@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本项目是一个类似 **Gemini Chat / ChatGPT** 的 AI 聊天工具，对于每一个聊天工具都可以将其视为一个数字人智能体（Digital Human Agent，DHA），有自己的 skill 和 mcp，核心特点是**所有对话都支持 ReAct Agent 模式**，可以自动调用 MCP 工具和自定义 Skills。参考了 Manus 的设计思路。对于 MCP 的设计部分应该参考官方的 MCP 设计理念，也就是在/Users/ggd/mycode/DHA/MCP_Learn/python-sdk中。
+本项目是一个类似 **Gemini Chat / ChatGPT** 的 AI 聊天工具，对于每一个聊天工具都可以将其视为一个数字人智能体（Digital Human Agent，DHA），有自己的 skill 和 mcp，核心特点是**所有对话都支持 ReAct Agent 模式**，可以自动调用 MCP 工具和自定义 Skills。参考了 Manus 的设计思路。对于 MCP 的设计部分应该参考官方的 MCP 设计理念（[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)）。
 
 提供对话、Session 管理、MCP/Skills/模型配置等功能。
 
@@ -74,7 +74,9 @@
 - **LangChain**：Python 版本的 `langchain` 核心库
   - 提供 LLM 抽象接口
   - 工具调用和链式处理
-- **MCP Python SDK**：使用 `/Users/ggd/mycode/DHA/MCP_Learn/python-sdk` 中的 MCP SDK
+- **MCP Python SDK**：使用官方 MCP Python SDK
+  - 从 PyPI 安装：`pip install mcp`
+  - 或从 GitHub 安装：`pip install git+https://github.com/modelcontextprotocol/python-sdk.git`
   - 直接使用 Python MCP SDK 连接 MCP Server
   - 支持 stdio、SSE、HTTP 等多种传输方式
   - 无需 JavaScript 适配器，原生 Python 集成

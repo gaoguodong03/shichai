@@ -1,0 +1,355 @@
+<template>
+  <div class="max-w-4xl mx-auto">
+    <!-- 标题和添加按钮 -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h2 class="text-2xl font-bold text-gray-800">Skills 配置</h2>
+        <p class="text-sm text-gray-500 mt-1">配置和管理 Skills，提供策略层指导</p>
+      </div>
+      <button
+        @click="showAddModal = true"
+        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+      >
+        + 添加 Skill
+      </button>
+    </div>
+
+    <!-- Skills 列表 -->
+    <div v-if="loading" class="text-center py-8 text-gray-500">
+      加载中...
+    </div>
+    <div v-else-if="skills.length === 0" class="text-center py-12 text-gray-500">
+      <p class="mb-4">还没有配置 Skill</p>
+      <button
+        @click="showAddModal = true"
+        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+      >
+        添加第一个 Skill
+      </button>
+    </div>
+    <div v-else class="space-y-4">
+      <div
+        v-for="skill in skills"
+        :key="skill.id"
+        class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+      >
+        <div class="flex items-start justify-between">
+          <div class="flex-1">
+            <div class="flex items-center gap-3 mb-2">
+              <h3 class="text-lg font-semibold text-gray-800">{{ skill.name }}</h3>
+              <span
+                :class="[
+                  'px-2 py-1 text-xs rounded-full',
+                  skill.enabled
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-gray-600'
+                ]"
+              >
+                {{ skill.enabled ? '已启用' : '已禁用' }}
+              </span>
+              <span
+                :class="[
+                  'px-2 py-1 text-xs rounded-full',
+                  skill.source === 'local'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-purple-100 text-purple-700'
+                ]"
+              >
+                {{ skill.source === 'local' ? '本地' : '远程' }}
+              </span>
+            </div>
+            <p v-if="skill.description" class="text-sm text-gray-600 mb-2">
+              {{ skill.description }}
+            </p>
+            <div class="text-sm text-gray-500">
+              <span v-if="skill.source === 'local'">路径: {{ skill.path }}</span>
+              <span v-else>URL: {{ skill.url }}</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 ml-4">
+            <button
+              @click="toggleSkill(skill.id, !skill.enabled)"
+              :class="[
+                'px-3 py-1 text-sm rounded',
+                skill.enabled
+                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+              ]"
+            >
+              {{ skill.enabled ? '禁用' : '启用' }}
+            </button>
+            <button
+              @click="editSkill(skill)"
+              class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+            >
+              编辑
+            </button>
+            <button
+              @click="deleteSkill(skill.id)"
+              class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 添加/编辑 Modal -->
+    <div
+      v-if="showAddModal || editingSkill"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      @click.self="closeModal"
+    >
+      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="p-6">
+          <h3 class="text-xl font-semibold mb-4">
+            {{ editingSkill ? '编辑 Skill' : '添加 Skill' }}
+          </h3>
+          
+          <form @submit.prevent="saveSkill" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                名称 *
+              </label>
+              <input
+                v-model="formData.name"
+                type="text"
+                required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="例如：数据分析"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                来源 *
+              </label>
+              <select
+                v-model="formData.source"
+                @change="onSourceChange"
+                required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="local">本地</option>
+                <option value="remote">远程 URL</option>
+              </select>
+            </div>
+
+            <!-- 本地路径 -->
+            <div v-if="formData.source === 'local'">
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                路径 *
+              </label>
+              <input
+                v-model="formData.path"
+                type="text"
+                required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="例如：/path/to/skill 或 ./skills/example-skill"
+              />
+            </div>
+
+            <!-- 远程 URL -->
+            <div v-if="formData.source === 'remote'">
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                URL *
+              </label>
+              <input
+                v-model="formData.url"
+                type="url"
+                required
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="例如：https://example.com/skills/data-analysis"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                描述
+              </label>
+              <textarea
+                v-model="formData.description"
+                rows="3"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Skill 的功能描述"
+              />
+            </div>
+
+            <div class="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                @click="closeModal"
+                class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              >
+                保存
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+
+interface Skill {
+  id: string
+  name: string
+  description?: string
+  enabled: boolean
+  source: 'local' | 'remote'
+  path?: string
+  url?: string
+}
+
+const skills = ref<Skill[]>([])
+const loading = ref(false)
+const showAddModal = ref(false)
+const editingSkill = ref<Skill | null>(null)
+
+const formData = ref({
+  name: '',
+  description: '',
+  source: 'local' as 'local' | 'remote',
+  path: '',
+  url: ''
+})
+
+const API_BASE = 'http://localhost:8000/api'
+
+const loadSkills = async () => {
+  loading.value = true
+  try {
+    const response = await fetch(`${API_BASE}/settings/skills`)
+    const result = await response.json()
+    if (result.status === 'ok') {
+      skills.value = result.data.skills || []
+    }
+  } catch (error) {
+    console.error('Failed to load skills:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const saveSkill = async () => {
+  try {
+    const url = editingSkill.value
+      ? `${API_BASE}/settings/skills/${editingSkill.value.id}`
+      : `${API_BASE}/settings/skills`
+    
+    const method = editingSkill.value ? 'PUT' : 'POST'
+    
+    const payload: any = {
+      name: formData.value.name,
+      description: formData.value.description,
+      source: formData.value.source
+    }
+    
+    if (formData.value.source === 'local') {
+      payload.path = formData.value.path
+    } else {
+      payload.url = formData.value.url
+    }
+    
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    
+    const result = await response.json()
+    if (result.status === 'ok') {
+      await loadSkills()
+      closeModal()
+    } else {
+      alert(result.error?.message || '保存失败')
+    }
+  } catch (error) {
+    console.error('Failed to save skill:', error)
+    alert('保存失败')
+  }
+}
+
+const editSkill = (skill: Skill) => {
+  editingSkill.value = skill
+  formData.value = {
+    name: skill.name,
+    description: skill.description || '',
+    source: skill.source,
+    path: skill.path || '',
+    url: skill.url || ''
+  }
+  showAddModal.value = true
+}
+
+const deleteSkill = async (id: string) => {
+  if (!confirm('确定要删除这个 Skill 吗？')) return
+  
+  try {
+    const response = await fetch(`${API_BASE}/settings/skills/${id}`, {
+      method: 'DELETE'
+    })
+    const result = await response.json()
+    if (result.status === 'ok') {
+      await loadSkills()
+    } else {
+      alert(result.error?.message || '删除失败')
+    }
+  } catch (error) {
+    console.error('Failed to delete skill:', error)
+    alert('删除失败')
+  }
+}
+
+const toggleSkill = async (id: string, enabled: boolean) => {
+  try {
+    const endpoint = enabled ? 'enable' : 'disable'
+    const response = await fetch(`${API_BASE}/settings/skills/${id}/${endpoint}`, {
+      method: 'POST'
+    })
+    const result = await response.json()
+    if (result.status === 'ok') {
+      await loadSkills()
+    } else {
+      alert(result.error?.message || '操作失败')
+    }
+  } catch (error) {
+    console.error('Failed to toggle skill:', error)
+    alert('操作失败')
+  }
+}
+
+const closeModal = () => {
+  showAddModal.value = false
+  editingSkill.value = null
+  formData.value = {
+    name: '',
+    description: '',
+    source: 'local',
+    path: '',
+    url: ''
+  }
+}
+
+const onSourceChange = () => {
+  if (formData.value.source === 'local') {
+    formData.value.url = ''
+  } else {
+    formData.value.path = ''
+  }
+}
+
+onMounted(() => {
+  loadSkills()
+})
+</script>

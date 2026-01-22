@@ -300,13 +300,6 @@ router/
 - **函数/变量**: 使用小写字母和下划线（`snake_case`）
 - **常量**: 使用大写字母和下划线（`UPPER_SNAKE_CASE`）
 
-### TypeScript/Vue 前端
-
-- **文件**: 使用大驼峰（`PascalCase`）用于组件，小驼峰（`camelCase`）用于其他
-- **组件**: 使用大驼峰（`PascalCase`）
-- **函数/变量**: 使用小驼峰（`camelCase`）
-- **常量**: 使用大写字母和下划线（`UPPER_SNAKE_CASE`）
-
 ## 代码组织原则
 
 1. **单一职责**: 每个模块/文件只负责一个功能

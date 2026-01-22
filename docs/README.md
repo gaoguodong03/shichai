@@ -8,6 +8,7 @@
 
 - [架构概述](./architecture/overview.md) - 项目整体架构和设计理念
 - [技术栈](./architecture/tech-stack.md) - 前后端技术栈详细说明
+- [运行流程](./architecture/runtime-flow.md) - 系统完整运行流程详解
 - [流式处理架构](./architecture/react-stream.md) - ReAct 流式处理实现
 - [API 设计](./architecture/api-design.md) - RESTful API 设计规范
 - [项目结构](./architecture/project-structure.md) - 项目目录结构说明
@@ -28,6 +29,7 @@
 - [代码规范](./development/code-styleguide.md) - 编码规范和最佳实践
 - [测试文档](./development/testing.md) - 测试方法和指南
 - [部署文档](./development/deployment.md) - 生产环境部署指南
+- [MCP Server 配置指南](./development/mcp-server-setup.md) - 如何配置和使用 MCP Server
 
 ### 设计文档
 

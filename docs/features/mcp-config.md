@@ -108,7 +108,7 @@ MCP Server 支持多种传输方式：
 
 ### Python MCP SDK 集成
 
-使用 `/Users/ggd/mycode/DHA/MCP_Learn/python-sdk` 中的 MCP SDK：
+使用 MCP Python SDK（从 PyPI 或 GitHub 安装）：
 
 ```python
 from mcp import ClientSession, StdioServerParameters
@@ -255,5 +255,6 @@ Response:
 ## 参考资源
 
 - [MCP 官方文档](https://modelcontextprotocol.io)
-- [MCP Python SDK 文档](/Users/ggd/mycode/DHA/MCP_Learn/python-sdk/docs)
+- [MCP Python SDK GitHub](https://github.com/modelcontextprotocol/python-sdk)
+- [MCP Python SDK 文档](https://github.com/modelcontextprotocol/python-sdk/tree/main/docs)
 - [LangChain Tools 文档](https://python.langchain.com/docs/modules/tools)
