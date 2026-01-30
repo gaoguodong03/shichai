@@ -1,693 +1,212 @@
-# 运行流程文档
+# 运行流程文档（程序逻辑与运行结果）
 
-本文档详细描述了 DHA (Digital Human Agent) 系统的完整运行流程，包括系统启动、请求处理、ReAct Agent 工作流、工具调用和流式输出等各个环节。
+本文档描述 DHA 系统的**整体程序逻辑**和**实际运行流程**，重点说明：**只有一个 ReAct Agent**；**Skill 的每一步由该 Agent 执行，步骤中如需要才调用 MCP**；**不存在 Agent 调用 Agent**。
 
-## 目录
+---
 
-- [系统启动流程](#系统启动流程)
-- [用户请求处理流程](#用户请求处理流程)
-- [ReAct Agent 工作流程](#react-agent-工作流程)
-- [MCP 工具调用流程](#mcp-工具调用流程)
-- [Skills 加载和使用流程](#skills-加载和使用流程)
-- [流式输出流程](#流式输出流程)
-- [错误处理流程](#错误处理流程)
+## 一、整体程序逻辑
 
-## 系统启动流程
+### 1.1 核心结论
 
-### 1. 后端服务启动
+- **单一 Agent**：全系统只有一个 ReAct 循环（一个 LLM + 一个「思考 → 可选工具调用 → 再思考」的循环）。没有「主 Agent 调子 Agent」。
+- **Skill 是「步骤说明书」**：Skill 的完整指令（SKILL.md）被注入到该 Agent 的系统提示词里，Agent **按 Skill 描述的步骤顺序**执行；每一步可以是纯推理，也可以**在这一步里**决定调用 MCP 工具。
+- **MCP 是「步骤内能力」**：当某一步需要搜索、抓取、计算等**执行能力**时，Agent 输出 tool_call，由 ReAct 的 Tool 节点执行对应 MCP 工具，结果回到**同一个** Agent，再继续下一步。
+- **无 Agent 调 Agent**：所有「按 Skill 步骤执行」和「调用 MCP」都发生在同一个 ReAct 循环内，不存在 Agent 调用 Agent。
 
-```
-启动命令: python -m app.main 或 uvicorn app.main:app --reload
-```
-
-**步骤详解：**
-
-1. **加载环境变量**
-   - 从 `.env` 文件加载配置
-   - 包括 Qwen API Key、CORS 设置、MCP 配置路径等
-
-2. **初始化 FastAPI 应用**
-   - 创建 FastAPI 实例
-   - 配置 CORS 中间件
-   - 注册路由（`/api/chat`, `/api/settings`）
-
-3. **启动 HTTP 服务器**
-   - 监听 `0.0.0.0:8000`
-   - 等待客户端连接
-
-### 2. 延迟初始化（Lazy Initialization）
-
-系统采用延迟初始化策略，在第一次请求时才初始化 MCP 和 Skills：
-
-```python
-# 全局管理器实例
-mcp_manager = MCPToolManager()
-skills_loader = SkillsLoader()
-initialized = False
-
-async def ensure_initialized():
-    if not initialized:
-        # 初始化 MCP Servers
-        await mcp_manager.initialize_all()
-        # 加载 Skills
-        skills_loader.load_all_skills()
-        initialized = True
-```
-
-**初始化步骤：**
-
-1. **MCP Manager 初始化**
-   - 加载 `config/mcp_servers.json` 配置文件
-   - 遍历所有启用的 MCP Server
-   - 建立 stdio 连接
-   - 调用 `list_tools()` 获取工具列表
-   - 将 MCP 工具转换为 LangChain Tool
-
-2. **Skills Loader 初始化**
-   - 扫描 `skills/` 目录
-   - 读取每个 Skill 的 `SKILL.md` 文件
-   - 解析 YAML frontmatter
-   - 提取技能名称、描述和指令内容
-
-## 用户请求处理流程
-
-### 请求入口
+### 1.2 数据流概览
 
 ```
-POST /api/chat/stream
-Content-Type: application/json
-
-{
-    "message": "现在几点了？",
-    "session_id": "default"
-}
+用户消息
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Chat API：组装「历史 + 用户消息」、拿到 tools + skills_instruction │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  create_react_agent(llm, tools, skills_instruction)         │
+│  • 系统提示词 = 工具列表 + 技能选择规则 + 可用技能(SKILL.md)    │
+│  • 图：agent 节点 ↔ should_continue ↔ call_tool / end       │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Agent (ReAct) 运行                                          │
+│  • 每次迭代：LLM 根据「当前消息 + Skill 步骤」决定：           │
+│    - 只回复文本（本步不调工具）→ 结束或继续                   │
+│    - 调用工具（本步需要 MCP）→ call_tool 节点执行 MCP         │
+│  • 工具结果作为新消息回到同一 Agent，继续下一步               │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+  最终回复（文本 + 可选 meta：skill / mcp_servers / tools）
 ```
 
-### 处理步骤
+---
 
-1. **接收请求**
-   - FastAPI 路由接收 POST 请求
-   - 验证请求体（Pydantic 模型）
-   - 解析 `message` 和 `session_id`
+## 二、启动与初始化
 
-2. **确保初始化**
-   - 调用 `ensure_initialized()`
-   - 如果未初始化，执行初始化流程
+### 2.1 后端启动
 
-3. **获取工具和技能**
-   ```python
-   tools = mcp_manager.get_tools()  # 获取所有 MCP 工具
-   skills_instruction = skills_loader.get_active_skills_instructions()  # 获取技能指令
-   ```
+- 启动命令：`uvicorn app.main:app` 或 `python -m app.main`。
+- 加载 `.env`、挂载路由（如 `/api/chat/stream`、`/api/settings/*`）。
+- **不在此阶段**连接 MCP 或加载 Skill 正文；仅准备好 API。
 
-4. **创建 Agent**
-   ```python
-   llm = QwenLLM()  # 创建 LLM 客户端
-   agent = create_react_agent(llm, tools, skills_instruction)  # 创建 ReAct Agent
-   ```
+### 2.2 延迟初始化（第一次聊天请求时）
 
-5. **准备初始状态**
-   ```python
-   initial_state = {
-       "messages": [HumanMessage(content=request.message)],
-       "tools": tools
-   }
-   ```
+在**第一次**收到聊天请求时执行一次：
 
-6. **启动流式响应**
-   - 创建 `StreamingResponse`
-   - 使用 Server-Sent Events (SSE) 格式
-   - 开始流式执行 Agent 工作流
+1. **MCP Manager**
+   - 读取 `config/mcp_servers.json`，对每个 `enabled: true` 的 Server 建立连接（stdio 或 HTTP）。
+   - 对每个 Server 调用 `list_tools()`，得到工具列表；工具在系统内命名为 `{server_id}_{tool_name}`（如 `time_get_time`、`exa_web_search_exa`）。
+   - 将 MCP 工具封装为 LangChain Tool，供 ReAct 使用。
 
-## ReAct Agent 工作流程
+2. **Skills Loader**
+   - 扫描 `skills/` 下各子目录，读取每个目录下的 `SKILL.md`。
+   - 解析 YAML frontmatter（name、description）和正文，组成「可用技能」的完整指令文本。
+   - `get_active_skills_instructions()` 返回所有已加载 Skill 的合并文本（用于注入系统提示词）。
 
-### 工作流图
+3. **标记已初始化**
+   - 之后同一进程内不再重复做上述 MCP 连接和 Skill 扫描。
+
+**要点**：只有**一个** MCP Manager 和一个 Skills Loader；它们为**那一个** ReAct Agent 提供「工具列表」和「Skill 步骤说明」。
+
+---
+
+## 三、单次请求的完整流程
+
+### 3.1 请求入口
+
+- 前端：`POST /api/chat/stream`，body：`{ "message": "…", "session_id": "…" }`。
+- 后端：`chat_stream(request)`。
+
+### 3.2 准备 Agent 输入
+
+1. **ensure_initialized()**  
+   若未初始化，则执行上节的 MCP 连接与 Skills 加载。
+
+2. **获取工具与技能文本**
+   - `tools = mcp_manager.get_tools()`：当前所有 MCP 工具（LangChain Tool 列表）。
+   - `skills_instruction = skills_loader.get_active_skills_instructions()`：所有 Skill 的合并指令（含「技能选择」规则和每个 SKILL.md 的步骤说明）。
+
+3. **创建 ReAct Agent**
+   - `llm = QwenLLM()`（或配置的其它 LLM）。
+   - `agent = create_react_agent(llm, tools, skills_instruction)`。
+   - 系统提示词中包括：
+     - 工具列表（名称 + 描述）；
+     - 工具调用格式（JSON）；
+     - **技能选择**：根据用户意图先选一个 Skill（如 wechat-article-writer / app-icon-generator）；
+     - **可用技能**：`skills_instruction` 的完整内容（即「按该 Skill 的步骤执行」的说明书）。
+
+4. **初始状态**
+   - `messages` = 会话历史（截断到最近 N 条）+ 本条用户消息。
+   - `tools` = 上面拿到的工具列表（同一份引用会一直在状态里）。
+
+**要点**：全流程只有这里创建的一次 `agent`，没有在内部再创建「子 Agent」。
+
+### 3.3 ReAct 循环（同一 Agent，Skill 步骤中可能调 MCP）
+
+图结构（LangGraph）：
 
 ```
-┌─────────────┐
-│   Entry     │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────┐
-│   Agent     │  ← LLM 思考和决策
-│   Node      │
-└──────┬──────┘
-       │
-       ├─── should_continue() ───┐
-       │                          │
-       │                          ▼
-       │                    ┌─────────────┐
-       │                    │  call_tool  │  ← 需要工具？
-       │                    │     end     │
-       │                    └─────────────┘
-       │                          │
-       │                          ▼
-       │                    ┌─────────────┐
-       │                    │    Tool     │  ← 执行工具
-       │                    │    Node     │
-       │                    └──────┬──────┘
-       │                           │
-       │                           │ (工具结果)
-       │                           │
-       └───────────────────────────┘
-                    │
-                    ▼
-              ┌─────────────┐
-              │     END     │
+  Entry → agent 节点 → should_continue
+                            │
+              ┌─────────────┼─────────────┐
+              │ call_tool   │     end     │
+              ▼             │             ▼
+         call_tool 节点     │            END
+              │             │
               └─────────────┘
+                (工具结果作为 HumanMessage 回到 agent 节点)
 ```
 
-### 详细流程
+**agent 节点（call_model）**：
 
-#### 1. Agent 节点（call_model）
+- 输入：当前 `state["messages"]`、`state["tools"]`。
+- 系统提示词已在建图时固定，包含：工具列表 + 技能选择 + 可用技能（Skill 步骤）。
+- 调用 LLM：`llm.invoke(messages)`，得到一条 `AIMessage`。
+- 该消息可能包含：
+  - **仅文本**：表示本步只做推理（例如「先澄清需求」「规划结构」），不调工具。
+  - **tool_calls**：表示本步需要执行能力，要调用 MCP；内容为 `(tool_name, arguments)`。
 
-**功能：** LLM 思考和决策
+**should_continue**：
 
-**执行步骤：**
+- 若上一条 AIMessage 含有 `tool_calls` → 走 **call_tool** 分支。
+- 否则 → **end**，结束循环。
 
-1. 获取当前消息列表
-2. 添加系统提示词（包含工具列表和技能指令）
-3. 调用 LLM（`llm.get_client().ainvoke(messages)`）
-4. 获取 LLM 响应（AIMessage）
-5. 更新状态：`{"messages": messages + [response]}`
- 
-**系统提示词结构：**
+**call_tool 节点**：
 
-```
-你是一个有用的 AI 助手，可以使用工具来帮助用户。
+- 从上一条 AIMessage 里取出每个 `tool_call` 的 `name` 和 `args`。
+- 在 `state["tools"]` 中按 `name` 查找 LangChain Tool（即某个 MCP 工具的封装）。
+- 执行：`tool.func(**args)` 或等价调用；内部会通过 MCP Session 调用真实 MCP Server。
+- 将执行结果格式化为字符串，封装成 `HumanMessage(content="工具 xxx 的执行结果: …")`，**追加到 messages**。
+- 下一轮迭代：**再次进入 agent 节点**，LLM 看到「工具结果」+ 继续按 Skill 步骤决定：要么再调工具，要么输出最终回复。
 
-你可以使用以下工具：
-- time_get_time: 获取当前时间
-- calculator_calculate: 执行数学计算
-...
+**要点**：
 
-当你需要使用工具时，请按照以下格式回复：
-```json
-{
-    "action": "tool_call",
-    "tool": "tool_name",
-    "arguments": {...}
-}
-```
+- 每一轮都是**同一个** Agent（同一个图、同一个 LLM、同一套 Skill 指令）。
+- 「Skill 的某一步」对应的是 LLM 在某轮迭代中决定：这一步是只说话，还是调用 MCP；若调用 MCP，则在该轮走 call_tool，结果回到下一轮 agent，继续按 Skill 下一步执行。
+- **不存在** Agent 调用 Agent；只存在「Agent 调用 MCP 工具」。
 
-## 可用技能
-[Skills 指令内容]
-```
+### 3.4 流式输出（SSE）
 
-#### 2. 条件判断（should_continue）
+- 后端在 `agent.astream(initial_state)` 的迭代中，根据事件类型向前端推送：
+  - `event: start`
+  - `event: react_step`（思考或工具结果，带 meta：skills / mcp_servers / tools）
+  - `event: content`（最终或中间文本，带 meta）
+  - `event: end` / `event: error`
+- meta 中的 `skills` 来源于：  
+  - 先根据用户消息推断（如文案→wechat-article-writer）；  
+  - 若本轮有 tool_calls，则按 `server_id` 从 `_MCP_SERVER_TO_SKILL` 覆盖（如调用了 exa → 显示 wechat-article-writer）。
 
-**功能：** 判断是否需要调用工具
+### 3.5 会话历史
 
-**判断逻辑：**
+- 流式结束后，将本轮「用户消息 + 助手完整回复」追加到该 `session_id` 的对话历史中，并做长度截断。
+- 下次同一 session 的请求会带上这段历史，仍是**同一个** Agent 逻辑，只是多了一些历史消息。
 
-1. 检查最后一条消息是否为 AIMessage
-2. 检查消息内容是否包含 "tool_call"
-3. 尝试解析 JSON 格式的工具调用
-4. 如果解析成功且 `action == "tool_call"`，返回 `"call_tool"`
-5. 否则返回 `"end"`
-
-**代码示例：**
-
-```python
-def should_continue(state: AgentState):
-    messages = state["messages"]
-    last_message = messages[-1]
-    
-    if isinstance(last_message, AIMessage):
-        content = last_message.content
-        if isinstance(content, str) and "tool_call" in content.lower():
-            # 解析 JSON
-            tool_call = json.loads(json_str)
-            if tool_call.get("action") == "tool_call":
-                return "call_tool"
-    
-    return "end"
-```
-
-#### 3. Tool 节点（call_tool）
-
-**功能：** 执行工具调用
-
-**执行步骤：**
-
-1. 从 Agent 节点的响应中提取工具调用信息
-2. 解析 JSON：`{"action": "tool_call", "tool": "time_get_time", "arguments": {}}`
-3. 根据工具名称查找对应的 LangChain Tool
-4. 执行工具：
-   - 异步工具：`await tool.arun(**arguments)`
-   - 同步工具：`await asyncio.to_thread(tool.run, **arguments)`
-5. 将工具结果封装为 HumanMessage
-6. 更新状态：`{"messages": [HumanMessage(content=f"工具执行结果: {result}")]}`
-
-**工具执行示例：**
-
-```python
-# 工具调用
-tool_name = "time_get_time"
-arguments = {}
-
-# 查找工具
-tool = find_tool_by_name(tool_name)
-
-# 执行工具
-if hasattr(tool, 'arun'):
-    result = await tool.arun(**arguments)
-else:
-    result = await asyncio.to_thread(tool.run, **arguments)
-
-# 返回结果
-return {
-    "messages": [
-        HumanMessage(content=f"工具 {tool_name} 的执行结果: {result}")
-    ]
-}
-```
-
-#### 4. 循环执行
-
-**流程：**
-
-1. Tool 节点执行完成后，自动返回到 Agent 节点
-2. Agent 节点接收工具结果，再次调用 LLM
-3. LLM 基于工具结果生成最终回复
-4. 如果不再需要工具，流程结束
-
-**示例循环：**
-
-```
-用户: "现在几点了？"
-  ↓
-Agent: 思考 → 决定调用 time_get_time 工具
-  ↓
-Tool: 执行工具 → 返回 "当前时间: 2024-01-01 12:00:00"
-  ↓
-Agent: 基于工具结果 → 生成回复 "现在是 2024年1月1日 12点整"
-  ↓
-END: 返回最终回复
-```
-
-## MCP 工具调用流程
-
-### MCP Server 连接流程
-
-```
-1. 读取配置
-   └─> config/mcp_servers.json
-   
-2. 遍历启用的 Server
-   └─> enabled: true
-   
-3. 建立连接
-   └─> stdio_client(StdioServerParameters)
-   
-4. 初始化 Session
-   └─> await session.initialize()
-   
-5. 获取工具列表
-   └─> await session.list_tools()
-   
-6. 转换工具
-   └─> MCP Tool → LangChain Tool
-```
-
-### 工具调用流程
-
-```
-Agent 决定调用工具
-  ↓
-解析工具名称: "time_get_time"
-  ↓
-查找 LangChain Tool
-  ↓
-调用 tool.arun() 或 tool.run()
-  ↓
-内部调用 MCP Session
-  └─> await session.call_tool("get_time", {})
-  ↓
-MCP Server 执行
-  └─> Python 函数执行
-  └─> 返回结果
-  ↓
-结果转换
-  └─> MCP Result → LangChain Result
-  ↓
-返回给 Agent
-```
-
-### 工具名称映射
-
-**MCP Server 配置：**
-
-```json
-{
-  "id": "time",
-  "name": "时间 Server",
-  "transport": {
-    "type": "stdio",
-    "command": "python",
-    "args": ["example_time.py"]
-  }
-}
-```
-
-**工具注册：**
-
-- MCP Server 中的工具名：`get_time`
-- 注册到 LangChain 的工具名：`time_get_time`（添加 server_id 前缀避免冲突）
-
-**调用过程：**
-
-```python
-# Agent 调用
-tool_name = "time_get_time"
-
-# 查找工具
-tool = find_tool(tool_name)  # 找到 LangChain Tool
-
-# 执行工具
-result = await tool.arun()
-
-# 内部执行
-# 1. 提取原始工具名: "get_time"
-# 2. 调用 MCP Session: await session.call_tool("get_time", {})
-# 3. MCP Server 执行 Python 函数
-# 4. 返回结果
-```
-
-## Skills 加载和使用流程
-
-### Skills 加载流程
-
-```
-1. 扫描目录
-   └─> skills/
-   
-2. 遍历子目录
-   └─> example-skill/
-   
-3. 读取 SKILL.md
-   └─> 解析 YAML frontmatter
-   └─> 提取 body 内容
-   
-4. 创建 Skill 对象
-   └─> name, description, content, metadata
-   
-5. 存储到字典
-   └─> skills[name] = Skill(...)
-```
-
-### Skills 使用流程
-
-```
-1. 获取所有激活的 Skills
-   └─> skills_loader.get_active_skills_instructions()
-   
-2. 合并技能指令
-   └─> 格式: "## skill_name\n{description}\n\n{content}"
-   
-3. 添加到系统提示词
-   └─> system_prompt += "\n## 可用技能\n{skills_instruction}\n"
-   
-4. LLM 接收技能指令
-   └─> 在决策时参考技能指导
-   
-5. 根据技能执行任务
-   └─> 可能调用相关工具
-```
-
-### Skills 示例
-
-**SKILL.md 文件：**
-
-```markdown
----
-name: data-analysis
-description: 数据分析技能
 ---
 
-## 数据分析流程
+## 四、Skill 与 MCP 在运行中的角色（对照）
 
-1. 收集数据
-2. 清理数据
-3. 分析数据
-4. 生成报告
-```
+| 维度       | Skill                          | MCP                                    |
+|------------|--------------------------------|----------------------------------------|
+| 是什么     | 步骤说明书（SKILL.md 注入提示词） | 可执行工具集（通过 MCP Server 注册）     |
+| 谁使用     | 同一个 ReAct Agent（LLM）      | 同一个 ReAct Agent（通过 call_tool）   |
+| 何时起作用 | 每一步推理时（选技能、按步骤执行） | 某一步需要「执行能力」时（搜索、抓取等） |
+| 调用关系   | 不「调用」MCP，只指导何时用哪些能力 | 被 Agent 在步骤中按需调用               |
 
-**系统提示词中的体现：**
+- **Skill 的每一步可能会调用 MCP**：指的是「Agent 在执行 Skill 描述的某一步时，若该步需要搜索/抓取/计算等，就会在本轮或后续轮发出 tool_call，从而调用 MCP」。
+- **不会有 Agent 直接调用 Agent**：整个系统只有一个 ReAct 循环，没有子 Agent 或嵌套 Agent。
 
-```
-## 可用技能
+---
 
-## data-analysis
-数据分析技能
+## 五、运行结果示例（单轮简化）
 
-## 数据分析流程
+以用户说「生成北邮校庆文案」为例（wechat-article-writer 被选中）：
 
-1. 收集数据
-2. 清理数据
-3. 分析数据
-4. 生成报告
-```
+1. **第一轮 agent**  
+   - 输入：用户消息 + 系统提示（含 wechat-article-writer 的步骤）。  
+   - 输出：AIMessage 仅文本，例如「按 wechat-article-writer，先澄清：校庆年份、受众、风格…」（**本步不调工具**）。  
+   - should_continue → end，流式把这段文本推给前端。
 
-## 流式输出流程
+2. 若用户补全信息后再说「可以写了」：
+   - **第一轮 agent**  
+     - 输出：AIMessage 带 tool_calls，例如 `exa_web_search_exa` 或 `fetch_fetch`（执行「搜索补充」这一步）。  
+   - **call_tool**  
+     - 执行对应 MCP，结果写入 HumanMessage。  
+   - **第二轮 agent**  
+     - 输入：历史 + 工具结果；仍按同一 Skill 步骤继续。  
+     - 输出：可能再调工具，或直接输出正文（本步不调工具）→ end。
 
-### SSE 事件格式
+3. **结果**  
+   - 前端收到：`content` 事件中的最终文案 + meta（如 `skills: ["wechat-article-writer"]`、`mcp_servers: ["exa"]` 等）。  
+   - 全程**只有一个** ReAct Agent；Skill 指导「步骤」，MCP 在步骤需要时被调用。
 
-系统使用 Server-Sent Events (SSE) 进行流式输出：
+---
 
-```
-event: start
-data: {"type": "start"}
+## 六、相关文档
 
-event: react_step
-data: {"type": "thought", "content": "用户询问时间，我需要调用工具..."}
-
-event: react_step
-data: {"type": "tool_result", "content": "工具 time_get_time 的执行结果: 当前时间: 2024-01-01 12:00:00"}
-
-event: content
-data: {"text": "现在是"}
-
-event: content
-data: {"text": "2024年1月1日"}
-
-event: content
-data: {"text": "12点整"}
-
-event: end
-data: {"type": "end"}
-```
-
-### 事件类型
-
-1. **start** - 开始事件
-   - 工作流开始执行时发送
-
-2. **react_step** - ReAct 步骤事件
-   - `type: "thought"` - LLM 思考过程（包含工具调用 JSON）
-   - `type: "tool_result"` - 工具执行结果
-
-3. **content** - 内容事件
-   - LLM 生成的文本内容（流式输出）
-
-4. **end** - 结束事件
-   - 工作流执行完成
-
-5. **error** - 错误事件
-   - 执行过程中发生错误
-
-### 流式执行流程
-
-```python
-async def event_generator():
-    # 1. 发送开始事件
-    yield f"event: start\ndata: {json.dumps({'type': 'start'})}\n\n"
-    
-    # 2. 流式执行 Agent 工作流
-    async for event in agent.astream(initial_state):
-        for node_name, messages in event.items():
-            if node_name == "agent":
-                # Agent 节点：LLM 响应
-                for message in messages:
-                    if isinstance(message, AIMessage):
-                        content = message.content
-                        if "tool_call" in content:
-                            # 发送思考步骤
-                            yield f"event: react_step\ndata: ...\n\n"
-                        else:
-                            # 发送内容
-                            yield f"event: content\ndata: ...\n\n"
-            
-            elif node_name == "tool":
-                # Tool 节点：工具结果
-                for message in messages:
-                    yield f"event: react_step\ndata: ...\n\n"
-    
-    # 3. 发送结束事件
-    yield f"event: end\ndata: {json.dumps({'type': 'end'})}\n\n"
-```
-
-### 前端接收流程
-
-```javascript
-const eventSource = new EventSource('/api/chat/stream');
-
-eventSource.addEventListener('start', (e) => {
-    // 开始处理
-});
-
-eventSource.addEventListener('react_step', (e) => {
-    const data = JSON.parse(e.data);
-    if (data.type === 'thought') {
-        // 显示思考过程
-    } else if (data.type === 'tool_result') {
-        // 显示工具结果
-    }
-});
-
-eventSource.addEventListener('content', (e) => {
-    const data = JSON.parse(e.data);
-    // 流式显示文本内容
-    appendText(data.text);
-});
-
-eventSource.addEventListener('end', (e) => {
-    // 结束处理
-    eventSource.close();
-});
-```
-
-## 错误处理流程
-
-### 错误类型
-
-1. **初始化错误**
-   - MCP Server 连接失败
-   - Skills 加载失败
-   - 处理：记录警告，继续运行（部分功能可能不可用）
-
-2. **工具调用错误**
-   - 工具不存在
-   - 工具执行失败
-   - 处理：返回错误消息给 Agent，Agent 可以重试或报告错误
-
-3. **LLM 调用错误**
-   - API 调用失败
-   - 超时
-   - 处理：返回错误事件给前端
-
-4. **JSON 解析错误**
-   - 工具调用 JSON 格式错误
-   - 处理：返回解析错误消息
-
-### 错误处理示例
-
-```python
-try:
-    # 执行工具
-    result = await tool.arun(**arguments)
-except Exception as e:
-    # 返回错误消息
-    return {
-        "messages": [
-            HumanMessage(content=f"工具调用错误: {str(e)}")
-        ]
-    }
-```
-
-```python
-try:
-    async for event in agent.astream(initial_state):
-        # 处理事件
-        ...
-except Exception as e:
-    # 发送错误事件
-    yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-```
-
-## 完整流程示例
-
-### 示例：用户询问时间
-
-```
-1. 用户发送请求
-   POST /api/chat/stream
-   {"message": "现在几点了？"}
-
-2. 系统初始化（如果未初始化）
-   - 加载 MCP Servers
-   - 连接 time Server
-   - 加载工具: time_get_time
-   - 加载 Skills
-
-3. 创建 Agent
-   - 构建系统提示词（包含工具和技能）
-   - 创建 LangGraph 工作流
-
-4. 启动工作流
-   └─> Agent 节点
-       └─> LLM 思考
-       └─> 决定调用 time_get_time
-       └─> 生成工具调用 JSON
-
-5. 条件判断
-   └─> 检测到工具调用
-   └─> 路由到 Tool 节点
-
-6. Tool 节点
-   └─> 解析工具调用
-   └─> 查找工具: time_get_time
-   └─> 调用 MCP Session
-   └─> MCP Server 执行 get_time()
-   └─> 返回: "当前时间: 2024-01-01 12:00:00"
-
-7. 返回 Agent 节点
-   └─> 接收工具结果
-   └─> LLM 生成最终回复
-   └─> "现在是 2024年1月1日 12点整"
-
-8. 条件判断
-   └─> 无工具调用
-   └─> 结束工作流
-
-9. 流式输出
-   - event: start
-   - event: react_step (思考)
-   - event: react_step (工具结果)
-   - event: content ("现在是")
-   - event: content ("2024年1月1日")
-   - event: content ("12点整")
-   - event: end
-```
-
-## 性能优化
-
-### 1. 延迟初始化
-- 只在第一次请求时初始化
-- 避免启动时的长时间等待
-
-### 2. 连接复用
-- MCP Server 连接保持打开
-- 工具调用复用同一连接
-
-### 3. 异步执行
-- 所有 I/O 操作使用异步
-- 支持并发请求处理
-
-### 4. 流式输出
-- 实时返回结果
-- 减少用户等待时间
-
-## 总结
-
-DHA 系统采用 ReAct Agent 模式，通过 LangGraph 实现完整的工作流：
-
-1. **系统启动**：延迟初始化，按需加载资源
-2. **请求处理**：接收请求 → 初始化 → 创建 Agent → 执行工作流
-3. **ReAct 循环**：Agent 思考 → 工具调用 → 结果处理 → 生成回复
-4. **工具集成**：MCP Server → LangChain Tool → Agent 调用
-5. **技能指导**：Skills 指令注入系统提示词
-6. **流式输出**：SSE 实时推送执行过程和结果
-
-整个系统设计注重可扩展性、可维护性和用户体验。
+- [架构概述](./overview.md)：协作关系图与 Skill/MCP 定位  
+- [流式处理](./react-stream.md)：ReAct 流式实现细节  
+- [API 设计](./api-design.md)：接口与事件格式  

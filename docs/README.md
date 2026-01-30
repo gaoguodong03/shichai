@@ -9,6 +9,8 @@
 - [架构概述](./architecture/overview.md) - 项目整体架构和设计理念
 - [技术栈](./architecture/tech-stack.md) - 前后端技术栈详细说明
 - [运行流程](./architecture/runtime-flow.md) - 系统完整运行流程详解
+- [项目流程图](./architecture/flow-diagrams.md) - React、Skills、MCP 详细流程图
+- [项目流程通俗说明](./architecture/flow-diagrams-plain.md) - 用通俗语言描述的项目流程
 - [流式处理架构](./architecture/react-stream.md) - ReAct 流式处理实现
 - [API 设计](./architecture/api-design.md) - RESTful API 设计规范
 - [项目结构](./architecture/project-structure.md) - 项目目录结构说明

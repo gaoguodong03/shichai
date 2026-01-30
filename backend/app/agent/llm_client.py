@@ -31,5 +31,6 @@ class QwenLLM:
             openai_api_base=self.base_url,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            streaming=True
+            streaming=True,
+            request_timeout=90,
         )

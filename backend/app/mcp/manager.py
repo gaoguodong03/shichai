@@ -1,7 +1,7 @@
 """MCP Server 管理器"""
 import os
 import logging
-import io
+import asyncio
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
 
@@ -15,6 +15,15 @@ except ImportError as e:
     logger.error(f"MCP SDK not found: {e}")
     print("Please install MCP SDK: pip install mcp")
     print("Or from GitHub: pip install git+https://github.com/modelcontextprotocol/python-sdk.git")
+
+# HTTP/Streamable HTTP 为可选依赖，仅在配置了远程 Server 时使用
+_streamable_http_available = False
+try:
+    from mcp.client.streamable_http import streamable_http_client
+    import httpx
+    _streamable_http_available = True
+except ImportError:
+    pass
 
 class MCPToolManager:
     """MCP 工具管理器"""
@@ -59,9 +68,11 @@ class MCPToolManager:
                     import sys
                     command = sys.executable
                 
+                env = transport.get("env")
                 params = StdioServerParameters(
                     command=command,
-                    args=args
+                    args=args,
+                    env=env if isinstance(env, dict) else None,
                 )
                 
                 # stdio_client 是异步上下文管理器，返回 (read, write) 元组
@@ -84,9 +95,7 @@ class MCPToolManager:
                     session = await self.exit_stack.enter_async_context(
                         ClientSession(read, write)
                     )
-                   
-                    # 添加超时保护（30秒）
-                    import asyncio
+                    # 添加超时保护（30秒），asyncio 在文件顶部已导入
                     await asyncio.wait_for(session.initialize(), timeout=30.0)
                     logger.info("MCP Session 初始化成功")
                 except asyncio.TimeoutError:
@@ -100,8 +109,41 @@ class MCPToolManager:
                 logger.info(f"MCP Server {server_id} 连接成功")
                 await self._load_tools_from_server(server_id, session)
                 return True
+
+            elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
+                # 远程 HTTP / Streamable HTTP：使用 MCP SDK 的 streamable_http_client
+                url = (transport.get("url") or transport.get("base_url") or "").strip()
+                if not url:
+                    logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
+                    return False
+                headers = dict(transport.get("headers") or {})
+                http_client = None
+                if headers:
+                    http_client = httpx.AsyncClient(headers=headers, timeout=60.0)
+                    await self.exit_stack.enter_async_context(http_client)
+                try:
+                    streamable_transport = streamable_http_client(url, http_client=http_client, terminate_on_close=True)
+                    read_write_getid = await self.exit_stack.enter_async_context(streamable_transport)
+                    read_stream, write_stream, _ = read_write_getid
+                    session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
+                    await asyncio.wait_for(session.initialize(), timeout=30.0)
+                    logger.info("MCP Session (Streamable HTTP) 初始化成功")
+                except asyncio.TimeoutError:
+                    logger.error(f"MCP Server {server_id} Streamable HTTP 初始化超时（30秒）")
+                    raise
+                except Exception as e:
+                    logger.error(f"MCP Server {server_id} Streamable HTTP 连接失败: {e}", exc_info=True)
+                    raise
+                self.sessions[server_id] = session
+                logger.info(f"MCP Server {server_id} 连接成功 (Streamable HTTP)")
+                await self._load_tools_from_server(server_id, session)
+                return True
+
             else:
-                logger.error(f"不支持的传输类型: {transport_type}")
+                if transport_type in ("http", "streamable_http", "sse") and not _streamable_http_available:
+                    logger.error(f"传输类型 {transport_type} 需要安装 mcp 与 httpx，且 mcp 需包含 streamable_http 客户端")
+                else:
+                    logger.error(f"不支持的传输类型: {transport_type}")
                 return False
         except Exception as e:
             logger.error(f"Failed to connect MCP server {server_id}: {e}", exc_info=True)
@@ -149,12 +191,17 @@ class MCPToolManager:
                 logger.error(f"工具执行错误: {error_msg}", exc_info=True)
                 return error_msg
         
-        # 创建 Tool，func 可以是异步函数
-        # LangChain Tool 会自动处理异步函数
+        # 若有 inputSchema，把参数说明拼进 description，避免 LLM 误以为只接受一个参数
+        description = mcp_tool.description or f"MCP tool: {mcp_tool.name}"
+        if getattr(mcp_tool, "inputSchema", None) and isinstance(mcp_tool.inputSchema, dict):
+            props = mcp_tool.inputSchema.get("properties") or {}
+            if props:
+                parts = [f"{k} ({v.get('type', 'string')})" for k, v in props.items()]
+                description = f"{description} 参数: {', '.join(parts)}。"
         return Tool(
-            name=tool_name,  # 使用带前缀的名称作为 LangChain Tool 名称
-            description=mcp_tool.description or f"MCP tool: {mcp_tool.name}",
-            func=tool_func  # func 可以是异步函数，Tool 会自动处理
+            name=tool_name,
+            description=description,
+            func=tool_func,
         )
     
     def get_tools(self) -> List[Tool]:

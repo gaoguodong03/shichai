@@ -2,10 +2,10 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
-import json
+from typing import Optional, Dict, Any, List
 import logging
-from langchain_core.messages import HumanMessage, AIMessage
+import re
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from app.agent.llm_client import QwenLLM
 from app.agent.graph import create_react_agent
 from app.mcp.manager import MCPToolManager
@@ -21,6 +21,49 @@ router = APIRouter(tags=["chat"])
 mcp_manager = MCPToolManager()
 skills_loader = SkillsLoader()
 initialized = False
+
+# 从工具结果文本中提取工具名（graph.py 会输出：工具 <tool_name> 的执行结果: ...）
+_TOOL_NAME_RE = re.compile(r"工具\s+([^\s]+)\s+的执行结果")
+
+# MCP server_id -> 本轮响应关联的 skill 名称（仅用于 meta 展示：一条消息显示一个 skill + 一个 mcp）
+_MCP_SERVER_TO_SKILL: Dict[str, str] = {
+    "volces-icon": "app-icon-generator",
+    "linkup": "wechat-article-writer",
+    "exa": "wechat-article-writer",
+    "fetch": "wechat-article-writer",
+    "mem0": "wechat-article-writer",
+}
+
+
+def _infer_skill_from_user_message(message: str) -> Optional[str]:
+    """根据用户首条消息推断应使用的 skill，用于未调用工具时也能正确显示当前技能"""
+    if not message or not message.strip():
+        return None
+    t = message.strip()
+    # 文案/校庆/公众号/文章/推文/宣传 -> wechat-article-writer
+    if any(kw in t for kw in ("文案", "校庆", "公众号", "文章", "推文", "宣传")):
+        return "wechat-article-writer"
+    # 图标/icon -> app-icon-generator
+    if any(kw in t for kw in ("图标", "icon", "应用图标")):
+        return "app-icon-generator"
+    return None
+
+
+def _update_meta_skill_from_tool_calls(meta_context: Dict[str, Any], message) -> None:
+    """根据 AIMessage 的 tool_calls 更新 meta_context['skills']（仅当调用的工具所属 server 在 _MCP_SERVER_TO_SKILL 中）"""
+    if not hasattr(message, "tool_calls") or not message.tool_calls:
+        return
+    tc = message.tool_calls[0]
+    tool_name = tc.get("name") or tc.get("id") or ""
+    if "_" in tool_name:
+        server_id = tool_name.split("_", 1)[0]
+        skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
+        if skill_name:
+            meta_context["skills"] = [skill_name]
+
+# 会话级对话历史（每段对话是一段记忆）：session_id -> [HumanMessage, AIMessage, ...]，最多保留最近 N 条
+_CHAT_HISTORY: Dict[str, List[BaseMessage]] = {}
+_CHAT_HISTORY_MAX_MESSAGES = 5
 
 async def ensure_initialized():
     """确保管理器已初始化"""
@@ -75,12 +118,19 @@ async def chat_stream(request: ChatRequest):
     agent = create_react_agent(llm, tools, skills_instruction)
     logger.info("ReAct Agent 创建完成")
     
-    # 初始状态
+    session_id = request.session_id or "default"
+    # 加载该会话的历史消息，并与本条用户消息一起作为上下文发给大模型
+    history = _CHAT_HISTORY.get(session_id, [])
+    if len(history) > _CHAT_HISTORY_MAX_MESSAGES:
+        history = history[-_CHAT_HISTORY_MAX_MESSAGES:]
+    new_user_msg = HumanMessage(content=request.message)
+    messages_for_agent = list(history) + [new_user_msg]
+    
     initial_state = {
-        "messages": [HumanMessage(content=request.message)],
+        "messages": messages_for_agent,
         "tools": tools
     }
-    logger.info(f"初始状态准备完成，消息数量: {len(initial_state['messages'])}")
+    logger.info(f"初始状态准备完成，消息数量: {len(initial_state['messages'])}（含历史 {len(history)} 条）")
     
     async def event_generator():
         """事件生成器 - 使用完整的 ReAct Agent 工作流"""
@@ -90,6 +140,16 @@ async def chat_stream(request: ChatRequest):
             logger.info("开始执行 Agent 工作流")
             # 发送开始事件
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
+
+            # meta 透传：skill 先根据用户消息推断（文案/校庆等->wechat-article-writer），后续若调用了工具则按工具所属 server 覆盖
+            inferred_skill = _infer_skill_from_user_message(request.message)
+            meta_context: Dict[str, Any] = {
+                "skills": [inferred_skill] if inferred_skill else [],
+                "tools": [],
+                "mcp_servers": [],
+            }
+            # 累积本轮助手回复，用于写入会话历史
+            accumulated_content: List[str] = []
             
             # 使用 LangGraph 运行完整的 ReAct 循环
             # 流式执行 Agent 工作流
@@ -131,6 +191,8 @@ async def chat_stream(request: ChatRequest):
                                 # 检查是否有工具调用
                                 has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
                                 logger.info(f"Agent 响应 - 是否有工具调用: {has_tool_calls}")
+                                # 根据本条调用的工具更新 meta.skills（用于前端显示当前技能）
+                                _update_meta_skill_from_tool_calls(meta_context, message)
                                 
                                 # 处理文本内容
                                 content_str = ""
@@ -144,8 +206,9 @@ async def chat_stream(request: ChatRequest):
                                 
                                 # 只有当有实际文本内容时才发送 content 事件
                                 if content_stripped:
+                                    accumulated_content.append(content_str)
                                     logger.info(f"✓ 发送文本内容（长度: {len(content_str)}）")
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                     has_sent_content = True
                                     
                                     # 如果有工具调用，也发送 react_step
@@ -175,6 +238,7 @@ async def chat_stream(request: ChatRequest):
                                 # 检查是否有工具调用
                                 has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
                                 logger.info(f"Agent 响应 - 是否有工具调用: {has_tool_calls}")
+                                _update_meta_skill_from_tool_calls(meta_context, message)
                                 
                                 # 处理文本内容
                                 content_str = ""
@@ -189,7 +253,7 @@ async def chat_stream(request: ChatRequest):
                                 # 只有当有实际文本内容时才发送 content 事件
                                 if content_stripped:
                                     logger.info(f"✓ 发送文本内容（长度: {len(content_str)}）")
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                     has_sent_content = True
                                     
                                     # 如果有工具调用，也发送 react_step
@@ -200,7 +264,7 @@ async def chat_stream(request: ChatRequest):
                                     logger.info("检测到工具调用（无文本内容），只发送 react_step")
                                     yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': '正在调用工具...'}, ensure_ascii=False)}\n\n"
                                 # 如果既没有内容也没有工具调用，不发送任何内容（可能是中间状态）
-                            logger.info(f"消息是字典格式，尝试提取内容")
+                            logger.info("消息是字典格式，尝试提取内容")
                             # 尝试从字典中提取内容 - 只提取 content 字段，不要发送整个字典
                             content = message.get("content")
                             
@@ -219,11 +283,12 @@ async def chat_stream(request: ChatRequest):
                             
                             # 只有当有实际内容时才发送，不要发送整个字典
                             if content_stripped:
+                                accumulated_content.append(content_str)
                                 logger.info(f"✓ 发送字典消息内容（长度: {len(content_str)}）")
-                                yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                 has_sent_content = True
                             else:
-                                logger.warning(f"字典消息内容为空，跳过发送")
+                                logger.warning("字典消息内容为空，跳过发送")
                         
                         else:
                             logger.warning(f"消息 #{idx} 类型未知，跳过处理。类型: {type(message).__name__}")
@@ -238,7 +303,21 @@ async def chat_stream(request: ChatRequest):
                         if isinstance(message, HumanMessage):
                             content = message.content
                             logger.info(f"工具执行结果: {content}")
-                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content}, ensure_ascii=False)}\n\n"
+                            # 从文本中尽可能提取 tool/mcp server 名
+                            tool_name = None
+                            m = _TOOL_NAME_RE.search(str(content))
+                            if m:
+                                tool_name = m.group(1)
+                            if tool_name:
+                                meta_context["tools"] = [tool_name]
+                                # 约定工具名格式: <server_id>_<tool>
+                                server_id = tool_name.split("_", 1)[0] if "_" in tool_name else ""
+                                if server_id:
+                                    meta_context["mcp_servers"] = [server_id]
+                                    skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
+                                    if skill_name:
+                                        meta_context["skills"] = [skill_name]
+                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                 
                 # 处理状态更新格式（备用）
                 elif "messages" in event:
@@ -258,14 +337,16 @@ async def chat_stream(request: ChatRequest):
                             
                             # 检查是否有工具调用
                             has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
+                            _update_meta_skill_from_tool_calls(meta_context, message)
                             
                             content_str = str(content) if content else ""
                             content_stripped = content_str.strip()
                             
                             # 只有当有实际文本内容时才发送（忽略只有工具调用的消息）
                             if content_stripped:
+                                accumulated_content.append(content_str)
                                 logger.info(f"✓ 发送文本内容（从状态更新，长度: {len(content_str)}）")
-                                yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                 has_sent_content = True
                             elif has_tool_calls:
                                 # 只有工具调用，发送 react_step
@@ -276,7 +357,19 @@ async def chat_stream(request: ChatRequest):
                         elif isinstance(message, HumanMessage):
                             content = message.content
                             logger.info(f"工具执行结果（从状态更新）: {content}")
-                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content}, ensure_ascii=False)}\n\n"
+                            tool_name = None
+                            m = _TOOL_NAME_RE.search(str(content))
+                            if m:
+                                tool_name = m.group(1)
+                            if tool_name:
+                                meta_context["tools"] = [tool_name]
+                                server_id = tool_name.split("_", 1)[0] if "_" in tool_name else ""
+                                if server_id:
+                                    meta_context["mcp_servers"] = [server_id]
+                                    skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
+                                    if skill_name:
+                                        meta_context["skills"] = [skill_name]
+                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                     
                     # 更新 previous_messages 以便下次比较
                     previous_messages = current_messages
@@ -300,8 +393,9 @@ async def chat_stream(request: ChatRequest):
                             content_stripped = content_str.strip()
                             
                             if content_stripped:
+                                accumulated_content.append(content_str)
                                 logger.info(f"✓ 从最终状态发送内容（长度: {len(content_str)}）")
-                                yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                 has_sent_content = True
                                 break
                 
@@ -320,21 +414,32 @@ async def chat_stream(request: ChatRequest):
                                 content_stripped = content_str.strip()
                                 
                                 if content_stripped:
+                                    accumulated_content.append(content_str)
                                     logger.info(f"✓ 从增量发送内容（长度: {len(content_str)}）")
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str}, ensure_ascii=False)}\n\n"
+                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                                     has_sent_content = True
                                     break
                 
                 if not has_sent_content:
                     logger.warning("无法从最终状态获取内容")
-                    yield f"event: content\ndata: {json_module.dumps({'text': '（没有收到响应）'}, ensure_ascii=False)}\n\n"
+                    accumulated_content.append("（没有收到响应）")
+                    yield f"event: content\ndata: {json_module.dumps({'text': '（没有收到响应）', 'meta': meta_context}, ensure_ascii=False)}\n\n"
                     has_sent_content = True
             
+            # 触发一次读取，避免 last_agent_response “只赋值未使用”
+            if last_agent_response is not None:
+                logger.info("已生成最后一条 Agent 响应")
             logger.info(f"Agent 工作流执行完成，共处理 {event_count} 个事件，已发送内容: {has_sent_content}")
+            # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复
+            full_content = "".join(accumulated_content).strip() if accumulated_content else ""
+            new_history = list(history) + [new_user_msg] + [AIMessage(content=full_content or "(无响应)")]
+            if len(new_history) > _CHAT_HISTORY_MAX_MESSAGES:
+                new_history = new_history[-_CHAT_HISTORY_MAX_MESSAGES:]
+            _CHAT_HISTORY[session_id] = new_history
+            logger.info(f"已更新会话 {session_id} 历史，共 {len(new_history)} 条消息")
             # 发送结束事件
             yield f"event: end\ndata: {json_module.dumps({'type': 'end'})}\n\n"
         except Exception as e:
-            import traceback
             error_msg = str(e)
             logger.error(f"Error in chat_stream: {error_msg}", exc_info=True)
             yield f"event: error\ndata: {json_module.dumps({'error': error_msg})}\n\n"

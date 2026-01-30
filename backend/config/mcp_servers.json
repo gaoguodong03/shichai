@@ -30,5 +30,106 @@
       "description": "获取当前时间",
       "version": "1.0.0"
     }
+  },
+  {
+    "id": "linkup",
+    "name": "Linkup MCP（远程）",
+    "enabled": true,
+    "transport": {
+      "type": "http",
+      "url": "https://mcp.linkup.so/mcp?apiKey=9fa70c40-0152-418c-add6-e0e15b9b9d51",
+      "headers": {}
+    },
+    "metadata": {
+      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。API Key 已写在 url 中。",
+      "version": "1.0.0"
+    }
+  },
+  {
+    "id": "volces-icon",
+    "name": "Volces 应用图标生成",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "/Users/ggd/mycode/DHA/backend/mcp_servers/volces_icon.py"
+      ],
+      "env": {
+        "VOLCES_IMAGE_API_KEY": "Bearer 2d4ac581-9179-4c70-944b-14a0549d927a"
+      }
+    },
+    "metadata": {
+      "description": "根据文字描述生成应用图标（火山引擎图像生成 API）",
+      "version": "1.0.0"
+    }
+  },
+  {
+    "id": "exa",
+    "name": "Exa 搜索 MCP（远程）",
+    "enabled": false,
+    "transport": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY",
+      "headers": {}
+    },
+    "metadata": {
+      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 https://dashboard.exa.ai/api-keys 获取 API Key 并替换 url 中的 YOUR_EXA_API_KEY 后启用。",
+      "version": "1.0.0"
+    }
+  },
+  {
+    "id": "fetch",
+    "name": "Fetch 网页抓取 MCP",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp_server_fetch"
+      ]
+    },
+    "metadata": {
+      "description": "MCP 官方 Fetch：抓取 URL 内容并转为 Markdown（工具名 fetch_fetch）。需先 pip install mcp-server-fetch。",
+      "version": "1.0.0"
+    }
+  },
+  {
+    "id": "mem0",
+    "name": "Mem0 记忆 MCP",
+    "enabled": false,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "mem0_mcp_server"
+      ],
+      "env": {
+        "MEM0_API_KEY": "YOUR_MEM0_API_KEY",
+        "MEM0_DEFAULT_USER_ID": "default_user"
+      }
+    },
+    "metadata": {
+      "description": "Mem0 长期记忆：添加/搜索/更新记忆。需在 https://app.mem0.ai 获取 API Key（格式 sk_mem0_...）并替换 env 中的 YOUR_MEM0_API_KEY 后启用。",
+      "version": "1.0.0"
+    }
+  },
+  {
+    "id": "smithery-text-to-pdf",
+    "name": "Smithery 文本转 PDF",
+    "enabled": false,
+    "transport": {
+      "type": "http",
+      "url": "https://server.smithery.ai/text_to_pdf",
+      "headers": {
+        "Authorization": "Bearer YOUR_SMITHERY_API_KEY"
+      }
+    },
+    "metadata": {
+      "description": "Smithery 远程 MCP：将文本转换为 PDF。需在 Smithery 获取 API Key 并替换 YOUR_SMITHERY_API_KEY。",
+      "version": "1.0.0"
+    }
   }
 ]

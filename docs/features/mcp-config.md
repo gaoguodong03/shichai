@@ -45,6 +45,13 @@ MCP Server 支持多种传输方式：
 - **工具命名空间**: 避免不同 Server 的工具名称冲突
 - **资源管理**: 管理多个 Server 的资源访问
 
+## 如何添加新 Server
+
+1. **配置文件位置**：`backend/config/mcp_servers.json`（或在环境变量 `MCP_CONFIG_PATH` 指定的路径）。
+2. **本地 stdio**：在数组里新增一条，`transport.type` 为 `stdio`，填写 `command` 和 `args`（如 `"command": "python"`, `"args": ["/绝对路径/your_server.py"]`）。
+3. **远程 HTTP（如 Linkup）**：在数组里新增一条，`transport.type` 为 `http`，`transport.url` 填完整地址（如 Linkup：`https://mcp.linkup.so/mcp?apiKey=你的API_KEY`）。**不需要**从网页上复制 DOM Path、Position、HTML 等界面元素，只需 URL 和传输类型。
+4. **当前实现**：后端 MCP 管理器支持 **stdio**（本地）与 **HTTP/Streamable HTTP**（远程）。`transport.type` 为 `http`、`streamable_http` 或 `sse` 时使用远程连接。详细步骤见 [MCP Server 配置指南](../development/mcp-server-setup.md#添加远程-mcp-server如-linkup)。
+
 ## 配置格式
 
 ### MCP Server 配置

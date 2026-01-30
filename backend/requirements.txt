@@ -15,6 +15,10 @@ langchain-openai==0.1.7
 # MCP SDK
 mcp==1.25.0
 
+# MCP Servers（wechat-article-writer 等 skill 所需）
+mcp-server-fetch>=1.0.0
+mem0-mcp-server>=0.2.0
+
 # HTTP Client
 httpx==0.28.1
 

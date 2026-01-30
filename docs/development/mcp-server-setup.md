@@ -249,6 +249,50 @@ python your_mcp_server.py
 
 **注意**：当前 DHA 实现主要支持 stdio 传输。
 
+#### 添加远程 MCP Server（如 Linkup）
+
+若你要接入 **远程 MCP 服务**（例如 [Linkup MCP](https://mcp.linkup.so)），只需在 `backend/config/mcp_servers.json` 里增加一条配置，**不需要**填写网页上的 DOM Path、Position、HTML 等界面元素信息；只需填写连接地址和传输方式。
+
+**Linkup 远程 MCP 示例**（官方文档：<https://docs.linkup.so/pages/integrations/mcp/mcp>）：
+
+```json
+{
+  "id": "linkup",
+  "name": "Linkup MCP（远程）",
+  "enabled": true,
+  "transport": {
+    "type": "http",
+    "url": "https://mcp.linkup.so/mcp?apiKey=YOUR_LINKUP_API_KEY",
+    "headers": {}
+  },
+  "metadata": {
+    "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页",
+    "version": "1.0.0"
+  }
+}
+```
+
+**操作步骤：**
+
+1. 在 [Linkup](https://app.linkup.so) 注册并获取 API Key。
+2. 把上例中的 `YOUR_LINKUP_API_KEY` 换成你的真实 API Key。
+3. 将上述对象追加到 `backend/config/mcp_servers.json` 的数组中（或使用项目里已提供的 `linkup` 示例条，修改 `url` 中的 apiKey 并将 `enabled` 设为 `true`）。
+4. **已支持远程**：DHA 的 MCP 管理器已支持 **Streamable HTTP**。`transport.type` 为 `http`、`streamable_http` 或 `sse` 时，会使用 MCP SDK 的 `streamable_http_client` 连接远程 URL；需已安装 `mcp` 与 `httpx`。
+
+#### Exa / Fetch / Mem0（wechat-article-writer 等 skill 可选）
+
+项目已在 `mcp_servers.json` 中预置以下三条，按需启用即可：
+
+| Server | 用途 | 启用方式 |
+|--------|------|----------|
+| **exa** | 搜索（web_search_exa 等） | 在 [Exa Dashboard](https://dashboard.exa.ai/api-keys) 获取 API Key，将配置里 url 中的 `YOUR_EXA_API_KEY` 替换后，把 `enabled` 设为 `true`。 |
+| **fetch** | 网页抓取（fetch_fetch，等价 web_fetch） | 执行 `pip install mcp-server-fetch`（或已写在 `requirements.txt`），保持 `enabled: true`。stdio 命令为 `python -m mcp_server_fetch`。 |
+| **mem0** | 长期记忆（添加/搜索记忆） | 在 [Mem0](https://app.mem0.ai) 获取 API Key（格式 `sk_mem0_...`），将 transport.env 中的 `YOUR_MEM0_API_KEY` 替换后，把 `enabled` 设为 `true`。 |
+
+- **Exa**：远程 HTTP，`url` 格式为 `https://mcp.exa.ai/mcp?exaApiKey=你的KEY`。
+- **Fetch**：stdio，需已安装 `mcp-server-fetch`；工具在运行时名为 `fetch_fetch`。
+- **Mem0**：stdio，需已安装 `mem0-mcp-server`；需设置环境变量 `MEM0_API_KEY` 和可选 `MEM0_DEFAULT_USER_ID`。
+
 ### 步骤 3：重启后端服务
 
 ```bash

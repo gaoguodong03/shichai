@@ -1,12 +1,14 @@
 """设置 API - MCP 和 Skills 配置"""
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+import asyncio
 import json
 import os
 import uuid
 import yaml
 from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
 router = APIRouter(tags=["settings"])
 
 # 延迟导入以避免循环导入
@@ -74,15 +76,22 @@ async def get_mcp_servers():
     # 确保 MCP Manager 已加载配置和初始化
     try:
         await mcp_manager.load_config()
-        # 如果还没有初始化，尝试初始化已启用的服务器
-        if not mcp_manager.sessions:
-            for config in mcp_manager.server_configs:
-                server_id = config.get("id", "")
-                if config.get("enabled", True):
-                    try:
-                        await mcp_manager.connect_server(server_id, config)
-                    except Exception as e:
-                        print(f"Failed to connect server {server_id} in settings API: {e}")
+        # 对每个已启用且尚未连接的 server 尝试连接（包括 HTTP 远程 server）
+        for config in mcp_manager.server_configs:
+            server_id = config.get("id", "")
+            if not config.get("enabled", True):
+                continue
+            if server_id in mcp_manager.sessions:
+                continue
+            try:
+                await mcp_manager.connect_server(server_id, config)
+            except asyncio.CancelledError:
+                # 请求被取消（如前端断开、超时），不再继续连接，直接返回当前状态
+                break
+            except Exception as e:
+                print(f"Failed to connect server {server_id} in settings API: {e}")
+    except asyncio.CancelledError:
+        pass  # 被取消时不再抛错，下面会按当前 sessions 返回列表
     except Exception as e:
         print(f"Error loading MCP config in settings API: {e}")
     

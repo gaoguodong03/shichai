@@ -1,11 +1,12 @@
 """ReAct Agent 工作流"""
+import asyncio
+import json
+import logging
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from app.agent.llm_client import QwenLLM
-import json
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,16 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
     
     # 添加 Skills 指令
     if skills_instruction:
+        system_prompt += """
+## 技能选择（必须优先执行）
+
+根据用户请求**先判断应使用哪个技能**，然后**仅按该技能的说明执行**，不要混用其他技能的工具或话术：
+- **公众号/文案/校庆/宣传/文章/推文** 等写作需求 → 使用 **wechat-article-writer**，按其中步骤做（理解需求、搜索补充、规划结构、撰写正文等）；写文案时**不要**先调用 time_get_time 等无关工具。
+- **应用图标/icon 生成** 需求 → 使用 **app-icon-generator**，按其中工具与澄清流程执行。
+
+确定技能后，只调用该技能所需工具，并只输出该技能风格的回答。
+
+"""
         system_prompt += f"\n## 可用技能\n{skills_instruction}\n"
         logger.info("已添加技能指令到系统提示词")
 
@@ -100,8 +111,13 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
         if tools:
             client = client.bind_tools(tools)
         
-        # 使用异步调用
-        response = await client.ainvoke(messages)
+        # 使用异步调用（带超时，避免卡死）
+        logger.info("call_model: 正在调用 LLM...")
+        try:
+            response = await asyncio.wait_for(client.ainvoke(messages), timeout=120.0)
+        except asyncio.TimeoutError:
+            logger.error("call_model: LLM 调用超时（120秒）")
+            response = AIMessage(content="抱歉，模型响应超时，请稍后重试或检查网络与 API 配置。")
         logger.info(f"call_model: LLM 响应类型: {type(response).__name__}")
         logger.info(f"call_model: LLM 响应内容类型: {type(response.content).__name__}")
         logger.info(f"call_model: LLM 响应内容 (前200字符): {str(response.content)[:200]}...")
@@ -123,6 +139,17 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
         
         logger.info(f"call_tool: 开始处理工具调用，最后一条消息类型: {type(last_message).__name__}")
         
+        def normalize_linkup_search_args(tool_name: str, arguments: dict) -> dict:
+            """linkup_linkup-search 的 depth 仅接受 standard 或 deep，默认 standard"""
+            if tool_name != "linkup_linkup-search":
+                return arguments
+            args = dict(arguments) if arguments else {}
+            depth = args.get("depth")
+            if depth not in ("standard", "deep"):
+                args["depth"] = "standard"
+                logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
+            return args
+
         tool_results = []
         
         # 优先处理 LangChain 的结构化工具调用
@@ -130,7 +157,7 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
             logger.info(f"call_tool: 处理 {len(last_message.tool_calls)} 个结构化工具调用")
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call.get("name") or tool_call.get("id", "")
-                arguments = tool_call.get("args", {})
+                arguments = normalize_linkup_search_args(tool_name, tool_call.get("args", {}))
                 
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
@@ -203,7 +230,7 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
             logger.info(f"call_tool: 提取的 JSON: {json_str}")
             tool_call = json.loads(json_str)
             tool_name = tool_call.get("tool")
-            arguments = tool_call.get("arguments", {})
+            arguments = normalize_linkup_search_args(tool_name, tool_call.get("arguments", {}))
             
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
@@ -218,30 +245,28 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
             
             if tool:
                 logger.info(f"call_tool: 开始执行工具: {tool_name}")
-                # LangChain BaseTool.arun() 需要 tool_input 参数（字符串或字典）
-                # 将 arguments 字典作为 tool_input 传递
                 logger.info(f"call_tool: 参数: {arguments}")
                 try:
-                    if hasattr(tool, 'arun'):
-                        # arun 接受 tool_input 参数（可以是字符串或字典）
-                        result = await tool.arun(arguments)
+                    import asyncio
+                    # 与结构化 tool_calls 分支保持一致：优先以 **kwargs 调用 func
+                    if hasattr(tool, 'func') and asyncio.iscoroutinefunction(tool.func):
+                        logger.info("call_tool: 直接调用异步工具函数")
+                        result = await tool.func(**arguments)
+                    elif hasattr(tool, 'func'):
+                        logger.info("call_tool: 直接调用同步工具函数（在线程中执行）")
+                        result = await asyncio.to_thread(tool.func, **arguments)
+                    elif hasattr(tool, 'arun'):
+                        # arun 接受 tool_input（通常是字符串）；这里统一传 JSON 字符串，避免位置参数误传
+                        tool_input = json.dumps(arguments) if arguments else "{}"
+                        logger.info(f"call_tool: 使用异步方法 arun，tool_input: {tool_input}")
+                        result = await tool.arun(tool_input)
                     elif hasattr(tool, 'run'):
-                        logger.info(f"call_tool: 使用同步方法 run（在线程中执行）")
-                        # run 也接受 tool_input 参数
-                        import asyncio
-                        result = await asyncio.to_thread(tool.run, arguments)
+                        tool_input = json.dumps(arguments) if arguments else "{}"
+                        logger.info("call_tool: 使用同步方法 run（在线程中执行）")
+                        result = await asyncio.to_thread(tool.run, tool_input)
                     else:
-                        # 如果工具有 func 属性，直接调用
-                        if hasattr(tool, 'func'):
-                            logger.info(f"call_tool: 直接调用工具函数")
-                            import asyncio
-                            if asyncio.iscoroutinefunction(tool.func):
-                                result = await tool.func(**arguments)
-                            else:
-                                result = await asyncio.to_thread(tool.func, **arguments)
-                        else:
-                            result = f"工具 {tool_name} 无法执行"
-                            logger.error(f"call_tool: 工具 {tool_name} 没有可用的执行方法")
+                        result = f"工具 {tool_name} 无法执行"
+                        logger.error(f"call_tool: 工具 {tool_name} 没有可用的执行方法")
                 except Exception as e:
                     error_msg = f"工具 {tool_name} 执行错误: {str(e)}"
                     logger.error(f"call_tool: {error_msg}", exc_info=True)
