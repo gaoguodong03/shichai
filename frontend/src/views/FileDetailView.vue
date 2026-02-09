@@ -46,6 +46,22 @@
         :alt="path"
         class="max-w-full h-auto rounded border border-gray-200"
       />
+      <!-- PDF 预览 -->
+      <div v-else-if="isPDF" class="flex-1 min-h-0">
+        <VuePdfEmbed :source="downloadUrl" class="pdf-viewer" />
+      </div>
+      <!-- DOCX 预览 -->
+      <div v-else-if="isDocx" class="flex-1 min-h-0">
+        <div v-if="docxLoading" class="text-sm text-gray-500 py-8">加载中...</div>
+        <div v-else-if="docxError" class="text-sm text-red-500 py-4">{{ docxError }}</div>
+        <div v-show="!docxLoading && !docxError" ref="docxContainerRef" class="docx-preview overflow-auto" />
+      </div>
+      <!-- Excel 预览 -->
+      <div v-else-if="isExcel" class="flex-1 min-h-0">
+        <div v-if="excelLoading" class="text-sm text-gray-500 py-8">加载中...</div>
+        <div v-else-if="excelError" class="text-sm text-red-500 py-4">{{ excelError }}</div>
+        <div v-show="!excelLoading && !excelError" class="excel-preview overflow-auto" v-html="excelHtml" />
+      </div>
       <!-- 文本可编辑 -->
       <template v-else-if="isEditableText">
         <div v-if="editingContent" class="flex-1 flex flex-col min-h-0">
@@ -86,7 +102,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import VuePdfEmbed from 'vue-pdf-embed'
+import { renderAsync } from 'docx-preview'
+import * as XLSX from 'xlsx'
 
 const props = defineProps<{ path: string }>()
 const emit = defineEmits<{ (e: 'renamed', newPath: string): void }>()
@@ -96,10 +115,19 @@ const downloadUrl = computed(() => `/api/files/download?path=${encodeURIComponen
 const imageExtensions = /\.(jpe?g|png|gif|webp|bmp|svg)$/i
 const isImage = computed(() => imageExtensions.test(currentPath.value))
 
+const pdfExtensions = /\.pdf$/i
+const isPDF = computed(() => pdfExtensions.test(currentPath.value))
+
+const docxExtensions = /\.docx?$/i
+const isDocx = computed(() => docxExtensions.test(currentPath.value))
+
+const excelExtensions = /\.(xlsx|xls|csv)$/i
+const isExcel = computed(() => excelExtensions.test(currentPath.value))
+
 const textExts = ['txt', 'md', 'json', 'yaml', 'yml', 'html', 'css', 'js', 'ts', 'py', 'log']
 const isEditableText = computed(() => {
   const ext = currentPath.value.split('.').pop()?.toLowerCase()
-  return !isImage.value && textExts.includes(ext || '')
+  return !isImage.value && !isPDF.value && !isDocx.value && !isExcel.value && textExts.includes(ext || '')
 })
 
 const currentPath = ref(props.path)
@@ -117,6 +145,58 @@ const editingContent = ref(false)
 const editContent = ref('')
 const contentTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
+// DOCX 预览
+const docxContainerRef = ref<HTMLElement | null>(null)
+const docxLoading = ref(false)
+const docxError = ref<string | null>(null)
+
+// Excel 预览
+const excelHtml = ref('')
+const excelLoading = ref(false)
+const excelError = ref<string | null>(null)
+
+async function loadDocx() {
+  if (!currentPath.value || !isDocx.value) return
+  docxLoading.value = true
+  docxError.value = null
+  try {
+    const r = await fetch(downloadUrl.value)
+    if (!r.ok) throw new Error('加载失败')
+    const blob = await r.blob()
+    await nextTick()
+    const container = docxContainerRef.value
+    if (!container) return
+    container.innerHTML = ''
+    await renderAsync(blob, container)
+  } catch (e) {
+    docxError.value = e instanceof Error ? e.message : '预览失败，请下载查看'
+  } finally {
+    docxLoading.value = false
+  }
+}
+
+async function loadExcel() {
+  if (!currentPath.value || !isExcel.value) return
+  excelLoading.value = true
+  excelError.value = null
+  excelHtml.value = ''
+  try {
+    const r = await fetch(downloadUrl.value)
+    if (!r.ok) throw new Error('加载失败')
+    const buffer = await r.arrayBuffer()
+    const wb = XLSX.read(buffer, { type: 'array' })
+    const firstSheetName = wb.SheetNames[0]
+    if (!firstSheetName) throw new Error('无工作表')
+    const sheet = wb.Sheets[firstSheetName]
+    const html = XLSX.utils.sheet_to_html(sheet, { id: 'excel-table', editable: false })
+    excelHtml.value = html || '<p class="text-gray-500">空表格</p>'
+  } catch (e) {
+    excelError.value = e instanceof Error ? e.message : '预览失败，请下载查看'
+  } finally {
+    excelLoading.value = false
+  }
+}
+
 async function loadContent() {
   if (!currentPath.value || isImage.value) return
   if (!isEditableText.value) {
@@ -124,7 +204,7 @@ async function loadContent() {
     return
   }
   try {
-    const r = await fetch(downloadUrl.value)
+    const r = await fetch(downloadUrl.value, { cache: 'no-store' })
     if (r.ok) {
       const t = await r.text()
       previewText.value = t
@@ -188,12 +268,46 @@ async function saveContent() {
     if (j.status === 'ok') {
       previewText.value = editContent.value
       editingContent.value = false
+    } else {
+      alert('保存失败：' + (j.detail || '未知错误'))
     }
   } catch (e) {
     console.error('保存失败', e)
+    alert('保存失败，请检查网络或后端服务')
   }
 }
 
 watch(() => props.path, (p) => { currentPath.value = p }, { immediate: true })
 watch(currentPath, loadContent, { immediate: true })
+watch([currentPath, isDocx], () => {
+  if (isDocx.value) loadDocx()
+  else { docxError.value = null }
+}, { immediate: true })
+watch([currentPath, isExcel], () => {
+  if (isExcel.value) loadExcel()
+  else { excelError.value = null; excelHtml.value = '' }
+}, { immediate: true })
 </script>
+
+<style scoped>
+.pdf-viewer {
+  width: 100%;
+  min-height: 600px;
+}
+.docx-preview :deep(*) {
+  max-width: 100%;
+}
+.excel-preview :deep(table) {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.excel-preview :deep(th),
+.excel-preview :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 0.25rem 0.5rem;
+}
+.excel-preview :deep(th) {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+</style>

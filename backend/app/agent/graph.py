@@ -2,6 +2,8 @@
 import asyncio
 import json
 import logging
+import os
+import time
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import BaseTool
@@ -9,6 +11,9 @@ from langgraph.graph import StateGraph, END
 from app.agent.llm_client import QwenLLM
 
 logger = logging.getLogger(__name__)
+
+# 可通过 LLM_AGENT_TIMEOUT 调整（秒），默认 180。多轮工具调用时上下文较长，需更长时间
+_LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
 
 class AgentState(TypedDict):
     """Agent 状态"""
@@ -38,8 +43,15 @@ def create_react_agent(
     # 添加工具描述
     for tool in tools:
         system_prompt += f"- {tool.name}: {tool.description}\n"
-        logger.info(f"添加工具到系统提示词: {tool.name}")
-    
+    if tools:
+        logger.info("已添加工具指令到系统提示词")
+    # 若包含 Exa 工具，注入 Exa MCP 使用说明（仅调用 exa 时生效）
+    if any(t.name == "exa_web_search_exa" for t in tools):
+        system_prompt += """
+## Exa 搜索工具使用说明
+exa_web_search_exa 的 type 参数仅接受 'auto' 或 'fast'；livecrawl 仅接受 'fallback'、'preferred'、'always'、'never'。不要使用 'news' 等无效值。
+
+"""
     system_prompt += """
 当你需要使用工具时，请按照以下格式回复：
 ```json
@@ -53,7 +65,12 @@ def create_react_agent(
 当你不需要使用工具时，直接回复用户的问题。
 
 ## 文件引用
-当用户消息中出现【文件引用：path】时，**必须先调用 read_file 工具**读取该文件内容（path 为相对路径，如 genimi.txt），再根据文件内容回答用户问题。不要猜测文件内容。
+当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为相对路径（如 report.pdf）：
+- 纯文本（txt、md、json 等）：使用 read_file
+- PDF：使用 file-reader_read_pdf
+- DOCX：使用 file-reader_read_docx
+- Excel（xlsx）：使用 file-reader_read_xlsx
+不要猜测文件内容。
 
 """
     
@@ -134,12 +151,25 @@ def create_react_agent(
         if tools:
             client = client.bind_tools(tools)
         
+        # 日志：本次输入大模型的提示词概览
+        msg_summary = []
+        for i, m in enumerate(messages):
+            role = getattr(m, "type", type(m).__name__.replace("Message", "").lower())
+            content = getattr(m, "content", str(m)) or ""
+            s = str(content)
+            if role == "system":
+                msg_summary.append(f"  [{i+1}] {role}: 共 {len(s)} 字符，前150字: {s[:150]}…" if len(s) > 150 else f"  [{i+1}] {role}: {s}")
+            else:
+                preview = (s[:150] + "…") if len(s) > 150 else s
+                msg_summary.append(f"  [{i+1}] {role}: {preview}")
+        logger.info("输入大模型的提示词:\n" + "\n".join(msg_summary))
+        
         # 使用异步调用（带超时，避免卡死）
         logger.info("call_model: 正在调用 LLM...")
         try:
-            response = await asyncio.wait_for(client.ainvoke(messages), timeout=120.0)
+            response = await asyncio.wait_for(client.ainvoke(messages), timeout=float(_LLM_AGENT_TIMEOUT))
         except asyncio.TimeoutError:
-            logger.error("call_model: LLM 调用超时（120秒）")
+            logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
             response = AIMessage(content="抱歉，模型响应超时，请稍后重试或检查网络与 API 配置。")
         logger.info(f"call_model: LLM 响应类型: {type(response).__name__}")
         logger.info(f"call_model: LLM 响应内容类型: {type(response.content).__name__}")
@@ -171,12 +201,7 @@ def create_react_agent(
                 if depth not in ("standard", "deep"):
                     args["depth"] = "standard"
                     logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
-            # exa_web_search_exa: livecrawl 仅接受 fallback、preferred、always、never
-            elif tool_name == "exa_web_search_exa" and "livecrawl" in args:
-                livecrawl = args.get("livecrawl")
-                if livecrawl not in ("fallback", "preferred", "always", "never"):
-                    args["livecrawl"] = "fallback"
-                    logger.info(f"call_tool: exa_web_search_exa livecrawl 规范化为 fallback（原值: {livecrawl!r}）")
+            # exa_web_search_exa: 参数约束已在 MCP manager 的工具描述中说明，由 LLM 按正确参数调用
             return args
 
         tool_results = []
@@ -355,3 +380,212 @@ def create_react_agent(
     workflow.add_edge("tool", "agent")
     
     return workflow.compile()
+
+
+def create_skill_execution_agent(
+    llm,
+    tools: list[BaseTool],
+    skill_full_content: str,
+    extra_system_prompt: str = "",
+    t_request_start: float = None,
+):
+    """
+    创建技能执行 Agent：仅用于「第二次调用」。
+    系统提示词 = 用户设置 + 选中技能的完整内容 + 工具列表。
+    按 skill 步骤执行，某一步需要时调用 MCP 工具。
+    """
+    logger.info(f"创建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
+
+    system_prompt = ""
+    if extra_system_prompt and extra_system_prompt.strip():
+        system_prompt += extra_system_prompt.strip() + "\n\n"
+    system_prompt += """你是一个有用的 AI 助手，正在按以下技能说明执行用户请求。
+
+"""
+    system_prompt += skill_full_content
+    system_prompt += """
+
+你可以使用以下工具：
+"""
+    for tool in tools:
+        system_prompt += f"- {tool.name}: {tool.description}\n"
+    if tools:
+        logger.info("已添加工具指令到系统提示词")
+    # 若包含 Exa 工具，注入 Exa MCP 使用说明（仅调用 exa 时生效）
+    if any(t.name == "exa_web_search_exa" for t in tools):
+        system_prompt += """
+## Exa 搜索工具使用说明
+exa_web_search_exa 的 type 参数仅接受 'auto' 或 'fast'；livecrawl 仅接受 'fallback'、'preferred'、'always'、'never'。不要使用 'news' 等无效值。
+
+"""
+    system_prompt += """
+当你需要使用工具时，请按照以下格式回复：
+```json
+{
+    "action": "tool_call",
+    "tool": "tool_name",
+    "arguments": {...}
+}
+```
+
+当你不需要使用工具时，直接回复用户的问题。
+
+## 多步任务规则
+若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。
+
+## 文件引用
+当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为相对路径（如 report.pdf）：
+- 纯文本（txt、md、json 等）：使用 read_file
+- PDF：使用 file-reader_read_pdf
+- DOCX：使用 file-reader_read_docx
+- Excel（xlsx）：使用 file-reader_read_xlsx
+不要猜测文件内容。
+"""
+
+    async def call_model(state: AgentState, config=None):
+        messages = list(state["messages"])
+        if not messages or not isinstance(messages[0], SystemMessage):
+            messages = [SystemMessage(content=system_prompt)] + messages
+
+        client = llm.get_client()
+        if tools:
+            client = client.bind_tools(tools)
+        msg_summary = []
+        for i, m in enumerate(messages):
+            role = getattr(m, "type", type(m).__name__.replace("Message", "").lower())
+            content = getattr(m, "content", str(m)) or ""
+            s = str(content)
+            if role == "system":
+                msg_summary.append(f"  [{i+1}] {role}: 共 {len(s)} 字符，前150字: {s[:150]}…" if len(s) > 150 else f"  [{i+1}] {role}: {s}")
+            else:
+                preview = (s[:150] + "…") if len(s) > 150 else s
+                msg_summary.append(f"  [{i+1}] {role}: {preview}")
+        logger.info("输入大模型的提示词（技能执行）:\n" + "\n".join(msg_summary))
+        t0 = time.perf_counter()
+        elapsed = (t0 - t_request_start) if t_request_start else 0
+        logger.info(f"[TIMING] call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
+        try:
+            # 传入 config 以支持 stream_mode="messages" 的 token 流（Python < 3.11 需显式传递）
+            invoke_kw = {"config": config} if config is not None else {}
+            response = await asyncio.wait_for(
+                client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
+            )
+            logger.info(f"[TIMING] call_model ainvoke: {time.perf_counter() - t0:.2f}s")
+        except asyncio.TimeoutError:
+            logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
+            response = AIMessage(content="抱歉，模型响应超时，请稍后重试。")
+        return {"messages": messages + [response]}
+
+    def should_continue(state: AgentState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if isinstance(last_message, AIMessage):
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                return "call_tool"
+            if isinstance(last_message.content, str) and "tool_call" in last_message.content.lower():
+                try:
+                    if "```json" in last_message.content:
+                        json_str = last_message.content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in last_message.content:
+                        json_str = last_message.content.split("```")[1].split("```")[0].strip()
+                    else:
+                        json_str = last_message.content
+                    tool_call = json.loads(json_str)
+                    if tool_call.get("action") == "tool_call":
+                        return "call_tool"
+                except Exception:
+                    pass
+        return "end"
+
+    async def call_tool(state: AgentState):
+        return await _call_tool_impl(state, tools)
+
+    workflow = StateGraph(AgentState)
+    workflow.add_node("agent", call_model)
+    workflow.add_node("tool", call_tool)
+    workflow.set_entry_point("agent")
+    workflow.add_conditional_edges("agent", should_continue, {"call_tool": "tool", "end": END})
+    workflow.add_edge("tool", "agent")
+    return workflow.compile()
+
+
+async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
+    """工具调用实现（供 create_skill_execution_agent 复用）"""
+    messages = state["messages"]
+    last_message = messages[-1]
+    tool_results = []
+
+    def normalize_tool_args(tool_name: str, arguments: dict) -> dict:
+        args = dict(arguments) if arguments else {}
+        if tool_name == "linkup_linkup-search":
+            depth = args.get("depth")
+            if depth not in ("standard", "deep"):
+                args["depth"] = "standard"
+        # exa_web_search_exa: 参数约束已在 MCP manager 的工具描述中说明
+        return args
+
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call.get("name") or tool_call.get("id", "")
+            arguments = normalize_tool_args(tool_name, tool_call.get("args", {}))
+            tool = None
+            for t in state["tools"]:
+                if t.name == tool_name:
+                    tool = t
+                    break
+            if tool:
+                try:
+                    t_tool = time.perf_counter()
+                    if hasattr(tool, "func") and asyncio.iscoroutinefunction(tool.func):
+                        result = await tool.func(**arguments)
+                    elif hasattr(tool, "arun"):
+                        tool_input = json.dumps(arguments) if arguments else "{}"
+                        result = await tool.arun(tool_input)
+                    elif hasattr(tool, "run"):
+                        tool_input = json.dumps(arguments) if arguments else "{}"
+                        result = await asyncio.to_thread(tool.run, tool_input)
+                    elif hasattr(tool, "func"):
+                        result = await asyncio.to_thread(tool.func, **arguments)
+                    else:
+                        result = f"工具 {tool_name} 无法执行"
+                    tool_results.append(f"工具 {tool_name} 的执行结果: {result}")
+                    logger.info(f"[TIMING] 工具 {tool_name}: {time.perf_counter() - t_tool:.2f}s")
+                except Exception as e:
+                    tool_results.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                    logger.info(f"[TIMING] 工具 {tool_name} 异常: {time.perf_counter() - t_tool:.2f}s")
+            else:
+                tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
+        return {"messages": [HumanMessage(content="\n".join(tool_results))]}
+
+    content = last_message.content
+    try:
+        if "```json" in content:
+            json_str = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            json_str = content.split("```")[1].split("```")[0].strip()
+        else:
+            json_str = content
+        tool_call = json.loads(json_str)
+        tool_name = tool_call.get("tool")
+        arguments = normalize_tool_args(tool_name, tool_call.get("arguments", {}))
+        tool = None
+        for t in state["tools"]:
+            if t.name == tool_name:
+                tool = t
+                break
+        if tool:
+            try:
+                if hasattr(tool, "func") and asyncio.iscoroutinefunction(tool.func):
+                    result = await tool.func(**arguments)
+                elif hasattr(tool, "func"):
+                    result = await asyncio.to_thread(tool.func, **arguments)
+                elif hasattr(tool, "arun"):
+                    result = await tool.arun(json.dumps(arguments) if arguments else "{}")
+                else:
+                    result = await asyncio.to_thread(tool.run, json.dumps(arguments) if arguments else "{}")
+                return {"messages": [HumanMessage(content=f"工具 {tool_name} 的执行结果: {result}")]}
+            except Exception as e:
+                return {"messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")]}
+        return {"messages": [HumanMessage(content=f"工具 {tool_name} 不存在")]}
+    except Exception as e:
+        return {"messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")]}

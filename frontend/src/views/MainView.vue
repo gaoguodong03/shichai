@@ -6,7 +6,7 @@
         <button
           v-for="item in navItems"
           :key="item.id"
-          @click="currentModule = item.id; selectedId = null"
+          @click="onNavClick(item)"
           :class="[
             'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors',
             currentModule === item.id
@@ -26,43 +26,63 @@
         {{ middleColumnTitle }}
       </div>
       <div class="flex-1 overflow-y-auto">
-        <!-- Chat：中间列显示当前对话的精简轮次 -->
+        <!-- Chat：历史对话列表（默认）或当前对话轮次 -->
         <template v-if="currentModule === 'chat'">
-          <div v-if="chatSummaryLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <div v-else-if="!chatSummary.length" class="px-3 py-4 text-sm text-gray-500">暂无对话</div>
-          <div
-            v-else
-            v-for="(turn, idx) in chatSummary"
-            :key="idx"
-            class="px-3 py-2.5 border-b border-gray-100 text-xs text-gray-700"
-          >
-            <div class="font-medium text-gray-900 truncate">
-              U: {{ turn.userPreview || '（无用户消息）' }}
-            </div>
-            <div class="mt-0.5 text-gray-600 truncate">
-              A: {{ turn.assistantPreview || '（无回答）' }}
-            </div>
-          </div>
-        </template>
-        <!-- 对话历史 -->
-        <template v-else-if="currentModule === 'sessions'">
-          <div v-if="sessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <div v-else-if="!sessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
-          <button
-            v-else
-            v-for="s in sessions"
-            :key="s.id"
-            @click="selectedId = s.id"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              selectedId === s.id && currentModule === 'sessions'
-                ? 'bg-blue-50 text-blue-700'
-                : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
-            <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
-          </button>
+          <!-- 历史对话模式：会话列表 -->
+          <template v-if="chatViewMode === 'history'">
+            <button
+              @click="startNewChat"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+                selectedSessionId === null ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              ]"
+            >
+              + 新对话
+            </button>
+            <div v-if="sessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+            <div v-else-if="!sessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
+            <button
+              v-else
+              v-for="s in sessions"
+              :key="s.id"
+              @click="selectedSessionId = s.id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              ]"
+            >
+              <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
+              <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
+            </button>
+          </template>
+          <!-- 当前对话模式：Q&A 轮次，点击跳转到右侧对应位置 -->
+          <template v-else>
+            <button
+              class="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 rounded-lg mb-1"
+              @click="chatViewMode = 'history'; fetchSessions()"
+            >
+              ← 返回历史对话
+            </button>
+            <div v-if="chatSummaryLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+            <div v-else-if="!chatSummary.length" class="px-3 py-4 text-sm text-gray-500">暂无对话</div>
+            <button
+              v-else
+              v-for="(turn, idx) in chatSummary"
+              :key="idx"
+              @click="scrollToTurnIndex = idx"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg border-b border-gray-100 text-xs transition-colors',
+                scrollToTurnIndex === idx ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+              ]"
+            >
+              <div class="font-medium text-gray-900 truncate">
+                Q: {{ turn.userPreview || '（无用户消息）' }}
+              </div>
+              <div class="mt-0.5 text-gray-600 line-clamp-5 text-gray-700 whitespace-pre-wrap break-words">
+                {{ turn.assistantPreview || '（无回答）' }}
+              </div>
+            </button>
+          </template>
         </template>
         <!-- Skill -->
         <template v-else-if="currentModule === 'skill'">
@@ -132,12 +152,27 @@
         </template>
         <!-- 文件系统 -->
         <template v-else-if="currentModule === 'files'">
-          <button
-            class="w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50"
-            @click="createNewFile"
-          >
-            + 新建文件
-          </button>
+          <div class="flex gap-1 mb-1">
+            <button
+              class="flex-1 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
+              @click="createNewFile"
+            >
+              + 新建
+            </button>
+            <button
+              class="flex-1 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
+              @click="triggerImportFile"
+            >
+              ↑ 导入
+            </button>
+            <input
+              ref="importFileInputRef"
+              type="file"
+              multiple
+              class="hidden"
+              @change="onImportFileSelected"
+            />
+          </div>
           <div v-if="filesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
           <div v-else-if="!fileEntries.length && !currentFilePath" class="px-3 py-4 text-sm text-gray-500">暂无文件</div>
           <template v-else>
@@ -167,12 +202,15 @@
 
     <!-- 右侧列：主内容，默认 Chat -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- 默认或选中 Chat / 对话历史会话 → 聊天界面 -->
-      <template v-if="currentModule === 'chat' || (currentModule === 'sessions' && selectedId)">
+      <!-- Chat 模块 → 聊天界面（始终显示，支持选择会话或输入新消息） -->
+      <template v-if="currentModule === 'chat'">
         <ChatView
           :session-id="effectiveSessionId"
           :initial-messages="sessionMessages"
+          :scroll-to-turn-index="scrollToTurnIndex"
           @saved-as-file="onSavedAsFile"
+          @message-sent="onChatMessageSent"
+          @stream-ended="onChatStreamEnded"
         />
       </template>
       <!-- Skill：添加 或 详情/编辑 -->
@@ -222,22 +260,27 @@ import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
 import FileDetailView from './FileDetailView.vue'
 
-type ModuleId = 'skill' | 'mcp' | 'chat' | 'sessions' | 'settings' | 'files'
+type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'settings'
 
 const navItems: { id: ModuleId; label: string; icon: string }[] = [
-  { id: 'skill', label: 'Skill', icon: '⚡' },
-  { id: 'mcp', label: 'MCP', icon: '🔌' },
   { id: 'chat', label: 'Chat', icon: '💬' },
-  { id: 'sessions', label: '对话历史', icon: '📋' },
-  { id: 'settings', label: '设置', icon: '⚙️' },
   { id: 'files', label: '文件系统', icon: '📂' },
+  { id: 'skill', label: 'Skills', icon: '⚡' },
+  { id: 'mcp', label: 'MCPs', icon: '🔌' },
+  { id: 'settings', label: '设置', icon: '⚙️' },
 ]
 
 const currentModule = ref<ModuleId>('chat')
 const selectedId = ref<string | null>(null)
 
+// Chat 模块：历史对话 / 当前对话 两种模式
+const chatViewMode = ref<'history' | 'current'>('history')
+const selectedSessionId = ref<string | null>(null)
 const sessions = ref<{ id: string; title: string; updated_at: string }[]>([])
 const sessionsLoading = ref(false)
+const sessionMessages = ref<{ role: string; content: string }[]>([])
+const scrollToTurnIndex = ref<number | null>(null)
+
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
 const mcpServers = ref<{ id: string; name: string; status: string; tool_count: number }[]>([])
@@ -249,34 +292,99 @@ const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const filesLoading = ref(false)
 const currentFilePath = ref('')
 const selectedFileEntry = ref<{ name: string; path: string; is_dir: boolean } | null>(null)
-const sessionMessages = ref<{ role: string; content: string }[]>([])
+const importFileInputRef = ref<HTMLInputElement | null>(null)
 
-// 当前对话（effectiveSessionId）的精简轮次预览：U/A 各截断前几行
+// 当前对话的精简轮次预览：U/A 各截断前几行
 const chatSummary = ref<{ userPreview: string; assistantPreview: string }[]>([])
 const chatSummaryLoading = ref(false)
 
+const effectiveSessionId = computed(() => {
+  if (selectedSessionId.value) return selectedSessionId.value
+  return 'default'
+})
+
 const middleColumnTitle = computed(() => {
   const t: Record<ModuleId, string> = {
+    chat: chatViewMode.value === 'history' ? '历史对话' : '当前对话',
+    files: '文件列表',
     skill: '技能列表',
     mcp: 'MCP Server',
-    chat: '当前对话',
-    sessions: '会话列表',
     settings: '设置分类',
-    files: '文件列表',
   }
   return t[currentModule.value]
 })
 
-const effectiveSessionId = computed(() => {
-  if (currentModule.value === 'sessions' && selectedId.value) return selectedId.value
-  return 'default'
-})
+
+function startNewChat() {
+  // 为新对话生成一个临时 sessionId，后端在收到首条消息后会自动持久化该会话
+  const newId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  selectedSessionId.value = newId
+  // 清空当前会话的右侧消息内容
+  sessionMessages.value = []
+  // 切换到「当前对话」视图，左侧显示本轮轮次摘要（初始为空）
+  chatViewMode.value = 'current'
+  chatSummary.value = []
+  scrollToTurnIndex.value = null
+}
 
 function buildPreview(text: string, maxLen = 80): string {
   if (!text) return ''
   const oneLine = text.split('\n').join(' ').trim()
   if (oneLine.length <= maxLen) return oneLine
   return oneLine.slice(0, maxLen) + '…'
+}
+
+/** 去掉 content 中的 tool_call JSON 块，取前 3 行作为助手回复预览 */
+function buildAssistantPreview(content: string): string {
+  if (!content) return ''
+  const jsonBlockRe = /```(?:json)?\s*([\s\S]*?)```/g
+  const toRemove: string[] = []
+  let match: RegExpExecArray | null
+  while ((match = jsonBlockRe.exec(content)) !== null) {
+    try {
+      const obj = JSON.parse(match[1].trim())
+      if (obj && obj.action === 'tool_call') toRemove.push(match[0])
+    } catch {
+      // 非 tool_call JSON，忽略
+    }
+  }
+  let rest = content
+  for (const block of toRemove) rest = rest.replace(block, '')
+  const lines = rest.split('\n').filter((l) => l.trim())
+  return lines.slice(0, 5).join('\n').trim() || ''
+}
+
+function formatDate(iso: string) {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return iso
+  }
+}
+
+function onNavClick(item: { id: ModuleId }) {
+  currentModule.value = item.id
+  selectedId.value = null
+  if (item.id === 'chat') {
+    chatViewMode.value = 'history'
+    selectedSessionId.value = null
+    fetchSessions()
+  }
+}
+
+async function fetchSessions() {
+  sessionsLoading.value = true
+  try {
+    const r = await fetch('/api/sessions')
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.sessions) {
+      sessions.value = j.data.sessions
+    }
+  } finally {
+    sessionsLoading.value = false
+  }
 }
 
 async function fetchChatSummary() {
@@ -301,7 +409,7 @@ async function fetchChatSummary() {
         }
         turns.push({
           userPreview: buildPreview(m.content || ''),
-          assistantPreview: assistantContent ? buildPreview(assistantContent) : '',
+          assistantPreview: assistantContent ? buildAssistantPreview(assistantContent) : '',
         })
       }
       chatSummary.value = turns
@@ -315,26 +423,15 @@ async function fetchChatSummary() {
   }
 }
 
-function formatDate(iso: string) {
-  if (!iso) return ''
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return iso
-  }
+function onChatMessageSent() {
+  chatViewMode.value = 'current'
+  fetchChatSummary()
 }
 
-async function fetchSessions() {
-  sessionsLoading.value = true
-  try {
-    const r = await fetch('/api/sessions')
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.sessions) {
-      sessions.value = j.data.sessions
-    }
-  } finally {
-    sessionsLoading.value = false
+function onChatStreamEnded() {
+  // 流式回复结束后，后端已保存会话，刷新中间栏的轮次列表
+  if (chatViewMode.value === 'current') {
+    setTimeout(() => fetchChatSummary(), 200)
   }
 }
 
@@ -418,6 +515,52 @@ function onSavedAsFile(path: string) {
   fetchFiles(currentFilePath.value)
 }
 
+function triggerImportFile() {
+  importFileInputRef.value?.click()
+}
+
+const uploadApiBase = import.meta.env.DEV ? 'http://localhost:8000' : ''
+
+async function onImportFileSelected(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const files = input.files
+  if (!files?.length) return
+  const path = currentFilePath.value
+  let lastPath: string | null = null
+  let hasError = false
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    const form = new FormData()
+    form.append('file', file)
+    try {
+      const url = `${uploadApiBase}/api/files/upload?path=${encodeURIComponent(path)}`
+      const r = await fetch(url, {
+        method: 'POST',
+        body: form,
+      })
+      const j = await r.json()
+      if (j.status === 'ok' && j.data?.path) {
+        lastPath = j.data.path
+      } else {
+        hasError = true
+        console.error('导入失败:', j.detail || j)
+      }
+    } catch (e) {
+      hasError = true
+      console.error('导入文件失败', e)
+    }
+  }
+  input.value = ''
+  if (hasError) {
+    alert('部分或全部文件导入失败，请确保后端服务已启动（backend 目录下运行 uvicorn）')
+  }
+  if (lastPath) {
+    fetchFiles(path)
+    selectedId.value = lastPath
+    selectedFileEntry.value = { name: lastPath.split('/').pop() || lastPath, path: lastPath, is_dir: false }
+  }
+}
+
 async function createNewFile() {
   const name = window.prompt('请输入文件名（如 note.md）')
   if (!name?.trim()) return
@@ -441,7 +584,6 @@ async function createNewFile() {
 watch(currentModule, (mod) => {
   if (mod !== 'skill' && mod !== 'mcp') selectedId.value = null
   selectedFileEntry.value = null
-  if (mod === 'sessions') fetchSessions()
   if (mod === 'skill') fetchSkills()
   if (mod === 'mcp') fetchMCP()
   if (mod === 'settings') selectedId.value = 'app'
@@ -449,35 +591,35 @@ watch(currentModule, (mod) => {
     currentFilePath.value = ''
     fetchFiles()
   }
-  if (mod === 'chat' || (mod === 'sessions' && selectedId.value)) {
-    fetchChatSummary()
+  if (mod === 'chat') {
+    if (chatViewMode.value === 'history') fetchSessions()
+    else fetchChatSummary()
   }
-})
+}, { immediate: true })
 
-watch(selectedId, async (id) => {
-  if (currentModule.value !== 'sessions' || !id) {
-    sessionMessages.value = []
-    if (currentModule.value === 'chat') {
-      // 切回当前对话时刷新预览
-      fetchChatSummary()
-    }
-    return
-  }
+watch(selectedSessionId, async (id) => {
+  const sid = id || 'default'
   try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
+    const r = await fetch(`/api/sessions/${encodeURIComponent(sid)}`)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.messages) {
       sessionMessages.value = j.data.messages.map((m: { role: string; content: string }) => ({
         role: m.role,
         content: m.content,
       }))
+    } else {
+      sessionMessages.value = []
     }
-    // 选中某个历史会话时，同步刷新中间栏的精简轮次
-    fetchChatSummary()
   } catch {
     sessionMessages.value = []
   }
+}, { immediate: true })
+
+// 点击 turn 后，ChatView 滚动完成后清除 scrollToTurnIndex，避免重复触发
+watch(scrollToTurnIndex, (v) => {
+  if (v !== null) setTimeout(() => { scrollToTurnIndex.value = null }, 500)
 })
 
-// 初始加载：若当前是 chat，不请求；切到 sessions/skill/mcp/files 时再请求
+
+// 初始加载：切到对应模块时再请求数据
 </script>

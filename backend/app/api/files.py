@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -120,6 +120,33 @@ async def create_file(path: str = "", body: FileCreateBody = None):
     if not str(target).startswith(str(root)):
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
+    rel = str(target.relative_to(root)).replace("\\", "/")
+    return {"status": "ok", "data": {"path": rel}}
+
+
+@router.post("/files/upload")
+async def upload_file(path: str = "", file: UploadFile = File(...)):
+    """导入/上传文件到指定目录（path 为相对路径，空表示根目录）"""
+    if not file.filename or not file.filename.strip():
+        raise HTTPException(status_code=400, detail="filename is required")
+    fn = file.filename.strip().replace("..", "").replace("/", "").replace("\\", "")
+    if not fn:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        dir_path = _resolve_path(path or "")
+    except HTTPException:
+        raise
+    if not dir_path.is_dir():
+        raise HTTPException(status_code=400, detail="Path must be a directory")
+    target = (dir_path / fn).resolve()
+    root = Path(AGENT_OUTPUTS_DIR).resolve()
+    if not str(target).startswith(str(root)):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    try:
+        content = await file.read()
+        target.write_bytes(content)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
     rel = str(target.relative_to(root)).replace("\\", "/")
     return {"status": "ok", "data": {"path": rel}}
 

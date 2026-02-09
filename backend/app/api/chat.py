@@ -3,15 +3,18 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+import asyncio
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import os
 import json
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from app.agent.llm_client import QwenLLM
-from app.agent.graph import create_react_agent
+from app.agent.graph import create_skill_execution_agent
+from app.agent.skill_selector import select_skill
 from app.mcp.manager import get_mcp_manager
 from app.skills.loader import SkillsLoader
 from app.api.settings import load_app_settings
@@ -46,7 +49,13 @@ _MCP_SERVER_TO_SKILL: Dict[str, str] = {
     "exa": "wechat-article-writer",
     "fetch": "wechat-article-writer",
     "mem0": "wechat-article-writer",
+    "amap-maps": "amap-maps",
 }
+
+
+def _get_mcp_servers_for_skill(skill_id: str) -> List[str]:
+    """根据 skill_id 返回其关联的 MCP server_id 列表。用于技能执行时只传入该技能的工具，加快响应、减少混淆。"""
+    return [s for s, sk in _MCP_SERVER_TO_SKILL.items() if sk == skill_id]
 # 内置工具（无 server_id）-> skill
 _TOOL_TO_SKILL: Dict[str, str] = {
     "export_session_to_md": "session-export",
@@ -59,24 +68,32 @@ def _update_meta_skill_from_tool_calls(meta_context: Dict[str, Any], message) ->
         return
     tc = message.tool_calls[0]
     tool_name = tc.get("name") or tc.get("id") or ""
+    existing = meta_context.get("skills") or []
     # 内置工具（如 export_session_to_md）
     skill_name = _TOOL_TO_SKILL.get(tool_name)
     if skill_name:
-        meta_context["skills"] = [skill_name]
+        # 只有在当前没有 skill 标记时才覆盖，避免把用户显式选择的 skill 覆盖掉
+        if not existing:
+            meta_context["skills"] = [skill_name]
         return
     # MCP 工具（server_id_tool_name）
     if "_" in tool_name:
         server_id = tool_name.split("_", 1)[0]
         skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
         if skill_name:
-            meta_context["skills"] = [skill_name]
+            if not existing:
+                meta_context["skills"] = [skill_name]
 
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./data/sessions")
 
 
-# 会话级对话历史（每段对话是一段记忆）：session_id -> [HumanMessage, AIMessage, ...]，最多保留最近 N 条
+# 会话级对话历史（每段对话是一段记忆）：session_id -> [HumanMessage, AIMessage, ...]
+# 不再对历史消息条数做硬性上限，轮次（Turn）数量理论上不设上限。
 _CHAT_HISTORY: Dict[str, List[BaseMessage]] = {}
-_CHAT_HISTORY_MAX_MESSAGES = 5
+_CHAT_HISTORY_MAX_MESSAGES = 5  # 保留旧常量以兼容，但不再用于截断
+
+# 每个 Session 的轮次摘要：session_id -> [turn_summary1, turn_summary2, ...]
+_TURN_SUMMARIES: Dict[str, List[str]] = {}
 
 # 会话元数据：session_id -> {title, updated_at}，用于对话历史列表展示
 _SESSION_META: Dict[str, Dict[str, str]] = {}
@@ -103,7 +120,18 @@ def _save_sessions_to_disk() -> None:
             json.dumps(_SESSION_META, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        logger.info(f"已将会话历史保存到磁盘（{len(_CHAT_HISTORY)} 个会话）")
+        # 轮次摘要单独持久化，避免破坏原有 history 结构
+        turn_payload: Dict[str, List[str]] = {}
+        for sid, turns in _TURN_SUMMARIES.items():
+            # 只保存非空摘要
+            clean_turns = [str(t).strip() for t in turns if str(t).strip()]
+            if clean_turns:
+                turn_payload[sid] = clean_turns
+        (root / "turn_summaries.json").write_text(
+            json.dumps(turn_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logger.info(f"已将会话历史与轮次摘要保存到磁盘（{len(_CHAT_HISTORY)} 个会话）")
     except Exception as e:
         logger.error(f"保存会话历史到磁盘失败: {e}", exc_info=True)
 
@@ -114,6 +142,7 @@ def _load_sessions_from_disk() -> None:
         root = _ensure_sessions_dir()
         history_file = root / "history.json"
         meta_file = root / "meta.json"
+        turn_file = root / "turn_summaries.json"
 
         if history_file.exists():
             raw = json.loads(history_file.read_text(encoding="utf-8"))
@@ -145,7 +174,15 @@ def _load_sessions_from_disk() -> None:
                             "updated_at": str(meta.get("updated_at", "")),
                         }
 
-        logger.info(f"已从磁盘加载会话历史: {len(_CHAT_HISTORY)} 个会话")
+        # 加载轮次摘要（若存在）
+        if turn_file.exists():
+            raw_turns = json.loads(turn_file.read_text(encoding="utf-8"))
+            if isinstance(raw_turns, dict):
+                for sid, turns in raw_turns.items():
+                    if isinstance(turns, list):
+                        _TURN_SUMMARIES[str(sid)] = [str(t) for t in turns if isinstance(t, (str, int, float))]
+
+        logger.info(f"已从磁盘加载会话历史: {len(_CHAT_HISTORY)} 个会话；轮次摘要: {len(_TURN_SUMMARIES)} 个会话")
     except Exception as e:
         logger.error(f"从磁盘加载会话历史失败: {e}", exc_info=True)
 
@@ -194,12 +231,138 @@ def _is_export_intent(message: str) -> bool:
     return any(kw in t for kw in _EXPORT_KEYWORDS)
 
 
+async def _summarize_turn_with_llm(
+    llm: "QwenLLM",
+    user_text: str,
+    assistant_text: str,
+    max_input_chars: int = 3000,
+) -> str:
+    """
+    使用 LLM 为单个 Turn（用户 + 助手）生成摘要。
+    - 摘要应短小（不超过 ~100 字），突出关键信息、结论、约定。
+    - 仅作为「记忆」，不会直接展示给用户。
+    """
+    from langchain_core.messages import SystemMessage, HumanMessage
+
+    user_text = (user_text or "").strip()
+    assistant_text = (assistant_text or "").strip()
+
+    # 粗略截断输入，避免异常长上下文
+    if len(user_text) > max_input_chars // 3:
+        user_text = user_text[: max_input_chars // 3] + "…"
+    if len(assistant_text) > max_input_chars * 2 // 3:
+        assistant_text = assistant_text[: max_input_chars * 2 // 3] + "…"
+
+    try:
+        client = llm.get_client()
+        system_prompt = (
+            "你是对话摘要助手。请用不超过 100 字的中文，总结下面用户与助手本轮对话的关键信息，"
+            "包括重要事实、决策、约定或结论。不要加入新内容，不要复述无关客套。"
+        )
+        content = f"【用户】\n{user_text}\n\n【助手】\n{assistant_text}"
+        resp = await client.ainvoke(
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=content),
+            ]
+        )
+        summary = (getattr(resp, "content", "") or "").strip()
+        if summary:
+            return summary
+    except Exception as e:
+        logger.error(f"生成 Turn 摘要失败: {e}", exc_info=True)
+
+    # 回退：简单拼接截断版用户 / 助手内容
+    fallback_user = user_text[:100] + ("…" if len(user_text) > 100 else "")
+    fallback_assistant = assistant_text[:150] + ("…" if len(assistant_text) > 150 else "")
+    return f"用户：{fallback_user} 助手：{fallback_assistant}"
+
+
+def _append_turn_summary(session_id: str, summary: str) -> None:
+    """将单轮摘要追加到内存结构中。空摘要会被忽略。"""
+    s = (summary or "").strip()
+    if not s:
+        return
+    turns = _TURN_SUMMARIES.get(session_id)
+    if turns is None:
+        _TURN_SUMMARIES[session_id] = [s]
+    else:
+        turns.append(s)
+
+
+def _build_history_summary(session_id: str, history: List[BaseMessage], max_chars_per_msg: int = 200) -> str:
+    """
+    从历史消息构建摘要，用于多轮 chat 的上下文。
+
+    优先使用「按 Turn 的 LLM 摘要」：
+    - 若存在 _TURN_SUMMARIES[session_id]，则直接拼接这些摘要。
+    - 否则按原始消息对 (Human + AI) 构造简要预览文本，作为回退。
+    """
+    if not history:
+        return ""
+
+    # 1. 优先使用已生成的 Turn 摘要（每个元素对应一轮）
+    turn_summaries = _TURN_SUMMARIES.get(session_id) or []
+    if turn_summaries:
+        lines: List[str] = []
+        for idx, s in enumerate(turn_summaries, start=1):
+            summary_str = (s or "").strip()
+            if not summary_str:
+                continue
+            lines.append(f"第{idx}轮：{summary_str}")
+        if lines:
+            return "\n".join(lines)
+
+    # 2. 无 Turn 摘要时，按 Turn 结构做简要预览（旧逻辑的改进版）
+    lines: List[str] = []
+    turn_index = 1
+    i = 0
+    n = len(history)
+
+    while i < n:
+        msg = history[i]
+        i += 1
+
+        # 只从用户消息开始构建轮次
+        if not isinstance(msg, HumanMessage):
+            continue
+
+        user_content = getattr(msg, "content", "") or ""
+        user_preview = str(user_content)[:max_chars_per_msg]
+        if len(str(user_content)) > max_chars_per_msg:
+            user_preview += "…"
+
+        # 查找该用户消息之后最近的一条助手回复，组成同一轮
+        assistant_preview = ""
+        while i < n:
+            next_msg = history[i]
+            i += 1
+            if isinstance(next_msg, AIMessage):
+                ai_content = getattr(next_msg, "content", "") or ""
+                assistant_preview = str(ai_content)[:max_chars_per_msg]
+                if len(str(ai_content)) > max_chars_per_msg:
+                    assistant_preview += "…"
+                break
+
+        lines.append(f"第{turn_index}轮：")
+        lines.append(f"- 用户：{user_preview}")
+        if assistant_preview:
+            lines.append(f"- 助手：{assistant_preview}")
+        lines.append("")  # 轮次之间空一行，便于阅读
+
+        turn_index += 1
+
+    return "\n".join(lines).strip()
+
+
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """流式聊天接口"""
+    t_start = time.perf_counter()
     logger.info(f"收到聊天请求: session_id={request.session_id}, message={request.message[:50]}...")
     
     await ensure_initialized()
+    logger.info(f"[TIMING] ensure_initialized: {time.perf_counter() - t_start:.2f}s")
     
     session_id = request.session_id or "default"
     
@@ -210,9 +373,8 @@ async def chat_stream(request: ChatRequest):
         result = export_tool.func()
         # 更新会话历史
         history = _CHAT_HISTORY.get(session_id, [])
+        # 追加本次用户消息与导出结果，不再按条数截断，会话完整保留
         new_history = list(history) + [HumanMessage(content=request.message)] + [AIMessage(content=result)]
-        if len(new_history) > _CHAT_HISTORY_MAX_MESSAGES:
-            new_history = new_history[-_CHAT_HISTORY_MAX_MESSAGES:]
         _CHAT_HISTORY[session_id] = new_history
         # 更新会话元数据
         title = (request.message.strip()[:50] + "…") if len(request.message.strip()) > 50 else request.message.strip() or "新对话"
@@ -236,46 +398,93 @@ async def chat_stream(request: ChatRequest):
     # 获取工具和技能（支持按 skill_ids / mcp_server_ids 筛选）
     all_tools = _get_mcp_manager().get_tools()
     if request.mcp_server_ids:
-        tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in request.mcp_server_ids]
-    else:
-        tools = list(all_tools)
-    tools = tools + [create_export_session_tool(session_id), create_read_file_tool()]
-    skills_instruction = skills_loader.get_active_skills_index(request.skill_ids)
-    skill_routing_rules = skills_loader.get_skill_routing_rules(request.skill_ids)
-    
-    logger.info(f"可用工具数量: {len(tools)}")
-    for tool in tools:
-        logger.info(f"  - {tool.name}: {tool.description}")
-    
-    logger.info(f"技能索引长度: {len(skills_instruction)} 字符")
-    
-    # 应用设置：系统提示词在每次 chat 前注入到 prompt
+        all_tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in request.mcp_server_ids]
+    skills_for_selection = skills_loader.get_skills_for_selection(request.skill_ids)
+
+    logger.info(f"MCP 工具总数: {len(all_tools)}")
+    logger.info(f"技能数量（用于选择）: {len(skills_for_selection)}")
+
     app_settings = load_app_settings()
     extra_system_prompt = app_settings.get("system_prompt") or ""
-    
-    # 创建 LLM 客户端（当前仅 qwen；default_llm 可扩展）
     llm = QwenLLM()
-    
-    # 创建 Agent
-    agent = create_react_agent(
-        llm, tools, skills_instruction,
-        skill_routing_rules=skill_routing_rules,
-        extra_system_prompt=extra_system_prompt,
-    )
-    logger.info("ReAct Agent 创建完成")
-    # 加载该会话的历史消息，并与本条用户消息一起作为上下文发给大模型
+
+    # 加载历史，构建摘要（多轮 chat 时加入）
+    # 使用该 session 下的全部历史消息，按 Turn 摘要传给大模型
     history = _CHAT_HISTORY.get(session_id, [])
-    if len(history) > _CHAT_HISTORY_MAX_MESSAGES:
-        history = history[-_CHAT_HISTORY_MAX_MESSAGES:]
-    new_user_msg = HumanMessage(content=request.message)
-    messages_for_agent = list(history) + [new_user_msg]
-    
+    history_summary = _build_history_summary(session_id, history) if history else None
+
+    # 阶段一：技能选择（仅 name+description）
+    # 如果前端已显式指定 skill_ids 且只有一个，直接使用该 skill，跳过第一次 LLM 选择
+    if request.skill_ids and len(skills_for_selection) == 1:
+        selected_skill_id = skills_for_selection[0].get("skill_id")
+        logger.info(f"前端显式指定 skill_ids，仅一个技能，直接使用: {selected_skill_id}")
+    else:
+        t_skill_start = time.perf_counter()
+        selected_skill_id = await select_skill(llm, request.message, skills_for_selection, history_summary)
+        logger.info(f"[TIMING] select_skill: {time.perf_counter() - t_skill_start:.2f}s")
+        # 技能选择与 Agent 调用间隔，避免 DashScope 限流（如 qwen3-max 仅 1 RPS 时）导致第二次请求 429 触发重试
+        delay_sec = float(os.getenv("QWEN_REQUEST_DELAY_SEC", "1"))
+        if delay_sec > 0:
+            await asyncio.sleep(delay_sec)
+            logger.info(f"[TIMING] 固定延迟 sleep({delay_sec}): {delay_sec:.2f}s")
+        if selected_skill_id is None and len(skills_for_selection) == 1:
+            selected_skill_id = skills_for_selection[0].get("skill_id")
+        if selected_skill_id is None and skills_for_selection:
+            selected_skill_id = skills_for_selection[0].get("skill_id")
+        if selected_skill_id is None and skills_loader.get_skill_full_content("default"):
+            selected_skill_id = "default"
+
+    # 按选中技能过滤工具：只传入该技能关联的 MCP 工具，加快响应、减少混淆
+    server_ids = _get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
+    skill_tools_fallback = False  # 是否因技能 MCP 无工具而回退到全部工具
+    if server_ids:
+        tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]
+        if not tools:
+            logger.warning(f"技能 {selected_skill_id} 关联的 MCP {server_ids} 无可用工具（可能未启动），回退到全部工具")
+            tools = list(all_tools)
+            skill_tools_fallback = True
+        else:
+            logger.info(f"已按技能 {selected_skill_id} 过滤工具，仅传入 {server_ids} 的 {len(tools)} 个工具")
+    else:
+        tools = list(all_tools)
+    # file-reader MCP 用于读取 PDF/DOC/Excel，始终加入（技能过滤时可能被排除）
+    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
+    tool_names = {t.name for t in tools}
+    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + [create_export_session_tool(session_id), create_read_file_tool()]
+    logger.info(f"最终可用工具数量: {len(tools)}")
+
+    skill_full_content = ""
+    if selected_skill_id:
+        skill_full_content = skills_loader.get_skill_full_content(selected_skill_id)
+    if not skill_full_content:
+        skill_full_content = "你是通用助手，直接回答用户问题。若需要外部能力可调用工具。"
+    # 当技能所需 MCP 工具不可用时，注入回退提示，避免 LLM 尝试调用不存在的工具
+    if skill_tools_fallback and selected_skill_id == "amap-maps":
+        skill_full_content += """
+
+**重要**：amap-maps 工具当前不可用（MCP 可能未连接或 Node.js 未安装）。请使用以下替代方式：
+- 地理编码/路线规划：用 `linkup_linkup-search` 或 `exa_web_search_exa` 搜索在线地图工具、高德 API 文档或地址经纬度；
+- 直接告知用户需在本地配置 amap-maps MCP（安装 Node.js、设置 AMAP_MAPS_API_KEY、重启后端）。"""
+
+    # 阶段二：技能执行（完整 skill 内容 + 工具）
+    t_agent_create = time.perf_counter()
+    agent = create_skill_execution_agent(llm, tools, skill_full_content, extra_system_prompt, t_request_start=t_start)
+    logger.info(f"[TIMING] create_skill_execution_agent: {time.perf_counter() - t_agent_create:.2f}s")
+
+    # 构建输入：用户问题 + 历史摘要（若有）
+    user_content = request.message.strip()
+    if history_summary:
+        user_content = f"历史对话摘要：\n{history_summary}\n\n当前用户输入：\n{user_content}"
+    messages_for_agent = [HumanMessage(content=user_content)]
+
     initial_state = {
         "messages": messages_for_agent,
         "tools": tools
     }
-    logger.info(f"初始状态准备完成，消息数量: {len(initial_state['messages'])}（含历史 {len(history)} 条）")
-    
+    logger.info(f"初始状态准备完成，消息数量: {len(initial_state['messages'])}，选中技能: {selected_skill_id}")
+
+    new_user_msg = HumanMessage(content=request.message)
+
     async def event_generator():
         """事件生成器 - 使用完整的 ReAct Agent 工作流"""
         # 确保 json 模块可用
@@ -285,10 +494,9 @@ async def chat_stream(request: ChatRequest):
             # 发送开始事件
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
-            # meta 透传：skill 先根据用户消息推断（文案/校庆等->wechat-article-writer），后续若调用了工具则按工具所属 server 覆盖
-            inferred_skill = skills_loader.infer_skill_from_message(request.message)
+            # meta 透传：使用选中的 skill_id，后续若调用了工具则按工具所属 server 覆盖
             meta_context: Dict[str, Any] = {
-                "skills": [inferred_skill] if inferred_skill else [],
+                "skills": [selected_skill_id] if selected_skill_id else [],
                 "tools": [],
                 "mcp_servers": [],
             }
@@ -305,137 +513,73 @@ async def chat_stream(request: ChatRequest):
             # 跟踪上一个状态，以便检测新消息
             previous_messages = initial_state.get("messages", [])
             
-            async for event in agent.astream(initial_state):
-                final_state = event  # 保存最后一个状态
+            t_loop_start = time.perf_counter()
+            t_last = t_loop_start
+            # stream_mode: updates=节点事件, messages=LLM token 流, values=完整状态（供 fallback）
+            async for stream_item in agent.astream(initial_state, stream_mode=["updates", "messages", "values"]):
+                # 多模式时返回 (mode, chunk)
+                if isinstance(stream_item, tuple) and len(stream_item) == 2:
+                    mode, chunk = stream_item
+                    if mode == "values":
+                        final_state = chunk
+                        continue
+                    if mode == "messages":
+                        # token 流：chunk 为 (msg_chunk, metadata)，仅从 agent 节点流式输出
+                        msg_chunk, meta = chunk if isinstance(chunk, tuple) and len(chunk) >= 2 else (chunk, {})
+                        if meta.get("langgraph_node") != "agent":
+                            continue
+                        if hasattr(msg_chunk, "content") and msg_chunk.content:
+                            txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
+                            if txt:
+                                accumulated_content.append(txt)
+                                has_sent_content = True
+                                yield f"event: content\ndata: {json_module.dumps({'text': txt, 'meta': meta_context}, ensure_ascii=False)}\n\n"
+                        continue
+                    event = chunk  # updates 模式的 chunk
+                else:
+                    event = stream_item
+                    mode = "updates"
+                
+                t_now = time.perf_counter()
+                event_keys = list(event.keys()) if isinstance(event, dict) else []
+                logger.info(f"[TIMING] 事件 #{event_count + 1} {event_keys}: 距上次 {t_now - t_last:.2f}s, 累计 {t_now - t_start:.2f}s")
+                t_last = t_now
+                # final_state 由 values 模式提供（含 messages），此处不覆盖
                 event_count += 1
-                logger.info(f"收到 Agent 事件 #{event_count}: {list(event.keys())}")
+                logger.info(f"收到 Agent 事件 #{event_count}: {event_keys}")
                 
-                # LangGraph 的 astream 可能返回两种格式：
-                # 1. 节点输出格式: {"agent": [AIMessage(...)], "tool": [HumanMessage(...)]}
-                # 2. 状态更新格式: {"messages": [...]}
-                
-                # 处理节点输出格式（优先）
+                # updates 格式：{"agent": [...]} 或 {"tool": [...]}
                 if "agent" in event:
                     agent_output = event["agent"]
                     logger.info(f"agent 节点输出类型: {type(agent_output).__name__}")
                     
-                    # 如果 agent 输出是字典且包含 messages 键，提取 messages
+                    aimsg = None
                     if isinstance(agent_output, dict) and "messages" in agent_output:
-                        logger.info(f"agent 输出是状态字典，包含 {len(agent_output['messages'])} 条消息")
-                        messages = agent_output["messages"]
-                        # 找出最后一条 AIMessage
-                        for message in reversed(messages):
-                            if isinstance(message, AIMessage):
-                                logger.info(f"找到 AIMessage，内容: {str(message.content)[:200]}...")
-                                # 处理这条 AIMessage
-                                last_agent_response = message
-                                content = message.content
-                                logger.info(f"Agent 响应内容类型: {type(content)}, 内容 (前200字符): {str(content)[:200]}...")
-                                
-                                # 检查是否有工具调用
-                                has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
-                                logger.info(f"Agent 响应 - 是否有工具调用: {has_tool_calls}")
-                                # 根据本条调用的工具更新 meta.skills（用于前端显示当前技能）
-                                _update_meta_skill_from_tool_calls(meta_context, message)
-                                
-                                # 处理文本内容
-                                content_str = ""
-                                if isinstance(content, str):
-                                    content_str = content
-                                elif content is not None:
-                                    content_str = str(content)
-                                
-                                content_stripped = content_str.strip() if content_str else ""
-                                logger.info(f"内容 strip 后长度: {len(content_stripped)}")
-                                
-                                # 只有当有实际文本内容时才发送 content 事件
-                                if content_stripped:
-                                    accumulated_content.append(content_str)
-                                    logger.info(f"✓ 发送文本内容（长度: {len(content_str)}）")
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                                    has_sent_content = True
-                                    
-                                    # 如果有工具调用，也发送 react_step
-                                    if has_tool_calls:
-                                        yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': content_str}, ensure_ascii=False)}\n\n"
-                                elif has_tool_calls:
-                                    # 只有工具调用，没有文本内容 - 只发送 react_step，不发送空的 content
-                                    logger.info("检测到工具调用（无文本内容），只发送 react_step")
-                                    yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': '正在调用工具...'}, ensure_ascii=False)}\n\n"
-                                break  # 找到最后一条 AIMessage 后退出
-                        else:
-                            logger.warning("在 agent 状态字典中未找到 AIMessage")
-                    # 如果 agent 输出是列表或单个消息对象
+                        for m in reversed(agent_output["messages"]):
+                            if isinstance(m, AIMessage):
+                                aimsg = m
+                                break
                     elif isinstance(agent_output, list):
-                        messages = agent_output
-                        logger.info(f"处理 agent 节点输出（列表格式），消息数量: {len(messages)}")
-                        
-                        for idx, message in enumerate(messages):
-                            logger.info(f"消息 #{idx}: 类型={type(message).__name__}, 是否为 AIMessage={isinstance(message, AIMessage)}")
-                            
-                            # 处理 AIMessage 对象
-                            if isinstance(message, AIMessage):
-                                last_agent_response = message  # 保存最后一个响应
-                                content = message.content
-                                logger.info(f"Agent 响应内容类型: {type(content)}, 内容 (前200字符): {str(content)[:200]}...")
-                                
-                                # 检查是否有工具调用
-                                has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
-                                logger.info(f"Agent 响应 - 是否有工具调用: {has_tool_calls}")
-                                _update_meta_skill_from_tool_calls(meta_context, message)
-                                
-                                # 处理文本内容
-                                content_str = ""
-                                if isinstance(content, str):
-                                    content_str = content
-                                elif content is not None:
-                                    content_str = str(content)
-                                
-                                content_stripped = content_str.strip() if content_str else ""
-                                logger.info(f"内容 strip 后长度: {len(content_stripped)}")
-                                
-                                # 只有当有实际文本内容时才发送 content 事件
-                                if content_stripped:
-                                    logger.info(f"✓ 发送文本内容（长度: {len(content_str)}）")
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                                    has_sent_content = True
-                                    
-                                    # 如果有工具调用，也发送 react_step
-                                    if has_tool_calls:
-                                        yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': content_str}, ensure_ascii=False)}\n\n"
-                                elif has_tool_calls:
-                                    # 只有工具调用，没有文本内容 - 只发送 react_step，不发送空的 content
-                                    logger.info("检测到工具调用（无文本内容），只发送 react_step")
-                                    yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': '正在调用工具...'}, ensure_ascii=False)}\n\n"
-                                # 如果既没有内容也没有工具调用，不发送任何内容（可能是中间状态）
-                            logger.info("消息是字典格式，尝试提取内容")
-                            # 尝试从字典中提取内容 - 只提取 content 字段，不要发送整个字典
-                            content = message.get("content")
-                            
-                            # 如果 content 是列表（可能是多部分内容），提取文本部分
-                            if isinstance(content, list):
-                                text_parts = [str(item.get("text", item)) for item in content if isinstance(item, dict)]
-                                content = " ".join(text_parts) if text_parts else None
-                            
-                            if not content:
-                                content = message.get("text")
-                            
-                            logger.info(f"从字典提取的内容: {repr(str(content)[:200]) if content else 'None'}")
-                            
-                            content_str = str(content) if content else ""
-                            content_stripped = content_str.strip()
-                            
-                            # 只有当有实际内容时才发送，不要发送整个字典
-                            if content_stripped:
+                        for m in reversed(agent_output):
+                            if isinstance(m, AIMessage):
+                                aimsg = m
+                                break
+                    if aimsg:
+                        last_agent_response = aimsg
+                        content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
+                        has_tool_calls = hasattr(aimsg, 'tool_calls') and aimsg.tool_calls
+                        _update_meta_skill_from_tool_calls(meta_context, aimsg)
+                        # 若有 messages 结构则保留供 fallback 使用（values 可能未到达）
+                        if isinstance(agent_output, dict) and "messages" in agent_output:
+                            final_state = {"messages": agent_output["messages"]}
+                        # token 已通过 stream_mode="messages" 流式发送；若未收到流则此处发送完整内容（兼容 API 不支持流式）
+                        if content_str.strip():
+                            if not has_sent_content:
                                 accumulated_content.append(content_str)
-                                logger.info(f"✓ 发送字典消息内容（长度: {len(content_str)}）")
                                 yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                                has_sent_content = True
-                            else:
-                                logger.warning("字典消息内容为空，跳过发送")
-                        
-                        else:
-                            logger.warning(f"消息 #{idx} 类型未知，跳过处理。类型: {type(message).__name__}")
+                            has_sent_content = True
+                        if has_tool_calls:
+                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': content_str.strip() or '正在调用工具...', 'meta': meta_context}, ensure_ascii=False)}\n\n"
                 
                 elif "tool" in event:
                     messages = event["tool"]
@@ -463,60 +607,6 @@ async def chat_stream(request: ChatRequest):
                                         meta_context["skills"] = [skill_name]
                             yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                 
-                # 处理状态更新格式（备用）
-                elif "messages" in event:
-                    current_messages = event["messages"]
-                    logger.info(f"状态更新: messages 数量从 {len(previous_messages)} 变为 {len(current_messages)}")
-                    
-                    # 找出新添加的消息
-                    new_messages = current_messages[len(previous_messages):]
-                    logger.info(f"检测到 {len(new_messages)} 条新消息")
-                    
-                    for idx, message in enumerate(new_messages):
-                        logger.info(f"新消息 #{idx}: 类型={type(message).__name__}")
-                        
-                        if isinstance(message, AIMessage):
-                            last_agent_response = message
-                            content = message.content
-                            
-                            # 检查是否有工具调用
-                            has_tool_calls = hasattr(message, 'tool_calls') and message.tool_calls
-                            _update_meta_skill_from_tool_calls(meta_context, message)
-                            
-                            content_str = str(content) if content else ""
-                            content_stripped = content_str.strip()
-                            
-                            # 只有当有实际文本内容时才发送（忽略只有工具调用的消息）
-                            if content_stripped:
-                                accumulated_content.append(content_str)
-                                logger.info(f"✓ 发送文本内容（从状态更新，长度: {len(content_str)}）")
-                                yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                                has_sent_content = True
-                            elif has_tool_calls:
-                                # 只有工具调用，发送 react_step
-                                logger.info("从状态更新检测到工具调用（无文本内容）")
-                                yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': '正在调用工具...'}, ensure_ascii=False)}\n\n"
-                            # 如果既没有内容也没有工具调用，不发送（可能是中间状态）
-                        
-                        elif isinstance(message, HumanMessage):
-                            content = message.content
-                            logger.info(f"工具执行结果（从状态更新）: {content}")
-                            tool_name = None
-                            m = _TOOL_NAME_RE.search(str(content))
-                            if m:
-                                tool_name = m.group(1)
-                            if tool_name:
-                                meta_context["tools"] = [tool_name]
-                                server_id = tool_name.split("_", 1)[0] if "_" in tool_name else ""
-                                if server_id:
-                                    meta_context["mcp_servers"] = [server_id]
-                                    skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
-                                    if skill_name:
-                                        meta_context["skills"] = [skill_name]
-                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                    
-                    # 更新 previous_messages 以便下次比较
-                    previous_messages = current_messages
                 else:
                     logger.info(f"事件格式未知，跳过。事件键: {list(event.keys())}")
             
@@ -573,13 +663,19 @@ async def chat_stream(request: ChatRequest):
             # 触发一次读取，避免 last_agent_response “只赋值未使用”
             if last_agent_response is not None:
                 logger.info("已生成最后一条 Agent 响应")
+            logger.info(f"[TIMING] Agent 工作流总耗时: {time.perf_counter() - t_start:.2f}s")
             logger.info(f"Agent 工作流执行完成，共处理 {event_count} 个事件，已发送内容: {has_sent_content}")
             # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复
             full_content = "".join(accumulated_content).strip() if accumulated_content else ""
+            # 不再按消息条数截断，完整保留该 session 的所有轮次
             new_history = list(history) + [new_user_msg] + [AIMessage(content=full_content or "(无响应)")]
-            if len(new_history) > _CHAT_HISTORY_MAX_MESSAGES:
-                new_history = new_history[-_CHAT_HISTORY_MAX_MESSAGES:]
             _CHAT_HISTORY[session_id] = new_history
+            # 使用 LLM 为本轮对话生成摘要，并追加到 Turn 摘要列表
+            try:
+                turn_summary = await _summarize_turn_with_llm(llm, request.message, full_content or "(无响应)")
+                _append_turn_summary(session_id, turn_summary)
+            except Exception as e:
+                logger.error(f"生成并追加本轮摘要失败: {e}", exc_info=True)
             # 更新会话元数据：标题取首条用户消息前 50 字，更新时间
             title = (request.message.strip()[:50] + "…") if len(request.message.strip()) > 50 else request.message.strip() or "新对话"
             _SESSION_META[session_id] = {
@@ -593,7 +689,11 @@ async def chat_stream(request: ChatRequest):
             yield f"event: end\ndata: {json_module.dumps({'type': 'end'})}\n\n"
         except asyncio.CancelledError:
             # 客户端断开、超时等导致取消，正常退出，不视为错误
-            logger.info("chat_stream: 请求已取消（客户端断开或超时）")
+            elapsed_sec = time.perf_counter() - t_start
+            hint = "可能是前端流式超时(120s)" if elapsed_sec > 100 else "可能是客户端断开(刷新/切换标签/关闭/Vite HMR等)"
+            logger.info(
+                f"chat_stream: 请求已取消｜耗时 {elapsed_sec:.1f}s｜事件数 {event_count}｜已发内容 {has_sent_content}｜{hint}"
+            )
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error in chat_stream: {error_msg}", exc_info=True)
@@ -621,6 +721,7 @@ def _message_to_dict(msg: BaseMessage) -> Dict[str, Any]:
 @router.get("/sessions")
 async def list_sessions():
     """获取会话列表（对话历史用）"""
+    await ensure_initialized()
     # 确保有 default 会话的元数据（从未发过消息时也可展示）
     if "default" not in _SESSION_META and "default" in _CHAT_HISTORY:
         first_msg = None
@@ -655,6 +756,7 @@ async def list_sessions():
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     """获取指定会话的完整消息列表"""
+    await ensure_initialized()
     history = _CHAT_HISTORY.get(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -704,6 +806,7 @@ def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, s
 @router.post("/sessions/{session_id}/export")
 async def export_session(session_id: str, filename: str = None):
     """将会话导出为 markdown 文件"""
+    await ensure_initialized()
     try:
         rel_path, download_url = _export_session_to_md(session_id, filename)
         return {"status": "ok", "data": {"path": rel_path, "download_url": download_url}}

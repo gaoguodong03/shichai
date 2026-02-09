@@ -13,66 +13,66 @@
     </header>
 
     <!-- 消息列表 -->
-    <div class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-      <div
-        v-for="(msg, index) in messages"
-        :key="index"
-        :class="[
-          'flex',
-          msg.role === 'user' ? 'justify-end' : 'justify-start'
-        ]"
-      >
+    <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <!-- 历史消息 & 已完成的助手回复 -->
+      <template v-for="(msg, index) in messages" :key="index">
+        <!-- 对于正在流式中的占位助手消息，不在这里渲染，避免与下方流式块重复显示 -->
         <div
+          v-if="!(msg.role === 'assistant' && msg.isStreaming)"
+          :data-message-index="index"
           :class="[
-            'max-w-3xl min-w-0 rounded-lg px-4 py-2',
-            msg.role === 'user'
-              ? 'bg-blue-500 text-white'
-              : 'bg-white text-gray-800 border border-gray-200'
+            'flex',
+            msg.role === 'user' ? 'justify-end' : 'justify-start'
           ]"
         >
-          <!-- 助手消息顶部：skill 紫色显示，未用显示「无」 -->
           <div
-            v-if="msg.role === 'assistant'"
-            class="mb-2 text-xs text-purple-600 font-medium"
+            :class="[
+              'max-w-3xl min-w-0 rounded-lg px-4 py-2',
+              msg.role === 'user'
+                ? 'bg-blue-500 text-white'
+                : 'bg-white text-gray-800 border border-gray-200'
+            ]"
           >
-            skill: {{ (msg.meta?.skills && msg.meta.skills[0]) || '无' }}
+            <!-- 助手消息顶部：skill 紫色显示，未用显示「无」 -->
+            <div
+              v-if="msg.role === 'assistant'"
+              class="mb-2 text-xs text-purple-600 font-medium"
+            >
+              skill: {{ (msg.meta?.skills && msg.meta.skills[0]) || '无' }}
+            </div>
+            <!-- 工具调用 JSON 单独框：标题为工具名称 -->
+            <div
+              v-if="msg.role === 'assistant' && extractToolCall(msg.content).toolCall"
+              class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+            >
+              <div class="text-blue-700 font-sans font-medium mb-1">{{ getToolNameFromToolCall(extractToolCall(msg.content).toolCall) }}</div>
+              <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ extractToolCall(msg.content).toolCall }}</pre>
+            </div>
+            <!-- 正式回答内容 -->
+            <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
+              <template v-for="(seg, segIndex) in parseMessageContent(extractToolCall(msg.content).rest)" :key="segIndex">
+                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+                <a
+                  v-else
+                  :href="seg.url"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="block mt-2"
+                >
+                  <img
+                    :src="seg.url"
+                    :alt="seg.alt || 'image'"
+                    loading="lazy"
+                    class="max-w-full rounded-md border border-gray-200"
+                  />
+                </a>
+              </template>
+            </div>
           </div>
-          <!-- 工具调用 JSON 单独框：标题为工具名称 -->
-          <div
-            v-if="msg.role === 'assistant' && extractToolCall(msg.content).toolCall"
-            class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
-          >
-            <div class="text-blue-700 font-sans font-medium mb-1">{{ getToolNameFromToolCall(extractToolCall(msg.content).toolCall) }}</div>
-            <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ extractToolCall(msg.content).toolCall }}</pre>
-          </div>
-          <!-- 正式回答内容 -->
-          <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
-            <template v-for="(seg, segIndex) in parseMessageContent(extractToolCall(msg.content).rest)" :key="segIndex">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
-              <a
-                v-else
-                :href="seg.url"
-                target="_blank"
-                rel="noreferrer"
-                class="block mt-2"
-              >
-                <img
-                  :src="seg.url"
-                  :alt="seg.alt || 'image'"
-                  loading="lazy"
-                  class="max-w-full rounded-md border border-gray-200"
-                />
-              </a>
-            </template>
-          </div>
-          <div
-            v-if="msg.role === 'assistant' && msg.isStreaming"
-            class="inline-block w-2 h-2 bg-gray-400 rounded-full animate-pulse ml-2"
-          ></div>
         </div>
-      </div>
+      </template>
 
-      <!-- 流式输出显示 -->
+      <!-- 当前流式输出：单独一块展示，避免与占位助手消息重复 -->
       <div v-if="currentStreamingText" class="flex justify-start">
         <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-white text-gray-800 border border-gray-200">
           <div class="mb-2 text-xs text-purple-600 font-medium">
@@ -117,11 +117,10 @@
           type="text"
           placeholder="输入消息..."
           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          :disabled="isStreaming"
         />
         <button
           type="submit"
-          :disabled="!inputMessage.trim() || isStreaming"
+          :disabled="!inputMessage.trim()"
           class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           发送
@@ -281,16 +280,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 
 const props = withDefaults(
   defineProps<{
     sessionId?: string
     initialMessages?: { role: string; content: string }[]
+    scrollToTurnIndex?: number | null
   }>(),
-  { sessionId: 'default', initialMessages: () => [] }
+  { sessionId: 'default', initialMessages: () => [], scrollToTurnIndex: null }
 )
-const emit = defineEmits<{ (e: 'savedAsFile', path: string): void }>()
+const emit = defineEmits<{ (e: 'savedAsFile', path: string): void; (e: 'messageSent'): void; (e: 'streamEnded'): void }>()
 
 interface Message {
   role: 'user' | 'assistant'
@@ -308,6 +308,7 @@ type ParsedSegment =
   | { type: 'image'; alt: string; url: string }
 
 const messages = ref<Message[]>([])
+const messagesContainerRef = ref<HTMLElement | null>(null)
 const inputMessage = ref('')
 const isStreaming = ref(false)
 const currentStreamingText = ref('')
@@ -333,6 +334,18 @@ const mcpPickerLoading = ref(false)
 const selectedSkillIds = ref<string[]>([])
 const selectedMCPIds = ref<string[]>([])
 
+// 监听 scrollToTurnIndex，滚动到对应轮次（turn N = user消息在 index N*2）
+watch(
+  () => props.scrollToTurnIndex,
+  async (turnIndex) => {
+    if (turnIndex == null || turnIndex < 0) return
+    await nextTick()
+    const msgIndex = turnIndex * 2
+    const el = messagesContainerRef.value?.querySelector(`[data-message-index="${msgIndex}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+)
+
 // 当父组件传入 initialMessages 时（如从对话历史进入），用其初始化消息列表
 watch(
   () => props.initialMessages,
@@ -342,6 +355,9 @@ watch(
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }))
+    } else {
+      // 当切换到一个没有历史消息的会话（例如新对话）时，清空右侧聊天内容
+      messages.value = []
     }
   },
   { immediate: true }
@@ -423,9 +439,15 @@ function splitTextSegmentForImageUrls(text: string): ParsedSegment[] {
   return segments.length ? segments : [{ type: 'text', text }]
 }
 
+/** 移除非 tool_call 的 ``` 代码块边界，保留内部内容，避免图片被误当作代码块内文本 */
+function stripCodeBlockFences(text: string): string {
+  const fenceRe = /```(?:[\w]+)?\s*\n?([\s\S]*?)```/g
+  return text.replace(fenceRe, (_, inner) => inner || '')
+}
+
 const parseMessageContent = (content: string): ParsedSegment[] => {
   // 1) 识别 Markdown 图片语法 ![alt](url)；2) 文本中的纯图片链接也渲染为图片
-  const text = content ?? ''
+  const text = stripCodeBlockFences(content ?? '')
   const re = /!\[([^\]]*)\]\(([^)]+)\)/g
   const segments: ParsedSegment[] = []
   let lastIndex = 0
@@ -589,7 +611,7 @@ function onPickEntry(e: FileEntry) {
 }
 
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isStreaming.value) return
+  if (!inputMessage.value.trim()) return
 
   let userMessage = inputMessage.value.trim()
   if (userMessage.length > MAX_INPUT_CHARS) {
@@ -602,6 +624,7 @@ const sendMessage = async () => {
     role: 'user',
     content: userMessage
   })
+  emit('messageSent')
 
   // 添加占位的助手消息
   const assistantMessageIndex = messages.value.length
@@ -615,6 +638,9 @@ const sendMessage = async () => {
   isStreaming.value = true
   currentStreamingText.value = ''
   currentMeta.value = null
+
+  // 防御性超时：若后端流长时间无 end/error，强制结束流，解锁输入框
+  let streamTimeoutId: number | undefined
 
   try {
     const response = await fetch('/api/chat/stream', {
@@ -637,6 +663,17 @@ const sendMessage = async () => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+
+    // 超时时间（毫秒），超过则取消读取并提示
+    const STREAM_TIMEOUT_MS = 120000
+    streamTimeoutId = window.setTimeout(() => {
+      console.warn('流式响应超时，强制结束')
+      try {
+        reader.cancel()
+      } catch (e) {
+        console.error('取消流读取失败:', e)
+      }
+    }, STREAM_TIMEOUT_MS)
 
     while (true) {
       const { done, value } = await reader.read()
@@ -708,6 +745,7 @@ const sendMessage = async () => {
                   console.warn('流结束但没有内容')
                 }
                 currentStreamingText.value = ''
+                emit('streamEnded')
               } else if (eventType === 'error') {
                 console.error('收到错误:', parsed.error)
                 throw new Error(parsed.error || 'Unknown error')
@@ -725,7 +763,11 @@ const sendMessage = async () => {
     console.error('Error:', error)
     messages.value[assistantMessageIndex].content = `错误: ${error instanceof Error ? error.message : '未知错误'}`
     messages.value[assistantMessageIndex].isStreaming = false
+    emit('streamEnded')
   } finally {
+    if (streamTimeoutId !== undefined) {
+      clearTimeout(streamTimeoutId)
+    }
     isStreaming.value = false
     currentStreamingText.value = ''
   }

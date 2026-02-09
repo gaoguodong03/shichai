@@ -512,6 +512,7 @@ if __name__ == "__main__":
 
 ## 下一步
 
+- 查看 [MCP 操作指南](./mcp-operation-guide.md) 了解从 MCP.so 搜选、远程接入与本地编写的完整流程
 - 查看 [MCP 配置文档](../features/mcp-config.md) 了解完整的 MCP 功能
 - 查看 [开发设置文档](./setup.md) 了解开发环境配置
 - 查看 [API 设计文档](../architecture/api-design.md) 了解 API 接口

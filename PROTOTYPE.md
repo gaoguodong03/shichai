@@ -33,15 +33,8 @@ pip install -r requirements.txt
 # 或从 GitHub 安装：pip install git+https://github.com/modelcontextprotocol/python-sdk.git
 
 # 配置环境变量
-# 创建 .env 文件（手动创建或使用以下命令）
-cat > .env << 'EOF'
-QWEN_API_KEY=sk-364125e5aa404a04bd3d3d01918ffde2
-QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-DEBUG=true
-CORS_ORIGINS=http://localhost:5173
-MCP_CONFIG_PATH=./config/mcp_servers.json
-SKILLS_DIR=./skills
-EOF
+cp .env.example .env
+# 编辑 .env，填入 QWEN_API_KEY、QWEN_BASE_URL 等
 
 # 启动服务
 python -m app.main

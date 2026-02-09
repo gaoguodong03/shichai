@@ -1,93 +1,76 @@
 # DHA 项目文档
 
-欢迎来到 DHA（Digital Human Agent）项目文档中心。本文档提供了项目的完整技术文档和使用指南。
+DHA（Digital Human Agent）项目文档中心，**面向文档开发**：以文档为单一信息源，开发时优先查阅与更新文档。
 
-## 📚 文档导航
+---
 
-### 架构文档
+## 文档导航
 
-- [架构概述](./architecture/overview.md) - 项目整体架构和设计理念
-- [技术栈](./architecture/tech-stack.md) - 前后端技术栈详细说明
-- [运行流程](./architecture/runtime-flow.md) - 系统完整运行流程详解
-- [项目流程图](./architecture/flow-diagrams.md) - React、Skills、MCP 详细流程图
-- [项目流程通俗说明](./architecture/flow-diagrams-plain.md) - 用通俗语言描述的项目流程
-- [流式处理架构](./architecture/react-stream.md) - ReAct 流式处理实现
-- [API 设计](./architecture/api-design.md) - RESTful API 设计规范
-- [项目结构](./architecture/project-structure.md) - 项目目录结构说明
+### 一、架构文档（理解系统）
 
-### 功能文档
+| 文档 | 说明 |
+|------|------|
+| [架构概述](./architecture/overview.md) | 项目定位、前后端架构、Skill 与 MCP 设计 |
+| [运行流程](./architecture/runtime-flow.md) | 请求完整流程（技能选择 → 执行 → 工具调用） |
+| [Skill + MCP 设计](./architecture/skill-mcp-design-draft.md) | 两阶段技能选择与执行（已实现） |
+| [LLM 提示词结构](./architecture/llm-prompt-structure.md) | 每次请求发给大模型的内容 |
+| [会话与记忆设计](./architecture/session-round-memory.md) | 轮对话、Turn、摘要与记忆 |
+| [流式处理](./architecture/react-stream.md) | ReAct 流式处理实现 |
+| [API 设计](./architecture/api-design.md) | RESTful API 规范 |
+| [项目结构](./architecture/project-structure.md) | 目录与代码组织 |
+| [LLM 提供者切换](./architecture/llm-provider-switch.md) | 更换大模型（jeniya、OpenAI 兼容 API） |
 
-- [对话功能](./features/chat.md) - 对话交互功能说明
-- [Session 管理](./features/session-management.md) - Session 管理功能
-- [记忆功能](./features/memory.md) - Agent 记忆管理
-- [MCP 配置](./features/mcp-config.md) - MCP Server 配置和管理
-- [Skills 配置](./features/skills-config.md) - Skills 配置和管理
-- [多模型配置](./features/multi-model-config.md) - 多 LLM 模型配置
+### 二、功能文档（功能说明）
 
-### 开发文档
+| 文档 | 说明 |
+|------|------|
+| [对话功能](./features/chat.md) | 对话交互、SSE 流式输出 |
+| [Session 管理](./features/session-management.md) | 会话新建、列表、切换 |
+| [记忆功能](./features/memory.md) | Agent 记忆管理 |
+| [MCP 配置](./features/mcp-config.md) | MCP Server 配置与管理 |
+| [Skills 配置](./features/skills-config.md) | Skills 配置与管理 |
+| [多模型配置](./features/multi-model-config.md) | 多 LLM 模型配置 |
+| [文件预览方案](./features/file-preview-research.md) | PDF/DOC/Excel 预览方案调研 |
 
-- [开发设置](./development/setup.md) - 环境配置和开发指南
-- [开发计划](./development/plan.md) - 开发任务清单
-- [代码规范](./development/code-styleguide.md) - 编码规范和最佳实践
-- [测试文档](./development/testing.md) - 测试方法和指南
-- [部署文档](./development/deployment.md) - 生产环境部署指南
-- [MCP Server 配置指南](./development/mcp-server-setup.md) - 如何配置和使用 MCP Server
+### 三、开发文档（上手与配置）
 
-### 设计文档
+| 文档 | 说明 |
+|------|------|
+| [项目依赖](./requirements.md) | 前后端依赖清单 |
+| [开发设置](./development/setup.md) | 环境配置、安装、启动 |
+| [MCP Server 配置](./development/mcp-server-setup.md) | 创建与配置 MCP Server |
+| [MCP 操作指南](./development/mcp-operation-guide.md) | 从 MCP.so 搜选、远程接入、本地编写 |
+| [Node/JSAPI Skills](./development/setup-node-and-jsapi-skills.md) | 百度地图等需 Node 的 Skills 配置 |
+| [部署](./development/deployment.md) | 生产环境部署 |
 
-- [UI/UX 设计](./design/ui-ux.md) - 用户界面和体验设计
+### 四、设计文档
 
-## 🚀 快速开始
+| 文档 | 说明 |
+|------|------|
+| [UI/UX 设计](./design/ui-ux.md) | 布局、菜单、交互规范 |
 
-1. **环境设置**: 查看 [开发设置文档](./development/setup.md)
-2. **了解架构**: 阅读 [架构概述](./architecture/overview.md)
-3. **开始开发**: 参考 [开发计划](./development/plan.md)
+---
 
-## 📖 文档说明
+## 面向文档开发
 
-### 文档组织
+1. **开发前**：先查对应架构/功能文档，确认设计再动手
+2. **开发中**：实现与文档不符时，以文档为准并更新代码，或发现文档过期时更新文档
+3. **新增能力**：先写或更新文档，再实现
 
-文档按以下方式组织：
+---
 
-- **architecture/**: 架构和设计文档
-- **features/**: 功能特性文档
-- **development/**: 开发和部署文档
-- **design/**: UI/UX 设计文档
+## 快速开始
 
-### 文档更新
+1. [开发设置](./development/setup.md) 完成环境与启动
+2. [架构概述](./architecture/overview.md) 理解整体设计
+3. [运行流程](./architecture/runtime-flow.md) 理解请求链路
 
-文档会随着项目开发持续更新。如果发现文档有误或需要补充，请及时更新。
+---
 
-## 🔗 相关资源
-
-### 外部资源
+## 外部资源
 
 - [MCP 官方文档](https://modelcontextprotocol.io)
 - [Anthropic Agent Skills](https://agentskills.io)
 - [LangChain 文档](https://python.langchain.com)
 - [FastAPI 文档](https://fastapi.tiangolo.com)
 - [Vue 3 文档](https://vuejs.org)
-
-### 项目资源
-
-- MCP Python SDK: `/Users/ggd/mycode/DHA/MCP_Learn/python-sdk`
-
-## 📝 贡献指南
-
-欢迎贡献文档！请遵循以下原则：
-
-1. 保持文档的准确性和时效性
-2. 使用清晰简洁的语言
-3. 提供代码示例和实际用例
-4. 保持文档结构的一致性
-
-## 📧 联系方式
-
-如有问题或建议，请通过以下方式联系：
-
-- 项目 Issue: [GitHub Issues]
-- 文档问题: 直接提交 PR 或 Issue
-
----
-
-**最后更新**: 2024-01-01

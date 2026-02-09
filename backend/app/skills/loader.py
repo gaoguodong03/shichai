@@ -138,3 +138,32 @@ class SkillsLoader:
             }
             for skill in self.skills.values()
         ]
+
+    def get_skills_for_selection(self, skill_ids: Optional[List[str]] = None) -> List[Dict[str, str]]:
+        """获取用于技能选择的精简列表，仅含 name、description（若有）。
+        skill_ids 为空则全部；否则仅包含指定 id 的技能。
+        default 技能始终放在最后，作为无法确定时的备用选项。"""
+        items = []
+        default_item = None
+        for skill in self.skills.values():
+            if not skill.metadata.get("enabled", True):
+                continue
+            if skill_ids and skill.skill_id not in skill_ids:
+                continue
+            d: Dict[str, str] = {"skill_id": skill.skill_id, "name": skill.name}
+            if skill.description and str(skill.description).strip():
+                d["description"] = str(skill.description).strip()
+            if skill.skill_id == "default":
+                default_item = d
+            else:
+                items.append(d)
+        if default_item:
+            items.append(default_item)
+        return items
+
+    def get_skill_full_content(self, skill_id: str) -> Optional[str]:
+        """获取指定技能的完整内容（含 frontmatter 后的正文）。"""
+        skill = self.skills.get(skill_id)
+        if not skill:
+            return None
+        return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"

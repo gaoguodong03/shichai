@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Volces 应用图标生成 MCP Server
+"""图片生成 MCP Server
 
-调用火山引擎（Volces）图像生成 API，根据文字描述生成应用图标。
+调用火山引擎（Volces）图像生成 API，根据文字描述生成图片。
 API Key 通过环境变量 VOLCES_IMAGE_API_KEY 传入，或在 mcp_servers.json 的 transport.env 中配置。
 
 使用方法：
@@ -17,7 +17,7 @@ from mcp.server.fastmcp import FastMCP
 API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
 MODEL = "ep-20250705144856-6jcl6"
 
-mcp = FastMCP("Volces App Icon Server")
+mcp = FastMCP("图片生成")
 
 
 def _get_api_key() -> str:

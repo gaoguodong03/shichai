@@ -46,6 +46,20 @@ python example_calculator.py
 
 参考 [MCP Server 配置指南](../../docs/development/mcp-server-setup.md) 了解如何创建自己的 MCP Server。
 
+### file_reader_mcp.py
+
+文件读取 MCP，从 `data/agent-outputs` 提取 PDF/DOC/Excel 文本供 LLM 使用。
+
+**功能**：
+- `read_file`: 读取纯文本（txt、md、json 等）
+- `read_pdf`: 从 PDF 提取文本
+- `read_docx`: 从 DOCX 提取文本
+- `read_xlsx`: 从 Excel 提取文本
+
+**依赖**：`pip install pypdf python-docx openpyxl`
+
+**配置**：已在 `config/mcp_servers.json` 中默认添加，id 为 `file-reader`。
+
 ## 更多示例
 
 查看 `MCP_Learn/python-sdk/examples/servers/` 目录获取更多 MCP Server 示例。

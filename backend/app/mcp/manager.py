@@ -29,6 +29,11 @@ except ImportError:
 _mcp_manager_singleton: Optional["MCPToolManager"] = None
 
 
+def _subst_env(val: str) -> str:
+    """将字符串中的 ${VAR} 替换为环境变量"""
+    return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), str(val))
+
+
 def get_mcp_manager() -> "MCPToolManager":
     """获取全局 MCP 管理器单例（chat、settings 共用，保证状态一致）"""
     global _mcp_manager_singleton
@@ -80,11 +85,14 @@ class MCPToolManager:
                     import sys
                     command = sys.executable
                 
-                env = transport.get("env")
+                raw_env = transport.get("env")
+                env = None
+                if isinstance(raw_env, dict) and raw_env:
+                    env = {k: _subst_env(v) for k, v in raw_env.items()}
                 params = StdioServerParameters(
                     command=command,
                     args=args,
-                    env=env if isinstance(env, dict) else None,
+                    env=env or None,
                 )
                 
                 # stdio_client 是异步上下文管理器，返回 (read, write) 元组
@@ -125,13 +133,12 @@ class MCPToolManager:
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
                 # 远程 HTTP / Streamable HTTP：使用 MCP SDK 的 streamable_http_client
                 url = (transport.get("url") or transport.get("base_url") or "").strip()
+                url = _subst_env(url)  # 支持 ${VAR} 环境变量（如 Exa API Key）
                 if not url:
                     logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
                     return False
                 raw_headers = dict(transport.get("headers") or {})
                 # 支持 ${VAR} 环境变量替换，便于安全配置 API Key（如 "Bearer ${SMITHERY_API_KEY}"）
-                def _subst_env(s: str) -> str:
-                    return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), s)
                 headers = {k: _subst_env(str(v)) for k, v in raw_headers.items()}
                 http_client = None
                 if headers:
@@ -191,9 +198,22 @@ class MCPToolManager:
         async def tool_func(**kwargs):
             logger.info(f"执行工具: {original_tool_name}, 参数: {kwargs}")
             try:
+                # amap-maps maps_geo: LLM 传入 __arg1 时，展开为 address/city，确保 MCP 能正确传给高德 API
+                call_Kwargs = dict(kwargs)
+                if server_id == "amap-maps" and original_tool_name == "maps_geo" and set(call_Kwargs.keys()) == {"__arg1"}:
+                    import json as _json
+                    try:
+                        _parsed = _json.loads(call_Kwargs["__arg1"])
+                        if isinstance(_parsed, dict) and "address" in _parsed:
+                            call_Kwargs = {"address": _parsed["address"]}
+                            if "city" in _parsed:
+                                call_Kwargs["city"] = _parsed["city"]
+                            logger.info(f"maps_geo: 将 __arg1 展开为 {call_Kwargs}")
+                    except (ValueError, TypeError):
+                        pass
                 # 使用原始工具名调用 MCP Server
-                logger.info(f"调用 MCP Session: call_tool({original_tool_name}, {kwargs})")
-                result = await session.call_tool(original_tool_name, kwargs)
+                logger.info(f"调用 MCP Session: call_tool({original_tool_name}, {call_Kwargs})")
+                result = await session.call_tool(original_tool_name, call_Kwargs)
                 logger.info(f"MCP 调用返回结果类型: {type(result)}")
                 
                 if result.content:

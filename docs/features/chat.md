@@ -29,15 +29,18 @@
 - **FastAPI SSE**: 使用 FastAPI 的 Server-Sent Events 实现流式输出
 - **流式输出**: 支持流式输出 Thought、Tool Call 和最终回复
 
-### 工作流程
-1. 用户输入消息
-2. AI 进入 ReAct 循环：
+### 工作流程（两阶段）
+
+1. **第一次调用**：技能选择。AI 根据用户消息和各 Skill 的 name+description 选定一个 Skill。
+2. **第二次调用**：技能执行。AI 按选中 Skill 的步骤进入 ReAct 循环：
    - **Thought**: AI 思考需要做什么
    - **Tool Call**: 如果需要，调用相关工具（MCP 工具或 Skills）
    - **Observation**: 获取工具执行结果
    - **Thought**: 基于结果继续思考
    - 重复直到得出最终答案
 3. 流式输出最终回复给用户
+
+详见 [运行流程](../architecture/runtime-flow.md) 和 [Skill + MCP 设计](../architecture/skill-mcp-design-draft.md)。
 
 ### 工具调用展示
 - 在对话中显示工具调用过程（可选，可折叠）

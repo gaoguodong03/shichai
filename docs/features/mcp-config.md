@@ -261,6 +261,7 @@ Response:
 
 ## 参考资源
 
+- [MCP 操作指南](../development/mcp-operation-guide.md) - 从 MCP.so 搜选、远程接入与本地编写 MCP 的操作步骤
 - [MCP 官方文档](https://modelcontextprotocol.io)
 - [MCP Python SDK GitHub](https://github.com/modelcontextprotocol/python-sdk)
 - [MCP Python SDK 文档](https://github.com/modelcontextprotocol/python-sdk/tree/main/docs)
