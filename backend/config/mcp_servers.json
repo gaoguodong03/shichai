@@ -67,15 +67,14 @@
   {
     "id": "exa",
     "name": "Exa 搜索 MCP（远程）",
-    "enabled": false,
+    "enabled": true,
     "transport": {
       "type": "http",
       "url": "https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY",
-      "headers": {}
+      "base_url": "https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
     },
     "metadata": {
-      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 https://dashboard.exa.ai/api-keys 获取 API Key 并替换 url 中的 YOUR_EXA_API_KEY 后启用。",
-      "version": "1.0.0"
+      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 https://dashboard.exa.ai/api-keys 获取 API Key 并替换 url 中的 YOUR_EXA_API_KEY 后启用。"
     }
   },
   {
@@ -123,12 +122,23 @@
     "transport": {
       "type": "http",
       "url": "https://server.smithery.ai/text_to_pdf",
-      "headers": {
-        "Authorization": "Bearer YOUR_SMITHERY_API_KEY"
-      }
+      "base_url": "https://server.smithery.ai/text_to_pdf"
     },
     "metadata": {
-      "description": "Smithery 远程 MCP：将文本转换为 PDF。需在 Smithery 获取 API Key 并替换 YOUR_SMITHERY_API_KEY。",
+      "description": "Smithery 远程 MCP：将文本转换为 PDF。在 https://smithery.ai/account/api-keys 获取 API Key，在 .env 中设置 SMITHERY_API_KEY=你的密钥 后启用。"
+    }
+  },
+  {
+    "id": "math-mcp",
+    "name": "Smithery 数学 MCP",
+    "enabled": true,
+    "transport": {
+      "type": "http",
+      "url": "https://server.smithery.ai/@EthanHenrickson/math-mcp",
+      "base_url": "https://server.smithery.ai/@EthanHenrickson/math-mcp"
+    },
+    "metadata": {
+      "description": "Smithery 数学 MCP：提供数学计算和公式相关工具，可用于复杂算式推导、符号运算等。",
       "version": "1.0.0"
     }
   }

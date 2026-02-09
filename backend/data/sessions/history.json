@@ -1,0 +1,24 @@
+{
+  "default": [
+    {
+      "role": "assistant",
+      "content": "你好，我是千问！"
+    },
+    {
+      "role": "user",
+      "content": "【文件引用：qwen.md】"
+    },
+    {
+      "role": "assistant",
+      "content": "你好，我是千问！"
+    },
+    {
+      "role": "user",
+      "content": "【文件引用：genimi.txt】"
+    },
+    {
+      "role": "assistant",
+      "content": "我无法访问或读取名为 \"genimi.txt\" 的文件。如果你有关于该文件的具体问题，或者需要我帮助处理其中的内容，请提供更多信息或直接粘贴相关内容，我很乐意为你提供帮助！"
+    }
+  ]
+}
