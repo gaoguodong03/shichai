@@ -1,7 +1,11 @@
 """设置 API - MCP 和 Skills 配置"""
+from __future__ import annotations
+
 import asyncio
 import json
 import os
+import re
+import shutil
 import uuid
 import yaml
 from pathlib import Path
@@ -11,20 +15,55 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 router = APIRouter(tags=["settings"])
 
-# 延迟导入以避免循环导入
-_mcp_manager = None
-
+# 使用 mcp.manager 的全局单例，与 chat 共用
 def get_mcp_manager():
-    """获取 MCP Manager 实例（延迟初始化）"""
-    global _mcp_manager
-    if _mcp_manager is None:
-        from app.mcp.manager import MCPToolManager
-        _mcp_manager = MCPToolManager()
-    return _mcp_manager
+    """获取 MCP Manager 实例（与 chat 共用同一实例）"""
+    from app.mcp.manager import get_mcp_manager as _get_mcp
+    return _get_mcp()
 
 # 配置文件路径
 MCP_CONFIG_PATH = os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
 SKILLS_DIR = os.getenv("SKILLS_DIR", "./skills")
+APP_SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "./config/app_settings.json")
+
+# ========== 应用设置 API（LLM 选择、系统提示词） ==========
+
+class AppSettingsBody(BaseModel):
+    """应用设置请求体"""
+    default_llm: Optional[str] = None  # 当前仅支持 qwen
+    system_prompt: Optional[str] = None  # 每次 chat 前注入到大模型 prompt 的系统提示词
+
+def load_app_settings() -> Dict[str, Any]:
+    """加载应用设置"""
+    path = Path(APP_SETTINGS_PATH)
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"default_llm": "qwen", "system_prompt": ""}
+
+def save_app_settings(data: Dict[str, Any]):
+    """保存应用设置"""
+    path = Path(APP_SETTINGS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = load_app_settings()
+    current.update({k: v for k, v in data.items() if v is not None})
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(current, f, ensure_ascii=False, indent=2)
+
+@router.get("/settings/app")
+async def get_app_settings():
+    """获取应用设置（LLM 选择、系统提示词）"""
+    data = load_app_settings()
+    return {"status": "ok", "data": data}
+
+@router.put("/settings/app")
+async def update_app_settings(body: AppSettingsBody):
+    """更新应用设置"""
+    save_app_settings(body.model_dump(exclude_none=True))
+    return {"status": "ok", "data": load_app_settings()}
 
 # ========== MCP 配置 API ==========
 
@@ -89,11 +128,13 @@ async def get_mcp_servers():
                 # 请求被取消（如前端断开、超时），不再继续连接，直接返回当前状态
                 break
             except Exception as e:
-                print(f"Failed to connect server {server_id} in settings API: {e}")
+                import logging
+                logging.getLogger(__name__).warning(f"MCP Server {server_id} 连接失败: {e}")
     except asyncio.CancelledError:
         pass  # 被取消时不再抛错，下面会按当前 sessions 返回列表
     except Exception as e:
-        print(f"Error loading MCP config in settings API: {e}")
+        import logging
+        logging.getLogger(__name__).warning(f"MCP 配置加载失败: {e}")
     
     # 统计每个 server 的工具数量
     server_tool_counts = {}
@@ -330,7 +371,7 @@ def load_skills_config() -> List[Dict[str, Any]]:
                                 "id": skill_id,
                                 "name": frontmatter.get("name", skill_id),
                                 "description": frontmatter.get("description", ""),
-                                "enabled": True,  # 默认启用
+                                "enabled": frontmatter.get("enabled", True),
                                 "source": "local",
                                 "path": str(skill_dir)
                             })
@@ -351,76 +392,113 @@ async def get_skills():
         }
     }
 
+def _slugify(name: str) -> str:
+    """生成可作目录名的 slug"""
+    s = re.sub(r"[^\w\s-]", "", name)
+    s = re.sub(r"[-\s]+", "-", s).strip("-").lower()
+    return s or "skill"
+
+
 @router.post("/settings/skills")
 async def create_skill(skill: SkillCreate):
-    """创建 Skill"""
-    # 简化版本：只返回成功
-    # TODO: 实际应该创建 skill 目录和文件
-    skill_id = f"skill-{uuid.uuid4().hex[:8]}"
-    
+    """创建 Skill：在 skills 目录下创建 <id>/SKILL.md"""
+    base = Path(SKILLS_DIR)
+    base.mkdir(parents=True, exist_ok=True)
+    raw_id = _slugify(skill.name)
+    skill_id = raw_id
+    idx = 0
+    while (base / skill_id).exists():
+        idx += 1
+        skill_id = f"{raw_id}-{idx}"
+    skill_dir = base / skill_id
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    body = "\n## 说明\n\n（待补充）\n"
+    frontmatter = {
+        "name": skill.name,
+        "description": skill.description or "",
+        "enabled": skill.enabled,
+    }
+    content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
+    (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
     new_skill = {
         "id": skill_id,
         "name": skill.name,
         "description": skill.description or "",
         "enabled": skill.enabled,
-        "source": skill.source,
-        "path": skill.path,
-        "url": skill.url
+        "source": "local",
+        "path": str(skill_dir),
+        "url": skill.url,
     }
-    
-    return {
-        "status": "ok",
-        "data": new_skill
-    }
+    return {"status": "ok", "data": new_skill}
+
+def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:
+    """读取 SKILL.md，返回 (frontmatter_dict, body)"""
+    path = skill_dir / "SKILL.md"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    text = path.read_text(encoding="utf-8")
+    if not text.strip().startswith("---"):
+        return ({}, text)
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return ({}, text)
+    fm = yaml.safe_load(parts[1]) or {}
+    return (fm, parts[2].lstrip("\n"))
+
+
+def _write_skill_file(skill_dir: Path, frontmatter: Dict, body: str):
+    """写入 SKILL.md"""
+    content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
+    (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
 
 @router.put("/settings/skills/{skill_id}")
 async def update_skill(skill_id: str, skill_update: SkillUpdate):
-    """更新 Skill"""
-    # 简化版本：只返回成功
-    # TODO: 实际应该更新 skill 配置
-    return {
-        "status": "ok",
-        "data": {
-            "id": skill_id,
-            "updated": True
-        }
-    }
+    """更新 Skill：修改 SKILL.md 的 frontmatter"""
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    fm, body = _read_skill_file(skill_dir)
+    if skill_update.name is not None:
+        fm["name"] = skill_update.name
+    if skill_update.description is not None:
+        fm["description"] = skill_update.description
+    if skill_update.enabled is not None:
+        fm["enabled"] = skill_update.enabled
+    _write_skill_file(skill_dir, fm, body)
+    return {"status": "ok", "data": {"id": skill_id, "updated": True}}
 
 @router.delete("/settings/skills/{skill_id}")
 async def delete_skill(skill_id: str):
-    """删除 Skill"""
-    # 简化版本：只返回成功
-    # TODO: 实际应该删除 skill 目录
-    return {
-        "status": "ok",
-        "data": {
-            "id": skill_id,
-            "deleted": True
-        }
-    }
+    """删除 Skill：删除对应目录"""
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    shutil.rmtree(skill_dir)
+    return {"status": "ok", "data": {"id": skill_id, "deleted": True}}
 
 @router.post("/settings/skills/{skill_id}/enable")
 async def enable_skill(skill_id: str):
     """启用 Skill"""
-    # 简化版本：只返回成功
-    # TODO: 实际应该更新 skill 状态
-    return {
-        "status": "ok",
-        "data": {
-            "id": skill_id,
-            "enabled": True
-        }
-    }
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    fm, body = _read_skill_file(skill_dir)
+    fm["enabled"] = True
+    _write_skill_file(skill_dir, fm, body)
+    return {"status": "ok", "data": {"id": skill_id, "enabled": True}}
 
 @router.post("/settings/skills/{skill_id}/disable")
 async def disable_skill(skill_id: str):
     """禁用 Skill"""
-    # 简化版本：只返回成功
-    # TODO: 实际应该更新 skill 状态
-    return {
-        "status": "ok",
-        "data": {
-            "id": skill_id,
-            "enabled": False
-        }
-    }
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    fm, body = _read_skill_file(skill_dir)
+    fm["enabled"] = False
+    _write_skill_file(skill_dir, fm, body)
+    return {"status": "ok", "data": {"id": skill_id, "enabled": False}}

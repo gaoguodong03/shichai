@@ -4,10 +4,11 @@
     <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
       <h1 class="text-xl font-semibold text-gray-800">DHA Chat</h1>
       <button
-        @click="$router.push('/settings')"
-        class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+        class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        :disabled="!messages.length"
+        @click="saveAsFile"
       >
-        ⚙️ 设置
+        保存为文件
       </button>
     </header>
 
@@ -126,13 +127,170 @@
           发送
         </button>
       </form>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="isStreaming"
+          @click="openFilePicker"
+        >
+          选择文件插入
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="isStreaming"
+          @click="openSkillPicker"
+        >
+          选择 Skill
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="isStreaming"
+          @click="openMCPPicker"
+        >
+          选择 MCP
+        </button>
+        <div class="text-xs text-gray-500 truncate" v-if="selectedInsertFilePath">
+          已选文件：{{ selectedInsertFilePath }}
+        </div>
+        <div class="text-xs text-gray-500" v-if="selectedSkillIds.length">
+          已选 Skill：{{ selectedSkillIds.join(', ') }}
+        </div>
+        <div class="text-xs text-gray-500" v-if="selectedMCPIds.length">
+          已选 MCP：{{ selectedMCPIds.join(', ') }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 文件选择弹窗 -->
+    <div
+      v-if="showFilePicker"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closeFilePicker"
+    >
+      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-gray-800 truncate">
+            选择要插入到输入框的文件（当前目录：{{ filePickerPath || '/' }}）
+          </div>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeFilePicker">关闭</button>
+        </div>
+        <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+          <button
+            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+            :disabled="!filePickerPath"
+            @click="filePickerGoUp"
+          >
+            ↑ 上一级
+          </button>
+          <button
+            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+            @click="loadFilePickerEntries(filePickerPath)"
+          >
+            刷新
+          </button>
+          <div v-if="filePickerLoading" class="text-xs text-gray-500">加载中...</div>
+          <div v-else-if="filePickerError" class="text-xs text-red-600 truncate">{{ filePickerError }}</div>
+        </div>
+        <div class="max-h-[60vh] overflow-auto">
+          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-gray-500">
+            当前目录为空
+          </div>
+          <button
+            v-for="e in filePickerEntries"
+            :key="e.path"
+            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            @click="onPickEntry(e)"
+          >
+            <span class="flex-shrink-0">{{ e.is_dir ? '📁' : '📄' }}</span>
+            <span class="truncate">{{ e.name }}</span>
+            <span v-if="!e.is_dir" class="ml-auto text-xs text-gray-400">插入</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Skill 选择弹窗 -->
+    <div
+      v-if="showSkillPicker"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closeSkillPicker"
+    >
+      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-gray-800">选择本次对话使用的 Skill（可多选，空则全部）</div>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeSkillPicker">关闭</button>
+        </div>
+        <div class="px-4 py-2 border-b border-gray-100 flex justify-end">
+          <button class="text-xs text-gray-500 hover:text-gray-700" @click="clearSkillSelection">清除选择</button>
+        </div>
+        <div class="max-h-[60vh] overflow-auto">
+          <div v-if="skillPickerLoading" class="px-4 py-6 text-sm text-gray-500">加载中...</div>
+          <button
+            v-else
+            v-for="s in skillPickerList"
+            :key="s.id"
+            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            @click="toggleSkillSelection(s.id)"
+          >
+            <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedSkillIds.includes(s.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300'">
+              <span v-if="selectedSkillIds.includes(s.id)" class="text-white text-xs">✓</span>
+            </span>
+            <span class="truncate font-medium">{{ s.name || s.id }}</span>
+            <span class="text-xs text-gray-400 truncate flex-1">{{ s.description || '' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MCP 选择弹窗 -->
+    <div
+      v-if="showMCPPicker"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closeMCPPicker"
+    >
+      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-gray-800">选择本次对话使用的 MCP（可多选，空则全部）</div>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeMCPPicker">关闭</button>
+        </div>
+        <div class="px-4 py-2 border-b border-gray-100 flex justify-end">
+          <button class="text-xs text-gray-500 hover:text-gray-700" @click="clearMCPSelection">清除选择</button>
+        </div>
+        <div class="max-h-[60vh] overflow-auto">
+          <div v-if="mcpPickerLoading" class="px-4 py-6 text-sm text-gray-500">加载中...</div>
+          <button
+            v-else
+            v-for="m in mcpPickerList"
+            :key="m.id"
+            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            @click="toggleMCPSelection(m.id)"
+          >
+            <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedMCPIds.includes(m.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300'">
+              <span v-if="selectedMCPIds.includes(m.id)" class="text-white text-xs">✓</span>
+            </span>
+            <span class="truncate font-medium">{{ m.name || m.id }}</span>
+            <span class="text-xs text-gray-400">{{ m.status === 'connected' ? '已连接' : '未连接' }} · {{ m.tool_count || 0 }} 工具</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
-import { useSSEStream } from '@/composables/useEventSource'
+import { ref, watch, onMounted } from 'vue'
+
+const props = withDefaults(
+  defineProps<{
+    sessionId?: string
+    initialMessages?: { role: string; content: string }[]
+  }>(),
+  { sessionId: 'default', initialMessages: () => [] }
+)
+const emit = defineEmits<{ (e: 'savedAsFile', path: string): void }>()
 
 interface Message {
   role: 'user' | 'assistant'
@@ -154,6 +312,48 @@ const inputMessage = ref('')
 const isStreaming = ref(false)
 const currentStreamingText = ref('')
 const currentMeta = ref<Message['meta'] | null>(null)
+const MAX_INPUT_CHARS = 4000
+const MAX_INSERT_FILE_CHARS = 6000
+
+type FileEntry = { name: string; path: string; is_dir: boolean }
+const showFilePicker = ref(false)
+const filePickerEntries = ref<FileEntry[]>([])
+const filePickerPath = ref('')
+const filePickerLoading = ref(false)
+const filePickerError = ref('')
+const selectedInsertFilePath = ref<string>('')
+
+// Skill / MCP 选择（类似文件选择）
+const showSkillPicker = ref(false)
+const showMCPPicker = ref(false)
+const skillPickerList = ref<{ id: string; name: string; description: string }[]>([])
+const mcpPickerList = ref<{ id: string; name: string; status: string; tool_count: number }[]>([])
+const skillPickerLoading = ref(false)
+const mcpPickerLoading = ref(false)
+const selectedSkillIds = ref<string[]>([])
+const selectedMCPIds = ref<string[]>([])
+
+// 当父组件传入 initialMessages 时（如从对话历史进入），用其初始化消息列表
+watch(
+  () => props.initialMessages,
+  (list) => {
+    if (list && list.length > 0) {
+      messages.value = list.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }))
+    }
+  },
+  { immediate: true }
+)
+onMounted(() => {
+  if (props.initialMessages && props.initialMessages.length > 0) {
+    messages.value = props.initialMessages.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+  }
+})
 
 /** 从 content 中提取工具调用 JSON 块（```json { "action": "tool_call", ... } ```），返回 { toolCall, rest } */
 function extractToolCall(content: string): { toolCall: string | null; rest: string } {
@@ -259,10 +459,142 @@ const parseMessageContent = (content: string): ParsedSegment[] => {
   return segments.length ? segments : [{ type: 'text', text }]
 }
 
+async function saveAsFile() {
+  if (!messages.value.length) return
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.sessionId || 'default')}/export`, {
+      method: 'POST',
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.path) {
+      const base = window.location.origin
+      window.open(`${base}/api/files/download?path=${encodeURIComponent(j.data.path)}`, '_blank')
+      emit('savedAsFile', j.data.path)
+    }
+  } catch (e) {
+    console.error('导出失败', e)
+  }
+}
+
+function openFilePicker() {
+  showFilePicker.value = true
+  filePickerError.value = ''
+  loadFilePickerEntries('')
+}
+
+function closeFilePicker() {
+  showFilePicker.value = false
+}
+
+async function loadFilePickerEntries(path: string) {
+  filePickerLoading.value = true
+  filePickerError.value = ''
+  try {
+    const url = path ? `/api/files?path=${encodeURIComponent(path)}` : '/api/files'
+    const r = await fetch(url)
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.entries) {
+      filePickerEntries.value = j.data.entries as FileEntry[]
+      filePickerPath.value = path
+    } else {
+      filePickerEntries.value = []
+      filePickerError.value = j.detail || '加载失败'
+    }
+  } catch (e) {
+    filePickerEntries.value = []
+    filePickerError.value = '加载失败'
+  } finally {
+    filePickerLoading.value = false
+  }
+}
+
+function filePickerGoUp() {
+  const p = filePickerPath.value.replace(/\/?[^/]+\/?$/, '').replace(/\/$/, '')
+  loadFilePickerEntries(p)
+}
+
+async function insertFileToInput(filePath: string) {
+  selectedInsertFilePath.value = filePath
+  // 仅作为“引用”插入，不展开全文，避免输入过长
+  const block = `\n\n【文件引用：${filePath}】\n`
+  let next = (inputMessage.value || '') + block
+  if (next.length > MAX_INPUT_CHARS) {
+    next = next.slice(0, MAX_INPUT_CHARS)
+  }
+  inputMessage.value = next
+}
+
+function openSkillPicker() {
+  showSkillPicker.value = true
+  skillPickerLoading.value = true
+  fetch('/api/settings/skills')
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.status === 'ok' && j.data?.skills) {
+        skillPickerList.value = j.data.skills.filter((s: { enabled?: boolean }) => s.enabled !== false)
+      }
+    })
+    .finally(() => { skillPickerLoading.value = false })
+}
+function closeSkillPicker() {
+  showSkillPicker.value = false
+}
+function toggleSkillSelection(id: string) {
+  const idx = selectedSkillIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedSkillIds.value = selectedSkillIds.value.filter((x) => x !== id)
+  } else {
+    selectedSkillIds.value = [...selectedSkillIds.value, id]
+  }
+}
+function clearSkillSelection() {
+  selectedSkillIds.value = []
+}
+
+function openMCPPicker() {
+  showMCPPicker.value = true
+  mcpPickerLoading.value = true
+  fetch('/api/settings/mcp')
+    .then((r) => r.json())
+    .then((j) => {
+      if (j.status === 'ok' && j.data?.servers) {
+        mcpPickerList.value = j.data.servers.filter((m: { enabled?: boolean }) => m.enabled !== false)
+      }
+    })
+    .finally(() => { mcpPickerLoading.value = false })
+}
+function closeMCPPicker() {
+  showMCPPicker.value = false
+}
+function toggleMCPSelection(id: string) {
+  const idx = selectedMCPIds.value.indexOf(id)
+  if (idx >= 0) {
+    selectedMCPIds.value = selectedMCPIds.value.filter((x) => x !== id)
+  } else {
+    selectedMCPIds.value = [...selectedMCPIds.value, id]
+  }
+}
+function clearMCPSelection() {
+  selectedMCPIds.value = []
+}
+
+function onPickEntry(e: FileEntry) {
+  if (e.is_dir) {
+    loadFilePickerEntries(e.path)
+    return
+  }
+  // 选中文件：插入并关闭
+  insertFileToInput(e.path)
+  closeFilePicker()
+}
+
 const sendMessage = async () => {
   if (!inputMessage.value.trim() || isStreaming.value) return
 
-  const userMessage = inputMessage.value.trim()
+  let userMessage = inputMessage.value.trim()
+  if (userMessage.length > MAX_INPUT_CHARS) {
+    userMessage = userMessage.slice(0, MAX_INPUT_CHARS)
+  }
   inputMessage.value = ''
 
   // 添加用户消息
@@ -285,14 +617,16 @@ const sendMessage = async () => {
   currentMeta.value = null
 
   try {
-    const response = await fetch('http://localhost:8000/api/chat/stream', {
+    const response = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         message: userMessage,
-        session_id: 'default'
+        session_id: props.sessionId || 'default',
+        ...(selectedSkillIds.value.length ? { skill_ids: selectedSkillIds.value } : {}),
+        ...(selectedMCPIds.value.length ? { mcp_server_ids: selectedMCPIds.value } : {}),
       })
     })
 

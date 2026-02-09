@@ -1,7 +1,8 @@
 """FastAPI 应用入口"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, settings
+from app.api import chat, settings, files
+from app.mcp.manager import get_mcp_manager
 from dotenv import load_dotenv
 import os
 from contextlib import asynccontextmanager
@@ -14,7 +15,7 @@ async def lifespan(app: FastAPI):
     # 启动时
     yield
     # 关闭时清理 MCP 连接
-    await chat.mcp_manager.cleanup()
+    await get_mcp_manager().cleanup()
 
 app = FastAPI(
     title="DHA API",
@@ -36,6 +37,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(chat.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(files.router, prefix="/api")
 
 @app.get("/")
 async def root():

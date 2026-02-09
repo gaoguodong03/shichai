@@ -1,5 +1,6 @@
 """MCP Server 管理器"""
 import os
+import re
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
@@ -24,6 +25,17 @@ try:
     _streamable_http_available = True
 except ImportError:
     pass
+
+_mcp_manager_singleton: Optional["MCPToolManager"] = None
+
+
+def get_mcp_manager() -> "MCPToolManager":
+    """获取全局 MCP 管理器单例（chat、settings 共用，保证状态一致）"""
+    global _mcp_manager_singleton
+    if _mcp_manager_singleton is None:
+        _mcp_manager_singleton = MCPToolManager()
+    return _mcp_manager_singleton
+
 
 class MCPToolManager:
     """MCP 工具管理器"""
@@ -116,7 +128,11 @@ class MCPToolManager:
                 if not url:
                     logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
                     return False
-                headers = dict(transport.get("headers") or {})
+                raw_headers = dict(transport.get("headers") or {})
+                # 支持 ${VAR} 环境变量替换，便于安全配置 API Key（如 "Bearer ${SMITHERY_API_KEY}"）
+                def _subst_env(s: str) -> str:
+                    return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), s)
+                headers = {k: _subst_env(str(v)) for k, v in raw_headers.items()}
                 http_client = None
                 if headers:
                     http_client = httpx.AsyncClient(headers=headers, timeout=60.0)
@@ -218,11 +234,16 @@ class MCPToolManager:
             server_id = config.get("id", f"server_{len(self.sessions)}")
             if config.get("enabled", True):
                 enabled_count += 1
-                success = await self.connect_server(server_id, config)
-                if success:
-                    logger.info(f"MCP Server {server_id} 初始化成功")
-                else:
-                    logger.error(f"MCP Server {server_id} 初始化失败")
+                try:
+                    success = await self.connect_server(server_id, config)
+                    if success:
+                        logger.info(f"MCP Server {server_id} 初始化成功")
+                    else:
+                        logger.error(f"MCP Server {server_id} 初始化失败")
+                except asyncio.CancelledError:
+                    raise  # 请求被取消时继续向上抛出
+                except Exception as e:
+                    logger.error(f"MCP Server {server_id} 初始化异常，跳过: {e}", exc_info=True)
         
         logger.info(f"MCP 初始化完成: 共 {len(self.server_configs)} 个配置，{enabled_count} 个启用，{len(self.sessions)} 个连接成功，{len(self.tools)} 个工具加载")
     

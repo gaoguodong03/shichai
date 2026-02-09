@@ -15,12 +15,22 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], "对话消息列表"]
     tools: List[BaseTool]
 
-def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = ""):
-    """创建 ReAct Agent"""
-    logger.info(f"创建 ReAct Agent，工具数量: {len(tools)}, 技能指令长度: {len(skills_instruction)}")
+def create_react_agent(
+    llm,
+    tools: list[BaseTool],
+    skills_instruction: str = "",
+    skill_routing_rules: str = "",
+    extra_system_prompt: str = "",
+):
+    """创建 ReAct Agent。extra_system_prompt 为设置中的系统提示词，每次 chat 前注入到 prompt 最前。
+    skill_routing_rules 由 SkillsLoader.get_skill_routing_rules() 动态生成，来自各 SKILL.md 的 description。"""
+    logger.info(f"创建 ReAct Agent，工具数量: {len(tools)}, 技能指令长度: {len(skills_instruction)}, 技能路由规则长度: {len(skill_routing_rules)}, 额外系统提示词长度: {len(extra_system_prompt)}")
     
-    # 构建系统提示词
-    system_prompt = """你是一个有用的 AI 助手，可以使用工具来帮助用户。
+    # 构建系统提示词：先拼接设置中的系统提示词（每次 chat 前注入）
+    system_prompt = ""
+    if extra_system_prompt and extra_system_prompt.strip():
+        system_prompt += extra_system_prompt.strip() + "\n\n"
+    system_prompt += """你是一个有用的 AI 助手，可以使用工具来帮助用户。
 
 你可以使用以下工具：
 """
@@ -42,18 +52,31 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
 
 当你不需要使用工具时，直接回复用户的问题。
 
+## 文件引用
+当用户消息中出现【文件引用：path】时，**必须先调用 read_file 工具**读取该文件内容（path 为相对路径，如 genimi.txt），再根据文件内容回答用户问题。不要猜测文件内容。
+
 """
     
-    # 添加 Skills 指令
+    # 添加 Skills 指令（技能选择规则由 SkillsLoader 从各 SKILL.md 的 when_to_use/description 动态生成）
     if skills_instruction:
-        system_prompt += """
+        if skill_routing_rules:
+            system_prompt += """
 ## 技能选择（必须优先执行）
 
 根据用户请求**先判断应使用哪个技能**，然后**仅按该技能的说明执行**，不要混用其他技能的工具或话术：
-- **公众号/文案/校庆/宣传/文章/推文** 等写作需求 → 使用 **wechat-article-writer**，按其中步骤做（理解需求、搜索补充、规划结构、撰写正文等）；写文案时**不要**先调用 time_get_time 等无关工具。
-- **应用图标/icon 生成** 需求 → 使用 **app-icon-generator**，按其中工具与澄清流程执行。
+
+"""
+            system_prompt += skill_routing_rules
+            system_prompt += """
 
 确定技能后，只调用该技能所需工具，并只输出该技能风格的回答。
+
+"""
+        else:
+            system_prompt += """
+## 技能选择（必须优先执行）
+
+根据用户请求选择最合适的技能，按该技能说明执行，不要混用其他技能的工具或话术。
 
 """
         system_prompt += f"\n## 可用技能\n{skills_instruction}\n"
@@ -139,15 +162,21 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
         
         logger.info(f"call_tool: 开始处理工具调用，最后一条消息类型: {type(last_message).__name__}")
         
-        def normalize_linkup_search_args(tool_name: str, arguments: dict) -> dict:
-            """linkup_linkup-search 的 depth 仅接受 standard 或 deep，默认 standard"""
-            if tool_name != "linkup_linkup-search":
-                return arguments
+        def normalize_tool_args(tool_name: str, arguments: dict) -> dict:
+            """规范化各 MCP 工具的参数，避免 LLM 传入非法值导致调用失败"""
             args = dict(arguments) if arguments else {}
-            depth = args.get("depth")
-            if depth not in ("standard", "deep"):
-                args["depth"] = "standard"
-                logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
+            # linkup_linkup-search: depth 仅接受 standard 或 deep
+            if tool_name == "linkup_linkup-search":
+                depth = args.get("depth")
+                if depth not in ("standard", "deep"):
+                    args["depth"] = "standard"
+                    logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
+            # exa_web_search_exa: livecrawl 仅接受 fallback、preferred、always、never
+            elif tool_name == "exa_web_search_exa" and "livecrawl" in args:
+                livecrawl = args.get("livecrawl")
+                if livecrawl not in ("fallback", "preferred", "always", "never"):
+                    args["livecrawl"] = "fallback"
+                    logger.info(f"call_tool: exa_web_search_exa livecrawl 规范化为 fallback（原值: {livecrawl!r}）")
             return args
 
         tool_results = []
@@ -157,7 +186,7 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
             logger.info(f"call_tool: 处理 {len(last_message.tool_calls)} 个结构化工具调用")
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call.get("name") or tool_call.get("id", "")
-                arguments = normalize_linkup_search_args(tool_name, tool_call.get("args", {}))
+                arguments = normalize_tool_args(tool_name, tool_call.get("args", {}))
                 
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
@@ -230,7 +259,7 @@ def create_react_agent(llm, tools: list[BaseTool], skills_instruction: str = "")
             logger.info(f"call_tool: 提取的 JSON: {json_str}")
             tool_call = json.loads(json_str)
             tool_name = tool_call.get("tool")
-            arguments = normalize_linkup_search_args(tool_name, tool_call.get("arguments", {}))
+            arguments = normalize_tool_args(tool_name, tool_call.get("arguments", {}))
             
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
