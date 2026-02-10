@@ -24,6 +24,57 @@
 └─────────────┘
 ```
 
+## Docker 部署（推荐）
+
+项目根目录提供 Dockerfile 与 docker-compose，**前后端一体镜像**：前端构建为静态文件由后端托管，单容器即可运行。
+
+### 构建与运行
+
+```bash
+# 在项目根目录 DHA/
+docker compose up -d --build
+# 访问 http://localhost:8000
+```
+
+默认已按 **linux/amd64** 构建（见 `docker-compose.yml` 中 `platform: linux/amd64`）。若需其他架构可改回本机平台或去掉 `platform` 配置。
+
+### 配置
+
+- **环境变量（QWEN_API_KEY 等）**：在 `backend/.env` 中配置，大多数敏感信息都放这里。`docker-compose.yml` 会通过 `env_file: backend/.env` 注入到容器：
+  - 该文件 **只存在于宿主机**，不会被打进镜像，也不会出现在容器文件系统中（因此 Env 设置页在 Docker 环境下看到“未找到 .env”是正常的）。
+  - 若未配置 `QWEN_API_KEY` 等，调用聊天接口时日志会出现 `ValueError: QWEN_API_KEY is required` 并返回 500。
+- **数据 & 配置挂载（默认即复用本地）**：`docker-compose.yml` 默认绑定宿主机目录：
+  - `./backend/data:/app/data`（会话历史、agent 产出等）
+  - `./backend/skills:/app/data/skills`（Skills）
+  - `./backend/config:/app/config`（MCP 配置等）
+  这样容器内看到的 Skills、MCP Servers、历史会话与本地开发一致。若希望完全隔离的数据环境，可改为使用匿名卷 `dha_data`、`dha_config`。
+
+### 仅构建镜像
+
+```bash
+docker build -t dha:latest .
+docker run -p 8000:8000 -v dha_data:/app/data -v dha_config:/app/config --env-file backend/.env dha:latest
+```
+
+### Docker 常见问题（打包踩坑记录）
+
+- **现象：Skill、MCP、历史会话全都不见了**
+  - **原因**：容器内的 `/app/data`、`/app/config` 使用了空的匿名卷，未挂载宿主机的 `backend/data`、`backend/skills`、`backend/config`。
+  - **解决**：在 `docker-compose.yml` 中使用当前推荐配置：
+    - `./backend/data:/app/data`
+    - `./backend/skills:/app/data/skills`
+    - `./backend/config:/app/config`
+- **现象：聊天接口 500，日志中有 `ValueError: QWEN_API_KEY is required`**
+  - **原因**：容器内没有 `QWEN_API_KEY` 等 LLM 相关环境变量，通常是忘记配置或启用 `env_file: backend/.env`。
+  - **解决**：
+    - 在宿主机创建并配置 `backend/.env`（可从 `backend/.env.example` 复制）。
+    - 确认 `docker-compose.yml` 中启用了 `env_file: backend/.env`，然后重新 `docker compose up -d --build`。
+- **现象：前端“环境变量 (.env)” 页面显示“未找到 .env 文件”或看起来是空的**
+  - **原因**：Docker 部署时 `.env` 文件只存在于宿主机，Compose 读取后以环境变量形式注入容器，容器内本身没有 `/app/backend/.env` 文件可供读取展示。
+  - **说明**：这是预期行为，不影响实际环境变量生效。需要查看具体值时，应在宿主机直接打开 `backend/.env`，或通过 `docker compose run --rm dha env` 等方式查看。
+
+---
+
 ## 环境要求
 
 ### 服务器要求

@@ -1,0 +1,40 @@
+# DHA 一键运行：前后端一体镜像
+# 使用：docker compose up -d
+# 访问：http://localhost:8000
+#
+# 默认挂载本地 backend/data、backend/skills、backend/config，与本地开发共用技能、MCP 配置、会话历史与产出。
+# 若不想用本地数据，可改回匿名卷：注释掉下面三行 volumes，改用 - dha_data:/app/data 与 - dha_config:/app/config
+
+services:
+  dha:
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+    image: dha:latest
+    platform: linux/amd64
+    container_name: dha
+    ports:
+      - "8000:8000"
+    environment:
+      - CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+      - SKILLS_DIR=/app/data/skills
+      - MCP_CONFIG_PATH=/app/config/mcp_servers.json
+      - APP_SETTINGS_PATH=/app/config/app_settings.json
+      - SESSIONS_DIR=/app/data/sessions
+      - AGENT_OUTPUTS_DIR=/app/data/agent-outputs
+    volumes:
+      # 与本地共用：会话、产出、技能、MCP 配置
+      - ./backend/data:/app/data
+      - ./backend/skills:/app/data/skills
+      - ./backend/config:/app/config
+    # 从宿主机 backend/.env 注入 QWEN_API_KEY 等（文件需存在，否则聊天会 500）
+    env_file:
+      - backend/.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

@@ -7,9 +7,14 @@
     <div class="flex-1 overflow-auto p-4">
       <div v-if="loading" class="text-sm text-gray-500">加载中...</div>
       <template v-else>
-        <p v-if="!data?.exists" class="text-sm text-amber-600 mb-2">未找到 .env 文件（路径: {{ data?.path || '—' }}）</p>
-        <p v-else class="text-xs text-gray-500 mb-2">路径: {{ data?.path }}</p>
-        <pre class="text-xs bg-gray-900 text-gray-100 rounded-lg p-4 overflow-auto whitespace-pre-wrap break-words font-mono border border-gray-700">{{ data?.content || '（空）' }}</pre>
+        <template v-if="!data?.exists">
+          <p class="text-sm text-amber-600 mb-2">未找到 .env 文件（路径: {{ data?.path || '—' }}）</p>
+          <p class="text-xs text-gray-500">Docker 部署时通过 docker-compose 的 env_file 注入变量，容器内无该文件，此处无法显示。</p>
+        </template>
+        <template v-else>
+          <p class="text-xs text-gray-500 mb-2">路径: {{ data?.path }}</p>
+          <pre class="text-xs bg-gray-900 text-gray-100 rounded-lg p-4 overflow-auto whitespace-pre-wrap break-words font-mono border border-gray-700">{{ (data?.content && data.content.trim()) ? data.content : '（文件为空，请配置 QWEN_API_KEY 等）' }}</pre>
+        </template>
       </template>
     </div>
   </div>
