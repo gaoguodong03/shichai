@@ -100,10 +100,29 @@ async def update_file_content(path: str, body: FileContentBody):
     return {"status": "ok", "data": {"path": path}}
 
 
+@router.delete("/files/content")
+async def delete_file(path: str):
+    """删除文件（path 为相对路径，仅限 AGENT_OUTPUTS_DIR 内，且必须是文件）"""
+    if not path or path.strip() == "":
+        raise HTTPException(status_code=400, detail="path is required")
+    try:
+        target = _resolve_path(path)
+    except HTTPException:
+        raise
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if target.is_dir():
+        raise HTTPException(status_code=400, detail="Cannot delete a directory")
+    try:
+        target.unlink()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+    return {"status": "ok", "data": {"path": path, "deleted": True}}
+
+
 @router.post("/files")
-async def create_file(path: str = "", body: FileCreateBody = None):
+async def create_file(body: FileCreateBody, path: str = ""):
     """创建新文件（path 为所在目录相对路径，body.filename 为文件名）"""
-    body = body or FileCreateBody(filename="")
     if not body.filename or not body.filename.strip():
         raise HTTPException(status_code=400, detail="filename is required")
     fn = body.filename.strip().replace("..", "").replace("/", "")

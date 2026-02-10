@@ -465,7 +465,7 @@ def create_skill_execution_agent(
         logger.info("输入大模型的提示词（技能执行）:\n" + "\n".join(msg_summary))
         t0 = time.perf_counter()
         elapsed = (t0 - t_request_start) if t_request_start else 0
-        logger.info(f"[TIMING] call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
+        logger.info(f"call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
         try:
             # 优先 astream：token 级流式，供 stream_mode="messages" 推送；传入 config 以支持 tracer（Python < 3.11 需显式传递）
             invoke_kw = {"config": config} if config is not None else {}
@@ -485,7 +485,7 @@ def create_skill_execution_agent(
                 response = await asyncio.wait_for(
                     client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
                 )
-            logger.info(f"[TIMING] call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
+            logger.info(f"call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
         except asyncio.TimeoutError:
             logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
             response = AIMessage(content="抱歉，模型响应超时，请稍后重试。")
@@ -568,10 +568,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     else:
                         result = f"工具 {tool_name} 无法执行"
                     tool_results.append(f"工具 {tool_name} 的执行结果: {result}")
-                    logger.info(f"[TIMING] 工具 {tool_name}: {time.perf_counter() - t_tool:.2f}s")
                 except Exception as e:
                     tool_results.append(f"工具 {tool_name} 执行错误: {str(e)}")
-                    logger.info(f"[TIMING] 工具 {tool_name} 异常: {time.perf_counter() - t_tool:.2f}s")
             else:
                 tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
         return {"messages": [HumanMessage(content="\n".join(tool_results))]}

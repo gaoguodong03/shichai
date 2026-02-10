@@ -24,6 +24,49 @@ def create_run_skill_script_tool(skill_id: str):
     @tool
     def run_skill_script(script_path: str, input_json: str = "") -> str:
         """执行当前技能 scripts 目录下的脚本。script_path 为相对 scripts 的路径（如 optimize-prompt.py）；input_json 为可选 JSON 字符串，会作为 stdin 传入脚本。仅支持 .py 与 .sh。"""
+        # #region agent log: run_skill_script entry
+        try:
+            import time as _t, json as _json, os as _os
+            log_path = "/Users/ggd/mycode/DHA/.cursor/debug.log"
+            _os.makedirs(_os.path.dirname(log_path), exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as _f:
+                _f.write(
+                    _json.dumps(
+                        {
+                            "id": f"log_{int(_t.time()*1000)}_run_skill_script_enter",
+                            "timestamp": int(_t.time() * 1000),
+                            "location": "app/tools/run_skill_script.py:entry",
+                            "message": "run_skill_script_enter",
+                            "runId": "run_skill_script-debug-1",
+                            "hypothesisId": "H-script",
+                            "data": {"skill_id": skill_id, "script_path": script_path},
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # #endregion agent log: run_skill_script entry
+
+        # 兼容 LLM 把整个 JSON 对象字符串塞进 script_path 的情况，例如：
+        # script_path='{"script_path": "hello_dha.py", "input_json": ""}'
+        raw_script_param = (script_path or "").strip()
+        try:
+            if raw_script_param.startswith("{") and raw_script_param.endswith("}"):
+                maybe_obj = json.loads(raw_script_param)
+                if isinstance(maybe_obj, dict) and "script_path" in maybe_obj:
+                    script_path = str(maybe_obj.get("script_path", "")).strip()
+                    if "input_json" in maybe_obj and not input_json:
+                        ij = maybe_obj["input_json"]
+                        input_json = ij if isinstance(ij, str) else json.dumps(ij, ensure_ascii=False)
+                else:
+                    script_path = raw_script_param
+            else:
+                script_path = raw_script_param
+        except Exception:
+            script_path = raw_script_param
+
         if not script_path or ".." in script_path or script_path.startswith("/"):
             return "错误：script_path 必须为相对路径且不包含 ..。"
         script_path = script_path.strip().lstrip("/")
@@ -51,6 +94,38 @@ def create_run_skill_script_tool(skill_id: str):
             )
             out = (proc.stdout or "").strip()
             err = (proc.stderr or "").strip()
+
+            # #region agent log: run_skill_script result
+            try:
+                import time as _t2, json as _json2, os as _os2
+                log_path2 = "/Users/ggd/mycode/DHA/.cursor/debug.log"
+                _os2.makedirs(_os2.path.dirname(log_path2), exist_ok=True)
+                with open(log_path2, "a", encoding="utf-8") as _f2:
+                    _f2.write(
+                        _json2.dumps(
+                            {
+                                "id": f"log_{int(_t2.time()*1000)}_run_skill_script_result",
+                                "timestamp": int(_t2.time() * 1000),
+                                "location": "app/tools/run_skill_script.py:result",
+                                "message": "run_skill_script_result",
+                                "runId": "run_skill_script-debug-1",
+                                "hypothesisId": "H-script",
+                                "data": {
+                                    "skill_id": skill_id,
+                                    "script_path": script_path,
+                                    "returncode": proc.returncode,
+                                    "stdout_preview": out[:200],
+                                    "stderr_preview": err[:200],
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                pass
+            # #endregion agent log: run_skill_script result
+
             if proc.returncode != 0:
                 return f"脚本退出码 {proc.returncode}\nstdout:\n{out}\nstderr:\n{err}"
             return out if out else "(无输出)"

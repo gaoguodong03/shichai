@@ -40,18 +40,30 @@
             >
               skill: {{ (msg.meta?.skills && msg.meta.skills[0]) || '无' }}
             </div>
-            <!-- 工具调用 JSON 单独框：标题为工具名称 -->
-            <div
-              v-if="msg.role === 'assistant' && extractToolCall(msg.content).toolCall"
-              class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
-            >
-              <div class="text-blue-700 font-sans font-medium mb-1">{{ getToolNameFromToolCall(extractToolCall(msg.content).toolCall) }}</div>
-              <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ extractToolCall(msg.content).toolCall }}</pre>
+            <!-- 工具调用 JSON 单独框：一条调用一个框，标题为工具名称 -->
+            <div v-if="msg.role === 'assistant'">
+              <div
+                v-for="(tc, tcIndex) in extractToolCalls(msg.content).toolCalls"
+                :key="tcIndex"
+                class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+              >
+                <div class="text-blue-700 font-sans font-medium mb-1">
+                  {{ getToolNameFromToolCall(tc) }}
+                </div>
+                <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
+              </div>
             </div>
-            <!-- 正式回答内容 -->
+            <!-- 正式回答内容（支持 Markdown 渲染 + 图片） -->
             <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
-              <template v-for="(seg, segIndex) in parseMessageContent(extractToolCall(msg.content).rest)" :key="segIndex">
-                <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+              <template
+                v-for="(seg, segIndex) in parseMessageContent(extractToolCalls(msg.content).rest)"
+                :key="segIndex"
+              >
+                <span
+                  v-if="seg.type === 'text'"
+                  class="block"
+                  v-html="renderMarkdown(seg.text)"
+                />
                 <a
                   v-else
                   :href="seg.url"
@@ -78,16 +90,28 @@
           <div class="mb-2 text-xs text-purple-600 font-medium">
             skill: {{ (currentMeta?.skills && currentMeta.skills[0]) || '无' }}
           </div>
-          <div
-            v-if="extractToolCall(currentStreamingText).toolCall"
-            class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
-          >
-            <div class="text-blue-700 font-sans font-medium mb-1">{{ getToolNameFromToolCall(extractToolCall(currentStreamingText).toolCall) }}</div>
-            <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ extractToolCall(currentStreamingText).toolCall }}</pre>
+          <div v-if="extractToolCalls(currentStreamingText).toolCalls.length">
+            <div
+              v-for="(tc, tcIndex) in extractToolCalls(currentStreamingText).toolCalls"
+              :key="tcIndex"
+              class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+            >
+              <div class="text-blue-700 font-sans font-medium mb-1">
+                {{ getToolNameFromToolCall(tc) }}
+              </div>
+              <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
+            </div>
           </div>
           <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
-            <template v-for="(seg, segIndex) in parseMessageContent(extractToolCall(currentStreamingText).rest)" :key="segIndex">
-              <span v-if="seg.type === 'text'">{{ seg.text }}</span>
+            <template
+              v-for="(seg, segIndex) in parseMessageContent(extractToolCalls(currentStreamingText).rest)"
+              :key="segIndex"
+            >
+              <span
+                v-if="seg.type === 'text'"
+                class="block"
+                v-html="renderMarkdown(seg.text)"
+              />
               <a
                 v-else
                 :href="seg.url"
@@ -143,22 +167,11 @@
         >
           选择 Skill
         </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="isStreaming"
-          @click="openMCPPicker"
-        >
-          选择 MCP
-        </button>
         <div class="text-xs text-gray-500 truncate" v-if="selectedInsertFilePath">
           已选文件：{{ selectedInsertFilePath }}
         </div>
         <div class="text-xs text-gray-500" v-if="selectedSkillIds.length">
           已选 Skill：{{ selectedSkillIds.join(', ') }}
-        </div>
-        <div class="text-xs text-gray-500" v-if="selectedMCPIds.length">
-          已选 MCP：{{ selectedMCPIds.join(', ') }}
         </div>
       </div>
     </div>
@@ -244,43 +257,12 @@
       </div>
     </div>
 
-    <!-- MCP 选择弹窗 -->
-    <div
-      v-if="showMCPPicker"
-      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
-      @click.self="closeMCPPicker"
-    >
-      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold text-gray-800">选择本次对话使用的 MCP（可多选，空则全部）</div>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeMCPPicker">关闭</button>
-        </div>
-        <div class="px-4 py-2 border-b border-gray-100 flex justify-end">
-          <button class="text-xs text-gray-500 hover:text-gray-700" @click="clearMCPSelection">清除选择</button>
-        </div>
-        <div class="max-h-[60vh] overflow-auto">
-          <div v-if="mcpPickerLoading" class="px-4 py-6 text-sm text-gray-500">加载中...</div>
-          <button
-            v-else
-            v-for="m in mcpPickerList"
-            :key="m.id"
-            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
-            @click="toggleMCPSelection(m.id)"
-          >
-            <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedMCPIds.includes(m.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300'">
-              <span v-if="selectedMCPIds.includes(m.id)" class="text-white text-xs">✓</span>
-            </span>
-            <span class="truncate font-medium">{{ m.name || m.id }}</span>
-            <span class="text-xs text-gray-400">{{ m.status === 'connected' ? '已连接' : '未连接' }} · {{ m.tool_count || 0 }} 工具</span>
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from 'vue'
+import MarkdownIt from 'markdown-it'
 
 const props = withDefaults(
   defineProps<{
@@ -316,6 +298,22 @@ const currentMeta = ref<Message['meta'] | null>(null)
 const MAX_INPUT_CHARS = 4000
 const MAX_INSERT_FILE_CHARS = 6000
 
+// Markdown 渲染器：用于把助手回复里的 Markdown（标题、列表、加粗等）渲染出来
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
+
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    return md.render(text)
+  } catch {
+    return text
+  }
+}
+
 type FileEntry = { name: string; path: string; is_dir: boolean }
 const showFilePicker = ref(false)
 const filePickerEntries = ref<FileEntry[]>([])
@@ -324,15 +322,11 @@ const filePickerLoading = ref(false)
 const filePickerError = ref('')
 const selectedInsertFilePath = ref<string>('')
 
-// Skill / MCP 选择（类似文件选择）
+// Skill 选择（类似文件选择）
 const showSkillPicker = ref(false)
-const showMCPPicker = ref(false)
 const skillPickerList = ref<{ id: string; name: string; description: string }[]>([])
-const mcpPickerList = ref<{ id: string; name: string; status: string; tool_count: number }[]>([])
 const skillPickerLoading = ref(false)
-const mcpPickerLoading = ref(false)
 const selectedSkillIds = ref<string[]>([])
-const selectedMCPIds = ref<string[]>([])
 
 // 监听 scrollToTurnIndex，滚动到对应轮次（turn N = user消息在 index N*2）
 watch(
@@ -371,28 +365,45 @@ onMounted(() => {
   }
 })
 
-/** 从 content 中提取工具调用 JSON 块（```json { "action": "tool_call", ... } ```），返回 { toolCall, rest } */
-function extractToolCall(content: string): { toolCall: string | null; rest: string } {
+/** 从 content 中提取所有工具调用 JSON 块（```json { "action": "tool_call", ... } ```），返回 { toolCalls, rest } */
+function extractToolCalls(content: string): { toolCalls: string[]; rest: string } {
   const text = content ?? ''
   const jsonBlockRe = /```(?:json)?\s*([\s\S]*?)```/g
   let match: RegExpExecArray | null
-  let rest = text
-  let toolCall: string | null = null
+  const toolCalls: string[] = []
+  const restParts: string[] = []
+  let lastIndex = 0
 
   while ((match = jsonBlockRe.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index)
+    if (before) restParts.push(before)
+    lastIndex = match.index + match[0].length
+
     const raw = match[1].trim()
     try {
       const obj = JSON.parse(raw)
       if (obj && obj.action === 'tool_call') {
-        toolCall = JSON.stringify({ action: obj.action, tool: obj.tool, arguments: obj.arguments }, null, 2)
-        rest = (text.slice(0, match.index) + text.slice(match.index + match[0].length)).trim()
-        break
+        const normalized = JSON.stringify(
+          { action: obj.action, tool: obj.tool, arguments: obj.arguments },
+          null,
+          2
+        )
+        toolCalls.push(normalized)
+        // tool_call 代码块本身不保留在 rest 中
+        continue
       }
     } catch {
-      // 非合法 JSON 或非 tool_call，忽略
+      // 非合法 JSON 或非 tool_call，保留原代码块
     }
+    restParts.push(match[0])
   }
-  return { toolCall, rest: rest || text }
+
+  if (lastIndex < text.length) {
+    restParts.push(text.slice(lastIndex))
+  }
+
+  const rest = restParts.join('').trim()
+  return { toolCalls, rest: rest || text }
 }
 
 /** 从工具调用 JSON 字符串解析出工具名称，用于标题显示 */
@@ -573,33 +584,6 @@ function clearSkillSelection() {
   selectedSkillIds.value = []
 }
 
-function openMCPPicker() {
-  showMCPPicker.value = true
-  mcpPickerLoading.value = true
-  fetch('/api/settings/mcp')
-    .then((r) => r.json())
-    .then((j) => {
-      if (j.status === 'ok' && j.data?.servers) {
-        mcpPickerList.value = j.data.servers.filter((m: { enabled?: boolean }) => m.enabled !== false)
-      }
-    })
-    .finally(() => { mcpPickerLoading.value = false })
-}
-function closeMCPPicker() {
-  showMCPPicker.value = false
-}
-function toggleMCPSelection(id: string) {
-  const idx = selectedMCPIds.value.indexOf(id)
-  if (idx >= 0) {
-    selectedMCPIds.value = selectedMCPIds.value.filter((x) => x !== id)
-  } else {
-    selectedMCPIds.value = [...selectedMCPIds.value, id]
-  }
-}
-function clearMCPSelection() {
-  selectedMCPIds.value = []
-}
-
 function onPickEntry(e: FileEntry) {
   if (e.is_dir) {
     loadFilePickerEntries(e.path)
@@ -652,7 +636,6 @@ const sendMessage = async () => {
         message: userMessage,
         session_id: props.sessionId || 'default',
         ...(selectedSkillIds.value.length ? { skill_ids: selectedSkillIds.value } : {}),
-        ...(selectedMCPIds.value.length ? { mcp_server_ids: selectedMCPIds.value } : {}),
       })
     })
 
@@ -709,11 +692,22 @@ const sendMessage = async () => {
               } else if (eventType === 'react_step') {
                 // 处理 ReAct 步骤
                 console.log('ReAct step:', parsed)
-                // 若是结构化 tool_call（后端附带），注入到内容中以便参数框显示
-                if (parsed.type === 'thought' && parsed.tool_call) {
-                  const tc = parsed.tool_call
-                  const tcJson = JSON.stringify({ action: tc.action || 'tool_call', tool: tc.tool, arguments: tc.arguments || {} }, null, 2)
-                  currentStreamingText.value += `\n\`\`\`json\n${tcJson}\n\`\`\`\n`
+                // 若是结构化 tool_call（后端附带），注入到内容中以便参数框显示；支持单条或多条
+                if (parsed.type === 'thought' && (parsed.tool_call || parsed.tool_calls)) {
+                  const toolCallsArray: any[] =
+                    (Array.isArray(parsed.tool_calls) && parsed.tool_calls.length
+                      ? parsed.tool_calls
+                      : parsed.tool_call
+                        ? [parsed.tool_call]
+                        : [])
+                  for (const tc of toolCallsArray) {
+                    const tcJson = JSON.stringify(
+                      { action: tc.action || 'tool_call', tool: tc.tool, arguments: tc.arguments || {} },
+                      null,
+                      2
+                    )
+                    currentStreamingText.value += `\n\`\`\`json\n${tcJson}\n\`\`\`\n`
+                  }
                 }
                 // 如果是思考过程，显示内容
                 if (parsed.type === 'thought' && parsed.content) {
@@ -726,6 +720,11 @@ const sendMessage = async () => {
                     currentStreamingText.value += `\n[思考] ${thoughtContent}\n`
                   }
                   messages.value[assistantMessageIndex].content = currentStreamingText.value
+                  // 若 thought 中也带了 meta（例如 skill / MCP / tool），也一并更新，避免 skill 显示为“无”
+                  if (parsed.meta && (parsed.meta.skills?.length || parsed.meta.mcp_servers?.length || parsed.meta.tools?.length)) {
+                    messages.value[assistantMessageIndex].meta = parsed.meta
+                    currentMeta.value = parsed.meta
+                  }
                 } else if (parsed.type === 'tool_result' && parsed.content) {
                   currentStreamingText.value += `\n[工具结果] ${parsed.content}\n`
                   messages.value[assistantMessageIndex].content = currentStreamingText.value

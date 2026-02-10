@@ -70,9 +70,7 @@ async def select_skill(
     logger.info("技能选择：第一次调用大模型（仅 name+description）")
     try:
         client = llm.get_client()
-        t0 = time.perf_counter()
         response = await asyncio.wait_for(client.ainvoke(messages), timeout=30.0)
-        logger.info(f"[TIMING] select_skill 内 ainvoke: {time.perf_counter() - t0:.2f}s")
         content = (response.content or "").strip()
         logger.info(f"技能选择 LLM 返回: {content[:300]}")
 

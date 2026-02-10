@@ -199,22 +199,91 @@ class MCPToolManager:
             logger.info(f"执行工具: {original_tool_name}, 参数: {kwargs}")
             try:
                 call_Kwargs = dict(kwargs)
+                # #region agent log
+                try:
+                    if server_id == "volces-icon" and original_tool_name == "generate_app_icon":
+                        import json as _json
+                        import time as _time
+                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(
+                                _json.dumps(
+                                    {
+                                        "id": "log_volces_icon_pre",
+                                        "timestamp": int(_time.time() * 1000),
+                                        "location": "backend/app/mcp/manager.py:201",
+                                        "message": "volces-icon_generate_app_icon raw kwargs",
+                                        "data": {
+                                            "server_id": server_id,
+                                            "original_tool_name": original_tool_name,
+                                            "kwargs": call_Kwargs,
+                                        },
+                                        "runId": "pre-fix",
+                                        "hypothesisId": "A",
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                except Exception:
+                    # 日志失败不影响正常逻辑
+                    pass
+                # #endregion
                 # exa web_search_exa: LLM 传入 __arg1 时视为搜索关键词，映射为必需参数 query
                 if server_id == "exa" and original_tool_name == "web_search_exa" and "__arg1" in call_Kwargs:
                     call_Kwargs["query"] = call_Kwargs.pop("__arg1", "") or call_Kwargs.get("query", "")
                     logger.info(f"web_search_exa: 将 __arg1 映射为 query")
-                # volces-icon generate_app_icon: LLM 传入 __arg1 时，展开为 description/pic_size
-                if server_id == "volces-icon" and original_tool_name == "generate_app_icon" and set(call_Kwargs.keys()) == {"__arg1"}:
+                # volces-icon generate_app_icon: 兼容 __arg1 + pic_size / 纯字符串 / JSON，统一映射为 description/pic_size
+                if (
+                    server_id == "volces-icon"
+                    and original_tool_name == "generate_app_icon"
+                    and "__arg1" in call_Kwargs
+                    and "description" not in call_Kwargs
+                ):
                     import json as _json
-                    try:
-                        _parsed = _json.loads(call_Kwargs["__arg1"])
+                    arg1 = call_Kwargs.pop("__arg1")
+                    _mapped = False
+                    # 如果 __arg1 是 JSON 字符串，优先按 {description, pic_size} 解析
+                    if isinstance(arg1, str):
+                        try:
+                            _parsed = _json.loads(arg1)
+                        except (ValueError, TypeError):
+                            _parsed = None
                         if isinstance(_parsed, dict) and "description" in _parsed:
-                            call_Kwargs = {"description": _parsed["description"]}
-                            if "pic_size" in _parsed:
+                            call_Kwargs["description"] = _parsed["description"]
+                            if "pic_size" in _parsed and "pic_size" not in call_Kwargs:
                                 call_Kwargs["pic_size"] = _parsed["pic_size"]
-                            logger.info(f"generate_app_icon: 将 __arg1 展开为 {call_Kwargs}")
-                    except (ValueError, TypeError):
+                            _mapped = True
+                    # 否则，直接把 __arg1 当成 description 文本
+                    if not _mapped:
+                        call_Kwargs["description"] = str(arg1) if arg1 is not None else ""
+                    logger.info(f"generate_app_icon: 归一化参数为 {call_Kwargs}")
+                    # #region agent log
+                    try:
+                        import json as _json2, time as _time2
+                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(
+                                _json2.dumps(
+                                    {
+                                        "id": "log_volces_icon_mapped",
+                                        "timestamp": int(_time2.time() * 1000),
+                                        "location": "backend/app/mcp/manager.py:236",
+                                        "message": "volces-icon_generate_app_icon mapped kwargs",
+                                        "data": {
+                                            "server_id": server_id,
+                                            "original_tool_name": original_tool_name,
+                                            "kwargs": call_Kwargs,
+                                        },
+                                        "runId": "fix-mapped",
+                                        "hypothesisId": "B",
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                    except Exception:
+                        # 日志失败不影响正常逻辑
                         pass
+                    # #endregion
                 # amap-maps maps_geo: LLM 传入 __arg1 时，转为 address/city；支持 JSON、纯字符串 或 "地址,城市" 格式
                 if server_id == "amap-maps" and original_tool_name == "maps_geo" and "__arg1" in call_Kwargs:
                     import json as _json

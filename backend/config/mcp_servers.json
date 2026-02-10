@@ -1,7 +1,7 @@
 [
   {
     "id": "calculator",
-    "name": "计算器 Server",
+    "name": "计算器",
     "enabled": true,
     "transport": {
       "type": "stdio",
@@ -11,13 +11,12 @@
       ]
     },
     "metadata": {
-      "description": "提供数学计算工具（加法、减法、乘法、除法)",
-      "version": "1.0.0"
+      "description": "提供数学计算工具（加法、减法、乘法、除法)"
     }
   },
   {
     "id": "time",
-    "name": "时间 Server",
+    "name": "时间查询",
     "enabled": true,
     "transport": {
       "type": "stdio",
@@ -27,22 +26,20 @@
       ]
     },
     "metadata": {
-      "description": "获取当前时间",
-      "version": "1.0.0"
+      "description": "获取当前时间"
     }
   },
   {
     "id": "linkup",
-    "name": "Linkup MCP（远程）",
+    "name": "Linkup抓取网页",
     "enabled": true,
     "transport": {
       "type": "http",
       "url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}",
-      "headers": {}
+      "base_url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}"
     },
     "metadata": {
-      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。需在 .env 中设置 LINKUP_API_KEY。",
-      "version": "1.0.0"
+      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。需在 .env 中设置 LINKUP_API_KEY。"
     }
   },
   {
@@ -54,7 +51,10 @@
       "command": "python",
       "args": [
         "mcp_servers/volces_icon.py"
-      ]
+      ],
+      "env": {
+        "VOLCES_IMAGE_API_KEY": "${VOLCES_IMAGE_API_KEY}"
+      }
     },
     "metadata": {
       "description": "根据文字描述生成图片。"
@@ -62,7 +62,7 @@
   },
   {
     "id": "exa",
-    "name": "Exa 搜索 MCP（远程）",
+    "name": "Exa 搜索",
     "enabled": true,
     "transport": {
       "type": "http",
@@ -75,7 +75,7 @@
   },
   {
     "id": "fetch",
-    "name": "Fetch 网页抓取 MCP",
+    "name": "Fetch 网页抓取",
     "enabled": true,
     "transport": {
       "type": "stdio",
@@ -86,8 +86,7 @@
       ]
     },
     "metadata": {
-      "description": "MCP 官方 Fetch：抓取 URL 内容并转为 Markdown（工具名 fetch_fetch）。需先 pip install mcp-server-fetch。",
-      "version": "1.0.0"
+      "description": "MCP 官方 Fetch：抓取 URL 内容并转为 Markdown（工具名 fetch_fetch）。需先 pip install mcp-server-fetch。"
     }
   },
   {
@@ -113,7 +112,7 @@
   },
   {
     "id": "amap-maps",
-    "name": "高德地图 MCP",
+    "name": "高德地图",
     "enabled": true,
     "transport": {
       "type": "stdio",
@@ -121,10 +120,7 @@
       "args": [
         "-y",
         "@amap/amap-maps-mcp-server"
-      ],
-      "env": {
-        "AMAP_MAPS_API_KEY": "${AMAP_MAPS_API_KEY}"
-      }
+      ]
     },
     "metadata": {
       "description": "高德地图 MCP：地理编码、逆地理编码、天气、距离计算、路线规划（步行/驾车/公交）等。需在 .env 中设置 AMAP_MAPS_API_KEY。"
@@ -132,7 +128,7 @@
   },
   {
     "id": "file-reader",
-    "name": "文件读取 MCP（本地）",
+    "name": "文件读取",
     "enabled": true,
     "transport": {
       "type": "stdio",
@@ -142,8 +138,22 @@
       ]
     },
     "metadata": {
-      "description": "本地 MCP：read_file（纯文本）、read_pdf、read_docx、read_xlsx。从 data/agent-outputs 提取文本供 LLM 使用。当用户消息出现【文件引用：path】时使用。",
-      "version": "1.0.0"
+      "description": "本地 MCP：read_file（纯文本）、read_pdf、read_docx、read_xlsx。从 data/agent-outputs 提取文本供 LLM 使用。当用户消息出现【文件引用：path】时使用。"
+    }
+  },
+  {
+    "id": "zhipu-web-search",
+    "name": "智谱 Web 搜索",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "cc-zhipu-web-search"
+      ]
+    },
+    "metadata": {
+      "description": "通过本地 STDIO MCP Server 调用智谱 Web Search。"
     }
   }
 ]

@@ -331,39 +331,268 @@ async def disable_mcp_server(server_id: str):
 
 @router.post("/settings/mcp/{server_id}/test")
 async def test_mcp_server(server_id: str):
-    """测试 MCP Server 连接"""
+    """测试 MCP Server 连接（真实调用 MCP Manager）"""
     servers = load_mcp_config()
-    
-    # 查找服务器
-    server = None
-    for s in servers:
-        if s.get("id") == server_id:
-            server = s
-            break
-    
+
+    # 查找服务器配置
+    server = next((s for s in servers if s.get("id") == server_id), None)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP Server not found")
-    
-    # 简化版本：只返回成功，实际应该测试连接
-    # TODO: 实际实现连接测试逻辑
-    return {
-        "status": "ok",
-        "data": {
-            "connected": True,
-            "response_time": 100,
-            "error": None
+
+    mcp_manager = get_mcp_manager()
+
+    import time
+
+    start = time.perf_counter()
+    try:
+        # 确保已加载配置
+        await mcp_manager.load_config()
+        # 如果当前没有 session，则尝试连接
+        if server_id not in mcp_manager.sessions:
+            ok = await mcp_manager.connect_server(server_id, server)
+            if not ok:
+                elapsed = int((time.perf_counter() - start) * 1000)
+                return {
+                    "status": "ok",
+                    "data": {
+                        "connected": False,
+                        "response_time": elapsed,
+                        "error": f"Failed to connect to MCP server {server_id}",
+                    },
+                }
+        # 调用 list_tools 做一次简单健康检查
+        session = mcp_manager.sessions.get(server_id)
+        if not session:
+            elapsed = int((time.perf_counter() - start) * 1000)
+            return {
+                "status": "ok",
+                "data": {
+                    "connected": False,
+                    "response_time": elapsed,
+                    "error": f"No active session for MCP server {server_id}",
+                },
+            }
+        try:
+            tools_result = await session.list_tools()
+            tool_count = len(getattr(tools_result, "tools", []) or [])
+            elapsed = int((time.perf_counter() - start) * 1000)
+            return {
+                "status": "ok",
+                "data": {
+                    "connected": True,
+                    "response_time": elapsed,
+                    "tool_count": tool_count,
+                    "error": None,
+                },
+            }
+        except Exception as e:
+            elapsed = int((time.perf_counter() - start) * 1000)
+            return {
+                "status": "ok",
+                "data": {
+                    "connected": False,
+                    "response_time": elapsed,
+                    "error": f"list_tools error: {e}",
+                },
+            }
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        elapsed = int((time.perf_counter() - start) * 1000)
+        return {
+            "status": "ok",
+            "data": {
+                "connected": False,
+                "response_time": elapsed,
+                "error": f"Unexpected error: {e}",
+            },
         }
-    }
 
 @router.get("/settings/mcp/{server_id}/tools")
 async def get_mcp_server_tools(server_id: str):
-    """获取 MCP Server 工具列表"""
-    # TODO: 实际应该从 MCP Manager 获取工具列表
+    """获取 MCP Server 工具列表（含 input_schema），用于前端动态渲染参数表单"""
+    mcp_manager = get_mcp_manager()
+    await mcp_manager.load_config()
+
+    # 找到对应 server 配置
+    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    if not config:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+    # 确保已连接
+    if server_id not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(server_id, config)
+        if not ok:
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+
+    session = mcp_manager.sessions.get(server_id)
+    if not session:
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+
+    try:
+        tools_result = await session.list_tools()
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"list_tools error: {e}")
+
+    tools_payload = []
+    for t in getattr(tools_result, "tools", []) or []:
+        # mcp Tool 对象通常有 name / description / inputSchema
+        input_schema = getattr(t, "inputSchema", None)
+        # 尽量转换为原生 dict 以便前端消费
+        if hasattr(input_schema, "model_dump"):
+            input_schema = input_schema.model_dump()
+        tools_payload.append(
+            {
+                "name": getattr(t, "name", ""),
+                "description": getattr(t, "description", "") or "",
+                "input_schema": input_schema or {},
+            }
+        )
+
     return {
         "status": "ok",
         "data": {
-            "tools": []
+            "tools": tools_payload,
+        },
+    }
+
+
+class MCPToolCallBody(BaseModel):
+    """调用 MCP 工具的请求体（用于前端测试）"""
+
+    arguments: Dict[str, Any] = {}
+
+
+@router.post("/settings/mcp/{server_id}/tools/{tool_name}/call")
+async def call_mcp_tool(server_id: str, tool_name: str, body: MCPToolCallBody):
+    """调用指定 MCP Server 上的某个工具，用于前端测试面板"""
+    mcp_manager = get_mcp_manager()
+    await mcp_manager.load_config()
+
+    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    if not config:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+    # 确保连接
+    if server_id not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(server_id, config)
+        if not ok:
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+
+    session = mcp_manager.sessions.get(server_id)
+    if not session:
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+
+    try:
+        result = await session.call_tool(tool_name, body.arguments or {})
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        # 把错误直接返回给前端，便于调试
+        return {
+            "status": "ok",
+            "data": {
+                "ok": False,
+                "error": str(e),
+                "raw": None,
+            },
         }
+
+    # 将 MCP ToolResult 内容序列化为易读结构
+    blocks = []
+    for block in getattr(result, "content", []) or []:
+        # 文本内容
+        if hasattr(block, "text"):
+            blocks.append({"type": "text", "text": block.text})
+        else:
+            # 兜底：直接转字符串
+            blocks.append({"type": "unknown", "raw": str(block)})
+
+    return {
+        "status": "ok",
+        "data": {
+            "ok": True,
+            "blocks": blocks,
+        },
+    }
+
+
+class MCPSandboxCallBody(BaseModel):
+    """沙箱调用：不关心具体工具名，只在该 MCP Server 上调用第一个工具"""
+
+    arguments: Dict[str, Any] = {}
+
+
+@router.post("/settings/mcp/{server_id}/sandbox-call")
+async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
+    """
+    沙箱调用：在指定 MCP Server 上选择第一个可用工具进行一次调用。
+    前端只需提供 arguments，不需要关心工具名。
+    """
+    mcp_manager = get_mcp_manager()
+    await mcp_manager.load_config()
+
+    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    if not config:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+    # 确保连接
+    if server_id not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(server_id, config)
+        if not ok:
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+
+    session = mcp_manager.sessions.get(server_id)
+    if not session:
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+
+    # 获取工具列表，选择第一个工具名
+    try:
+        tools_result = await session.list_tools()
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"list_tools error: {e}")
+
+    tools = getattr(tools_result, "tools", []) or []
+    if not tools:
+        raise HTTPException(status_code=500, detail=f"MCP server {server_id} has no tools")
+
+    tool_name = getattr(tools[0], "name", None)
+    if not tool_name:
+        raise HTTPException(status_code=500, detail=f"First tool of MCP server {server_id} has no name")
+
+    # 调用第一个工具
+    try:
+        result = await session.call_tool(tool_name, body.arguments or {})
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        return {
+            "status": "ok",
+            "data": {
+                "ok": False,
+                "error": str(e),
+                "raw": None,
+            },
+        }
+
+    blocks = []
+    for block in getattr(result, "content", []) or []:
+        if hasattr(block, "text"):
+            blocks.append({"type": "text", "text": block.text})
+        else:
+            blocks.append({"type": "unknown", "raw": str(block)})
+
+    return {
+        "status": "ok",
+        "data": {
+            "ok": True,
+            "tool_name": tool_name,
+            "blocks": blocks,
+        },
     }
 
 # ========== Skills 配置 API ==========

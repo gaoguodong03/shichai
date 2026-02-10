@@ -54,14 +54,24 @@
                 <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
                 <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
               </div>
-              <button
-                type="button"
-                class="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="删除会话"
-                @click.stop="deleteSession(s.id)"
-              >
-                🗑️
-              </button>
+              <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                  title="重命名会话"
+                  @click.stop="renameSession(s.id, s.title || '新对话')"
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
+                  class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  title="删除会话"
+                  @click.stop="deleteSession(s.id)"
+                >
+                  🗑️
+                </button>
+              </div>
             </div>
           </template>
           <!-- 当前对话模式：Q&A 轮次，点击跳转到右侧对应位置 -->
@@ -192,18 +202,41 @@
             >
               ↑ 上一级
             </button>
-            <button
+            <div
               v-for="e in fileEntries"
               :key="e.path"
-              @click="onFileEntryClick(e)"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2',
+                'w-full px-3 py-2.5 rounded-lg text-sm transition-colors flex items-start gap-2',
                 selectedId === e.path ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
               ]"
             >
-              <span>{{ e.is_dir ? '📁' : '📄' }}</span>
-              <span class="truncate">{{ e.name }}</span>
-            </button>
+              <button
+                class="flex-1 min-w-0 text-left flex items-start gap-2"
+                @click="onFileEntryClick(e)"
+              >
+                <span class="flex-shrink-0 mt-0.5">{{ e.is_dir ? '📁' : '📄' }}</span>
+                <span class="break-all leading-tight">{{ e.name }}</span>
+              </button>
+              <div
+                v-if="!e.is_dir"
+                class="flex-shrink-0 flex items-center gap-1"
+              >
+                <button
+                  type="button"
+                  class="px-2 py-1 text-[11px] border border-gray-300 rounded hover:bg-gray-100"
+                  @click.stop="renameFileFromList(e)"
+                >
+                  重命名
+                </button>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50"
+                  @click.stop="deleteFileFromList(e)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
           </template>
         </template>
       </div>
@@ -408,6 +441,27 @@ async function fetchSessions() {
   }
 }
 
+async function renameSession(sessionId: string, currentTitle: string) {
+  const next = window.prompt('重命名会话标题：', currentTitle || '新对话')
+  if (!next || !next.trim()) return
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/title`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: next.trim() }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      await fetchSessions()
+    } else {
+      alert('重命名失败：' + (j.detail || '未知错误'))
+    }
+  } catch (e) {
+    console.error('重命名会话失败', e)
+    alert('重命名失败，请检查网络或后端服务')
+  }
+}
+
 async function deleteSession(sessionId: string) {
   if (!confirm('确定删除该会话？删除后不可恢复。')) return
   try {
@@ -530,6 +584,55 @@ function onFileEntryClick(e: { name: string; path: string; is_dir: boolean }) {
   if (e.is_dir) {
     currentFilePath.value = e.path
     fetchFiles(e.path)
+  }
+}
+
+async function renameFileFromList(e: { name: string; path: string; is_dir: boolean }) {
+  const current = e.name
+  const next = window.prompt('重命名文件为：', current)
+  if (!next || next.trim() === '' || next.trim() === current) return
+  try {
+    const resp = await fetch(`/api/files/rename?path=${encodeURIComponent(e.path)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: next.trim() }),
+    })
+    const j = await resp.json()
+    if (j.status !== 'ok' || !j.data?.path) {
+      alert(j.detail || '重命名失败')
+      return
+    }
+    const newPath = j.data.path as string
+    // 刷新列表并更新选中项
+    await fetchFiles(currentFilePath.value)
+    selectedId.value = newPath
+    selectedFileEntry.value = { name: next.trim(), path: newPath, is_dir: false }
+  } catch (err) {
+    console.error('重命名文件失败', err)
+    alert('重命名失败')
+  }
+}
+
+async function deleteFileFromList(e: { name: string; path: string; is_dir: boolean }) {
+  if (!window.confirm(`确定要删除文件「${e.name}」吗？此操作无法恢复。`)) return
+  try {
+    const resp = await fetch(`/api/files/content?path=${encodeURIComponent(e.path)}`, {
+      method: 'DELETE',
+    })
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}))
+      alert(j.detail || '删除失败')
+      return
+    }
+    // 删除成功后刷新列表，若当前选中的是该文件则清空右侧预览
+    await fetchFiles(currentFilePath.value)
+    if (selectedId.value === e.path) {
+      selectedId.value = null
+      selectedFileEntry.value = null
+    }
+  } catch (err) {
+    console.error('删除文件失败', err)
+    alert('删除失败')
   }
 }
 

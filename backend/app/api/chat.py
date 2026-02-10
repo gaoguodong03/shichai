@@ -228,6 +228,12 @@ class ChatRequest(BaseModel):
     skill_ids: Optional[List[str]] = None  # 指定使用的技能，空则全部
     mcp_server_ids: Optional[List[str]] = None  # 指定使用的 MCP，空则全部
 
+
+class SessionTitleBody(BaseModel):
+    """更新会话标题请求体"""
+
+    title: str
+
 # 导出意图关键词：命中时直接执行导出，跳过 LLM 调用
 _EXPORT_KEYWORDS = ("导出", "导出为", "导出对话", "保存为 markdown", "导出为完整", ".md 文件")
 
@@ -592,30 +598,38 @@ async def chat_stream(request: ChatRequest):
                                 yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                             has_sent_content = True
                         if has_tool_calls:
-                            # 结构化 tool_calls 时，附带 tool_call 供前端显示（地图等工具不再有 JSON 块在 content 中）
-                            tool_call_payload = None
-                            if aimsg.tool_calls:
-                                tc = aimsg.tool_calls[0]
-                                tool_name = tc.get("name") or tc.get("id", "")
-                                args = tc.get("args") or {}
-                                tool_call_payload = {
+                            # 结构化 tool_calls：同时附带单条和数组，便于前端展示「单步多次工具调用」
+                            tool_calls_payload = []
+                            for tco in aimsg.tool_calls:
+                                tool_name = tco.get("name") or tco.get("id", "")
+                                args = tco.get("args") or {}
+                                # 对部分 MCP 工具做展示层参数归一化（不影响实际调用），例如将 __arg1 映射为 description
+                                if (
+                                    tool_name == "volces-icon_generate_app_icon"
+                                    and isinstance(args, dict)
+                                    and "__arg1" in args
+                                    and "description" not in args
+                                ):
+                                    args = dict(args)
+                                    args["description"] = args.pop("__arg1")
+                                payload = {
                                     "action": "tool_call",
                                     "tool": tool_name,
                                     "arguments": args,
                                 }
-                                # 写入 accumulated_content 以供历史保存
-                                tc_json = json_module.dumps(tool_call_payload, ensure_ascii=False, indent=2)
+                                tool_calls_payload.append(payload)
+                                # 写入 accumulated_content 以供历史保存（每个调用一个 JSON 代码块）
+                                tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
                                 accumulated_content.append(f"\n```json\n{tc_json}\n```\n")
-                                for tco in aimsg.tool_calls[1:]:
-                                    extra = {"action": "tool_call", "tool": tco.get("name") or tco.get("id", ""), "arguments": tco.get("args") or {}}
-                                    accumulated_content.append(f"\n```json\n{json_module.dumps(extra, ensure_ascii=False, indent=2)}\n```\n")
                             react_data = {
                                 "type": "thought",
                                 "content": content_str.strip() or "正在调用工具...",
                                 "meta": meta_context,
                             }
-                            if tool_call_payload:
-                                react_data["tool_call"] = tool_call_payload
+                            if tool_calls_payload:
+                                # 向后兼容：保留单条 tool_call，同时提供 tool_calls 数组
+                                react_data["tool_call"] = tool_calls_payload[0]
+                                react_data["tool_calls"] = tool_calls_payload
                             yield f"event: react_step\ndata: {json_module.dumps(react_data, ensure_ascii=False)}\n\n"
                 
                 elif "tool" in event:
@@ -819,6 +833,33 @@ async def delete_session(session_id: str):
     _TURN_SUMMARIES.pop(session_id, None)
     _save_sessions_to_disk()
     return {"status": "ok", "data": {"id": session_id}}
+
+
+@router.put("/sessions/{session_id}/title")
+async def update_session_title(session_id: str, body: SessionTitleBody):
+    """更新指定会话的标题"""
+    await ensure_initialized()
+    title = (body.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+
+    # 如果该会话在历史或元数据中均不存在，则视为 404
+    if session_id not in _CHAT_HISTORY and session_id not in _SESSION_META:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    meta = _SESSION_META.get(session_id) or {}
+    meta["title"] = title
+    meta.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+    _SESSION_META[session_id] = meta
+    _save_sessions_to_disk()
+    return {
+        "status": "ok",
+        "data": {
+            "id": session_id,
+            "title": title,
+            "updated_at": meta["updated_at"],
+        },
+    }
 
 
 def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, str]:
