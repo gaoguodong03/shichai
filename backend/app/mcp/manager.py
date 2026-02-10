@@ -198,19 +198,77 @@ class MCPToolManager:
         async def tool_func(**kwargs):
             logger.info(f"执行工具: {original_tool_name}, 参数: {kwargs}")
             try:
-                # amap-maps maps_geo: LLM 传入 __arg1 时，展开为 address/city，确保 MCP 能正确传给高德 API
                 call_Kwargs = dict(kwargs)
-                if server_id == "amap-maps" and original_tool_name == "maps_geo" and set(call_Kwargs.keys()) == {"__arg1"}:
+                # exa web_search_exa: LLM 传入 __arg1 时视为搜索关键词，映射为必需参数 query
+                if server_id == "exa" and original_tool_name == "web_search_exa" and "__arg1" in call_Kwargs:
+                    call_Kwargs["query"] = call_Kwargs.pop("__arg1", "") or call_Kwargs.get("query", "")
+                    logger.info(f"web_search_exa: 将 __arg1 映射为 query")
+                # volces-icon generate_app_icon: LLM 传入 __arg1 时，展开为 description/pic_size
+                if server_id == "volces-icon" and original_tool_name == "generate_app_icon" and set(call_Kwargs.keys()) == {"__arg1"}:
                     import json as _json
                     try:
                         _parsed = _json.loads(call_Kwargs["__arg1"])
-                        if isinstance(_parsed, dict) and "address" in _parsed:
-                            call_Kwargs = {"address": _parsed["address"]}
-                            if "city" in _parsed:
-                                call_Kwargs["city"] = _parsed["city"]
-                            logger.info(f"maps_geo: 将 __arg1 展开为 {call_Kwargs}")
+                        if isinstance(_parsed, dict) and "description" in _parsed:
+                            call_Kwargs = {"description": _parsed["description"]}
+                            if "pic_size" in _parsed:
+                                call_Kwargs["pic_size"] = _parsed["pic_size"]
+                            logger.info(f"generate_app_icon: 将 __arg1 展开为 {call_Kwargs}")
                     except (ValueError, TypeError):
                         pass
+                # amap-maps maps_geo: LLM 传入 __arg1 时，转为 address/city；支持 JSON、纯字符串 或 "地址,城市" 格式
+                if server_id == "amap-maps" and original_tool_name == "maps_geo" and "__arg1" in call_Kwargs:
+                    import json as _json
+                    arg1 = call_Kwargs.pop("__arg1", "")
+                    if isinstance(arg1, str) and "," in arg1 and "city" not in call_Kwargs:
+                        parts = arg1.split(",", 1)
+                        if len(parts) == 2:
+                            call_Kwargs["address"] = parts[0].strip()
+                            call_Kwargs["city"] = parts[1].strip()
+                            logger.info(f"maps_geo: 将 __arg1(地址,城市) 拆分: {call_Kwargs}")
+                            arg1 = None
+                    if arg1 is not None:
+                        try:
+                            _parsed = _json.loads(arg1) if isinstance(arg1, str) else arg1
+                            if isinstance(_parsed, dict) and "address" in _parsed:
+                                call_Kwargs["address"] = _parsed["address"]
+                                if "city" not in call_Kwargs and "city" in _parsed:
+                                    call_Kwargs["city"] = _parsed["city"]
+                            else:
+                                call_Kwargs["address"] = str(arg1) if arg1 else ""
+                        except (ValueError, TypeError):
+                            call_Kwargs["address"] = str(arg1) if arg1 else ""
+                        logger.info(f"maps_geo: 将 __arg1 转为 address/city: {call_Kwargs}")
+                # amap-maps 路线/距离类工具: LLM 传入 __arg1 为 dict 时，展开为 origin/destination 等（避免 INVALID_PARAMS）
+                if server_id == "amap-maps" and "__arg1" in call_Kwargs and original_tool_name not in ("maps_geo",):
+                    arg1 = call_Kwargs.pop("__arg1", None)
+                    if isinstance(arg1, dict):
+                        for k, v in arg1.items():
+                            if k in ("origin", "destination", "city", "cityd", "type") and v is not None:
+                                call_Kwargs[k] = v
+                        logger.info(f"maps_direction: 将 __arg1 展开为 {call_Kwargs}")
+                    elif isinstance(arg1, str):
+                        try:
+                            _parsed = __import__("json").loads(arg1)
+                            if isinstance(_parsed, dict):
+                                for k, v in _parsed.items():
+                                    if k in ("origin", "destination", "city", "cityd", "type") and v is not None:
+                                        call_Kwargs[k] = v
+                                logger.info(f"maps_direction: 将 __arg1(JSON) 展开为 {call_Kwargs}")
+                        except (ValueError, TypeError):
+                            pass
+                # amap-maps maps_geo: 无 city 或 city 为区名时，若地址含北京相关关键词则自动补 city=北京，避免全国检索误匹配
+                if server_id == "amap-maps" and original_tool_name == "maps_geo":
+                    addr = (call_Kwargs.get("address") or "").strip()
+                    city = (call_Kwargs.get("city") or "").strip()
+                    _beijing_keywords = ("北邮", "海淀", "天安门", "故宫", "北京", "西单", "东单", "国贸", "中关村")
+                    _district_not_city = ("海淀", "朝阳", "东城", "西城", "丰台", "石景山", "通州", "顺义")  # 区名不能当 city
+                    needs_fix = (
+                        not city
+                        or (city in _district_not_city and any(kw in addr for kw in _beijing_keywords))
+                    )
+                    if needs_fix and any(kw in addr for kw in _beijing_keywords):
+                        call_Kwargs["city"] = "北京"
+                        logger.info(f"maps_geo: 地址含北京关键词，补 city=北京 (原 city={city!r})")
                 # 使用原始工具名调用 MCP Server
                 logger.info(f"调用 MCP Session: call_tool({original_tool_name}, {call_Kwargs})")
                 result = await session.call_tool(original_tool_name, call_Kwargs)

@@ -55,6 +55,8 @@ Skills 采用渐进式披露机制，优化上下文使用：
 ## 功能特性
 
 - **Skills 目录管理**：支持添加、编辑、删除技能目录
+- **技能详情多 Tab**：在技能详情页中，除主说明（SKILL.md 的 name/description/启用状态）外，提供 **References**、**Assets**、**Scripts** 三个 Tab，可浏览并预览各子目录下的文件内容（只读）。
+- **API**：`GET /api/settings/skills/{skill_id}/parts` 返回 references/assets/scripts 的文件列表；`GET /api/settings/skills/{skill_id}/parts/{references|assets|scripts}/{文件路径}` 返回指定文件的文本内容。
 - **渐进式加载**：按需加载技能内容，优化性能
 - **技能激活**：Agent 根据上下文自动激活相关技能
 - **技能组合**：多个技能可以组合使用

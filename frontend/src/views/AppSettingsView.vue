@@ -13,9 +13,11 @@
             v-model="form.default_llm"
             class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="qwen">Qwen（通义千问）</option>
+            <option v-for="(meta, id) in llmProviders" :key="id" :value="id">
+              {{ meta.label || id }}
+            </option>
           </select>
-          <p class="mt-1 text-xs text-gray-500">当前仅支持 Qwen，后续可扩展其他模型。</p>
+          <p class="mt-1 text-xs text-gray-500">需在 .env 中配置对应 provider 的 API Key（api_key_env）。</p>
         </div>
         <!-- 系统提示词 -->
         <div>
@@ -50,6 +52,10 @@ const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const form = ref({ default_llm: 'qwen', system_prompt: '' })
+const llmProviders = ref<Record<string, { label: string }>>({
+  qwen: { label: 'Qwen（通义千问）' },
+  jeniya: { label: 'Jeniya（GPT 兼容）' },
+})
 
 async function load() {
   loading.value = true
@@ -60,6 +66,14 @@ async function load() {
       form.value = {
         default_llm: j.data.default_llm ?? 'qwen',
         system_prompt: j.data.system_prompt ?? '',
+      }
+      if (j.data.llm_providers && Object.keys(j.data.llm_providers).length > 0) {
+        llmProviders.value = Object.fromEntries(
+          Object.entries(j.data.llm_providers).map(([k, v]: [string, any]) => [
+            k,
+            { label: v.model ? `${k} (${v.model})` : k },
+          ])
+        )
       }
     }
   } finally {

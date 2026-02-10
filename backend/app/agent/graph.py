@@ -49,7 +49,8 @@ def create_react_agent(
     if any(t.name == "exa_web_search_exa" for t in tools):
         system_prompt += """
 ## Exa 搜索工具使用说明
-exa_web_search_exa 的 type 参数仅接受 'auto' 或 'fast'；livecrawl 仅接受 'fallback'、'preferred'、'always'、'never'。不要使用 'news' 等无效值。
+调用 exa_web_search_exa 时**必须**使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{"query": "北京 烟花 燃放", "numResults": 10}。
+可选参数：numResults（数量）、livecrawl（'fallback'|'preferred'|'always'|'never'）、type（'auto'|'fast'）。type 不要用 'news' 等无效值。
 
 """
     system_prompt += """
@@ -415,7 +416,8 @@ def create_skill_execution_agent(
     if any(t.name == "exa_web_search_exa" for t in tools):
         system_prompt += """
 ## Exa 搜索工具使用说明
-exa_web_search_exa 的 type 参数仅接受 'auto' 或 'fast'；livecrawl 仅接受 'fallback'、'preferred'、'always'、'never'。不要使用 'news' 等无效值。
+调用 exa_web_search_exa 时**必须**使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{"query": "北京 烟花 燃放", "numResults": 10}。
+可选参数：numResults（数量）、livecrawl（'fallback'|'preferred'|'always'|'never'）、type（'auto'|'fast'）。type 不要用 'news' 等无效值。
 
 """
     system_prompt += """
@@ -465,12 +467,25 @@ exa_web_search_exa 的 type 参数仅接受 'auto' 或 'fast'；livecrawl 仅接
         elapsed = (t0 - t_request_start) if t_request_start else 0
         logger.info(f"[TIMING] call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
         try:
-            # 传入 config 以支持 stream_mode="messages" 的 token 流（Python < 3.11 需显式传递）
+            # 优先 astream：token 级流式，供 stream_mode="messages" 推送；传入 config 以支持 tracer（Python < 3.11 需显式传递）
             invoke_kw = {"config": config} if config is not None else {}
-            response = await asyncio.wait_for(
-                client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
-            )
-            logger.info(f"[TIMING] call_model ainvoke: {time.perf_counter() - t0:.2f}s")
+
+            async def _consume_stream():
+                resp = None
+                async for chunk in client.astream(messages, **invoke_kw):
+                    resp = chunk if resp is None else resp + chunk
+                return resp if resp is not None else AIMessage(content="")
+
+            try:
+                response = await asyncio.wait_for(
+                    _consume_stream(), timeout=float(_LLM_AGENT_TIMEOUT)
+                )
+            except Exception as stream_err:
+                logger.warning(f"call_model: astream 失败，回退到 ainvoke: {stream_err}")
+                response = await asyncio.wait_for(
+                    client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
+                )
+            logger.info(f"[TIMING] call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
         except asyncio.TimeoutError:
             logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
             response = AIMessage(content="抱歉，模型响应超时，请稍后重试。")
@@ -521,7 +536,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             depth = args.get("depth")
             if depth not in ("standard", "deep"):
                 args["depth"] = "standard"
-        # exa_web_search_exa: 参数约束已在 MCP manager 的工具描述中说明
+        if tool_name == "volces-icon_generate_app_icon":
+            if "description" not in args and ("prompt" in args or "input" in args):
+                args["description"] = args.get("prompt") or args.get("input", "")
+                for k in ("prompt", "input"):
+                    args.pop(k, None)
         return args
 
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:

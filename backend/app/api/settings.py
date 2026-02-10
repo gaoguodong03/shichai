@@ -25,13 +25,31 @@ def get_mcp_manager():
 MCP_CONFIG_PATH = os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
 SKILLS_DIR = os.getenv("SKILLS_DIR", "./skills")
 APP_SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "./config/app_settings.json")
+# .env 默认路径：若未设置 ENV_FILE_PATH，则用 backend 目录下的 .env（与启动目录无关）
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE_PATH = os.getenv("ENV_FILE_PATH", str(_BACKEND_DIR / ".env"))
 
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
     """应用设置请求体"""
-    default_llm: Optional[str] = None  # 当前仅支持 qwen
+    default_llm: Optional[str] = None  # 如 qwen、jeniya
+    llm_providers: Optional[Dict[str, Dict[str, Any]]] = None  # provider_id -> {base_url, model, api_key_env}
     system_prompt: Optional[str] = None  # 每次 chat 前注入到大模型 prompt 的系统提示词
+
+# 默认 llm_providers（无配置文件时使用）
+_DEFAULT_LLM_PROVIDERS = {
+    "qwen": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen3-max",
+        "api_key_env": "QWEN_API_KEY",
+    },
+    "jeniya": {
+        "base_url": "http://jeniya.top/v1",
+        "model": "gpt-4o",
+        "api_key_env": "JENIYA_API_KEY",
+    },
+}
 
 def load_app_settings() -> Dict[str, Any]:
     """加载应用设置"""
@@ -39,10 +57,17 @@ def load_app_settings() -> Dict[str, Any]:
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if "llm_providers" not in data or not data["llm_providers"]:
+                    data["llm_providers"] = _DEFAULT_LLM_PROVIDERS
+                return data
         except Exception:
             pass
-    return {"default_llm": "qwen", "system_prompt": ""}
+    return {
+        "default_llm": "qwen",
+        "llm_providers": _DEFAULT_LLM_PROVIDERS,
+        "system_prompt": "",
+    }
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""
@@ -64,6 +89,21 @@ async def update_app_settings(body: AppSettingsBody):
     """更新应用设置"""
     save_app_settings(body.model_dump(exclude_none=True))
     return {"status": "ok", "data": load_app_settings()}
+
+
+@router.get("/settings/env")
+async def get_env_content():
+    """获取 .env 文件内容（只读展示）。默认读 backend/.env；可通过 ENV_FILE_PATH 覆盖。"""
+    path = Path(ENV_FILE_PATH)
+    path = path.resolve() if path.is_absolute() else (_BACKEND_DIR / path).resolve()
+    if not path.exists():
+        return {"status": "ok", "data": {"content": "", "path": str(path), "exists": False}}
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取 .env 失败: {e}")
+    return {"status": "ok", "data": {"content": content, "path": str(path), "exists": True}}
+
 
 # ========== MCP 配置 API ==========
 
@@ -345,6 +385,7 @@ class SkillUpdate(BaseModel):
     path: Optional[str] = None
     url: Optional[str] = None
     enabled: Optional[bool] = None
+    body: Optional[str] = None  # SKILL.md frontmatter 之后的正文
 
 def load_skills_config() -> List[Dict[str, Any]]:
     """加载 Skills 配置"""
@@ -454,7 +495,7 @@ def _write_skill_file(skill_dir: Path, frontmatter: Dict, body: str):
 
 @router.put("/settings/skills/{skill_id}")
 async def update_skill(skill_id: str, skill_update: SkillUpdate):
-    """更新 Skill：修改 SKILL.md 的 frontmatter"""
+    """更新 Skill：修改 SKILL.md 的 frontmatter 与/或正文 body"""
     base = Path(SKILLS_DIR)
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
@@ -466,6 +507,8 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
         fm["description"] = skill_update.description
     if skill_update.enabled is not None:
         fm["enabled"] = skill_update.enabled
+    if skill_update.body is not None:
+        body = skill_update.body
     _write_skill_file(skill_dir, fm, body)
     return {"status": "ok", "data": {"id": skill_id, "updated": True}}
 
@@ -502,3 +545,157 @@ async def disable_skill(skill_id: str):
     fm["enabled"] = False
     _write_skill_file(skill_dir, fm, body)
     return {"status": "ok", "data": {"id": skill_id, "enabled": False}}
+
+
+@router.get("/settings/skills/{skill_id}/content")
+async def get_skill_content(skill_id: str):
+    """获取技能 SKILL.md 的完整内容（raw 全文）及 frontmatter 解析结果，用于详情页展示。"""
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    path = skill_dir / "SKILL.md"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    raw = path.read_text(encoding="utf-8")
+    fm, body = _read_skill_file(skill_dir)
+    return {
+        "status": "ok",
+        "data": {
+            "raw": raw,
+            "name": fm.get("name", skill_id),
+            "description": fm.get("description", ""),
+            "enabled": fm.get("enabled", True),
+            "body": body,
+        },
+    }
+
+
+# ========== Skill 辅助目录（references / assets / scripts）==========
+
+ALLOWED_PART_TYPES = ("references", "assets", "scripts")
+
+
+def _list_skill_part_dir(skill_dir: Path, part_type: str) -> List[Dict[str, str]]:
+    """列出 skill 下某子目录中的文件，返回 [{name, path}]，path 为相对该子目录的路径。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        return []
+    dir_path = skill_dir / part_type
+    if not dir_path.is_dir():
+        return []
+    items = []
+    for p in sorted(dir_path.iterdir()):
+        if p.is_file():
+            items.append({"name": p.name, "path": p.name})
+        elif p.is_dir():
+            for fp in sorted(p.rglob("*")):
+                if fp.is_file():
+                    rel = fp.relative_to(dir_path)
+                    items.append({"name": str(rel), "path": str(rel).replace("\\", "/")})
+    return items
+
+
+@router.get("/settings/skills/{skill_id}/parts")
+async def get_skill_parts(skill_id: str):
+    """获取某 skill 目录下 references、assets、scripts 的文件列表。"""
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return {
+        "status": "ok",
+        "data": {
+            "references": _list_skill_part_dir(skill_dir, "references"),
+            "assets": _list_skill_part_dir(skill_dir, "assets"),
+            "scripts": _list_skill_part_dir(skill_dir, "scripts"),
+        },
+    }
+
+
+@router.get("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
+async def get_skill_part_file(skill_id: str, part_type: str, file_path: str):
+    """获取某 skill 下 references/assets/scripts 中指定文件的内容。file_path 为相对该子目录的路径，禁止 ..。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid part type")
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    full_path = skill_dir / part_type / file_path
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        content = full_path.read_text(encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
+    return {"status": "ok", "data": {"path": file_path, "content": content}}
+
+
+class PartFileCreate(BaseModel):
+    """在 references/assets/scripts 下新建文件"""
+    path: str  # 相对该子目录的路径，如 new-doc.md 或 subdir/file.txt
+    content: str = ""
+
+
+class PartFileUpdate(BaseModel):
+    """更新 references/assets/scripts 下某文件内容"""
+    content: str
+
+
+@router.post("/settings/skills/{skill_id}/parts/{part_type}")
+async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCreate):
+    """在 skill 的 references/assets/scripts 下新建文件。path 为相对该子目录的路径，禁止 ..。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid part type")
+    path = (body.path or "").strip().lstrip("/")
+    if ".." in path or not path:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    full_path = (skill_dir / part_type / path).resolve()
+    part_dir = (skill_dir / part_type).resolve()
+    if not str(full_path).startswith(str(part_dir)):
+        raise HTTPException(status_code=400, detail="Path outside part dir")
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    full_path.write_text(body.content or "", encoding="utf-8")
+    return {"status": "ok", "data": {"path": path.replace("\\", "/")}}
+
+
+@router.put("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
+async def update_skill_part_file(skill_id: str, part_type: str, file_path: str, body: PartFileUpdate):
+    """更新 skill 下 references/assets/scripts 中指定文件的内容。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid part type")
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    full_path = skill_dir / part_type / file_path
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    full_path.write_text(body.content, encoding="utf-8")
+    return {"status": "ok", "data": {"path": file_path}}
+
+
+@router.delete("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
+async def delete_skill_part_file(skill_id: str, part_type: str, file_path: str):
+    """删除 skill 下 references/assets/scripts 中的指定文件。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid part type")
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    base = Path(SKILLS_DIR)
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    full_path = skill_dir / part_type / file_path
+    if not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    full_path.unlink()
+    return {"status": "ok", "data": {"path": file_path, "deleted": True}}

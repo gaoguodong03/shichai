@@ -15,7 +15,7 @@ DHA（Digital Human Agent）项目文档中心，**面向文档开发**：以文
 | [Skill + MCP 设计](./architecture/skill-mcp-design-draft.md) | 两阶段技能选择与执行（已实现） |
 | [LLM 提示词结构](./architecture/llm-prompt-structure.md) | 每次请求发给大模型的内容 |
 | [会话与记忆设计](./architecture/session-round-memory.md) | 轮对话、Turn、摘要与记忆 |
-| [流式处理](./architecture/react-stream.md) | ReAct 流式处理实现 |
+| [流式处理](./architecture/streaming-and-memory-update.md) | ReAct 流式处理与记忆更新 |
 | [API 设计](./architecture/api-design.md) | RESTful API 规范 |
 | [项目结构](./architecture/project-structure.md) | 目录与代码组织 |
 | [LLM 提供者切换](./architecture/llm-provider-switch.md) | 更换大模型（jeniya、OpenAI 兼容 API） |
@@ -29,6 +29,7 @@ DHA（Digital Human Agent）项目文档中心，**面向文档开发**：以文
 | [记忆功能](./features/memory.md) | Agent 记忆管理 |
 | [MCP 配置](./features/mcp-config.md) | MCP Server 配置与管理 |
 | [Skills 配置](./features/skills-config.md) | Skills 配置与管理 |
+| [领域数据与报告 Skill+MCP](./features/domain-data-report-skill-mcp.md) | 数据收集与报告技能设计（data-report） |
 | [多模型配置](./features/multi-model-config.md) | 多 LLM 模型配置 |
 | [文件预览方案](./features/file-preview-research.md) | PDF/DOC/Excel 预览方案调研 |
 
@@ -38,6 +39,8 @@ DHA（Digital Human Agent）项目文档中心，**面向文档开发**：以文
 |------|------|
 | [项目依赖](./requirements.md) | 前后端依赖清单 |
 | [开发设置](./development/setup.md) | 环境配置、安装、启动 |
+| [会话记录](./development/session-notes.md) | 近期对话中已完成的修改与结论 |
+| [下一步开发计划](./development/next-plan.md) | 待开发项（左侧栏、Skill 详情、领域报告 Skill+MCP、MCP 沙箱方向） |
 | [MCP Server 配置](./development/mcp-server-setup.md) | 创建与配置 MCP Server |
 | [MCP 操作指南](./development/mcp-operation-guide.md) | 从 MCP.so 搜选、远程接入、本地编写 |
 | [Node/JSAPI Skills](./development/setup-node-and-jsapi-skills.md) | 百度地图等需 Node 的 Skills 配置 |

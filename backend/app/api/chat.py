@@ -12,7 +12,7 @@ from pathlib import Path
 import os
 import json
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-from app.agent.llm_client import QwenLLM
+from app.agent.llm_client import get_llm_from_config, QwenLLM
 from app.agent.graph import create_skill_execution_agent
 from app.agent.skill_selector import select_skill
 from app.mcp.manager import get_mcp_manager
@@ -20,6 +20,8 @@ from app.skills.loader import SkillsLoader
 from app.api.settings import load_app_settings
 from app.tools.export_session import create_export_session_tool
 from app.tools.read_file import create_read_file_tool
+from app.tools.run_skill_script import create_run_skill_script_tool
+from app.tools.call_api import call_api
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -42,20 +44,24 @@ initialized = False
 # 从工具结果文本中提取工具名（graph.py 会输出：工具 <tool_name> 的执行结果: ...）
 _TOOL_NAME_RE = re.compile(r"工具\s+([^\s]+)\s+的执行结果")
 
-# MCP server_id / 工具名 -> 本轮响应关联的 skill 名称（仅用于 meta 展示）
-_MCP_SERVER_TO_SKILL: Dict[str, str] = {
-    "volces-icon": "app-icon-generator",
-    "linkup": "wechat-article-writer",
-    "exa": "wechat-article-writer",
-    "fetch": "wechat-article-writer",
-    "mem0": "wechat-article-writer",
-    "amap-maps": "amap-maps",
+# 技能 -> 关联的 MCP server_id 列表（一个技能可对应多个 MCP，一个 MCP 可被多技能共用）
+_SKILL_MCP_SERVERS: Dict[str, List[str]] = {
+    "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
+    "amap-maps": ["amap-maps"],
+    "app-icon-generator": ["volces-icon"],
+    "data-report": ["linkup", "exa", "fetch"],
 }
+# 由 _SKILL_MCP_SERVERS 反推：server_id -> skill_id（取首个，用于 meta 展示）
+_MCP_SERVER_TO_SKILL: Dict[str, str] = {}
+for _sk, _srv_list in _SKILL_MCP_SERVERS.items():
+    for _s in _srv_list:
+        if _s not in _MCP_SERVER_TO_SKILL:
+            _MCP_SERVER_TO_SKILL[_s] = _sk
 
 
 def _get_mcp_servers_for_skill(skill_id: str) -> List[str]:
-    """根据 skill_id 返回其关联的 MCP server_id 列表。用于技能执行时只传入该技能的工具，加快响应、减少混淆。"""
-    return [s for s, sk in _MCP_SERVER_TO_SKILL.items() if sk == skill_id]
+    """根据 skill_id 返回其关联的 MCP server_id 列表。用于技能执行时只传入该技能的工具。"""
+    return list(_SKILL_MCP_SERVERS.get(skill_id, []))
 # 内置工具（无 server_id）-> skill
 _TOOL_TO_SKILL: Dict[str, str] = {
     "export_session_to_md": "session-export",
@@ -174,13 +180,14 @@ def _load_sessions_from_disk() -> None:
                             "updated_at": str(meta.get("updated_at", "")),
                         }
 
-        # 加载轮次摘要（若存在）
+        # 加载轮次摘要（若存在），只保留最近 N 轮以控制内存
         if turn_file.exists():
             raw_turns = json.loads(turn_file.read_text(encoding="utf-8"))
             if isinstance(raw_turns, dict):
                 for sid, turns in raw_turns.items():
                     if isinstance(turns, list):
-                        _TURN_SUMMARIES[str(sid)] = [str(t) for t in turns if isinstance(t, (str, int, float))]
+                        clean = [str(t) for t in turns if isinstance(t, (str, int, float))]
+                        _TURN_SUMMARIES[str(sid)] = clean[-_HISTORY_WINDOW_TURNS:]
 
         logger.info(f"已从磁盘加载会话历史: {len(_CHAT_HISTORY)} 个会话；轮次摘要: {len(_TURN_SUMMARIES)} 个会话")
     except Exception as e:
@@ -278,8 +285,12 @@ async def _summarize_turn_with_llm(
     return f"用户：{fallback_user} 助手：{fallback_assistant}"
 
 
+# 记忆窗口：只保留最近 N 轮摘要，传入 LLM 的上下文
+_HISTORY_WINDOW_TURNS = 10
+
+
 def _append_turn_summary(session_id: str, summary: str) -> None:
-    """将单轮摘要追加到内存结构中。空摘要会被忽略。"""
+    """将单轮摘要追加到内存结构中。空摘要会被忽略。只保留最近 _HISTORY_WINDOW_TURNS 轮。"""
     s = (summary or "").strip()
     if not s:
         return
@@ -288,6 +299,8 @@ def _append_turn_summary(session_id: str, summary: str) -> None:
         _TURN_SUMMARIES[session_id] = [s]
     else:
         turns.append(s)
+        if len(turns) > _HISTORY_WINDOW_TURNS:
+            _TURN_SUMMARIES[session_id] = turns[-_HISTORY_WINDOW_TURNS:]
 
 
 def _build_history_summary(session_id: str, history: List[BaseMessage], max_chars_per_msg: int = 200) -> str:
@@ -301,11 +314,12 @@ def _build_history_summary(session_id: str, history: List[BaseMessage], max_char
     if not history:
         return ""
 
-    # 1. 优先使用已生成的 Turn 摘要（每个元素对应一轮）
+    # 1. 优先使用已生成的 Turn 摘要（每个元素对应一轮），只取最近 10 轮
     turn_summaries = _TURN_SUMMARIES.get(session_id) or []
     if turn_summaries:
+        recent = turn_summaries[-_HISTORY_WINDOW_TURNS:]
         lines: List[str] = []
-        for idx, s in enumerate(turn_summaries, start=1):
+        for idx, s in enumerate(recent, start=1):
             summary_str = (s or "").strip()
             if not summary_str:
                 continue
@@ -313,26 +327,19 @@ def _build_history_summary(session_id: str, history: List[BaseMessage], max_char
         if lines:
             return "\n".join(lines)
 
-    # 2. 无 Turn 摘要时，按 Turn 结构做简要预览（旧逻辑的改进版）
-    lines: List[str] = []
-    turn_index = 1
+    # 2. 无 Turn 摘要时，先收集所有轮次，再取最近 10 轮做简要预览
+    all_turns: List[tuple] = []
     i = 0
     n = len(history)
-
     while i < n:
         msg = history[i]
         i += 1
-
-        # 只从用户消息开始构建轮次
         if not isinstance(msg, HumanMessage):
             continue
-
         user_content = getattr(msg, "content", "") or ""
         user_preview = str(user_content)[:max_chars_per_msg]
         if len(str(user_content)) > max_chars_per_msg:
             user_preview += "…"
-
-        # 查找该用户消息之后最近的一条助手回复，组成同一轮
         assistant_preview = ""
         while i < n:
             next_msg = history[i]
@@ -343,15 +350,16 @@ def _build_history_summary(session_id: str, history: List[BaseMessage], max_char
                 if len(str(ai_content)) > max_chars_per_msg:
                     assistant_preview += "…"
                 break
+        all_turns.append((user_preview, assistant_preview))
 
-        lines.append(f"第{turn_index}轮：")
-        lines.append(f"- 用户：{user_preview}")
-        if assistant_preview:
-            lines.append(f"- 助手：{assistant_preview}")
-        lines.append("")  # 轮次之间空一行，便于阅读
-
-        turn_index += 1
-
+    recent_turns = all_turns[-_HISTORY_WINDOW_TURNS:]
+    lines = []
+    for idx, (up, ap) in enumerate(recent_turns, start=1):
+        lines.append(f"第{idx}轮：")
+        lines.append(f"- 用户：{up}")
+        if ap:
+            lines.append(f"- 助手：{ap}")
+        lines.append("")
     return "\n".join(lines).strip()
 
 
@@ -406,7 +414,9 @@ async def chat_stream(request: ChatRequest):
 
     app_settings = load_app_settings()
     extra_system_prompt = app_settings.get("system_prompt") or ""
-    llm = QwenLLM()
+    provider_id = app_settings.get("default_llm", "qwen")
+    llm = get_llm_from_config(provider_id, app_settings.get("llm_providers"))
+    logger.info(f"使用 LLM provider: {provider_id}")
 
     # 加载历史，构建摘要（多轮 chat 时加入）
     # 使用该 session 下的全部历史消息，按 Turn 摘要传给大模型
@@ -450,7 +460,10 @@ async def chat_stream(request: ChatRequest):
     # file-reader MCP 用于读取 PDF/DOC/Excel，始终加入（技能过滤时可能被排除）
     file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
     tool_names = {t.name for t in tools}
-    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + [create_export_session_tool(session_id), create_read_file_tool()]
+    extra_tools = [create_export_session_tool(session_id), create_read_file_tool(), call_api]
+    if selected_skill_id:
+        extra_tools.append(create_run_skill_script_tool(selected_skill_id))
+    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
     logger.info(f"最终可用工具数量: {len(tools)}")
 
     skill_full_content = ""
@@ -579,7 +592,31 @@ async def chat_stream(request: ChatRequest):
                                 yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
                             has_sent_content = True
                         if has_tool_calls:
-                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'thought', 'content': content_str.strip() or '正在调用工具...', 'meta': meta_context}, ensure_ascii=False)}\n\n"
+                            # 结构化 tool_calls 时，附带 tool_call 供前端显示（地图等工具不再有 JSON 块在 content 中）
+                            tool_call_payload = None
+                            if aimsg.tool_calls:
+                                tc = aimsg.tool_calls[0]
+                                tool_name = tc.get("name") or tc.get("id", "")
+                                args = tc.get("args") or {}
+                                tool_call_payload = {
+                                    "action": "tool_call",
+                                    "tool": tool_name,
+                                    "arguments": args,
+                                }
+                                # 写入 accumulated_content 以供历史保存
+                                tc_json = json_module.dumps(tool_call_payload, ensure_ascii=False, indent=2)
+                                accumulated_content.append(f"\n```json\n{tc_json}\n```\n")
+                                for tco in aimsg.tool_calls[1:]:
+                                    extra = {"action": "tool_call", "tool": tco.get("name") or tco.get("id", ""), "arguments": tco.get("args") or {}}
+                                    accumulated_content.append(f"\n```json\n{json_module.dumps(extra, ensure_ascii=False, indent=2)}\n```\n")
+                            react_data = {
+                                "type": "thought",
+                                "content": content_str.strip() or "正在调用工具...",
+                                "meta": meta_context,
+                            }
+                            if tool_call_payload:
+                                react_data["tool_call"] = tool_call_payload
+                            yield f"event: react_step\ndata: {json_module.dumps(react_data, ensure_ascii=False)}\n\n"
                 
                 elif "tool" in event:
                     messages = event["tool"]
@@ -771,6 +808,17 @@ async def get_session(session_id: str):
             "messages": messages,
         },
     }
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """删除指定会话（内存与持久化均移除）"""
+    await ensure_initialized()
+    _CHAT_HISTORY.pop(session_id, None)
+    _SESSION_META.pop(session_id, None)
+    _TURN_SUMMARIES.pop(session_id, None)
+    _save_sessions_to_disk()
+    return {"status": "ok", "data": {"id": session_id}}
 
 
 def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, str]:

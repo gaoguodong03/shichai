@@ -214,7 +214,6 @@ data: {"text": "..."}
 
 - [运行流程](./runtime-flow.md) - 两阶段流程详解
 - [Skill + MCP 设计](./skill-mcp-design-draft.md) - 两阶段设计说明
-- [技术栈文档](./tech-stack.md) - 详细的技术栈说明
-- [流式处理架构](./react-stream.md) - ReAct 流式处理实现
+- [流式处理架构](./streaming-and-memory-update.md) - ReAct 流式处理与记忆更新
 - [API 设计文档](./api-design.md) - RESTful API 设计规范
 - [项目结构文档](./project-structure.md) - 项目目录结构说明

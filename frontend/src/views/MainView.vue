@@ -1,20 +1,19 @@
 <template>
   <div class="flex h-screen bg-gray-50">
     <!-- 最左侧：导航（图标 + 名称） -->
-    <nav class="w-52 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 py-3">
-      <div class="px-3 space-y-0.5">
+    <nav class="w-16 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 py-3">
+      <div class="px-2 space-y-0.5">
         <button
           v-for="item in navItems"
           :key="item.id"
           @click="onNavClick(item)"
           :class="[
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors',
+            'w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium transition-colors',
             currentModule === item.id
               ? 'bg-blue-50 text-blue-700'
               : 'text-gray-700 hover:bg-gray-100'
           ]"
         >
-          <span class="text-lg" aria-hidden="true">{{ item.icon }}</span>
           <span>{{ item.label }}</span>
         </button>
       </div>
@@ -41,19 +40,29 @@
             </button>
             <div v-if="sessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
             <div v-else-if="!sessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
-            <button
+            <div
               v-else
               v-for="s in sessions"
               :key="s.id"
               @click="selectedSessionId = s.id"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
                 selectedSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
               ]"
             >
-              <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
-              <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
-            </button>
+              <div class="flex-1 min-w-0 text-left">
+                <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
+                <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
+              </div>
+              <button
+                type="button"
+                class="flex-shrink-0 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="删除会话"
+                @click.stop="deleteSession(s.id)"
+              >
+                🗑️
+              </button>
+            </div>
           </template>
           <!-- 当前对话模式：Q&A 轮次，点击跳转到右侧对应位置 -->
           <template v-else>
@@ -227,7 +236,13 @@
       <template v-else-if="currentModule === 'mcp' && selectedId">
         <MCPDetailView :server-id="selectedId" @updated="fetchMCP" @deleted="selectedId = null; fetchMCP()" />
       </template>
-      <!-- 设置：应用设置（LLM + 系统提示词） -->
+      <!-- 设置：应用设置 或 环境变量 -->
+      <template v-else-if="currentModule === 'settings' && selectedId === 'app'">
+        <AppSettingsView />
+      </template>
+      <template v-else-if="currentModule === 'settings' && selectedId === 'env'">
+        <EnvSettingsView />
+      </template>
       <template v-else-if="currentModule === 'settings'">
         <AppSettingsView />
       </template>
@@ -258,16 +273,17 @@ import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
+import EnvSettingsView from './EnvSettingsView.vue'
 import FileDetailView from './FileDetailView.vue'
 
 type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'settings'
 
-const navItems: { id: ModuleId; label: string; icon: string }[] = [
-  { id: 'chat', label: 'Chat', icon: '💬' },
-  { id: 'files', label: '文件系统', icon: '📂' },
-  { id: 'skill', label: 'Skills', icon: '⚡' },
-  { id: 'mcp', label: 'MCPs', icon: '🔌' },
-  { id: 'settings', label: '设置', icon: '⚙️' },
+const navItems: { id: ModuleId; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'files', label: 'Files' },
+  { id: 'skill', label: 'Skills' },
+  { id: 'mcp', label: 'MCPs' },
+  { id: 'settings', label: '设置' },
 ]
 
 const currentModule = ref<ModuleId>('chat')
@@ -276,6 +292,8 @@ const selectedId = ref<string | null>(null)
 // Chat 模块：历史对话 / 当前对话 两种模式
 const chatViewMode = ref<'history' | 'current'>('history')
 const selectedSessionId = ref<string | null>(null)
+/** 未选会话时使用的临时 sessionId，点击 Chat 时生成，用于发送首条消息；不加载默认会话内容 */
+const newSessionPlaceholderId = ref<string>(`session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
 const sessions = ref<{ id: string; title: string; updated_at: string }[]>([])
 const sessionsLoading = ref(false)
 const sessionMessages = ref<{ role: string; content: string }[]>([])
@@ -287,6 +305,7 @@ const mcpServers = ref<{ id: string; name: string; status: string; tool_count: n
 const mcpLoading = ref(false)
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
+  { id: 'env', label: '环境变量 (.env)' },
 ]
 const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const filesLoading = ref(false)
@@ -300,7 +319,7 @@ const chatSummaryLoading = ref(false)
 
 const effectiveSessionId = computed(() => {
   if (selectedSessionId.value) return selectedSessionId.value
-  return 'default'
+  return newSessionPlaceholderId.value
 })
 
 const middleColumnTitle = computed(() => {
@@ -370,6 +389,8 @@ function onNavClick(item: { id: ModuleId }) {
   if (item.id === 'chat') {
     chatViewMode.value = 'history'
     selectedSessionId.value = null
+    newSessionPlaceholderId.value = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    sessionMessages.value = []
     fetchSessions()
   }
 }
@@ -384,6 +405,26 @@ async function fetchSessions() {
     }
   } finally {
     sessionsLoading.value = false
+  }
+}
+
+async function deleteSession(sessionId: string) {
+  if (!confirm('确定删除该会话？删除后不可恢复。')) return
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      if (selectedSessionId.value === sessionId) {
+        selectedSessionId.value = null
+        sessionMessages.value = []
+      }
+      await fetchSessions()
+    } else {
+      alert('删除失败：' + (j.detail || '未知错误'))
+    }
+  } catch (e) {
+    console.error('删除会话失败', e)
+    alert('删除失败，请检查网络或后端服务')
   }
 }
 
@@ -598,9 +639,12 @@ watch(currentModule, (mod) => {
 }, { immediate: true })
 
 watch(selectedSessionId, async (id) => {
-  const sid = id || 'default'
+  if (id == null) {
+    sessionMessages.value = []
+    return
+  }
   try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(sid)}`)
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.messages) {
       sessionMessages.value = j.data.messages.map((m: { role: string; content: string }) => ({

@@ -709,13 +709,20 @@ const sendMessage = async () => {
               } else if (eventType === 'react_step') {
                 // 处理 ReAct 步骤
                 console.log('ReAct step:', parsed)
+                // 若是结构化 tool_call（后端附带），注入到内容中以便参数框显示
+                if (parsed.type === 'thought' && parsed.tool_call) {
+                  const tc = parsed.tool_call
+                  const tcJson = JSON.stringify({ action: tc.action || 'tool_call', tool: tc.tool, arguments: tc.arguments || {} }, null, 2)
+                  currentStreamingText.value += `\n\`\`\`json\n${tcJson}\n\`\`\`\n`
+                }
                 // 如果是思考过程，显示内容
                 if (parsed.type === 'thought' && parsed.content) {
                   const thoughtContent = parsed.content
                   // 如果内容看起来像最终答案，直接显示
                   if (!thoughtContent.includes('tool_call') && !thoughtContent.includes('```json')) {
                     currentStreamingText.value += thoughtContent
-                  } else {
+                  } else if (!parsed.tool_call) {
+                    // 仅有 thought 且非 tool_call 注入时，才加 [思考]
                     currentStreamingText.value += `\n[思考] ${thoughtContent}\n`
                   }
                   messages.value[assistantMessageIndex].content = currentStreamingText.value

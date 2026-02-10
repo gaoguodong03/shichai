@@ -1,8 +1,47 @@
-"""LLM 客户端 - 支持 Qwen 模型"""
+"""LLM 客户端 - 支持 Qwen 及 OpenAI 兼容 API，可配置化切换"""
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from langchain_openai import ChatOpenAI
+
+
+# 默认 provider 配置（当 app_settings 无 llm_providers 时使用）
+_DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, str]] = {
+    "qwen": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen3-max",
+        "api_key_env": "QWEN_API_KEY",
+    },
+    "jeniya": {
+        "base_url": "http://jeniya.top/v1",
+        "model": "gpt-4o",
+        "api_key_env": "JENIYA_API_KEY",
+    },
+}
+
+
+def get_llm_from_config(
+    provider_id: str,
+    providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> "QwenLLM":
+    """
+    根据 provider_id 从配置创建 LLM 客户端。
+    api_key 从 api_key_env 指定的环境变量读取，不落库。
+    """
+    providers = providers_config or _DEFAULT_LLM_PROVIDERS
+    cfg = providers.get(provider_id) or providers.get("qwen")
+    if not cfg:
+        return QwenLLM()
+
+    api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
+    api_key = os.getenv(api_key_env)
+    base_url = cfg.get("base_url")
+    model = cfg.get("model")
+    return QwenLLM(
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+    )
 
 
 def _parse_int_env(name: str, default: int) -> int:

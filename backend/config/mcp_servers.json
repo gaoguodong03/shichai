@@ -54,14 +54,10 @@
       "command": "python",
       "args": [
         "mcp_servers/volces_icon.py"
-      ],
-      "env": {
-        "VOLCES_IMAGE_API_KEY": "${VOLCES_IMAGE_API_KEY}"
-      }
+      ]
     },
     "metadata": {
-      "description": "根据文字描述生成图片（火山引擎图像生成 API）",
-      "version": "1.0.0"
+      "description": "根据文字描述生成图片。"
     }
   },
   {
@@ -113,19 +109,6 @@
     "metadata": {
       "description": "Mem0 长期记忆：添加/搜索/更新记忆。需在 https://app.mem0.ai 获取 API Key（格式 sk_mem0_...）并替换 env 中的 YOUR_MEM0_API_KEY 后启用。",
       "version": "1.0.0"
-    }
-  },
-  {
-    "id": "math-mcp",
-    "name": "Smithery 数学 MCP",
-    "enabled": false,
-    "transport": {
-      "type": "http",
-      "url": "https://server.smithery.ai/@EthanHenrickson/math-mcp",
-      "base_url": "https://server.smithery.ai/@EthanHenrickson/math-mcp"
-    },
-    "metadata": {
-      "description": "Smithery 数学 MCP：提供数学计算和公式相关工具，可用于复杂算式推导、符号运算等。"
     }
   },
   {

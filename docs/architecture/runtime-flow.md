@@ -50,6 +50,23 @@
   最终回复（文本 + 可选 meta：skill / mcp_servers / tools）
 ```
 
+### 1.3 Skill 步骤执行体（目标模型 vs 当前实现）
+
+从流程上讲，Skill 的**每一步（step）**的执行体在目标模型中可以是：
+
+- **MCP**：调用某个 MCP 工具
+- **script**：执行 skill 目录下的脚本（如 `scripts/optimize-prompt.py`）
+- **service**：调用某个 API / 外部服务
+- **直接问大模型**：本步仅由 LLM 推理或生成，不调工具
+
+流程形态上可以是**多步重复**或**跳过**某些 step。
+
+**当前实现**：技能执行阶段由单一 ReAct Agent 根据 SKILL 正文自然语言理解步骤；**显式可执行体**包括：
+- **MCP 工具**（及 file-reader、read_file、export_session 等内置工具）；
+- **run_skill_script**：执行当前技能 `scripts/` 目录下的 .py / .sh 脚本，参数为 script_path（相对 scripts 的路径）、可选 input_json（作为 stdin）；技能在 SKILL.md 或 scripts 中描述「运行某脚本」时由 LLM 调用；
+- **call_api**：调用外部 HTTP API，参数为 url、method、可选 headers_json、body；技能在 SKILL.md 或脚本中描述「调用某接口」时由 LLM 调用。
+多步/跳过仍由 LLM 在 ReAct 循环中决定，**没有**显式编排器按 step 类型分发；script 与 service 已作为**工具**提供，LLM 按技能说明选择调用。
+
 ---
 
 ## 二、启动与初始化
@@ -100,6 +117,7 @@
 
 3. **构建历史摘要**（多轮 chat）
    - `history_summary = _build_history_summary(history)`：从会话历史生成摘要文本。
+   - **只保留最近 10 轮**：`_TURN_SUMMARIES` 与回退路径均只取最近 10 轮，控制 token 开销。
 
 4. **第一次调用 LLM：技能选择**
    - `selected_skill_id = select_skill(llm, user_message, skills_for_selection, history_summary)`。
@@ -178,7 +196,7 @@
 
 ## 3.7 Chat 流程时序与等待点
 
-用户从「发送消息」到「看到首字」的时序如下，**每步均为阻塞等待**（`ainvoke` 等完整响应）：
+用户从「发送消息」到「看到首字」的时序如下（`call_model` 使用 `astream` 做 token 级流式）：
 
 ```
 T0  用户点击发送
@@ -191,13 +209,13 @@ T0  用户点击发送
 │
 ├─ T3  asyncio.sleep(1)          [固定延迟，避免 DashScope 限流；可设 QWEN_REQUEST_DELAY_SEC=0 关闭]
 │
-├─ T4  技能执行 Agent 第一次 call_model   [LLM 调用 #2：ainvoke，等完整返回]
+├─ T4  技能执行 Agent 第一次 call_model   [LLM 调用 #2：astream，token 逐字推给前端]
 │      输入：system_prompt(含 skill 全文) + 用户消息
 │      输出：AIMessage（文本或 tool_calls）
 │
 ├─ T5  [若 tool_calls] call_tool 执行 MCP   [耗时取决于工具：搜索/抓取等]
 │
-├─ T6  技能执行 Agent 第二次 call_model   [LLM 调用 #3：ainvoke，等完整返回]
+├─ T6  技能执行 Agent 第二次 call_model   [LLM 调用 #3：astream，token 逐字推给前端]
 │      ... 循环直到无 tool_calls ...
 │
 └─ T7  流式推送 content 事件 → 前端展示
@@ -209,10 +227,10 @@ T0  用户点击发送
 |------|------|----------|
 | 技能选择 | 第一次 LLM 调用，`ainvoke` 等完整响应 | 无，可考虑流式或跳过（单 skill 时已跳过） |
 | 固定延迟 | 技能选择与 Agent 间 1 秒，防 429 | `QWEN_REQUEST_DELAY_SEC=0` 可关闭 |
-| Agent call_model | 每次 `ainvoke` 等完整响应，无 token 级流式 | 可改为 `astream` 实现首字更快 |
+| Agent call_model | 使用 `astream` token 级流式，首字更快 | 若 astream 失败则回退 ainvoke |
 | 工具执行 | MCP 调用（搜索、抓取等） | 受外部 API 影响 |
 
-**当前实现**：`call_model` 使用 `client.ainvoke(messages)`，即每次 LLM 调用都会等**整条回复**生成完才返回，用户看不到 token 逐字输出。若需「边生成边显示」，需将 Agent 的 `ainvoke` 改为 `astream` 并逐 chunk 推给前端。
+**当前实现**：`call_model` 使用 `client.astream(messages)` token 级流式调用，配合 `stream_mode="messages"` 将 chunk 推给前端；若 astream 失败则回退到 `ainvoke`。
 
 ---
 
