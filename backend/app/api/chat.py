@@ -15,7 +15,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from app.agent.llm_client import get_llm_from_config, QwenLLM
 from app.agent.graph import create_skill_execution_agent
 from app.agent.skill_selector import select_skill
-from app.mcp.manager import get_mcp_manager
+from app.mcp.manager import get_mcp_manager, normalize_mcp_kwargs_for_call
 from app.skills.loader import SkillsLoader
 from app.api.settings import load_app_settings
 from app.tools.export_session import create_export_session_tool
@@ -603,24 +603,27 @@ async def chat_stream(request: ChatRequest):
                             for tco in aimsg.tool_calls:
                                 tool_name = tco.get("name") or tco.get("id", "")
                                 args = tco.get("args") or {}
-                                # 对部分 MCP 工具做展示层参数归一化（不影响实际调用）
-                                if isinstance(args, dict):
-                                    # volces-icon_generate_app_icon: 将 __arg1 显示为 description
-                                    if (
-                                        tool_name == "volces-icon_generate_app_icon"
-                                        and "__arg1" in args
-                                        and "description" not in args
-                                    ):
-                                        args = dict(args)
-                                        args["description"] = args.pop("__arg1")
-                                    # amap-maps_maps_geo: 将 __arg1 显示为 address
-                                    elif (
-                                        tool_name == "amap-maps_maps_geo"
-                                        and "__arg1" in args
-                                        and "address" not in args
-                                    ):
-                                        args = dict(args)
-                                        args["address"] = args.pop("__arg1")
+                                # read_file（内置工具）：展示层将 __arg1 显示为 path，方便理解
+                                if (
+                                    isinstance(args, dict)
+                                    and tool_name == "read_file"
+                                    and "__arg1" in args
+                                    and "path" not in args
+                                ):
+                                    args = dict(args)
+                                    args["path"] = args.pop("__arg1")
+                                # 对 MCP 工具使用与 manager 相同的参数归一化逻辑，
+                                # 确保前端展示的就是「最终发给 MCP 的参数」（包含自动补 city=北京 等修正）。
+                                if isinstance(args, dict) and "_" in tool_name:
+                                    server_id, original_tool_name = tool_name.split("_", 1)
+                                    # 目前对 volces-icon / amap-maps / file-reader 做特殊归一化；
+                                    # 其他 MCP 若后续增加兼容逻辑，可在 normalize_mcp_kwargs_for_call 中统一维护。
+                                    if server_id in ("volces-icon", "amap-maps", "file-reader"):
+                                        args = normalize_mcp_kwargs_for_call(
+                                            server_id=server_id,
+                                            original_tool_name=original_tool_name,
+                                            kwargs=args,
+                                        )
                                 payload = {
                                     "action": "tool_call",
                                     "tool": tool_name,
