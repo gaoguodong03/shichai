@@ -603,15 +603,24 @@ async def chat_stream(request: ChatRequest):
                             for tco in aimsg.tool_calls:
                                 tool_name = tco.get("name") or tco.get("id", "")
                                 args = tco.get("args") or {}
-                                # 对部分 MCP 工具做展示层参数归一化（不影响实际调用），例如将 __arg1 映射为 description
-                                if (
-                                    tool_name == "volces-icon_generate_app_icon"
-                                    and isinstance(args, dict)
-                                    and "__arg1" in args
-                                    and "description" not in args
-                                ):
-                                    args = dict(args)
-                                    args["description"] = args.pop("__arg1")
+                                # 对部分 MCP 工具做展示层参数归一化（不影响实际调用）
+                                if isinstance(args, dict):
+                                    # volces-icon_generate_app_icon: 将 __arg1 显示为 description
+                                    if (
+                                        tool_name == "volces-icon_generate_app_icon"
+                                        and "__arg1" in args
+                                        and "description" not in args
+                                    ):
+                                        args = dict(args)
+                                        args["description"] = args.pop("__arg1")
+                                    # amap-maps_maps_geo: 将 __arg1 显示为 address
+                                    elif (
+                                        tool_name == "amap-maps_maps_geo"
+                                        and "__arg1" in args
+                                        and "address" not in args
+                                    ):
+                                        args = dict(args)
+                                        args["address"] = args.pop("__arg1")
                                 payload = {
                                     "action": "tool_call",
                                     "tool": tool_name,

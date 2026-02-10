@@ -3,14 +3,15 @@ description: 高德地图位置服务。当用户需要地理编码、逆地理�
 enabled: true
 name: 高德地图
 ---
-# 高德地图 Skill（基于 amap-maps MCP）
+# 高德地图 Skill（只使用 amap-maps MCP）
 
 当用户提出与**地理位置、路线、天气、周边搜索**相关的问题时，请按以下原则工作：
 
-1. **优先使用 amap-maps 工具**
-   - 通过 MCP Manager 已接入：`amap-maps` Server
-   - 工具在系统内的名称前缀为：`amap-maps_*`
-   - 遇到地址转换、路线规划、天气、距离、POI 搜索等需求时，**必须**调用相应工具，而不是凭空猜测。
+1. **只使用 amap-maps MCP 处理地图相关任务**
+   - 通过 MCP Manager 已接入：`amap-maps` Server。
+   - 工具在系统内的名称前缀为：`amap-maps_*`。
+   - 遇到地址转换、经纬度查询、路线规划（驾车/步行/骑行/公交）、距离计算、天气、周边/关键词 POI 搜索时，**必须调用 `amap-maps_*` 工具**。
+   - **不要为了这些任务调用 linkup、exa、data-report 等其它 MCP/技能。** 这些仅用于通用网页搜索和数据报告，不负责具体导航与地图能力。
 
 2. **工具调用规范（参数必须正确填写）**
 

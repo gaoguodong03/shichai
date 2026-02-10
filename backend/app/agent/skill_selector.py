@@ -37,6 +37,39 @@ async def select_skill(
         logger.warning("技能列表为空，无法选择")
         return None
 
+    # 简单规则：若用户明显在问「地图/路线/怎么走/经纬度」，且存在 amap-maps 技能，则直接选用 amap-maps，
+    # 避免被 data-report 等技能抢走，并避免误用 linkup 等通用搜索 MCP。
+    text = (user_message or "").strip()
+    if history_summary:
+        text = f"{history_summary}\n\n{text}"
+    text_lower = text.lower()
+    amap_skill_id = next((s.get("skill_id") for s in skills if s.get("skill_id") == "amap-maps"), None)
+    if amap_skill_id:
+        amap_keywords = (
+            "怎么走",
+            "路线",
+            "路線",
+            "导航",
+            "导航一下",
+            "到哪儿",
+            "到哪里",
+            "到那儿",
+            "去那儿",
+            "去哪里",
+            "公交",
+            "地铁",
+            "骑行",
+            "驾车",
+            "打车",
+            "经纬度",
+            "坐标",
+            "距离多远",
+            "多远",
+        )
+        if any(k in text for k in amap_keywords) or "lat" in text_lower or "lng" in text_lower:
+            logger.info("命中地图关键词，直接选择 amap-maps 技能（跳过 LLM 技能路由）")
+            return "amap-maps"
+
     skill_list_text = _build_skill_selection_prompt(skills)
     skill_ids = [s.get("skill_id") for s in skills if s.get("skill_id")]
 

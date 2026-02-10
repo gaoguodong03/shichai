@@ -120,7 +120,10 @@
       "args": [
         "-y",
         "@amap/amap-maps-mcp-server"
-      ]
+      ],
+      "env": {
+        "AMAP_MAPS_API_KEY": "${AMAP_MAPS_API_KEY}"
+      }
     },
     "metadata": {
       "description": "高德地图 MCP：地理编码、逆地理编码、天气、距离计算、路线规划（步行/驾车/公交）等。需在 .env 中设置 AMAP_MAPS_API_KEY。"
@@ -150,7 +153,10 @@
       "command": "npx",
       "args": [
         "cc-zhipu-web-search"
-      ]
+      ],
+      "env": {
+        "BIGMODEL_API_KEY": "${ZHIPU_WEB_SEARCH_API_KEY}"
+      }
     },
     "metadata": {
       "description": "通过本地 STDIO MCP Server 调用智谱 Web Search。"

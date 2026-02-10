@@ -34,6 +34,23 @@ enabled: true
 - **type**（可选）：`auto` 或 `fast`，不要使用 `news` 等无效值。
 
 示例：`{"query": "北京 烟花 燃放情况", "numResults": 10, "livecrawl": "preferred", "type": "auto"}`。
+
+### linkup_linkup-search 使用说明
+
+调用 `linkup_linkup-search` 时**也必须**使用参数名 `query`（必需）传递搜索关键词，不要使用 `__arg1`。
+
+- `query`（必需）：要搜索的自然语言问题或关键词，例如 `"天安门 经纬度"`、`"北京邮电大学 海淀 经纬度"`。
+- 其他可选参数（若 MCP 提供）：如 `depth` 等，请按 inputSchema 中的字段名直接填写，**不要把整个对象塞进 `__arg1`**。
+
+示例：
+
+```json
+{
+  "query": "北京 天安门 经纬度",
+  "depth": 2
+}
+```
+
 | 抓取单个 URL | linkup_linkup-search（fetch 能力）、fetch_fetch | 将网页内容抓取为 Markdown |
 | 调用外部 API | call_api                    | 用户提供 URL/方法/请求体时使用 |
 | 读取本地文件 | read_file、file-reader_*    | 用户引用文件或需读取已有数据时使用 |
