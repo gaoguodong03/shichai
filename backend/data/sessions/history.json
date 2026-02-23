@@ -421,5 +421,19 @@
         "工具 amap-maps_maps_geo 的执行结果: {\n  \"return\": [\n    {\n      \"country\": \"中国\",\n      \"province\": \"北京市\",\n      \"city\": \"北京市\",\n      \"citycode\": \"010\",\n      \"district\": \"海淀区\",\n      \"street\": [],\n      \"number\": [],\n      \"adcode\": \"110108\",\n      \"location\": \"116.358104,39.961554\",\n      \"level\": \"兴趣点\"\n    }\n  ]\n}"
       ]
     }
+  ],
+  "session-mlyxfau5-6l6u41": [
+    {
+      "role": "user",
+      "content": "北京邮电大学在哪里"
+    },
+    {
+      "role": "assistant",
+      "content": "```json\n{\n  \"action\": \"tool_call\",\n  \"tool\": \"amap-maps_maps_geo\",\n  \"arguments\": {\n    \"address\": \"北京邮电大学\",\n    \"city\": \"北京\"\n  }\n}\n```\n根据工具返回结果，地址已成功解析为经纬度坐标：\n\n- 坐标位置：**116.358104,39.961554**\n- 解析地址：**北京市海淀区**\n- 行政编码：**110108**\n\n如果需要进一步查询路线、天气或周边信息，请告诉我您的需求！",
+      "tool_raw_results": [
+        "工具 amap-maps_maps_geo 的执行结果: {\n  \"return\": [\n    {\n      \"country\": \"中国\",\n      \"province\": \"北京市\",\n      \"city\": \"北京市\",\n      \"citycode\": \"010\",\n      \"district\": \"海淀区\",\n      \"street\": [],\n      \"number\": [],\n      \"adcode\": \"110108\",\n      \"location\": \"116.358104,39.961554\",\n      \"level\": \"兴趣点\"\n    }\n  ]\n}"
+      ],
+      "skill_id": "amap-maps"
+    }
   ]
 }

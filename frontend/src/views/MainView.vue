@@ -17,6 +17,16 @@
           <span>{{ item.label }}</span>
         </button>
       </div>
+      <div class="flex-1 min-h-2" />
+      <div class="px-2 pb-3 border-t border-gray-100 pt-2">
+        <button
+          type="button"
+          @click="logout"
+          class="w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+        >
+          登出
+        </button>
+      </div>
     </nav>
 
     <!-- 中间列：当前模块的列表/摘要 -->
@@ -270,12 +280,9 @@
       <template v-else-if="currentModule === 'mcp' && selectedId">
         <MCPDetailView :server-id="selectedId" @updated="fetchMCP" @deleted="selectedId = null; fetchMCP()" />
       </template>
-      <!-- 设置：应用设置 或 环境变量 -->
+      <!-- 设置：应用设置 -->
       <template v-else-if="currentModule === 'settings' && selectedId === 'app'">
         <AppSettingsView />
-      </template>
-      <template v-else-if="currentModule === 'settings' && selectedId === 'env'">
-        <EnvSettingsView />
       </template>
       <template v-else-if="currentModule === 'settings'">
         <AppSettingsView />
@@ -301,14 +308,24 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ChatView from './ChatView.vue'
 import SkillDetailView from './SkillDetailView.vue'
 import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
-import EnvSettingsView from './EnvSettingsView.vue'
 import FileDetailView from './FileDetailView.vue'
+
+const router = useRouter()
+const LOGIN_STORAGE_KEY = 'dha_logged_in'
+const USER_STORAGE_KEY = 'dha_user'
+
+function logout() {
+  localStorage.removeItem(LOGIN_STORAGE_KEY)
+  localStorage.removeItem(USER_STORAGE_KEY)
+  router.push('/login')
+}
 
 type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'settings'
 
@@ -330,7 +347,7 @@ const selectedSessionId = ref<string | null>(null)
 const newSessionPlaceholderId = ref<string>(`session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
 const sessions = ref<{ id: string; title: string; updated_at: string }[]>([])
 const sessionsLoading = ref(false)
-const sessionMessages = ref<{ role: string; content: string }[]>([])
+const sessionMessages = ref<{ role: string; content: string; skill_id?: string; tool_raw_results?: string[] }[]>([])
 const scrollToTurnIndex = ref<number | null>(null)
 
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
@@ -339,7 +356,6 @@ const mcpServers = ref<{ id: string; name: string; status: string; tool_count: n
 const mcpLoading = ref(false)
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
-  { id: 'env', label: '环境变量 (.env)' },
 ]
 const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const filesLoading = ref(false)
@@ -758,10 +774,7 @@ watch(selectedSessionId, async (id) => {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.messages) {
-      sessionMessages.value = j.data.messages.map((m: { role: string; content: string }) => ({
-        role: m.role,
-        content: m.content,
-      }))
+      sessionMessages.value = j.data.messages
     } else {
       sessionMessages.value = []
     }

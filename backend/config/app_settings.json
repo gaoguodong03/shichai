@@ -1,6 +1,6 @@
 {
   "default_llm": "jeniya",
-  "system_prompt": "每次回复前都要加上：“马年大吉！”",
+  "system_prompt": "",
   "llm_providers": {
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",

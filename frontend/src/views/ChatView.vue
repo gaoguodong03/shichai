@@ -33,12 +33,12 @@
                 : 'bg-white text-gray-800 border border-gray-200'
             ]"
           >
-            <!-- 助手消息顶部：skill 紫色显示，未用显示「无」 -->
+            <!-- 助手消息顶部：skill 紫色显示，优先用持久化 skill_id，未用显示「无」 -->
             <div
               v-if="msg.role === 'assistant'"
               class="mb-2 text-xs text-purple-600 font-medium"
             >
-              skill: {{ (msg.meta?.skills && msg.meta.skills[0]) || '无' }}
+              skill: {{ msg.skill_id ?? (msg.meta?.skills && msg.meta.skills[0]) ?? '无' }}
             </div>
             <!-- 工具调用 JSON 单独框：一条调用一个框，标题为工具名称，可查看该次调用的 MCP 原始输出 -->
             <div v-if="msg.role === 'assistant'">
@@ -108,7 +108,7 @@
       <div v-if="currentStreamingText" ref="streamingBlockRef" class="flex justify-start">
         <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-white text-gray-800 border border-gray-200">
           <div class="mb-2 text-xs text-purple-600 font-medium">
-            skill: {{ (currentMeta?.skills && currentMeta.skills[0]) || '无' }}
+            skill: {{ (currentMeta?.skills && currentMeta.skills[0]) ?? '无' }}
           </div>
           <div v-if="extractToolCalls(currentStreamingText).toolCalls.length">
             <div
@@ -343,6 +343,8 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  /** 本条助手回复使用的 skill（持久化字段，历史加载时由后端返回） */
+  skill_id?: string
   /** 每条工具调用对应的 MCP 原始输出（未加工），用于「查看原始输出」弹窗 */
   toolRawResults?: string[]
   meta?: {
@@ -502,13 +504,15 @@ watch(
   () => props.initialMessages,
   (list) => {
     if (list && list.length > 0) {
-      messages.value = list.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-        ...(Array.isArray((m as { tool_raw_results?: string[] }).tool_raw_results)
-          ? { toolRawResults: (m as { tool_raw_results: string[] }).tool_raw_results }
-          : {}),
-      }))
+      messages.value = list.map((m) => {
+        const raw = m as { role: string; content: string; tool_raw_results?: string[]; skill_id?: string }
+        return {
+          role: raw.role as 'user' | 'assistant',
+          content: raw.content,
+          ...(Array.isArray(raw.tool_raw_results) ? { toolRawResults: raw.tool_raw_results } : {}),
+          ...(raw.skill_id != null ? { skill_id: raw.skill_id } : {}),
+        }
+      })
     } else {
       // 当切换到一个没有历史消息的会话（例如新对话）时，清空右侧聊天内容
       messages.value = []
@@ -518,13 +522,15 @@ watch(
 )
 onMounted(() => {
   if (props.initialMessages && props.initialMessages.length > 0) {
-    messages.value = props.initialMessages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-      ...(Array.isArray((m as { tool_raw_results?: string[] }).tool_raw_results)
-        ? { toolRawResults: (m as { tool_raw_results: string[] }).tool_raw_results }
-        : {}),
-    }))
+    messages.value = props.initialMessages.map((m) => {
+      const raw = m as { role: string; content: string; tool_raw_results?: string[]; skill_id?: string }
+      return {
+        role: raw.role as 'user' | 'assistant',
+        content: raw.content,
+        ...(Array.isArray(raw.tool_raw_results) ? { toolRawResults: raw.tool_raw_results } : {}),
+        ...(raw.skill_id != null ? { skill_id: raw.skill_id } : {}),
+      }
+    })
   }
   nextTick(() => {
     const ta = inputTextareaRef.value

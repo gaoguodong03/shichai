@@ -25,10 +25,6 @@ def get_mcp_manager():
 MCP_CONFIG_PATH = os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
 SKILLS_DIR = os.getenv("SKILLS_DIR", "./skills")
 APP_SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "./config/app_settings.json")
-# .env 默认路径：若未设置 ENV_FILE_PATH，则用 backend 目录下的 .env（与启动目录无关）
-_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
-ENV_FILE_PATH = os.getenv("ENV_FILE_PATH", str(_BACKEND_DIR / ".env"))
-
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
@@ -89,20 +85,6 @@ async def update_app_settings(body: AppSettingsBody):
     """更新应用设置"""
     save_app_settings(body.model_dump(exclude_none=True))
     return {"status": "ok", "data": load_app_settings()}
-
-
-@router.get("/settings/env")
-async def get_env_content():
-    """获取 .env 文件内容（只读展示）。默认读 backend/.env；可通过 ENV_FILE_PATH 覆盖。"""
-    path = Path(ENV_FILE_PATH)
-    path = path.resolve() if path.is_absolute() else (_BACKEND_DIR / path).resolve()
-    if not path.exists():
-        return {"status": "ok", "data": {"content": "", "path": str(path), "exists": False}}
-    try:
-        content = path.read_text(encoding="utf-8")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取 .env 失败: {e}")
-    return {"status": "ok", "data": {"content": content, "path": str(path), "exists": True}}
 
 
 # ========== MCP 配置 API ==========

@@ -174,7 +174,13 @@ def _load_sessions_from_disk() -> None:
                                 restored.append(HumanMessage(content=content))
                             elif role == "assistant":
                                 raw_list = m.get("tool_raw_results")
-                                kwargs = {"additional_kwargs": {"tool_raw_results": raw_list}} if isinstance(raw_list, list) and raw_list else {}
+                                skill_id = m.get("skill_id")
+                                additional: Dict[str, Any] = {}
+                                if isinstance(raw_list, list) and raw_list:
+                                    additional["tool_raw_results"] = raw_list
+                                if skill_id is not None:
+                                    additional["skill_id"] = skill_id
+                                kwargs = {"additional_kwargs": additional} if additional else {}
                                 restored.append(AIMessage(content=content, **kwargs))
                             else:
                                 restored.append(HumanMessage(content=content))
@@ -818,11 +824,16 @@ async def chat_stream(request: ChatRequest):
                 logger.info("已生成最后一条 Agent 响应")
             logger.info(f"[TIMING] Agent 工作流总耗时: {time.perf_counter() - t_start:.2f}s")
             logger.info(f"Agent 工作流执行完成，共处理 {event_count} 个事件，已发送内容: {has_sent_content}")
-            # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复（含 MCP 原始返回列表，纳入注册流程）
+            # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复（含 MCP 原始返回列表、本回答使用的 skill_id）
             full_content = "".join(accumulated_content).strip() if accumulated_content else ""
             aimessage_kwargs: Dict[str, Any] = {}
+            additional: Dict[str, Any] = {}
             if accumulated_raw_tool_results:
-                aimessage_kwargs["additional_kwargs"] = {"tool_raw_results": accumulated_raw_tool_results}
+                additional["tool_raw_results"] = accumulated_raw_tool_results
+            if selected_skill_id:
+                additional["skill_id"] = selected_skill_id
+            if additional:
+                aimessage_kwargs["additional_kwargs"] = additional
             new_history = list(history) + [new_user_msg] + [AIMessage(content=full_content or "(无响应)", **aimessage_kwargs)]
             _CHAT_HISTORY[session_id] = new_history
             # 使用 LLM 为本轮对话生成摘要，并追加到 Turn 摘要列表
@@ -872,6 +883,8 @@ def _message_to_dict(msg: BaseMessage) -> Dict[str, Any]:
         kwargs = getattr(msg, "additional_kwargs", None) or {}
         if kwargs.get("tool_raw_results") is not None:
             out["tool_raw_results"] = kwargs["tool_raw_results"]
+        if kwargs.get("skill_id") is not None:
+            out["skill_id"] = kwargs["skill_id"]
         return out
     return {"role": "unknown", "content": str(getattr(msg, "content", ""))}
 
