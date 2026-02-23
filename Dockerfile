@@ -15,9 +15,13 @@ RUN npx vite build
 FROM --platform=$TARGETPLATFORM python:3.12-slim
 WORKDIR /app
 
-# 系统依赖（可选，部分 MCP 或工具可能需要）
+# 系统依赖（部分 MCP 或工具需要）
+# - curl: 基础网络工具
+# - nodejs/npm: 运行基于 npx 的本地 MCP（如 amap-maps、zhipu-web-search）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # 后端依赖与代码（保持 backend 目录结构，便于与本地一致）
@@ -28,13 +32,17 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 
 # 环境变量：静态目录供 main 挂载；工作目录与 Python 路径
+# 说明：
+# - skills、config、data 都已经随 backend 目录一起打包进镜像
+# - 这里直接指向 /app/backend 下的真实路径，这样即使没有挂载卷、也没有额外环境变量，
+#   在 K8s/free4inno 这类只能改少量配置的平台中也能开箱即用
 ENV STATIC_DIR=/app/frontend_dist
 ENV PYTHONPATH=/app/backend
-ENV SKILLS_DIR=/app/data/skills
-ENV MCP_CONFIG_PATH=/app/config/mcp_servers.json
-ENV APP_SETTINGS_PATH=/app/config/app_settings.json
-ENV SESSIONS_DIR=/app/data/sessions
-ENV AGENT_OUTPUTS_DIR=/app/data/agent-outputs
+ENV SKILLS_DIR=/app/backend/skills
+ENV MCP_CONFIG_PATH=/app/backend/config/mcp_servers.json
+ENV APP_SETTINGS_PATH=/app/backend/config/app_settings.json
+ENV SESSIONS_DIR=/app/backend/data/sessions
+ENV AGENT_OUTPUTS_DIR=/app/backend/data/agent-outputs
 
 # 默认端口
 EXPOSE 8000

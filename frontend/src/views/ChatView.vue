@@ -2,7 +2,7 @@
   <div class="flex flex-col h-screen bg-gray-50">
     <!-- 头部 -->
     <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-800">DHA Chat</h1>
+      <h1 class="text-xl font-semibold text-gray-800 truncate">{{ sessionTitle }}</h1>
       <button
         class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!messages.length"
@@ -40,28 +40,36 @@
             >
               skill: {{ (msg.meta?.skills && msg.meta.skills[0]) || '无' }}
             </div>
-            <!-- 工具调用 JSON 单独框：一条调用一个框，标题为工具名称 -->
+            <!-- 工具调用 JSON 单独框：一条调用一个框，标题为工具名称，可查看该次调用的 MCP 原始输出 -->
             <div v-if="msg.role === 'assistant'">
               <div
                 v-for="(tc, tcIndex) in extractToolCalls(msg.content).toolCalls"
                 :key="tcIndex"
                 class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
               >
-                <div class="text-blue-700 font-sans font-medium mb-1">
-                  {{ getToolNameFromToolCall(tc) }}
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                  <button
+                    v-if="msg.toolRawResults && msg.toolRawResults[tcIndex] !== undefined"
+                    type="button"
+                    class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
+                    @click="openRawModal(msg.toolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
+                  >
+                    原始输出
+                  </button>
                 </div>
                 <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
               </div>
             </div>
             <!-- 正式回答内容（支持 Markdown 渲染 + 图片） -->
-            <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
+            <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
               <template
                 v-for="(seg, segIndex) in parseMessageContent(extractToolCalls(msg.content).rest)"
                 :key="segIndex"
               >
-                <span
+                <div
                   v-if="seg.type === 'text'"
-                  class="block"
+                  class="chat-markdown"
                   v-html="renderMarkdown(seg.text)"
                 />
                 <a
@@ -84,8 +92,20 @@
         </div>
       </template>
 
-      <!-- 当前流式输出：单独一块展示，避免与占位助手消息重复 -->
-      <div v-if="currentStreamingText" class="flex justify-start">
+      <!-- 正在思考：发送后尚无任何流式内容时显示，避免用户误以为死机 -->
+      <div v-if="isStreaming && !currentStreamingText" class="flex justify-start">
+        <div class="max-w-3xl min-w-0 rounded-lg px-4 py-3 bg-white text-gray-800 border border-gray-200 flex items-center gap-2">
+          <span class="text-sm text-gray-600">正在思考</span>
+          <span class="flex gap-1">
+            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0ms"></span>
+            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 160ms"></span>
+            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 320ms"></span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 当前流式输出：单独一块展示，避免与占位助手消息重复；出现时滚动到视口中部便于查看 -->
+      <div v-if="currentStreamingText" ref="streamingBlockRef" class="flex justify-start">
         <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-white text-gray-800 border border-gray-200">
           <div class="mb-2 text-xs text-purple-600 font-medium">
             skill: {{ (currentMeta?.skills && currentMeta.skills[0]) || '无' }}
@@ -96,20 +116,40 @@
               :key="tcIndex"
               class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
             >
-              <div class="text-blue-700 font-sans font-medium mb-1">
-                {{ getToolNameFromToolCall(tc) }}
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                <button
+                  v-if="currentToolRawResults[tcIndex] !== undefined"
+                  type="button"
+                  class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
+                  @click="openRawModal(currentToolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
+                >
+                  原始输出
+                </button>
               </div>
               <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
             </div>
           </div>
-          <div class="whitespace-pre-wrap break-words min-w-0 overflow-hidden">
+          <!-- 已有工具调用但正文尚未出来时，显示正在思考动画 -->
+          <div
+            v-if="isStreaming && !hasSubstantialRest(currentStreamingText)"
+            class="flex items-center gap-2 py-1 text-sm text-gray-500"
+          >
+            <span>正在思考</span>
+            <span class="flex gap-1">
+              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 160ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 320ms"></span>
+            </span>
+          </div>
+          <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
             <template
               v-for="(seg, segIndex) in parseMessageContent(extractToolCalls(currentStreamingText).rest)"
               :key="segIndex"
             >
-              <span
+              <div
                 v-if="seg.type === 'text'"
-                class="block"
+                class="chat-markdown"
                 v-html="renderMarkdown(seg.text)"
               />
               <a
@@ -128,24 +168,33 @@
               </a>
             </template>
           </div>
-          <div class="inline-block w-2 h-2 bg-gray-400 rounded-full animate-pulse ml-2"></div>
+          <div v-if="isStreaming" class="inline-block w-2 h-2 bg-gray-400 rounded-full animate-pulse ml-2"></div>
         </div>
       </div>
     </div>
 
-    <!-- 输入框 -->
+    <!-- 输入框：多行，上/下都可拖拽调高度，Enter 换行，Ctrl+Enter 发送 -->
     <div class="bg-white border-t border-gray-200 px-4 py-4">
-      <form @submit.prevent="sendMessage" class="flex gap-2">
-        <input
-          v-model="inputMessage"
-          type="text"
-          placeholder="输入消息..."
-          class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <form @submit.prevent="sendMessage" class="flex gap-2 items-end">
+        <div class="flex-1 flex flex-col min-w-0 rounded-lg border border-blue-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+          <div
+            class="chat-input-resize-top cursor-ns-resize flex-shrink-0 h-1.5 hover:bg-blue-50"
+            title="拖动调整输入框高度"
+            @mousedown.prevent="startResizeFromTop"
+          />
+          <textarea
+            ref="inputTextareaRef"
+            v-model="inputMessage"
+            placeholder="输入消息...（Enter 换行，Ctrl+Enter 发送）"
+            :style="inputAreaHeightPx ? { height: inputAreaHeightPx + 'px' } : undefined"
+            class="chat-input-textarea w-full min-h-[2.5rem] max-h-[40rem] resize-y px-4 py-2 border-0 focus:outline-none focus:ring-0"
+            @keydown.enter.prevent="onInputKeydown"
+          />
+        </div>
         <button
           type="submit"
           :disabled="!inputMessage.trim()"
-          class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-6 py-2 h-[2.5rem] flex-shrink-0 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           发送
         </button>
@@ -257,6 +306,21 @@
       </div>
     </div>
 
+    <!-- MCP 原始输出弹窗 -->
+    <div
+      v-if="rawModalVisible"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closeRawModal"
+    >
+      <div class="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg border border-gray-200 flex flex-col overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
+          <span class="text-sm font-semibold text-gray-800">{{ rawModalTitle }}</span>
+          <button class="text-gray-500 hover:text-gray-800 p-1" @click="closeRawModal" aria-label="关闭">✕</button>
+        </div>
+        <pre class="flex-1 overflow-auto p-4 text-xs text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 m-0">{{ rawModalContent }}</pre>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -267,10 +331,11 @@ import MarkdownIt from 'markdown-it'
 const props = withDefaults(
   defineProps<{
     sessionId?: string
+    sessionTitle?: string
     initialMessages?: { role: string; content: string }[]
     scrollToTurnIndex?: number | null
   }>(),
-  { sessionId: 'default', initialMessages: () => [], scrollToTurnIndex: null }
+  { sessionId: 'default', sessionTitle: 'Chat', initialMessages: () => [], scrollToTurnIndex: null }
 )
 const emit = defineEmits<{ (e: 'savedAsFile', path: string): void; (e: 'messageSent'): void; (e: 'streamEnded'): void }>()
 
@@ -278,6 +343,8 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  /** 每条工具调用对应的 MCP 原始输出（未加工），用于「查看原始输出」弹窗 */
+  toolRawResults?: string[]
   meta?: {
     skills?: string[]
     mcp_servers?: string[]
@@ -291,18 +358,91 @@ type ParsedSegment =
 
 const messages = ref<Message[]>([])
 const messagesContainerRef = ref<HTMLElement | null>(null)
+const streamingBlockRef = ref<HTMLElement | null>(null)
 const inputMessage = ref('')
+const inputTextareaRef = ref<HTMLTextAreaElement | null>(null)
+
+/** 输入框高度（px），用于上边拖拽与同步；默认约 2 行，最大 640px */
+const INPUT_HEIGHT_MIN = 60
+const INPUT_HEIGHT_MAX = 640
+const inputAreaHeightPx = ref(52)
+function getInputAreaHeight(): number {
+  const ta = inputTextareaRef.value
+  return ta ? ta.offsetHeight : 100
+}
+function setInputAreaHeightPx(h: number) {
+  const v = Math.max(INPUT_HEIGHT_MIN, Math.min(INPUT_HEIGHT_MAX, h))
+  inputAreaHeightPx.value = v
+}
+
+let resizeFromTop = false
+let resizeStartY = 0
+let resizeStartH = 0
+function startResizeFromTop(e: MouseEvent) {
+  resizeFromTop = true
+  resizeStartY = e.clientY
+  resizeStartH = inputAreaHeightPx.value || getInputAreaHeight()
+  if (!inputAreaHeightPx.value) inputAreaHeightPx.value = resizeStartH
+  document.addEventListener('mousemove', onResizeMove)
+  document.addEventListener('mouseup', onResizeEnd)
+}
+function onResizeMove(e: MouseEvent) {
+  if (!resizeFromTop) return
+  const dy = resizeStartY - e.clientY
+  setInputAreaHeightPx(resizeStartH + dy)
+}
+function onResizeEnd() {
+  resizeFromTop = false
+  document.removeEventListener('mousemove', onResizeMove)
+  document.removeEventListener('mouseup', onResizeEnd)
+}
+
+/** 多行输入：Enter 换行，Ctrl/Cmd+Enter 发送 */
+function onInputKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter') return
+  if (e.ctrlKey || e.metaKey) {
+    sendMessage()
+    return
+  }
+  // 纯 Enter：在光标处插入换行（已 .prevent 故需手动插入）
+  const ta = inputTextareaRef.value
+  if (!ta) return
+  const start = ta.selectionStart
+  const end = ta.selectionEnd
+  const val = inputMessage.value
+  inputMessage.value = val.slice(0, start) + '\n' + val.slice(end)
+  nextTick(() => {
+    ta.selectionStart = ta.selectionEnd = start + 1
+    ta.focus()
+  })
+}
 const isStreaming = ref(false)
 const currentStreamingText = ref('')
 const currentMeta = ref<Message['meta'] | null>(null)
+/** 当前流式回复中每条工具调用对应的 MCP 原始输出（与 tool_result 事件顺序一致） */
+const currentToolRawResults = ref<string[]>([])
+
+/** 原始输出弹窗 */
+const rawModalVisible = ref(false)
+const rawModalTitle = ref('')
+const rawModalContent = ref('')
+function openRawModal(content: string, title: string) {
+  rawModalTitle.value = title
+  rawModalContent.value = content
+  rawModalVisible.value = true
+}
+function closeRawModal() {
+  rawModalVisible.value = false
+}
 const MAX_INPUT_CHARS = 4000
 const MAX_INSERT_FILE_CHARS = 6000
 
-// Markdown 渲染器：用于把助手回复里的 Markdown（标题、列表、加粗等）渲染出来
+// Markdown 渲染器：与 files 一致，支持标题、列表、分行、代码块等完整渲染
 const md = new MarkdownIt({
   html: false,
   linkify: true,
   breaks: true,
+  typographer: true,
 })
 
 function renderMarkdown(text: string): string {
@@ -340,6 +480,23 @@ watch(
   }
 )
 
+// 开始生成回答时，将「当前回答」顶部滚到视口中部，方便查看
+watch(
+  () => !!currentStreamingText.value,
+  (hasStreaming) => {
+    if (!hasStreaming) return
+    nextTick(() => {
+      const container = messagesContainerRef.value
+      const block = streamingBlockRef.value
+      if (!container || !block) return
+      const ch = container.clientHeight
+      const blockTop = block.offsetTop
+      const targetScroll = blockTop - ch / 2
+      container.scrollTop = Math.max(0, Math.min(targetScroll, container.scrollHeight - ch))
+    })
+  }
+)
+
 // 当父组件传入 initialMessages 时（如从对话历史进入），用其初始化消息列表
 watch(
   () => props.initialMessages,
@@ -348,6 +505,9 @@ watch(
       messages.value = list.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
+        ...(Array.isArray((m as { tool_raw_results?: string[] }).tool_raw_results)
+          ? { toolRawResults: (m as { tool_raw_results: string[] }).tool_raw_results }
+          : {}),
       }))
     } else {
       // 当切换到一个没有历史消息的会话（例如新对话）时，清空右侧聊天内容
@@ -361,8 +521,20 @@ onMounted(() => {
     messages.value = props.initialMessages.map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
+      ...(Array.isArray((m as { tool_raw_results?: string[] }).tool_raw_results)
+        ? { toolRawResults: (m as { tool_raw_results: string[] }).tool_raw_results }
+        : {}),
     }))
   }
+  nextTick(() => {
+    const ta = inputTextareaRef.value
+    if (ta && typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        if (!resizeFromTop && ta.offsetHeight) inputAreaHeightPx.value = ta.offsetHeight
+      })
+      ro.observe(ta)
+    }
+  })
 })
 
 /** 从 content 中提取所有工具调用 JSON 块（```json { "action": "tool_call", ... } ```），返回 { toolCalls, rest } */
@@ -415,6 +587,13 @@ function getToolNameFromToolCall(toolCallStr: string | null): string {
   } catch {
     return '执行工具'
   }
+}
+
+/** 流式内容中除去 tool_call 后的正文是否已有实质内容（用于决定是否显示「正在思考」） */
+function hasSubstantialRest(content: string): boolean {
+  const rest = extractToolCalls(content ?? '').rest.trim()
+  // 尚无正文或仅有一两句占位文案时仍显示「正在思考」
+  return rest.length > 40
 }
 
 /** 判断是否为图片 URL（路径或 pathname 含常见图片扩展名） */
@@ -622,6 +801,7 @@ const sendMessage = async () => {
   isStreaming.value = true
   currentStreamingText.value = ''
   currentMeta.value = null
+  currentToolRawResults.value = []
 
   // 防御性超时：若后端流长时间无 end/error，强制结束流，解锁输入框
   let streamTimeoutId: number | undefined
@@ -646,6 +826,8 @@ const sendMessage = async () => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    /** 跨 chunk 保留，避免 event: 与 data: 分在不同 TCP 包时丢失类型 */
+    let eventType = ''
 
     // 超时时间（毫秒），超过则取消读取并提示
     const STREAM_TIMEOUT_MS = 120000
@@ -666,7 +848,6 @@ const sendMessage = async () => {
       const lines = buffer.split('\n')
       buffer = lines.pop() || ''
 
-      let eventType = ''
       for (const line of lines) {
         if (line.startsWith('event: ')) {
           eventType = line.substring(7).trim()
@@ -676,8 +857,6 @@ const sendMessage = async () => {
           if (data) {
             try {
               const parsed = JSON.parse(data)
-              console.log('解析数据:', eventType, parsed)
-              
               if (eventType === 'content' && parsed.text) {
                 currentStreamingText.value += parsed.text
                 // 更新消息内容
@@ -708,6 +887,7 @@ const sendMessage = async () => {
                     )
                     currentStreamingText.value += `\n\`\`\`json\n${tcJson}\n\`\`\`\n`
                   }
+                  messages.value[assistantMessageIndex].content = currentStreamingText.value
                 }
                 // 如果是思考过程，显示内容
                 if (parsed.type === 'thought' && parsed.content) {
@@ -725,9 +905,10 @@ const sendMessage = async () => {
                     messages.value[assistantMessageIndex].meta = parsed.meta
                     currentMeta.value = parsed.meta
                   }
-                } else if (parsed.type === 'tool_result' && parsed.content) {
-                  currentStreamingText.value += `\n[工具结果] ${parsed.content}\n`
-                  messages.value[assistantMessageIndex].content = currentStreamingText.value
+                } else if (parsed.type === 'tool_result') {
+                  // MCP 原始返会在流程里注册（后端持久化并在会话中返回）；前端用 toolRawResults 存一份复制，仅点击蓝色块「原始输出」时显示
+                  const raw = (parsed as { raw_content?: string }).raw_content ?? parsed.content ?? ''
+                  currentToolRawResults.value.push(raw)
                   if (parsed.meta && (parsed.meta.skills?.length || parsed.meta.mcp_servers?.length || parsed.meta.tools?.length)) {
                     messages.value[assistantMessageIndex].meta = parsed.meta
                     currentMeta.value = parsed.meta
@@ -737,10 +918,14 @@ const sendMessage = async () => {
                 // 开始事件，初始化
                 console.log('流开始')
                 currentStreamingText.value = ''
+                currentToolRawResults.value = []
               } else if (eventType === 'end') {
                 // 流结束
                 console.log('流结束，当前内容长度:', currentStreamingText.value.length)
                 messages.value[assistantMessageIndex].isStreaming = false
+                if (currentToolRawResults.value.length) {
+                  messages.value[assistantMessageIndex].toolRawResults = [...currentToolRawResults.value]
+                }
                 // 确保最终内容已保存
                 if (currentStreamingText.value.trim()) {
                   messages.value[assistantMessageIndex].content = currentStreamingText.value
@@ -751,6 +936,7 @@ const sendMessage = async () => {
                   console.warn('流结束但没有内容')
                 }
                 currentStreamingText.value = ''
+                currentToolRawResults.value = []
                 emit('streamEnded')
               } else if (eventType === 'error') {
                 console.error('收到错误:', parsed.error)
@@ -779,3 +965,142 @@ const sendMessage = async () => {
   }
 }
 </script>
+
+<style scoped>
+.thinking-dot {
+  animation: thinking-bounce 0.6s ease-in-out infinite;
+}
+@keyframes thinking-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* 对话中的 Markdown 样式：标题、分行、列表、代码块等，与 files 展示一致 */
+.chat-markdown-wrap :deep(.chat-markdown) {
+  line-height: 1.6;
+  word-break: break-word;
+}
+.chat-markdown-wrap :deep(.chat-markdown > *:first-child) {
+  margin-top: 0;
+}
+.chat-markdown-wrap :deep(.chat-markdown > *:last-child) {
+  margin-bottom: 0;
+}
+.chat-markdown-wrap :deep(.chat-markdown h1) {
+  font-size: 1.375rem;
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+  line-height: 1.3;
+  color: #1f2937;
+}
+.chat-markdown-wrap :deep(.chat-markdown h2) {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.125rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #374151;
+}
+.chat-markdown-wrap :deep(.chat-markdown h3) {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #4b5563;
+}
+.chat-markdown-wrap :deep(.chat-markdown h4, .chat-markdown h5, .chat-markdown h6) {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #4b5563;
+}
+.chat-markdown-wrap :deep(.chat-markdown p) {
+  margin-top: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+.chat-markdown-wrap :deep(.chat-markdown ul) {
+  list-style-type: disc;
+  margin-left: 1.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+}
+.chat-markdown-wrap :deep(.chat-markdown ol) {
+  list-style-type: decimal;
+  margin-left: 1.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
+}
+.chat-markdown-wrap :deep(.chat-markdown li) {
+  margin-bottom: 0.25rem;
+}
+.chat-markdown-wrap :deep(.chat-markdown li > p) {
+  margin-bottom: 0.25rem;
+}
+.chat-markdown-wrap :deep(.chat-markdown pre) {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.chat-markdown-wrap :deep(.chat-markdown code) {
+  background: #f3f4f6;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  border: 1px solid #e5e7eb;
+}
+.chat-markdown-wrap :deep(.chat-markdown pre code) {
+  background: none;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+}
+.chat-markdown-wrap :deep(.chat-markdown blockquote) {
+  border-left: 4px solid #d1d5db;
+  margin: 0.5rem 0;
+  padding-left: 1rem;
+  color: #6b7280;
+}
+.chat-markdown-wrap :deep(.chat-markdown a) {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.chat-markdown-wrap :deep(.chat-markdown hr) {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 0.75rem 0;
+}
+.chat-markdown-wrap :deep(.chat-markdown strong) {
+  font-weight: 600;
+}
+.chat-markdown-wrap :deep(.chat-markdown table) {
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin: 0.5rem 0;
+}
+.chat-markdown-wrap :deep(.chat-markdown th),
+.chat-markdown-wrap :deep(.chat-markdown td) {
+  border: 1px solid #e5e7eb;
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.chat-markdown-wrap :deep(.chat-markdown th) {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+</style>

@@ -311,11 +311,13 @@ sudo ufw allow 443/tcp
 sudo ufw enable
 ```
 
-## Docker 部署（可选）
+## Docker 部署（多容器示例，可选）
+
+> **说明**：本节是基于旧版结构的多容器示例，已根据当前项目目录和环境变量约定做了更新。实际生产环境 **推荐优先使用前文的“一体化镜像 + 单容器 Compose” 方案**，这里主要作为需要前后端、数据库独立容器时的参考。
 
 ### Docker Compose 配置
 
-创建 `docker-compose.yml`:
+创建 `docker-compose.yml`（关键点：通过 `env_file` 挂载 `backend/.env`，统一管理包括高德/智谱在内的所有 Key）：
 
 ```yaml
 version: '3.8'
@@ -325,13 +327,18 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # 从 backend/.env 注入所有 LLM / MCP 相关环境变量
+    # 例如 QWEN_API_KEY、AMAP_MAPS_API_KEY、ZHIPU_WEB_SEARCH_API_KEY 等
+    env_file:
+      - ./backend/.env
     environment:
+      # 如需在 Compose 中覆盖数据库连接，可在这里显式指定
       - DATABASE_URL=postgresql://postgres:password@db:5432/dha
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
-      - ./backend:/app
-      - ./config:/app/config
-      - ./skills:/app/skills
+      # 挂载数据与配置目录，保持与本地开发一致
+      - ./backend/data:/app/data
+      - ./backend/skills:/app/data/skills
+      - ./backend/config:/app/config
     depends_on:
       - db
 

@@ -1,18 +1,14 @@
 {
-  "session-mlfbd3tn-50608v": {
-    "title": "步行",
-    "updated_at": "2026-02-09T15:31:34.240484+00:00"
-  },
   "session-mlfz0fjf-lf1bjy": {
-    "title": "帮我收集一下最近关于北京烟花燃放情况的报道并生成一份汇总报告",
+    "title": "示例 2-关于北京烟花燃放情况的报道并生成一份汇总报告",
     "updated_at": "2026-02-10T02:18:32.980439+00:00"
   },
   "session-mlg0zadr-bgdrjp": {
-    "title": "河南春晚的收视率调研测试",
+    "title": "示例 2-河南春晚的收视率调研测试",
     "updated_at": "2026-02-10T03:13:52.795016+00:00"
   },
   "session-mlg1bhdj-5z7dav": {
-    "title": "很好，你的计算和地图提供的路线四计算的一模一样。",
+    "title": "skill 之间的跳转测试",
     "updated_at": "2026-02-10T03:24:45.901850+00:00"
   },
   "session-mlgjpook-v6oggt": {
@@ -20,23 +16,43 @@
     "updated_at": "2026-02-10T11:57:15.502195+00:00"
   },
   "session-mlgko2yj-w9b2i5": {
-    "title": "提示词设计测试",
+    "title": "含script的skills 测试-提示词设计",
     "updated_at": "2026-02-10T12:24:12.087286+00:00"
-  },
-  "session-mlglbmyf-rkekj8": {
-    "title": "生成完整的新闻汇总 HTML 页面",
-    "updated_at": "2026-02-10T12:44:18.853317+00:00"
   },
   "session-mlglpwr0-41uci0": {
     "title": "地图测试",
     "updated_at": "2026-02-10T12:54:43.004313+00:00"
   },
-  "session-mlglu8mx-96lcx6": {
-    "title": "北京今天下不下雨",
-    "updated_at": "2026-02-10T12:58:23.653814+00:00"
-  },
   "session-mlglwz7x-y2y9ek": {
     "title": "api 服务测试",
     "updated_at": "2026-02-10T13:00:22.656549+00:00"
+  },
+  "session-mlixnvxh-vfwhjj": {
+    "title": "示例 1-博客分析",
+    "updated_at": "2026-02-12T04:04:58.153988+00:00"
+  },
+  "session-mlj00dpk-le8r5s": {
+    "title": "示例 1-公众号写作",
+    "updated_at": "2026-02-12T05:23:07.635195+00:00"
+  },
+  "session-mlj16vge-hjx80w": {
+    "title": "示例 1-博客写作",
+    "updated_at": "2026-02-12T05:47:48.980129+00:00"
+  },
+  "session-mlj55twt-g8mxy4": {
+    "title": "高德地图搜索",
+    "updated_at": "2026-02-12T07:33:11.286137+00:00"
+  },
+  "session-mlj5xz80-1kz8yt": {
+    "title": "示例 2-深度调研-上下文长度不够版本",
+    "updated_at": "2026-02-12T08:04:16.672751+00:00"
+  },
+  "session-mlj6hpv3-4cv020": {
+    "title": "示例 3-生成图标",
+    "updated_at": "2026-02-12T08:13:26.763223+00:00"
+  },
+  "session-mlj99nki-69l596": {
+    "title": "北京邮电大学在哪里",
+    "updated_at": "2026-02-12T09:28:12.583421+00:00"
   }
 }

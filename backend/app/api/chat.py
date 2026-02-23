@@ -12,6 +12,11 @@ from pathlib import Path
 import os
 import json
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+
+try:
+    from langchain_core.messages import messages_from_dict
+except ImportError:
+    messages_from_dict = None
 from app.agent.llm_client import get_llm_from_config, QwenLLM
 from app.agent.graph import create_skill_execution_agent
 from app.agent.skill_selector import select_skill
@@ -43,13 +48,17 @@ initialized = False
 
 # 从工具结果文本中提取工具名（graph.py 会输出：工具 <tool_name> 的执行结果: ...）
 _TOOL_NAME_RE = re.compile(r"工具\s+([^\s]+)\s+的执行结果")
+# 从图标工具结果中提取图片 URL，用于格式化为 Markdown 图片以便前端渲染
+_IMAGE_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 # 技能 -> 关联的 MCP server_id 列表（一个技能可对应多个 MCP，一个 MCP 可被多技能共用）
 _SKILL_MCP_SERVERS: Dict[str, List[str]] = {
     "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
     "amap-maps": ["amap-maps"],
     "app-icon-generator": ["volces-icon"],
+    "blog-write": ["linkup", "exa", "fetch", "zhipu-web-search"],
     "data-report": ["linkup", "exa", "fetch"],
+    "zhipu-web-search": ["zhipu-web-search"],
 }
 # 由 _SKILL_MCP_SERVERS 反推：server_id -> skill_id（取首个，用于 meta 展示）
 _MCP_SERVER_TO_SKILL: Dict[str, str] = {}
@@ -164,7 +173,9 @@ def _load_sessions_from_disk() -> None:
                             if role == "user":
                                 restored.append(HumanMessage(content=content))
                             elif role == "assistant":
-                                restored.append(AIMessage(content=content))
+                                raw_list = m.get("tool_raw_results")
+                                kwargs = {"additional_kwargs": {"tool_raw_results": raw_list}} if isinstance(raw_list, list) and raw_list else {}
+                                restored.append(AIMessage(content=content, **kwargs))
                             else:
                                 restored.append(HumanMessage(content=content))
                     if restored:
@@ -244,6 +255,10 @@ def _is_export_intent(message: str) -> bool:
     return any(kw in t for kw in _EXPORT_KEYWORDS)
 
 
+# 单轮摘要建议字数：稍详细以便后续轮次不丢关键信息，但单轮有上限
+_TURN_SUMMARY_MAX_CHARS = 220
+
+
 async def _summarize_turn_with_llm(
     llm: "QwenLLM",
     user_text: str,
@@ -252,8 +267,8 @@ async def _summarize_turn_with_llm(
 ) -> str:
     """
     使用 LLM 为单个 Turn（用户 + 助手）生成摘要。
-    - 摘要应短小（不超过 ~100 字），突出关键信息、结论、约定。
-    - 仅作为「记忆」，不会直接展示给用户。
+    - 摘要稍详细（约 150–220 字），包含：用户问题要点、助手是否调用工具/搜索及关键结论或数据。
+    - 仅作为「历史记忆」发给后续轮次的大模型，不直接展示给用户。
     """
     from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -269,8 +284,11 @@ async def _summarize_turn_with_llm(
     try:
         client = llm.get_client()
         system_prompt = (
-            "你是对话摘要助手。请用不超过 100 字的中文，总结下面用户与助手本轮对话的关键信息，"
-            "包括重要事实、决策、约定或结论。不要加入新内容，不要复述无关客套。"
+            "你是对话摘要助手。请用 150–220 字的中文，总结下面用户与助手本轮对话，必须包含：\n"
+            "1. 用户问题或需求要点（一句话概括）。\n"
+            "2. 助手做了什么：若调用了工具/搜索，写出工具类型或搜索关键词及结果要点；若直接回答，写出关键结论、数据、链接或名称。\n"
+            "3. 若有重要约定、结论、数字、链接，请保留在摘要中。\n"
+            "不要加入新内容，不要复述无关客套，不要漏掉对后续对话有用的关键信息。"
         )
         content = f"【用户】\n{user_text}\n\n【助手】\n{assistant_text}"
         resp = await client.ainvoke(
@@ -281,6 +299,9 @@ async def _summarize_turn_with_llm(
         )
         summary = (getattr(resp, "content", "") or "").strip()
         if summary:
+            # 单轮摘要过长时截断，避免历史摘要总长膨胀
+            if len(summary) > _TURN_SUMMARY_MAX_CHARS:
+                summary = summary[:_TURN_SUMMARY_MAX_CHARS].rstrip() + "…"
             return summary
     except Exception as e:
         logger.error(f"生成 Turn 摘要失败: {e}", exc_info=True)
@@ -293,6 +314,8 @@ async def _summarize_turn_with_llm(
 
 # 记忆窗口：只保留最近 N 轮摘要，传入 LLM 的上下文
 _HISTORY_WINDOW_TURNS = 10
+# 历史摘要总字符上限，避免提示词过长
+_HISTORY_SUMMARY_MAX_TOTAL_CHARS = 3200
 
 
 def _append_turn_summary(session_id: str, summary: str) -> None:
@@ -331,7 +354,18 @@ def _build_history_summary(session_id: str, history: List[BaseMessage], max_char
                 continue
             lines.append(f"第{idx}轮：{summary_str}")
         if lines:
-            return "\n".join(lines)
+            raw = "\n".join(lines)
+            # 总长超过上限时，从最早轮开始丢弃，只保留能塞进上限的最近几轮
+            if len(raw) > _HISTORY_SUMMARY_MAX_TOTAL_CHARS:
+                kept: List[str] = []
+                total = 0
+                for line in reversed(lines):
+                    if total + len(line) + 1 > _HISTORY_SUMMARY_MAX_TOTAL_CHARS:
+                        break
+                    kept.insert(0, line)
+                    total += len(line) + 1
+                raw = "\n".join(kept)
+            return raw
 
     # 2. 无 Turn 摘要时，先收集所有轮次，再取最近 10 轮做简要预览
     all_turns: List[tuple] = []
@@ -521,6 +555,8 @@ async def chat_stream(request: ChatRequest):
             }
             # 累积本轮助手回复，用于写入会话历史
             accumulated_content: List[str] = []
+            # MCP 原始返回列表，纳入注册流程并持久化；前端用单独字段存一份复制，仅点击「原始输出」时显示
+            accumulated_raw_tool_results: List[str] = []
             
             # 使用 LangGraph 运行完整的 ReAct 循环
             # 流式执行 Agent 工作流
@@ -566,7 +602,6 @@ async def chat_stream(request: ChatRequest):
                 # final_state 由 values 模式提供（含 messages），此处不覆盖
                 event_count += 1
                 logger.info(f"收到 Agent 事件 #{event_count}: {event_keys}")
-                
                 # updates 格式：{"agent": [...]} 或 {"tool": [...]}
                 if "agent" in event:
                     agent_output = event["agent"]
@@ -593,10 +628,12 @@ async def chat_stream(request: ChatRequest):
                             final_state = {"messages": agent_output["messages"]}
                         # token 已通过 stream_mode="messages" 流式发送；若未收到流则此处发送完整内容（兼容 API 不支持流式）
                         if content_str.strip():
-                            if not has_sent_content:
-                                accumulated_content.append(content_str)
+                            accumulated_content.append(content_str)
+                            # 有 tool_calls 时同一段内容会通过 react_step 的 thought 下发，不再重复发 content 事件避免前端显示两遍；
+                            # 仅在「无 tool_calls 且尚未发送过最终内容」时，用 content 事件作为兜底输出。
+                            if not has_tool_calls and not has_sent_content:
                                 yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'meta': meta_context}, ensure_ascii=False)}\n\n"
-                            has_sent_content = True
+                                has_sent_content = True
                         if has_tool_calls:
                             # 结构化 tool_calls：同时附带单条和数组，便于前端展示「单步多次工具调用」
                             tool_calls_payload = []
@@ -613,17 +650,23 @@ async def chat_stream(request: ChatRequest):
                                     args = dict(args)
                                     args["path"] = args.pop("__arg1")
                                 # 对 MCP 工具使用与 manager 相同的参数归一化逻辑，
-                                # 确保前端展示的就是「最终发给 MCP 的参数」（包含自动补 city=北京 等修正）。
+                                # 确保前端展示的就是「最终发给 MCP 的参数」（含 __arg1 -> 首参 等通用映射）。
                                 if isinstance(args, dict) and "_" in tool_name:
                                     server_id, original_tool_name = tool_name.split("_", 1)
-                                    # 目前对 volces-icon / amap-maps / file-reader 做特殊归一化；
-                                    # 其他 MCP 若后续增加兼容逻辑，可在 normalize_mcp_kwargs_for_call 中统一维护。
-                                    if server_id in ("volces-icon", "amap-maps", "file-reader"):
-                                        args = normalize_mcp_kwargs_for_call(
-                                            server_id=server_id,
-                                            original_tool_name=original_tool_name,
-                                            kwargs=args,
-                                        )
+                                    input_schema = None
+                                    try:
+                                        mcp = _get_mcp_manager()
+                                        t = mcp.tools.get(tool_name) if getattr(mcp, "tools", None) else None
+                                        if t is not None:
+                                            input_schema = getattr(t, "_mcp_input_schema", None)
+                                    except Exception:
+                                        pass
+                                    args = normalize_mcp_kwargs_for_call(
+                                        server_id=server_id,
+                                        original_tool_name=original_tool_name,
+                                        kwargs=args,
+                                        input_schema=input_schema,
+                                    )
                                 payload = {
                                     "action": "tool_call",
                                     "tool": tool_name,
@@ -649,10 +692,38 @@ async def chat_stream(request: ChatRequest):
                     if not isinstance(messages, list):
                         messages = [messages]
                     logger.info(f"处理 tool 节点输出，消息数量: {len(messages)}")
-                    
                     for message in messages:
+                        # LangGraph 流式返回的 event["tool"] 项可能是 {"messages": [HumanMessage(...)]} 的包装
+                        if isinstance(message, dict) and "messages" in message and isinstance(message["messages"], list) and message["messages"]:
+                            message = message["messages"][0]
+                        # 流式 updates 中可能是 dict（LangGraph 序列化），不一定是 HumanMessage 实例
                         if isinstance(message, HumanMessage):
                             content = message.content
+                        elif isinstance(message, dict):
+                            content = None
+                            if messages_from_dict:
+                                try:
+                                    restored = messages_from_dict([message])
+                                    if restored and hasattr(restored[0], "content"):
+                                        content = restored[0].content
+                                        if isinstance(content, list):
+                                            content = content[0].get("text", str(content)) if content and isinstance(content[0], dict) else (content[0] if content else "")
+                                except Exception:
+                                    pass
+                            if content is None or content == "":
+                                data_val = message.get("data")
+                                content = (
+                                    message.get("content")
+                                    or (data_val.get("content") if isinstance(data_val, dict) else (data_val if isinstance(data_val, str) else None))
+                                    or (message.get("kwargs") or {}).get("content")
+                                    or ""
+                                )
+                            if isinstance(content, list):
+                                content = content[0].get("text", str(content)) if content and isinstance(content[0], dict) else (content[0] if content else "")
+                            content = content or ""
+                        else:
+                            content = None
+                        if content is not None:
                             logger.info(f"工具执行结果: {content}")
                             # 从文本中尽可能提取 tool/mcp server 名
                             tool_name = None
@@ -668,7 +739,24 @@ async def chat_stream(request: ChatRequest):
                                     skill_name = _MCP_SERVER_TO_SKILL.get(server_id)
                                     if skill_name:
                                         meta_context["skills"] = [skill_name]
-                            yield f"event: react_step\ndata: {json_module.dumps({'type': 'tool_result', 'content': content, 'meta': meta_context}, ensure_ascii=False)}\n\n"
+                            # MCP 原始返回：纳入注册流程（累积并随助手消息持久化），并随 tool_result 事件下发给前端
+                            raw_content = str(content)
+                            accumulated_raw_tool_results.append(raw_content)
+                            # 图标生成工具：若结果中含 URL，格式化为 Markdown 图片，随 tool_result 的 content 下发（前端可选展示）
+                            display_content = raw_content
+                            if tool_name == "volces-icon_generate_app_icon":
+                                first_url = _IMAGE_URL_RE.search(display_content)
+                                if first_url:
+                                    url = first_url.group(0).rstrip(".,;:!?)]")
+                                    display_content = display_content + "\n\n![生成的图标]({})".format(url)
+                            payload = {
+                                "type": "tool_result",
+                                "content": display_content,
+                                "raw_content": raw_content,
+                                "meta": meta_context,
+                            }
+                            logger.info(f"发送 tool_result 事件, tool={tool_name}, raw_content 长度={len(raw_content)}, content 长度={len(display_content)}")
+                            yield f"event: react_step\ndata: {json_module.dumps(payload, ensure_ascii=False)}\n\n"
                 
                 else:
                     logger.info(f"事件格式未知，跳过。事件键: {list(event.keys())}")
@@ -728,10 +816,12 @@ async def chat_stream(request: ChatRequest):
                 logger.info("已生成最后一条 Agent 响应")
             logger.info(f"[TIMING] Agent 工作流总耗时: {time.perf_counter() - t_start:.2f}s")
             logger.info(f"Agent 工作流执行完成，共处理 {event_count} 个事件，已发送内容: {has_sent_content}")
-            # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复
+            # 将会话历史写入内存：历史 + 本轮用户消息 + 本轮助手回复（含 MCP 原始返回列表，纳入注册流程）
             full_content = "".join(accumulated_content).strip() if accumulated_content else ""
-            # 不再按消息条数截断，完整保留该 session 的所有轮次
-            new_history = list(history) + [new_user_msg] + [AIMessage(content=full_content or "(无响应)")]
+            aimessage_kwargs: Dict[str, Any] = {}
+            if accumulated_raw_tool_results:
+                aimessage_kwargs["additional_kwargs"] = {"tool_raw_results": accumulated_raw_tool_results}
+            new_history = list(history) + [new_user_msg] + [AIMessage(content=full_content or "(无响应)", **aimessage_kwargs)]
             _CHAT_HISTORY[session_id] = new_history
             # 使用 LLM 为本轮对话生成摘要，并追加到 Turn 摘要列表
             try:
@@ -753,9 +843,8 @@ async def chat_stream(request: ChatRequest):
         except asyncio.CancelledError:
             # 客户端断开、超时等导致取消，正常退出，不视为错误
             elapsed_sec = time.perf_counter() - t_start
-            hint = "可能是前端流式超时(120s)" if elapsed_sec > 100 else "可能是客户端断开(刷新/切换标签/关闭/Vite HMR等)"
             logger.info(
-                f"chat_stream: 请求已取消｜耗时 {elapsed_sec:.1f}s｜事件数 {event_count}｜已发内容 {has_sent_content}｜{hint}"
+                f"chat_stream: 请求已取消｜耗时 {elapsed_sec:.1f}s｜事件数 {event_count}｜已发内容 {has_sent_content}"
             )
         except Exception as e:
             error_msg = str(e)
@@ -777,7 +866,11 @@ def _message_to_dict(msg: BaseMessage) -> Dict[str, Any]:
     if isinstance(msg, HumanMessage):
         return {"role": "user", "content": msg.content if isinstance(msg.content, str) else str(msg.content)}
     if isinstance(msg, AIMessage):
-        return {"role": "assistant", "content": msg.content if isinstance(msg.content, str) else str(msg.content)}
+        out: Dict[str, Any] = {"role": "assistant", "content": msg.content if isinstance(msg.content, str) else str(msg.content)}
+        kwargs = getattr(msg, "additional_kwargs", None) or {}
+        if kwargs.get("tool_raw_results") is not None:
+            out["tool_raw_results"] = kwargs["tool_raw_results"]
+        return out
     return {"role": "unknown", "content": str(getattr(msg, "content", ""))}
 
 

@@ -86,14 +86,25 @@
             </button>
           </div>
         </div>
-        <div v-else>
-          <pre class="text-sm text-gray-800 whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
-          <button
-            class="mt-2 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
-            @click="startEditContent"
-          >
-            编辑内容
-          </button>
+        <div v-else class="flex flex-col gap-2">
+          <!-- .md 默认渲染为 Markdown，可切换为源文件 -->
+          <div v-if="isMarkdown && !showMdSource" class="prose prose-sm max-w-none text-gray-800 file-detail-markdown" v-html="renderMarkdown(previewText ?? '')" />
+          <pre v-else class="text-sm text-gray-800 whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
+          <div class="flex flex-wrap items-center gap-2 mt-1">
+            <button
+              v-if="isMarkdown"
+              class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+              @click="showMdSource = !showMdSource"
+            >
+              {{ showMdSource ? '显示渲染' : '显示源文件' }}
+            </button>
+            <button
+              class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+              @click="startEditContent"
+            >
+              编辑内容
+            </button>
+          </div>
         </div>
       </template>
       <div v-else class="text-sm text-gray-500">不支持预览或编辑，请下载查看</div>
@@ -106,6 +117,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import VuePdfEmbed from 'vue-pdf-embed'
 import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
+import MarkdownIt from 'markdown-it'
 
 const props = defineProps<{ path: string }>()
 const emit = defineEmits<{ (e: 'renamed', newPath: string): void }>()
@@ -129,6 +141,18 @@ const isEditableText = computed(() => {
   const ext = currentPath.value.split('.').pop()?.toLowerCase()
   return !isImage.value && !isPDF.value && !isDocx.value && !isExcel.value && textExts.includes(ext || '')
 })
+
+const isMarkdown = computed(() => /\.md$/i.test(currentPath.value))
+const showMdSource = ref(false)
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    return md.render(text)
+  } catch {
+    return text
+  }
+}
 
 const currentPath = ref(props.path)
 const displayName = computed(() => {
@@ -277,7 +301,10 @@ async function saveContent() {
   }
 }
 
-watch(() => props.path, (p) => { currentPath.value = p }, { immediate: true })
+watch(() => props.path, (p) => {
+  currentPath.value = p
+  showMdSource.value = false
+}, { immediate: true })
 watch(currentPath, loadContent, { immediate: true })
 watch([currentPath, isDocx], () => {
   if (isDocx.value) loadDocx()
@@ -310,4 +337,13 @@ watch([currentPath, isExcel], () => {
   background: #f3f4f6;
   font-weight: 600;
 }
+.file-detail-markdown :deep(h1) { font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(h2) { font-size: 1.25rem; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0.25rem; }
+.file-detail-markdown :deep(h3) { font-size: 1.125rem; font-weight: 600; margin-top: 0.5rem; }
+.file-detail-markdown :deep(p) { margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(ul) { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(ol) { list-style-type: decimal; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(pre) { background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
+.file-detail-markdown :deep(code) { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
+.file-detail-markdown :deep(a) { color: #2563eb; text-decoration: underline; }
 </style>

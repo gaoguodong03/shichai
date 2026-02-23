@@ -33,6 +33,7 @@ def normalize_mcp_kwargs_for_call(
     server_id: Optional[str],
     original_tool_name: str,
     kwargs: Dict[str, Any],
+    input_schema: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     规范化 MCP 工具调用参数。
@@ -40,6 +41,9 @@ def normalize_mcp_kwargs_for_call(
     仅做纯函数转换（不写日志），便于：
     - manager 内部在真正调用 MCP 前统一规整参数
     - chat 层在展示「实际调用参数」时复用相同逻辑，保证前后端一致
+
+    input_schema: 工具的 JSON Schema（含 properties/required），用于将 __arg1 等通用占位符
+                  映射到实际参数名（如 query、address），解决 LLM 常输出 __arg1 的问题。
     """
     call_kwargs: Dict[str, Any] = dict(kwargs or {})
 
@@ -136,6 +140,21 @@ def normalize_mcp_kwargs_for_call(
         if "path" not in call_kwargs:
             call_kwargs["path"] = str(call_kwargs["__arg1"]) if call_kwargs["__arg1"] is not None else ""
 
+    # 通用：若存在 __arg1 且尚未被上述规则映射，且能拿到工具的 inputSchema，
+    # 则映射到 schema 中第一个必需参数或第一个属性（解决 zhipu-web-search、exa 等 query 参数问题）
+    if "__arg1" in call_kwargs and input_schema:
+        schema = input_schema if isinstance(input_schema, dict) else {}
+        first_param = None
+        required = schema.get("required") or []
+        if required:
+            first_param = required[0]
+        else:
+            props = schema.get("properties") or {}
+            if props:
+                first_param = next(iter(props.keys()), None)
+        if first_param and first_param not in call_kwargs:
+            call_kwargs[first_param] = call_kwargs.pop("__arg1")
+
     # amap-maps maps_geo:
     # 无 city 或 city 为区名时，若地址含北京相关关键词则自动补 city=北京，避免全国检索误匹配
     if server_id == "amap-maps" and original_tool_name == "maps_geo":
@@ -191,6 +210,40 @@ class MCPToolManager:
             logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
             for config in self.server_configs:
                 logger.info(f"  - {config.get('id')}: {config.get('name')}, enabled: {config.get('enabled')}")
+            # #region agent log
+            # 调试：记录当前加载到的 MCP Server 基本信息（不包含任何敏感字段）
+            try:
+                import json as _json_cfg, time as _time_cfg
+                summary = []
+                for _cfg in self.server_configs:
+                    _transport = _cfg.get("transport") or {}
+                    summary.append(
+                        {
+                            "id": _cfg.get("id"),
+                            "enabled": bool(_cfg.get("enabled", True)),
+                            "transport_type": _transport.get("type", ""),
+                        }
+                    )
+                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                    _f.write(
+                        _json_cfg.dumps(
+                            {
+                                "id": f"log_mcp_load_config_{int(_time_cfg.time() * 1000)}",
+                                "timestamp": int(_time_cfg.time() * 1000),
+                                "location": "backend/app/mcp/manager.py:205",
+                                "message": "MCP load_config summary",
+                                "data": {"config_path": config_path, "servers": summary},
+                                "runId": "mcp-config",
+                                "hypothesisId": "H-config",
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                # 日志失败不影响正常逻辑
+                pass
+            # #endregion
         else:
             logger.warning(f"MCP 配置文件不存在: {config_path}")
             # 默认配置示例
@@ -203,6 +256,34 @@ class MCPToolManager:
             transport = config.get("transport", {})
             transport_type = transport.get("type", "stdio")
             logger.info(f"传输类型: {transport_type}")
+            # #region agent log
+            # 调试：记录连接前的关键信息，用于排查 Docker 环境下某些 MCP 未能成功连接的问题
+            try:
+                import json as _json_conn, time as _time_conn
+                env_keys = sorted(list((transport.get("env") or {}).keys()))
+                url_or_base = (transport.get("url") or transport.get("base_url") or "").strip()
+                _payload = {
+                    "id": f"log_mcp_connect_try_{server_id}_{int(_time_conn.time() * 1000)}",
+                    "timestamp": int(_time_conn.time() * 1000),
+                    "location": "backend/app/mcp/manager.py:222",
+                    "message": "MCP connect attempt",
+                    "data": {
+                        "server_id": server_id,
+                        "transport_type": transport_type,
+                        "has_command": bool(transport.get("command")),
+                        "has_args": bool(transport.get("args")),
+                        "env_keys": env_keys,
+                        "has_url_or_base": bool(url_or_base),
+                    },
+                    "runId": "mcp-connect",
+                    "hypothesisId": "H-connect",
+                }
+                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                    _f.write(_json_conn.dumps(_payload, ensure_ascii=False) + "\n")
+            except Exception:
+                # 日志失败不影响正常逻辑
+                pass
+            # #endregion
             
             if transport_type == "stdio":
                 command = transport.get("command", "python")
@@ -256,6 +337,37 @@ class MCPToolManager:
                 self.sessions[server_id] = session
                 logger.info(f"MCP Server {server_id} 连接成功")
                 await self._load_tools_from_server(server_id, session)
+                # #region agent log
+                # 调试：记录成功连接的 MCP Server 及加载到的工具数量
+                try:
+                    import json as _json_conn_ok, time as _time_conn_ok
+                    tool_count = len(
+                        [t for name, t in self.tools.items() if isinstance(name, str) and name.startswith(f"{server_id}_")]
+                    )
+                    with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                        _f.write(
+                            _json_conn_ok.dumps(
+                                {
+                                    "id": f"log_mcp_connect_ok_{server_id}_{int(_time_conn_ok.time() * 1000)}",
+                                    "timestamp": int(_time_conn_ok.time() * 1000),
+                                    "location": "backend/app/mcp/manager.py:275",
+                                    "message": "MCP connect success",
+                                    "data": {
+                                        "server_id": server_id,
+                                        "transport_type": transport_type,
+                                        "tool_count": tool_count,
+                                    },
+                                    "runId": "mcp-connect",
+                                    "hypothesisId": "H-connect-ok",
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    # 日志失败不影响正常逻辑
+                    pass
+                # #endregion
                 return True
 
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
@@ -298,6 +410,34 @@ class MCPToolManager:
                 return False
         except Exception as e:
             logger.error(f"Failed to connect MCP server {server_id}: {e}", exc_info=True)
+            # #region agent log
+            # 调试：记录连接失败的原因（不包含任何敏感字段）
+            try:
+                import json as _json_conn_err, time as _time_conn_err
+                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                    _f.write(
+                        _json_conn_err.dumps(
+                            {
+                                "id": f"log_mcp_connect_error_{server_id}_{int(_time_conn_err.time() * 1000)}",
+                                "timestamp": int(_time_conn_err.time() * 1000),
+                                "location": "backend/app/mcp/manager.py:318",
+                                "message": "MCP connect failed",
+                                "data": {
+                                    "server_id": server_id,
+                                    "transport_type": locals().get("transport_type", ""),
+                                    "error": str(e),
+                                },
+                                "runId": "mcp-connect",
+                                "hypothesisId": "H-connect-error",
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                # 日志失败不影响正常逻辑
+                pass
+            # #endregion
             return False
     
     async def _load_tools_from_server(self, server_id: str, session: ClientSession):
@@ -322,7 +462,13 @@ class MCPToolManager:
         # 保存原始工具名和 session 引用
         original_tool_name = mcp_tool.name
         tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
-        
+        # 将 inputSchema 转为 dict 并保存，供 normalize_mcp_kwargs_for_call 做 __arg1 等通用映射
+        _input_schema = getattr(mcp_tool, "inputSchema", None)
+        if hasattr(_input_schema, "model_dump"):
+            _input_schema = _input_schema.model_dump()
+        if not isinstance(_input_schema, dict):
+            _input_schema = None
+
         async def tool_func(**kwargs):
             logger.info(f"执行工具: {original_tool_name}, 参数: {kwargs}")
             try:
@@ -383,7 +529,9 @@ class MCPToolManager:
                     except Exception:
                         pass
                 # 归一化 MCP 调用参数（纯函数逻辑提取到 normalize_mcp_kwargs_for_call，便于前端展示复用）
-                call_Kwargs = normalize_mcp_kwargs_for_call(server_id, original_tool_name, call_Kwargs)
+                call_Kwargs = normalize_mcp_kwargs_for_call(
+                    server_id, original_tool_name, call_Kwargs, input_schema=_input_schema
+                )
                 if server_id == "volces-icon" and original_tool_name == "generate_app_icon":
                     logger.info(f"generate_app_icon: 归一化参数为 {call_Kwargs}")
                     # #region agent log
@@ -510,11 +658,15 @@ class MCPToolManager:
             if props:
                 parts = [f"{k} ({v.get('type', 'string')})" for k, v in props.items()]
                 description = f"{description} 参数: {', '.join(parts)}。"
-        return Tool(
+        langchain_tool = Tool(
             name=tool_name,
             description=description,
             func=tool_func,
         )
+        # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
+        # LangChain Tool 为 Pydantic 模型，不能直接赋未声明属性，用 object.__setattr__ 绕过
+        object.__setattr__(langchain_tool, "_mcp_input_schema", _input_schema)
+        return langchain_tool
     
     def get_tools(self) -> List[Tool]:
         """获取所有工具"""

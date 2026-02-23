@@ -1,9 +1,8 @@
 ---
+description: 使用规划 + 子代理的结构化 Web 调研工作流，生成带引用的研究报告。（目前无法使用）
+enabled: false
 name: web-research
-description: 使用规划 + 子代理的结构化 Web 调研工作流，生成带引用的研究报告。
-enabled: true
 ---
-
 # Web Research Skill
 
 使用「研究规划 → 多子代理并行调研 → 系统化综合」三阶段流程，借助 `task` 工具创建研究子代理，并通过本地文件在代理之间传递信息，完成复杂 Web 调研与高质量研究报告撰写。

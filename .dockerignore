@@ -12,8 +12,8 @@
 # 前端
 frontend/node_modules
 frontend/dist
-frontend/.env
-frontend/.env.*
+# frontend/.env
+# frontend/.env.*
 
 # 后端
 backend/__pycache__
@@ -21,13 +21,13 @@ backend/**/__pycache__
 backend/*.pyc
 backend/.venv
 backend/venv
-backend/.env
-backend/.env.*
+# backend/.env
+# backend/.env.*
 
 # 数据与配置（运行时挂载，不打包进镜像）
-backend/data
-backend/config/*.json
-backend/config/*.env
+# backend/data
+# backend/config/*.json
+# backend/config/*.env
 
 # 文档与杂项（可选，减小镜像）
 docs

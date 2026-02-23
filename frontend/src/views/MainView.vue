@@ -248,6 +248,7 @@
       <template v-if="currentModule === 'chat'">
         <ChatView
           :session-id="effectiveSessionId"
+          :session-title="currentChatTitle"
           :initial-messages="sessionMessages"
           :scroll-to-turn-index="scrollToTurnIndex"
           @saved-as-file="onSavedAsFile"
@@ -292,7 +293,7 @@
       </template>
       <!-- 默认：未选任何条目时显示 Chat -->
       <template v-else>
-        <ChatView session-id="default" @saved-as-file="onSavedAsFile" />
+        <ChatView session-id="default" session-title="Chat" @saved-as-file="onSavedAsFile" />
       </template>
     </main>
   </div>
@@ -353,6 +354,13 @@ const chatSummaryLoading = ref(false)
 const effectiveSessionId = computed(() => {
   if (selectedSessionId.value) return selectedSessionId.value
   return newSessionPlaceholderId.value
+})
+
+/** 当前 Chat 标题：有选中会话用其名称，否则为「Chat」 */
+const currentChatTitle = computed(() => {
+  if (!selectedSessionId.value) return 'Chat'
+  const s = sessions.value.find((x) => x.id === selectedSessionId.value)
+  return (s?.title && s.title.trim()) ? s.title.trim() : 'Chat'
 })
 
 const middleColumnTitle = computed(() => {

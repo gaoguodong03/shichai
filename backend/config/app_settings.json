@@ -1,4 +1,16 @@
 {
   "default_llm": "jeniya",
-  "system_prompt": ""
+  "system_prompt": "每次回复前都要加上：“马年大吉！”",
+  "llm_providers": {
+    "qwen": {
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max",
+      "api_key_env": "QWEN_API_KEY"
+    },
+    "jeniya": {
+      "base_url": "http://jeniya.top/v1",
+      "model": "gpt-4o",
+      "api_key_env": "JENIYA_API_KEY"
+    }
+  }
 }

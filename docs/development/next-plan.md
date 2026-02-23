@@ -95,14 +95,22 @@
     - `zhipu-web-search`：MCP 要求 `BIGMODEL_API_KEY`，通过 `${ZHIPU_WEB_SEARCH_API_KEY}` 映射。
   - 效果：三者在 MCP 管理器启动时都能正常完成初始化，前端不再显示「未连接」（高德、智谱），错误由「连接失败」转为显式的业务/参数错误（若有）。
 - **MCPToolManager 参数处理与日志**（`backend/app/mcp/manager.py`）：
-  - 移除对 Exa、amap-maps 的旧式 `__arg1` 硬编码映射（如自动将 `__arg1` 改为 `query` / `address` / `origin`），改为：
-    - 若仍收到 `__arg1`，只记录一条调试日志（`log_mcp_arg1_*`），提示还有 Skill/提示词在使用旧样例。
-  - 针对 `volces-icon_generate_app_icon`：
-    - 保留一个窄范围的兼容逻辑：若有 `__arg1` 且无 `description`，则兼容纯字符串 / JSON 字符串，统一归一化为 `{"description": "...", "pic_size": "..."}`。
-    - 在工具调用前后写入调试日志（raw kwargs、mapped kwargs），方便排查参数错误。
-  - 针对 `amap-maps_maps_geo`：
-    - 在「不破坏 Skill 语义规范」前提下，增加一个精确的容错：若仍然收到 `{"__arg1": "天安门,北京"}` 这类形式，则在 manager 层将其拆分为 `{"address": "天安门", "city": "北京"}`，同时兼容 JSON/dict 写法。
-    - 调用前后写入调试日志：记录归一化后的参数与返回结果前 300 字，便于分析「参数不对 / 地方错判」问题。
+  - 新增统一的参数归一化函数 `normalize_mcp_kwargs_for_call(server_id, original_tool_name, kwargs)`：
+    - 作为**纯函数**集中管理 MCP 参数兼容/容错逻辑，内部用于真正调用 MCP 前的归一化，`chat.py` 也复用它来生成前端展示参数，保证「展示 == 实际调用」。
+    - 在归一化前，若检测到 `__arg1` 等占位参数，会写调试日志（`log_mcp_arg1_*`）提醒还有 Skill/提示词在用旧样例。
+  - 兼容逻辑（过渡期，尽量窄范围）：
+    - `volces-icon_generate_app_icon`：
+      - 若有 `__arg1` 且无 `description`，兼容纯字符串 / JSON 字符串，统一归一化为 `{"description": "...", "pic_size": "..."}`。
+      - 在工具调用前后写入调试日志（raw kwargs、mapped kwargs），方便排查参数错误。
+    - `amap-maps_maps_geo`：
+      - 若仍然收到 `{"__arg1": "天安门,北京"}` 等形式，则在 manager 层将其拆分为 `{"address": "天安门", "city": "北京"}`，并兼容 JSON/dict 写法。
+      - 在不破坏 Skill 语义的前提下，对北京场景增加精细容错：当 `address` 中包含「北邮 / 天安门 / 故宫 / 北京 / 西单 / 中关村」等关键词且 `city` 缺失或为区名（海淀、朝阳等）时，自动补 `city="北京"`，减少全国检索误匹配。
+      - 调用前后写入调试日志：记录归一化后的参数与返回结果前 300 字，便于分析「参数不对 / 地方错判」问题。
+    - `amap-maps` 路线/距离工具（如 `maps_direction_driving`、`maps_direction_walking`、`maps_bicycling`、`maps_direction_transit[_integrated]`、`maps_distance`）：
+      - 若仍收到 `__arg1` 且其中是 JSON（如 `{"origin": "...", "destination": "...", "city": "...", "cityd": "..."}`），则在 manager 层解析出 `origin` / `destination` / `city` / `cityd` / `type` 等字段并补齐，避免旧模板导致 `INVALID_PARAMS`。
+    - `file-reader` 系列 MCP（`file-reader_read_file` / `read_pdf` / `read_docx` / `read_xlsx`）：
+      - 若仍收到 `__arg1`，统一视为 `path` 参数的别名：将 `__arg1` 写入 `path`，保证旧调用能正常读取文件。
+  - 安全收尾：在所有归一化步骤之后，会统一删除残留的 `__arg*` 字段，只向 MCP 传递 schema 中定义的字段名，日志与前端展示都只暴露最终字段（如 `description`、`address`、`city`、`origin`、`destination`、`path`）。
 - **Skill 与路由层整改**：
   - `backend/skills/data-report/SKILL.md`：
     - 明确 `exa_web_search_exa`、`linkup_linkup-search` 都必须使用 `query` 参数传入关键词，禁止再用 `__arg1`。
@@ -112,12 +120,12 @@
   - `backend/app/agent/skill_selector.py`：
     - 在 LLM 路由前增加简易规则：若用户输入/历史摘要中明显包含「怎么走 / 路线 / 导航 / 公交 / 地铁 / 经纬度 / 坐标 / 多远」等关键词，且存在 `amap-maps` 技能，则**直接选择 `amap-maps`**，避免地图问题被 `data-report` 等技能抢走并误用 linkup。
 - **前端展示层参数归一化**（`backend/app/api/chat.py`）：
-  - 在构造 `react_step` 事件和插入 ```json 工具调用代码块``` 时，只对展示用参数做轻量转换，不影响实际 MCP 调用：
-    - `volces-icon_generate_app_icon`：将展示中的 `__arg1` 字段重命名为 `description`。
-    - `amap-maps_maps_geo`：将展示中的 `__arg1` 字段重命名为 `address`，配合 Skill 文档保持一贯的参数命名。
-  - 效果：前端与文档看到的工具调用参数名与 MCP schema / Skill 说明保持一致（`description`、`address`、`city` 等），而不是中间层占位名 `__arg1`。
+  - 在构造 `react_step` 事件和插入 ```json 工具调用代码块``` 时，对**展示用参数**做与 manager 一致的轻量归一化，不影响实际 MCP 调用，但保证两者一致：
+    - 对 MCP 工具 `volces-icon_*`、`amap-maps_*`、`file-reader_*`，直接调用 `normalize_mcp_kwargs_for_call(server_id, original_tool_name, args)`，使展示参数与 manager 最终发给 MCP 的参数完全一致（包括自动补 `city="北京"`、解析 `__arg1` 为 `origin`/`destination`、`path` 等）。
+    - 对内置工具 `read_file`，若仍收到 `{"__arg1": "xxx.md"}` 形式，则在展示层将 `__arg1` 重命名为 `path`，与工具说明保持一致。
+  - 效果：前端与文档看到的工具调用参数名与 MCP schema / Skill 说明保持一致（`description`、`address`、`city`、`origin`、`destination`、`path` 等），而不是中间层占位名 `__arg1` / `__arg2`；同时前端展示的 JSON 即为「manager 实际发起调用时的参数快照」。
 
-> 后续迭代建议：随着 Skill 与提示词清理完成，可进一步下掉 manager 中对 `__arg1` 的兼容逻辑，仅保留日志，用完全 schema 驱动的参数命名；本文档保持记录当前过渡期方案。
+> 后续迭代建议：随着 Skill 与提示词清理完成，可进一步下掉 manager 中对 `__arg1` 及相关兼容逻辑，仅保留日志，用完全 schema 驱动的参数命名；本文档保持记录当前过渡期方案与兼容策略。
 
 ---
 

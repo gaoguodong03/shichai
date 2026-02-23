@@ -28,6 +28,8 @@ services:
       - ./backend/data:/app/data
       - ./backend/skills:/app/data/skills
       - ./backend/config:/app/config
+      # 调试模式：将宿主机 .cursor 挂载到与代码中日志路径一致的位置，便于收集容器内 MCP 日志
+      - ./.cursor:/Users/ggd/mycode/DHA/.cursor
     # 从宿主机 backend/.env 注入 QWEN_API_KEY 等（文件需存在，否则聊天会 500）
     env_file:
       - backend/.env
