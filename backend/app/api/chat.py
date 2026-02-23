@@ -215,6 +215,8 @@ async def ensure_initialized():
             logger.info(f"MCP Manager 初始化完成，加载了 {len(mgr.tools)} 个工具")
             for tool_name in mgr.tools.keys():
                 logger.info(f"  - 工具: {tool_name}")
+        except asyncio.CancelledError:
+            raise  # 请求被取消（如前端断开/超时），直接向上抛，不转为 500
         except Exception as e:
             logger.error(f"Failed to initialize MCP managers: {e}", exc_info=True)
         
@@ -877,7 +879,11 @@ def _message_to_dict(msg: BaseMessage) -> Dict[str, Any]:
 @router.get("/sessions")
 async def list_sessions():
     """获取会话列表（对话历史用）"""
-    await ensure_initialized()
+    try:
+        await ensure_initialized()
+    except asyncio.CancelledError:
+        # 初始化时被取消（如前端超时/断开），返回空列表避免 500，前端可重试
+        return {"status": "ok", "data": {"sessions": []}}
     # 确保有 default 会话的元数据（从未发过消息时也可展示）
     if "default" not in _SESSION_META and "default" in _CHAT_HISTORY:
         first_msg = None
