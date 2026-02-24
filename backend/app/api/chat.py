@@ -113,6 +113,17 @@ _TURN_SUMMARIES: Dict[str, List[str]] = {}
 # 会话元数据：session_id -> {title, updated_at}，用于对话历史列表展示
 _SESSION_META: Dict[str, Dict[str, str]] = {}
 
+# 是否已从磁盘加载过会话（仅读 JSON，不初始化 MCP/Skills），用于 list_sessions/get_session 快速响应
+_sessions_loaded = False
+
+
+def _ensure_sessions_loaded() -> None:
+    """仅加载会话数据（磁盘 JSON），不初始化 MCP/Skills；供列表与详情接口快速返回"""
+    global _sessions_loaded
+    if not _sessions_loaded:
+        _load_sessions_from_disk()
+        _sessions_loaded = True
+
 
 def _ensure_sessions_dir() -> Path:
     root = Path(SESSIONS_DIR).resolve()
@@ -153,6 +164,7 @@ def _save_sessions_to_disk() -> None:
 
 def _load_sessions_from_disk() -> None:
     """从本地 JSON 文件加载会话历史与元数据"""
+    global _sessions_loaded
     try:
         root = _ensure_sessions_dir()
         history_file = root / "history.json"
@@ -206,6 +218,7 @@ def _load_sessions_from_disk() -> None:
                         clean = [str(t) for t in turns if isinstance(t, (str, int, float))]
                         _TURN_SUMMARIES[str(sid)] = clean[-_HISTORY_WINDOW_TURNS:]
 
+        _sessions_loaded = True
         logger.info(f"已从磁盘加载会话历史: {len(_CHAT_HISTORY)} 个会话；轮次摘要: {len(_TURN_SUMMARIES)} 个会话")
     except Exception as e:
         logger.error(f"从磁盘加载会话历史失败: {e}", exc_info=True)
@@ -891,11 +904,10 @@ def _message_to_dict(msg: BaseMessage) -> Dict[str, Any]:
 
 @router.get("/sessions")
 async def list_sessions():
-    """获取会话列表（对话历史用）"""
+    """获取会话列表（仅加载磁盘会话数据，不触发 MCP/Skills 初始化以加快首屏）"""
     try:
-        await ensure_initialized()
-    except asyncio.CancelledError:
-        # 初始化时被取消（如前端超时/断开），返回空列表避免 500，前端可重试
+        _ensure_sessions_loaded()
+    except Exception:
         return {"status": "ok", "data": {"sessions": []}}
     # 确保有 default 会话的元数据（从未发过消息时也可展示）
     if "default" not in _SESSION_META and "default" in _CHAT_HISTORY:
@@ -930,8 +942,8 @@ async def list_sessions():
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
-    """获取指定会话的完整消息列表"""
-    await ensure_initialized()
+    """获取指定会话的完整消息列表（仅加载磁盘会话数据，不触发 MCP/Skills 初始化）"""
+    _ensure_sessions_loaded()
     history = _CHAT_HISTORY.get(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -951,7 +963,7 @@ async def get_session(session_id: str):
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """删除指定会话（内存与持久化均移除）"""
-    await ensure_initialized()
+    _ensure_sessions_loaded()
     _CHAT_HISTORY.pop(session_id, None)
     _SESSION_META.pop(session_id, None)
     _TURN_SUMMARIES.pop(session_id, None)
@@ -962,7 +974,7 @@ async def delete_session(session_id: str):
 @router.put("/sessions/{session_id}/title")
 async def update_session_title(session_id: str, body: SessionTitleBody):
     """更新指定会话的标题"""
-    await ensure_initialized()
+    _ensure_sessions_loaded()
     title = (body.title or "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="title is required")
@@ -1019,7 +1031,7 @@ def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, s
 @router.post("/sessions/{session_id}/export")
 async def export_session(session_id: str, filename: str = None):
     """将会话导出为 markdown 文件"""
-    await ensure_initialized()
+    _ensure_sessions_loaded()
     try:
         rel_path, download_url = _export_session_to_md(session_id, filename)
         return {"status": "ok", "data": {"path": rel_path, "download_url": download_url}}

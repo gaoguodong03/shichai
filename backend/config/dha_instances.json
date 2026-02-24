@@ -1,0 +1,37 @@
+[
+  {
+    "dha_id": "dha-df1f712a",
+    "name": "天气感知专家",
+    "role": "负责感知天气",
+    "system_prompt": "",
+    "skill_ids": [
+      "weather-service"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false
+  },
+  {
+    "dha_id": "dha-c9b8ae32",
+    "name": "导航负责人",
+    "role": "负责查找路径",
+    "system_prompt": "",
+    "skill_ids": [
+      "amap-maps"
+    ],
+    "mcp_server_ids": [
+      "amap-maps"
+    ],
+    "is_leader": false
+  },
+  {
+    "dha_id": "dha-e6308a0e",
+    "name": "默认主持人",
+    "role": "负责决定下一个发言人是谁",
+    "system_prompt": "",
+    "skill_ids": [
+      "default"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false
+  }
+]

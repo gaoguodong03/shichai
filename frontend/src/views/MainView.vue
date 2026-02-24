@@ -165,6 +165,80 @@
             <div class="truncate text-xs text-gray-500 mt-0.5">{{ s.status === 'connected' ? '已连接' : '未连接' }} · {{ s.tool_count || 0 }} 工具</div>
           </button>
         </template>
+        <!-- DHA：中间列显示 DHA 列表 -->
+        <template v-else-if="currentModule === 'dha'">
+          <button
+            @click="selectedId = '__new__'"
+            :class="[
+              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+              selectedId === '__new__' ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            + 新建 DHA
+          </button>
+          <div v-if="dhaInstancesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+          <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-gray-500">暂无 DHA</div>
+          <div
+            v-else
+            v-for="d in dhaInstances"
+            :key="d.dha_id"
+            :class="[
+              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
+              selectedId === d.dha_id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+            @click="selectedId = d.dha_id"
+          >
+            <div class="flex-1 min-w-0 text-left">
+              <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
+              <div class="truncate text-xs text-gray-500 mt-0.5">{{ d.role || '（无角色）' }}</div>
+            </div>
+            <button
+              type="button"
+              class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+              title="删除 DHA"
+              @click.stop="deleteDhaInstance(d.dha_id)"
+            >
+              🗑️
+            </button>
+          </div>
+        </template>
+        <!-- Group -->
+        <template v-else-if="currentModule === 'group_chat'">
+          <button
+            @click="createNewGroupChat"
+            :class="[
+              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+              showGroupCreateForm ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            + 新建 Group
+          </button>
+          <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+          <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-gray-500">暂无 Group</div>
+          <div
+            v-else
+            v-for="s in groupSessions"
+            :key="s.id"
+            @click="selectedGroupSessionId = s.id"
+            :class="[
+              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
+              selectedGroupSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            <div class="flex-1 min-w-0 text-left">
+              <div class="truncate font-medium">{{ s.title || '新 Group' }}</div>
+              <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
+            </div>
+            <button
+              type="button"
+              class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+              title="删除 Group"
+              @click.stop="deleteGroupSession(s.id)"
+            >
+              🗑️
+            </button>
+          </div>
+        </template>
         <!-- 设置 -->
         <template v-else-if="currentModule === 'settings'">
           <button
@@ -298,6 +372,39 @@
           <p v-else>请在左侧选择文件以预览或下载。</p>
         </div>
       </template>
+      <!-- DHA：右侧显示选中 DHA 的详情 -->
+      <template v-else-if="currentModule === 'dha'">
+        <DHAView
+          :selected-dha-id="currentModule === 'dha' ? selectedId : null"
+          :dha-instances="dhaInstances"
+          @created="onDHACreated"
+          @updated="fetchDHA"
+          @cancel="selectedId = null"
+        />
+      </template>
+      <!-- Group：选中会话时显示聊天，新建时显示创建表单 -->
+      <template v-else-if="currentModule === 'group_chat' && showGroupCreateForm">
+        <GroupCreateView
+          :dha-instances="dhaInstances"
+          @created="onGroupCreated"
+          @cancel="showGroupCreateForm = false"
+        />
+      </template>
+      <template v-else-if="currentModule === 'group_chat' && selectedGroupSessionId && groupSessionDetail">
+        <GroupChatView
+          :group-session-id="groupSessionDetail.id"
+          :session-title="groupSessionDetail.title"
+          :messages="groupSessionDetail.messages || []"
+          :dha-map="groupSessionDetail.dha_map || {}"
+          :dha-ids="groupSessionDetail.dha_ids || []"
+          @message-sent="fetchGroupSessionDetail"
+        />
+      </template>
+      <template v-else-if="currentModule === 'group_chat'">
+        <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
+          <p>请从左侧选择 Group，或新建 Group</p>
+        </div>
+      </template>
       <!-- 默认：未选任何条目时显示 Chat -->
       <template v-else>
         <ChatView session-id="default" session-title="Chat" @saved-as-file="onSavedAsFile" />
@@ -316,6 +423,9 @@ import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
 import FileDetailView from './FileDetailView.vue'
+import DHAView from './DHAView.vue'
+import GroupChatView from './GroupChatView.vue'
+import GroupCreateView from './GroupCreateView.vue'
 
 const router = useRouter()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
@@ -327,10 +437,12 @@ function logout() {
   router.push('/login')
 }
 
-type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'settings'
+type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'dha' | 'group_chat' | 'settings'
 
 const navItems: { id: ModuleId; label: string }[] = [
   { id: 'chat', label: 'Chat' },
+  { id: 'group_chat', label: 'Group' },
+  { id: 'dha', label: 'DHA' },
   { id: 'files', label: 'Files' },
   { id: 'skill', label: 'Skills' },
   { id: 'mcp', label: 'MCPs' },
@@ -357,6 +469,20 @@ const mcpLoading = ref(false)
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
 ]
+// Group
+const selectedGroupSessionId = ref<string | null>(null)
+const groupSessions = ref<{ id: string; title: string; updated_at: string }[]>([])
+const groupSessionsLoading = ref(false)
+const groupSessionDetail = ref<{
+  id: string
+  title: string
+  messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
+  dha_map: Record<string, { name?: string; role?: string }>
+  dha_ids: string[]
+} | null>(null)
+const showGroupCreateForm = ref(false)
+const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
+const dhaInstancesLoading = ref(false)
 const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const filesLoading = ref(false)
 const currentFilePath = ref('')
@@ -385,6 +511,8 @@ const middleColumnTitle = computed(() => {
     files: '文件列表',
     skill: '技能列表',
     mcp: 'MCP Server',
+    dha: 'DHA 实例',
+    group_chat: 'Group 会话',
     settings: '设置分类',
   }
   return t[currentModule.value]
@@ -449,6 +577,16 @@ function onNavClick(item: { id: ModuleId }) {
     newSessionPlaceholderId.value = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
     sessionMessages.value = []
     fetchSessions()
+  }
+  if (item.id === 'group_chat') {
+    selectedGroupSessionId.value = null
+    showGroupCreateForm.value = false
+    groupSessionDetail.value = null
+    fetchGroupSessions()
+    fetchDHA()
+  }
+  if (item.id === 'dha') {
+    fetchDHA()
   }
 }
 
@@ -564,6 +702,94 @@ async function fetchSkills() {
     }
   } finally {
     skillsLoading.value = false
+  }
+}
+
+async function fetchGroupSessions() {
+  groupSessionsLoading.value = true
+  try {
+    const r = await fetch('/api/group-sessions')
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.sessions) {
+      groupSessions.value = j.data.sessions
+    }
+  } finally {
+    groupSessionsLoading.value = false
+  }
+}
+
+async function fetchGroupSessionDetail() {
+  const id = selectedGroupSessionId.value
+  if (!id) return
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`)
+    const j = await r.json()
+    if (j.status === 'ok' && j.data) {
+      groupSessionDetail.value = j.data
+    }
+  } catch {
+    groupSessionDetail.value = null
+  }
+}
+
+function createNewGroupChat() {
+  selectedGroupSessionId.value = null
+  showGroupCreateForm.value = true
+  groupSessionDetail.value = null
+  fetchDHA()
+}
+
+async function deleteGroupSession(id: string) {
+  if (!confirm('确定删除该 Group？')) return
+  const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const j = await r.json()
+  if (j.status === 'ok') {
+    if (selectedGroupSessionId.value === id) {
+      selectedGroupSessionId.value = null
+      groupSessionDetail.value = null
+    }
+    fetchGroupSessions()
+  } else {
+    alert(j.detail || '删除失败')
+  }
+}
+
+function onGroupCreated(id: string) {
+  showGroupCreateForm.value = false
+  selectedGroupSessionId.value = id
+  fetchGroupSessions()
+  fetchGroupSessionDetail()
+}
+
+async function fetchDHA() {
+  dhaInstancesLoading.value = true
+  try {
+    const r = await fetch('/api/dha/instances')
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.instances) {
+      dhaInstances.value = j.data.instances
+    }
+  } catch {
+    dhaInstances.value = []
+  } finally {
+    dhaInstancesLoading.value = false
+  }
+}
+
+function onDHACreated(dhaId: string) {
+  selectedId.value = dhaId
+  fetchDHA()
+}
+
+async function deleteDhaInstance(dhaId: string) {
+  if (!confirm('确定删除该 DHA？')) return
+  const r = await fetch(`/api/dha/instances/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
+  const j = await r.json()
+  if (j.status === 'ok') {
+    if (selectedId.value === dhaId) selectedId.value = null
+    fetchDHA()
+  } else {
+    alert(j.detail || '删除失败')
   }
 }
 
@@ -762,6 +988,19 @@ watch(currentModule, (mod) => {
   if (mod === 'chat') {
     if (chatViewMode.value === 'history') fetchSessions()
     else fetchChatSummary()
+  }
+  if (mod === 'group_chat') {
+    fetchGroupSessions()
+    fetchDHA()
+  }
+  if (mod === 'dha') fetchDHA()
+}, { immediate: true })
+
+watch(selectedGroupSessionId, (id) => {
+  if (id) {
+    fetchGroupSessionDetail()
+  } else {
+    groupSessionDetail.value = null
   }
 }, { immediate: true })
 
