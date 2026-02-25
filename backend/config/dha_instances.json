@@ -33,5 +33,27 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false
+  },
+  {
+    "dha_id": "dha-80c203d7",
+    "name": "群聊主持人",
+    "role": "负责主持会议",
+    "system_prompt": "",
+    "skill_ids": [
+      "group-host"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false
+  },
+  {
+    "dha_id": "dha-440b26f8",
+    "name": "图片生成负责人",
+    "role": "负责生成图标",
+    "system_prompt": "",
+    "skill_ids": [
+      "app-icon-generator"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false
   }
 ]

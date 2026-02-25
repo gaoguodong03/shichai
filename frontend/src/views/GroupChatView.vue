@@ -7,9 +7,9 @@
       </div>
     </header>
 
-    <!-- 消息列表 -->
+    <!-- 消息列表：用 displayedMessages 保证顺序与逐条出现 -->
     <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
-      <template v-for="(msg, index) in messages" :key="msg.message_id || index">
+      <template v-for="(msg, index) in displayedMessages" :key="msg.message_id || index">
         <div
           :data-message-index="index"
           :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']"
@@ -23,7 +23,7 @@
               <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
             </div>
           </div>
-          <!-- 主持人消息 -->
+          <!-- 主持人消息（旧版 role=host 或主持人 DHA 的发言） -->
           <div
             v-else-if="msg.role === 'host'"
             class="max-w-3xl min-w-0 w-full flex justify-center"
@@ -32,14 +32,15 @@
               {{ msg.content || '' }}
             </div>
           </div>
-          <!-- DHA 消息：名称 + 简介 + 输出框，不同 DHA 不同样式 -->
+          <!-- DHA 消息：名称 + 简介 + 输出框；主持人 DHA 显示「主持人」标签 -->
           <div
             v-else
             class="max-w-3xl min-w-0 w-full"
           >
-            <div class="mb-1.5">
+            <div class="mb-1.5 flex items-center gap-2 flex-wrap">
               <span class="font-semibold text-gray-800">{{ getDhaName(msg.dha_id) }}</span>
-              <span v-if="getDhaRole(msg.dha_id)" class="ml-2 text-xs text-gray-500">{{ getDhaRole(msg.dha_id) }}</span>
+              <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">主持人</span>
+              <span v-if="getDhaRole(msg.dha_id)" class="text-xs text-gray-500">{{ getDhaRole(msg.dha_id) }}</span>
             </div>
             <div
               :class="getDhaBoxClass(msg.dha_id)"
@@ -53,8 +54,24 @@
         </div>
       </template>
 
-      <!-- 等待回复中 -->
-      <div v-if="isStreaming" class="flex justify-start">
+      <!-- 当前 DHA 正在发言（流式或等待中） -->
+      <div v-if="isStreaming && currentStreamingDhaId" class="flex justify-start">
+        <div class="max-w-3xl min-w-0 w-full">
+          <div class="mb-1.5 flex items-center gap-2">
+            <span class="font-semibold text-gray-800">{{ getDhaName(currentStreamingDhaId) }}</span>
+            <span class="text-xs text-gray-500">正在发言...</span>
+          </div>
+          <div
+            :class="getDhaBoxClass(currentStreamingDhaId)"
+            class="rounded-lg px-4 py-3 border-l-4"
+          >
+            <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
+              <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(currentStreamingText)"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="isStreaming" class="flex justify-start">
         <div class="max-w-3xl rounded-lg px-4 py-3 bg-gray-50 border border-gray-200 flex items-center gap-2">
           <span class="text-sm text-gray-600">正在思考</span>
           <span class="flex gap-1">
@@ -116,8 +133,9 @@ const props = withDefaults(
     messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
     dhaMap?: Record<string, { name?: string; role?: string }>
     dhaIds: string[]
+    leaderDhaId?: string
   }>(),
-  { dhaMap: () => ({}) }
+  { dhaMap: () => ({}), leaderDhaId: '' }
 )
 
 const emit = defineEmits<{
@@ -128,6 +146,20 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const overrideNextSpeaker = ref('')
 const messagesContainerRef = ref<HTMLElement | null>(null)
+/** 用于逐条展示的消息列表：从 props 同步，并从流式 message 事件追加 */
+const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string }[]>([])
+const currentStreamingText = ref('')
+const currentStreamingDhaId = ref('')
+
+watch(
+  () => props.messages,
+  (next) => {
+    if (!isStreaming.value && next?.length !== undefined) {
+      displayedMessages.value = [...next]
+    }
+  },
+  { immediate: true }
+)
 
 const dhaList = computed(() => {
   return props.dhaIds.map((id) => ({
@@ -170,11 +202,16 @@ function getDhaBoxClass(dhaId: string): string {
   return DHA_BOX_COLORS[idx]
 }
 
-const md = new MarkdownIt()
+const md = new MarkdownIt({ breaks: true })
+/** 去掉末尾空行，并把连续换行压成单个，减少段落间空行 */
+function normalizeContent(s: string) {
+  if (!s) return ''
+  return s.trimEnd().replace(/\n{2,}/g, '\n')
+}
 function renderMarkdown(text: string) {
   if (!text) return ''
   try {
-    return md.render(text)
+    return md.render(normalizeContent(text))
   } catch {
     return text
   }
@@ -186,6 +223,16 @@ async function sendMessage() {
 
   inputText.value = ''
   isStreaming.value = true
+  currentStreamingText.value = ''
+  currentStreamingDhaId.value = ''
+
+  const userMsg = {
+    message_id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: 'user' as const,
+    content: msg,
+  }
+  displayedMessages.value = [...displayedMessages.value, userMsg]
+  scrollToBottom()
 
   const body: Record<string, string> = { message: msg }
   if (overrideNextSpeaker.value) {
@@ -193,29 +240,81 @@ async function sendMessage() {
   }
 
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat`, {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     if (!r.ok) throw new Error(r.statusText)
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.messages) {
-      emit('message-sent')
+    emit('message-sent')
+
+    const reader = r.body?.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() || ''
+        for (const block of parts) {
+          if (!block.startsWith('event: ')) continue
+          const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
+          if (eventType === 'message' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr)
+              if (data && (data.role === 'assistant' || data.role === 'user')) {
+                currentStreamingText.value = ''
+                currentStreamingDhaId.value = ''
+                displayedMessages.value = [...displayedMessages.value, data]
+                scrollToBottom()
+              }
+            } catch (_) {}
+          } else if (eventType === 'content' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr)
+              if (data?.dha_id) {
+                currentStreamingDhaId.value = data.dha_id
+                if (data.text) currentStreamingText.value = (currentStreamingText.value || '') + data.text
+                scrollToBottom()
+              }
+            } catch (_) {}
+          } else if (eventType === 'end') {
+            currentStreamingText.value = ''
+            currentStreamingDhaId.value = ''
+          }
+        }
+      }
     }
+    emit('message-sent')
   } catch (e) {
     console.error('Group 发送失败', e)
   } finally {
     isStreaming.value = false
+    currentStreamingText.value = ''
+    currentStreamingDhaId.value = ''
   }
 }
 
+function scrollToBottom() {
+  nextTick(() => {
+    messagesContainerRef.value?.scrollTo({ top: messagesContainerRef.value.scrollHeight, behavior: 'smooth' })
+  })
+}
+
 watch(
-  () => props.messages.length,
-  () => {
-    nextTick(() => {
-      messagesContainerRef.value?.scrollTo({ top: messagesContainerRef.value.scrollHeight, behavior: 'smooth' })
-    })
-  }
+  () => displayedMessages.value.length,
+  () => { scrollToBottom() }
 )
 </script>
+
+<style scoped>
+.chat-markdown :deep(p) {
+  margin: 0 0 0.35em 0;
+}
+.chat-markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+</style>

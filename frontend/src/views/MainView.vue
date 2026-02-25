@@ -397,6 +397,7 @@
           :messages="groupSessionDetail.messages || []"
           :dha-map="groupSessionDetail.dha_map || {}"
           :dha-ids="groupSessionDetail.dha_ids || []"
+          :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
           @message-sent="fetchGroupSessionDetail"
         />
       </template>
@@ -479,6 +480,7 @@ const groupSessionDetail = ref<{
   messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
   dha_map: Record<string, { name?: string; role?: string }>
   dha_ids: string[]
+  leader_dha_id?: string
 } | null>(null)
 const showGroupCreateForm = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])

@@ -15,19 +15,22 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │ 后端 group_chat / group_chat_stream                              │
 │ 1. 若有 message：追加 user 消息并落盘                             │
-│ 2. 从历史中取 last_speaker_dha_id（最近一条 assistant 的 dha_id）│
-│ 3. 若未指定 override_next_speaker → 调用领导人调度                │
+│ 2. 从历史中取 last_speaker_dha_id（最近一条非主持人的 assistant）│
+│ 3. 若未指定 override_next_speaker → 由主持人 DHA 或默认调度决策   │
 └─────────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 领导人调度 leader_decide(llm, dha_list, discussion_goal,         │
-│            recent_messages, last_speaker_dha_id)                 │
-│ 输入：群内 DHA 列表、讨论目标、最近讨论内容、上一发言人             │
-│ 输出：{ task_done, next_speaker, reason }                        │
-│   - task_done=false → 当前 DHA 继续发言（未完成任务）            │
-│   - task_done=true  → next_speaker 为下一发言人                  │
-│   - next_speaker：dha_id | "user" | "end"                        │
+│ 主持人决策（二选一）                                              │
+│ • 主持人 DHA：_host_decide_by_dha(leader_dha_id) 执行 group-host  │
+│   skill，解析回复得到 task_done/next_speaker/announcement         │
+│ • 默认调度：leader_decide(llm, ...) 仅输出 JSON                   │
+│ 输出：task_done, next_speaker, reason, announcement（主持词）     │
+└─────────────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ 写入主持人发言：assistant(leader_dha_id, announcement) 并落盘    │
 └─────────────────────────────────────────────────────────────────┘
          │
          ▼
@@ -35,9 +38,9 @@
 │ while next_speaker in dha_ids：                                  │
 │   1. 用该 DHA 的 skill + tools 构造 agent，传入群聊上下文          │
 │   2. agent 流式/非流式输出 → 前端展示 + 落盘一条 assistant 消息   │
-│   3. last_speaker_dha_id = 当前 DHA                              │
-│   4. 再次调用 leader_decide → 得到新的 next_speaker              │
-│   5. 若 task_done=false → next_speaker 保持为当前 DHA（同一人再发）│
+│   3. last_speaker_dha_id = 当前 DHA（参与讨论者）                 │
+│   4. 再次由主持人 DHA / leader_decide 决策 → 主持词 + next_speaker │
+│   5. 写入主持人发言 assistant(leader_dha_id)，再轮转或结束        │
 │   6. 若 next_speaker 为 user/end → 退出循环，结束本轮             │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -54,16 +57,23 @@
 - **会话与历史**：`group_sessions_meta.json` 存会话元数据；`group_history_{id}.json` 存消息列表。
 - **消息结构**：`role`（user | assistant）、`dha_id`（assistant 时必填）、`content`、`message_id`、`timestamp`。
 
-### 2.2 首发言人与「等待用户」的修正
+### 2.2 主持人 DHA 与 group-host skill
+
+- **主持人**：由会话的 `leader_dha_id` 指定，即某个具体 DHA 担任。
+- **主持技能**：`skills/group-host/SKILL.md` 定义主持人行为：根据讨论目标与最近讨论、上一发言人，输出一句**主持词**（announcement）和 **JSON**（task_done, next_speaker, reason）。主持人 DHA 调用时仅使用该 skill，不绑定 MCP 工具。
+- **决策流程**：若存在 `leader_dha_id` 且该 DHA 有效，则调用 `_host_decide_by_dha` 执行 group-host skill，解析回复；解析失败或未配置主持人时回退到 `leader_decide`（默认 LLM 调度）。
+- **主持词展示**：每次决策后写入一条 `role=assistant`、`dha_id=leader_dha_id`、`content=announcement` 的消息，前端将该 DHA 展示为「主持人」并显示主持词。
+
+### 2.3 首发言人与「等待用户」的修正
 
 - 若**没有**上一发言人且领导人返回 `next_speaker="user"`：后端会强制 `next_speaker = dha_ids[0]`，保证至少有一个 DHA 先发言。
 - 若**最后一条是用户消息**且领导人仍返回 `next_speaker="user"`：后端会按轮转取下一个 DHA（`dha_ids[(idx+1) % len(dha_ids)]`），避免用户刚说完就结束。
 
-### 2.3 同一 DHA 连续发言（当前问题来源）
+### 2.4 同一 DHA 连续发言
 
 - 当领导人返回 **task_done=false** 时，后端会把 `next_speaker` 设为**当前发言人**，即同一 DHA 会再发一条。
 - 若领导人多次返回 task_done=false（或 LLM 解析失败回退逻辑导致重复），就会出现**同一 DHA 连续多条**（例如三条）的情况。
-- 当前设计下，**主持人（领导人）本身不写入聊天记录**，只做调度；因此前端看不到「主持人说：接下来由 XX 发言」这类提示。
+- 主持人 DHA 的每次决策会写入一条 assistant(leader_dha_id) 消息，内容为主持词，前端以「主持人」标签展示。
 
 ## 三、前端关键逻辑
 
@@ -81,7 +91,7 @@
 
 - **用户消息**：右对齐、蓝色气泡。
 - **DHA 消息**：左对齐；展示 `dha_map[dha_id].name`、`dha_map[dha_id].role`（简介），并按 `dha_id` 哈希取不同边框/背景色。
-- **主持人消息**：当前数据模型中没有 `role=host` 或类似字段，因此前端不会、也无法显示「主持人」的单独一条消息。
+- **主持人消息**：主持人由 `leader_dha_id` 对应的 DHA 担任，其发言为 `role=assistant`、`dha_id=leader_dha_id`；前端根据 `msg.dha_id === leaderDhaId` 显示「主持人」标签。旧版 `role=host` 仍兼容展示。
 
 ## 四、问题与改进对应
 

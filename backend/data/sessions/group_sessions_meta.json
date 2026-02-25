@@ -1,24 +1,14 @@
 {
-  "group-eebfffe1aedc": {
-    "title": "新群聊",
-    "dha_ids": [
-      "dha-df1f712a",
-      "dha-c9b8ae32",
-      "dha-e6308a0e"
-    ],
-    "leader_dha_id": "dha-e6308a0e",
-    "created_at": "2026-02-23T09:49:22.903911+00:00",
-    "updated_at": "2026-02-23T10:06:38.349468+00:00"
-  },
-  "group-a6330dfadc8b": {
+  "group-43e605dd8d7f": {
     "title": "新 Group",
     "dha_ids": [
       "dha-df1f712a",
       "dha-c9b8ae32",
-      "dha-e6308a0e"
+      "dha-80c203d7",
+      "dha-440b26f8"
     ],
-    "leader_dha_id": "dha-e6308a0e",
-    "created_at": "2026-02-23T10:07:01.544286+00:00",
-    "updated_at": "2026-02-24T13:49:29.470970+00:00"
+    "leader_dha_id": "dha-80c203d7",
+    "created_at": "2026-02-25T02:51:00.477418+00:00",
+    "updated_at": "2026-02-25T02:58:34.062225+00:00"
   }
 }
