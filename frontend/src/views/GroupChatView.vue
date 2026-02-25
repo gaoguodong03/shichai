@@ -23,6 +23,15 @@
               <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
             </div>
           </div>
+          <!-- 主持人消息 -->
+          <div
+            v-else-if="msg.role === 'host'"
+            class="max-w-3xl min-w-0 w-full flex justify-center"
+          >
+            <div class="text-xs text-gray-500 italic px-3 py-1.5 bg-gray-100 rounded-full">
+              {{ msg.content || '' }}
+            </div>
+          </div>
           <!-- DHA 消息：名称 + 简介 + 输出框，不同 DHA 不同样式 -->
           <div
             v-else

@@ -95,6 +95,8 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
         dha_id = m.get("dha_id", "")
         if role == "user":
             lines.append(f"【用户】{content}")
+        elif role == "host":
+            lines.append(f"【主持人】{content}")
         else:
             name = dha_id or "助手"
             lines.append(f"【{name}】{content[:500]}{'…' if len(content) > 500 else ''}")
@@ -294,6 +296,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     async def event_gen():
         nonlocal last_speaker_dha_id
+        consecutive_same_dha = 0  # 限制同一 DHA 连续发言次数
         try:
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
@@ -327,6 +330,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = dha_ids[idx % len(dha_ids)]
 
             while next_speaker and next_speaker in dha_ids:
+                # 主持人提示：接下来由谁发言（写入历史并可选下发 SSE）
+                host_dha = dha_map.get(next_speaker)
+                host_name = (host_dha.get("name") or next_speaker) if host_dha else next_speaker
+                host_msg = {
+                    "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                    "role": "host",
+                    "content": f"主持人：接下来由 {host_name} 发言。",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                messages.append(host_msg)
+                _save_group_history(group_session_id, messages)
                 dha = dha_map.get(next_speaker)
                 if not dha:
                     next_speaker = "user"
@@ -396,6 +410,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 next_speaker = decision.get("next_speaker", "user")
                 if not task_done:
                     next_speaker = last_speaker_dha_id
+                # 限制同一 DHA 连续发言：若下一发言人仍是上一发言人，则最多允许一次（task_done=false）；否则轮转
+                if next_speaker == last_speaker_dha_id:
+                    if task_done or consecutive_same_dha >= 1:
+                        idx = dha_ids.index(last_speaker_dha_id) + 1 if last_speaker_dha_id in dha_ids else 0
+                        next_speaker = dha_ids[idx % len(dha_ids)] if dha_ids else "user"
+                        consecutive_same_dha = 0
+                    else:
+                        consecutive_same_dha += 1
+                else:
+                    consecutive_same_dha = 0
 
             if next_speaker == "end":
                 yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'discussion_ended': True})}\n\n"
@@ -478,7 +502,19 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             idx = dha_ids.index(last_speaker_dha_id) + 1 if last_speaker_dha_id in dha_ids else 0
             next_speaker = dha_ids[idx % len(dha_ids)]
 
+    consecutive_same_dha = 0
     while next_speaker and next_speaker in dha_ids:
+        host_dha = dha_map.get(next_speaker)
+        host_name = (host_dha.get("name") or next_speaker) if host_dha else next_speaker
+        host_msg = {
+            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+            "role": "host",
+            "content": f"主持人：接下来由 {host_name} 发言。",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        messages.append(host_msg)
+        _save_group_history(group_session_id, messages)
+
         dha = dha_map.get(next_speaker)
         if not dha:
             break
@@ -527,5 +563,14 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         next_speaker = decision.get("next_speaker", "user")
         if not task_done:
             next_speaker = last_speaker_dha_id
+        if next_speaker == last_speaker_dha_id:
+            if task_done or consecutive_same_dha >= 1:
+                idx = dha_ids.index(last_speaker_dha_id) + 1 if last_speaker_dha_id in dha_ids else 0
+                next_speaker = dha_ids[idx % len(dha_ids)] if dha_ids else "user"
+                consecutive_same_dha = 0
+            else:
+                consecutive_same_dha += 1
+        else:
+            consecutive_same_dha = 0
 
     return {"status": "ok", "data": {"messages": messages}}
