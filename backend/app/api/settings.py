@@ -33,7 +33,9 @@ class AppSettingsBody(BaseModel):
     llm_providers: Optional[Dict[str, Dict[str, Any]]] = None  # provider_id -> {base_url, model, api_key_env}
     system_prompt: Optional[str] = None  # 每次 chat 前注入到大模型 prompt 的系统提示词
 
-# 默认 llm_providers（无配置文件时使用）
+# 默认 llm_providers（无配置文件时使用）；jeniya 系共用 JENIYA_API_KEY + base_url，模型见 https://jeniya.top/pricing
+_JENIYA_BASE = "http://jeniya.top/v1"
+_JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS = {
     "qwen": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -41,29 +43,55 @@ _DEFAULT_LLM_PROVIDERS = {
         "api_key_env": "QWEN_API_KEY",
     },
     "jeniya": {
-        "base_url": "http://jeniya.top/v1",
+        "base_url": _JENIYA_BASE,
         "model": "gpt-4o",
-        "api_key_env": "JENIYA_API_KEY",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "gemini": {
+        "base_url": _JENIYA_BASE,
+        "model": "gemini-3-pro-preview",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "claude": {
+        "base_url": _JENIYA_BASE,
+        "model": "claude-sonnet-4-6",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "glm": {
+        "base_url": _JENIYA_BASE,
+        "model": "glm-4.7",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "deepseek": {
+        "base_url": _JENIYA_BASE,
+        "model": "deepseek-chat",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "kimi": {
+        "base_url": _JENIYA_BASE,
+        "model": "moonshot-v1-128k",
+        "api_key_env": _JENIYA_KEY,
     },
 }
 
 def load_app_settings() -> Dict[str, Any]:
-    """加载应用设置"""
+    """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
     path = Path(APP_SETTINGS_PATH)
+    data = {"default_llm": "qwen", "llm_providers": dict(_DEFAULT_LLM_PROVIDERS), "system_prompt": ""}
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if "llm_providers" not in data or not data["llm_providers"]:
-                    data["llm_providers"] = _DEFAULT_LLM_PROVIDERS
+                loaded = json.load(f)
+                data.update(loaded)
+                providers = data.get("llm_providers") or {}
+                for k, v in _DEFAULT_LLM_PROVIDERS.items():
+                    if k not in providers:
+                        providers[k] = v
+                data["llm_providers"] = providers
                 return data
         except Exception:
             pass
-    return {
-        "default_llm": "qwen",
-        "llm_providers": _DEFAULT_LLM_PROVIDERS,
-        "system_prompt": "",
-    }
+    return data
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""

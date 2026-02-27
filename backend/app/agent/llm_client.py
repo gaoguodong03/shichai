@@ -5,18 +5,21 @@ from typing import Optional, Dict, Any
 from langchain_openai import ChatOpenAI
 
 
-# 默认 provider 配置（当 app_settings 无 llm_providers 时使用）
+# 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
+_JENIYA_BASE = "http://jeniya.top/v1"
+_JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, str]] = {
     "qwen": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3-max",
         "api_key_env": "QWEN_API_KEY",
     },
-    "jeniya": {
-        "base_url": "http://jeniya.top/v1",
-        "model": "gpt-4o",
-        "api_key_env": "JENIYA_API_KEY",
-    },
+    "jeniya": {"base_url": _JENIYA_BASE, "model": "gpt-4o", "api_key_env": _JENIYA_KEY},
+    "gemini": {"base_url": _JENIYA_BASE, "model": "gemini-3-pro-preview", "api_key_env": _JENIYA_KEY},
+    "claude": {"base_url": _JENIYA_BASE, "model": "claude-sonnet-4-6", "api_key_env": _JENIYA_KEY},
+    "glm": {"base_url": _JENIYA_BASE, "model": "glm-4.7", "api_key_env": _JENIYA_KEY},
+    "deepseek": {"base_url": _JENIYA_BASE, "model": "deepseek-chat", "api_key_env": _JENIYA_KEY},
+    "kimi": {"base_url": _JENIYA_BASE, "model": "moonshot-v1-128k", "api_key_env": _JENIYA_KEY},
 }
 
 

@@ -26,6 +26,13 @@
           </option>
         </select>
       </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">发言模式</label>
+        <select v-model="speakMode" class="w-full border border-gray-300 rounded px-3 py-2">
+          <option value="auto">自动（由主持人指定发言人）</option>
+          <option value="manual">手动（每次由用户选择发言人，仅该人回答后等待用户）</option>
+        </select>
+      </div>
       <div class="flex gap-2">
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" :disabled="!selectedDhaIds.length || !leaderDhaId">
           创建
@@ -53,6 +60,7 @@ const emit = defineEmits<{
 const title = ref('新 Group')
 const selectedDhaIds = ref<string[]>([])
 const leaderDhaId = ref('')
+const speakMode = ref<'auto' | 'manual'>('auto')
 
 const selectedDhaList = computed(() => {
   return props.dhaInstances.filter((d) => selectedDhaIds.value.includes(d.dha_id))
@@ -77,6 +85,7 @@ async function create() {
       title: title.value,
       dha_ids: selectedDhaIds.value,
       leader_dha_id: leaderDhaId.value,
+      speak_mode: speakMode.value,
     }),
   })
   const j = await r.json()

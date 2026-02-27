@@ -32,11 +32,17 @@
               {{ msg.content || '' }}
             </div>
           </div>
-          <!-- DHA 消息：名称 + 简介 + 输出框；主持人 DHA 显示「主持人」标签 -->
+          <!-- DHA 消息：头像（首字）+ 名称 + 简介 + 输出框 -->
           <div
             v-else
-            class="max-w-3xl min-w-0 w-full"
+            class="max-w-3xl min-w-0 w-full flex gap-2"
           >
+            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+              :style="{ backgroundColor: getDhaAvatarBg(msg.dha_id) }"
+            >
+              {{ getDhaAvatarChar(msg.dha_id) }}
+            </div>
+            <div class="min-w-0 flex-1">
             <div class="mb-1.5 flex items-center gap-2 flex-wrap">
               <span class="font-semibold text-gray-800">{{ getDhaName(msg.dha_id) }}</span>
               <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">主持人</span>
@@ -50,13 +56,20 @@
                 <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
               </div>
             </div>
+            </div>
           </div>
         </div>
       </template>
 
       <!-- 当前 DHA 正在发言（流式或等待中） -->
       <div v-if="isStreaming && currentStreamingDhaId" class="flex justify-start">
-        <div class="max-w-3xl min-w-0 w-full">
+        <div class="max-w-3xl min-w-0 w-full flex gap-2">
+          <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+            :style="{ backgroundColor: getDhaAvatarBg(currentStreamingDhaId) }"
+          >
+            {{ getDhaAvatarChar(currentStreamingDhaId) }}
+          </div>
+          <div class="min-w-0 flex-1">
           <div class="mb-1.5 flex items-center gap-2">
             <span class="font-semibold text-gray-800">{{ getDhaName(currentStreamingDhaId) }}</span>
             <span class="text-xs text-gray-500">正在发言...</span>
@@ -68,6 +81,7 @@
             <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
               <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(currentStreamingText)"></div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -86,13 +100,13 @@
     <!-- 输入区 -->
     <div class="bg-white border-t border-gray-200 px-4 py-3">
       <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 text-xs text-gray-500">
-          <span>下一发言人：</span>
+        <div class="flex items-center gap-2 text-xs" :class="speakMode === 'manual' ? 'text-amber-700' : 'text-gray-500'">
+          <span>{{ speakMode === 'manual' ? '请选择发言人（必选）：' : '下一发言人：' }}</span>
           <select
             v-model="overrideNextSpeaker"
             class="border border-gray-300 rounded px-2 py-1 text-gray-700"
           >
-            <option value="">由领导人决定</option>
+            <option value="">{{ speakMode === 'manual' ? '请选择' : '由主持人决定' }}</option>
             <option value="user">等待用户</option>
             <option v-for="d in dhaList" :key="d.dha_id" :value="d.dha_id">
               {{ d.name }}
@@ -100,18 +114,40 @@
           </select>
         </div>
         <div class="flex gap-2">
-          <textarea
-            v-model="inputText"
-            placeholder="输入消息参与讨论..."
-            rows="2"
-            class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            :disabled="isStreaming"
-            @keydown.enter.exact.prevent="sendMessage"
-          />
+          <div class="flex-1 flex flex-col gap-1">
+            <textarea
+              v-model="inputText"
+              placeholder="输入消息参与讨论..."
+              rows="2"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              :disabled="isStreaming"
+              @keydown.enter.exact.prevent="sendMessage"
+            />
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="text-xs text-gray-500 hover:text-blue-600"
+                @click="showFilePicker = !showFilePicker; showFilePicker && loadFileEntries()"
+              >
+                插入文件
+              </button>
+              <div v-if="showFilePicker" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                <button
+                  v-for="e in fileEntries"
+                  :key="e.path"
+                  type="button"
+                  class="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 truncate max-w-[180px]"
+                  @click="insertFileRef(e.path)"
+                >
+                  {{ e.name }}
+                </button>
+              </div>
+            </div>
+          </div>
           <button
             type="button"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="isStreaming || !inputText.trim()"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+            :disabled="isStreaming || !inputText.trim() || (speakMode === 'manual' && !overrideNextSpeaker)"
             @click="sendMessage"
           >
             发送
@@ -134,8 +170,9 @@ const props = withDefaults(
     dhaMap?: Record<string, { name?: string; role?: string }>
     dhaIds: string[]
     leaderDhaId?: string
+    speakMode?: string
   }>(),
-  { dhaMap: () => ({}), leaderDhaId: '' }
+  { dhaMap: () => ({}), leaderDhaId: '', speakMode: 'auto' }
 )
 
 const emit = defineEmits<{
@@ -150,6 +187,47 @@ const messagesContainerRef = ref<HTMLElement | null>(null)
 const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string }[]>([])
 const currentStreamingText = ref('')
 const currentStreamingDhaId = ref('')
+const showFilePicker = ref(false)
+const fileEntries = ref<{ name: string; path: string }[]>([])
+
+const DHA_AVATAR_COLORS = [
+  '#2563eb', '#059669', '#b45309', '#7c3aed', '#be123c', '#0891b2', '#0d9488', '#4f46e5',
+]
+
+function getDhaAvatarChar(dhaId: string) {
+  const name = getDhaName(dhaId)
+  if (!name) return '?'
+  const first = name.trim().charAt(0)
+  return first || dhaId?.charAt(0) || '?'
+}
+
+function getDhaAvatarBg(dhaId: string) {
+  let hash = 0
+  const s = dhaId || ''
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) - hash) + s.charCodeAt(i)
+    hash |= 0
+  }
+  return DHA_AVATAR_COLORS[Math.abs(hash) % DHA_AVATAR_COLORS.length]
+}
+
+async function loadFileEntries() {
+  if (fileEntries.value.length) return
+  try {
+    const r = await fetch('/api/files')
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.entries) {
+      fileEntries.value = (j.data.entries as { name: string; path: string }[]).filter((e: any) => !e.is_dir)
+    }
+  } catch {
+    fileEntries.value = []
+  }
+}
+
+function insertFileRef(filePath: string) {
+  inputText.value = (inputText.value || '') + `\n【文件引用：${filePath}】\n`
+  showFilePicker.value = false
+}
 
 watch(
   () => props.messages,

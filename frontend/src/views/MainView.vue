@@ -229,14 +229,24 @@
               <div class="truncate font-medium">{{ s.title || '新 Group' }}</div>
               <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
             </div>
-            <button
-              type="button"
-              class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100"
-              title="删除 Group"
-              @click.stop="deleteGroupSession(s.id)"
-            >
-              🗑️
-            </button>
+            <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                title="重命名 Group"
+                @click.stop="renameGroupSession(s.id, s.title || '新 Group')"
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="删除 Group"
+                @click.stop="deleteGroupSession(s.id)"
+              >
+                🗑️
+              </button>
+            </div>
           </div>
         </template>
         <!-- 设置 -->
@@ -398,6 +408,7 @@
           :dha-map="groupSessionDetail.dha_map || {}"
           :dha-ids="groupSessionDetail.dha_ids || []"
           :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
+          :speak-mode="groupSessionDetail.speak_mode || 'auto'"
           @message-sent="fetchGroupSessionDetail"
         />
       </template>
@@ -472,7 +483,7 @@ const settingsCategories = [
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
-const groupSessions = ref<{ id: string; title: string; updated_at: string }[]>([])
+const groupSessions = ref<{ id: string; title: string; updated_at: string; speak_mode?: string }[]>([])
 const groupSessionsLoading = ref(false)
 const groupSessionDetail = ref<{
   id: string
@@ -481,6 +492,7 @@ const groupSessionDetail = ref<{
   dha_map: Record<string, { name?: string; role?: string }>
   dha_ids: string[]
   leader_dha_id?: string
+  speak_mode?: string
 } | null>(null)
 const showGroupCreateForm = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
@@ -761,6 +773,25 @@ function onGroupCreated(id: string) {
   selectedGroupSessionId.value = id
   fetchGroupSessions()
   fetchGroupSessionDetail()
+}
+
+async function renameGroupSession(id: string, currentTitle: string) {
+  const next = prompt('重命名 Group', currentTitle)
+  if (next == null || next.trim() === '') return
+  const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: next.trim() }),
+  })
+  const j = await r.json()
+  if (j.status === 'ok') {
+    fetchGroupSessions()
+    if (groupSessionDetail.value?.id === id) {
+      groupSessionDetail.value = { ...groupSessionDetail.value, title: next.trim() }
+    }
+  } else {
+    alert(j.detail || '重命名失败')
+  }
 }
 
 async function fetchDHA() {

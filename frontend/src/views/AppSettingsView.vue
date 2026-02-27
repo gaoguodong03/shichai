@@ -6,9 +6,11 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-6">
       <div v-if="loading" class="text-sm text-gray-500">加载中...</div>
       <template v-else>
-        <!-- LLM 选择 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">LLM 选择</label>
+        <!-- 模型选择 -->
+        <section class="space-y-4">
+          <h2 class="text-base font-medium text-gray-800 border-b border-gray-200 pb-1">模型选择</h2>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">默认 LLM</label>
           <select
             v-model="form.default_llm"
             class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -18,10 +20,13 @@
             </option>
           </select>
           <p class="mt-1 text-xs text-gray-500">需在 .env 中配置对应 provider 的 API Key（api_key_env）。</p>
-        </div>
+          </div>
+        </section>
         <!-- 系统提示词 -->
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">系统提示词</label>
+        <section class="space-y-4">
+          <h2 class="text-base font-medium text-gray-800 border-b border-gray-200 pb-1">系统提示词</h2>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">全局系统提示词</label>
           <textarea
             v-model="form.system_prompt"
             rows="8"
@@ -29,7 +34,8 @@
             placeholder="每次向大模型发起 chat 前，会将该内容注入到 prompt 最前。可为空。"
           />
           <p class="mt-1 text-xs text-gray-500">在每次对话请求前会拼接到系统提示词最前面，用于固定人设或全局指令。</p>
-        </div>
+          </div>
+        </section>
         <div class="flex items-center gap-3">
           <button
             @click="save"

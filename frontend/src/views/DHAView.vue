@@ -18,6 +18,13 @@
           <input v-model="form.role" type="text" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="如：负责技术方案与实现细节" />
         </div>
         <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">大模型（可选）</label>
+          <select v-model="form.llm_provider_id" class="w-full border border-gray-300 rounded px-3 py-2">
+            <option value="">使用应用默认</option>
+            <option v-for="(meta, id) in llmProviders" :key="id" :value="id">{{ meta.label || id }}</option>
+          </select>
+        </div>
+        <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">系统提示词（可选）</label>
           <textarea v-model="form.system_prompt" rows="2" class="w-full border border-gray-300 rounded px-3 py-2" placeholder="该 DHA 的额外指令" />
         </div>
@@ -60,7 +67,7 @@ import { ref, watch, onMounted } from 'vue'
 
 const props = defineProps<{
   selectedDhaId: string | null
-  dhaInstances: { dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]
+  dhaInstances: { dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -71,6 +78,7 @@ const emit = defineEmits<{
 
 const skills = ref<{ id: string; name: string }[]>([])
 const mcpServers = ref<{ id: string; name: string }[]>([])
+const llmProviders = ref<Record<string, { label: string }>>({})
 
 const form = ref({
   name: '',
@@ -79,13 +87,14 @@ const form = ref({
   skill_ids: [] as string[],
   mcp_server_ids: [] as string[],
   is_leader: false,
+  llm_provider_id: '',
 })
 
 watch(
   () => [props.selectedDhaId, props.dhaInstances],
   () => {
     if (props.selectedDhaId === '__new__') {
-      form.value = { name: '', role: '', system_prompt: '', skill_ids: [], mcp_server_ids: [], is_leader: false }
+      form.value = { name: '', role: '', system_prompt: '', skill_ids: [], mcp_server_ids: [], is_leader: false, llm_provider_id: '' }
     } else if (props.selectedDhaId) {
       const d = props.dhaInstances.find((x) => x.dha_id === props.selectedDhaId)
       if (d) {
@@ -96,6 +105,7 @@ watch(
           skill_ids: d.skill_ids || [],
           mcp_server_ids: d.mcp_server_ids || [],
           is_leader: d.is_leader || false,
+          llm_provider_id: d.llm_provider_id || '',
         }
       }
     }
@@ -147,8 +157,22 @@ async function saveDha() {
   }
 }
 
+async function fetchAppSettings() {
+  const r = await fetch('/api/settings/app')
+  const j = await r.json()
+  if (j.status === 'ok' && j.data?.llm_providers) {
+    llmProviders.value = Object.fromEntries(
+      Object.entries(j.data.llm_providers).map(([k, v]: [string, any]) => [
+        k,
+        { label: v.model ? `${k} (${v.model})` : k },
+      ])
+    )
+  }
+}
+
 onMounted(() => {
   fetchSkills()
   fetchMCP()
+  fetchAppSettings()
 })
 </script>

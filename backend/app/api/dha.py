@@ -23,6 +23,7 @@ class DHACreate(BaseModel):
     skill_ids: List[str] = []
     mcp_server_ids: List[str] = []
     is_leader: bool = False
+    llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
 
 
 class DHAUpdate(BaseModel):
@@ -33,6 +34,7 @@ class DHAUpdate(BaseModel):
     skill_ids: Optional[List[str]] = None
     mcp_server_ids: Optional[List[str]] = None
     is_leader: Optional[bool] = None
+    llm_provider_id: Optional[str] = None
 
 
 def _ensure_config_dir() -> Path:
@@ -81,6 +83,7 @@ async def create_dha_instance(body: DHACreate):
         "skill_ids": body.skill_ids or [],
         "mcp_server_ids": body.mcp_server_ids or [],
         "is_leader": body.is_leader,
+        "llm_provider_id": body.llm_provider_id or "",
     }
     instances.append(new_instance)
     save_dha_instances(instances)
@@ -107,6 +110,8 @@ async def update_dha_instance(dha_id: str, body: DHAUpdate):
         inst["mcp_server_ids"] = body.mcp_server_ids
     if body.is_leader is not None:
         inst["is_leader"] = body.is_leader
+    if body.llm_provider_id is not None:
+        inst["llm_provider_id"] = body.llm_provider_id or ""
     save_dha_instances(instances)
     return {"status": "ok", "data": inst}
 

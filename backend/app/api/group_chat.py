@@ -116,6 +116,14 @@ def _get_dha_tools(dha: Dict[str, Any]) -> List:
     return tools
 
 
+def _get_llm_for_dha(dha: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
+    """按 DHA 的 llm_provider_id 或应用默认创建 LLM"""
+    provider = (dha.get("llm_provider_id") or "").strip() if dha else ""
+    if not provider:
+        provider = app_settings.get("default_llm", "qwen")
+    return get_llm_from_config(provider, app_settings.get("llm_providers"))
+
+
 def _get_dha_skill_content(dha: Dict[str, Any]) -> str:
     """获取 DHA 的技能内容（按 skill_ids 取第一个或 default）"""
     skill_ids = dha.get("skill_ids") or []
@@ -223,6 +231,12 @@ class GroupSessionCreate(BaseModel):
     title: str = "新群聊"
     dha_ids: List[str]
     leader_dha_id: str
+    speak_mode: Optional[str] = "auto"  # auto | manual
+
+
+class GroupSessionUpdate(BaseModel):
+    title: Optional[str] = None
+    speak_mode: Optional[str] = None
 
 
 class GroupChatRequest(BaseModel):
@@ -239,14 +253,15 @@ async def list_group_sessions():
     """获取群聊会话列表"""
     meta = _load_group_meta()
     sessions = []
-    for gsid, m in meta.items():
+    for gsid, gm in meta.items():
         sessions.append({
             "id": gsid,
-            "title": m.get("title", "新群聊"),
-            "dha_ids": m.get("dha_ids", []),
-            "leader_dha_id": m.get("leader_dha_id", ""),
-            "created_at": m.get("created_at", ""),
-            "updated_at": m.get("updated_at", ""),
+            "title": gm.get("title", "新群聊"),
+            "dha_ids": gm.get("dha_ids", []),
+            "leader_dha_id": gm.get("leader_dha_id", ""),
+            "speak_mode": gm.get("speak_mode", "auto"),
+            "created_at": gm.get("created_at", ""),
+            "updated_at": gm.get("updated_at", ""),
         })
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
@@ -273,6 +288,7 @@ async def create_group_session(body: GroupSessionCreate):
         "title": body.title or "新群聊",
         "dha_ids": body.dha_ids,
         "leader_dha_id": body.leader_dha_id or (body.dha_ids[0] if body.dha_ids else ""),
+        "speak_mode": (body.speak_mode or "auto").strip().lower() if body.speak_mode else "auto",
         "created_at": now,
         "updated_at": now,
     }
@@ -310,12 +326,28 @@ async def get_group_session(group_session_id: str):
             "title": m.get("title", "新群聊"),
             "dha_ids": m.get("dha_ids", []),
             "leader_dha_id": m.get("leader_dha_id", ""),
+            "speak_mode": m.get("speak_mode", "auto"),
             "created_at": m.get("created_at", ""),
             "updated_at": m.get("updated_at", ""),
             "messages": messages,
             "dha_map": dha_map,
         },
     }
+
+
+@router.put("/group-sessions/{group_session_id}")
+async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
+    """更新群聊：重命名、发言模式等"""
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+    if body.title is not None and str(body.title).strip():
+        meta[group_session_id]["title"] = body.title.strip()
+    if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
+        meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
+    meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _save_group_meta(meta)
+    return {"status": "ok", "data": meta[group_session_id]}
 
 
 @router.delete("/group-sessions/{group_session_id}")
@@ -378,7 +410,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         discussion_goal = "待用户提出讨论主题"
 
     app_settings = load_app_settings()
-    llm = get_llm_from_config(app_settings.get("default_llm", "qwen"), app_settings.get("llm_providers"))
     extra_system_prompt = app_settings.get("system_prompt") or ""
 
     import json as json_module
@@ -390,6 +421,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
             next_speaker = None
+            speak_mode = m.get("speak_mode", "auto")  # auto | manual
 
             if request.override_next_speaker is not None:
                 next_speaker = request.override_next_speaker.strip().lower()
@@ -401,18 +433,22 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     return
                 if next_speaker and next_speaker not in dha_ids:
                     next_speaker = None
+            elif speak_mode == "manual":
+                # 手动模式：必须由前端传 override_next_speaker，否则不自动选人
+                next_speaker = None
             else:
-                # 由主持人 DHA 或默认调度决定下一发言人
+                # auto：由主持人 DHA 或默认调度决定下一发言人
                 recent = _messages_to_context(messages)
                 decision = None
-                if leader_dha_id and leader_dha_id in dha_ids:
-                    host_dha = dha_map.get(leader_dha_id)
-                    if host_dha:
-                        decision = await _host_decide_by_dha(
-                            llm, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
-                        )
+                host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
+                if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                    llm_host = _get_llm_for_dha(host_dha, app_settings)
+                    decision = await _host_decide_by_dha(
+                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
+                    )
                 if decision is None:
-                    decision = await leader_decide(llm, dha_list, discussion_goal, recent, last_speaker_dha_id)
+                    llm_default = _get_llm_for_dha(None, app_settings)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
                     announcement = None
                 else:
                     announcement = decision.get("announcement")
@@ -458,7 +494,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if role:
                     skill_content = f"你的角色：{role}\n\n{skill_content}"
 
-                agent = create_skill_execution_agent(llm, tools, skill_content, extra_system_prompt)
+                llm_dha = _get_llm_for_dha(dha, app_settings)
+                agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
                 context = _messages_to_context(messages)
                 user_content = f"【群聊讨论目标】\n{discussion_goal}\n\n【最近讨论】\n{context}\n\n请基于以上上下文，以你的角色参与讨论并发言。"
                 initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
@@ -510,17 +547,22 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
 
                 last_speaker_dha_id = next_speaker
-                # 主持人 DHA 或默认调度决定下一发言人
+                # manual 模式：该 DHA 回答后直接结束，不再交给主持人
+                if speak_mode == "manual":
+                    yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                    return
+                # auto：主持人 DHA 或默认调度决定下一发言人
                 decision = None
-                if leader_dha_id and leader_dha_id in dha_ids:
-                    host_dha = dha_map.get(leader_dha_id)
-                    if host_dha:
-                        decision = await _host_decide_by_dha(
-                            llm, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
-                            last_speaker_dha_id, extra_system_prompt
-                        )
+                host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
+                if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                    llm_host = _get_llm_for_dha(host_dha, app_settings)
+                    decision = await _host_decide_by_dha(
+                        llm_host, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
+                        last_speaker_dha_id, extra_system_prompt
+                    )
                 if decision is None:
-                    decision = await leader_decide(llm, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id)
+                    llm_default = _get_llm_for_dha(None, app_settings)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id)
                 task_done = decision.get("task_done", True)
                 next_speaker = decision.get("next_speaker", "user")
                 if not task_done:
@@ -615,8 +657,8 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         discussion_goal = "待用户提出讨论主题"
 
     app_settings = load_app_settings()
-    llm = get_llm_from_config(app_settings.get("default_llm", "qwen"), app_settings.get("llm_providers"))
     extra_system_prompt = app_settings.get("system_prompt") or ""
+    speak_mode = m.get("speak_mode", "auto")
 
     next_speaker = None
     if request.override_next_speaker is not None:
@@ -625,17 +667,18 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             return {"status": "ok", "data": {"messages": messages}}
         if next_speaker not in dha_ids:
             next_speaker = None
-    if next_speaker is None:
+    if next_speaker is None and speak_mode != "manual":
         recent = _messages_to_context(messages)
         decision = None
-        if leader_dha_id and leader_dha_id in dha_ids:
-            host_dha = dha_map.get(leader_dha_id)
-            if host_dha:
-                decision = await _host_decide_by_dha(
-                    llm, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
-                )
+        host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
+        if leader_dha_id and host_dha:
+            llm_host = _get_llm_for_dha(host_dha, app_settings)
+            decision = await _host_decide_by_dha(
+                llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
+            )
         if decision is None:
-            decision = await leader_decide(llm, dha_list, discussion_goal, recent, last_speaker_dha_id)
+            llm_default = _get_llm_for_dha(None, app_settings)
+            decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
         next_speaker = decision.get("next_speaker", "user")
         task_done = decision.get("task_done", True)
         if not task_done and last_speaker_dha_id:
@@ -676,7 +719,8 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         if role:
             skill_content = f"你的角色：{role}\n\n{skill_content}"
 
-        agent = create_skill_execution_agent(llm, tools, skill_content, extra_system_prompt)
+        llm_dha = _get_llm_for_dha(dha, app_settings)
+        agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
         context = _messages_to_context(messages)
         user_content = f"【群聊讨论目标】\n{discussion_goal}\n\n【最近讨论】\n{context}\n\n请基于以上上下文，以你的角色参与讨论并发言。"
         initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
@@ -706,17 +750,20 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
         _save_group_meta(meta)
 
+        if speak_mode == "manual":
+            break
         last_speaker_dha_id = next_speaker
         decision = None
-        if leader_dha_id and leader_dha_id in dha_ids:
-            host_dha = dha_map.get(leader_dha_id)
-            if host_dha:
-                decision = await _host_decide_by_dha(
-                    llm, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
-                    last_speaker_dha_id, extra_system_prompt
-                )
+        host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
+        if leader_dha_id and host_dha:
+            llm_host = _get_llm_for_dha(host_dha, app_settings)
+            decision = await _host_decide_by_dha(
+                llm_host, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
+                last_speaker_dha_id, extra_system_prompt
+            )
         if decision is None:
-            decision = await leader_decide(llm, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id)
+            llm_default = _get_llm_for_dha(None, app_settings)
+            decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id)
         task_done = decision.get("task_done", True)
         next_speaker = decision.get("next_speaker", "user")
         if not task_done:
