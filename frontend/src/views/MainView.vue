@@ -410,6 +410,7 @@
           :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
           :speak-mode="groupSessionDetail.speak_mode || 'auto'"
           @message-sent="fetchGroupSessionDetail"
+          @speak-mode-changed="fetchGroupSessionDetail"
         />
       </template>
       <template v-else-if="currentModule === 'group_chat'">

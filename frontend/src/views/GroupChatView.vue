@@ -1,9 +1,18 @@
 <template>
   <div class="flex flex-col h-full bg-gray-50">
-    <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-800 truncate">{{ sessionTitle }}</h1>
-      <div class="text-xs text-gray-500">
-        {{ dhaIds.length }} 个 DHA
+    <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
+      <h1 class="text-xl font-semibold text-gray-800 truncate min-w-0">{{ sessionTitle }}</h1>
+      <div class="flex items-center gap-3 flex-shrink-0">
+        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+          <span>自动</span>
+          <input
+            type="checkbox"
+            :checked="speakMode === 'auto'"
+            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            @change="onAutoSwitchChange"
+          />
+        </label>
+        <span class="text-xs text-gray-500">{{ dhaIds.length }} 个 DHA</span>
       </div>
     </header>
 
@@ -100,13 +109,13 @@
     <!-- 输入区 -->
     <div class="bg-white border-t border-gray-200 px-4 py-3">
       <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 text-xs" :class="speakMode === 'manual' ? 'text-amber-700' : 'text-gray-500'">
-          <span>{{ speakMode === 'manual' ? '请选择发言人（必选）：' : '下一发言人：' }}</span>
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <span>下一发言人：</span>
           <select
             v-model="overrideNextSpeaker"
             class="border border-gray-300 rounded px-2 py-1 text-gray-700"
           >
-            <option value="">{{ speakMode === 'manual' ? '请选择' : '由主持人决定' }}</option>
+            <option value="">由主持人决定</option>
             <option value="user">等待用户</option>
             <option v-for="d in dhaList" :key="d.dha_id" :value="d.dha_id">
               {{ d.name }}
@@ -147,7 +156,7 @@
           <button
             type="button"
             class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed self-end"
-            :disabled="isStreaming || !inputText.trim() || (speakMode === 'manual' && !overrideNextSpeaker)"
+            :disabled="isStreaming || (!inputText.trim() && !overrideNextSpeaker)"
             @click="sendMessage"
           >
             发送
@@ -177,6 +186,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'message-sent'): void
+  (e: 'speak-mode-changed'): void
 }>()
 
 const inputText = ref('')
@@ -297,23 +307,27 @@ function renderMarkdown(text: string) {
 
 async function sendMessage() {
   const msg = inputText.value.trim()
-  if (!msg || isStreaming.value) return
+  const hasOverride = !!overrideNextSpeaker.value
+  if (isStreaming.value) return
+  if (!msg && !hasOverride) return
 
   inputText.value = ''
   isStreaming.value = true
   currentStreamingText.value = ''
   currentStreamingDhaId.value = ''
 
-  const userMsg = {
-    message_id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    role: 'user' as const,
-    content: msg,
+  if (msg) {
+    const userMsg = {
+      message_id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      role: 'user' as const,
+      content: msg,
+    }
+    displayedMessages.value = [...displayedMessages.value, userMsg]
+    scrollToBottom()
   }
-  displayedMessages.value = [...displayedMessages.value, userMsg]
-  scrollToBottom()
 
-  const body: Record<string, string> = { message: msg }
-  if (overrideNextSpeaker.value) {
+  const body: Record<string, string> = { message: msg || '' }
+  if (hasOverride) {
     body.override_next_speaker = overrideNextSpeaker.value
   }
 
@@ -373,6 +387,26 @@ async function sendMessage() {
     isStreaming.value = false
     currentStreamingText.value = ''
     currentStreamingDhaId.value = ''
+  }
+}
+
+async function onAutoSwitchChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const next = target.checked ? 'auto' : 'manual'
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ speak_mode: next }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      emit('speak-mode-changed')
+    } else {
+      target.checked = !target.checked
+    }
+  } catch {
+    target.checked = !target.checked
   }
 }
 

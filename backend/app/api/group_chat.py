@@ -411,6 +411,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     app_settings = load_app_settings()
     extra_system_prompt = app_settings.get("system_prompt") or ""
+    speak_mode = m.get("speak_mode", "auto")  # auto：主持人直接推进；非 auto：主持人先说建议，等用户选人后再发
 
     import json as json_module
 
@@ -421,7 +422,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
             next_speaker = None
-            speak_mode = m.get("speak_mode", "auto")  # auto | manual
 
             if request.override_next_speaker is not None:
                 next_speaker = request.override_next_speaker.strip().lower()
@@ -433,9 +433,40 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     return
                 if next_speaker and next_speaker not in dha_ids:
                     next_speaker = None
-            elif speak_mode == "manual":
-                # 手动模式：必须由前端传 override_next_speaker，否则不自动选人
-                next_speaker = None
+            elif speak_mode != "auto":
+                # 非自动：仅让主持人给出建议，不下发 DHA，等用户选人后下次请求再跑
+                recent = _messages_to_context(messages)
+                decision = None
+                host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
+                if leader_dha_id and host_dha:
+                    llm_host = _get_llm_for_dha(host_dha, app_settings)
+                    decision = await _host_decide_by_dha(
+                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
+                    )
+                if decision is None:
+                    llm_default = _get_llm_for_dha(None, app_settings)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
+                announcement = decision.get("announcement")
+                suggested = (decision.get("next_speaker") or "").strip().lower()
+                if suggested in dha_ids:
+                    next_dha = dha_map.get(suggested)
+                    next_name = (next_dha.get("name") or suggested) if next_dha else suggested
+                    host_content = announcement or f"建议由 {next_name} 发言，请选择发言人并发送。"
+                else:
+                    host_content = announcement or "请选择下一发言人并发送。"
+                if leader_dha_id:
+                    host_msg = {
+                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                        "role": "assistant",
+                        "dha_id": leader_dha_id,
+                        "content": host_content,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    messages.append(host_msg)
+                    _save_group_history(group_session_id, messages)
+                    yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                return
             else:
                 # auto：由主持人 DHA 或默认调度决定下一发言人
                 recent = _messages_to_context(messages)
@@ -547,8 +578,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
 
                 last_speaker_dha_id = next_speaker
-                # manual 模式：该 DHA 回答后直接结束，不再交给主持人
-                if speak_mode == "manual":
+                # 非自动模式：该 DHA 回答后直接结束，等用户下次选人
+                if speak_mode != "auto":
                     yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
                     return
                 # auto：主持人 DHA 或默认调度决定下一发言人
@@ -667,7 +698,39 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             return {"status": "ok", "data": {"messages": messages}}
         if next_speaker not in dha_ids:
             next_speaker = None
-    if next_speaker is None and speak_mode != "manual":
+    if next_speaker is None and speak_mode != "auto":
+        # 非自动：仅主持人给建议，不跑 DHA
+        recent = _messages_to_context(messages)
+        decision = None
+        host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
+        if leader_dha_id and host_dha:
+            llm_host = _get_llm_for_dha(host_dha, app_settings)
+            decision = await _host_decide_by_dha(
+                llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt
+            )
+        if decision is None:
+            llm_default = _get_llm_for_dha(None, app_settings)
+            decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
+        announcement = decision.get("announcement")
+        suggested = (decision.get("next_speaker") or "").strip().lower()
+        if suggested in dha_ids:
+            next_dha = dha_map.get(suggested)
+            next_name = (next_dha.get("name") or suggested) if next_dha else suggested
+            host_content = announcement or f"建议由 {next_name} 发言，请选择发言人并发送。"
+        else:
+            host_content = announcement or "请选择下一发言人并发送。"
+        if leader_dha_id:
+            host_msg = {
+                "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                "role": "assistant",
+                "dha_id": leader_dha_id,
+                "content": host_content,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            messages.append(host_msg)
+            _save_group_history(group_session_id, messages)
+        return {"status": "ok", "data": {"messages": messages}}
+    if next_speaker is None and speak_mode == "auto":
         recent = _messages_to_context(messages)
         decision = None
         host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
@@ -750,7 +813,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
         _save_group_meta(meta)
 
-        if speak_mode == "manual":
+        if speak_mode != "auto":
             break
         last_speaker_dha_id = next_speaker
         decision = None

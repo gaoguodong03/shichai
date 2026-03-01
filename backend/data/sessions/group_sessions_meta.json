@@ -23,6 +23,20 @@
     "leader_dha_id": "dha-80c203d7",
     "speak_mode": "auto",
     "created_at": "2026-02-27T04:55:42.269008+00:00",
-    "updated_at": "2026-02-27T04:56:29.681291+00:00"
+    "updated_at": "2026-02-27T05:03:24.119981+00:00"
+  },
+  "group-9c540bbc0920": {
+    "title": "新 Group",
+    "dha_ids": [
+      "dha-df1f712a",
+      "dha-c9b8ae32",
+      "dha-80c203d7",
+      "dha-440b26f8",
+      "dha-195b8c3a"
+    ],
+    "leader_dha_id": "dha-80c203d7",
+    "speak_mode": "auto",
+    "created_at": "2026-02-27T05:03:55.468913+00:00",
+    "updated_at": "2026-03-01T14:06:54.763106+00:00"
   }
 }
