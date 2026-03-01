@@ -2,18 +2,7 @@
   <div class="flex flex-col h-full bg-gray-50">
     <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
       <h1 class="text-xl font-semibold text-gray-800 truncate min-w-0">{{ sessionTitle }}</h1>
-      <div class="flex items-center gap-3 flex-shrink-0">
-        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-          <span>自动</span>
-          <input
-            type="checkbox"
-            :checked="speakMode === 'auto'"
-            class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            @change="onAutoSwitchChange"
-          />
-        </label>
-        <span class="text-xs text-gray-500">{{ dhaIds.length }} 个 DHA</span>
-      </div>
+      <span class="text-xs text-gray-500 flex-shrink-0">{{ dhaIds.length }} 个 DHA</span>
     </header>
 
     <!-- 消息列表：用 displayedMessages 保证顺序与逐条出现 -->
@@ -108,58 +97,101 @@
 
     <!-- 输入区 -->
     <div class="bg-white border-t border-gray-200 px-4 py-3">
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center gap-2 text-xs text-gray-500">
-          <span>下一发言人：</span>
-          <select
-            v-model="overrideNextSpeaker"
-            class="border border-gray-300 rounded px-2 py-1 text-gray-700"
-          >
-            <option value="">由主持人决定</option>
-            <option value="user">等待用户</option>
-            <option v-for="d in dhaList" :key="d.dha_id" :value="d.dha_id">
-              {{ d.name }}
-            </option>
-          </select>
+      <div class="flex gap-2">
+        <div class="flex-1 flex flex-col gap-1">
+          <textarea
+            v-model="inputText"
+            placeholder="输入消息参与讨论..."
+            rows="2"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            :disabled="isStreaming"
+            @keydown.enter.exact.prevent="sendMessage"
+          />
+          <div class="flex items-center gap-3 flex-wrap text-xs">
+            <button
+              type="button"
+              class="text-gray-500 hover:text-blue-600"
+              @click="openFilePicker"
+            >
+              插入文件
+            </button>
+            <label class="flex items-center gap-1.5 text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                :checked="speakMode === 'auto'"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                @change="onAutoSwitchChange"
+              />
+              <span>自动</span>
+            </label>
+            <span class="text-gray-500">下一发言人：</span>
+            <select
+              v-model="overrideNextSpeaker"
+              class="border border-gray-300 rounded px-2 py-1 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="speakMode === 'auto'"
+            >
+              <option value="">由主持人决定</option>
+              <option value="user">等待用户</option>
+              <option v-for="d in dhaList" :key="d.dha_id" :value="d.dha_id">
+                {{ d.name }}
+              </option>
+            </select>
+          </div>
         </div>
-        <div class="flex gap-2">
-          <div class="flex-1 flex flex-col gap-1">
-            <textarea
-              v-model="inputText"
-              placeholder="输入消息参与讨论..."
-              rows="2"
-              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              :disabled="isStreaming"
-              @keydown.enter.exact.prevent="sendMessage"
-            />
-            <div class="flex items-center gap-2">
-              <button
-                type="button"
-                class="text-xs text-gray-500 hover:text-blue-600"
-                @click="showFilePicker = !showFilePicker; showFilePicker && loadFileEntries()"
-              >
-                插入文件
-              </button>
-              <div v-if="showFilePicker" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                <button
-                  v-for="e in fileEntries"
-                  :key="e.path"
-                  type="button"
-                  class="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 truncate max-w-[180px]"
-                  @click="insertFileRef(e.path)"
-                >
-                  {{ e.name }}
-                </button>
-              </div>
-            </div>
+        <button
+          type="button"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed self-end"
+          :disabled="isStreaming || (!inputText.trim() && !overrideNextSpeaker)"
+          @click="sendMessage"
+        >
+          发送
+        </button>
+      </div>
+    </div>
+
+    <!-- 文件选择弹窗（与 Chat 同款样式） -->
+    <div
+      v-if="showFilePicker"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closeFilePicker"
+    >
+      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-gray-800 truncate">
+            选择要插入到输入框的文件（当前目录：{{ filePickerPath || '/' }}）
+          </div>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeFilePicker">关闭</button>
+        </div>
+        <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+          <button
+            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+            :disabled="!filePickerPath"
+            @click="filePickerGoUp"
+          >
+            ↑ 上一级
+          </button>
+          <button
+            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+            @click="loadFilePickerEntries(filePickerPath)"
+          >
+            刷新
+          </button>
+          <div v-if="filePickerLoading" class="text-xs text-gray-500">加载中...</div>
+          <div v-else-if="filePickerError" class="text-xs text-red-600 truncate">{{ filePickerError }}</div>
+        </div>
+        <div class="max-h-[60vh] overflow-auto">
+          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-gray-500">
+            当前目录为空
           </div>
           <button
-            type="button"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed self-end"
-            :disabled="isStreaming || (!inputText.trim() && !overrideNextSpeaker)"
-            @click="sendMessage"
+            v-for="e in filePickerEntries"
+            :key="e.path"
+            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            @click="onPickFileEntry(e)"
           >
-            发送
+            <span class="flex-shrink-0">{{ e.is_dir ? '📁' : '📄' }}</span>
+            <span class="truncate">{{ e.name }}</span>
+            <span v-if="!e.is_dir" class="ml-auto text-xs text-gray-400">插入</span>
           </button>
         </div>
       </div>
@@ -198,7 +230,10 @@ const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: stri
 const currentStreamingText = ref('')
 const currentStreamingDhaId = ref('')
 const showFilePicker = ref(false)
-const fileEntries = ref<{ name: string; path: string }[]>([])
+const filePickerPath = ref('')
+const filePickerLoading = ref(false)
+const filePickerError = ref('')
+const filePickerEntries = ref<{ name: string; path: string; is_dir?: boolean }[]>([])
 
 const DHA_AVATAR_COLORS = [
   '#2563eb', '#059669', '#b45309', '#7c3aed', '#be123c', '#0891b2', '#0d9488', '#4f46e5',
@@ -221,22 +256,50 @@ function getDhaAvatarBg(dhaId: string) {
   return DHA_AVATAR_COLORS[Math.abs(hash) % DHA_AVATAR_COLORS.length]
 }
 
-async function loadFileEntries() {
-  if (fileEntries.value.length) return
+function openFilePicker() {
+  showFilePicker.value = true
+  filePickerError.value = ''
+  loadFilePickerEntries('')
+}
+
+function closeFilePicker() {
+  showFilePicker.value = false
+}
+
+async function loadFilePickerEntries(path: string) {
+  filePickerLoading.value = true
+  filePickerError.value = ''
   try {
-    const r = await fetch('/api/files')
+    const url = path ? `/api/files?path=${encodeURIComponent(path)}` : '/api/files'
+    const r = await fetch(url)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.entries) {
-      fileEntries.value = (j.data.entries as { name: string; path: string }[]).filter((e: any) => !e.is_dir)
+      filePickerEntries.value = j.data.entries as { name: string; path: string; is_dir?: boolean }[]
+      filePickerPath.value = path
+    } else {
+      filePickerEntries.value = []
+      filePickerError.value = (j as { detail?: string }).detail || '加载失败'
     }
   } catch {
-    fileEntries.value = []
+    filePickerEntries.value = []
+    filePickerError.value = '加载失败'
+  } finally {
+    filePickerLoading.value = false
   }
 }
 
-function insertFileRef(filePath: string) {
-  inputText.value = (inputText.value || '') + `\n【文件引用：${filePath}】\n`
-  showFilePicker.value = false
+function filePickerGoUp() {
+  const p = filePickerPath.value.replace(/\/?[^/]+\/?$/, '').replace(/\/$/, '')
+  loadFilePickerEntries(p)
+}
+
+function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
+  if (e.is_dir) {
+    loadFilePickerEntries(e.path)
+    return
+  }
+  inputText.value = (inputText.value || '') + `\n【文件引用：${e.path}】\n`
+  closeFilePicker()
 }
 
 watch(

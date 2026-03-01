@@ -219,7 +219,7 @@
             v-else
             v-for="s in groupSessions"
             :key="s.id"
-            @click="selectedGroupSessionId = s.id"
+            @click="selectGroupSession(s.id)"
             :class="[
               'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
               selectedGroupSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
@@ -727,6 +727,10 @@ async function fetchGroupSessions() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.sessions) {
       groupSessions.value = j.data.sessions
+      // 无选中且未在新建时，默认打开第一个 Group
+      if (!selectedGroupSessionId.value && !showGroupCreateForm.value && groupSessions.value.length > 0) {
+        selectedGroupSessionId.value = groupSessions.value[0].id
+      }
     }
   } finally {
     groupSessionsLoading.value = false
@@ -752,6 +756,11 @@ function createNewGroupChat() {
   showGroupCreateForm.value = true
   groupSessionDetail.value = null
   fetchDHA()
+}
+
+function selectGroupSession(id: string) {
+  selectedGroupSessionId.value = id
+  showGroupCreateForm.value = false
 }
 
 async function deleteGroupSession(id: string) {
