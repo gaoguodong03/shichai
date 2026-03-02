@@ -1,8 +1,8 @@
 # 构建目标平台（默认 linux/amd64；可覆盖：docker build --platform linux/arm64）
 ARG TARGETPLATFORM=linux/amd64
 ARG BUILDPLATFORM=linux/amd64
-# ========== 阶段 1：构建前端 ==========
-FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-builder
+# ========== 阶段 1：构建前端（用 Debian 版 Node，便于阶段 2 复用，避免 apt 拉取 node/npm 失败）==========
+FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
@@ -15,14 +15,15 @@ RUN npx vite build
 FROM --platform=$TARGETPLATFORM python:3.12-slim
 WORKDIR /app
 
-# 系统依赖（部分 MCP 或工具需要）
-# - curl: 基础网络工具
-# - nodejs/npm: 运行基于 npx 的本地 MCP（如 amap-maps、zhipu-web-search）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    nodejs \
-    npm \
+# 只装 curl（健康检查用）；Node/npm 从 frontend-builder 复制，避免 apt 拉取大量 node-* 包导致网络超时/失败
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
+
+# 从构建阶段复制 Node/npm/npx（运行基于 npx 的本地 MCP 如 amap-maps、zhipu-web-search）
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/
+COPY --from=frontend-builder /usr/local/bin/npm /usr/local/bin/
+COPY --from=frontend-builder /usr/local/bin/npx /usr/local/bin/
+COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 
 # 后端依赖与代码（保持 backend 目录结构，便于与本地一致）
 COPY backend/ ./backend/
