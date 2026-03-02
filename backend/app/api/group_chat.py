@@ -243,6 +243,13 @@ class GroupChatRequest(BaseModel):
     message: Optional[str] = None
     override_next_speaker: Optional[str] = None  # dha_id | "user" | null
     action: Optional[str] = None  # "continue" 继续下一轮
+    custom_prompt: Optional[str] = None  # 手动模式下，可由前端传入自定义给下一发言人的提示词（覆盖默认生成）
+
+
+class GroupPromptPreviewRequest(BaseModel):
+    """前端在 manual 模式下预览（并可编辑）某个 DHA 下一轮发言时将收到的提示词内容。"""
+
+    dha_id: str
 
 
 # ========== API 路由 ==========
@@ -265,6 +272,43 @@ async def list_group_sessions():
         })
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
+
+
+@router.post("/group-sessions/{group_session_id}/prompt-preview")
+async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPreviewRequest):
+    """
+    预览指定 DHA 作为下一发言人时，将要收到的用户侧提示词（HumanMessage 内容）。
+
+    仅用于前端 manual 模式下展示/编辑提示词，不实际触发 LLM 调用。
+    """
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+    m = meta[group_session_id]
+    dha_ids = m.get("dha_ids", [])
+    if body.dha_id not in dha_ids:
+        raise HTTPException(status_code=400, detail="DHA 不在该群聊中")
+
+    messages = _load_group_history(group_session_id)
+
+    # 讨论目标：取首条用户消息
+    discussion_goal = ""
+    for msg in messages:
+        if msg.get("role") == "user":
+            discussion_goal = (msg.get("content") or "")[:200]
+            break
+    if not discussion_goal:
+        discussion_goal = "待用户提出讨论主题"
+
+    # 与实际调用时保持一致的上下文拼接逻辑
+    context = _messages_to_context(messages)
+    user_content = (
+        f"【群聊讨论目标】\n{discussion_goal}\n\n"
+        f"【最近讨论】\n{context}\n\n"
+        "请基于以上上下文，以你的角色参与讨论并发言。"
+    )
+
+    return {"status": "ok", "data": {"prompt": user_content}}
 
 
 @router.post("/group-sessions")
@@ -418,6 +462,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     async def event_gen():
         nonlocal last_speaker_dha_id
         consecutive_same_dha = 0  # 限制同一 DHA 连续发言次数
+        custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
         try:
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
@@ -528,7 +573,15 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 llm_dha = _get_llm_for_dha(dha, app_settings)
                 agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
                 context = _messages_to_context(messages)
-                user_content = f"【群聊讨论目标】\n{discussion_goal}\n\n【最近讨论】\n{context}\n\n请基于以上上下文，以你的角色参与讨论并发言。"
+                if not custom_prompt_used and request.custom_prompt:
+                    user_content = request.custom_prompt
+                    custom_prompt_used = True
+                else:
+                    user_content = (
+                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                        f"【最近讨论】\n{context}\n\n"
+                        "请基于以上上下文，以你的角色参与讨论并发言。"
+                    )
                 initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
 
                 accumulated = []
@@ -769,6 +822,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             _save_group_history(group_session_id, messages)
 
     consecutive_same_dha = 0
+    custom_prompt_used = False  # 非流式模式下，custom_prompt 仅对本次请求的首个 DHA 生效
     while next_speaker and next_speaker in dha_ids:
         dha = dha_map.get(next_speaker)
         if not dha:
@@ -785,7 +839,15 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         llm_dha = _get_llm_for_dha(dha, app_settings)
         agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
         context = _messages_to_context(messages)
-        user_content = f"【群聊讨论目标】\n{discussion_goal}\n\n【最近讨论】\n{context}\n\n请基于以上上下文，以你的角色参与讨论并发言。"
+        if not custom_prompt_used and request.custom_prompt:
+            user_content = request.custom_prompt
+            custom_prompt_used = True
+        else:
+            user_content = (
+                f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                f"【最近讨论】\n{context}\n\n"
+                "请基于以上上下文，以你的角色参与讨论并发言。"
+            )
         initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
 
         try:

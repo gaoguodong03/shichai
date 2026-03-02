@@ -136,6 +136,14 @@
                 {{ d.name }}
               </option>
             </select>
+            <button
+              v-if="speakMode === 'manual' && overrideNextSpeaker && overrideNextSpeaker !== 'user'"
+              type="button"
+              class="px-2 py-1 border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+              @click="openPromptEditor"
+            >
+              查看/编辑提示词
+            </button>
           </div>
         </div>
         <button
@@ -196,6 +204,48 @@
         </div>
       </div>
     </div>
+
+    <!-- 下一发言人提示词编辑弹窗（manual 模式下使用） -->
+    <div
+      v-if="showPromptEditor"
+      class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
+      @click.self="closePromptEditor"
+    >
+      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-gray-800 truncate">
+            下一发言人提示词（仅本轮有效）
+          </div>
+          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closePromptEditor">关闭</button>
+        </div>
+        <div class="p-4">
+          <textarea
+            v-model="promptEditorText"
+            rows="10"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <p class="mt-2 text-xs text-gray-500">
+            说明：这是发送给下一位 DHA 的完整文本提示词，你可以在 manual 模式下按需微调，仅对本轮生效。
+          </p>
+        </div>
+        <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+            @click="closePromptEditor"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            @click="confirmPromptEditor"
+          >
+            使用此提示词
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -224,6 +274,7 @@ const emit = defineEmits<{
 const inputText = ref('')
 const isStreaming = ref(false)
 const overrideNextSpeaker = ref('')
+const customPrompt = ref('') // manual 模式下，用户可编辑的下一发言人提示词
 const messagesContainerRef = ref<HTMLElement | null>(null)
 /** 用于逐条展示的消息列表：从 props 同步，并从流式 message 事件追加 */
 const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string }[]>([])
@@ -234,6 +285,8 @@ const filePickerPath = ref('')
 const filePickerLoading = ref(false)
 const filePickerError = ref('')
 const filePickerEntries = ref<{ name: string; path: string; is_dir?: boolean }[]>([])
+const showPromptEditor = ref(false)
+const promptEditorText = ref('')
 
 const DHA_AVATAR_COLORS = [
   '#2563eb', '#059669', '#b45309', '#7c3aed', '#be123c', '#0891b2', '#0d9488', '#4f46e5',
@@ -300,6 +353,37 @@ function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
   }
   inputText.value = (inputText.value || '') + `\n【文件引用：${e.path}】\n`
   closeFilePicker()
+}
+
+async function openPromptEditor() {
+  if (!overrideNextSpeaker.value || overrideNextSpeaker.value === 'user') {
+    return
+  }
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/prompt-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dha_id: overrideNextSpeaker.value }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.prompt) {
+      promptEditorText.value = j.data.prompt as string
+      showPromptEditor.value = true
+    } else {
+      alert((j as { detail?: string }).detail || '加载提示词失败')
+    }
+  } catch {
+    alert('加载提示词失败，请检查网络或后端服务')
+  }
+}
+
+function closePromptEditor() {
+  showPromptEditor.value = false
+}
+
+function confirmPromptEditor() {
+  customPrompt.value = promptEditorText.value || ''
+  showPromptEditor.value = false
 }
 
 watch(
@@ -393,6 +477,9 @@ async function sendMessage() {
   if (hasOverride) {
     body.override_next_speaker = overrideNextSpeaker.value
   }
+  if (customPrompt.value.trim()) {
+    body.custom_prompt = customPrompt.value.trim()
+  }
 
   try {
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
@@ -472,6 +559,14 @@ async function onAutoSwitchChange(e: Event) {
     target.checked = !target.checked
   }
 }
+
+watch(
+  () => overrideNextSpeaker.value,
+  () => {
+    // 选择不同的下一发言人时，清空上一次编辑的提示词，避免误用
+    customPrompt.value = ''
+  }
+)
 
 function scrollToBottom() {
   nextTick(() => {
