@@ -22,5 +22,16 @@
     "speak_mode": "auto",
     "created_at": "2026-03-02T11:35:48.547018+00:00",
     "updated_at": "2026-03-02T11:39:13.381696+00:00"
+  },
+  "group-6ccfab495c09": {
+    "title": "国际新闻推广",
+    "dha_ids": [
+      "dha-195b8c3a",
+      "dha-c1bf68ba"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-05T13:20:04.908196+00:00",
+    "updated_at": "2026-03-05T13:29:50.382404+00:00"
   }
 }

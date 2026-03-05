@@ -3,6 +3,13 @@
     <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
       <h1 class="text-xl font-semibold text-gray-800 truncate min-w-0">{{ sessionTitle }}</h1>
       <div class="flex items-center gap-2 flex-shrink-0">
+        <button
+          type="button"
+          class="text-xs px-2 py-1 border border-blue-300 rounded text-blue-700 hover:bg-blue-50"
+          @click="openWorkspaceViewer"
+        >
+          打开工作区
+        </button>
         <span class="text-xs text-gray-500">{{ dhaIds.length }} 个 DHA</span>
         <button
           v-if="invitableDhas.length"
@@ -15,112 +22,207 @@
       </div>
     </header>
 
-    <!-- 消息列表：用 displayedMessages 保证顺序与逐条出现 -->
-    <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
-      <template v-for="(msg, index) in displayedMessages" :key="msg.message_id || index">
-        <div
-          :data-message-index="index"
-          :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']"
-        >
-          <!-- 用户消息 -->
+    <!-- 消息列表 + 工作区侧栏：用 displayedMessages 保证顺序与逐条出现 -->
+    <div class="flex-1 min-h-0 flex">
+      <!-- 左侧：消息 -->
+      <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+        <template v-for="(msg, index) in displayedMessages" :key="msg.message_id || index">
           <div
-            v-if="msg.role === 'user'"
-            class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-teal-600 text-white"
+            :data-message-index="index"
+            :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']"
           >
-            <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
-              <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
-            </div>
-          </div>
-          <!-- 主持人消息（灰色标签，先于 DHA 发言出现） -->
-          <div
-            v-else-if="msg.role === 'host'"
-            class="max-w-3xl min-w-0 w-full flex flex-col items-center gap-2"
-          >
-            <div class="text-xs text-gray-500 italic px-3 py-1.5 bg-gray-100 rounded-full">
-              {{ msg.content || '' }}
-            </div>
-            <div v-if="msg.next_prompt" class="w-full max-w-2xl">
-              <details class="text-xs border border-gray-200 rounded-lg bg-white overflow-hidden">
-                <summary class="px-3 py-2 cursor-pointer hover:bg-gray-50 text-gray-600">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
-                <pre class="p-3 m-0 text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 border-t border-gray-100 max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
-              </details>
-            </div>
-          </div>
-          <!-- DHA 消息：头像（首字）+ 名称 + 简介 + 输出框 -->
-          <div
-            v-else
-            class="max-w-3xl min-w-0 w-full flex gap-2"
-          >
-            <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
-              :style="{ backgroundColor: getDhaAvatarBg(msg.dha_id) }"
-            >
-              {{ getDhaAvatarChar(msg.dha_id) }}
-            </div>
-            <div class="min-w-0 flex-1">
-            <div class="mb-1.5 flex items-center gap-2 flex-wrap">
-              <span class="font-semibold text-gray-800">{{ getDhaName(msg.dha_id) }}</span>
-              <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">主持人</span>
-              <span v-if="getDhaRole(msg.dha_id)" class="text-xs text-gray-500">{{ getDhaRole(msg.dha_id) }}</span>
-            </div>
+            <!-- 用户消息 -->
             <div
-              :class="getDhaBoxClass(msg.dha_id)"
-              class="rounded-lg px-4 py-3 border-l-4"
+              v-if="msg.role === 'user'"
+              class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-teal-600 text-white"
             >
-              <div v-if="msg.role === 'assistant'" class="mb-2 text-xs text-purple-600 font-medium">
-                skill: {{ getDhaSkillLabel(msg.dha_id, msg) }}
-              </div>
-              <div v-if="msg.role === 'assistant' && extractToolCalls(msg.content || '').toolCalls.length">
-                <div
-                  v-for="(tc, tcIdx) in extractToolCalls(msg.content || '').toolCalls"
-                  :key="tcIdx"
-                  class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
-                >
-                  <div class="flex items-center justify-between gap-2 mb-1">
-                    <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
-                    <button
-                      v-if="msg.tool_raw_results && msg.tool_raw_results[tcIdx] !== undefined"
-                      type="button"
-                      class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
-                      @click="openRawModal(msg.tool_raw_results[tcIdx], getToolNameFromToolCall(tc) + ' 原始输出')"
-                    >
-                      原始输出
-                    </button>
-                  </div>
-                  <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
-                </div>
-              </div>
               <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
-                <template
-                  v-for="(seg, segIdx) in parseMessageContent(extractToolCalls(msg.content || '').rest)"
-                  :key="segIdx"
-                >
-                  <div v-if="seg.type === 'text'" class="chat-markdown" v-html="renderMarkdown(seg.text)" />
-                  <a v-else :href="seg.url" target="_blank" rel="noreferrer" class="block mt-2">
-                    <img :src="seg.url" :alt="seg.alt || 'image'" loading="lazy" class="max-w-full rounded-md border border-gray-200" />
-                  </a>
-                </template>
+                <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
               </div>
-              <div v-if="msg.next_prompt" class="mt-3 w-full">
+            </div>
+            <!-- 主持人消息（灰色标签，先于 DHA 发言出现） -->
+            <div
+              v-else-if="msg.role === 'host'"
+              class="max-w-3xl min-w-0 w-full flex flex-col items-center gap-2"
+            >
+              <div class="text-xs text-gray-500 italic px-3 py-1.5 bg-gray-100 rounded-full">
+                {{ msg.content || '' }}
+              </div>
+              <div v-if="msg.next_prompt" class="w-full max-w-2xl">
                 <details class="text-xs border border-gray-200 rounded-lg bg-white overflow-hidden">
                   <summary class="px-3 py-2 cursor-pointer hover:bg-gray-50 text-gray-600">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
                   <pre class="p-3 m-0 text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 border-t border-gray-100 max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
                 </details>
               </div>
             </div>
+            <!-- DHA 消息：头像（首字）+ 名称 + 简介 + 输出框 -->
+            <div
+              v-else
+              class="max-w-3xl min-w-0 w-full flex gap-2"
+            >
+              <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+                :style="{ backgroundColor: getDhaAvatarBg(msg.dha_id) }"
+              >
+                {{ getDhaAvatarChar(msg.dha_id) }}
+              </div>
+              <div class="min-w-0 flex-1">
+              <div class="mb-1.5 flex items-center gap-2 flex-wrap">
+                <span class="font-semibold text-gray-800">{{ getDhaName(msg.dha_id) }}</span>
+                <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">主持人</span>
+                <span v-if="getDhaRole(msg.dha_id)" class="text-xs text-gray-500">{{ getDhaRole(msg.dha_id) }}</span>
+              </div>
+              <div
+                :class="getDhaBoxClass(msg.dha_id)"
+                class="rounded-lg px-4 py-3 border-l-4"
+              >
+                <div
+                  v-if="msg.role === 'assistant'"
+                  class="mb-2 text-xs text-purple-600 font-medium flex items-center justify-between gap-2 flex-wrap"
+                >
+                  <span>skill: {{ getDhaSkillLabel(msg.dha_id, msg) }}</span>
+                  <button
+                    type="button"
+                    class="px-2 py-0.5 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+                    @click="saveMessageAsFile(msg)"
+                  >
+                    保存为文件
+                  </button>
+                </div>
+                <div v-if="msg.role === 'assistant' && extractToolCalls(msg.content || '').toolCalls.length">
+                  <div
+                    v-for="(tc, tcIdx) in extractToolCalls(msg.content || '').toolCalls"
+                    :key="tcIdx"
+                    class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+                  >
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                      <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                      <button
+                        v-if="msg.tool_raw_results && msg.tool_raw_results[tcIdx] !== undefined"
+                        type="button"
+                        class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
+                        @click="openRawModal(msg.tool_raw_results[tcIdx], getToolNameFromToolCall(tc) + ' 原始输出')"
+                      >
+                        原始输出
+                      </button>
+                    </div>
+                    <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
+                  </div>
+                </div>
+                <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
+                  <template
+                    v-for="(seg, segIdx) in parseMessageContent(extractToolCalls(msg.content || '').rest)"
+                    :key="segIdx"
+                  >
+                    <div v-if="seg.type === 'text'" class="chat-markdown" v-html="renderMarkdown(seg.text)" />
+                    <a v-else :href="seg.url" target="_blank" rel="noreferrer" class="block mt-2">
+                      <img :src="seg.url" :alt="seg.alt || 'image'" loading="lazy" class="max-w-full rounded-md border border-gray-200" />
+                    </a>
+                  </template>
+                </div>
+                <div v-if="msg.next_prompt" class="mt-3 w-full">
+                  <details class="text-xs border border-gray-200 rounded-lg bg-white overflow-hidden">
+                    <summary class="px-3 py-2 cursor-pointer hover:bg-gray-50 text-gray-600">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
+                    <pre class="p-3 m-0 text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 border-t border-gray-100 max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
+                  </details>
+                </div>
+              </div>
+              </div>
             </div>
           </div>
-        </div>
-      </template>
+        </template>
 
-      <!-- 生成中：内容生成结束后一次性输出 -->
-      <div v-if="isStreaming" class="flex justify-start">
-        <div class="max-w-3xl rounded-lg px-4 py-3 bg-gray-50 border border-gray-200 flex items-center gap-2">
-          <span class="text-sm text-gray-600">正在生成...</span>
-          <span class="flex gap-1">
-            <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0ms"></span>
-            <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 160ms"></span>
-            <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 320ms"></span>
-          </span>
+        <!-- 生成中：内容生成结束后一次性输出 -->
+        <div v-if="isStreaming" class="flex justify-start">
+          <div class="max-w-3xl rounded-lg px-4 py-3 bg-gray-50 border border-gray-200 flex items-center gap-2">
+            <span class="text-sm text-gray-600">正在生成...</span>
+            <span class="flex gap-1">
+              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0ms"></span>
+              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 160ms"></span>
+              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 320ms"></span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：工作区侧栏（与 skill 文件查看类似，在本页面中展示） -->
+      <div
+        v-if="showWorkspaceViewer"
+        class="w-80 md:w-96 border-l border-gray-200 bg-white flex flex-col"
+      >
+        <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div class="text-xs font-semibold text-gray-700 truncate">
+            工作区（{{ workspacePath || '/' }}）
+          </div>
+          <button class="text-xs text-gray-500 hover:text-gray-800" @click="closeWorkspaceViewer">✕</button>
+        </div>
+        <div class="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
+          <button
+            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+            :disabled="!workspacePath"
+            @click="workspaceGoUp"
+          >
+            ↑ 上一级
+          </button>
+          <button
+            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
+            @click="loadWorkspaceEntries(workspacePath)"
+          >
+            刷新
+          </button>
+          <div v-if="workspaceLoading" class="text-[11px] text-gray-500">加载中...</div>
+          <div v-else-if="workspaceError" class="text-[11px] text-red-600 truncate">{{ workspaceError }}</div>
+        </div>
+        <div class="flex-1 min-h-0 flex divide-x divide-gray-200">
+          <!-- 左侧：文件 / 目录列表 -->
+          <div class="w-[45%] max-w-[220px] min-w-[160px] overflow-auto">
+            <div v-if="!workspaceEntries.length && !workspaceLoading" class="px-3 py-4 text-xs text-gray-500">
+              当前目录为空
+            </div>
+            <button
+              v-for="e in workspaceEntries"
+              :key="e.path"
+              class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+              :class="workspaceSelectedEntry?.path === e.path ? 'bg-blue-50' : ''"
+              @click="onWorkspaceEntryClick(e)"
+            >
+              <span class="flex-shrink-0 text-sm">{{ e.is_dir ? '📁' : '📄' }}</span>
+              <span class="truncate text-xs">{{ e.name }}</span>
+            </button>
+          </div>
+          <!-- 右侧：文件内容预览 -->
+          <div class="flex-1 min-w-0 flex flex-col">
+            <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
+              <div class="text-[11px] text-gray-600 truncate">
+                <span v-if="workspaceSelectedEntry">
+                  预览：{{ workspaceSelectedEntry.name }}
+                </span>
+                <span v-else>
+                  请选择左侧文件以预览内容
+                </span>
+              </div>
+              <div v-if="workspaceSelectedEntry && !workspaceSelectedEntry.is_dir" class="flex items-center gap-2">
+                <a
+                  :href="`/api/workspaces/${encodeURIComponent(groupSessionId)}/files/download?path=${encodeURIComponent(workspaceSelectedEntry.path)}`"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="px-2 py-1 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+                >
+                  在新标签打开
+                </a>
+              </div>
+            </div>
+            <div class="flex-1 min-h-0 overflow-auto p-3">
+              <div v-if="workspaceFileLoading" class="text-xs text-gray-500">加载中...</div>
+              <div v-else-if="workspaceFileError" class="text-xs text-red-600">{{ workspaceFileError }}</div>
+              <pre
+                v-else-if="workspaceFileContent"
+                class="text-xs text-gray-800 whitespace-pre-wrap break-words font-mono"
+              >{{ workspaceFileContent }}</pre>
+              <div v-else class="text-xs text-gray-400">
+                请选择左侧的一个文本文件以在此处预览内容。
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -236,6 +338,8 @@
         </div>
       </div>
     </div>
+
+    <!-- 工作区浏览弹窗（旧实现）已废弃，现改为右侧内嵌面板 -->
 
     <!-- 原始输出弹窗 -->
     <div
@@ -370,10 +474,21 @@ const messagesContainerRef = ref<HTMLElement | null>(null)
 /** 用于逐条展示的消息列表：从 props 同步，请求完成后一次性更新 */
 const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string; tool_raw_results?: string[]; next_prompt?: string; next_dha_name?: string }[]>([])
 const showFilePicker = ref(false)
+// 工作区内的当前路径（相对 workspace 根目录，例如 ""、"notes"、"notes/sub"）
 const filePickerPath = ref('')
 const filePickerLoading = ref(false)
 const filePickerError = ref('')
 const filePickerEntries = ref<{ name: string; path: string; is_dir?: boolean }[]>([])
+// 工作区浏览弹窗
+const showWorkspaceViewer = ref(false)
+const workspacePath = ref('')
+const workspaceLoading = ref(false)
+const workspaceError = ref('')
+const workspaceEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
+const workspaceSelectedEntry = ref<{ name: string; path: string; is_dir: boolean } | null>(null)
+const workspaceFileLoading = ref(false)
+const workspaceFileError = ref('')
+const workspaceFileContent = ref('')
 const showPromptEditor = ref(false)
 const promptEditorText = ref('')
 const rawModalVisible = ref(false)
@@ -423,7 +538,9 @@ async function loadFilePickerEntries(path: string) {
   filePickerLoading.value = true
   filePickerError.value = ''
   try {
-    const url = path ? `/api/files?path=${encodeURIComponent(path)}` : '/api/files'
+    // 使用当前群聊对应的 workspace 文件接口
+    const base = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files`
+    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
     const r = await fetch(url)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.entries) {
@@ -451,8 +568,119 @@ function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
     loadFilePickerEntries(e.path)
     return
   }
-  inputText.value = (inputText.value || '') + `\n【文件引用：${e.path}】\n`
+  // 插入时将 workspace 内相对路径转换为全局相对路径：
+  // workspaces/{groupSessionId}/{workspace_path}，便于后端 read_file 工具读取
+  const workspacePrefix = `workspaces/${props.groupSessionId}`
+  const globalPath = e.path ? `${workspacePrefix}/${e.path}` : workspacePrefix
+  inputText.value = (inputText.value || '') + `\n【文件引用：${globalPath}】\n`
   closeFilePicker()
+}
+
+function openWorkspaceViewer() {
+  showWorkspaceViewer.value = true
+  workspaceError.value = ''
+  workspacePath.value = ''
+  loadWorkspaceEntries('')
+}
+
+function closeWorkspaceViewer() {
+  showWorkspaceViewer.value = false
+}
+
+async function loadWorkspaceEntries(path: string) {
+  workspaceLoading.value = true
+  workspaceError.value = ''
+  try {
+    const base = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files`
+    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
+    const r = await fetch(url)
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.entries) {
+      workspaceEntries.value = j.data.entries as { name: string; path: string; is_dir: boolean }[]
+      workspacePath.value = path
+      // 切换目录时重置选中与预览
+      workspaceSelectedEntry.value = null
+      workspaceFileContent.value = ''
+      workspaceFileError.value = ''
+    } else {
+      workspaceEntries.value = []
+      workspaceError.value = (j as { detail?: string }).detail || '加载失败'
+    }
+  } catch {
+    workspaceEntries.value = []
+    workspaceError.value = '加载失败'
+  } finally {
+    workspaceLoading.value = false
+  }
+}
+
+function workspaceGoUp() {
+  const p = workspacePath.value.replace(/\/?[^/]+\/?$/, '').replace(/\/$/, '')
+  loadWorkspaceEntries(p)
+}
+
+function onWorkspaceEntryClick(e: { name: string; path: string; is_dir: boolean }) {
+  if (e.is_dir) {
+    loadWorkspaceEntries(e.path)
+    return
+  }
+  workspaceSelectedEntry.value = e
+  loadWorkspaceFile(e)
+}
+
+async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolean }) {
+  workspaceFileLoading.value = true
+  workspaceFileError.value = ''
+  workspaceFileContent.value = ''
+  try {
+    const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/download?path=${encodeURIComponent(e.path)}`
+    // 简单按扩展名判断是否作为文本预览
+    const lower = e.name.toLowerCase()
+    const textExts = ['.md', '.txt', '.json', '.yaml', '.yml', '.log', '.csv']
+    const isText = textExts.some((ext) => lower.endsWith(ext))
+    if (!isText) {
+      workspaceFileContent.value = '该文件类型暂不支持在线预览，请点击「在新标签打开」查看。'
+      return
+    }
+    const r = await fetch(url, { cache: 'no-store' })
+    if (!r.ok) {
+      workspaceFileError.value = '预览失败'
+      return
+    }
+    const t = await r.text()
+    workspaceFileContent.value = t
+  } catch {
+    workspaceFileError.value = '预览失败'
+  } finally {
+    workspaceFileLoading.value = false
+  }
+}
+
+async function saveMessageAsFile(msg: { content: string; dha_id?: string }) {
+  const raw = (msg.content || '').trim()
+  if (!raw) return
+  const dhaLabel = msg.dha_id || 'dha'
+  const ts = new Date()
+  const tsStr = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, '0')}${String(ts.getDate()).padStart(2, '0')}-${String(ts.getHours()).padStart(2, '0')}${String(ts.getMinutes()).padStart(2, '0')}`
+  const suggested = `${dhaLabel}-${tsStr}.md`
+  const filename = window.prompt('保存为工作区文件名（如 note.md）', suggested)
+  if (!filename || !filename.trim()) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: filename.trim(), content: raw }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.path) {
+      console.log('已保存为工作区文件:', j.data.path)
+    } else {
+      alert((j as { detail?: string }).detail || '保存失败')
+    }
+  } catch (e) {
+    console.error('保存消息为文件失败', e)
+    alert('保存失败，请检查网络或后端服务')
+  }
 }
 
 async function openPromptEditor() {

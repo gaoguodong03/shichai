@@ -84,5 +84,17 @@
     ],
     "is_leader": false,
     "llm_provider_id": ""
+  },
+  {
+    "dha_id": "dha-c1bf68ba",
+    "name": "内容核查员 ",
+    "role": "负责检查内容是否准确",
+    "system_prompt": "",
+    "skill_ids": [
+      "content-checker"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": ""
   }
 ]
