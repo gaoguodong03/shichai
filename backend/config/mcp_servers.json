@@ -132,7 +132,7 @@
   {
     "id": "file-reader",
     "name": "文件读取",
-    "enabled": true,
+    "enabled": false,
     "transport": {
       "type": "stdio",
       "command": "python",
@@ -141,7 +141,24 @@
       ]
     },
     "metadata": {
-      "description": "本地 MCP：read_file（纯文本）、read_pdf、read_docx、read_xlsx。从 data/agent-outputs 提取文本供 LLM 使用。当用户消息出现【文件引用：path】时使用。"
+      "description": "（已废弃）本地 MCP：read_file（纯文本）、read_pdf、read_docx、read_xlsx。从 data/agent-outputs 提取文本供 LLM 使用，现已由官方 Filesystem MCP 取代。"
+    }
+  },
+  {
+    "id": "filesystem",
+    "name": "本地文件系统（Filesystem MCP）",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./data/agent-outputs"
+      ]
+    },
+    "metadata": {
+      "description": "官方 Filesystem MCP：在 AGENT_OUTPUTS_DIR（./data/agent-outputs） 下读写文件、列目录、搜索和获取元数据，作为原 file-reader 的替代方案。需要本机安装 Node.js 18+。"
     }
   },
   {

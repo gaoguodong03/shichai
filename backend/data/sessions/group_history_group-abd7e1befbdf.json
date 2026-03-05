@@ -1,0 +1,16 @@
+[
+  {
+    "message_id": "msg-317a2ad4",
+    "role": "user",
+    "content": "帮我读取一下",
+    "timestamp": "2026-03-05T15:12:01.957355+00:00"
+  },
+  {
+    "message_id": "msg-daed54da",
+    "role": "assistant",
+    "dha_id": "dha-file-workspace",
+    "content": "(调用异常: Error code: 429 - {'error': {'message': '当前分组上游负载已饱和，请稍后再试 (request id: 20260305231222105057235OhaBEBdu)', 'type': 'shell_api_error', 'param': '', 'code': None}})",
+    "timestamp": "2026-03-05T15:12:22.440433+00:00",
+    "skill_id": "file-workspace"
+  }
+]

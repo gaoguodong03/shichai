@@ -169,6 +169,31 @@
           >
             刷新
           </button>
+          <button
+            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
+            @click="createWorkspaceTextFile"
+          >
+            新建文件
+          </button>
+          <button
+            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
+            @click="triggerWorkspaceUpload"
+          >
+            导入文件
+          </button>
+          <button
+            class="px-2 py-1 text-xs border border-red-300 rounded text-red-700 hover:bg-red-50 disabled:opacity-50"
+            :disabled="!workspaceSelectedEntry || workspaceSelectedEntry.is_dir"
+            @click="deleteWorkspaceFile"
+          >
+            删除
+          </button>
+          <input
+            ref="workspaceUploadInputRef"
+            type="file"
+            class="hidden"
+            @change="onWorkspaceUpload"
+          />
           <div v-if="workspaceLoading" class="text-[11px] text-gray-500">加载中...</div>
           <div v-else-if="workspaceError" class="text-[11px] text-red-600 truncate">{{ workspaceError }}</div>
         </div>
@@ -209,11 +234,39 @@
                 >
                   在新标签打开
                 </a>
+                <button
+                  v-if="workspaceSelectedIsText && !workspaceEditing"
+                  class="px-2 py-1 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+                  @click="startWorkspaceEdit"
+                >
+                  在线编辑
+                </button>
+                <div v-else-if="workspaceSelectedIsText && workspaceEditing" class="flex items-center gap-1.5">
+                  <button
+                    class="px-2 py-1 text-[11px] border border-blue-500 text-blue-600 rounded hover:bg-blue-50"
+                    @click="saveWorkspaceEdit"
+                  >
+                    保存
+                  </button>
+                  <button
+                    class="px-2 py-1 text-[11px] border border-gray-300 text-gray-600 rounded hover:bg-gray-100"
+                    @click="cancelWorkspaceEdit"
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
             </div>
             <div class="flex-1 min-h-0 overflow-auto p-3">
               <div v-if="workspaceFileLoading" class="text-xs text-gray-500">加载中...</div>
               <div v-else-if="workspaceFileError" class="text-xs text-red-600">{{ workspaceFileError }}</div>
+              <div v-else-if="workspaceEditing && workspaceSelectedIsText" class="flex flex-col gap-2 h-full">
+                <textarea
+                  v-model="workspaceEditContent"
+                  class="flex-1 w-full text-xs text-gray-800 whitespace-pre-wrap break-words font-mono border border-gray-300 rounded-md p-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  spellcheck="false"
+                />
+              </div>
               <pre
                 v-else-if="workspaceFileContent"
                 class="text-xs text-gray-800 whitespace-pre-wrap break-words font-mono"
@@ -489,6 +542,9 @@ const workspaceSelectedEntry = ref<{ name: string; path: string; is_dir: boolean
 const workspaceFileLoading = ref(false)
 const workspaceFileError = ref('')
 const workspaceFileContent = ref('')
+const workspaceEditing = ref(false)
+const workspaceEditContent = ref('')
+const workspaceUploadInputRef = ref<HTMLInputElement | null>(null)
 const showPromptEditor = ref(false)
 const promptEditorText = ref('')
 const rawModalVisible = ref(false)
@@ -624,8 +680,86 @@ function onWorkspaceEntryClick(e: { name: string; path: string; is_dir: boolean 
     loadWorkspaceEntries(e.path)
     return
   }
+  workspaceEditing.value = false
   workspaceSelectedEntry.value = e
   loadWorkspaceFile(e)
+}
+
+function triggerWorkspaceUpload() {
+  workspaceUploadInputRef.value?.click()
+}
+
+async function onWorkspaceUpload(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  if (!input.files || !input.files.length) return
+  const file = input.files[0]
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    if (workspacePath.value) {
+      form.append('path', workspacePath.value)
+    }
+    const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/upload${workspacePath.value ? `?path=${encodeURIComponent(workspacePath.value)}` : ''}`
+    const r = await fetch(url, {
+      method: 'POST',
+      body: form,
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      await loadWorkspaceEntries(workspacePath.value)
+    } else {
+      alert((j as { detail?: string }).detail || '导入失败')
+    }
+  } catch {
+    alert('导入失败，请检查网络或后端服务')
+  } finally {
+    if (input) {
+      input.value = ''
+    }
+  }
+}
+
+async function createWorkspaceTextFile() {
+  const name = window.prompt('新建文件名（如 note.md）', 'note.md')
+  if (!name || !name.trim()) return
+  try {
+    const body = { filename: name.trim(), content: '' }
+    const base = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files`
+    const url = workspacePath.value ? `${base}?path=${encodeURIComponent(workspacePath.value)}` : base
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      await loadWorkspaceEntries(workspacePath.value)
+    } else {
+      alert((j as { detail?: string }).detail || '新建失败')
+    }
+  } catch {
+    alert('新建失败，请检查网络或后端服务')
+  }
+}
+
+async function deleteWorkspaceFile() {
+  const entry = workspaceSelectedEntry.value
+  if (!entry || entry.is_dir) return
+  if (!window.confirm(`确定要删除文件「${entry.name}」吗？此操作不可恢复。`)) return
+  try {
+    const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/content?path=${encodeURIComponent(entry.path)}`
+    const r = await fetch(url, { method: 'DELETE' })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      workspaceSelectedEntry.value = null
+      workspaceFileContent.value = ''
+      await loadWorkspaceEntries(workspacePath.value)
+    } else {
+      alert((j as { detail?: string }).detail || '删除失败')
+    }
+  } catch {
+    alert('删除失败，请检查网络或后端服务')
+  }
 }
 
 async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolean }) {
@@ -654,6 +788,47 @@ async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolea
   } finally {
     workspaceFileLoading.value = false
   }
+}
+
+const workspaceSelectedIsText = computed(() => {
+  const e = workspaceSelectedEntry.value
+  if (!e || e.is_dir) return false
+  const lower = e.name.toLowerCase()
+  const textExts = ['.md', '.txt', '.json', '.yaml', '.yml', '.log', '.csv']
+  return textExts.some((ext) => lower.endsWith(ext))
+})
+
+function startWorkspaceEdit() {
+  if (!workspaceSelectedIsText.value || !workspaceSelectedEntry.value) return
+  workspaceEditContent.value = workspaceFileContent.value || ''
+  workspaceEditing.value = true
+}
+
+async function saveWorkspaceEdit() {
+  const entry = workspaceSelectedEntry.value
+  if (!entry || !workspaceSelectedIsText.value) return
+  try {
+    const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/content?path=${encodeURIComponent(entry.path)}`
+    const r = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: workspaceEditContent.value }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      workspaceFileContent.value = workspaceEditContent.value
+      workspaceEditing.value = false
+    } else {
+      alert((j as { detail?: string }).detail || '保存失败')
+    }
+  } catch {
+    alert('保存失败，请检查网络或后端服务')
+  }
+}
+
+function cancelWorkspaceEdit() {
+  workspaceEditing.value = false
+  workspaceEditContent.value = workspaceFileContent.value || ''
 }
 
 async function saveMessageAsFile(msg: { content: string; dha_id?: string }) {

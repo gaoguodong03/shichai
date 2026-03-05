@@ -44,7 +44,7 @@
       "group-host"
     ],
     "mcp_server_ids": [
-      "file-reader"
+      "filesystem"
     ],
     "is_leader": false,
     "llm_provider_id": ""
@@ -78,7 +78,7 @@
     ],
     "mcp_server_ids": [
       "linkup",
-      "file-reader",
+      "filesystem",
       "zhipu-web-search",
       "exa"
     ],
@@ -106,6 +106,20 @@
       "browser-playwright"
     ],
     "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "glm"
+  },
+  {
+    "dha_id": "dha-file-workspace",
+    "name": "本地文档助手",
+    "role": "负责在本地文件目录中查找、读取并总结文档内容",
+    "system_prompt": "你是本地文档助手，擅长使用 Filesystem MCP 在指定目录下查找、读取和分析文本文件，并根据真实文件内容进行总结、比较和问答。回答必须严格基于你实际读取到的文件内容，不要编造文件中不存在的信息。",
+    "skill_ids": [
+      "file-workspace"
+    ],
+    "mcp_server_ids": [
+      "filesystem"
+    ],
     "is_leader": false,
     "llm_provider_id": "glm"
   }
