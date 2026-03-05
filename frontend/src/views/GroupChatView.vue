@@ -144,10 +144,17 @@
         </div>
       </div>
 
-      <!-- 右侧：工作区侧栏（与 skill 文件查看类似，在本页面中展示） -->
+      <!-- 中间：拖拽分隔条（调整消息区与工作区宽度） -->
       <div
         v-if="showWorkspaceViewer"
-        class="w-80 md:w-96 border-l border-gray-200 bg-white flex flex-col"
+        class="w-1 cursor-col-resize bg-transparent hover:bg-gray-200"
+        @mousedown="startResizeMain"
+      ></div>
+      <!-- 右侧：工作区侧栏（与 skill 文件查看类似，在本页面中展示，可调整宽度） -->
+      <div
+        v-if="showWorkspaceViewer"
+        class="border-l border-gray-200 bg-white flex flex-col"
+        :style="{ width: `${workspaceWidth}px`, minWidth: '260px', maxWidth: '640px' }"
       >
         <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div class="text-xs font-semibold text-gray-700 truncate">
@@ -279,9 +286,16 @@
         </div>
       </div>
     </div>
-
-    <!-- 输入区 -->
-    <div class="bg-white border-t border-gray-200 px-4 py-3">
+    <!-- 纵向拖拽条：调整消息区与输入区高度 -->
+    <div
+      class="h-1 cursor-row-resize bg-transparent hover:bg-gray-200 flex-shrink-0"
+      @mousedown="startResizeInput"
+    ></div>
+    <!-- 输入区（高度可调整） -->
+    <div
+      class="bg-white border-t border-gray-200 px-4 py-3 flex-shrink-0"
+      :style="{ height: `${inputAreaHeight}px`, minHeight: '96px', maxHeight: '260px' }"
+    >
       <div class="flex gap-2">
         <div class="flex-1 flex flex-col gap-1">
           <textarea
@@ -545,6 +559,8 @@ const workspaceFileContent = ref('')
 const workspaceEditing = ref(false)
 const workspaceEditContent = ref('')
 const workspaceUploadInputRef = ref<HTMLInputElement | null>(null)
+const workspaceWidth = ref(320) // 右侧工作区面板宽度（px）
+const inputAreaHeight = ref(140) // 底部输入区域高度（px）
 const showPromptEditor = ref(false)
 const promptEditorText = ref('')
 const rawModalVisible = ref(false)
@@ -829,6 +845,44 @@ async function saveWorkspaceEdit() {
 function cancelWorkspaceEdit() {
   workspaceEditing.value = false
   workspaceEditContent.value = workspaceFileContent.value || ''
+}
+
+// 横向拖拽：调整消息区与工作区宽度
+function startResizeMain(ev: MouseEvent) {
+  const startX = ev.clientX
+  const startWidth = workspaceWidth.value
+  const onMove = (e: MouseEvent) => {
+    const delta = startX - e.clientX
+    let next = startWidth + delta
+    if (next < 260) next = 260
+    if (next > 640) next = 640
+    workspaceWidth.value = next
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+// 纵向拖拽：调整消息区与输入区高度
+function startResizeInput(ev: MouseEvent) {
+  const startY = ev.clientY
+  const startHeight = inputAreaHeight.value
+  const onMove = (e: MouseEvent) => {
+    const delta = e.clientY - startY
+    let next = startHeight - delta
+    if (next < 96) next = 96
+    if (next > 260) next = 260
+    inputAreaHeight.value = next
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
 }
 
 async function saveMessageAsFile(msg: { content: string; dha_id?: string }) {

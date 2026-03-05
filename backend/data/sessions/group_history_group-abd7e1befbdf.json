@@ -12,5 +12,19 @@
     "content": "(调用异常: Error code: 429 - {'error': {'message': '当前分组上游负载已饱和，请稍后再试 (request id: 20260305231222105057235OhaBEBdu)', 'type': 'shell_api_error', 'param': '', 'code': None}})",
     "timestamp": "2026-03-05T15:12:22.440433+00:00",
     "skill_id": "file-workspace"
+  },
+  {
+    "message_id": "msg-64b12de3",
+    "role": "user",
+    "content": "帮我读取一下工作区中的的 report.md 都说了什么\n【文件引用：workspaces/group-abd7e1befbdf/report.md】",
+    "timestamp": "2026-03-05T15:22:49.096881+00:00"
+  },
+  {
+    "message_id": "msg-02e04dcf",
+    "role": "assistant",
+    "dha_id": "dha-file-workspace",
+    "content": "(调用异常: Error code: 429 - {'error': {'message': '当前分组上游负载已饱和，请稍后再试 (request id: 20260305232309856053075pXabQMH7)', 'type': 'shell_api_error', 'param': '', 'code': None}})",
+    "timestamp": "2026-03-05T15:23:10.031271+00:00",
+    "skill_id": "file-workspace"
   }
 ]
