@@ -35,154 +35,54 @@
         {{ middleColumnTitle }}
       </div>
       <div class="flex-1 overflow-y-auto">
-        <!-- Chat：统一入口，支持单人对话 + 多 DHA 对话 -->
+        <!-- Chat：统一会话列表（group 模式，1 DHA=chat 风格，2+=群聊） -->
         <template v-if="currentModule === 'chat'">
-          <div class="px-3 pt-2 pb-1 flex items-center gap-2 text-xs text-gray-600">
-            <span class="font-medium">视图：</span>
-            <button
-              type="button"
-              class="px-2 py-1 rounded border text-[11px]"
-              :class="chatMainMode === 'single' ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'"
-              @click="chatMainMode = 'single'"
-            >
-              单人对话
-            </button>
-            <button
-              type="button"
-              class="px-2 py-1 rounded border text-[11px]"
-              :class="chatMainMode === 'group' ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'"
-              @click="chatMainMode = 'group'"
-            >
-              多 DHA 对话
-            </button>
-          </div>
-
-          <!-- 单人对话：沿用原 Chat 会话列表与轮次视图 -->
-          <template v-if="chatMainMode === 'single'">
-            <!-- 历史对话模式：会话列表 -->
-            <template v-if="chatViewMode === 'history'">
-              <button
-                @click="startNewChat"
-                :class="[
-                  'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-                  selectedSessionId === null ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-                ]"
-              >
-                + 新对话
-              </button>
-              <div v-if="sessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-              <div v-else-if="!sessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
-              <div
-                v-else
-                v-for="s in sessions"
-                :key="s.id"
-                @click="selectedSessionId = s.id"
-                :class="[
-                  'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-                  selectedSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-                ]"
-              >
-                <div class="flex-1 min-w-0 text-left">
-                  <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
-                  <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
-                </div>
-                <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    type="button"
-                    class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                    title="重命名会话"
-                    @click.stop="renameSession(s.id, s.title || '新对话')"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    type="button"
-                    class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                    title="删除会话"
-                    @click.stop="deleteSession(s.id)"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-            </template>
-            <!-- 当前对话模式：Q&A 轮次，点击跳转到右侧对应位置 -->
-            <template v-else>
-              <button
-                class="w-full text-left px-3 py-2 text-xs text-blue-600 hover:bg-blue-50 rounded-lg mb-1"
-                @click="chatViewMode = 'history'; fetchSessions()"
-              >
-                ← 返回历史对话
-              </button>
-              <div v-if="chatSummaryLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-              <div v-else-if="!chatSummary.length" class="px-3 py-4 text-sm text-gray-500">暂无对话</div>
-              <button
-                v-else
-                v-for="(turn, idx) in chatSummary"
-                :key="idx"
-                @click="scrollToTurnIndex = idx"
-                :class="[
-                  'w-full text-left px-3 py-2.5 rounded-lg border-b border-gray-100 text-xs transition-colors',
-                  scrollToTurnIndex === idx ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
-                ]"
-              >
-                <div class="font-medium text-gray-900 truncate">
-                  Q: {{ turn.userPreview || '（无用户消息）' }}
-                </div>
-                <div class="mt-0.5 text-gray-600 line-clamp-5 text-gray-700 whitespace-pre-wrap break-words">
-                  {{ turn.assistantPreview || '（无回答）' }}
-                </div>
-              </button>
-            </template>
-          </template>
-
-          <!-- 多 DHA 对话：沿用原 Group 会话列表 -->
-          <template v-else>
-            <button
-              @click="createNewGroupChat"
-              :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-                showGroupCreateForm ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-              ]"
-            >
-              + 新建多 DHA 对话
-            </button>
-            <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-            <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-gray-500">暂无多 DHA 对话</div>
-            <div
-              v-else
-              v-for="s in groupSessions"
-              :key="s.id"
-              @click="selectGroupSession(s.id)"
-              :class="[
-                'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-                selectedGroupSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-              ]"
-            >
-              <div class="flex-1 min-w-0 text-left">
-                <div class="truncate font-medium">{{ s.title || '新多 DHA 对话' }}</div>
-                <div class="truncate text-xs text-gray-500 mt-0.5">{{ formatDate(s.updated_at) }}</div>
-              </div>
-              <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  type="button"
-                  class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
-                  title="重命名对话"
-                  @click.stop="renameGroupSession(s.id, s.title || '新多 DHA 对话')"
-                >
-                  ✏️
-                </button>
-                <button
-                  type="button"
-                  class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
-                  title="删除对话"
-                  @click.stop="deleteGroupSession(s.id)"
-                >
-                  🗑️
-                </button>
+          <button
+            @click="createNewGroupChat"
+            :class="[
+              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+              showGroupCreateForm ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            + 新对话
+          </button>
+          <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+          <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
+          <div
+            v-else
+            v-for="s in groupSessions"
+            :key="s.id"
+            @click="selectGroupSession(s.id)"
+            :class="[
+              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
+              selectedGroupSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            <div class="flex-1 min-w-0 text-left">
+              <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
+              <div class="truncate text-xs text-gray-500 mt-0.5">
+                {{ (s.dha_ids?.length || 0) }} 个 DHA · {{ formatDate(s.updated_at) }}
               </div>
             </div>
-          </template>
+            <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                title="重命名"
+                @click.stop="renameGroupSession(s.id, s.title || '新对话')"
+              >
+                ✏️
+              </button>
+              <button
+                type="button"
+                class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                title="删除"
+                @click.stop="deleteGroupSession(s.id)"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
         </template>
         <!-- Skill -->
         <template v-else-if="currentModule === 'skill'">
@@ -362,47 +262,35 @@
 
     <!-- 右侧列：主内容，默认 Chat -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Chat 模块：单人对话 / 多 DHA 对话 -->
+      <!-- Chat 模块：统一 group 会话（1 DHA=chat 风格，2+=群聊） -->
       <template v-if="currentModule === 'chat'">
-        <!-- 单人对话：沿用原 ChatView -->
-        <template v-if="chatMainMode === 'single'">
-          <ChatView
-            :session-id="effectiveSessionId"
-            :session-title="currentChatTitle"
-            :initial-messages="sessionMessages"
-            :scroll-to-turn-index="scrollToTurnIndex"
-            @saved-as-file="onSavedAsFile"
-            @message-sent="onChatMessageSent"
-            @stream-ended="onChatStreamEnded"
+        <template v-if="showGroupCreateForm">
+          <GroupCreateView
+            :dha-instances="dhaInstances"
+            @created="onGroupCreated"
+            @cancel="showGroupCreateForm = false"
           />
         </template>
-        <!-- 多 DHA 对话：沿用原 GroupChatView + GroupCreateView -->
+        <template v-else-if="selectedGroupSessionId && groupSessionDetail">
+          <GroupChatView
+            :group-session-id="groupSessionDetail.id"
+            :session-title="groupSessionDetail.title"
+            :messages="groupSessionDetail.messages || []"
+            :dha-map="groupSessionDetail.dha_map || {}"
+            :dha-ids="groupSessionDetail.dha_ids || []"
+            :all-dha-instances="dhaInstances"
+            :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
+            :speak-mode="groupSessionDetail.speak_mode || 'auto'"
+            :is-single-dha="(groupSessionDetail.dha_ids?.length || 0) <= 1"
+            @message-sent="fetchGroupSessionDetail"
+            @speak-mode-changed="fetchGroupSessionDetail"
+            @dha-added="fetchGroupSessionDetail"
+          />
+        </template>
         <template v-else>
-          <template v-if="showGroupCreateForm">
-            <GroupCreateView
-              :dha-instances="dhaInstances"
-              @created="onGroupCreated"
-              @cancel="showGroupCreateForm = false"
-            />
-          </template>
-          <template v-else-if="selectedGroupSessionId && groupSessionDetail">
-            <GroupChatView
-              :group-session-id="groupSessionDetail.id"
-              :session-title="groupSessionDetail.title"
-              :messages="groupSessionDetail.messages || []"
-              :dha-map="groupSessionDetail.dha_map || {}"
-              :dha-ids="groupSessionDetail.dha_ids || []"
-              :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
-              :speak-mode="groupSessionDetail.speak_mode || 'auto'"
-              @message-sent="fetchGroupSessionDetail"
-              @speak-mode-changed="fetchGroupSessionDetail"
-            />
-          </template>
-          <template v-else>
-            <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
-              <p>请在左侧选择多 DHA 对话，或新建对话</p>
-            </div>
-          </template>
+          <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
+            <p>请在左侧选择会话，或新建对话</p>
+          </div>
         </template>
       </template>
       <!-- Skill：添加 或 详情/编辑 -->
@@ -447,9 +335,10 @@
           @cancel="selectedId = null"
         />
       </template>
-      <!-- 默认：未选任何条目时显示 Chat -->
       <template v-else>
-        <ChatView session-id="default" session-title="Chat" @saved-as-file="onSavedAsFile" />
+        <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
+          <p>请从左侧选择功能</p>
+        </div>
       </template>
     </main>
   </div>
@@ -458,7 +347,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import ChatView from './ChatView.vue'
 import SkillDetailView from './SkillDetailView.vue'
 import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
@@ -491,18 +379,7 @@ const navItems: { id: ModuleId; label: string }[] = [
 ]
 
 const currentModule = ref<ModuleId>('chat')
-const chatMainMode = ref<'single' | 'group'>('single')
 const selectedId = ref<string | null>(null)
-
-// Chat 模块：历史对话 / 当前对话 两种模式
-const chatViewMode = ref<'history' | 'current'>('history')
-const selectedSessionId = ref<string | null>(null)
-/** 未选会话时使用的临时 sessionId，点击 Chat 时生成，用于发送首条消息；不加载默认会话内容 */
-const newSessionPlaceholderId = ref<string>(`session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
-const sessions = ref<{ id: string; title: string; updated_at: string }[]>([])
-const sessionsLoading = ref(false)
-const sessionMessages = ref<{ role: string; content: string; skill_id?: string; tool_raw_results?: string[] }[]>([])
-const scrollToTurnIndex = ref<number | null>(null)
 
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
@@ -513,7 +390,7 @@ const settingsCategories = [
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
-const groupSessions = ref<{ id: string; title: string; updated_at: string; speak_mode?: string }[]>([])
+const groupSessions = ref<{ id: string; title: string; updated_at: string; dha_ids?: string[]; speak_mode?: string }[]>([])
 const groupSessionsLoading = ref(false)
 const groupSessionDetail = ref<{
   id: string
@@ -533,27 +410,9 @@ const currentFilePath = ref('')
 const selectedFileEntry = ref<{ name: string; path: string; is_dir: boolean } | null>(null)
 const importFileInputRef = ref<HTMLInputElement | null>(null)
 
-// 当前对话的精简轮次预览：U/A 各截断前几行
-const chatSummary = ref<{ userPreview: string; assistantPreview: string }[]>([])
-const chatSummaryLoading = ref(false)
-
-const effectiveSessionId = computed(() => {
-  if (selectedSessionId.value) return selectedSessionId.value
-  return newSessionPlaceholderId.value
-})
-
-/** 当前 Chat 标题：有选中会话用其名称，否则为「Chat」 */
-const currentChatTitle = computed(() => {
-  if (!selectedSessionId.value) return 'Chat'
-  const s = sessions.value.find((x) => x.id === selectedSessionId.value)
-  return (s?.title && s.title.trim()) ? s.title.trim() : 'Chat'
-})
-
 const middleColumnTitle = computed(() => {
   const t: Record<ModuleId, string> = {
-    chat: chatMainMode.value === 'single'
-      ? (chatViewMode.value === 'history' ? '单人对话列表' : '当前对话')
-      : '多 DHA 对话列表',
+    chat: '会话列表',
     files: '文件列表',
     skill: '技能列表',
     mcp: 'MCP Server',
@@ -563,45 +422,6 @@ const middleColumnTitle = computed(() => {
   return t[currentModule.value]
 })
 
-
-function startNewChat() {
-  // 为新对话生成一个临时 sessionId，后端在收到首条消息后会自动持久化该会话
-  const newId = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  selectedSessionId.value = newId
-  // 清空当前会话的右侧消息内容
-  sessionMessages.value = []
-  // 切换到「当前对话」视图，左侧显示本轮轮次摘要（初始为空）
-  chatViewMode.value = 'current'
-  chatSummary.value = []
-  scrollToTurnIndex.value = null
-}
-
-function buildPreview(text: string, maxLen = 80): string {
-  if (!text) return ''
-  const oneLine = text.split('\n').join(' ').trim()
-  if (oneLine.length <= maxLen) return oneLine
-  return oneLine.slice(0, maxLen) + '…'
-}
-
-/** 去掉 content 中的 tool_call JSON 块，取前 3 行作为助手回复预览 */
-function buildAssistantPreview(content: string): string {
-  if (!content) return ''
-  const jsonBlockRe = /```(?:json)?\s*([\s\S]*?)```/g
-  const toRemove: string[] = []
-  let match: RegExpExecArray | null
-  while ((match = jsonBlockRe.exec(content)) !== null) {
-    try {
-      const obj = JSON.parse(match[1].trim())
-      if (obj && obj.action === 'tool_call') toRemove.push(match[0])
-    } catch {
-      // 非 tool_call JSON，忽略
-    }
-  }
-  let rest = content
-  for (const block of toRemove) rest = rest.replace(block, '')
-  const lines = rest.split('\n').filter((l) => l.trim())
-  return lines.slice(0, 5).join('\n').trim() || ''
-}
 
 function formatDate(iso: string) {
   if (!iso) return ''
@@ -617,124 +437,14 @@ function onNavClick(item: { id: ModuleId }) {
   currentModule.value = item.id
   selectedId.value = null
   if (item.id === 'chat') {
-    if (chatMainMode.value === 'single') {
-      chatViewMode.value = 'history'
-      selectedSessionId.value = null
-      newSessionPlaceholderId.value = `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-      sessionMessages.value = []
-      fetchSessions()
-    } else {
-      selectedGroupSessionId.value = null
-      showGroupCreateForm.value = false
-      groupSessionDetail.value = null
-      fetchGroupSessions()
-      fetchDHA()
-    }
+    selectedGroupSessionId.value = null
+    showGroupCreateForm.value = false
+    groupSessionDetail.value = null
+    fetchGroupSessions()
+    fetchDHA()
   }
   if (item.id === 'dha') {
     fetchDHA()
-  }
-}
-
-async function fetchSessions() {
-  sessionsLoading.value = true
-  try {
-    const r = await fetch('/api/sessions')
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.sessions) {
-      sessions.value = j.data.sessions
-    }
-  } finally {
-    sessionsLoading.value = false
-  }
-}
-
-async function renameSession(sessionId: string, currentTitle: string) {
-  const next = window.prompt('重命名会话标题：', currentTitle || '新对话')
-  if (!next || !next.trim()) return
-  try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/title`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: next.trim() }),
-    })
-    const j = await r.json()
-    if (j.status === 'ok') {
-      await fetchSessions()
-    } else {
-      alert('重命名失败：' + (j.detail || '未知错误'))
-    }
-  } catch (e) {
-    console.error('重命名会话失败', e)
-    alert('重命名失败，请检查网络或后端服务')
-  }
-}
-
-async function deleteSession(sessionId: string) {
-  if (!confirm('确定删除该会话？删除后不可恢复。')) return
-  try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
-    const j = await r.json()
-    if (j.status === 'ok') {
-      if (selectedSessionId.value === sessionId) {
-        selectedSessionId.value = null
-        sessionMessages.value = []
-      }
-      await fetchSessions()
-    } else {
-      alert('删除失败：' + (j.detail || '未知错误'))
-    }
-  } catch (e) {
-    console.error('删除会话失败', e)
-    alert('删除失败，请检查网络或后端服务')
-  }
-}
-
-async function fetchChatSummary() {
-  chatSummaryLoading.value = true
-  try {
-    const sid = effectiveSessionId.value
-    const r = await fetch(`/api/sessions/${encodeURIComponent(sid)}`)
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.messages) {
-      const msgs = j.data.messages as { role: string; content: string }[]
-      const turns: { userPreview: string; assistantPreview: string }[] = []
-      for (let i = 0; i < msgs.length; i++) {
-        const m = msgs[i]
-        if (m.role !== 'user') continue
-        // 找到后面最近的一条助手回复
-        let assistantContent = ''
-        for (let j2 = i + 1; j2 < msgs.length; j2++) {
-          if (msgs[j2].role === 'assistant') {
-            assistantContent = msgs[j2].content || ''
-            break
-          }
-        }
-        turns.push({
-          userPreview: buildPreview(m.content || ''),
-          assistantPreview: assistantContent ? buildAssistantPreview(assistantContent) : '',
-        })
-      }
-      chatSummary.value = turns
-    } else {
-      chatSummary.value = []
-    }
-  } catch {
-    chatSummary.value = []
-  } finally {
-    chatSummaryLoading.value = false
-  }
-}
-
-function onChatMessageSent() {
-  chatViewMode.value = 'current'
-  fetchChatSummary()
-}
-
-function onChatStreamEnded() {
-  // 流式回复结束后，后端已保存会话，刷新中间栏的轮次列表
-  if (chatViewMode.value === 'current') {
-    setTimeout(() => fetchChatSummary(), 200)
   }
 }
 
@@ -1060,27 +770,11 @@ watch(currentModule, (mod) => {
     fetchFiles()
   }
   if (mod === 'chat') {
-    if (chatMainMode.value === 'single') {
-      if (chatViewMode.value === 'history') fetchSessions()
-      else fetchChatSummary()
-    } else {
-      fetchGroupSessions()
-      fetchDHA()
-    }
-  }
-  if (mod === 'dha') fetchDHA()
-}, { immediate: true })
-
-watch(chatMainMode, (mode) => {
-  if (currentModule.value !== 'chat') return
-  if (mode === 'single') {
-    if (chatViewMode.value === 'history') fetchSessions()
-    else fetchChatSummary()
-  } else {
     fetchGroupSessions()
     fetchDHA()
   }
-})
+  if (mod === 'dha') fetchDHA()
+}, { immediate: true })
 
 watch(selectedGroupSessionId, (id) => {
   if (id) {
@@ -1089,29 +783,6 @@ watch(selectedGroupSessionId, (id) => {
     groupSessionDetail.value = null
   }
 }, { immediate: true })
-
-watch(selectedSessionId, async (id) => {
-  if (id == null) {
-    sessionMessages.value = []
-    return
-  }
-  try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.messages) {
-      sessionMessages.value = j.data.messages
-    } else {
-      sessionMessages.value = []
-    }
-  } catch {
-    sessionMessages.value = []
-  }
-}, { immediate: true })
-
-// 点击 turn 后，ChatView 滚动完成后清除 scrollToTurnIndex，避免重复触发
-watch(scrollToTurnIndex, (v) => {
-  if (v !== null) setTimeout(() => { scrollToTurnIndex.value = null }, 500)
-})
 
 
 // 初始加载：切到对应模块时再请求数据

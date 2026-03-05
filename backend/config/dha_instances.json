@@ -57,8 +57,11 @@
     "skill_ids": [
       "app-icon-generator"
     ],
-    "mcp_server_ids": [],
-    "is_leader": false
+    "mcp_server_ids": [
+      "volces-icon"
+    ],
+    "is_leader": false,
+    "llm_provider_id": ""
   },
   {
     "dha_id": "dha-195b8c3a",

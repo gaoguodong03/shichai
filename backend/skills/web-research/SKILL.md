@@ -1,6 +1,11 @@
 ---
 description: 使用规划 + 子代理的结构化 Web 调研工作流，生成带引用的研究报告。（目前无法使用）
 enabled: false
+mcp_server_ids:
+  - linkup
+  - exa
+  - fetch
+  - file-reader
 name: web-research
 ---
 # Web Research Skill

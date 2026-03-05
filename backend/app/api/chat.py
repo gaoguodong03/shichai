@@ -22,7 +22,7 @@ from app.agent.graph import create_skill_execution_agent
 from app.agent.skill_selector import select_skill
 from app.mcp.manager import get_mcp_manager, normalize_mcp_kwargs_for_call
 from app.skills.loader import SkillsLoader
-from app.api.settings import load_app_settings
+from app.api.settings import load_app_settings, get_mcp_servers_for_skill
 from app.tools.export_session import create_export_session_tool
 from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool
@@ -51,26 +51,12 @@ _TOOL_NAME_RE = re.compile(r"工具\s+([^\s]+)\s+的执行结果")
 # 从图标工具结果中提取图片 URL，用于格式化为 Markdown 图片以便前端渲染
 _IMAGE_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
-# 技能 -> 关联的 MCP server_id 列表（一个技能可对应多个 MCP，一个 MCP 可被多技能共用）
-_SKILL_MCP_SERVERS: Dict[str, List[str]] = {
-    "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
-    "amap-maps": ["amap-maps"],
-    "app-icon-generator": ["volces-icon"],
-    "blog-write": ["linkup", "exa", "fetch", "zhipu-web-search"],
-    "data-report": ["linkup", "exa", "fetch"],
-    "zhipu-web-search": ["zhipu-web-search"],
-}
-# 由 _SKILL_MCP_SERVERS 反推：server_id -> skill_id（取首个，用于 meta 展示）
+# 由 settings.get_mcp_servers_for_skill 反推：server_id -> skill_id（取首个，用于 meta 展示）
 _MCP_SERVER_TO_SKILL: Dict[str, str] = {}
-for _sk, _srv_list in _SKILL_MCP_SERVERS.items():
-    for _s in _srv_list:
+for _sk in ("wechat-article-writer", "amap-maps", "app-icon-generator", "blog-write", "data-report", "zhipu-web-search", "weather-service"):
+    for _s in get_mcp_servers_for_skill(_sk):
         if _s not in _MCP_SERVER_TO_SKILL:
             _MCP_SERVER_TO_SKILL[_s] = _sk
-
-
-def _get_mcp_servers_for_skill(skill_id: str) -> List[str]:
-    """根据 skill_id 返回其关联的 MCP server_id 列表。用于技能执行时只传入该技能的工具。"""
-    return list(_SKILL_MCP_SERVERS.get(skill_id, []))
 # 内置工具（无 server_id）-> skill
 _TOOL_TO_SKILL: Dict[str, str] = {
     "export_session_to_md": "session-export",
@@ -506,7 +492,7 @@ async def chat_stream(request: ChatRequest):
             selected_skill_id = "default"
 
     # 按选中技能过滤工具：只传入该技能关联的 MCP 工具，加快响应、减少混淆
-    server_ids = _get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
+    server_ids = get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
     skill_tools_fallback = False  # 是否因技能 MCP 无工具而回退到全部工具
     if server_ids:
         tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]

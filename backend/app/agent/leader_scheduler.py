@@ -16,24 +16,31 @@ def _build_leader_prompt(dha_list: List[Dict[str, Any]], discussion_goal: str, r
         role = d.get("role") or "参与者"
         name = d.get("name") or d.get("dha_id", "")
         dha_id = d.get("dha_id", "")
-        leader_mark = "（领导人）" if d.get("is_leader") else ""
+        leader_mark = "（主持人）" if d.get("is_leader") else ""
         dha_lines.append(f"- {name} ({dha_id}){leader_mark}: {role}")
     dha_text = "\n".join(dha_lines)
 
-    return f"""你是群聊讨论的主持人（领导人）。当前群聊中有以下 DHA 参与者：
+    return f"""你是群聊的主持人，负责协调讨论并指定下一发言人。
 
+## 参与者
 {dha_text}
 
-讨论目标：{discussion_goal}
+## 讨论目标
+{discussion_goal}
 
-请根据最近讨论内容，判断：
-1. 若刚发言的 DHA 尚未完成其本轮任务（例如需要继续补充、调用工具、或回答不完整），则 task_done=false，让该 DHA 继续发言。
-2. 若该 DHA 已完成本轮任务，则 task_done=true，并指定 next_speaker 为下一个应发言的 DHA（dha_id），或 "user" 表示等待用户输入，或 "end" 表示讨论结束。
+## 你的任务
+根据最近讨论内容，判断当前发言者是否完成任务，并指定下一发言人。
 
-**必须**严格按以下 JSON 格式回复，不要包含其他文字：
+**判断规则：**
+- 若刚发言的 DHA 尚未完成任务（需继续补充、调用工具、或回答不完整）→ task_done=false，next_speaker 为该 DHA 的 dha_id
+- 若该 DHA 已完成任务 → task_done=true，next_speaker 为下一个应发言的 dha_id
+- 若需等待用户输入 → next_speaker="user"
+- 若讨论已结束 → next_speaker="end"
+
+**输出格式（仅输出 JSON，不要其他文字）：**
 {{"task_done": true或false, "next_speaker": "dha_id或user或end", "reason": "简短理由"}}
 
-注意：next_speaker 必须是上述 dha_id 之一，或 "user" 或 "end"。"""
+next_speaker 必须是上述列出的 dha_id 之一，或 "user" 或 "end"。"""
 
 
 async def leader_decide(
@@ -76,10 +83,30 @@ async def leader_decide(
         task_done = data.get("task_done", True)
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
-        return {"task_done": task_done, "next_speaker": next_speaker, "reason": reason}
+        # 构建主持词 announcement，供前端展示
+        announcement = ""
+        if next_speaker == "user":
+            announcement = "请用户补充或继续提问。"
+        elif next_speaker == "end":
+            announcement = "讨论结束。"
+        elif next_speaker and dha_list:
+            for d in dha_list:
+                if d.get("dha_id") == next_speaker:
+                    name = d.get("name") or d.get("dha_id", next_speaker)
+                    announcement = f"下面由 {name} 发言。"
+                    break
+            if not announcement:
+                announcement = f"下面由 {next_speaker} 发言。"
+        return {"task_done": task_done, "next_speaker": next_speaker, "reason": reason, "announcement": announcement or reason}
     except Exception as e:
         logger.warning(f"领导人调度解析失败: {e}，回退为轮流")
         fallback = "user"
         if not last_speaker_dha_id and dha_list:
             fallback = dha_list[0].get("dha_id", "user")
-        return {"task_done": True, "next_speaker": fallback, "reason": f"解析失败: {e}"}
+        announcement = "请用户补充或继续提问。"
+        if fallback and fallback != "user":
+            for d in dha_list:
+                if d.get("dha_id") == fallback:
+                    announcement = f"下面由 {d.get('name') or fallback} 发言。"
+                    break
+        return {"task_done": True, "next_speaker": fallback, "reason": f"解析失败: {e}", "announcement": announcement}

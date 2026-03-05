@@ -625,6 +625,7 @@ class SkillUpdate(BaseModel):
     url: Optional[str] = None
     enabled: Optional[bool] = None
     body: Optional[str] = None  # SKILL.md frontmatter 之后的正文
+    mcp_server_ids: Optional[List[str]] = None  # 该 skill 依赖的 MCP server id 列表，空表示只用内置工具
 
 def load_skills_config() -> List[Dict[str, Any]]:
     """加载 Skills 配置"""
@@ -647,18 +648,59 @@ def load_skills_config() -> List[Dict[str, Any]]:
                         try:
                             frontmatter = yaml.safe_load(parts[1])
                             skill_id = skill_dir.name
-                            skills.append({
+                            fm_mcp = frontmatter.get("mcp_server_ids")
+                            mcp_ids = fm_mcp if isinstance(fm_mcp, list) else []
+                            # 仅当 frontmatter 显式包含 mcp_server_ids 时返回，否则不包含（表示用默认/fallback）
+                            item = {
                                 "id": skill_id,
                                 "name": frontmatter.get("name", skill_id),
                                 "description": frontmatter.get("description", ""),
                                 "enabled": frontmatter.get("enabled", True),
                                 "source": "local",
-                                "path": str(skill_dir)
-                            })
+                                "path": str(skill_dir),
+                            }
+                            if "mcp_server_ids" in frontmatter:
+                                item["mcp_server_ids"] = mcp_ids
+                            skills.append(item)
                         except:
                             pass
     
     return skills
+
+# 当 skill 的 frontmatter 未显式配置 mcp_server_ids 时使用的默认映射（向后兼容）
+# 与 backend/config/mcp_servers.json 中的 id 对应
+_SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
+    "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
+    "amap-maps": ["amap-maps"],
+    "app-icon-generator": ["volces-icon"],
+    "blog-write": ["linkup", "exa", "fetch", "zhipu-web-search", "file-reader"],
+    "data-report": ["linkup", "exa", "fetch", "file-reader"],
+    "zhipu-web-search": ["zhipu-web-search"],
+    "weather-service": [],
+    "news-summary": ["linkup", "exa", "fetch", "zhipu-web-search"],
+    "article-review": ["file-reader"],
+    "deep-research": ["linkup", "exa", "fetch", "zhipu-web-search", "file-reader"],
+    "web-research": ["linkup", "exa", "fetch", "file-reader"],
+    "doc-coauthoring": ["file-reader"],
+    "docs-write": ["file-reader"],
+    "xlsx": ["file-reader"],
+    "math-assistant": ["calculator"],
+    "group-host": ["file-reader"],
+    "session-export": [],
+    "default": [],
+    "script-demo": [],
+    "prompt-engineering-patterns": [],
+}
+
+def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
+    """根据 skill_id 返回其关联的 MCP server_id 列表。
+    优先从 SKILL.md frontmatter 的 mcp_server_ids 读取（前端可配置）；
+    若未配置则使用 _SKILL_MCP_SERVERS_FALLBACK。"""
+    skills = load_skills_config()
+    s = next((x for x in skills if x.get("id") == skill_id), None)
+    if s is not None and "mcp_server_ids" in s:
+        return list(s.get("mcp_server_ids") or [])
+    return list(_SKILL_MCP_SERVERS_FALLBACK.get(skill_id, []))
 
 @router.get("/settings/skills")
 async def get_skills():
@@ -746,6 +788,8 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
         fm["description"] = skill_update.description
     if skill_update.enabled is not None:
         fm["enabled"] = skill_update.enabled
+    if skill_update.mcp_server_ids is not None:
+        fm["mcp_server_ids"] = skill_update.mcp_server_ids
     if skill_update.body is not None:
         body = skill_update.body
     _write_skill_file(skill_dir, fm, body)
@@ -798,6 +842,10 @@ async def get_skill_content(skill_id: str):
         raise HTTPException(status_code=404, detail="Skill not found")
     raw = path.read_text(encoding="utf-8")
     fm, body = _read_skill_file(skill_dir)
+    if "mcp_server_ids" in fm:
+        mcp_ids = fm["mcp_server_ids"] if isinstance(fm["mcp_server_ids"], list) else []
+    else:
+        mcp_ids = get_mcp_servers_for_skill(skill_id)  # 未配置时返回 fallback，便于前端展示
     return {
         "status": "ok",
         "data": {
@@ -806,6 +854,7 @@ async def get_skill_content(skill_id: str):
             "description": fm.get("description", ""),
             "enabled": fm.get("enabled", True),
             "body": body,
+            "mcp_server_ids": mcp_ids,
         },
     }
 

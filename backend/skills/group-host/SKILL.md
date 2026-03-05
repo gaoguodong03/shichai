@@ -2,6 +2,8 @@
 name: 群聊主持人
 description: 担任群聊主持人，根据讨论进展指定下一发言人并判断当前发言人是否完成任务。仅用于群聊会话中的主持人 DHA。
 enabled: true
+mcp_server_ids:
+  - file-reader
 ---
 
 # 群聊主持人 Skill

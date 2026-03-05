@@ -1,6 +1,8 @@
 ---
 name: docs-write
 description: Write documentation following Metabase's conversational, clear, and user-focused style. Use when creating or editing documentation files (markdown, MDX, etc.).
+mcp_server_ids:
+  - file-reader
 ---
 
 # Documentation Writing Skill

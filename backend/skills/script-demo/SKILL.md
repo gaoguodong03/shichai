@@ -1,6 +1,7 @@
 ---
 description: 使用 run_skill_script 执行当前 Skill 下的简单 Python 脚本，验证 scripts 型 Skill 的调用链路。
 enabled: true
+mcp_server_ids: []
 name: 简单 Script 测试
 ---
 # Script 测试 Skill

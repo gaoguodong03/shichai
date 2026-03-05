@@ -37,15 +37,7 @@
             </label>
           </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">启用的 MCP</label>
-          <div class="flex flex-wrap gap-2">
-            <label v-for="m in mcpServers" :key="m.id" class="inline-flex items-center gap-1">
-              <input type="checkbox" :value="m.id" v-model="form.mcp_server_ids" />
-              <span class="text-sm">{{ m.name }}</span>
-            </label>
-          </div>
-        </div>
+        <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
         <!-- 已注释：是否领导人应在创建 Group 时指定，不在 DHA 编辑中设置 -->
         <!-- <div>
           <label class="inline-flex items-center gap-2">
@@ -77,7 +69,6 @@ const emit = defineEmits<{
 }>()
 
 const skills = ref<{ id: string; name: string }[]>([])
-const mcpServers = ref<{ id: string; name: string }[]>([])
 const llmProviders = ref<Record<string, { label: string }>>({})
 
 const form = ref({
@@ -85,7 +76,6 @@ const form = ref({
   role: '',
   system_prompt: '',
   skill_ids: [] as string[],
-  mcp_server_ids: [] as string[],
   is_leader: false,
   llm_provider_id: '',
 })
@@ -94,7 +84,7 @@ watch(
   () => [props.selectedDhaId, props.dhaInstances],
   () => {
     if (props.selectedDhaId === '__new__') {
-      form.value = { name: '', role: '', system_prompt: '', skill_ids: [], mcp_server_ids: [], is_leader: false, llm_provider_id: '' }
+      form.value = { name: '', role: '', system_prompt: '', skill_ids: [], is_leader: false, llm_provider_id: '' }
     } else if (props.selectedDhaId) {
       const d = props.dhaInstances.find((x) => x.dha_id === props.selectedDhaId)
       if (d) {
@@ -103,7 +93,6 @@ watch(
           role: d.role || '',
           system_prompt: d.system_prompt || '',
           skill_ids: d.skill_ids || [],
-          mcp_server_ids: d.mcp_server_ids || [],
           is_leader: d.is_leader || false,
           llm_provider_id: d.llm_provider_id || '',
         }
@@ -121,20 +110,12 @@ async function fetchSkills() {
   }
 }
 
-async function fetchMCP() {
-  const r = await fetch('/api/settings/mcp')
-  const j = await r.json()
-  if (j.status === 'ok' && j.data?.servers) {
-    mcpServers.value = j.data.servers
-  }
-}
-
 async function saveDha() {
   if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
     const r = await fetch(`/api/dha/instances/${encodeURIComponent(props.selectedDhaId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form.value),
+      body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
     })
     const j = await r.json()
     if (j.status === 'ok') {
@@ -146,7 +127,7 @@ async function saveDha() {
     const r = await fetch('/api/dha/instances', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form.value),
+      body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
     })
     const j = await r.json()
     if (j.status === 'ok' && j.data?.dha_id) {
@@ -172,7 +153,6 @@ async function fetchAppSettings() {
 
 onMounted(() => {
   fetchSkills()
-  fetchMCP()
   fetchAppSettings()
 })
 </script>

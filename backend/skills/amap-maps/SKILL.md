@@ -1,6 +1,8 @@
 ---
 description: 高德地图位置服务。当用户需要地理编码、逆地理编码、天气查询、路线规划、距离计算、周边/关键词搜索 POI 时，使用 amap-maps 相关工具。
 enabled: true
+mcp_server_ids:
+- amap-maps
 name: 高德地图
 ---
 # 高德地图 Skill（只使用 amap-maps MCP）
@@ -19,7 +21,7 @@ name: 高德地图
 
    | 工具名 | 必填参数 | 可选参数 | 说明 |
    |--------|----------|----------|------|
-   | `amap-maps_maps_geo` | `address` | `city` | 地理编码：地址→坐标。**必须传 city**（城市名如「北京」），否则全国检索会误匹配到其他省份 |
+   | `amap-maps_maps_geo` | `address` | `city` | 地理编码：地址→坐标。**必须用 `address` 传地址、`city` 传城市**，不要用 `__arg1`。**必须传 city**（城市名如「北京」），否则全国检索会误匹配到其他省份 |
    | `amap-maps_maps_regeocode` | `location` | - | 逆地理编码：坐标→省市区地址 |
    | `amap-maps_maps_ip_location` | `ip` | - | IP 定位 |
    | `amap-maps_maps_weather` | `city` | - | 天气：城市名或 adcode |
@@ -73,11 +75,14 @@ name: 高德地图
    - 若参数缺失（如出发地、目的地、城市名），先向用户确认再调用。
 
 6. **不要做的事情**
+   - **每次只调用一个工具**：工具名必须与上表完全一致（如 `amap-maps_maps_geo`、`amap-maps_maps_weather`），**严禁**将多个工具名拼接（如 `amap-maps_maps_geoamap-maps_maps_weather` 是错误写法）。
+   - **maps_geo 必须用 `address` 传地址**：不要用 `__arg1` 等占位参数，必须用 `{"address": "郑州东站", "city": "郑州"}` 格式。
    - 不要自造参数名（如 `from`/`to` 代替 `origin`/`destination`，`query` 代替 `keywords`）。
    - 不要在没有调用工具的情况下编造坐标、路线或天气数据。
    - 不要混淆经纬度顺序（高德使用 GCJ-02，格式为 `经度,纬度`）。
    - 不要在用户明确给出地址/地点时，仍用模糊描述代替实际查询。
    - **路线规划时**：不要只查完起点就停，必须查完起点和终点两个坐标后再查路线。
    - **maps_geo 时**：不要漏传 `city`，不要用区名（海淀、朝阳）当 city，必须用城市名（北京、上海）。否则会全国检索，返回兴义、越秀等错误城市。
+   - **分工明确时**：若群聊中你只负责「找位置」，则只调用 `maps_geo`；天气由天气专家负责，不要混用 `maps_weather`。
 
 > 简单记忆：**有位置、路线、天气、周边，就找 amap-maps**，先查工具，再组织回答。

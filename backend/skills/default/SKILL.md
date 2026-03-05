@@ -2,6 +2,7 @@
 name: 默认助手
 description: 当无法确定使用哪个专用技能时使用。直接按用户表达的方式执行，不做预设流程或固定步骤。
 enabled: true
+mcp_server_ids: []
 ---
 
 # 默认助手 Skill

@@ -1,6 +1,7 @@
 ---
 description: 用 call_api 调用聚合数据简单天气接口，查询指定城市当前天气，验证 service/API 调用链路。
 enabled: true
+mcp_server_ids: []
 name: 简单 service 测试- 城市天气查询（API）
 ---
 # 城市天气查询 Skill

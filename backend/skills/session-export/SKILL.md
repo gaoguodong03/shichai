@@ -2,6 +2,7 @@
 description: 导出对话、导出为 .md、保存为 markdown、导出为完整 .md 文件。当用户要求导出当前对话为 markdown 时，调用 export_session_to_md
   工具即可，无需再调用 LLM 生成内容。
 enabled: true
+mcp_server_ids: []
 name: 导出对话
 ---
 # Session Export

@@ -2,6 +2,8 @@
 name: 智谱网页搜索
 description: 使用智谱 Web Search MCP 进行实时网页搜索。适用于快速查事实、最新资讯、新闻热点等。
 enabled: true
+mcp_server_ids:
+  - zhipu-web-search
 ---
 
 # 智谱网页搜索 Skill

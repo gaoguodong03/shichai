@@ -1,6 +1,8 @@
 ---
 description: 生成应用图标的提示词与调用规范（配合 volces-icon_generate_app_icon 工具）。
 enabled: true
+mcp_server_ids:
+- volces-icon
 name: 图标生成
 ---
 ## 目标

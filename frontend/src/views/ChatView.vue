@@ -29,7 +29,7 @@
             :class="[
               'max-w-3xl min-w-0 rounded-lg px-4 py-2',
               msg.role === 'user'
-                ? 'bg-blue-500 text-white'
+                ? 'bg-teal-600 text-white'
                 : 'bg-white text-gray-800 border border-gray-200'
             ]"
           >

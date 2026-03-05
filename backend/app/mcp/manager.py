@@ -251,11 +251,9 @@ class MCPToolManager:
     
     async def connect_server(self, server_id: str, config: Dict[str, Any]) -> bool:
         """连接 MCP Server"""
-        logger.info(f"连接 MCP Server: {server_id}")
         try:
             transport = config.get("transport", {})
             transport_type = transport.get("type", "stdio")
-            logger.info(f"传输类型: {transport_type}")
             # #region agent log
             # 调试：记录连接前的关键信息，用于排查 Docker 环境下某些 MCP 未能成功连接的问题
             try:
@@ -317,7 +315,6 @@ class MCPToolManager:
                     logger.error(f"创建 stdio 客户端失败（: {e}", exc_info=True)
                     raise
                 
-                logger.info("创建 ClientSession（使用异步上下文管理器）...")
                 # 根据 MCP 官方文档，ClientSession 应该作为异步上下文管理器使用
                 # 使用 exit_stack 来管理，保持连接打开
                 try:
@@ -326,7 +323,6 @@ class MCPToolManager:
                     )
                     # 添加超时保护（30秒），asyncio 在文件顶部已导入
                     await asyncio.wait_for(session.initialize(), timeout=30.0)
-                    logger.info("MCP Session 初始化成功")
                 except asyncio.TimeoutError:
                     logger.error("MCP Session 初始化超时（30秒），可能的原因：")
                     raise
@@ -335,7 +331,6 @@ class MCPToolManager:
                     raise
                 
                 self.sessions[server_id] = session
-                logger.info(f"MCP Server {server_id} 连接成功")
                 await self._load_tools_from_server(server_id, session)
                 # #region agent log
                 # 调试：记录成功连接的 MCP Server 及加载到的工具数量
@@ -390,7 +385,6 @@ class MCPToolManager:
                     read_stream, write_stream, _ = read_write_getid
                     session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
                     await asyncio.wait_for(session.initialize(), timeout=30.0)
-                    logger.info("MCP Session (Streamable HTTP) 初始化成功")
                 except asyncio.TimeoutError:
                     logger.error(f"MCP Server {server_id} Streamable HTTP 初始化超时（30秒）")
                     raise
@@ -398,7 +392,6 @@ class MCPToolManager:
                     logger.error(f"MCP Server {server_id} Streamable HTTP 连接失败: {e}", exc_info=True)
                     raise
                 self.sessions[server_id] = session
-                logger.info(f"MCP Server {server_id} 连接成功 (Streamable HTTP)")
                 await self._load_tools_from_server(server_id, session)
                 return True
 
@@ -442,18 +435,13 @@ class MCPToolManager:
     
     async def _load_tools_from_server(self, server_id: str, session: ClientSession):
         """从 MCP Server 加载工具"""
-        logger.info(f"从 MCP Server {server_id} 加载工具...")
         try:
             tools_result = await session.list_tools()
-            logger.info(f"MCP Server {server_id} 返回 {len(tools_result.tools)} 个工具")
-            
             for mcp_tool in tools_result.tools:
-                logger.info(f"处理工具: {mcp_tool.name}, 描述: {mcp_tool.description}")
                 # 创建 LangChain Tool（传入 server_id 用于生成唯一名称）
                 langchain_tool = self._create_langchain_tool(mcp_tool, session, server_id)
                 tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
                 self.tools[tool_name] = langchain_tool
-                logger.info(f"成功加载工具: {tool_name} (原始名称: {mcp_tool.name})")
         except Exception as e:
             logger.error(f"Failed to load tools from server {server_id}: {e}", exc_info=True)
     
@@ -674,26 +662,21 @@ class MCPToolManager:
     
     async def initialize_all(self):
         """初始化所有配置的 MCP Server"""
-        logger.info("开始初始化所有 MCP Servers")
         await self.load_config()
         
-        enabled_count = 0
         for config in self.server_configs:
             server_id = config.get("id", f"server_{len(self.sessions)}")
             if config.get("enabled", True):
-                enabled_count += 1
                 try:
                     success = await self.connect_server(server_id, config)
-                    if success:
-                        logger.info(f"MCP Server {server_id} 初始化成功")
-                    else:
+                    if not success:
                         logger.error(f"MCP Server {server_id} 初始化失败")
                 except asyncio.CancelledError:
                     raise  # 请求被取消时继续向上抛出
                 except Exception as e:
                     logger.error(f"MCP Server {server_id} 初始化异常，跳过: {e}", exc_info=True)
         
-        logger.info(f"MCP 初始化完成: 共 {len(self.server_configs)} 个配置，{enabled_count} 个启用，{len(self.sessions)} 个连接成功，{len(self.tools)} 个工具加载")
+        logger.info("加载 mcp 工具完成")
     
     async def cleanup(self):
         """清理所有连接"""

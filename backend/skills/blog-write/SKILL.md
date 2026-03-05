@@ -2,6 +2,12 @@
 name: 博客写作
 description: 以博客写作师的身份与用户聊天，了解他想写什么、对哪些方面感兴趣；随着交流自然收集选题与素材，信息足够时自动开始撰写文章。
 enabled: true
+mcp_server_ids:
+  - linkup
+  - exa
+  - fetch
+  - zhipu-web-search
+  - file-reader
 ---
 
 # 博客写作 Skill

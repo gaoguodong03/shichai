@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
+from app.api.settings import get_mcp_servers_for_skill
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
@@ -86,7 +87,7 @@ def _save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -
 
 
 def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) -> str:
-    """将群聊消息转为供领导人/ DHA 使用的上下文字符串"""
+    """将群聊消息转为供领导人/ DHA 使用的上下文字符串（不截断，完整保留）"""
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
     lines = []
     for m in recent:
@@ -99,19 +100,32 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
             lines.append(f"【主持人】{content}")
         else:
             name = dha_id or "助手"
-            lines.append(f"【{name}】{content[:500]}{'…' if len(content) > 500 else ''}")
+            lines.append(f"【{name}】{content}")
     return "\n\n".join(lines)
 
 
 def _get_dha_tools(dha: Dict[str, Any]) -> List:
-    """根据 DHA 的 mcp_server_ids 获取工具列表"""
+    """根据 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖获取工具列表。
+    - mcp_server_ids 有值：只传这些 MCP 的工具。
+    - mcp_server_ids 为空：按 skill_ids 的 MCP 依赖过滤；若 skill 无 MCP 依赖（如 weather-service），
+      只传内置工具（read_file、call_api），不传任何 MCP 工具，避免跨职责调用（如天气专家调用高德）。"""
     mcp_manager = get_mcp_manager()
     all_tools = mcp_manager.get_tools()
     server_ids = dha.get("mcp_server_ids") or []
     if server_ids:
         tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]
     else:
-        tools = list(all_tools)
+        # mcp_server_ids 为空：按 skill 的 MCP 依赖决定
+        skill_ids = dha.get("skill_ids") or []
+        server_ids_from_skill = []
+        for sid in skill_ids:
+            server_ids_from_skill.extend(get_mcp_servers_for_skill(sid))
+        server_ids_from_skill = list(dict.fromkeys(server_ids_from_skill))  # 去重
+        if server_ids_from_skill:
+            tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids_from_skill]
+        else:
+            # skill 无 MCP 依赖（如 weather-service），只传内置工具
+            tools = []
     tools = tools + [create_read_file_tool(), call_api]
     return tools
 
@@ -230,13 +244,14 @@ async def _host_decide_by_dha(
 class GroupSessionCreate(BaseModel):
     title: str = "新群聊"
     dha_ids: List[str]
-    leader_dha_id: str
+    leader_dha_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
     speak_mode: Optional[str] = "auto"  # auto | manual
 
 
 class GroupSessionUpdate(BaseModel):
     title: Optional[str] = None
     speak_mode: Optional[str] = None
+    add_dha_ids: Optional[List[str]] = None  # 向已有群聊追加 DHA
 
 
 class GroupChatRequest(BaseModel):
@@ -305,7 +320,7 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
     user_content = (
         f"【群聊讨论目标】\n{discussion_goal}\n\n"
         f"【最近讨论】\n{context}\n\n"
-        "请基于以上上下文，以你的角色参与讨论并发言。"
+        "请紧扣讨论目标发言，不要偏离主题。"
     )
 
     return {"status": "ok", "data": {"prompt": user_content}}
@@ -331,7 +346,7 @@ async def create_group_session(body: GroupSessionCreate):
     meta[gsid] = {
         "title": body.title or "新群聊",
         "dha_ids": body.dha_ids,
-        "leader_dha_id": body.leader_dha_id or (body.dha_ids[0] if body.dha_ids else ""),
+        "leader_dha_id": (body.leader_dha_id or "").strip() or "",  # 主持人已改为固定逻辑，不再使用 DHA
         "speak_mode": (body.speak_mode or "auto").strip().lower() if body.speak_mode else "auto",
         "created_at": now,
         "updated_at": now,
@@ -381,7 +396,7 @@ async def get_group_session(group_session_id: str):
 
 @router.put("/group-sessions/{group_session_id}")
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、发言模式等"""
+    """更新群聊：重命名、发言模式、追加 DHA 等"""
     meta = _load_group_meta()
     if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")
@@ -389,6 +404,15 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         meta[group_session_id]["title"] = body.title.strip()
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
         meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
+    if body.add_dha_ids:
+        instances = load_dha_instances()
+        valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
+        current = set(meta[group_session_id].get("dha_ids", []))
+        for did in body.add_dha_ids:
+            if did not in valid_ids:
+                raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
+            current.add(did)
+        meta[group_session_id]["dha_ids"] = list(current)
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)
     return {"status": "ok", "data": meta[group_session_id]}
@@ -468,6 +492,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             next_speaker = None
 
+            # 仅 1 个 DHA 时跳过主持人，直接 user -> DHA（chat 风格）
+            single_dha_mode = len(dha_ids) == 1
+
             if request.override_next_speaker is not None:
                 next_speaker = request.override_next_speaker.strip().lower()
                 if next_speaker == "user":
@@ -478,6 +505,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     return
                 if next_speaker and next_speaker not in dha_ids:
                     next_speaker = None
+            elif single_dha_mode:
+                # 1 DHA：直接指定该 DHA 发言，无主持人
+                next_speaker = dha_ids[0]
             elif speak_mode != "auto":
                 # 非自动：仅让主持人给出建议，不下发 DHA，等用户选人后下次请求再跑
                 recent = _messages_to_context(messages)
@@ -499,17 +529,26 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_content = announcement or f"建议由 {next_name} 发言，请选择发言人并发送。"
                 else:
                     host_content = announcement or "请选择下一发言人并发送。"
+                host_msg = {
+                    "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                    "role": "host" if not leader_dha_id else "assistant",
+                    "content": host_content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
                 if leader_dha_id:
-                    host_msg = {
-                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "assistant",
-                        "dha_id": leader_dha_id,
-                        "content": host_content,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    messages.append(host_msg)
-                    _save_group_history(group_session_id, messages)
-                    yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                    host_msg["dha_id"] = leader_dha_id
+                messages.append(host_msg)
+                if suggested in dha_ids:
+                    context = _messages_to_context(messages)
+                    next_dha = dha_map.get(suggested)
+                    host_msg["next_dha_name"] = (next_dha.get("name") or suggested) if next_dha else suggested
+                    host_msg["next_prompt"] = (
+                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                        f"【最近讨论】\n{context}\n\n"
+                        "请紧扣讨论目标发言，不要偏离主题。"
+                    )
+                _save_group_history(group_session_id, messages)
+                yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
                 return
             else:
@@ -525,9 +564,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if decision is None:
                     llm_default = _get_llm_for_dha(None, app_settings)
                     decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
-                    announcement = None
-                else:
-                    announcement = decision.get("announcement")
+                announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 next_speaker = decision.get("next_speaker", "user")
                 task_done = decision.get("task_done", True)
                 if not task_done and last_speaker_dha_id:
@@ -537,8 +574,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if messages and messages[-1].get("role") == "user" and next_speaker == "user" and dha_ids:
                     idx = dha_ids.index(last_speaker_dha_id) + 1 if last_speaker_dha_id in dha_ids else 0
                     next_speaker = dha_ids[idx % len(dha_ids)]
-                # 主持人发言：写入一条 assistant(leader_dha_id)，并下发 message 事件供前端逐条展示
-                if leader_dha_id and next_speaker in dha_ids:
+                # 主持人发言（1 DHA 时跳过）
+                if next_speaker in dha_ids and not single_dha_mode:
                     host_content = announcement if announcement else None
                     if not host_content:
                         next_dha = dha_map.get(next_speaker)
@@ -546,12 +583,21 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_content = f"下面由 {next_name} 发言。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "assistant",
-                        "dha_id": leader_dha_id,
+                        "role": "host" if not leader_dha_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                    if leader_dha_id:
+                        host_msg["dha_id"] = leader_dha_id
                     messages.append(host_msg)
+                    context = _messages_to_context(messages)
+                    next_dha = dha_map.get(next_speaker)
+                    host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
+                    host_msg["next_prompt"] = (
+                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                        f"【最近讨论】\n{context}\n\n"
+                        "请紧扣讨论目标发言，不要偏离主题。"
+                    )
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
 
@@ -580,50 +626,109 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     user_content = (
                         f"【群聊讨论目标】\n{discussion_goal}\n\n"
                         f"【最近讨论】\n{context}\n\n"
-                        "请基于以上上下文，以你的角色参与讨论并发言。"
+                        "请紧扣讨论目标发言，不要偏离主题。"
                     )
                 initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
 
                 accumulated = []
-                async for stream_item in agent.astream(initial_state, stream_mode=["updates", "messages", "values"]):
-                    if isinstance(stream_item, tuple) and len(stream_item) == 2:
-                        mode, chunk = stream_item
-                        if mode == "messages":
-                            msg_chunk, meta_info = chunk if isinstance(chunk, tuple) and len(chunk) >= 2 else (chunk, {})
-                            if meta_info.get("langgraph_node") == "agent" and hasattr(msg_chunk, "content") and msg_chunk.content:
-                                txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
-                                if txt:
-                                    accumulated.append(txt)
-                                    yield f"event: content\ndata: {json_module.dumps({'text': txt, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
-                        continue
-                    event = stream_item if not isinstance(stream_item, tuple) else stream_item[1]
-                    if isinstance(event, dict) and "agent" in event:
-                        agent_out = event["agent"]
-                        aimsg = None
-                        if isinstance(agent_out, dict) and "messages" in agent_out:
-                            for m in reversed(agent_out["messages"]):
-                                if isinstance(m, AIMessage):
-                                    aimsg = m
-                                    break
-                        elif isinstance(agent_out, list):
-                            for m in reversed(agent_out):
-                                if isinstance(m, AIMessage):
-                                    aimsg = m
-                                    break
-                        if aimsg:
-                            content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
-                            if content_str.strip() and content_str not in accumulated:
-                                accumulated.append(content_str)
-                                yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                accumulated_raw_tool_results: List[str] = []
+                try:
+                    async for stream_item in agent.astream(initial_state, stream_mode=["updates", "messages", "values"]):
+                        if isinstance(stream_item, tuple) and len(stream_item) == 2:
+                            mode, chunk = stream_item
+                            if mode == "messages":
+                                msg_chunk, meta_info = chunk if isinstance(chunk, tuple) and len(chunk) >= 2 else (chunk, {})
+                                if meta_info.get("langgraph_node") == "agent" and hasattr(msg_chunk, "content") and msg_chunk.content:
+                                    txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
+                                    if txt:
+                                        accumulated.append(txt)
+                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                            continue
+                        event = stream_item if not isinstance(stream_item, tuple) else stream_item[1]
+                        if isinstance(event, dict) and "tool" in event:
+                            tool_msgs = event["tool"]
+                            if isinstance(tool_msgs, dict) and "messages" in tool_msgs:
+                                tool_msgs = tool_msgs["messages"] or []
+                            if not isinstance(tool_msgs, list):
+                                tool_msgs = [tool_msgs]
+                            for tm in tool_msgs:
+                                content = None
+                                if isinstance(tm, dict) and "messages" in tm and isinstance(tm["messages"], list) and tm["messages"]:
+                                    tm = tm["messages"][0]
+                                if isinstance(tm, HumanMessage):
+                                    content = tm.content
+                                elif isinstance(tm, dict) and tm.get("content"):
+                                    content = tm["content"]
+                                if content is not None:
+                                    raw_str = str(content) if not isinstance(content, str) else content
+                                    accumulated_raw_tool_results.append(raw_str)
+                        if isinstance(event, dict) and "agent" in event:
+                            agent_out = event["agent"]
+                            aimsg = None
+                            if isinstance(agent_out, dict) and "messages" in agent_out:
+                                for m in reversed(agent_out["messages"]):
+                                    if isinstance(m, AIMessage):
+                                        aimsg = m
+                                        break
+                            elif isinstance(agent_out, list):
+                                for m in reversed(agent_out):
+                                    if isinstance(m, AIMessage):
+                                        aimsg = m
+                                        break
+                            if aimsg:
+                                has_tool_calls = hasattr(aimsg, "tool_calls") and aimsg.tool_calls
+                                if has_tool_calls:
+                                    for tco in aimsg.tool_calls:
+                                        tool_name = tco.get("name") or tco.get("id", "")
+                                        args = tco.get("args") or {}
+                                        payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
+                                        tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
+                                        block = f"\n```json\n{tc_json}\n```\n"
+                                        accumulated.append(block)
+                                        yield f"event: content\ndata: {json_module.dumps({'text': block, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
+                                if content_str.strip() and content_str not in accumulated:
+                                    accumulated.append(content_str)
+                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                except Exception as stream_err:
+                    logger.warning("群聊 agent astream 失败，回退到 ainvoke: %s", stream_err)
+                    try:
+                        final_state = await agent.ainvoke(initial_state)
+                        out_msgs = final_state.get("messages", [])
+                        for m in out_msgs:
+                            if isinstance(m, AIMessage):
+                                if hasattr(m, "tool_calls") and m.tool_calls:
+                                    for tco in m.tool_calls:
+                                        tool_name = tco.get("name") or tco.get("id", "")
+                                        args = tco.get("args") or {}
+                                        payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
+                                        tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
+                                        accumulated.append(f"\n```json\n{tc_json}\n```\n")
+                                content_str = str(m.content) if isinstance(m.content, str) else str(m.content or "")
+                                if content_str.strip():
+                                    accumulated.append(content_str)
+                        if not accumulated_raw_tool_results:
+                            for msg in out_msgs:
+                                if isinstance(msg, HumanMessage) and msg.content:
+                                    raw_str = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
+                                    if raw_str and ("工具 " in raw_str and " 的执行结果:" in raw_str or "执行错误" in raw_str):
+                                        accumulated_raw_tool_results.append(raw_str)
+                    except Exception as invoke_err:
+                        logger.exception("群聊 agent ainvoke 也失败: %s", invoke_err)
+                        accumulated.append(f"(调用异常: {invoke_err})")
 
                 full_content = "".join(accumulated) if accumulated else "(无文本输出)"
+                skill_id = (dha.get("skill_ids") or ["default"])[0] if dha else "default"
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                     "role": "assistant",
                     "dha_id": next_speaker,
                     "content": full_content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "skill_id": skill_id,
                 }
+                if accumulated_raw_tool_results:
+                    assistant_msg["tool_raw_results"] = accumulated_raw_tool_results
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -631,11 +736,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
 
                 last_speaker_dha_id = next_speaker
-                # 非自动模式：该 DHA 回答后直接结束，等用户下次选人
-                if speak_mode != "auto":
+                # 1 DHA 或非自动模式：该 DHA 回答后直接结束
+                if single_dha_mode or speak_mode != "auto":
                     yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
                     return
-                # auto：主持人 DHA 或默认调度决定下一发言人
+                # auto 且多 DHA：主持人决定下一发言人
                 decision = None
                 host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
                 if leader_dha_id and leader_dha_id in dha_ids and host_dha:
@@ -652,8 +757,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if not task_done:
                     next_speaker = last_speaker_dha_id
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
-                # 主持人发言
-                if leader_dha_id and (next_speaker in dha_ids or next_speaker in ("user", "end")):
+                # 主持人发言：leader_dha_id 为空时用 role=host（固定逻辑）
+                if next_speaker in dha_ids or next_speaker in ("user", "end"):
                     host_content = announcement
                     if not host_content and next_speaker in dha_ids:
                         next_dha = dha_map.get(next_speaker)
@@ -663,12 +768,22 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_content = "请用户补充或继续提问。" if next_speaker == "user" else "讨论结束。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "assistant",
-                        "dha_id": leader_dha_id,
+                        "role": "host" if not leader_dha_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                    if leader_dha_id:
+                        host_msg["dha_id"] = leader_dha_id
                     messages.append(host_msg)
+                    if next_speaker in dha_ids:
+                        context = _messages_to_context(messages)
+                        next_dha = dha_map.get(next_speaker)
+                        host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
+                        host_msg["next_prompt"] = (
+                            f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                            f"【最近讨论】\n{context}\n\n"
+                            "请紧扣讨论目标发言，不要偏离主题。"
+                        )
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 # 限制同一 DHA 连续发言
@@ -743,6 +858,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
     app_settings = load_app_settings()
     extra_system_prompt = app_settings.get("system_prompt") or ""
     speak_mode = m.get("speak_mode", "auto")
+    single_dha_mode = len(dha_ids) == 1
 
     next_speaker = None
     if request.override_next_speaker is not None:
@@ -751,6 +867,8 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             return {"status": "ok", "data": {"messages": messages}}
         if next_speaker not in dha_ids:
             next_speaker = None
+    if next_speaker is None and single_dha_mode:
+        next_speaker = dha_ids[0]
     if next_speaker is None and speak_mode != "auto":
         # 非自动：仅主持人给建议，不跑 DHA
         recent = _messages_to_context(messages)
@@ -772,16 +890,16 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             host_content = announcement or f"建议由 {next_name} 发言，请选择发言人并发送。"
         else:
             host_content = announcement or "请选择下一发言人并发送。"
+        host_msg = {
+            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+            "role": "host" if not leader_dha_id else "assistant",
+            "content": host_content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
         if leader_dha_id:
-            host_msg = {
-                "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                "role": "assistant",
-                "dha_id": leader_dha_id,
-                "content": host_content,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            messages.append(host_msg)
-            _save_group_history(group_session_id, messages)
+            host_msg["dha_id"] = leader_dha_id
+        messages.append(host_msg)
+        _save_group_history(group_session_id, messages)
         return {"status": "ok", "data": {"messages": messages}}
     if next_speaker is None and speak_mode == "auto":
         recent = _messages_to_context(messages)
@@ -805,7 +923,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             idx = dha_ids.index(last_speaker_dha_id) + 1 if last_speaker_dha_id in dha_ids else 0
             next_speaker = dha_ids[idx % len(dha_ids)]
         announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
-        if leader_dha_id and next_speaker in dha_ids:
+        if next_speaker in dha_ids and not single_dha_mode:
             host_content = announcement or None
             if not host_content:
                 next_dha = dha_map.get(next_speaker)
@@ -813,11 +931,12 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
                 host_content = f"下面由 {next_name} 发言。"
             host_msg = {
                 "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                "role": "assistant",
-                "dha_id": leader_dha_id,
+                "role": "host" if not leader_dha_id else "assistant",
                 "content": host_content,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+            if leader_dha_id:
+                host_msg["dha_id"] = leader_dha_id
             messages.append(host_msg)
             _save_group_history(group_session_id, messages)
 
@@ -846,36 +965,53 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             user_content = (
                 f"【群聊讨论目标】\n{discussion_goal}\n\n"
                 f"【最近讨论】\n{context}\n\n"
-                "请基于以上上下文，以你的角色参与讨论并发言。"
+                "请紧扣讨论目标发言，不要偏离主题。"
             )
         initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
 
+        tool_raw_results: List[str] = []
+        content_parts: List[str] = []
         try:
             final_state = await agent.ainvoke(initial_state)
             out_msgs = final_state.get("messages", [])
-            content_str = ""
-            for msg in reversed(out_msgs):
+            for msg in out_msgs:
                 if isinstance(msg, AIMessage):
-                    content_str = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
-                    break
-            if not content_str.strip():
-                content_str = "(无文本输出)"
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        for tco in msg.tool_calls:
+                            tool_name = tco.get("name") or tco.get("id", "")
+                            args = tco.get("args") or {}
+                            payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
+                            content_parts.append(f"\n```json\n{json.dumps(payload, ensure_ascii=False, indent=2)}\n```\n")
+                    c = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
+                    if c.strip():
+                        content_parts.append(c)
+            for msg in out_msgs:
+                if isinstance(msg, HumanMessage) and msg.content:
+                    raw_str = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
+                    if raw_str and ("工具 " in raw_str and " 的执行结果:" in raw_str or "执行错误" in raw_str):
+                        tool_raw_results.append(raw_str)
         except Exception as e:
             logger.exception("群聊 DHA 调用异常")
-            content_str = f"调用异常: {e}"
+            content_parts = [f"调用异常: {e}"]
 
-        messages.append({
+        content_str = "".join(content_parts).strip() if content_parts else "(无文本输出)"
+        skill_id = (dha.get("skill_ids") or ["default"])[0] if dha else "default"
+        asst_msg = {
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
             "role": "assistant",
             "dha_id": next_speaker,
             "content": content_str,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+            "skill_id": skill_id,
+        }
+        if tool_raw_results:
+            asst_msg["tool_raw_results"] = tool_raw_results
+        messages.append(asst_msg)
         _save_group_history(group_session_id, messages)
         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
         _save_group_meta(meta)
 
-        if speak_mode != "auto":
+        if single_dha_mode or speak_mode != "auto":
             break
         last_speaker_dha_id = next_speaker
         decision = None
@@ -894,7 +1030,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
         if not task_done:
             next_speaker = last_speaker_dha_id
         announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
-        if leader_dha_id and (next_speaker in dha_ids or next_speaker in ("user", "end")):
+        if next_speaker in dha_ids or next_speaker in ("user", "end"):
             host_content = announcement
             if not host_content and next_speaker in dha_ids:
                 next_dha = dha_map.get(next_speaker)
@@ -904,12 +1040,22 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
                 host_content = "请用户补充或继续提问。" if next_speaker == "user" else "讨论结束。"
             host_msg = {
                 "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                "role": "assistant",
-                "dha_id": leader_dha_id,
+                "role": "host" if not leader_dha_id else "assistant",
                 "content": host_content,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+            if leader_dha_id:
+                host_msg["dha_id"] = leader_dha_id
             messages.append(host_msg)
+            if next_speaker in dha_ids:
+                context = _messages_to_context(messages)
+                next_dha = dha_map.get(next_speaker)
+                host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
+                host_msg["next_prompt"] = (
+                    f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                    f"【最近讨论】\n{context}\n\n"
+                    "请紧扣讨论目标发言，不要偏离主题。"
+                )
             _save_group_history(group_session_id, messages)
         if next_speaker == last_speaker_dha_id:
             if task_done or consecutive_same_dha >= 1:

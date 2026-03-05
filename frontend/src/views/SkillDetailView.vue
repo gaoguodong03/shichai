@@ -76,6 +76,29 @@
               class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white resize-y min-h-[4rem]"
             />
           </div>
+          <div class="rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2">
+            <label class="block text-xs font-medium text-gray-500 mb-1">MCP 依赖（可选）</label>
+            <p class="text-xs text-gray-500 mb-2">该 skill 可使用的 MCP 工具。空表示只用内置工具（call_api、read_file）。</p>
+            <div class="flex flex-wrap gap-2">
+              <label
+                v-for="srv in mcpServers"
+                :key="srv.id"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
+                :class="form.mcp_server_ids.includes(srv.id)
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'"
+              >
+                <input
+                  type="checkbox"
+                  :value="srv.id"
+                  v-model="form.mcp_server_ids"
+                  class="rounded border-gray-300"
+                />
+                {{ srv.name || srv.id }}
+              </label>
+            </div>
+            <p v-if="mcpServers.length === 0" class="text-xs text-gray-400">暂无 MCP 服务器，请先在设置中配置。</p>
+          </div>
           <div class="rounded-lg border border-gray-200 bg-gray-50/50">
             <label class="block text-xs font-medium text-gray-500 mb-1 px-3 pt-2">正文（Markdown）</label>
             <textarea
@@ -169,13 +192,14 @@ const tabs = [
   { id: 'scripts', label: 'Scripts' },
 ]
 
-const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string } | null>(null)
-const skillContent = ref<{ raw: string; name: string; description: string; enabled: boolean; body: string }>({ raw: '', name: '', description: '', enabled: true, body: '' })
+const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string; mcp_server_ids?: string[] } | null>(null)
+const skillContent = ref<{ raw: string; name: string; description: string; enabled: boolean; body: string; mcp_server_ids?: string[] }>({ raw: '', name: '', description: '', enabled: true, body: '', mcp_server_ids: [] })
 const loading = ref(false)
 const contentLoading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
-const form = ref({ name: '', description: '', enabled: true, body: '' })
+const form = ref({ name: '', description: '', enabled: true, body: '', mcp_server_ids: [] as string[] })
+const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 
 const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[] }>({
@@ -195,10 +219,27 @@ const currentPartFiles = computed(() => {
 })
 
 
+async function loadMcpServers() {
+  try {
+    const r = await fetch('/api/settings/mcp')
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.servers) {
+      mcpServers.value = j.data.servers.map((s: { id: string; name?: string; enabled?: boolean }) => ({
+        id: s.id,
+        name: s.name || s.id,
+        enabled: s.enabled ?? true,
+      }))
+    }
+  } catch {
+    mcpServers.value = []
+  }
+}
+
 async function load() {
   if (!props.skillId) return
   loading.value = true
   try {
+    await loadMcpServers()
     const r = await fetch('/api/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
@@ -209,6 +250,7 @@ async function load() {
           name: s.name,
           description: s.description ?? '',
           enabled: s.enabled ?? true,
+          mcp_server_ids: s.mcp_server_ids ?? [],
         }
         await loadContent()
       }
@@ -231,11 +273,13 @@ async function loadContent() {
         description: j.data.description ?? '',
         enabled: j.data.enabled ?? true,
         body: j.data.body ?? '',
+        mcp_server_ids: j.data.mcp_server_ids ?? [],
       }
       form.value.name = skillContent.value.name
       form.value.description = skillContent.value.description
       form.value.enabled = skillContent.value.enabled
       form.value.body = skillContent.value.body
+      form.value.mcp_server_ids = skillContent.value.mcp_server_ids ?? []
     }
   } finally {
     contentLoading.value = false
@@ -294,6 +338,7 @@ async function save() {
         description: form.value.description?.trim() ?? '',
         enabled: form.value.enabled,
         body: form.value.body ?? '',
+        mcp_server_ids: form.value.mcp_server_ids ?? [],
       }),
     })
     const j = await r.json()

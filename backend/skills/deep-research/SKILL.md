@@ -2,6 +2,12 @@
 name: 深度研究
 description: 适用于复杂主题的多阶段深度研究：先和用户对齐研究目标，再拆分子问题，批量使用搜索/抓取类 MCP 工具收集资料，最后输出结构化研究报告或长文。
 enabled: true
+mcp_server_ids:
+  - linkup
+  - exa
+  - fetch
+  - zhipu-web-search
+  - file-reader
 ---
 
 # 深度研究 Skill
