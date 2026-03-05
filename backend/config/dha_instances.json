@@ -96,5 +96,17 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": ""
+  },
+  {
+    "dha_id": "dha-browser-ops",
+    "name": "浏览器操作助手",
+    "role": "负责通过浏览器执行网页操作（Playwright MCP）",
+    "system_prompt": "你是浏览器自动化助手，可以通过 Playwright MCP 控制本机浏览器执行网页任务，例如导航、点击、填写表单、滚动、等待页面加载等。遇到多步任务要拆解清晰的步骤，必要时使用等待工具确保页面状态稳定后再继续下一步操作。",
+    "skill_ids": [
+      "browser-playwright"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "glm"
   }
 ]

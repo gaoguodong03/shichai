@@ -161,5 +161,21 @@
     "metadata": {
       "description": "通过本地 STDIO MCP Server 调用智谱 Web Search。"
     }
+  },
+  {
+    "id": "playwright-mcp",
+    "name": "Playwright 浏览器控制",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ]
+    },
+    "metadata": {
+      "description": "Playwright MCP：通过 Playwright 控制本机浏览器，支持导航、点击、输入、截图等自动化操作。需要本机安装 Node.js 18+，首次使用时 npx 会自动拉取依赖。"
+    }
   }
 ]

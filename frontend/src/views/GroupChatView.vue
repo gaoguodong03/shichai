@@ -151,7 +151,7 @@
       >
         <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
           <div class="text-xs font-semibold text-gray-700 truncate">
-            工作区（{{ workspacePath || '/' }}）
+            工作区（{{ workspacePath ? `${groupSessionId}/${workspacePath}` : `${groupSessionId}/` }}）
           </div>
           <button class="text-xs text-gray-500 hover:text-gray-800" @click="closeWorkspaceViewer">✕</button>
         </div>
