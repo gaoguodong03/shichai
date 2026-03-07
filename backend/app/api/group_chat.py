@@ -15,7 +15,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-from langchain.tools import Tool
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
@@ -26,7 +25,8 @@ from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
 from app.mcp.manager import get_mcp_manager
 from app.skills.loader import SkillsLoader
-from app.tools.read_file import create_read_file_tool
+from app.tools.write_workspace_file import create_write_workspace_file_tool
+from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.call_api import call_api
 
 logger = logging.getLogger(__name__)
@@ -106,50 +106,11 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
     return "\n\n".join(lines)
 
 
-def _create_write_workspace_file_tool(workspace_id: str) -> Tool:
-    """
-    创建写入当前群聊 workspace 文件的工具。
-    workspace_id 通常等于 group_session_id。
-    """
-
-    def _write_to_workspace_file(path: str, content: str = "", **kwargs) -> str:
-        # 允许从 kwargs 中兜底获取 path / content（兼容 JSON 形式的参数）
-        path_value = path or kwargs.get("path") or ""
-        content_value = content if content is not None else kwargs.get("content") or ""
-        path_value = str(path_value).strip()
-        if not path_value:
-            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report.md）。"
-        try:
-            ws_root = get_workspace_root(workspace_id)
-            # 防止越界：禁止 ..，并确保仍在 workspace 根目录下
-            normalized = path_value.strip("/").replace("..", "")
-            target = (ws_root / normalized).resolve()
-            if not str(target).startswith(str(ws_root)):
-                return f"错误：路径 {path_value} 不在当前工作区内。"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(str(content_value), encoding="utf-8")
-            rel = str(target.relative_to(ws_root)).replace("\\", "/")
-            return f"已写入当前 Chat 工作区文件：{rel}"
-        except Exception as e:
-            return f"错误：写入工作区文件失败 - {e}"
-
-    return Tool(
-        name="write_workspace_file",
-        description=(
-            "将文本内容写入当前 Chat 对应的工作区（workspace）中的文件。\n"
-            "- 参数 path: 工作区内相对路径，例如 'notes/report.md'。\n"
-            "- 参数 content: 要保存的完整文本内容（覆盖写入）。\n"
-            "适用于：在完成分析或写作后，把报告、草稿等保存到本 Chat 的 workspace 文件中。"
-        ),
-        func=_write_to_workspace_file,
-    )
-
-
 def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
     """根据 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖获取工具列表。
     - mcp_server_ids 有值：只传这些 MCP 的工具。
     - mcp_server_ids 为空：按 skill_ids 的 MCP 依赖过滤；若 skill 无 MCP 依赖（如 weather-service），
-      只传内置工具（read_file、call_api），不传任何 MCP 工具，避免跨职责调用（如天气专家调用高德）。"""
+      只传内置工具（call_api、write_workspace_file），不传任何 MCP 工具，避免跨职责调用（如天气专家调用高德）。"""
     mcp_manager = get_mcp_manager()
     all_tools = mcp_manager.get_tools()
     server_ids = dha.get("mcp_server_ids") or []
@@ -167,9 +128,9 @@ def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
         else:
             # skill 无 MCP 依赖（如 weather-service），只传内置工具
             tools = []
-    # 内置工具：读取引用文件、调用外部 HTTP API、将内容写入当前 Chat 的 workspace
-    workspace_tool = _create_write_workspace_file_tool(workspace_id)
-    tools = tools + [create_read_file_tool(), call_api, workspace_tool]
+    # 内置工具：调用外部 HTTP API、写入当前 workspace；读文件统一用 filesystem MCP（已按会话包装）
+    tools = tools + [call_api, create_write_workspace_file_tool(workspace_id)]
+    tools = wrap_filesystem_tools(tools, workspace_id)
     return tools
 
 

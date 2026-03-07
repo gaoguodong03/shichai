@@ -66,9 +66,9 @@ def create_react_agent(
 当你不需要使用工具时，直接回复用户的问题。
 
 ## 文件引用
-当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为相对路径（如 report.md 或 notes/report.txt）：
-- 纯文本（txt、md、json、csv、代码文件等）：优先使用 read_file（在 Agent 产出目录下读取），若文件不在默认目录中，可使用 filesystem_read_text_file。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可以尝试使用 filesystem_read_text_file 读取文本；如果内容明显是乱码或二进制数据，必须明确告知用户当前无法直接解析该文件，并建议用户先将其转换为可读文本后重新上传。
+当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
+- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 
 """
@@ -434,9 +434,9 @@ def create_skill_execution_agent(
 若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。
 
 ## 文件引用
-当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为相对路径（如 report.md 或 notes/report.txt）：
-- 纯文本（txt、md、json、csv、代码文件等）：优先使用 read_file（在 Agent 产出目录下读取），若文件不在默认目录中，可使用 filesystem_read_text_file。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可以尝试使用 filesystem_read_text_file 读取文本；如果内容明显是乱码或二进制数据，必须明确告知用户当前无法直接解析该文件，并建议用户先将其转换为可读文本后重新上传。
+当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
+- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 """
 
@@ -567,7 +567,12 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 except Exception as e:
                     tool_results.append(f"工具 {tool_name} 执行错误: {str(e)}")
             else:
-                tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
+                if tool_name == "read_file":
+                    tool_results.append(
+                        "工具 read_file 已废弃。请改用 filesystem_read_text_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。"
+                    )
+                else:
+                    tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
         return {"messages": [HumanMessage(content="\n".join(tool_results))]}
 
     content = last_message.content
@@ -599,6 +604,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 return {"messages": [HumanMessage(content=f"工具 {tool_name} 的执行结果: {result}")]}
             except Exception as e:
                 return {"messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")]}
+        if tool_name == "read_file":
+            return {"messages": [HumanMessage(content="工具 read_file 已废弃。请改用 filesystem_read_text_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。")]}
         return {"messages": [HumanMessage(content=f"工具 {tool_name} 不存在")]}
     except Exception as e:
         return {"messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")]}

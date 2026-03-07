@@ -58,7 +58,7 @@ mcp_server_ids:
 
 | 抓取单个 URL | linkup_linkup-search（fetch 能力）、fetch_fetch | 将网页内容抓取为 Markdown |
 | 调用外部 API | call_api                    | 用户提供 URL/方法/请求体时使用 |
-| 读取本地文件 | read_file、file-reader_*    | 用户引用文件或需读取已有数据时使用 |
+| 读取本地文件 | filesystem_read_text_file、file-reader_* | 用户引用文件或需读取已有数据时使用（工作区文件用 filesystem_read_text_file） |
 | 可选：脚本聚合 | run_skill_script           | 若 scripts/ 下有汇总脚本，可按需调用 |
 
 ---
@@ -70,7 +70,7 @@ mcp_server_ids:
    - 需要「搜索」时：使用 exa 或 linkup 搜索，获取足够条数（如 10–20 条），注意去重。
    - 需要「抓取网页」时：使用 fetch 或 linkup 的抓取能力，将关键 URL 转为可读文本。
    - 需要「调 API」时：使用 call_api，按用户给出的 URL、方法、参数调用。
-   - 需要「读文件」时：使用 read_file 或 file-reader 系列工具。
+   - 需要「读文件」时：使用 filesystem_read_text_file（工作区文本）或 file-reader 系列工具（PDF/DOCX 等）。
 3. **结构化整理**：将收集到的内容提取为统一字段（如标题、来源、时间、摘要、链接），可先整理成列表或表格结构。
 4. **生成报告**：以 Markdown 输出，建议结构：
    - 一级标题：报告主题

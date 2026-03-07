@@ -43,8 +43,8 @@ mcp_server_ids:
 - **网页抓取类**（如 `fetch_url`）  
   对特别重要的单个网页做深入阅读，将页面内容转成 Markdown 以便精读。
 
-- **文件读取类**（如 `file-reader` / `read_file`）  
-  当用户通过本地文件或 Chat 工作区提供文章内容时，用于读取文件文本进行分析。
+- **文件读取类**（如 `filesystem_read_text_file`、`file-reader_*`）  
+  当用户通过本地文件或 Chat 工作区提供文章内容时，用于读取文件文本进行分析。工作区文本用 filesystem_read_text_file。
 
 使用原则：
 

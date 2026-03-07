@@ -688,7 +688,8 @@ async function saveAsFile() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.path) {
       const base = window.location.origin
-      window.open(`${base}/api/files/download?path=${encodeURIComponent(j.data.path)}`, '_blank')
+      const url = j.data.download_url ? `${base}${j.data.download_url}` : `${base}/api/files/download?path=${encodeURIComponent(j.data.path)}`
+      window.open(url, '_blank')
       emit('savedAsFile', j.data.path)
     }
   } catch (e) {
@@ -707,10 +708,12 @@ function closeFilePicker() {
 }
 
 async function loadFilePickerEntries(path: string) {
+  const sessionId = props.sessionId || 'default'
   filePickerLoading.value = true
   filePickerError.value = ''
   try {
-    const url = path ? `/api/files?path=${encodeURIComponent(path)}` : '/api/files'
+    const base = `/api/workspaces/${encodeURIComponent(sessionId)}/files`
+    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
     const r = await fetch(url)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.entries) {
@@ -718,7 +721,7 @@ async function loadFilePickerEntries(path: string) {
       filePickerPath.value = path
     } else {
       filePickerEntries.value = []
-      filePickerError.value = j.detail || '加载失败'
+      filePickerError.value = (j as { detail?: string }).detail || '加载失败'
     }
   } catch (e) {
     filePickerEntries.value = []
@@ -735,8 +738,10 @@ function filePickerGoUp() {
 
 async function insertFileToInput(filePath: string) {
   selectedInsertFilePath.value = filePath
-  // 仅作为“引用”插入，不展开全文，避免输入过长
-  const block = `\n\n【文件引用：${filePath}】\n`
+  const sessionId = props.sessionId || 'default'
+  // 插入为当前会话工作区内的引用路径，供 read_file 工具读取
+  const refPath = filePath.startsWith('workspaces/') ? filePath : `workspaces/${sessionId}/${filePath}`
+  const block = `\n\n【文件引用：${refPath}】\n`
   let next = (inputMessage.value || '') + block
   if (next.length > MAX_INPUT_CHARS) {
     next = next.slice(0, MAX_INPUT_CHARS)

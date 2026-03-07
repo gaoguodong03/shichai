@@ -28,8 +28,8 @@ name: web-research
 本 Skill 依赖以下工具来实现「规划 → 调研 → 综合」的完整链路：
 
 - **`write_file`**：将研究计划、子代理调研结果、最终报告写入本地文件。
-- **`read_file`**：读取本地研究文件（计划、子代理结果等）。**不要**用来读取 URL。
-- **`list_files`**：列出研究目录下已有的计划/结果/报告文件。
+- **`filesystem_read_text_file`**：读取当前会话工作区内的文本文件（计划、子代理结果等）。**不要**用来读取 URL。
+- **`filesystem_list_directory`** / **`filesystem_directory_tree`**：列出工作区目录下已有的计划/结果/报告文件。
 - **`fetch_url`**：从网络 URL 抓取网页内容并转换为 Markdown（用于深度阅读单个页面）。
 - **`web_search`**：进行 Web 搜索获取多个候选信息源。
 - **`task`**：为每个子主题创建独立的「研究子代理」，并行开展调研。子代理可使用 `web_search`、`write_file` 等工具。
@@ -140,15 +140,15 @@ name: web-research
 
 ### 1. 收集本地结果文件
 
-1. 使用 `list_files` 列出 `research_[topic_name]` 目录：
+1. 使用 `filesystem_list_directory` 或 `filesystem_directory_tree` 列出工作区内 `research_[topic_name]` 目录：
    - 确认是否存在：
      - `research_plan.md`
      - 若干 `findings_[subtopic].md`
      - 可能已经存在的 `research_report.md`（如果是增量更新场景）
-2. 使用 `read_file` 读取所有 `findings_[subtopic].md` 文件的内容。
+2. 使用 `filesystem_read_text_file` 读取所有 `findings_[subtopic].md` 文件的内容。
 
 > **注意：**  
-> - `read_file` **只用于本地文件**；若需要从网上获取页面内容，请使用 `fetch_url`。  
+> - `filesystem_read_text_file` **只用于工作区本地文件**；若需要从网上获取页面内容，请使用 `fetch_url`。  
 > - 如果发现某个子主题缺少 `findings_*.md` 文件，需视为该子代理任务失败或未完成，主代理可选择：  
 >   - 重新为该子主题创建一个新的子代理；  
 >   - 或在最终报告中明确说明该部分缺失。
@@ -198,7 +198,7 @@ name: web-research
   - 将研究结果以 Markdown 形式保存到 `research_[topic_name]/findings_[subtopic].md`。  
   - 文件内容必须包含：关键结论、引用、URL 列表和不确定性说明。
 
-> 子代理**不需要**使用 `read_file` 或 `list_files`，这些通常由主代理在综合阶段使用。
+> 子代理**不需要**使用 `filesystem_read_text_file` 或 `filesystem_list_directory`，这些通常由主代理在综合阶段使用。
 
 ---
 
@@ -214,16 +214,16 @@ name: web-research
 
 3. **文件是唯一的跨代理通信载体**  
    - 子代理**必须**将结果写入文件，而不是直接返回大段内容给主代理。  
-   - 主代理通过 `read_file` 统一读取并综合。
+   - 主代理通过 `filesystem_read_text_file` 统一读取并综合。
 
 4. **适度搜索，避免过度调研**  
    - 默认每个子主题 3–5 次 `web_search` 即可。  
    - 若在有限搜索内已得到足够一致且高质量的信息，不必继续增加搜索次数。
 
 5. **严格区分本地文件与网络内容**  
-   - 本地：使用 `read_file` / `write_file` / `list_files`。  
+   - 本地：使用 `filesystem_read_text_file` / `write_workspace_file` / `filesystem_list_directory`。  
    - 网络：使用 `web_search` / `fetch_url`。  
-   - 不要尝试用 `read_file` 直接读取 URL。
+   - 不要尝试用 `filesystem_read_text_file` 直接读取 URL。
 
 6. **清晰引用与可追溯性**  
    - 在 findings 和最终报告中尽量附上来源 URL。  

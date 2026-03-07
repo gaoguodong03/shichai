@@ -119,10 +119,16 @@ import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
 import MarkdownIt from 'markdown-it'
 
-const props = defineProps<{ path: string }>()
+const props = defineProps<{ path: string; workspaceId?: string }>()
 const emit = defineEmits<{ (e: 'renamed', newPath: string): void }>()
 
-const downloadUrl = computed(() => `/api/files/download?path=${encodeURIComponent(currentPath.value)}`)
+const downloadUrl = computed(() => {
+  const p = currentPath.value
+  if (props.workspaceId) {
+    return `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/download?path=${encodeURIComponent(p)}`
+  }
+  return `/api/files/download?path=${encodeURIComponent(p)}`
+})
 
 const imageExtensions = /\.(jpe?g|png|gif|webp|bmp|svg)$/i
 const isImage = computed(() => imageExtensions.test(currentPath.value))
@@ -254,7 +260,11 @@ async function saveName() {
     return
   }
   try {
-    const r = await fetch(`/api/files/rename?path=${encodeURIComponent(currentPath.value)}`, {
+    const path = currentPath.value
+    const url = props.workspaceId
+      ? `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/rename?path=${encodeURIComponent(path)}`
+      : `/api/files/rename?path=${encodeURIComponent(path)}`
+    const r = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ new_name: newName }),
@@ -283,7 +293,11 @@ function cancelEditContent() {
 
 async function saveContent() {
   try {
-    const r = await fetch(`/api/files/content?path=${encodeURIComponent(currentPath.value)}`, {
+    const path = currentPath.value
+    const url = props.workspaceId
+      ? `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/content?path=${encodeURIComponent(path)}`
+      : `/api/files/content?path=${encodeURIComponent(path)}`
+    const r = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: editContent.value }),

@@ -1,10 +1,9 @@
-"""导出会话为 Markdown 文件工具"""
+"""导出会话为 Markdown 文件工具 - 写入当前会话 workspace"""
 from datetime import datetime
-from pathlib import Path
 
 from langchain.tools import Tool
 
-from app.api.files import AGENT_OUTPUTS_DIR
+from app.api.files import get_workspace_root
 
 
 def _render_history_to_markdown(messages) -> str:
@@ -27,7 +26,7 @@ def _render_history_to_markdown(messages) -> str:
 
 
 def create_export_session_tool(session_id: str):
-    """创建导出会话工具（闭包绑定 session_id）"""
+    """创建导出会话工具（闭包绑定 session_id）；导出到该会话 workspace。"""
 
     def export_session_to_md(**kwargs) -> str:
         from app.api.chat import _CHAT_HISTORY
@@ -36,16 +35,16 @@ def create_export_session_tool(session_id: str):
         if not history:
             return "当前会话无历史消息，无法导出。"
         md = _render_history_to_markdown(history)
-        root = Path(AGENT_OUTPUTS_DIR).resolve()
-        root.mkdir(parents=True, exist_ok=True)
+        ws_root = get_workspace_root(session_id)
         filename = f"session-{session_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-        filepath = root / filename
+        filename = filename.replace("..", "").replace("/", "")
+        filepath = ws_root / filename
         filepath.write_text(md, encoding="utf-8")
-        rel_path = str(filepath.relative_to(root)).replace("\\", "/")
-        return f"已导出到 {filename}。下载链接: /api/files/download?path={rel_path}"
+        rel = str(filepath.relative_to(ws_root)).replace("\\", "/")
+        return f"已导出到本会话工作区 {filename}。下载: /api/workspaces/{session_id}/files/download?path={rel}"
 
     return Tool(
         name="export_session_to_md",
-        description="导出当前会话为完整 markdown 文件。当用户说「导出为 .md」「导出对话」「保存为 markdown」「导出为完整 .md 文件」等时调用。无需参数。",
+        description="导出当前会话为完整 markdown 文件到本会话工作区。当用户说「导出为 .md」「导出对话」「保存为 markdown」等时调用。无需参数。",
         func=export_session_to_md,
     )

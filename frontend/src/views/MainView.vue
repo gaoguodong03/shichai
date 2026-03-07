@@ -30,13 +30,22 @@
     </nav>
 
     <!-- 中间列：当前模块的列表/摘要 -->
-    <aside class="w-64 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 overflow-hidden">
+    <aside class="w-80 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 overflow-hidden">
       <div class="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
         {{ middleColumnTitle }}
       </div>
       <div class="flex-1 overflow-y-auto">
-        <!-- Chat：统一会话列表（group 模式，1 DHA=chat 风格，2+=群聊） -->
+        <!-- Chat：单聊 + 群聊会话列表 -->
         <template v-if="currentModule === 'chat'">
+          <button
+            @click="enterSingleChat"
+            :class="[
+              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+              showSingleChat ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+            ]"
+          >
+            单聊
+          </button>
           <button
             @click="createNewGroupChat"
             :class="[
@@ -44,7 +53,7 @@
               showGroupCreateForm ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
             ]"
           >
-            + 新对话
+            + 新对话（群聊）
           </button>
           <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
           <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
@@ -55,7 +64,7 @@
             @click="selectGroupSession(s.id)"
             :class="[
               'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-              selectedGroupSessionId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              selectedGroupSessionId === s.id && !showSingleChat ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
             ]"
           >
             <div class="flex-1 min-w-0 text-left">
@@ -187,31 +196,42 @@
             {{ c.label }}
           </button>
         </template>
-        <!-- 文件系统 -->
+        <!-- 文件系统：当前选中会话的工作区 -->
         <template v-else-if="currentModule === 'files'">
-          <div class="flex gap-1 mb-1">
-            <button
-              class="flex-1 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
-              @click="createNewFile"
-            >
-              + 新建
-            </button>
-            <button
-              class="flex-1 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
-              @click="triggerImportFile"
-            >
-              ↑ 导入
-            </button>
-            <input
-              ref="importFileInputRef"
-              type="file"
-              multiple
-              class="hidden"
-              @change="onImportFileSelected"
-            />
+          <div v-if="!selectedGroupSessionId" class="px-3 py-4 text-sm text-gray-500">
+            请先在 Chat 中选择一个会话
           </div>
-          <div v-if="filesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <div v-else-if="!fileEntries.length && !currentFilePath" class="px-3 py-4 text-sm text-gray-500">暂无文件</div>
+          <template v-else>
+            <div class="flex flex-wrap gap-1 mb-1">
+              <button
+                class="flex-1 min-w-0 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
+                @click="createNewFile"
+              >
+                + 新建
+              </button>
+              <button
+                class="flex-1 min-w-0 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
+                @click="triggerImportFile"
+              >
+                ↑ 导入
+              </button>
+              <button
+                class="px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
+                title="刷新文件列表"
+                @click="fetchFiles(currentFilePath)"
+              >
+                🔄
+              </button>
+              <input
+                ref="importFileInputRef"
+                type="file"
+                multiple
+                class="hidden"
+                @change="onImportFileSelected"
+              />
+            </div>
+            <div v-if="filesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
+            <div v-else-if="!fileEntries.length && !currentFilePath" class="px-3 py-4 text-sm text-gray-500">该会话工作区暂无文件</div>
           <template v-else>
             <button
               v-if="currentFilePath"
@@ -256,15 +276,22 @@
               </div>
             </div>
           </template>
+          </template>
         </template>
       </div>
     </aside>
 
     <!-- 右侧列：主内容，默认 Chat -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Chat 模块：统一 group 会话（1 DHA=chat 风格，2+=群聊） -->
+      <!-- Chat 模块：单聊 或 群聊 -->
       <template v-if="currentModule === 'chat'">
-        <template v-if="showGroupCreateForm">
+        <template v-if="showSingleChat">
+          <ChatView
+            session-id="single-default"
+            session-title="单聊"
+          />
+        </template>
+        <template v-else-if="showGroupCreateForm">
           <GroupCreateView
             :dha-instances="dhaInstances"
             @created="onGroupCreated"
@@ -282,14 +309,14 @@
             :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
             :speak-mode="groupSessionDetail.speak_mode || 'auto'"
             :is-single-dha="(groupSessionDetail.dha_ids?.length || 0) <= 1"
-            @message-sent="fetchGroupSessionDetail"
+            @message-sent="onChatMessageSent"
             @speak-mode-changed="fetchGroupSessionDetail"
             @dha-added="fetchGroupSessionDetail"
           />
         </template>
         <template v-else>
           <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
-            <p>请在左侧选择会话，或新建对话</p>
+            <p>请在左侧选择「单聊」或「新对话（群聊）」或已有会话</p>
           </div>
         </template>
       </template>
@@ -315,13 +342,14 @@
         <AppSettingsView />
       </template>
       <!-- 文件系统：选中文件时预览/下载 -->
-      <template v-else-if="currentModule === 'files' && selectedId && selectedFileEntry && !selectedFileEntry.is_dir">
-        <FileDetailView :path="selectedId" @renamed="onFileRenamed" />
+      <template v-else-if="currentModule === 'files' && selectedId && selectedFileEntry && !selectedFileEntry.is_dir && selectedGroupSessionId">
+        <FileDetailView :workspace-id="selectedGroupSessionId" :path="selectedId" @renamed="onFileRenamed" />
       </template>
       <!-- 文件系统：选中目录或未选时显示提示 -->
       <template v-else-if="currentModule === 'files'">
         <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
-          <p v-if="selectedFileEntry?.is_dir">当前选中为目录，请在左侧继续浏览。</p>
+          <p v-if="!selectedGroupSessionId">请先在左侧 Chat 中选择一个会话，以查看该会话的工作区文件。</p>
+          <p v-else-if="selectedFileEntry?.is_dir">当前选中为目录，请在左侧继续浏览。</p>
           <p v-else>请在左侧选择文件以预览或下载。</p>
         </div>
       </template>
@@ -356,6 +384,7 @@ import FileDetailView from './FileDetailView.vue'
 import DHAView from './DHAView.vue'
 import GroupChatView from './GroupChatView.vue'
 import GroupCreateView from './GroupCreateView.vue'
+import ChatView from './ChatView.vue'
 
 const router = useRouter()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
@@ -402,6 +431,7 @@ const groupSessionDetail = ref<{
   speak_mode?: string
 } | null>(null)
 const showGroupCreateForm = ref(false)
+const showSingleChat = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
 const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
@@ -439,6 +469,7 @@ function onNavClick(item: { id: ModuleId }) {
   if (item.id === 'chat') {
     selectedGroupSessionId.value = null
     showGroupCreateForm.value = false
+    showSingleChat.value = false
     groupSessionDetail.value = null
     fetchGroupSessions()
     fetchDHA()
@@ -492,7 +523,21 @@ async function fetchGroupSessionDetail() {
   }
 }
 
+function onChatMessageSent() {
+  fetchGroupSessionDetail()
+  // 对话结束后刷新工作区文件列表，使新生成的文件直接出现
+  fetchFiles(currentFilePath.value)
+}
+
+function enterSingleChat() {
+  showSingleChat.value = true
+  selectedGroupSessionId.value = null
+  showGroupCreateForm.value = false
+  groupSessionDetail.value = null
+}
+
 function createNewGroupChat() {
+  showSingleChat.value = false
   selectedGroupSessionId.value = null
   showGroupCreateForm.value = true
   groupSessionDetail.value = null
@@ -500,6 +545,7 @@ function createNewGroupChat() {
 }
 
 function selectGroupSession(id: string) {
+  showSingleChat.value = false
   selectedGroupSessionId.value = id
   showGroupCreateForm.value = false
 }
@@ -591,13 +637,21 @@ async function fetchMCP() {
 }
 
 async function fetchFiles(path: string = '') {
+  const wsId = selectedGroupSessionId.value
+  if (!wsId) {
+    fileEntries.value = []
+    return
+  }
   filesLoading.value = true
   try {
-    const url = path ? `/api/files?path=${encodeURIComponent(path)}` : '/api/files'
+    const base = `/api/workspaces/${encodeURIComponent(wsId)}/files`
+    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
     const r = await fetch(url)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.entries) {
       fileEntries.value = j.data.entries
+    } else {
+      fileEntries.value = []
     }
   } finally {
     filesLoading.value = false
@@ -622,11 +676,13 @@ function onFileEntryClick(e: { name: string; path: string; is_dir: boolean }) {
 }
 
 async function renameFileFromList(e: { name: string; path: string; is_dir: boolean }) {
+  const wsId = selectedGroupSessionId.value
+  if (!wsId) return
   const current = e.name
   const next = window.prompt('重命名文件为：', current)
   if (!next || next.trim() === '' || next.trim() === current) return
   try {
-    const resp = await fetch(`/api/files/rename?path=${encodeURIComponent(e.path)}`, {
+    const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/files/rename?path=${encodeURIComponent(e.path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ new_name: next.trim() }),
@@ -648,9 +704,11 @@ async function renameFileFromList(e: { name: string; path: string; is_dir: boole
 }
 
 async function deleteFileFromList(e: { name: string; path: string; is_dir: boolean }) {
+  const wsId = selectedGroupSessionId.value
+  if (!wsId) return
   if (!window.confirm(`确定要删除文件「${e.name}」吗？此操作无法恢复。`)) return
   try {
-    const resp = await fetch(`/api/files/content?path=${encodeURIComponent(e.path)}`, {
+    const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/files/content?path=${encodeURIComponent(e.path)}`, {
       method: 'DELETE',
     })
     if (!resp.ok) {
@@ -700,6 +758,8 @@ function triggerImportFile() {
 const uploadApiBase = import.meta.env.DEV ? 'http://localhost:8000' : ''
 
 async function onImportFileSelected(ev: Event) {
+  const wsId = selectedGroupSessionId.value
+  if (!wsId) return
   const input = ev.target as HTMLInputElement
   const files = input.files
   if (!files?.length) return
@@ -711,7 +771,7 @@ async function onImportFileSelected(ev: Event) {
     const form = new FormData()
     form.append('file', file)
     try {
-      const url = `${uploadApiBase}/api/files/upload?path=${encodeURIComponent(path)}`
+      const url = `${uploadApiBase}/api/workspaces/${encodeURIComponent(wsId)}/files/upload${path ? `?path=${encodeURIComponent(path)}` : ''}`
       const r = await fetch(url, {
         method: 'POST',
         body: form,
@@ -740,10 +800,14 @@ async function onImportFileSelected(ev: Event) {
 }
 
 async function createNewFile() {
+  const wsId = selectedGroupSessionId.value
+  if (!wsId) return
   const name = window.prompt('请输入文件名（如 note.md）')
   if (!name?.trim()) return
   try {
-    const r = await fetch(`/api/files?path=${encodeURIComponent(currentFilePath.value)}`, {
+    const base = `/api/workspaces/${encodeURIComponent(wsId)}/files`
+    const url = currentFilePath.value ? `${base}?path=${encodeURIComponent(currentFilePath.value)}` : base
+    const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename: name.trim(), content: '' }),
@@ -767,6 +831,8 @@ watch(currentModule, (mod) => {
   if (mod === 'settings') selectedId.value = 'app'
   if (mod === 'files') {
     currentFilePath.value = ''
+    selectedId.value = null
+    selectedFileEntry.value = null
     fetchFiles()
   }
   if (mod === 'chat') {

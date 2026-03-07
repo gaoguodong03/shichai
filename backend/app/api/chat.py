@@ -24,7 +24,8 @@ from app.mcp.manager import get_mcp_manager, normalize_mcp_kwargs_for_call
 from app.skills.loader import SkillsLoader
 from app.api.settings import load_app_settings, get_mcp_servers_for_skill
 from app.tools.export_session import create_export_session_tool
-from app.tools.read_file import create_read_file_tool
+from app.tools.write_workspace_file import create_write_workspace_file_tool
+from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.call_api import call_api
 
@@ -471,16 +472,21 @@ async def chat_stream(request: ChatRequest):
     history_summary = _build_history_summary(session_id, history) if history else None
 
     # 阶段一：技能选择（仅 name+description）
-    # 如果前端已显式指定 skill_ids 且只有一个，直接使用该 skill，跳过第一次 LLM 选择
+    # 以下情况跳过 LLM 选技能，减少一次调用与延迟：
+    # - 前端已显式指定 skill_ids 且只有一个
+    # - 未指定但可选技能仅一个，直接使用
     if request.skill_ids and len(skills_for_selection) == 1:
         selected_skill_id = skills_for_selection[0].get("skill_id")
         logger.info(f"前端显式指定 skill_ids，仅一个技能，直接使用: {selected_skill_id}")
+    elif len(skills_for_selection) == 1:
+        selected_skill_id = skills_for_selection[0].get("skill_id")
+        logger.info(f"可选技能仅一个，直接使用: {selected_skill_id}，跳过 select_skill")
     else:
         t_skill_start = time.perf_counter()
         selected_skill_id = await select_skill(llm, request.message, skills_for_selection, history_summary)
         logger.info(f"[TIMING] select_skill: {time.perf_counter() - t_skill_start:.2f}s")
-        # 技能选择与 Agent 调用间隔，避免 DashScope 限流（如 qwen3-max 仅 1 RPS 时）导致第二次请求 429 触发重试
-        delay_sec = float(os.getenv("QWEN_REQUEST_DELAY_SEC", "1"))
+        # 技能选择与 Agent 调用间隔，仅当显式配置时生效（防 DashScope 限流时设 QWEN_REQUEST_DELAY_SEC=1）
+        delay_sec = float(os.getenv("QWEN_REQUEST_DELAY_SEC", "0"))
         if delay_sec > 0:
             await asyncio.sleep(delay_sec)
             logger.info(f"[TIMING] 固定延迟 sleep({delay_sec}): {delay_sec:.2f}s")
@@ -507,10 +513,15 @@ async def chat_stream(request: ChatRequest):
     # file-reader MCP 用于读取 PDF/DOC/Excel，始终加入（技能过滤时可能被排除）
     file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
     tool_names = {t.name for t in tools}
-    extra_tools = [create_export_session_tool(session_id), create_read_file_tool(), call_api]
+    extra_tools = [
+        create_export_session_tool(session_id),
+        create_write_workspace_file_tool(session_id),
+        call_api,
+    ]
     if selected_skill_id:
         extra_tools.append(create_run_skill_script_tool(selected_skill_id))
     tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
+    tools = wrap_filesystem_tools(tools, session_id)
     logger.info(f"最终可用工具数量: {len(tools)}")
 
     skill_full_content = ""
@@ -647,15 +658,6 @@ async def chat_stream(request: ChatRequest):
                             for tco in aimsg.tool_calls:
                                 tool_name = tco.get("name") or tco.get("id", "")
                                 args = tco.get("args") or {}
-                                # read_file（内置工具）：展示层将 __arg1 显示为 path，方便理解
-                                if (
-                                    isinstance(args, dict)
-                                    and tool_name == "read_file"
-                                    and "__arg1" in args
-                                    and "path" not in args
-                                ):
-                                    args = dict(args)
-                                    args["path"] = args.pop("__arg1")
                                 # 对 MCP 工具使用与 manager 相同的参数归一化逻辑，
                                 # 确保前端展示的就是「最终发给 MCP 的参数」（含 __arg1 -> 首参 等通用映射）。
                                 if isinstance(args, dict) and "_" in tool_name:
@@ -985,9 +987,8 @@ async def update_session_title(session_id: str, body: SessionTitleBody):
 
 
 def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, str]:
-    """将会话导出为 markdown 文件，返回 (relative_path, download_url)"""
-    from pathlib import Path
-    from app.api.files import AGENT_OUTPUTS_DIR
+    """将会话导出为 markdown 文件到该会话 workspace，返回 (workspace 内相对路径, download_url)"""
+    from app.api.files import get_workspace_root
 
     history = _CHAT_HISTORY.get(session_id, [])
     if not history:
@@ -1002,16 +1003,15 @@ def _export_session_to_md(session_id: str, filename: str = None) -> tuple[str, s
         lines.append(content.strip())
         lines.append("\n\n")
     md = "".join(lines)
-    root = Path(AGENT_OUTPUTS_DIR).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    ws_root = get_workspace_root(session_id)
     fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
     fn = fn.replace("..", "").replace("/", "")
     if not fn.endswith(".md"):
         fn += ".md"
-    filepath = root / fn
+    filepath = ws_root / fn
     filepath.write_text(md, encoding="utf-8")
-    rel = str(filepath.relative_to(root)).replace("\\", "/")
-    return rel, f"/api/files/download?path={rel}"
+    rel = str(filepath.relative_to(ws_root)).replace("\\", "/")
+    return rel, f"/api/workspaces/{session_id}/files/download?path={rel}"
 
 
 @router.post("/sessions/{session_id}/export")
