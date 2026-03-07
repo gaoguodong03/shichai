@@ -686,6 +686,7 @@ _SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
     "xlsx": ["filesystem"],
     "math-assistant": ["calculator"],
     "group-host": ["filesystem"],
+    "seminar-companion": [],
     "browser-playwright": ["playwright-mcp"],
     "session-export": [],
     "default": [],

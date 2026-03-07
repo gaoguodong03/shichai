@@ -185,10 +185,10 @@
           <textarea
             ref="inputTextareaRef"
             v-model="inputMessage"
-            placeholder="输入消息...（Enter 换行，Ctrl+Enter 发送）"
+            placeholder="输入消息...（Enter 换行，Cmd+空格 发送）"
             :style="inputAreaHeightPx ? { height: inputAreaHeightPx + 'px' } : undefined"
             class="chat-input-textarea w-full min-h-[2.5rem] max-h-[40rem] resize-y px-4 py-2 border-0 focus:outline-none focus:ring-0"
-            @keydown.enter.prevent="onInputKeydown"
+            @keydown="onInputKeydown"
           />
         </div>
         <button
@@ -399,14 +399,16 @@ function onResizeEnd() {
   document.removeEventListener('mouseup', onResizeEnd)
 }
 
-/** 多行输入：Enter 换行，Ctrl/Cmd+Enter 发送 */
+/** 多行输入：Enter 换行，Cmd+Space 发送 */
 function onInputKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Enter') return
-  if (e.ctrlKey || e.metaKey) {
+  if (e.key === ' ' && e.metaKey) {
+    e.preventDefault()
     sendMessage()
     return
   }
-  // 纯 Enter：在光标处插入换行（已 .prevent 故需手动插入）
+  if (e.key !== 'Enter') return
+  e.preventDefault()
+  // 纯 Enter：在光标处插入换行
   const ta = inputTextareaRef.value
   if (!ta) return
   const start = ta.selectionStart

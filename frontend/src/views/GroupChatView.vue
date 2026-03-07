@@ -265,7 +265,7 @@
               </div>
             </div>
             <div class="flex-1 min-h-0 overflow-auto p-3">
-              <div v-if="workspaceFileLoading" class="text-xs text-gray-500">加载中...</div>
+              <div v-if="workspaceFileLoading && !workspaceSelectedIsImage" class="text-xs text-gray-500">加载中...</div>
               <div v-else-if="workspaceFileError" class="text-xs text-red-600">{{ workspaceFileError }}</div>
               <div v-else-if="workspaceEditing && workspaceSelectedIsText" class="flex flex-col gap-2 h-full">
                 <textarea
@@ -274,12 +274,25 @@
                   spellcheck="false"
                 />
               </div>
+              <!-- 图片预览 -->
+              <img
+                v-else-if="workspaceSelectedEntry && workspaceSelectedIsImage"
+                :src="workspacePreviewDownloadUrl"
+                :alt="workspaceSelectedEntry.name"
+                class="max-w-full h-auto rounded border border-gray-200"
+              />
+              <!-- DOC/DOCX 预览 -->
+              <div v-else-if="workspaceSelectedIsDocx" class="flex-1 min-h-0 flex flex-col">
+                <div v-if="workspaceFileLoading" class="text-xs text-gray-500 py-4">加载中...</div>
+                <div v-else-if="workspaceDocxError" class="text-xs text-red-600 py-2">{{ workspaceDocxError }}</div>
+                <div v-show="!workspaceFileLoading && !workspaceDocxError" ref="workspaceDocxContainerRef" class="docx-preview overflow-auto text-left" />
+              </div>
               <pre
                 v-else-if="workspaceFileContent"
                 class="text-xs text-gray-800 whitespace-pre-wrap break-words font-mono"
               >{{ workspaceFileContent }}</pre>
               <div v-else class="text-xs text-gray-400">
-                请选择左侧的一个文本文件以在此处预览内容。
+                请选择左侧文件以预览（支持文本、图片、DOC/DOCX）。
               </div>
             </div>
           </div>
@@ -300,11 +313,11 @@
         <div class="flex-1 flex flex-col gap-1">
           <textarea
             v-model="inputText"
-            placeholder="输入消息参与讨论..."
+            placeholder="输入消息参与讨论...（Cmd+空格 发送）"
             rows="2"
             class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             :disabled="isStreaming"
-            @keydown.enter.exact.prevent="sendMessage"
+            @keydown="onChatInputKeydown"
           />
           <div class="flex items-center gap-3 flex-wrap text-xs">
             <button
@@ -511,6 +524,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
+import { renderAsync } from 'docx-preview'
 
 const props = withDefaults(
   defineProps<{
@@ -782,16 +796,50 @@ async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolea
   workspaceFileLoading.value = true
   workspaceFileError.value = ''
   workspaceFileContent.value = ''
-  try {
-    const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/download?path=${encodeURIComponent(e.path)}`
-    // 简单按扩展名判断是否作为文本预览
-    const lower = e.name.toLowerCase()
-    const textExts = ['.md', '.txt', '.json', '.yaml', '.yml', '.log', '.csv']
-    const isText = textExts.some((ext) => lower.endsWith(ext))
-    if (!isText) {
-      workspaceFileContent.value = '该文件类型暂不支持在线预览，请点击「在新标签打开」查看。'
-      return
+  workspaceDocxError.value = ''
+  const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/download?path=${encodeURIComponent(e.path)}`
+  const lower = e.name.toLowerCase()
+
+  // 图片：仅需展示，无需请求内容
+  if (imageExtensions.test(e.name)) {
+    workspaceFileLoading.value = false
+    return
+  }
+
+  // DOC/DOCX：拉取 blob 后用 docx-preview 渲染
+  if (docxExtensions.test(e.name)) {
+    try {
+      const r = await fetch(url, { cache: 'no-store' })
+      if (!r.ok) {
+        workspaceFileError.value = '预览失败'
+        return
+      }
+      const blob = await r.blob()
+      await nextTick()
+      const container = workspaceDocxContainerRef.value
+      if (!container) {
+        workspaceFileLoading.value = false
+        return
+      }
+      container.innerHTML = ''
+      await renderAsync(blob, container)
+    } catch {
+      workspaceDocxError.value = '预览失败，请下载查看'
+    } finally {
+      workspaceFileLoading.value = false
     }
+    return
+  }
+
+  // 文本类：按文本拉取
+  const textExts = ['.md', '.txt', '.json', '.yaml', '.yml', '.log', '.csv']
+  const isText = textExts.some((ext) => lower.endsWith(ext))
+  if (!isText) {
+    workspaceFileContent.value = '该文件类型暂不支持在线预览，请点击「在新标签打开」查看。'
+    workspaceFileLoading.value = false
+    return
+  }
+  try {
     const r = await fetch(url, { cache: 'no-store' })
     if (!r.ok) {
       workspaceFileError.value = '预览失败'
@@ -813,6 +861,25 @@ const workspaceSelectedIsText = computed(() => {
   const textExts = ['.md', '.txt', '.json', '.yaml', '.yml', '.log', '.csv']
   return textExts.some((ext) => lower.endsWith(ext))
 })
+
+const workspacePreviewDownloadUrl = computed(() => {
+  const e = workspaceSelectedEntry.value
+  if (!e || e.is_dir) return ''
+  return `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/download?path=${encodeURIComponent(e.path)}`
+})
+const imageExtensions = /\.(jpe?g|png|gif|webp|bmp|svg)$/i
+const workspaceSelectedIsImage = computed(() => {
+  const e = workspaceSelectedEntry.value
+  return !!e && !e.is_dir && imageExtensions.test(e.name)
+})
+const docxExtensions = /\.docx?$/i
+const workspaceSelectedIsDocx = computed(() => {
+  const e = workspaceSelectedEntry.value
+  return !!e && !e.is_dir && docxExtensions.test(e.name)
+})
+
+const workspaceDocxContainerRef = ref<HTMLElement | null>(null)
+const workspaceDocxError = ref('')
 
 function startWorkspaceEdit() {
   if (!workspaceSelectedIsText.value || !workspaceSelectedEntry.value) return
@@ -1101,6 +1168,13 @@ function renderMarkdown(text: string) {
   }
 }
 
+function onChatInputKeydown(e: KeyboardEvent) {
+  if (e.key === ' ' && e.metaKey) {
+    e.preventDefault()
+    sendMessage()
+  }
+}
+
 async function sendMessage() {
   const msg = inputText.value.trim()
   const hasOverride = !!overrideNextSpeaker.value
@@ -1217,5 +1291,8 @@ watch(
 }
 .chat-markdown :deep(p:last-child) {
   margin-bottom: 0;
+}
+.docx-preview :deep(*) {
+  max-width: 100%;
 }
 </style>
