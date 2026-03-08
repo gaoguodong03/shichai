@@ -557,6 +557,19 @@ onMounted(() => {
       ro.observe(ta)
     }
   })
+  // #region agent log
+  nextTick(() => {
+    const html = document.documentElement
+    const rootVarText = html ? getComputedStyle(html).getPropertyValue('--color-text').trim() : ''
+    const mainEl = document.querySelector('main.workspace-main')
+    const mainColor = mainEl ? getComputedStyle(mainEl).color : ''
+    const paneEl = document.querySelector('.workspace-pane')
+    const paneColor = paneEl ? getComputedStyle(paneEl).color : ''
+    const primaryEl = document.querySelector('.workspace-pane .text-primary')
+    const primaryColor = primaryEl ? getComputedStyle(primaryEl).color : ''
+    fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1338a6'},body:JSON.stringify({sessionId:'1338a6',location:'ChatView.vue:onMounted',message:'workbench color probe',data:{rootVarText,mainColor,mainHasEl:!!mainEl,paneColor,paneHasEl:!!paneEl,primaryColor,primaryHasEl:!!primaryEl},timestamp:Date.now()})}).catch(()=>{})
+  })
+  // #endregion
 })
 
 /** 从 content 中提取所有工具调用 JSON 块（```json { "action": "tool_call", ... } ```），返回 { toolCalls, rest } */

@@ -1,7 +1,7 @@
 <template>
-  <div class="workspace-pane flex flex-col h-full bg-page">
+  <div class="workspace-pane flex flex-col flex-1 min-h-0 bg-page">
     <header class="bg-card px-4 py-2.5 flex items-center justify-between gap-3 flex-shrink-0">
-      <h1 class="text-lg font-semibold text-primary truncate min-w-0">{{ sessionTitle }}</h1>
+      <h1 class="text-lg font-semibold text-primary truncate min-w-0">{{ sessionTitle || '群聊' }}</h1>
       <div class="flex items-center gap-2 flex-shrink-0">
         <button
           type="button"
@@ -560,9 +560,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
-import MarkdownIt from 'markdown-it'
-import { renderAsync } from 'docx-preview'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
+// markdown-it / docx-preview 均按需动态导入，避免组件模块加载时即报错导致整块空白
 
 const props = withDefaults(
   defineProps<{
@@ -915,7 +914,7 @@ async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolea
     return
   }
 
-  // DOC/DOCX：拉取 blob 后用 docx-preview 渲染
+  // DOC/DOCX：拉取 blob 后用 docx-preview 渲染（按需动态导入）
   if (docxExtensions.test(e.name)) {
     try {
       const r = await fetch(url, { cache: 'no-store' })
@@ -931,6 +930,7 @@ async function loadWorkspaceFile(e: { name: string; path: string; is_dir: boolea
         return
       }
       container.innerHTML = ''
+      const { renderAsync } = await import('docx-preview')
       await renderAsync(blob, container)
     } catch {
       workspaceDocxError.value = '预览失败，请下载查看'
@@ -1368,18 +1368,37 @@ function parseMessageContent(content: string): ParsedSegment[] {
   return segments.length ? segments : [{ type: 'text', text }]
 }
 
-const md = new MarkdownIt({ breaks: true })
+/** markdown-it 实例：挂载后按需加载，避免顶层 import 导致模块加载失败、右侧空白 */
+const mdRef = ref<{ render: (s: string) => string } | null>(null)
+onMounted(() => {
+  import('markdown-it').then((M) => {
+    const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
+    mdRef.value = new Md({ breaks: true })
+  }).catch(() => {})
+})
+
+function escapeHtml(s: string) {
+  if (!s) return ''
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 /** 去掉末尾空行，并把连续换行压成单个，减少段落间空行 */
 function normalizeContent(s: string) {
   if (!s) return ''
   return s.trimEnd().replace(/\n{2,}/g, '\n')
 }
+
 function renderMarkdown(text: string) {
   if (!text) return ''
+  if (!mdRef.value) return escapeHtml(text)
   try {
-    return md.render(normalizeContent(text))
+    return mdRef.value.render(normalizeContent(text))
   } catch {
-    return text
+    return escapeHtml(text)
   }
 }
 

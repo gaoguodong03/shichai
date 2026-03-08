@@ -295,3 +295,63 @@
   --color-input-bg: #0d0d0d;
   --color-border: #333333;
 }
+
+/* 工作台右侧内容区：仅用主题变量，不写死颜色 */
+.workspace-right-content {
+  background-color: var(--color-page);
+  color: var(--color-text);
+}
+
+/* 工作台主区强制文字可见（与变量同文件，避免统一到单文件后顺序导致不生效） */
+main {
+  color: var(--color-text, #000000);
+  background-color: var(--color-page, #f2f2f7);
+}
+.dark main {
+  color: var(--color-text, #ffffff);
+  background-color: var(--color-page, #000000);
+}
+main.workspace-main {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  color: #000000 !important;
+  font-size: 16px !important;
+}
+main.workspace-main > * {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+main.workspace-main .text-muted {
+  color: #8a8a8e !important;
+}
+.dark main.workspace-main {
+  color: #ffffff !important;
+}
+.dark main.workspace-main .text-muted {
+  color: #8e8e93 !important;
+}
+.workspace-pane {
+  color: #000000 !important;
+  font-size: 16px !important;
+}
+.workspace-pane .text-muted {
+  color: #8a8a8e !important;
+}
+.dark .workspace-pane {
+  color: #ffffff !important;
+}
+.dark .workspace-pane .text-muted {
+  color: #8e8e93 !important;
+}
+.dark .workspace-placeholder p {
+  color: #e0e0e0 !important;
+}
+.text-primary { color: var(--color-text, #000000); }
+.text-muted { color: var(--color-text-muted, #8a8a8e); }
+.dark .text-primary { color: var(--color-text, #ffffff); }
+.dark .text-muted { color: var(--color-text-muted, #8e8e93); }

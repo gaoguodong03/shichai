@@ -390,7 +390,18 @@ async def create_group_session(body: GroupSessionCreate):
 async def get_group_session(group_session_id: str):
     """获取群聊详情与消息"""
     meta = _load_group_meta()
-    if group_session_id not in meta:
+    # #region agent log
+    _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-1338a6.log"
+    _found = group_session_id in meta
+    try:
+        _log_path.parent.mkdir(parents=True, exist_ok=True)
+        _log_path.open("a").write(
+            json.dumps({"sessionId": "1338a6", "location": "group_chat.get_group_session", "message": "get_group_session", "data": {"group_session_id": group_session_id, "found": _found}, "timestamp": int(time.time() * 1000), "hypothesisId": "H1"}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
+    if not _found:
         raise HTTPException(status_code=404, detail="Group session not found")
     m = meta[group_session_id]
     messages = _load_group_history(group_session_id)

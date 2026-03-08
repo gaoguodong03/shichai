@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen bg-page">
+  <div class="flex flex-1 min-h-0 min-w-0 bg-page">
     <!-- 最左侧：导航（图标 + 名称） -->
     <nav class="w-16 flex-shrink-0 flex flex-col bg-sidebar py-3">
       <div class="px-2 space-y-0.5">
@@ -218,40 +218,19 @@
       </div>
     </aside>
 
-    <!-- 右侧列：主内容（工作台时加 workspace-main 便于强制文字色） -->
-    <main
-      :class="['flex-1 flex flex-col min-w-0 overflow-hidden bg-page text-primary', currentModule === 'workspace' && 'workspace-main']"
-    >
-      <!-- 工作台：单聊 / 新建会话 / 群聊 -->
-      <template v-if="currentModule === 'workspace'">
-        <template v-if="showSingleChat">
-          <ChatView
-            session-id="single-default"
-            session-title="单聊"
-          />
-        </template>
-        <template v-else-if="selectedGroupSessionId && groupSessionDetail">
-          <GroupChatView
-            :group-session-id="groupSessionDetail.id"
-            :session-title="groupSessionDetail.title"
-            :messages="groupSessionDetail.messages || []"
-            :dha-map="groupSessionDetail.dha_map || {}"
-            :dha-ids="groupSessionDetail.dha_ids || []"
-            :all-dha-instances="dhaInstances"
-            :leader-dha-id="groupSessionDetail.leader_dha_id || ''"
-            :speak-mode="groupSessionDetail.speak_mode || 'auto'"
-            :is-single-dha="(groupSessionDetail.dha_ids?.length || 0) <= 1"
-            @message-sent="onChatMessageSent"
-            @speak-mode-changed="fetchGroupSessionDetail"
-            @dha-added="fetchGroupSessionDetail"
-          />
-        </template>
-        <template v-else>
-          <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4 workspace-placeholder">
-            <p style="color: #1a1a1a">请选择左侧会话，或点击「新建会话」直接开始单聊（可稍后邀请 DHA 变为群聊）</p>
-          </div>
-        </template>
-      </template>
+    <!-- 右侧列：主内容。工作台时用单一包裹层保证占满高度且内容可见 -->
+    <main class="main-right w-0 flex-1 flex flex-col min-h-0 overflow-hidden bg-page text-primary">
+      <!-- 工作台右侧：由 WorkspaceContent 统一负责单聊/群聊/占位与拉取 -->
+      <WorkspaceContent
+        v-if="currentModule === 'workspace'"
+        ref="workspaceContentRef"
+        :show-single-chat="showSingleChat"
+        :selected-group-session-id="selectedGroupSessionId"
+        :dha-instances="dhaInstances"
+        @message-sent="onChatMessageSent"
+        @speak-mode-changed="onGroupChatRefresh"
+        @dha-added="onGroupChatRefresh"
+      />
       <!-- 资源中心：智能体 / 技能 / 工具 -->
       <template v-else-if="currentModule === 'resource'">
         <template v-if="resourceSubModule === 'dha'">
@@ -306,6 +285,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'
+
 import SkillDetailView from './SkillDetailView.vue'
 import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
@@ -314,6 +294,7 @@ import AppSettingsView from './AppSettingsView.vue'
 import ThemeSettingsView from './ThemeSettingsView.vue'
 import DHAView from './DHAView.vue'
 import GroupChatView from './GroupChatView.vue'
+import WorkspaceContent from './WorkspaceContent.vue'
 import ChatView from './ChatView.vue'
 import { useTheme } from '@/composables/useTheme'
 
@@ -359,15 +340,6 @@ const settingsCategories = [
 const selectedGroupSessionId = ref<string | null>(null)
 const groupSessions = ref<{ id: string; title: string; updated_at: string; dha_ids?: string[]; speak_mode?: string }[]>([])
 const groupSessionsLoading = ref(false)
-const groupSessionDetail = ref<{
-  id: string
-  title: string
-  messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
-  dha_map: Record<string, { name?: string; role?: string }>
-  dha_ids: string[]
-  leader_dha_id?: string
-  speak_mode?: string
-} | null>(null)
 const creatingSession = ref(false)
 const showSingleChat = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
@@ -397,9 +369,8 @@ function onNavClick(item: { id: ModuleId }) {
   currentModule.value = item.id
   selectedId.value = null
   if (item.id === 'workspace') {
-    selectedGroupSessionId.value = null
+    // 不在此处清空 selectedGroupSessionId，避免与 fetchGroupSessions 的「选第一个」竞态导致 groupDetail 被反复清空、右侧空白
     showSingleChat.value = false
-    groupSessionDetail.value = null
     fetchGroupSessions()
     fetchDHA()
   }
@@ -430,8 +401,11 @@ async function fetchGroupSessions() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.sessions) {
       groupSessions.value = j.data.sessions
-      // 无选中且未在新建时，默认打开第一个 Group
-      if (!selectedGroupSessionId.value && groupSessions.value.length > 0) {
+      const current = selectedGroupSessionId.value
+      const ids = groupSessions.value.map((s) => s.id)
+      if (current && !ids.includes(current)) {
+        selectedGroupSessionId.value = groupSessions.value.length > 0 ? groupSessions.value[0].id : null
+      } else if (!current && groupSessions.value.length > 0) {
         selectedGroupSessionId.value = groupSessions.value[0].id
       }
     }
@@ -440,28 +414,17 @@ async function fetchGroupSessions() {
   }
 }
 
-async function fetchGroupSessionDetail() {
-  const id = selectedGroupSessionId.value
-  if (!id) return
-  try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`)
-    const j = await r.json()
-    if (j.status === 'ok' && j.data) {
-      groupSessionDetail.value = j.data
-    }
-  } catch {
-    groupSessionDetail.value = null
-  }
-}
-
+const workspaceContentRef = ref<{ refresh: () => void } | null>(null)
 function onChatMessageSent() {
-  fetchGroupSessionDetail()
+  workspaceContentRef.value?.refresh()
+}
+function onGroupChatRefresh() {
+  workspaceContentRef.value?.refresh()
 }
 
 function enterSingleChat() {
   showSingleChat.value = true
   selectedGroupSessionId.value = null
-  groupSessionDetail.value = null
 }
 
 async function createNewSession() {
@@ -478,7 +441,6 @@ async function createNewSession() {
       showSingleChat.value = false
       selectedGroupSessionId.value = j.data.id
       await fetchGroupSessions()
-      await fetchGroupSessionDetail()
     } else {
       alert(j.detail || '新建会话失败')
     }
@@ -499,7 +461,6 @@ async function deleteGroupSession(id: string) {
   if (j.status === 'ok') {
     if (selectedGroupSessionId.value === id) {
       selectedGroupSessionId.value = null
-      groupSessionDetail.value = null
     }
     fetchGroupSessions()
   } else {
@@ -519,9 +480,7 @@ async function renameGroupSession(id: string, currentTitle: string) {
   const j = await r.json()
   if (j.status === 'ok') {
     fetchGroupSessions()
-    if (groupSessionDetail.value?.id === id) {
-      groupSessionDetail.value = { ...groupSessionDetail.value, title: next.trim() }
-    }
+    if (selectedGroupSessionId.value === id) workspaceContentRef.value?.refresh()
   } else {
     alert(j.detail || '重命名失败')
   }
@@ -602,15 +561,6 @@ watch(resourceSubModule, (sub) => {
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()
 })
-
-watch(selectedGroupSessionId, (id) => {
-  if (id) {
-    fetchGroupSessionDetail()
-  } else {
-    groupSessionDetail.value = null
-  }
-}, { immediate: true })
-
 
 // 初始加载：切到对应模块时再请求数据
 </script>
