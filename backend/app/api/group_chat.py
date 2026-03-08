@@ -522,9 +522,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     # 上一发言人（用于主持人/领导人判断 task_done；排除主持人本人，只计参与讨论的 DHA）
     last_speaker_dha_id = None
-    for m in reversed(messages):
-        if m.get("role") == "assistant" and m.get("dha_id") and m.get("dha_id") != leader_dha_id:
-            last_speaker_dha_id = m.get("dha_id")
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant" and msg.get("dha_id") and msg.get("dha_id") != leader_dha_id:
+            last_speaker_dha_id = msg.get("dha_id")
             break
 
     # 讨论目标：取首条用户消息
@@ -538,7 +538,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     app_settings = load_app_settings()
     extra_system_prompt = app_settings.get("system_prompt") or ""
-    speak_mode = m.get("speak_mode", "auto")  # auto：主持人直接推进；非 auto：主持人先说建议，等用户选人后再发
+    # speak_mode 从会话 meta 读取（m 为 meta[group_session_id]），manual 时仅主持人给建议并结束，等用户选人/改提示词后再发
+    speak_mode = m.get("speak_mode", "auto")
 
     import json as json_module
 
@@ -636,6 +637,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _save_group_history(group_session_id, messages)
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": suggested}
+                # If available, include next_prompt to help frontend fill input for next DHA
+                if decision is not None and isinstance(decision, dict) and decision.get("next_prompt"):
+                    end_data["next_prompt"] = decision["next_prompt"]
                 yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                 return
             else:
@@ -685,6 +689,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                    # auto 模式下：每次 DHA（非主持人）发言前暂停，等待用户确认；给该 DHA 的提示词已放在 host_msg.next_prompt 中供前端展示
+                    if speak_mode == "auto" and not single_dha_mode and next_speaker in dha_ids:
+                        end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker}
+                        if host_msg.get("next_prompt"):
+                            end_data["next_prompt"] = host_msg["next_prompt"]
+                        yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
+                        return
 
             while next_speaker and next_speaker in dha_ids:
                 dha = dha_map.get(next_speaker)
@@ -886,6 +897,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         consecutive_same_dha += 1
                 else:
                     consecutive_same_dha = 0
+                # auto 模式下：DHA 发言后主持人已给出下一发言人，暂停等待用户确认并把该 DHA 的提示词展示在「下一 DHA 提示词」中
+                if speak_mode == "auto" and next_speaker and next_speaker in dha_ids:
+                    end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker}
+                    if host_msg.get("next_prompt"):
+                        end_data["next_prompt"] = host_msg["next_prompt"]
+                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
+                    return
 
             if next_speaker == "end":
                 yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'discussion_ended': True})}\n\n"

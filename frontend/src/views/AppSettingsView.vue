@@ -6,22 +6,6 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-6">
       <div v-if="loading" class="text-sm text-muted">加载中...</div>
       <template v-else>
-        <!-- 模型选择 -->
-        <section class="space-y-4">
-          <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">模型选择</h2>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">默认 LLM</label>
-          <select
-            v-model="form.default_llm"
-            class="w-full max-w-xs px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-          >
-            <option v-for="(meta, id) in llmProviders" :key="id" :value="id">
-              {{ meta.label || id }}
-            </option>
-          </select>
-          <p class="mt-1 text-xs text-muted">需在 .env 中配置对应 provider 的 API Key（api_key_env）。</p>
-          </div>
-        </section>
         <!-- 系统提示词 -->
         <section class="space-y-4">
           <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">系统提示词</h2>
@@ -57,12 +41,7 @@ import { ref, onMounted } from 'vue'
 const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
-const form = ref({ default_llm: 'qwen', system_prompt: '' })
-const llmProviders = ref<Record<string, { label: string }>>({
-  qwen: { label: 'Qwen（通义千问）' },
-  jeniya: { label: 'Jeniya（GPT 兼容）' },
-})
-
+const form = ref({ system_prompt: '' })
 
 async function load() {
   loading.value = true
@@ -70,18 +49,7 @@ async function load() {
     const r = await fetch('/api/settings/app')
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
-      form.value = {
-        default_llm: j.data.default_llm ?? 'qwen',
-        system_prompt: j.data.system_prompt ?? '',
-      }
-      if (j.data.llm_providers && Object.keys(j.data.llm_providers).length > 0) {
-        llmProviders.value = Object.fromEntries(
-          Object.entries(j.data.llm_providers).map(([k, v]: [string, any]) => [
-            k,
-            { label: v.model ? `${k} (${v.model})` : k },
-          ])
-        )
-      }
+      form.value = { system_prompt: j.data.system_prompt ?? '' }
     }
   } finally {
     loading.value = false
@@ -95,7 +63,7 @@ async function save() {
     const r = await fetch('/api/settings/app', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form.value),
+      body: JSON.stringify({ system_prompt: form.value.system_prompt }),
     })
     const j = await r.json()
     if (j.status === 'ok') {

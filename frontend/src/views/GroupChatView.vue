@@ -313,7 +313,7 @@
             </label>
             <textarea
               v-model="inputText"
-              placeholder="主持人返回后自动填充，可编辑后确认"
+              placeholder="每次 DHA 发言前自动填充本轮提示词，可编辑后点「确认并继续」"
               rows="2"
               class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
               :disabled="isStreaming"
@@ -348,7 +348,7 @@
           <button
             type="button"
             class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            :disabled="isStreaming || (!canSend)"
+            :disabled="isStreaming || (!canSend && speakMode !== 'auto')"
             @click="sendMessage"
             title="Cmd+空格"
           >
@@ -1483,15 +1483,23 @@ async function sendMessage() {
                 scrollToBottom()
               }
             } catch (_) {}
-          } else if (eventType === 'end' && dataStr) {
-            streamingPhase.value = ''
-            try {
-              const endData = JSON.parse(dataStr)
-              if (endData.waiting_for_user && endData.suggested_next_speaker != null && props.speakMode === 'auto') {
-                pendingAutoConfirmSpeaker.value = endData.suggested_next_speaker
-              }
-            } catch (_) {}
-          }
+            } else if (eventType === 'end' && dataStr) {
+              streamingPhase.value = ''
+              try {
+                const endData = JSON.parse(dataStr)
+                // pause and fill next speaker and prompt if provided
+                if (endData.waiting_for_user && endData.suggested_next_speaker != null) {
+                  overrideNextSpeaker.value = endData.suggested_next_speaker
+                }
+                if (endData.next_prompt) {
+                  inputText.value = endData.next_prompt
+                }
+                // clear any pending auto-confirm to avoid auto-send
+                if (endData.suggested_next_speaker != null) {
+                  pendingAutoConfirmSpeaker.value = null
+                }
+              } catch (_) {}
+            }
         }
       }
     }
@@ -1501,11 +1509,11 @@ async function sendMessage() {
   } finally {
     isStreaming.value = false
     streamingPhase.value = ''
+    // 自动模式下暂停，等待用户确认 next_prompt 后手动发送
     if (pendingAutoConfirmSpeaker.value != null && props.speakMode === 'auto') {
       const next = pendingAutoConfirmSpeaker.value
       pendingAutoConfirmSpeaker.value = null
       overrideNextSpeaker.value = next
-      nextTick(() => sendMessage())
     }
   }
 }
@@ -1513,6 +1521,7 @@ async function sendMessage() {
 async function onAutoSwitchChange(e: Event) {
   const target = e.target as HTMLInputElement
   const next = target.checked ? 'auto' : 'manual'
+  const wasAuto = props.speakMode === 'auto'
   try {
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}`, {
       method: 'PUT',
@@ -1522,6 +1531,53 @@ async function onAutoSwitchChange(e: Event) {
     const j = await r.json()
     if (j.status === 'ok') {
       emit('speak-mode-changed')
+      // 从自动切换到手动时，向后端发送消息让主持人返回并暂停
+      if (wasAuto && next === 'manual') {
+        isStreaming.value = true
+        streamingPhase.value = '正在切换模式…'
+        try {
+          const res = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: '' }),
+          })
+          if (res.ok) {
+            const reader = res.body?.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ''
+            if (reader) {
+              while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+                buffer += decoder.decode(value, { stream: true })
+                const parts = buffer.split('\n\n')
+                buffer = parts.pop() || ''
+                for (const block of parts) {
+                  if (!block.startsWith('event: ')) continue
+                  const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+                  const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
+                  if (eventType === 'message' && dataStr) {
+                    try {
+                      const data = JSON.parse(dataStr)
+                      if (data && data.content) {
+                        displayedMessages.value = [...displayedMessages.value, data]
+                        if (data.next_prompt) {
+                          inputText.value = data.next_prompt
+                        }
+                        scrollToBottom()
+                      }
+                    } catch {}
+                  } else if (eventType === 'end') {
+                    streamingPhase.value = ''
+                  }
+                }
+              }
+            }
+          }
+        } finally {
+          isStreaming.value = false
+        }
+      }
     } else {
       target.checked = !target.checked
     }

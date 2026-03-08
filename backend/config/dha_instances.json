@@ -61,31 +61,6 @@
     "is_leader": false
   },
   {
-    "dha_id": "dha-e6308a0e",
-    "name": "默认主持人",
-    "role": "负责决定下一个发言人是谁",
-    "system_prompt": "",
-    "skill_ids": [
-      "default"
-    ],
-    "mcp_server_ids": [],
-    "is_leader": false
-  },
-  {
-    "dha_id": "dha-80c203d7",
-    "name": "群聊主持人",
-    "role": "负责主持会议",
-    "system_prompt": "",
-    "skill_ids": [
-      "group-host"
-    ],
-    "mcp_server_ids": [
-      "filesystem"
-    ],
-    "is_leader": false,
-    "llm_provider_id": ""
-  },
-  {
     "dha_id": "dha-440b26f8",
     "name": "图片生成负责人",
     "role": "负责生成图标",
@@ -105,19 +80,11 @@
     "role": "负责生成文字内容",
     "system_prompt": "",
     "skill_ids": [
-      "data-report",
-      "article-review",
       "blog-write",
       "news-summary",
-      "wechat-article-writer",
-      "zhipu-web-search"
+      "wechat-article-writer"
     ],
-    "mcp_server_ids": [
-      "linkup",
-      "filesystem",
-      "zhipu-web-search",
-      "exa"
-    ],
+    "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": ""
   },

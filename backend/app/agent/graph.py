@@ -15,6 +15,25 @@ logger = logging.getLogger(__name__)
 # 可通过 LLM_AGENT_TIMEOUT 调整（秒），默认 180。多轮工具调用时上下文较长，需更长时间
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
 
+
+def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | None:
+    """当模型将多个工具名拼接（如 amap-maps_maps_geo + amap-maps_maps_weather）时，解析出第一个有效工具名。"""
+    if tool_name in valid_names:
+        return tool_name
+    # 优先：取最长的「合法名称且为 tool_name 前缀」
+    for name in sorted(valid_names, key=len, reverse=True):
+        if tool_name.startswith(name):
+            return name
+    # 否则：取在 tool_name 中最先出现的合法名称
+    best = None
+    best_pos = 999999
+    for name in valid_names:
+        pos = tool_name.find(name)
+        if pos != -1 and pos < best_pos:
+            best_pos = pos
+            best = name
+    return best
+
 class AgentState(TypedDict):
     """Agent 状态"""
     messages: Annotated[Sequence[BaseMessage], "对话消息列表"]
@@ -215,8 +234,14 @@ def create_react_agent(
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
                 
-                # 查找工具
+                # 查找工具（若不存在则尝试纠错：模型可能将多个工具名拼接）
                 tool = None
+                valid_names = [t.name for t in state["tools"]]
+                if tool_name not in valid_names:
+                    resolved = _resolve_mangled_tool_name(tool_name, valid_names)
+                    if resolved:
+                        tool_name = resolved
+                        logger.info(f"call_tool: 工具名纠错后使用: {tool_name}")
                 for t in state["tools"]:
                     if t.name == tool_name:
                         tool = t
@@ -288,13 +313,23 @@ def create_react_agent(
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
             
-            # 查找工具
+            # 查找工具（若不存在则尝试纠错：模型可能将多个工具名拼接，如 amap-maps_maps_geoamap-maps_maps_weather）
             tool = None
+            resolved_name: str | None = None
             for t in state["tools"]:
                 if t.name == tool_name:
                     tool = t
                     logger.info(f"call_tool: 找到工具: {tool_name}")
                     break
+            if not tool:
+                resolved_name = _resolve_mangled_tool_name(tool_name, [t.name for t in state["tools"]])
+                if resolved_name:
+                    tool_name = resolved_name
+                    for t in state["tools"]:
+                        if t.name == tool_name:
+                            tool = t
+                            logger.info(f"call_tool: 工具名纠错后使用: {tool_name}")
+                            break
             
             if tool:
                 logger.info(f"call_tool: 开始执行工具: {tool_name}")
@@ -326,6 +361,8 @@ def create_react_agent(
                     result = error_msg
                 
                 logger.info(f"call_tool: 工具执行结果: {result}")
+                if resolved_name:
+                    result = f"{result}\n\n（注意：您填写了拼接后的工具名，已仅执行第一个工具「{tool_name}」。请在下一条回复中单独调用其余工具，每次一个。）"
                 return {
                     "messages": [
                         HumanMessage(content=f"工具 {tool_name} 的执行结果: {result}")

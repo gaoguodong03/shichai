@@ -257,6 +257,7 @@
       <template v-else-if="currentModule === 'settings'">
         <AppSettingsView v-if="selectedId === 'app'" />
         <ThemeSettingsView v-else-if="selectedId === 'theme'" />
+        <LLMSettingsView v-else-if="selectedId === 'llm'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择设置项</p>
         </div>
@@ -280,6 +281,7 @@ import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
 import ThemeSettingsView from './ThemeSettingsView.vue'
+import LLMSettingsView from './LLMSettingsView.vue'
 import DHAView from './DHAView.vue'
 import GroupChatView from './GroupChatView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
@@ -323,6 +325,7 @@ const mcpLoading = ref(false)
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
   { id: 'theme', label: '配色' },
+  { id: 'llm', label: '模型选择' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)

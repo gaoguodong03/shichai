@@ -219,24 +219,16 @@
                 <div class="group-chat-toolbar-right group-chat-send-row">
                 <button
                   type="button"
-                  class="group-chat-send-btn"
-                  :disabled="groupStreaming || !canSend || groupAutoConfirm"
-                  @click="sendGroupMessage"
+                  :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
+                  :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend) || groupAutoConfirm"
+                  @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
                 >
-                  {{ groupStreaming ? '发送中…' : '发送' }}
+                  {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
                 </button>
                 <label class="group-chat-auto-toggle">
                   <input type="checkbox" v-model="groupAutoConfirm" class="group-chat-auto-checkbox" />
                   <span>自动确认</span>
                 </label>
-                <button
-                  v-if="groupWaitingForUser && !groupAutoConfirm && effectiveNextSpeaker"
-                  type="button"
-                  class="group-chat-confirm-btn"
-                  @click="confirmGroupNext(effectiveNextSpeaker)"
-                >
-                  确认
-                </button>
               </div>
             </div>
           </div>
@@ -521,6 +513,7 @@ async function confirmGroupNext(override: string) {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -531,6 +524,7 @@ async function confirmGroupNext(override: string) {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
               }
             } catch (_) {}
           }
@@ -899,6 +893,7 @@ async function sendGroupMessage() {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -909,6 +904,7 @@ async function sendGroupMessage() {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
                 if (groupAutoConfirm.value && endData.suggested_next_speaker) {
                   nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
                 }
