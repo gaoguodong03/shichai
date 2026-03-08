@@ -38,6 +38,9 @@ SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./data/sessions")
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
 
+# 新建会话时若未选 DHA，默认使用该 DHA（拥有全部技能）；后续添加成员时会从会话中移除，历史保留
+CHAT_DHA_ID = "dha-chat"
+
 skills_loader = SkillsLoader()
 _initialized = False
 
@@ -355,13 +358,17 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
 @router.post("/group-sessions")
 async def create_group_session(body: GroupSessionCreate):
-    """创建群聊会话。dha_ids 可为空（单聊），之后通过邀请变为群聊。"""
+    """创建群聊会话。dha_ids 为空时默认包含 Chat（全部技能）；之后通过邀请追加 DHA 时会将 Chat 移除，历史保留。"""
     if body.leader_dha_id and body.dha_ids and body.leader_dha_id not in body.dha_ids:
         raise HTTPException(status_code=400, detail="leader_dha_id 必须在 dha_ids 中")
 
     instances = load_dha_instances()
     valid_ids = {d.get("dha_id") for d in instances}
-    for did in body.dha_ids:
+    dha_ids = list(body.dha_ids) if body.dha_ids else []
+    # 未选任何 DHA 时默认使用 Chat（与用户交流，拥有全部技能）
+    if not dha_ids and CHAT_DHA_ID in valid_ids:
+        dha_ids = [CHAT_DHA_ID]
+    for did in dha_ids:
         if did not in valid_ids:
             raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
 
@@ -370,7 +377,7 @@ async def create_group_session(body: GroupSessionCreate):
     meta = _load_group_meta()
     meta[gsid] = {
         "title": body.title or "新群聊",
-        "dha_ids": body.dha_ids,
+        "dha_ids": dha_ids,
         "leader_dha_id": (body.leader_dha_id or "").strip() or "",  # 主持人已改为固定逻辑，不再使用 DHA
         "speak_mode": (body.speak_mode or "auto").strip().lower() if body.speak_mode else "auto",
         "created_at": now,
@@ -453,6 +460,8 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             if did not in valid_ids:
                 raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
             current.add(did)
+        # 添加成员后移除默认 Chat，会话变为多成员群聊；已有对话历史不删除
+        current.discard(CHAT_DHA_ID)
         meta[group_session_id]["dha_ids"] = list(current)
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)

@@ -46,18 +46,6 @@
           >
             + 新建会话
           </button>
-          <button
-            @click="enterSingleChat"
-            :class="[
-              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer mb-1',
-              showSingleChat ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-            ]"
-          >
-            <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">单聊</div>
-              <div class="truncate text-xs text-muted mt-0.5">1 个 DHA</div>
-            </div>
-          </button>
           <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
           <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-muted">暂无群聊会话</div>
           <div
