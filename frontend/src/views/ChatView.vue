@@ -1,11 +1,12 @@
 <template>
-  <div class="flex flex-col h-screen bg-gray-50">
+  <div class="workspace-pane flex flex-col h-screen bg-page">
     <!-- 头部 -->
-    <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-800 truncate">{{ sessionTitle }}</h1>
+    <header class="bg-card px-4 py-3 flex items-center justify-between flex-shrink-0">
+      <h1 class="text-xl font-semibold text-primary truncate">{{ sessionTitle }}</h1>
       <button
-        class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!messages.length"
+        title="保存为文件"
         @click="saveAsFile"
       >
         保存为文件
@@ -13,7 +14,7 @@
     </header>
 
     <!-- 消息列表 -->
-    <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+    <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-4">
       <!-- 历史消息 & 已完成的助手回复 -->
       <template v-for="(msg, index) in messages" :key="index">
         <!-- 对于正在流式中的占位助手消息，不在这里渲染，避免与下方流式块重复显示 -->
@@ -27,33 +28,37 @@
         >
           <div
             :class="[
-              'max-w-3xl min-w-0 rounded-lg px-4 py-2',
+              'max-w-3xl min-w-0 rounded-lg px-4 py-2 shadow-sm',
               msg.role === 'user'
-                ? 'bg-teal-600 text-white'
-                : 'bg-white text-gray-800 border border-gray-200'
+                ? 'bg-user-bubble text-text-inverse'
+                : 'bg-card text-primary border border-border'
             ]"
           >
-            <!-- 助手消息顶部：skill 紫色显示，优先用持久化 skill_id，未用显示「无」 -->
+            <!-- 助手消息顶部：skill + 时间戳 -->
             <div
               v-if="msg.role === 'assistant'"
-              class="mb-2 text-xs text-purple-600 font-medium"
+              class="mb-2 text-xs text-skill font-medium flex items-center justify-between gap-2 flex-wrap"
             >
-              skill: {{ msg.skill_id ?? (msg.meta?.skills && msg.meta.skills[0]) ?? '无' }}
+              <span>skill: {{ msg.skill_id ?? (msg.meta?.skills && msg.meta.skills[0]) ?? '无' }}</span>
+              <span v-if="msg.timestamp" class="text-muted font-normal">{{ formatMsgTime(msg.timestamp) }}</span>
             </div>
             <!-- 工具调用 JSON 单独框：一条调用一个框，标题为工具名称，可查看该次调用的 MCP 原始输出 -->
             <div v-if="msg.role === 'assistant'">
               <div
                 v-for="(tc, tcIndex) in extractToolCalls(msg.content).toolCalls"
                 :key="tcIndex"
-                class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+                class="mb-2 rounded-r-md border-l-4 border-l-tool-call-border bg-tool-call-bg border border-tool-call-border px-3 py-2 text-xs text-primary font-mono cursor-pointer hover:opacity-90 transition-opacity"
+                :title="(msg.toolRawResults && msg.toolRawResults[tcIndex] !== undefined) ? '点击查看原始输出' : ''"
+                @click="(msg.toolRawResults && msg.toolRawResults[tcIndex] !== undefined) && openRawModal(msg.toolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
               >
                 <div class="flex items-center justify-between gap-2 mb-1">
-                  <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                  <span class="text-tool-call-text font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
                   <button
                     v-if="msg.toolRawResults && msg.toolRawResults[tcIndex] !== undefined"
                     type="button"
-                    class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
-                    @click="openRawModal(msg.toolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
+                    class="shrink-0 text-accent hover:opacity-80 hover:underline"
+                    title="查看该次调用的原始输出"
+                    @click.stop="openRawModal(msg.toolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
                   >
                     原始输出
                   </button>
@@ -83,7 +88,7 @@
                     :src="seg.url"
                     :alt="seg.alt || 'image'"
                     loading="lazy"
-                    class="max-w-full rounded-md border border-gray-200"
+                    class="max-w-full rounded-md border border-border"
                   />
                 </a>
               </template>
@@ -92,21 +97,21 @@
         </div>
       </template>
 
-      <!-- 正在思考：发送后尚无任何流式内容时显示，避免用户误以为死机 -->
+      <!-- 单一动态加载：仅流式且尚无内容时显示当前环节 -->
       <div v-if="isStreaming && !currentStreamingText" class="flex justify-start">
-        <div class="max-w-3xl min-w-0 rounded-lg px-4 py-3 bg-white text-gray-800 border border-gray-200 flex items-center gap-2">
-          <span class="text-sm text-gray-600">正在思考</span>
+        <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2.5 bg-card text-primary border border-border flex items-center gap-2">
+          <span class="text-sm text-muted">{{ streamingPhase || '正在加载…' }}</span>
           <span class="flex gap-1">
-            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0ms"></span>
-            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 160ms"></span>
-            <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 320ms"></span>
+            <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 0ms"></span>
+            <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 160ms"></span>
+            <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 320ms"></span>
           </span>
         </div>
       </div>
 
       <!-- 当前流式输出：单独一块展示，避免与占位助手消息重复；出现时滚动到视口中部便于查看 -->
       <div v-if="currentStreamingText" ref="streamingBlockRef" class="flex justify-start">
-        <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-white text-gray-800 border border-gray-200">
+        <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-card text-primary border border-border">
           <div class="mb-2 text-xs text-purple-600 font-medium">
             skill: {{ (currentMeta?.skills && currentMeta.skills[0]) ?? '无' }}
           </div>
@@ -114,7 +119,7 @@
             <div
               v-for="(tc, tcIndex) in extractToolCalls(currentStreamingText).toolCalls"
               :key="tcIndex"
-              class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+              class="mb-2 rounded-r-md border-l-4 border-l-tool-call-border bg-tool-call-bg border border-tool-call-border px-3 py-2 text-xs text-primary font-mono"
             >
               <div class="flex items-center justify-between gap-2 mb-1">
                 <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
@@ -122,6 +127,7 @@
                   v-if="currentToolRawResults[tcIndex] !== undefined"
                   type="button"
                   class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
+                  title="查看该次调用的原始输出"
                   @click="openRawModal(currentToolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
                 >
                   原始输出
@@ -130,16 +136,13 @@
               <pre class="m-0 overflow-x-auto max-h-40 overflow-y-auto break-all whitespace-pre-wrap">{{ tc }}</pre>
             </div>
           </div>
-          <!-- 已有工具调用但正文尚未出来时，显示正在思考动画 -->
-          <div
-            v-if="isStreaming && !hasSubstantialRest(currentStreamingText)"
-            class="flex items-center gap-2 py-1 text-sm text-gray-500"
-          >
-            <span>正在思考</span>
+          <!-- 流式进行中时仅保留一行当前环节提示 -->
+          <div v-if="isStreaming" class="flex items-center gap-2 py-1 text-sm text-muted">
+            <span>{{ streamingPhase || '正在生成…' }}</span>
             <span class="flex gap-1">
-              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 0ms"></span>
-              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 160ms"></span>
-              <span class="thinking-dot w-2 h-2 bg-gray-400 rounded-full" style="animation-delay: 320ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 0ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 160ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 320ms"></span>
             </span>
           </div>
           <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
@@ -163,22 +166,21 @@
                   :src="seg.url"
                   :alt="seg.alt || 'image'"
                   loading="lazy"
-                  class="max-w-full rounded-md border border-gray-200"
+                  class="max-w-full rounded-md border border-border"
                 />
               </a>
             </template>
           </div>
-          <div v-if="isStreaming" class="inline-block w-2 h-2 bg-gray-400 rounded-full animate-pulse ml-2"></div>
         </div>
       </div>
     </div>
 
     <!-- 输入框：多行，上/下都可拖拽调高度，Enter 换行，Ctrl+Enter 发送 -->
-    <div class="bg-white border-t border-gray-200 px-4 py-4">
+    <div class="bg-card px-4 py-4 flex-shrink-0">
       <form @submit.prevent="sendMessage" class="flex gap-2 items-end">
-        <div class="flex-1 flex flex-col min-w-0 rounded-lg border border-blue-200 overflow-hidden bg-white focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+        <div class="flex-1 flex flex-col min-w-0 rounded-lg border border-input-border overflow-hidden bg-card focus-within:ring-2 focus-within:ring-input-focus-ring focus-within:border-input-focus-ring">
           <div
-            class="chat-input-resize-top cursor-ns-resize flex-shrink-0 h-1.5 hover:bg-blue-50"
+            class="chat-input-resize-top cursor-ns-resize flex-shrink-0 h-1.5 hover:bg-accent-subtle"
             title="拖动调整输入框高度"
             @mousedown.prevent="startResizeFromTop"
           />
@@ -194,7 +196,8 @@
         <button
           type="submit"
           :disabled="!inputMessage.trim()"
-          class="px-6 py-2 h-[2.5rem] flex-shrink-0 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-6 py-2 h-[2.5rem] flex-shrink-0 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          title="发送 (Cmd+空格)"
         >
           发送
         </button>
@@ -202,24 +205,26 @@
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="isStreaming"
+          title="选择文件插入到消息"
           @click="openFilePicker"
         >
           选择文件插入
         </button>
         <button
           type="button"
-          class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover disabled:opacity-50 disabled:cursor-not-allowed"
           :disabled="isStreaming"
+          title="选择本次对话使用的 Skill"
           @click="openSkillPicker"
         >
           选择 Skill
         </button>
-        <div class="text-xs text-gray-500 truncate" v-if="selectedInsertFilePath">
+        <div class="text-xs text-muted truncate" v-if="selectedInsertFilePath">
           已选文件：{{ selectedInsertFilePath }}
         </div>
-        <div class="text-xs text-gray-500" v-if="selectedSkillIds.length">
+        <div class="text-xs text-muted" v-if="selectedSkillIds.length">
           已选 Skill：{{ selectedSkillIds.join(', ') }}
         </div>
       </div>
@@ -231,41 +236,44 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closeFilePicker"
     >
-      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold text-gray-800 truncate">
+      <div class="bg-card w-full max-w-2xl rounded-lg shadow-lg border border-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-primary truncate">
             选择要插入到输入框的文件（当前目录：{{ filePickerPath || '/' }}）
           </div>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeFilePicker">关闭</button>
+          <button class="text-sm text-muted hover:text-primary" title="关闭" @click="closeFilePicker">关闭</button>
         </div>
         <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
           <button
-            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+            class="px-2 py-1 text-sm border border-input-border rounded hover:bg-list-hover disabled:opacity-50"
             :disabled="!filePickerPath"
+            title="上一级"
             @click="filePickerGoUp"
           >
             ↑ 上一级
           </button>
           <button
-            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+            class="px-2 py-1 text-sm border border-input-border rounded hover:bg-list-hover"
+            title="刷新列表"
             @click="loadFilePickerEntries(filePickerPath)"
           >
             刷新
           </button>
-          <div v-if="filePickerLoading" class="text-xs text-gray-500">加载中...</div>
+          <div v-if="filePickerLoading" class="text-xs text-muted">加载中...</div>
           <div v-else-if="filePickerError" class="text-xs text-red-600 truncate">{{ filePickerError }}</div>
         </div>
         <div class="max-h-[60vh] overflow-auto">
-          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-gray-500">
+          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-muted">
             当前目录为空
           </div>
           <button
             v-for="e in filePickerEntries"
             :key="e.path"
             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            :title="e.is_dir ? `进入目录：${e.name}` : `插入文件：${e.name}`"
             @click="onPickEntry(e)"
           >
-            <span class="flex-shrink-0">{{ e.is_dir ? '📁' : '📄' }}</span>
+            <span class="flex-shrink-0 text-muted font-mono">{{ e.is_dir ? '▾' : '·' }}</span>
             <span class="truncate">{{ e.name }}</span>
             <span v-if="!e.is_dir" class="ml-auto text-xs text-gray-400">插入</span>
           </button>
@@ -279,16 +287,16 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closeSkillPicker"
     >
-      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold text-gray-800">选择本次对话使用的 Skill（可多选，空则全部）</div>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeSkillPicker">关闭</button>
+      <div class="bg-card w-full max-w-2xl rounded-lg shadow-lg border border-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-primary">选择本次对话使用的 Skill（可多选，空则全部）</div>
+          <button class="text-sm text-muted hover:text-primary" title="关闭" @click="closeSkillPicker">关闭</button>
         </div>
         <div class="px-4 py-2 border-b border-gray-100 flex justify-end">
-          <button class="text-xs text-gray-500 hover:text-gray-700" @click="clearSkillSelection">清除选择</button>
+          <button class="text-xs text-muted hover:text-primary" title="清除已选 Skill" @click="clearSkillSelection">清除选择</button>
         </div>
         <div class="max-h-[60vh] overflow-auto">
-          <div v-if="skillPickerLoading" class="px-4 py-6 text-sm text-gray-500">加载中...</div>
+          <div v-if="skillPickerLoading" class="px-4 py-6 text-sm text-muted">加载中...</div>
           <button
             v-else
             v-for="s in skillPickerList"
@@ -296,8 +304,8 @@
             class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
             @click="toggleSkillSelection(s.id)"
           >
-            <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedSkillIds.includes(s.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300'">
-              <span v-if="selectedSkillIds.includes(s.id)" class="text-white text-xs">✓</span>
+            <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedSkillIds.includes(s.id) ? 'bg-accent border-accent' : 'border-input-border'">
+              <span v-if="selectedSkillIds.includes(s.id)" class="text-text-inverse text-xs">✓</span>
             </span>
             <span class="truncate font-medium">{{ s.name || s.id }}</span>
             <span class="text-xs text-gray-400 truncate flex-1">{{ s.description || '' }}</span>
@@ -312,10 +320,10 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closeRawModal"
     >
-      <div class="bg-white w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg border border-gray-200 flex flex-col overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <span class="text-sm font-semibold text-gray-800">{{ rawModalTitle }}</span>
-          <button class="text-gray-500 hover:text-gray-800 p-1" @click="closeRawModal" aria-label="关闭">✕</button>
+      <div class="bg-card w-full max-w-3xl max-h-[85vh] rounded-lg shadow-lg border border-border flex flex-col overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+          <span class="text-sm font-semibold text-primary">{{ rawModalTitle }}</span>
+          <button class="text-muted hover:text-primary p-1" title="关闭" @click="closeRawModal" aria-label="关闭">×</button>
         </div>
         <pre class="flex-1 overflow-auto p-4 text-xs text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 m-0">{{ rawModalContent }}</pre>
       </div>
@@ -343,6 +351,8 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  /** 本条消息时间戳（ISO），用于显示回复时间 */
+  timestamp?: string
   /** 本条助手回复使用的 skill（持久化字段，历史加载时由后端返回） */
   skill_id?: string
   /** 每条工具调用对应的 MCP 原始输出（未加工），用于「查看原始输出」弹窗 */
@@ -421,6 +431,8 @@ function onInputKeydown(e: KeyboardEvent) {
   })
 }
 const isStreaming = ref(false)
+/** 当前流程环节，用于单一动态加载提示 */
+const streamingPhase = ref('')
 const currentStreamingText = ref('')
 const currentMeta = ref<Message['meta'] | null>(null)
 /** 当前流式回复中每条工具调用对应的 MCP 原始输出（与 tool_result 事件顺序一致） */
@@ -507,10 +519,11 @@ watch(
   (list) => {
     if (list && list.length > 0) {
       messages.value = list.map((m) => {
-        const raw = m as { role: string; content: string; tool_raw_results?: string[]; skill_id?: string }
+        const raw = m as { role: string; content: string; timestamp?: string; tool_raw_results?: string[]; skill_id?: string }
         return {
           role: raw.role as 'user' | 'assistant',
           content: raw.content,
+          ...(raw.timestamp != null ? { timestamp: raw.timestamp } : {}),
           ...(Array.isArray(raw.tool_raw_results) ? { toolRawResults: raw.tool_raw_results } : {}),
           ...(raw.skill_id != null ? { skill_id: raw.skill_id } : {}),
         }
@@ -525,10 +538,11 @@ watch(
 onMounted(() => {
   if (props.initialMessages && props.initialMessages.length > 0) {
     messages.value = props.initialMessages.map((m) => {
-      const raw = m as { role: string; content: string; tool_raw_results?: string[]; skill_id?: string }
+      const raw = m as { role: string; content: string; timestamp?: string; tool_raw_results?: string[]; skill_id?: string }
       return {
         role: raw.role as 'user' | 'assistant',
         content: raw.content,
+        ...(raw.timestamp != null ? { timestamp: raw.timestamp } : {}),
         ...(Array.isArray(raw.tool_raw_results) ? { toolRawResults: raw.tool_raw_results } : {}),
         ...(raw.skill_id != null ? { skill_id: raw.skill_id } : {}),
       }
@@ -587,6 +601,16 @@ function extractToolCalls(content: string): { toolCalls: string[]; rest: string 
 }
 
 /** 从工具调用 JSON 字符串解析出工具名称，用于标题显示 */
+function formatMsgTime(iso?: string): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  } catch {
+    return iso
+  }
+}
+
 function getToolNameFromToolCall(toolCallStr: string | null): string {
   if (!toolCallStr) return '执行工具'
   try {
@@ -871,6 +895,7 @@ const sendMessage = async () => {
             try {
               const parsed = JSON.parse(data)
               if (eventType === 'content' && parsed.text) {
+                streamingPhase.value = '正在生成回复…'
                 currentStreamingText.value += parsed.text
                 // 更新消息内容
                 messages.value[assistantMessageIndex].content = currentStreamingText.value
@@ -882,6 +907,8 @@ const sendMessage = async () => {
                 }
                 console.log('收到内容:', parsed.text)
               } else if (eventType === 'react_step') {
+                const rt = (parsed as { type?: string }).type
+                streamingPhase.value = rt === 'tool_result' ? '正在处理工具结果…' : '正在调用工具…'
                 // 处理 ReAct 步骤
                 console.log('ReAct step:', parsed)
                 // 若是结构化 tool_call（后端附带），注入到内容中以便参数框显示；支持单条或多条
@@ -928,12 +955,12 @@ const sendMessage = async () => {
                   }
                 }
               } else if (eventType === 'start') {
-                // 开始事件，初始化
                 console.log('流开始')
                 currentStreamingText.value = ''
                 currentToolRawResults.value = []
+                streamingPhase.value = '正在准备…'
               } else if (eventType === 'end') {
-                // 流结束
+                streamingPhase.value = ''
                 console.log('流结束，当前内容长度:', currentStreamingText.value.length)
                 messages.value[assistantMessageIndex].isStreaming = false
                 if (currentToolRawResults.value.length) {
@@ -974,6 +1001,7 @@ const sendMessage = async () => {
       clearTimeout(streamTimeoutId)
     }
     isStreaming.value = false
+    streamingPhase.value = ''
     currentStreamingText.value = ''
   }
 }

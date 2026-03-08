@@ -20,6 +20,7 @@ from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
 from app.api.settings import get_mcp_servers_for_skill
 from app.api.files import get_workspace_root_path, get_workspace_root
+from app.api.chat import run_single_chat_full_content
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
@@ -106,6 +107,15 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
     return "\n\n".join(lines)
 
 
+def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
+    """当主持人未输出 next_prompt 时使用的默认提示词模板。"""
+    return (
+        f"【群聊讨论目标】\n{discussion_goal}\n\n"
+        f"【最近讨论】\n{context}\n\n"
+        "请紧扣讨论目标发言，不要偏离主题。"
+    )
+
+
 def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
     """根据 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖获取工具列表。
     - mcp_server_ids 有值：只传这些 MCP 的工具。
@@ -154,7 +164,7 @@ def _get_dha_skill_content(dha: Dict[str, Any]) -> str:
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
-    """解析主持人 DHA 的回复，提取主持词与 JSON。返回 {task_done, next_speaker, reason, announcement} 或 None"""
+    """解析主持人 DHA 的回复，提取主持词与 JSON。返回 {task_done, next_speaker, reason, announcement, next_prompt} 或 None"""
     if not content or not content.strip():
         return None
     text = content.strip()
@@ -186,9 +196,22 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         task_done = data.get("task_done", True)
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
+        next_prompt = (data.get("next_prompt") or "").strip()  # 主持人生成的给下一发言人的提示词
+        suggested_order = data.get("suggested_order")  # 首轮任务规划：建议的 DHA 运行顺序
+        if isinstance(suggested_order, list):
+            suggested_order = [str(x).strip().lower() for x in suggested_order if str(x).strip()]
+        else:
+            suggested_order = None
         if not announcement and reason:
             announcement = reason
-        return {"task_done": task_done, "next_speaker": next_speaker, "reason": reason, "announcement": announcement or "请下一位发言。"}
+        return {
+            "task_done": task_done,
+            "next_speaker": next_speaker,
+            "reason": reason,
+            "announcement": announcement or "请下一位发言。",
+            "next_prompt": next_prompt if next_prompt else None,
+            "suggested_order": suggested_order,
+        }
     except Exception:
         return None
 
@@ -247,7 +270,7 @@ async def _host_decide_by_dha(
 
 class GroupSessionCreate(BaseModel):
     title: str = "新群聊"
-    dha_ids: List[str]
+    dha_ids: List[str] = []  # 可为空，表示单聊；之后通过邀请追加 DHA 变为群聊
     leader_dha_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
     speak_mode: Optional[str] = "auto"  # auto | manual
 
@@ -332,10 +355,8 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
 @router.post("/group-sessions")
 async def create_group_session(body: GroupSessionCreate):
-    """创建群聊会话"""
-    if not body.dha_ids:
-        raise HTTPException(status_code=400, detail="dha_ids 不能为空")
-    if body.leader_dha_id and body.leader_dha_id not in body.dha_ids:
+    """创建群聊会话。dha_ids 可为空（单聊），之后通过邀请变为群聊。"""
+    if body.leader_dha_id and body.dha_ids and body.leader_dha_id not in body.dha_ids:
         raise HTTPException(status_code=400, detail="leader_dha_id 必须在 dha_ids 中")
 
     instances = load_dha_instances()
@@ -510,6 +531,35 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             next_speaker = None
 
+            # 0 个 DHA：单聊模式，用「全部 skill」的默认 DHA 回复
+            if len(dha_ids) == 0:
+                history_override = [{"role": m.get("role"), "content": m.get("content")} for m in messages[:-1]]
+                try:
+                    full_content, used_skill_id = await run_single_chat_full_content(
+                        group_session_id,
+                        (request.message or "").strip(),
+                        history_override=history_override if history_override else None,
+                    )
+                except Exception as e:
+                    logger.exception("单聊模式 run_single_chat_full_content 失败")
+                    full_content = f"回复时出错：{e}"
+                    used_skill_id = None
+                assistant_msg = {
+                    "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                    "role": "assistant",
+                    "content": full_content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                if used_skill_id:
+                    assistant_msg["skill_id"] = used_skill_id
+                messages.append(assistant_msg)
+                _save_group_history(group_session_id, messages)
+                meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                _save_group_meta(meta)
+                yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
+                yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                return
+
             # 仅 1 个 DHA 时跳过主持人，直接 user -> DHA（chat 风格）
             single_dha_mode = len(dha_ids) == 1
 
@@ -560,14 +610,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     context = _messages_to_context(messages)
                     next_dha = dha_map.get(suggested)
                     host_msg["next_dha_name"] = (next_dha.get("name") or suggested) if next_dha else suggested
-                    host_msg["next_prompt"] = (
-                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
-                        f"【最近讨论】\n{context}\n\n"
-                        "请紧扣讨论目标发言，不要偏离主题。"
-                    )
+                    host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                if decision.get("suggested_order"):
+                    host_msg["suggested_order"] = decision["suggested_order"]
                 _save_group_history(group_session_id, messages)
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": suggested}
+                yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                 return
             else:
                 # auto：由主持人 DHA 或默认调度决定下一发言人
@@ -611,11 +660,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     context = _messages_to_context(messages)
                     next_dha = dha_map.get(next_speaker)
                     host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                    host_msg["next_prompt"] = (
-                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
-                        f"【最近讨论】\n{context}\n\n"
-                        "请紧扣讨论目标发言，不要偏离主题。"
-                    )
+                    host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                    if decision.get("suggested_order"):
+                        host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
 
@@ -641,7 +688,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     user_content = request.custom_prompt
                     custom_prompt_used = True
                 else:
-                    user_content = (
+                    # 优先使用刚写入的 host_msg 的 next_prompt（主持人产出或默认模板），否则用默认
+                    last_next_prompt = None
+                    for _m in reversed(messages):
+                        if _m.get("next_prompt"):
+                            last_next_prompt = (_m.get("next_prompt") or "").strip()
+                            break
+                    user_content = last_next_prompt or (
                         f"【群聊讨论目标】\n{discussion_goal}\n\n"
                         f"【最近讨论】\n{context}\n\n"
                         "请紧扣讨论目标发言，不要偏离主题。"
@@ -756,7 +809,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 last_speaker_dha_id = next_speaker
                 # 1 DHA 或非自动模式：该 DHA 回答后直接结束
                 if single_dha_mode or speak_mode != "auto":
-                    yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                    end_data = {"type": "end", "waiting_for_user": True}
+                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                     return
                 # auto 且多 DHA：主持人决定下一发言人
                 decision = None
@@ -797,11 +851,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         context = _messages_to_context(messages)
                         next_dha = dha_map.get(next_speaker)
                         host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                        host_msg["next_prompt"] = (
-                            f"【群聊讨论目标】\n{discussion_goal}\n\n"
-                            f"【最近讨论】\n{context}\n\n"
-                            "请紧扣讨论目标发言，不要偏离主题。"
-                        )
+                        host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                    if decision.get("suggested_order"):
+                        host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 # 限制同一 DHA 连续发言
@@ -818,7 +870,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             if next_speaker == "end":
                 yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'discussion_ended': True})}\n\n"
             else:
-                yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker}
+                yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
 
         except Exception as e:
             logger.exception("群聊流式输出异常")
@@ -980,7 +1033,12 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             user_content = request.custom_prompt
             custom_prompt_used = True
         else:
-            user_content = (
+            last_next_prompt = None
+            for _m in reversed(messages):
+                if _m.get("next_prompt"):
+                    last_next_prompt = (_m.get("next_prompt") or "").strip()
+                    break
+            user_content = last_next_prompt or (
                 f"【群聊讨论目标】\n{discussion_goal}\n\n"
                 f"【最近讨论】\n{context}\n\n"
                 "请紧扣讨论目标发言，不要偏离主题。"
@@ -1069,11 +1127,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
                 context = _messages_to_context(messages)
                 next_dha = dha_map.get(next_speaker)
                 host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                host_msg["next_prompt"] = (
-                    f"【群聊讨论目标】\n{discussion_goal}\n\n"
-                    f"【最近讨论】\n{context}\n\n"
-                    "请紧扣讨论目标发言，不要偏离主题。"
-                )
+                host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
             _save_group_history(group_session_id, messages)
         if next_speaker == last_speaker_dha_id:
             if task_done or consecutive_same_dha >= 1:

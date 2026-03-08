@@ -1,23 +1,26 @@
 <template>
-  <div class="flex flex-col h-full bg-gray-50">
-    <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
-      <h1 class="text-xl font-semibold text-gray-800 truncate min-w-0">{{ sessionTitle }}</h1>
+  <div class="workspace-pane flex flex-col h-full bg-page">
+    <header class="bg-card px-4 py-2.5 flex items-center justify-between gap-3 flex-shrink-0">
+      <h1 class="text-lg font-semibold text-primary truncate min-w-0">{{ sessionTitle }}</h1>
       <div class="flex items-center gap-2 flex-shrink-0">
         <button
           type="button"
-          class="text-xs px-2 py-1 border border-blue-300 rounded text-blue-700 hover:bg-blue-50"
-          @click="openWorkspaceViewer"
+          :class="[
+            'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
+            showWorkspaceViewer ? 'border-accent bg-accent-subtle text-accent-subtle-text' : 'border-input-border text-muted hover:bg-list-hover'
+          ]"
+          @click="toggleWorkspaceViewer"
         >
-          打开工作区
+          工作区
         </button>
-        <span class="text-xs text-gray-500">{{ dhaIds.length }} 个 DHA</span>
         <button
-          v-if="invitableDhas.length"
           type="button"
-          class="text-xs px-2 py-1 border border-gray-300 rounded text-gray-600 hover:bg-gray-50"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-input-border text-muted hover:bg-list-hover"
           @click="showInviteDha = true"
+          :title="sessionMembers.length ? `当前 ${sessionMembers.length} 名成员，点击查看并邀请更多` : '查看成员并邀请 DHA'"
         >
-          邀请 DHA
+          成员与邀请
+          <span v-if="sessionMembers.length" class="text-[10px] text-muted">({{ sessionMembers.length }})</span>
         </button>
       </div>
     </header>
@@ -25,7 +28,7 @@
     <!-- 消息列表 + 工作区侧栏：用 displayedMessages 保证顺序与逐条出现 -->
     <div class="flex-1 min-h-0 flex">
       <!-- 左侧：消息 -->
-      <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+      <div ref="messagesContainerRef" class="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-6">
         <template v-for="(msg, index) in displayedMessages" :key="msg.message_id || index">
           <div
             :data-message-index="index"
@@ -34,7 +37,7 @@
             <!-- 用户消息 -->
             <div
               v-if="msg.role === 'user'"
-              class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-teal-600 text-white"
+              class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-user-bubble text-text-inverse shadow-sm"
             >
               <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
                 <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
@@ -45,13 +48,13 @@
               v-else-if="msg.role === 'host'"
               class="max-w-3xl min-w-0 w-full flex flex-col items-center gap-2"
             >
-              <div class="text-xs text-gray-500 italic px-3 py-1.5 bg-gray-100 rounded-full">
+              <div class="text-xs text-muted italic px-3 py-1.5 bg-list-hover rounded-full">
                 {{ msg.content || '' }}
               </div>
               <div v-if="msg.next_prompt" class="w-full max-w-2xl">
-                <details class="text-xs border border-gray-200 rounded-lg bg-white overflow-hidden">
-                  <summary class="px-3 py-2 cursor-pointer hover:bg-gray-50 text-gray-600">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
-                  <pre class="p-3 m-0 text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 border-t border-gray-100 max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
+                <details class="text-xs border border-border rounded-lg bg-card overflow-hidden">
+                  <summary class="px-3 py-2 cursor-pointer hover:bg-list-hover text-muted">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
+                  <pre class="p-3 m-0 text-primary whitespace-pre-wrap break-words font-mono bg-list-hover border-t border-border-light max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
                 </details>
               </div>
             </div>
@@ -60,29 +63,30 @@
               v-else
               class="max-w-3xl min-w-0 w-full flex gap-2"
             >
-              <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-white"
+              <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-text-inverse"
                 :style="{ backgroundColor: getDhaAvatarBg(msg.dha_id) }"
               >
                 {{ getDhaAvatarChar(msg.dha_id) }}
               </div>
               <div class="min-w-0 flex-1">
               <div class="mb-1.5 flex items-center gap-2 flex-wrap">
-                <span class="font-semibold text-gray-800">{{ getDhaName(msg.dha_id) }}</span>
-                <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">主持人</span>
-                <span v-if="getDhaRole(msg.dha_id)" class="text-xs text-gray-500">{{ getDhaRole(msg.dha_id) }}</span>
+                <span class="font-semibold text-primary">{{ getDhaName(msg.dha_id) }}</span>
+                <span v-if="msg.timestamp" class="text-xs text-muted">{{ formatMsgTime(msg.timestamp) }}</span>
+                <span v-if="leaderDhaId && msg.dha_id === leaderDhaId" class="text-xs px-1.5 py-0.5 rounded bg-accent-subtle text-accent-subtle-text">主持人</span>
+                <span v-if="getDhaRole(msg.dha_id)" class="text-xs text-muted">{{ getDhaRole(msg.dha_id) }}</span>
               </div>
               <div
-                :class="getDhaBoxClass(msg.dha_id)"
+                :style="getDhaBoxStyle(msg.dha_id)"
                 class="rounded-lg px-4 py-3 border-l-4"
               >
                 <div
                   v-if="msg.role === 'assistant'"
-                  class="mb-2 text-xs text-purple-600 font-medium flex items-center justify-between gap-2 flex-wrap"
+                  class="mb-2 text-xs text-skill font-medium flex items-center justify-between gap-2 flex-wrap"
                 >
                   <span>skill: {{ getDhaSkillLabel(msg.dha_id, msg) }}</span>
                   <button
                     type="button"
-                    class="px-2 py-0.5 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+                    class="px-2 py-0.5 text-[11px] border border-border rounded text-muted hover:bg-list-hover"
                     @click="saveMessageAsFile(msg)"
                   >
                     保存为文件
@@ -92,15 +96,17 @@
                   <div
                     v-for="(tc, tcIdx) in extractToolCalls(msg.content || '').toolCalls"
                     :key="tcIdx"
-                    class="mb-2 rounded-r-md border-l-4 border-l-blue-500 bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-slate-800 font-mono"
+                    class="mb-2 rounded-r-md border-l-4 border-l-tool-call-border bg-tool-call-bg border border-tool-call-border px-3 py-2 text-xs text-primary font-mono cursor-pointer hover:opacity-90 transition-opacity"
+                    :title="(msg.tool_raw_results && msg.tool_raw_results[tcIdx] !== undefined) ? '点击查看原始输出' : ''"
+                    @click="(msg.tool_raw_results && msg.tool_raw_results[tcIdx] !== undefined) && openRawModal(msg.tool_raw_results[tcIdx], getToolNameFromToolCall(tc) + ' 原始输出')"
                   >
                     <div class="flex items-center justify-between gap-2 mb-1">
-                      <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                      <span class="text-tool-call-text font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
                       <button
                         v-if="msg.tool_raw_results && msg.tool_raw_results[tcIdx] !== undefined"
                         type="button"
-                        class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
-                        @click="openRawModal(msg.tool_raw_results[tcIdx], getToolNameFromToolCall(tc) + ' 原始输出')"
+                        class="shrink-0 text-accent hover:opacity-80 hover:underline"
+                        @click.stop="openRawModal(msg.tool_raw_results[tcIdx], getToolNameFromToolCall(tc) + ' 原始输出')"
                       >
                         原始输出
                       </button>
@@ -115,14 +121,14 @@
                   >
                     <div v-if="seg.type === 'text'" class="chat-markdown" v-html="renderMarkdown(seg.text)" />
                     <a v-else :href="seg.url" target="_blank" rel="noreferrer" class="block mt-2">
-                      <img :src="seg.url" :alt="seg.alt || 'image'" loading="lazy" class="max-w-full rounded-md border border-gray-200" />
+                      <img :src="seg.url" :alt="seg.alt || 'image'" loading="lazy" class="max-w-full rounded-md border border-border" />
                     </a>
                   </template>
                 </div>
                 <div v-if="msg.next_prompt" class="mt-3 w-full">
-                  <details class="text-xs border border-gray-200 rounded-lg bg-white overflow-hidden">
-                    <summary class="px-3 py-2 cursor-pointer hover:bg-gray-50 text-gray-600">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
-                    <pre class="p-3 m-0 text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 border-t border-gray-100 max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
+                  <details class="text-xs border border-border rounded-lg bg-card overflow-hidden">
+                    <summary class="px-3 py-2 cursor-pointer hover:bg-list-hover text-muted">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
+                    <pre class="p-3 m-0 text-primary whitespace-pre-wrap break-words font-mono bg-list-hover border-t border-border-light max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
                   </details>
                 </div>
               </div>
@@ -132,13 +138,14 @@
         </template>
 
         <!-- 生成中：内容生成结束后一次性输出 -->
+        <!-- 单一动态加载：显示当前环节 -->
         <div v-if="isStreaming" class="flex justify-start">
-          <div class="max-w-3xl rounded-lg px-4 py-3 bg-gray-50 border border-gray-200 flex items-center gap-2">
-            <span class="text-sm text-gray-600">正在生成...</span>
+          <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2.5 bg-card border border-border flex items-center gap-2">
+            <span class="text-sm text-muted">{{ streamingPhase || '正在加载…' }}</span>
             <span class="flex gap-1">
-              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 0ms"></span>
-              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 160ms"></span>
-              <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style="animation-delay: 320ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 0ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 160ms"></span>
+              <span class="thinking-dot w-2 h-2 bg-loading-dot rounded-full" style="animation-delay: 320ms"></span>
             </span>
           </div>
         </div>
@@ -147,153 +154,94 @@
       <!-- 中间：拖拽分隔条（调整消息区与工作区宽度） -->
       <div
         v-if="showWorkspaceViewer"
-        class="w-1 cursor-col-resize bg-transparent hover:bg-gray-200"
+        class="w-1 cursor-col-resize bg-transparent hover:bg-border"
         @mousedown="startResizeMain"
       ></div>
-      <!-- 右侧：工作区侧栏（与 skill 文件查看类似，在本页面中展示，可调整宽度） -->
+      <!-- 右侧：工作区侧栏（简洁文件管理器风格） -->
       <div
         v-if="showWorkspaceViewer"
-        class="border-l border-gray-200 bg-white flex flex-col"
-        :style="{ width: `${workspaceWidth}px`, minWidth: '260px', maxWidth: '640px' }"
+        class="bg-sidebar-list flex flex-col"
+        :style="{ width: `${workspaceWidth}px`, minWidth: '320px', maxWidth: '640px' }"
       >
-        <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
-          <div class="text-xs font-semibold text-gray-700 truncate">
-            工作区（{{ workspacePath ? `${groupSessionId}/${workspacePath}` : `${groupSessionId}/` }}）
-          </div>
-          <button class="text-xs text-gray-500 hover:text-gray-800" @click="closeWorkspaceViewer">✕</button>
+        <div class="h-9 px-3 flex items-center justify-between bg-section-header flex-shrink-0">
+          <span class="text-[13px] font-medium text-primary">工作区</span>
+          <button class="p-1 rounded text-muted hover:text-primary hover:bg-list-hover" title="关闭" @click="closeWorkspaceViewer" aria-label="关闭">×</button>
         </div>
-        <div class="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
-          <button
-            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
-            :disabled="!workspacePath"
-            @click="workspaceGoUp"
-          >
-            ↑ 上一级
-          </button>
-          <button
-            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            @click="loadWorkspaceEntries(workspacePath)"
-          >
-            刷新
-          </button>
-          <button
-            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            @click="createWorkspaceTextFile"
-          >
-            新建文件
-          </button>
-          <button
-            class="px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100"
-            @click="triggerWorkspaceUpload"
-          >
-            导入文件
-          </button>
-          <button
-            class="px-2 py-1 text-xs border border-red-300 rounded text-red-700 hover:bg-red-50 disabled:opacity-50"
-            :disabled="!workspaceSelectedEntry || workspaceSelectedEntry.is_dir"
-            @click="deleteWorkspaceFile"
-          >
-            删除
-          </button>
-          <input
-            ref="workspaceUploadInputRef"
-            type="file"
-            class="hidden"
-            @change="onWorkspaceUpload"
-          />
-          <div v-if="workspaceLoading" class="text-[11px] text-gray-500">加载中...</div>
-          <div v-else-if="workspaceError" class="text-[11px] text-red-600 truncate">{{ workspaceError }}</div>
+        <div class="px-2 py-1.5 bg-card flex items-center gap-1 flex-wrap flex-shrink-0">
+          <button type="button" :disabled="!workspacePath" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary disabled:opacity-40 disabled:pointer-events-none" title="上一级" @click="workspaceGoUp">↑</button>
+          <span class="text-[11px] text-muted font-mono truncate max-w-[120px]" :title="workspacePath || '根目录'">{{ workspacePath || '/' }}</span>
+          <div class="flex-1 min-w-0" />
+          <button type="button" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary" title="刷新" @click="loadWorkspaceEntries(workspacePath)">↻</button>
+          <button type="button" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary" title="新建文件夹" @click="createWorkspaceDir">⊕</button>
+          <button type="button" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary" title="新建文件" @click="createWorkspaceTextFile">+</button>
+          <button type="button" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary" title="上传文件" @click="triggerWorkspaceUpload">↑</button>
+          <button type="button" :disabled="!workspaceSelectedEntry || workspaceSelectedEntry.is_dir" class="p-1.5 rounded text-muted hover:bg-list-hover hover:text-primary disabled:opacity-40 disabled:pointer-events-none" title="重命名（仅文件）" @click="renameWorkspaceEntry">R</button>
+          <button type="button" :disabled="!workspaceSelectedEntry" class="p-1.5 rounded text-muted hover:bg-danger-subtle hover:text-danger disabled:opacity-40 disabled:pointer-events-none" title="删除（空目录也可删）" @click="deleteWorkspaceFile">−</button>
+          <input ref="workspaceUploadInputRef" type="file" class="hidden" @change="onWorkspaceUpload" />
         </div>
-        <div class="flex-1 min-h-0 flex divide-x divide-gray-200">
-          <!-- 左侧：文件 / 目录列表 -->
-          <div class="w-[45%] max-w-[220px] min-w-[160px] overflow-auto">
-            <div v-if="!workspaceEntries.length && !workspaceLoading" class="px-3 py-4 text-xs text-gray-500">
-              当前目录为空
+        <div v-if="workspaceLoading" class="px-3 py-2 text-[11px] text-muted">加载中...</div>
+        <div v-else-if="workspaceError" class="px-3 py-2 text-[11px] text-danger truncate">{{ workspaceError }}</div>
+        <div class="flex-1 min-h-0 flex min-w-0">
+          <div class="w-40 min-w-[140px] max-w-[200px] bg-card overflow-y-auto flex-shrink-0">
+            <div v-if="!workspaceEntries.length && !workspaceLoading" class="px-3 py-6 text-[11px] text-muted text-center">当前目录为空</div>
+            <div v-else class="py-0.5">
+              <button
+                v-for="e in workspaceEntries"
+                :key="e.path"
+                type="button"
+                class="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-none text-[12px] transition-colors"
+                :class="workspaceSelectedEntry?.path === e.path ? 'bg-accent-subtle/80 text-accent-subtle-text' : 'text-primary hover:bg-list-hover'"
+                @click="onWorkspaceEntryClick(e)"
+              >
+                <span class="flex-shrink-0 w-4 text-center text-muted font-mono text-xs">{{ e.is_dir ? '▾' : '·' }}</span>
+                <span class="truncate">{{ e.name }}</span>
+              </button>
             </div>
-            <button
-              v-for="e in workspaceEntries"
-              :key="e.path"
-              class="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
-              :class="workspaceSelectedEntry?.path === e.path ? 'bg-blue-50' : ''"
-              @click="onWorkspaceEntryClick(e)"
-            >
-              <span class="flex-shrink-0 text-sm">{{ e.is_dir ? '📁' : '📄' }}</span>
-              <span class="truncate text-xs">{{ e.name }}</span>
-            </button>
           </div>
           <!-- 右侧：文件内容预览 -->
           <div class="flex-1 min-w-0 flex flex-col">
-            <div class="px-3 py-2 border-b border-gray-100 flex items-center justify-between gap-2">
-              <div class="text-[11px] text-gray-600 truncate">
-                <span v-if="workspaceSelectedEntry">
-                  预览：{{ workspaceSelectedEntry.name }}
-                </span>
-                <span v-else>
-                  请选择左侧文件以预览内容
-                </span>
-              </div>
+            <div class="px-3 py-2 bg-section-header flex items-center justify-between gap-2 flex-shrink-0">
+              <span class="text-[11px] text-muted truncate">{{ workspaceSelectedEntry ? workspaceSelectedEntry.name : '选择文件预览' }}</span>
               <div v-if="workspaceSelectedEntry && !workspaceSelectedEntry.is_dir" class="flex items-center gap-2">
                 <a
                   :href="`/api/workspaces/${encodeURIComponent(groupSessionId)}/files/download?path=${encodeURIComponent(workspaceSelectedEntry.path)}`"
                   target="_blank"
                   rel="noreferrer"
-                  class="px-2 py-1 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
-                >
-                  在新标签打开
-                </a>
-                <button
-                  v-if="workspaceSelectedIsText && !workspaceEditing"
-                  class="px-2 py-1 text-[11px] border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
-                  @click="startWorkspaceEdit"
-                >
-                  在线编辑
-                </button>
-                <div v-else-if="workspaceSelectedIsText && workspaceEditing" class="flex items-center gap-1.5">
+                  class="px-2 py-1 text-[11px] border border-input-border rounded text-muted hover:bg-list-hover"
+                >新标签打开</a>
+                <template v-if="workspaceSelectedIsText">
+                  <button v-if="!workspaceEditing" class="px-1.5 py-0.5 text-[10px] text-muted hover:text-accent" @click="startWorkspaceEdit">编辑</button>
+                  <template v-else>
                   <button
-                    class="px-2 py-1 text-[11px] border border-blue-500 text-blue-600 rounded hover:bg-blue-50"
+                    class="px-2 py-1 text-[11px] border border-accent text-accent rounded hover:bg-accent-subtle"
                     @click="saveWorkspaceEdit"
                   >
                     保存
                   </button>
                   <button
-                    class="px-2 py-1 text-[11px] border border-gray-300 text-gray-600 rounded hover:bg-gray-100"
+                    class="px-2 py-1 text-[11px] border border-input-border text-muted rounded hover:bg-list-hover"
                     @click="cancelWorkspaceEdit"
                   >
                     取消
                   </button>
-                </div>
+                  </template>
+                </template>
               </div>
             </div>
-            <div class="flex-1 min-h-0 overflow-auto p-3">
-              <div v-if="workspaceFileLoading && !workspaceSelectedIsImage" class="text-xs text-gray-500">加载中...</div>
-              <div v-else-if="workspaceFileError" class="text-xs text-red-600">{{ workspaceFileError }}</div>
-              <div v-else-if="workspaceEditing && workspaceSelectedIsText" class="flex flex-col gap-2 h-full">
-                <textarea
-                  v-model="workspaceEditContent"
-                  class="flex-1 w-full text-xs text-gray-800 whitespace-pre-wrap break-words font-mono border border-gray-300 rounded-md p-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  spellcheck="false"
-                />
+            <div class="flex-1 min-h-0 overflow-auto p-3 bg-list-hover">
+              <div v-if="workspaceFileLoading && !workspaceSelectedIsImage" class="text-[11px] text-muted">加载中...</div>
+              <div v-else-if="workspaceFileError" class="text-[11px] text-danger">{{ workspaceFileError }}</div>
+              <div v-else-if="workspaceEditing && workspaceSelectedIsText" class="h-full">
+                <textarea v-model="workspaceEditContent" class="w-full h-full min-h-[120px] text-[12px] text-primary whitespace-pre-wrap break-words font-mono border border-border rounded p-2 resize-none focus:outline-none focus:ring-1 focus:ring-input-focus-ring" spellcheck="false" />
               </div>
-              <!-- 图片预览 -->
-              <img
-                v-else-if="workspaceSelectedEntry && workspaceSelectedIsImage"
-                :src="workspacePreviewDownloadUrl"
-                :alt="workspaceSelectedEntry.name"
-                class="max-w-full h-auto rounded border border-gray-200"
-              />
-              <!-- DOC/DOCX 预览 -->
-              <div v-else-if="workspaceSelectedIsDocx" class="flex-1 min-h-0 flex flex-col">
-                <div v-if="workspaceFileLoading" class="text-xs text-gray-500 py-4">加载中...</div>
-                <div v-else-if="workspaceDocxError" class="text-xs text-red-600 py-2">{{ workspaceDocxError }}</div>
+              <img v-else-if="workspaceSelectedEntry && workspaceSelectedIsImage" :src="workspacePreviewDownloadUrl" :alt="workspaceSelectedEntry.name" class="max-w-full h-auto rounded" />
+              <div v-else-if="workspaceSelectedIsDocx" class="min-h-0 flex flex-col">
+                <div v-if="workspaceFileLoading" class="text-[11px] text-muted py-4">加载中...</div>
+                <div v-else-if="workspaceDocxError" class="text-[11px] text-danger py-2">{{ workspaceDocxError }}</div>
                 <div v-show="!workspaceFileLoading && !workspaceDocxError" ref="workspaceDocxContainerRef" class="docx-preview overflow-auto text-left" />
               </div>
-              <pre
-                v-else-if="workspaceFileContent"
-                class="text-xs text-gray-800 whitespace-pre-wrap break-words font-mono"
-              >{{ workspaceFileContent }}</pre>
-              <div v-else class="text-xs text-gray-400">
-                请选择左侧文件以预览（支持文本、图片、DOC/DOCX）。
-              </div>
+              <pre v-else-if="workspaceFileContent" class="text-[12px] text-primary whitespace-pre-wrap break-words font-mono m-0">{{ workspaceFileContent }}</pre>
+              <div v-else class="text-[11px] text-muted">选择左侧文件以预览</div>
             </div>
           </div>
         </div>
@@ -301,73 +249,122 @@
     </div>
     <!-- 纵向拖拽条：调整消息区与输入区高度 -->
     <div
-      class="h-1 cursor-row-resize bg-transparent hover:bg-gray-200 flex-shrink-0"
+      class="h-1 cursor-row-resize bg-transparent hover:bg-border flex-shrink-0"
       @mousedown="startResizeInput"
     ></div>
-    <!-- 输入区（高度可调整） -->
+    <!-- 输入区：任务流程步进器 + 多输入框 + 下一发言人单选卡片 + 确认 -->
     <div
-      class="bg-white border-t border-gray-200 px-4 py-3 flex-shrink-0"
-      :style="{ height: `${inputAreaHeight}px`, minHeight: '96px', maxHeight: '260px' }"
+      class="bg-card flex-shrink-0 flex flex-col overflow-hidden"
+      :style="{ height: `${inputAreaHeight}px`, minHeight: '160px', maxHeight: '420px' }"
     >
-      <div class="flex gap-2">
-        <div class="flex-1 flex flex-col gap-1">
-          <textarea
-            v-model="inputText"
-            placeholder="输入消息参与讨论...（Cmd+空格 发送）"
-            rows="2"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            :disabled="isStreaming"
-            @keydown="onChatInputKeydown"
-          />
-          <div class="flex items-center gap-3 flex-wrap text-xs">
-            <button
-              type="button"
-              class="text-gray-500 hover:text-blue-600"
-              @click="openFilePicker"
+      <!-- 任务规划 / DHA 运行顺序（步进器） -->
+      <div v-if="!isSingleDha && (flowSteps.length || suggestedOrderFromHost.length)" class="flex-shrink-0 px-4 pt-2 pb-1 bg-sidebar-list">
+        <div class="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">任务流程</div>
+        <div class="flex items-center gap-0 overflow-x-auto pb-1">
+          <template v-for="(step, idx) in flowSteps" :key="step.id + '-' + idx">
+            <div
+              :class="[
+                'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all shrink-0',
+                step.state === 'done' && 'bg-emerald-50 border-emerald-200 text-emerald-800',
+                step.state === 'current' && 'bg-accent-subtle border-accent ring-1 ring-accent text-accent-subtle-text',
+                step.state === 'upcoming' && 'bg-list-hover border-border text-muted',
+              ]"
             >
-              插入文件
-            </button>
-            <template v-if="!isSingleDha">
-              <label class="flex items-center gap-1.5 text-gray-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="speakMode === 'auto'"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  @change="onAutoSwitchChange"
-                />
-                <span>自动</span>
-              </label>
-              <span class="text-gray-500">下一发言人：</span>
-              <select
-                v-model="overrideNextSpeaker"
-                class="border border-gray-300 rounded px-2 py-1 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                :disabled="speakMode === 'auto'"
-              >
-                <option value="">由主持人决定</option>
-                <option value="user">等待用户</option>
-                <option v-for="d in dhaList" :key="d.dha_id" :value="d.dha_id">
-                  {{ d.name }}
-                </option>
-              </select>
-              <button
-                v-if="speakMode === 'manual' && overrideNextSpeaker && overrideNextSpeaker !== 'user'"
-                type="button"
-                class="px-2 py-1 border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
-                @click="openPromptEditor"
-              >
-                查看/编辑提示词
-              </button>
-            </template>
+              <span v-if="step.state === 'done'" class="text-emerald-600">✓</span>
+              <span v-else class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-semibold" :style="step.id === 'user' ? {} : { backgroundColor: getDhaAvatarBg(step.id), color: 'white' }">{{ step.id === 'user' ? '我' : getDhaAvatarChar(step.id) }}</span>
+              <span class="text-xs font-medium max-w-[80px] truncate">{{ step.label }}</span>
+            </div>
+            <span v-if="idx < flowSteps.length - 1" class="text-placeholder shrink-0">→</span>
+          </template>
+        </div>
+      </div>
+
+      <!-- 多输入框：讨论目标 + 最近讨论 + 下一 DHA 提示词 -->
+      <div class="flex-1 flex flex-col gap-2 px-4 py-2 min-h-0 overflow-auto">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1">
+          <div class="flex flex-col min-h-0">
+            <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
+              【群聊讨论目标】
+              <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePickerForGoal">⊕</button>
+            </label>
+            <textarea
+              v-model="discussionGoalText"
+              placeholder="输入本场讨论要达成的目标…"
+              rows="2"
+              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+              :disabled="isStreaming"
+            />
+          </div>
+          <div class="flex flex-col min-h-0">
+            <label class="text-[11px] font-medium text-muted mb-0.5">最近讨论</label>
+            <textarea
+              v-model="recentDiscussionText"
+              placeholder="由消息自动生成，可编辑补充或修正…"
+              rows="2"
+              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm bg-list-hover text-primary overflow-auto resize-none placeholder:text-muted focus:ring-2 focus:ring-primary focus:border-primary"
+              :disabled="isStreaming"
+            />
+          </div>
+          <div class="flex flex-col min-h-0">
+            <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
+              下一 DHA 提示词
+              <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePicker">⊕</button>
+              <button v-if="speakMode === 'manual' && overrideNextSpeaker && overrideNextSpeaker !== 'user'" type="button" class="ml-1 text-[10px] text-accent hover:underline" @click="openPromptEditor">从预览加载</button>
+            </label>
+            <textarea
+              v-model="inputText"
+              placeholder="主持人返回后自动填充，可编辑后确认"
+              rows="2"
+              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+              :disabled="isStreaming"
+              @keydown="onChatInputKeydown"
+            />
           </div>
         </div>
-        <button
-          type="button"
-          class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed self-end"
-          :disabled="isStreaming || (!inputText.trim() && !overrideNextSpeaker)"
-          @click="sendMessage"
-        >
-          发送
-        </button>
+
+        <!-- 下一发言人：单选卡片 + 自动 + 确认 -->
+        <div v-if="!isSingleDha" class="flex flex-wrap items-center gap-2 flex-shrink-0">
+          <span class="text-[11px] text-muted">下一发言人</span>
+          <div class="flex flex-wrap gap-1.5">
+            <label
+              v-for="opt in nextSpeakerOptions"
+              :key="opt.value"
+              :class="[
+                'inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all',
+                overrideNextSpeaker === opt.value
+                  ? 'border-accent bg-accent-subtle text-accent-subtle-text shadow-sm'
+                  : 'border-border bg-card text-primary hover:border-input-border hover:bg-list-hover',
+              ]"
+            >
+              <input type="radio" :value="opt.value" v-model="overrideNextSpeaker" class="sr-only" :disabled="speakMode === 'auto'" />
+              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-text-inverse shrink-0" :style="opt.value === 'user' ? { backgroundColor: '#64748b' } : { backgroundColor: getDhaAvatarBg(opt.value) }">{{ opt.value === 'user' ? '我' : getDhaAvatarChar(opt.value) }}</span>
+              <span class="text-sm font-medium">{{ opt.label }}</span>
+            </label>
+          </div>
+          <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-card cursor-pointer hover:bg-list-hover text-sm">
+            <input type="checkbox" :checked="speakMode === 'auto'" class="rounded border-input-border text-accent focus:ring-input-focus-ring" @change="onAutoSwitchChange" />
+            <span>自动确认</span>
+          </label>
+          <button
+            type="button"
+            class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            :disabled="isStreaming || (!canSend)"
+            @click="sendMessage"
+            title="Cmd+空格"
+          >
+            {{ overrideNextSpeaker ? '确认并继续' : '发送' }}
+          </button>
+        </div>
+        <div v-else class="flex-shrink-0 flex justify-end">
+          <button
+            type="button"
+            class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            :disabled="isStreaming || !inputText.trim()"
+            @click="sendMessage"
+          >
+            发送
+          </button>
+        </div>
       </div>
     </div>
 
@@ -377,43 +374,46 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closeFilePicker"
     >
-      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold text-gray-800 truncate">
+      <div class="bg-card w-full max-w-2xl rounded-lg shadow-lg border border-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-primary truncate">
             选择要插入到输入框的文件（当前目录：{{ filePickerPath || '/' }}）
           </div>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closeFilePicker">关闭</button>
+          <button class="text-sm text-muted hover:text-primary" title="关闭" @click="closeFilePicker">关闭</button>
         </div>
-        <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+        <div class="px-4 py-2 border-b border-border-light flex items-center gap-2">
           <button
-            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50"
+            class="px-2 py-1 text-sm border border-input-border rounded hover:bg-list-hover disabled:opacity-50"
             :disabled="!filePickerPath"
+            title="上一级"
             @click="filePickerGoUp"
           >
             ↑ 上一级
           </button>
           <button
-            class="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100"
+            class="px-2 py-1 text-sm border border-input-border rounded hover:bg-list-hover"
+            title="刷新列表"
             @click="loadFilePickerEntries(filePickerPath)"
           >
             刷新
           </button>
-          <div v-if="filePickerLoading" class="text-xs text-gray-500">加载中...</div>
+          <div v-if="filePickerLoading" class="text-xs text-muted">加载中...</div>
           <div v-else-if="filePickerError" class="text-xs text-red-600 truncate">{{ filePickerError }}</div>
         </div>
         <div class="max-h-[60vh] overflow-auto">
-          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-gray-500">
+          <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-muted">
             当前目录为空
           </div>
           <button
             v-for="e in filePickerEntries"
             :key="e.path"
-            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            class="w-full text-left px-4 py-2.5 hover:bg-list-hover flex items-center gap-2 border-b border-border-light"
+            :title="e.is_dir ? `进入目录：${e.name}` : `插入文件：${e.name}`"
             @click="onPickFileEntry(e)"
           >
-            <span class="flex-shrink-0">{{ e.is_dir ? '📁' : '📄' }}</span>
+            <span class="flex-shrink-0 text-muted font-mono">{{ e.is_dir ? '▾' : '·' }}</span>
             <span class="truncate">{{ e.name }}</span>
-            <span v-if="!e.is_dir" class="ml-auto text-xs text-gray-400">插入</span>
+            <span v-if="!e.is_dir" class="ml-auto text-xs text-muted">插入</span>
           </button>
         </div>
       </div>
@@ -427,51 +427,89 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closeRawModal"
     >
-      <div class="bg-white w-full max-w-2xl max-h-[80vh] rounded-lg shadow-lg border border-gray-200 flex flex-col overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between shrink-0">
-          <span class="text-sm font-semibold text-gray-800">{{ rawModalTitle }}</span>
-          <button class="text-gray-500 hover:text-gray-800 p-1" @click="closeRawModal" aria-label="关闭">✕</button>
+      <div class="bg-card w-full max-w-2xl max-h-[80vh] rounded-lg shadow-lg border border-border flex flex-col overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+          <span class="text-sm font-semibold text-primary">{{ rawModalTitle }}</span>
+          <button class="text-muted hover:text-primary p-1" title="关闭" @click="closeRawModal" aria-label="关闭">×</button>
         </div>
-        <pre class="flex-1 overflow-auto p-4 text-xs text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 m-0">{{ rawModalContent }}</pre>
+        <pre class="flex-1 overflow-auto p-4 text-xs text-slate-700 whitespace-pre-wrap break-words font-mono bg-list-hover m-0">{{ rawModalContent }}</pre>
       </div>
     </div>
 
-    <!-- 邀请 DHA 加入弹窗 -->
+    <!-- 成员与邀请弹窗：当前成员 + 可邀请的 DHA（看到成员不够就可添加） -->
     <div
       v-if="showInviteDha"
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="showInviteDha = false"
     >
-      <div class="bg-white w-full max-w-md rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-          <span class="text-sm font-semibold text-gray-800">邀请 DHA 加入对话</span>
-          <button class="text-gray-500 hover:text-gray-800" @click="showInviteDha = false">✕</button>
+      <div class="bg-card w-full max-w-lg rounded-xl shadow-lg border border-border overflow-hidden flex flex-col max-h-[85vh]">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
+          <span class="text-sm font-semibold text-primary">成员与邀请</span>
+          <button class="text-muted hover:text-primary p-1 rounded" title="关闭" @click="showInviteDha = false">×</button>
         </div>
-        <div class="p-4">
-          <div v-if="!invitableDhas.length" class="text-sm text-gray-500">暂无可邀请的 DHA</div>
-          <div v-else class="space-y-2">
-            <label
-              v-for="d in invitableDhas"
-              :key="d.dha_id"
-              class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
-            >
-              <input type="checkbox" :value="d.dha_id" v-model="inviteSelectedIds" />
-              <span class="text-sm">{{ d.name }}</span>
-              <span v-if="d.role" class="text-xs text-gray-500">{{ d.role }}</span>
-            </label>
-          </div>
+        <div class="p-4 overflow-y-auto flex-1 min-h-0 space-y-4">
+          <!-- 当前成员：谁是谁、干啥的 -->
+          <section>
+            <h3 class="text-xs font-medium text-muted uppercase tracking-wide mb-2">当前成员 ({{ sessionMembers.length }})</h3>
+            <div v-if="!sessionMembers.length" class="text-sm text-muted py-2">暂无成员，可在下方邀请 DHA 加入。</div>
+            <div v-else class="space-y-1.5">
+              <div
+                v-for="m in sessionMembers"
+                :key="m.dha_id"
+                class="flex items-center gap-3 py-2 px-3 rounded-lg bg-list-hover border border-border-light"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-text-inverse flex-shrink-0"
+                  :style="{ backgroundColor: getDhaAvatarBg(m.dha_id) }"
+                >
+                  {{ getDhaAvatarChar(m.dha_id) }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium text-primary truncate">{{ m.name }}</div>
+                  <div v-if="m.role" class="text-xs text-muted truncate">{{ m.role }}</div>
+                </div>
+                <span v-if="m.isLeader" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 flex-shrink-0">主持</span>
+              </div>
+            </div>
+          </section>
+          <!-- 可邀请的 DHA：成员不够就点选添加 -->
+          <section>
+            <h3 class="text-xs font-medium text-muted uppercase tracking-wide mb-2">可邀请的 DHA</h3>
+            <div v-if="!invitableDhas.length" class="text-sm text-muted py-2">暂无可邀请的 DHA，请在资源中心先创建 DHA。</div>
+            <div v-else class="space-y-1.5">
+              <label
+                v-for="d in invitableDhas"
+                :key="d.dha_id"
+                class="flex items-center gap-3 cursor-pointer py-2 px-3 rounded-lg border transition-colors hover:bg-list-hover"
+                :class="inviteSelectedIds.includes(d.dha_id) ? 'bg-accent-subtle/80 border-blue-200' : 'border-border-light hover:border-border'"
+              >
+                <input type="checkbox" :value="d.dha_id" v-model="inviteSelectedIds" class="rounded border-input-border text-accent focus:ring-input-focus-ring" />
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold text-text-inverse flex-shrink-0"
+                  :style="{ backgroundColor: getDhaAvatarBg(d.dha_id) }"
+                >
+                  {{ (d.name || d.dha_id).trim().charAt(0) || '?' }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium text-primary truncate">{{ d.name || d.dha_id }}</div>
+                  <div v-if="d.role" class="text-xs text-muted truncate">{{ d.role }}</div>
+                  <div v-else class="text-xs text-muted">未设置角色</div>
+                </div>
+              </label>
+            </div>
+          </section>
         </div>
-        <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
-          <button type="button" class="px-3 py-1.5 border border-gray-300 rounded text-gray-600 hover:bg-gray-100" @click="showInviteDha = false">
-            取消
+        <div class="px-4 py-3 border-t border-border-light flex justify-end gap-2 flex-shrink-0">
+          <button type="button" class="px-3 py-1.5 text-sm border border-input-border rounded-lg text-muted hover:bg-list-hover" @click="showInviteDha = false">
+            关闭
           </button>
           <button
             type="button"
-            class="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover disabled:opacity-50"
             :disabled="!inviteSelectedIds.length"
             @click="confirmInviteDha"
           >
-            邀请
+            邀请选中 ({{ inviteSelectedIds.length }})
           </button>
         </div>
       </div>
@@ -483,34 +521,34 @@
       class="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50"
       @click.self="closePromptEditor"
     >
-      <div class="bg-white w-full max-w-2xl rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between gap-2">
-          <div class="text-sm font-semibold text-gray-800 truncate">
+      <div class="bg-card w-full max-w-2xl rounded-lg shadow-lg border border-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-primary truncate">
             下一发言人提示词（仅本轮有效）
           </div>
-          <button class="text-sm text-gray-500 hover:text-gray-800" @click="closePromptEditor">关闭</button>
+          <button class="text-sm text-muted hover:text-primary" @click="closePromptEditor">关闭</button>
         </div>
         <div class="p-4">
           <textarea
             v-model="promptEditorText"
             rows="10"
-            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            class="w-full border border-input-border rounded-lg px-3 py-2 text-sm resize-y focus:ring-2 focus:ring-input-focus-ring focus:border-accent"
           />
-          <p class="mt-2 text-xs text-gray-500">
+          <p class="mt-2 text-xs text-muted">
             说明：这是发送给下一位 DHA 的完整文本提示词，你可以在 manual 模式下按需微调，仅对本轮生效。
           </p>
         </div>
-        <div class="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+        <div class="px-4 py-3 border-t border-border-light flex justify-end gap-2">
           <button
             type="button"
-            class="px-3 py-1.5 text-sm border border-gray-300 rounded text-gray-600 hover:bg-gray-100"
+            class="px-3 py-1.5 text-sm border border-input-border rounded text-muted hover:bg-list-hover"
             @click="closePromptEditor"
           >
             取消
           </button>
           <button
             type="button"
-            class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded hover:bg-accent-hover"
             @click="confirmPromptEditor"
           >
             使用此提示词
@@ -530,7 +568,7 @@ const props = withDefaults(
   defineProps<{
     groupSessionId: string
     sessionTitle: string
-    messages: { message_id?: string; role: string; dha_id?: string; content: string; tool_raw_results?: string[]; next_prompt?: string; next_dha_name?: string }[]
+    messages: { message_id?: string; role: string; dha_id?: string; content: string; timestamp?: string; tool_raw_results?: string[]; next_prompt?: string; next_dha_name?: string; suggested_order?: string[] }[]
     dhaMap?: Record<string, { name?: string; role?: string }>
     dhaIds: string[]
     allDhaInstances?: { dha_id: string; name: string; role?: string }[]
@@ -548,12 +586,17 @@ const emit = defineEmits<{
 }>()
 
 const inputText = ref('')
+const discussionGoalText = ref('') // 【群聊讨论目标】，与首条用户消息同步，可编辑
+const recentDiscussionText = ref('') // 最近讨论，由消息自动生成并可编辑
 const isStreaming = ref(false)
+const streamingPhase = ref('')
 const overrideNextSpeaker = ref('')
-const customPrompt = ref('') // manual 模式下，用户可编辑的下一发言人提示词
+const customPrompt = ref('')
+/** 自动模式下，主持人返回后待确认的下一发言人（在 stream 结束后触发一次发送） */
+const pendingAutoConfirmSpeaker = ref<string | null>(null)
 const messagesContainerRef = ref<HTMLElement | null>(null)
 /** 用于逐条展示的消息列表：从 props 同步，请求完成后一次性更新 */
-const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string; tool_raw_results?: string[]; next_prompt?: string; next_dha_name?: string }[]>([])
+const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string; timestamp?: string; tool_raw_results?: string[]; next_prompt?: string; next_dha_name?: string; suggested_order?: string[] }[]>([])
 const showFilePicker = ref(false)
 // 工作区内的当前路径（相对 workspace 根目录，例如 ""、"notes"、"notes/sub"）
 const filePickerPath = ref('')
@@ -573,7 +616,7 @@ const workspaceFileContent = ref('')
 const workspaceEditing = ref(false)
 const workspaceEditContent = ref('')
 const workspaceUploadInputRef = ref<HTMLInputElement | null>(null)
-const workspaceWidth = ref(320) // 右侧工作区面板宽度（px）
+const workspaceWidth = ref(420) // 右侧工作区面板默认宽度（px），可拖拽调整
 const inputAreaHeight = ref(140) // 底部输入区域高度（px）
 const showPromptEditor = ref(false)
 const promptEditorText = ref('')
@@ -611,6 +654,7 @@ function getDhaAvatarBg(dhaId: string) {
 }
 
 function openFilePicker() {
+  filePickerTarget = 'prompt'
   showFilePicker.value = true
   filePickerError.value = ''
   loadFilePickerEntries('')
@@ -649,16 +693,25 @@ function filePickerGoUp() {
   loadFilePickerEntries(p)
 }
 
+let filePickerTarget: 'goal' | 'prompt' = 'prompt'
+function openFilePickerForGoal() {
+  filePickerTarget = 'goal'
+  openFilePicker()
+}
 function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
   if (e.is_dir) {
     loadFilePickerEntries(e.path)
     return
   }
-  // 插入时将 workspace 内相对路径转换为全局相对路径：
-  // workspaces/{groupSessionId}/{workspace_path}，便于后端 read_file 工具读取
   const workspacePrefix = `workspaces/${props.groupSessionId}`
   const globalPath = e.path ? `${workspacePrefix}/${e.path}` : workspacePrefix
-  inputText.value = (inputText.value || '') + `\n【文件引用：${globalPath}】\n`
+  const ref = `\n【文件引用：${globalPath}】\n`
+  if (filePickerTarget === 'goal') {
+    discussionGoalText.value = (discussionGoalText.value || '') + ref
+  } else {
+    inputText.value = (inputText.value || '') + ref
+  }
+  filePickerTarget = 'prompt'
   closeFilePicker()
 }
 
@@ -671,6 +724,11 @@ function openWorkspaceViewer() {
 
 function closeWorkspaceViewer() {
   showWorkspaceViewer.value = false
+}
+
+function toggleWorkspaceViewer() {
+  if (showWorkspaceViewer.value) closeWorkspaceViewer()
+  else openWorkspaceViewer()
 }
 
 async function loadWorkspaceEntries(path: string) {
@@ -749,6 +807,29 @@ async function onWorkspaceUpload(ev: Event) {
   }
 }
 
+async function createWorkspaceDir() {
+  const name = window.prompt('新建文件夹名称', '新文件夹')
+  if (!name || !name.trim()) return
+  try {
+    const body = { dirname: name.trim() }
+    const base = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/mkdir`
+    const url = workspacePath.value ? `${base}?path=${encodeURIComponent(workspacePath.value)}` : base
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      await loadWorkspaceEntries(workspacePath.value)
+    } else {
+      alert((j as { detail?: string }).detail || '新建文件夹失败')
+    }
+  } catch {
+    alert('新建文件夹失败，请检查网络或后端服务')
+  }
+}
+
 async function createWorkspaceTextFile() {
   const name = window.prompt('新建文件名（如 note.md）', 'note.md')
   if (!name || !name.trim()) return
@@ -772,10 +853,38 @@ async function createWorkspaceTextFile() {
   }
 }
 
-async function deleteWorkspaceFile() {
+async function renameWorkspaceEntry() {
   const entry = workspaceSelectedEntry.value
   if (!entry || entry.is_dir) return
-  if (!window.confirm(`确定要删除文件「${entry.name}」吗？此操作不可恢复。`)) return
+  const name = window.prompt('重命名为', entry.name)
+  if (name == null || name.trim() === '' || name.trim() === entry.name) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/rename?path=${encodeURIComponent(entry.path)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: name.trim() }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.path) {
+      workspaceSelectedEntry.value = { name: name.trim(), path: j.data.path, is_dir: false }
+      await loadWorkspaceEntries(workspacePath.value)
+    } else {
+      alert((j as { detail?: string }).detail || '重命名失败')
+    }
+  } catch {
+    alert('重命名失败，请检查网络或后端服务')
+  }
+}
+
+async function deleteWorkspaceFile() {
+  const entry = workspaceSelectedEntry.value
+  if (!entry) return
+  const label = entry.is_dir ? `目录「${entry.name}」` : `文件「${entry.name}」`
+  if (entry.is_dir) {
+    if (!window.confirm(`确定要删除空目录 ${entry.name} 吗？非空目录请先清空内容。`)) return
+  } else {
+    if (!window.confirm(`确定要删除 ${label} 吗？此操作不可恢复。`)) return
+  }
   try {
     const url = `/api/workspaces/${encodeURIComponent(props.groupSessionId)}/files/content?path=${encodeURIComponent(entry.path)}`
     const r = await fetch(url, { method: 'DELETE' })
@@ -1006,7 +1115,9 @@ function closePromptEditor() {
 }
 
 function confirmPromptEditor() {
-  customPrompt.value = promptEditorText.value || ''
+  const v = promptEditorText.value || ''
+  customPrompt.value = v
+  inputText.value = v  // 同步到输入框，用户可直接发送
   showPromptEditor.value = false
 }
 
@@ -1015,6 +1126,15 @@ watch(
   (next) => {
     if (!isStreaming.value && next?.length !== undefined) {
       displayedMessages.value = [...next]
+      const lastWithPrompt = next?.slice().reverse().find((m: { next_prompt?: string }) => m?.next_prompt)
+      if (lastWithPrompt?.next_prompt) {
+        inputText.value = lastWithPrompt.next_prompt
+      }
+      const firstUser = next?.find((m: { role: string }) => m.role === 'user')
+      if (firstUser?.content && !discussionGoalText.value) {
+        discussionGoalText.value = (firstUser.content || '').trim()
+      }
+      recentDiscussionText.value = recentDiscussionPreview.value
     }
   },
   { immediate: true }
@@ -1026,6 +1146,95 @@ const dhaList = computed(() => {
     name: props.dhaMap[id]?.name || id,
     role: props.dhaMap[id]?.role,
   }))
+})
+
+/** 最近讨论摘要（由消息生成），用于同步到可编辑框 */
+const recentDiscussionPreview = computed(() => {
+  const msgs = displayedMessages.value
+  if (!msgs.length) return '暂无讨论内容'
+  const recent = msgs.slice(-16)
+  const lines: string[] = []
+  for (const m of recent) {
+    const role = m.role || ''
+    const content = (m.content || '').trim().slice(0, 180)
+    if (role === 'user') lines.push(`【用户】${content}${(m.content || '').length > 180 ? '…' : ''}`)
+    else if (role === 'host') lines.push(`【主持人】${content}${(m.content || '').length > 180 ? '…' : ''}`)
+    else lines.push(`【${getDhaName(m.dha_id) || '助手'}】${content}${(m.content || '').length > 180 ? '…' : ''}`)
+  }
+  return lines.join('\n\n')
+})
+
+/** 主持人首轮返回的 suggested_order（任务规划顺序） */
+const suggestedOrderFromHost = computed(() => {
+  for (let i = displayedMessages.value.length - 1; i >= 0; i--) {
+    const order = displayedMessages.value[i]?.suggested_order
+    if (order && Array.isArray(order) && order.length) return order
+  }
+  return []
+})
+
+/** 流程步进器数据：优先用主持人 suggested_order，并标记已完成/当前/待执行 */
+const flowSteps = computed(() => {
+  const order = suggestedOrderFromHost.value
+  const msgs = displayedMessages.value
+  const actual: { id: string; label: string }[] = []
+  for (const m of msgs) {
+    if (m.role === 'user') actual.push({ id: 'user', label: '用户' })
+    else if (m.role === 'assistant' && m.dha_id) actual.push({ id: m.dha_id, label: getDhaName(m.dha_id) || m.dha_id })
+  }
+  if (order.length) {
+    const steps = order.map((id): { id: string; label: string; state: 'done' | 'current' | 'upcoming' } => {
+      const sid = (id === 'user' ? 'user' : id) as string
+      return { id: sid, label: sid === 'user' ? '用户' : (getDhaName(sid) || sid), state: 'upcoming' as const }
+    })
+    for (const a of actual) {
+      const idx = steps.findIndex(s => s.id === a.id && s.state === 'upcoming')
+      if (idx >= 0) steps[idx].state = 'done'
+    }
+    const firstUpcoming = steps.findIndex(s => s.state === 'upcoming')
+    if (firstUpcoming >= 0) steps[firstUpcoming].state = 'current'
+    return steps
+  }
+  if (actual.length) {
+    return actual.map((a, i) => ({
+      id: a.id,
+      label: a.label,
+      state: (i < actual.length - 1 ? 'done' : 'current') as 'done' | 'current' | 'upcoming',
+    }))
+  }
+  return []
+})
+
+/** 下一发言人单选列表：主持人定 + 用户 + 各 DHA */
+const nextSpeakerOptions = computed(() => {
+  const opts: { value: string; label: string }[] = [
+    { value: '', label: '主持人定' },
+    { value: 'user', label: '用户' },
+  ]
+  for (const d of dhaList.value) {
+    opts.push({ value: d.dha_id, label: d.name || d.dha_id })
+  }
+  return opts
+})
+
+const canSend = computed(() => {
+  if (overrideNextSpeaker.value) return true
+  return !!(discussionGoalText.value.trim() || inputText.value.trim())
+})
+
+/** 当前会话成员（用于头部展示：谁是谁、干啥的），含 name/role 及是否主持人 */
+const sessionMembers = computed(() => {
+  const all = props.allDhaInstances || []
+  return props.dhaIds.map((id) => {
+    const fromMap = props.dhaMap?.[id]
+    const fromAll = all.find((d) => d.dha_id === id)
+    return {
+      dha_id: id,
+      name: fromMap?.name || fromAll?.name || id,
+      role: fromMap?.role ?? fromAll?.role ?? '',
+      isLeader: props.leaderDhaId === id,
+    }
+  })
 })
 
 const invitableDhas = computed(() => {
@@ -1068,32 +1277,38 @@ function getDhaRole(dhaId: string) {
   return (role && String(role).trim()) || ''
 }
 
-const DHA_BOX_COLORS = [
-  'border-l-blue-500 bg-blue-50/50',
-  'border-l-emerald-500 bg-emerald-50/50',
-  'border-l-amber-500 bg-amber-50/50',
-  'border-l-violet-500 bg-violet-50/50',
-  'border-l-rose-500 bg-rose-50/50',
-  'border-l-cyan-500 bg-cyan-50/50',
-  'border-l-teal-500 bg-teal-50/50',
-  'border-l-indigo-500 bg-indigo-50/50',
-]
+const DHA_BOX_COUNT = 8
 
-function getDhaBoxClass(dhaId: string): string {
-  if (!dhaId) return 'border-l-gray-400 bg-gray-50/50'
-  let hash = 0
-  for (let i = 0; i < dhaId.length; i++) {
-    hash = ((hash << 5) - hash) + dhaId.charCodeAt(i)
-    hash |= 0
+function getDhaBoxStyle(dhaId: string): { borderLeftColor: string; backgroundColor: string } {
+  let idx = 0
+  if (dhaId) {
+    let hash = 0
+    for (let i = 0; i < dhaId.length; i++) {
+      hash = ((hash << 5) - hash) + dhaId.charCodeAt(i)
+      hash |= 0
+    }
+    idx = Math.abs(hash) % DHA_BOX_COUNT
   }
-  const idx = Math.abs(hash) % DHA_BOX_COLORS.length
-  return DHA_BOX_COLORS[idx]
+  return {
+    borderLeftColor: `var(--color-dha-box-${idx})`,
+    backgroundColor: `var(--color-dha-box-${idx}-bg)`,
+  }
 }
 
 function getDhaSkillLabel(dhaId: string, msg?: { skill_id?: string; meta?: { skills?: string[] } }): string {
   if (msg?.skill_id) return msg.skill_id
   if (msg?.meta?.skills?.length) return msg.meta.skills[0]
   return '无'
+}
+
+function formatMsgTime(iso?: string): string {
+  if (!iso) return ''
+  try {
+    const d = new Date(iso)
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  } catch {
+    return iso
+  }
 }
 
 /** 从 content 中提取 tool_call JSON 块，返回 { toolCalls, rest } */
@@ -1176,12 +1391,19 @@ function onChatInputKeydown(e: KeyboardEvent) {
 }
 
 async function sendMessage() {
-  const msg = inputText.value.trim()
   const hasOverride = !!overrideNextSpeaker.value
+  const promptText = inputText.value.trim()
+  const goalText = discussionGoalText.value.trim()
   if (isStreaming.value) return
-  if (!msg && !hasOverride) return
+  if (!hasOverride && !goalText && !promptText) return
 
-  inputText.value = ''
+  // 选择下一发言人时：发送「确认并继续」，message 为空，custom_prompt 为输入框提示词；否则发送用户消息（讨论目标）
+  const msg = hasOverride ? '' : (goalText || promptText)
+  if (!hasOverride) {
+    inputText.value = ''
+  } else {
+    inputText.value = ''  // 确认后清空，等主持人返回新 next_prompt 再自动填充
+  }
   isStreaming.value = true
 
   if (msg) {
@@ -1194,15 +1416,17 @@ async function sendMessage() {
     scrollToBottom()
   }
 
-  const body: Record<string, string> = { message: msg || '' }
+  const body: Record<string, string> = { message: msg }
   if (hasOverride) {
     body.override_next_speaker = overrideNextSpeaker.value
+    if (promptText) body.custom_prompt = promptText
   }
-  if (customPrompt.value.trim()) {
+  if (!hasOverride && customPrompt.value.trim()) {
     body.custom_prompt = customPrompt.value.trim()
   }
 
   try {
+    streamingPhase.value = '正在准备…'
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1225,12 +1449,27 @@ async function sendMessage() {
           if (!block.startsWith('event: ')) continue
           const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
           const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
-          if (eventType === 'message' && dataStr) {
+          if (eventType === 'start') {
+            streamingPhase.value = '正在准备…'
+          } else if (eventType === 'message' && dataStr) {
+            streamingPhase.value = '正在生成回复…'
             try {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 displayedMessages.value = [...displayedMessages.value, data]
+                if (data.next_prompt) {
+                  inputText.value = data.next_prompt
+                }
+                recentDiscussionText.value = recentDiscussionPreview.value
                 scrollToBottom()
+              }
+            } catch (_) {}
+          } else if (eventType === 'end' && dataStr) {
+            streamingPhase.value = ''
+            try {
+              const endData = JSON.parse(dataStr)
+              if (endData.waiting_for_user && endData.suggested_next_speaker != null && props.speakMode === 'auto') {
+                pendingAutoConfirmSpeaker.value = endData.suggested_next_speaker
               }
             } catch (_) {}
           }
@@ -1242,6 +1481,13 @@ async function sendMessage() {
     console.error('Group 发送失败', e)
   } finally {
     isStreaming.value = false
+    streamingPhase.value = ''
+    if (pendingAutoConfirmSpeaker.value != null && props.speakMode === 'auto') {
+      const next = pendingAutoConfirmSpeaker.value
+      pendingAutoConfirmSpeaker.value = null
+      overrideNextSpeaker.value = next
+      nextTick(() => sendMessage())
+    }
   }
 }
 
@@ -1286,6 +1532,19 @@ watch(
 </script>
 
 <style scoped>
+.thinking-dot {
+  animation: thinking-bounce 0.6s ease-in-out infinite;
+}
+@keyframes thinking-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
 .chat-markdown :deep(p) {
   margin: 0 0 0.35em 0;
 }

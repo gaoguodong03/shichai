@@ -87,5 +87,16 @@
     "speak_mode": "auto",
     "created_at": "2026-03-07T14:37:13.652426+00:00",
     "updated_at": "2026-03-07T14:44:25.276832+00:00"
+  },
+  "group-b6ad5fdbd856": {
+    "title": "新对话",
+    "dha_ids": [
+      "dha-df1f712a",
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-08T05:09:07.938520+00:00",
+    "updated_at": "2026-03-08T05:35:04.176652+00:00"
   }
 }

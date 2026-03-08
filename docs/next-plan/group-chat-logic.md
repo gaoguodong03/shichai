@@ -1,5 +1,78 @@
 # Group 群聊前后端逻辑说明
 
+## 〇、群聊执行顺序（从用户输入到最终输出）
+
+本节按**时间顺序**梳理：用户一次请求进来后，后端依次做了什么、**给谁发了什么**，不涉及字段细节。
+
+### 顺序总览
+
+1. **请求入口**  
+   前端 POST `.../chat/stream`，body 里可有：`message`（用户输入）、`override_next_speaker`（指定下一发言人）、`custom_prompt`（给下一 DHA 的提示词）。
+
+2. **写入用户消息**  
+   若有 `message`，则追加一条 `role=user` 的消息到历史并落盘。  
+   **讨论目标**：从历史中取**首条用户消息**的前 200 字作为本场 `discussion_goal`，后续主持人和 DHA 都会用到。
+
+3. **确定上一发言人**  
+   从历史中倒序找最近一条「参与讨论的 DHA」发言（`role=assistant` 且 `dha_id` 不是主持人），得到 `last_speaker_dha_id`，供主持人判断「谁刚说完、是否 task_done」。
+
+4. **决定下一发言人**（三种情况）  
+   - **前端指定了 override_next_speaker**：直接用该值（可为某 dha_id、user、end），不再调用主持人。  
+   - **仅 1 个 DHA**：不经过主持人，直接让该 DHA 发言。  
+   - **多 DHA 且未指定**：  
+     - **手动模式**：只调用主持人，得到「建议的下一发言人 + 主持词 + next_prompt + suggested_order」，写一条主持人消息，然后 **end + waiting_for_user**，等用户下次请求再带 override 或新 message。  
+     - **自动模式**：调用主持人得到 decision，若有「下一发言人是某 DHA」则先写一条主持人消息，再进入下面的 DHA 执行循环。
+
+5. **主持人被调用时，发给主持人的内容**  
+   - 参与者列表（各 DHA 的 name / dha_id / role）  
+   - 讨论目标（首条用户消息）  
+   - 最近讨论内容（历史消息转成的【用户】/【主持人】/【DHA名】文本）  
+   - 若已有上一发言人：刚发言的 DHA 的 dha_id；否则：说明「请指定第一个发言人」  
+   主持人（或默认 leader_decide）返回：`task_done`、`next_speaker`、`reason`、`announcement`（主持词）、可选 `next_prompt`（给下一 DHA 的提示词）、可选 `suggested_order`（首轮任务规划顺序）。
+
+6. **写主持人消息**  
+   把主持词写入一条消息（role=host 或 assistant+dha_id=主持人），并带上 `next_dha_name`、`next_prompt`、`suggested_order`（若有），落盘并推给前端。
+
+7. **DHA 执行循环**（当 next_speaker 是某 dha_id 时）  
+   - **发给该 DHA 的「用户侧」输入**：  
+     - 若本次请求带了 `custom_prompt` 且尚未用过，则用 `custom_prompt`；  
+     - 否则用**上一条主持人消息里的 next_prompt**（主持人生成的或后端默认模板：讨论目标 + 最近讨论 + 「请紧扣讨论目标发言」）。  
+   - **发给该 DHA 的「系统侧」**：该 DHA 的 skill 内容 + 角色说明 + 应用级 system_prompt。  
+   - 该 DHA 的 agent 流式输出 → 前端逐 token 展示；整段回复结束后写一条 `role=assistant`、`dha_id=该 DHA` 的消息并落盘。
+
+8. **该 DHA 说完之后（多 DHA + 自动模式）**  
+   再次调用主持人（输入：更新后的最近讨论 + 刚发言的 DHA 的 dha_id）→ 得到新的 next_speaker、主持词、next_prompt。  
+   - 若 next_speaker 仍是某 dha_id：写主持人消息，然后回到步骤 7，让该 DHA 发言。  
+   - 若 next_speaker 为 user 或 end：写主持人消息（若有），然后结束循环。
+
+9. **结束**  
+   - 发 `event: end`，并带上是否 `waiting_for_user`、`suggested_next_speaker`（建议的下一发言人，供前端自动确认用）、或 `discussion_ended`。  
+   - 若是等待用户，则本轮不再继续调用 DHA，等用户下次请求（可带 message 或 override_next_speaker + custom_prompt）。
+
+### 给谁发了什么（汇总）
+
+| 对象 | 收到的主要内容 |
+|------|----------------|
+| **主持人**（或默认调度 LLM） | 参与者列表、讨论目标、最近讨论全文、上一发言人 dha_id（或「指定首发言人」）；输出 next_speaker、主持词、next_prompt、suggested_order 等。 |
+| **参与讨论的 DHA** | 一条「用户消息」= next_prompt（讨论目标 + 最近讨论 + 主持人的具体指引，或默认模板）；系统消息 = 该 DHA 的 skill + role。 |
+| **前端** | 流式：start → 若干 message（主持人/assistant）→ content（DHA 流式片段）→ end（含 waiting_for_user、suggested_next_speaker 等）。 |
+
+### 举例说明
+
+- **场景**：群聊里有 2 个 DHA：「需求分析」「写作助手」，并设了主持人 DHA。用户输入：「帮我写一份本周工作周报」。  
+- **执行顺序**：  
+  1. 用户消息「帮我写一份本周工作周报」写入历史；讨论目标 = 该句。  
+  2. 无上一发言人，自动模式下调用主持人，输入：参与者列表、讨论目标、最近讨论（此时只有【用户】这条）。  
+  3. 主持人返回：next_speaker=需求分析、主持词「下面由 需求分析 发言」、next_prompt=「讨论目标：… 请先梳理用户本周做了哪些事、需要突出哪些成果」。  
+  4. 写一条主持人消息（含 next_prompt、suggested_order 若有）→ 前端展示。  
+  5. **需求分析 DHA** 收到 next_prompt 作为「用户消息」→ 流式输出（例如先问用户要更多信息或直接列要点）→ 写一条 assistant(需求分析) 消息。  
+  6. 再次调用主持人，输入：最近讨论（已含用户 + 主持人 + 需求分析）。主持人返回：task_done=true、next_speaker=写作助手、next_prompt=「根据需求分析的要点，写一份周报正文」。  
+  7. 写主持人消息 → **写作助手 DHA** 收到上述 next_prompt → 流式输出周报 → 写 assistant(写作助手) 消息。  
+  8. 再调主持人，返回 next_speaker=user、主持词「请用户查看或补充」→ 写主持人消息 → end（waiting_for_user, suggested_next_speaker=user）。  
+  9. 前端展示完整对话；用户可继续输入或选下一发言人再点确认。
+
+---
+
 ## 一、整体流程概览
 
 ```

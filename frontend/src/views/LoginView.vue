@@ -1,63 +1,63 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-100">
-    <div class="w-full max-w-sm rounded-xl bg-white shadow-lg border border-gray-200 p-8">
-      <h1 class="text-xl font-semibold text-gray-800 text-center mb-6">
+  <div class="min-h-screen flex items-center justify-center bg-page">
+    <div class="w-full max-w-sm rounded-xl bg-card shadow-lg border border-border p-8">
+      <h1 class="text-xl font-semibold text-primary text-center mb-6">
         {{ isRegister ? '创建账户' : 'DHA 登录' }}
       </h1>
       <form @submit.prevent="isRegister ? onRegister() : onSubmit()" class="space-y-4">
         <div>
-          <label for="username" class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+          <label for="username" class="block text-sm font-medium text-primary mb-1">用户名</label>
           <input
             id="username"
             v-model="username"
             type="text"
             required
             autocomplete="username"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-input-border px-3 py-2 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
             placeholder="请输入用户名"
           />
         </div>
         <div>
-          <label for="password" class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+          <label for="password" class="block text-sm font-medium text-primary mb-1">密码</label>
           <input
             id="password"
             v-model="password"
             type="password"
             autocomplete="current-password"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-input-border px-3 py-2 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
             :placeholder="isRegister ? '请设置密码' : '请输入密码'"
           />
         </div>
         <div v-if="isRegister">
-          <label for="passwordConfirm" class="block text-sm font-medium text-gray-700 mb-1">确认密码</label>
+          <label for="passwordConfirm" class="block text-sm font-medium text-primary mb-1">确认密码</label>
           <input
             id="passwordConfirm"
             v-model="passwordConfirm"
             type="password"
             autocomplete="new-password"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-input-border px-3 py-2 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
             placeholder="请再次输入密码"
           />
         </div>
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-sm text-danger">{{ error }}</p>
         <button
           type="submit"
           :disabled="loading"
-          class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {{ loading ? (isRegister ? '创建中…' : '验证中…') : (isRegister ? '创建账户' : '登录') }}
         </button>
       </form>
-      <p class="mt-4 text-center text-sm text-gray-600">
+      <p class="mt-4 text-center text-sm text-muted">
         <button
           type="button"
-          class="text-blue-600 hover:text-blue-800 hover:underline"
+          class="text-accent hover:opacity-80 hover:underline"
           @click="toggleMode"
         >
           {{ isRegister ? '已有账号？去登录' : '没有账号？创建账户' }}
         </button>
       </p>
-      <p class="mt-2 text-xs text-gray-500 text-center">
+      <p class="mt-2 text-xs text-muted text-center">
         账密由后端文本文件校验，初始账号 123 / 密码 1。
       </p>
     </div>

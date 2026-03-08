@@ -24,13 +24,15 @@ mcp_server_ids:
 
 2. **JSON 块**：在主持词之后，换行并写一个 **```json** 代码块，内容为：
    ```json
-   {"task_done": true或false, "next_speaker": "dha_id或user或end", "reason": "简短理由"}
+   {"task_done": true或false, "next_speaker": "dha_id或user或end", "reason": "简短理由", "next_prompt": "…", "suggested_order": ["dha_id或user", …]}
    ```
    - `task_done`：若上一发言人刚发过言，表示其是否已完成本轮任务；若尚未有人发言或上一句是用户，填 `true` 即可。
    - `next_speaker`：下一发言人的 **dha_id**（必须与当前群聊参与者列表中的 dha_id 一致），或 `"user"`（等待用户输入），或 `"end"`（讨论结束）。
    - `reason`：一句话说明理由。
+   - `next_prompt`：当 `next_speaker` 为某个 dha_id 时**必须**填写。这是交给该 DHA 的**完整用户侧提示词**（即该 DHA 将收到的 HumanMessage 内容），应包含：讨论目标、最近讨论摘要、以及你希望该 DHA 本轮重点做什么或回答什么（可针对当前讨论进展写一句具体指引）。若 `next_speaker` 为 `user` 或 `end`，可省略 `next_prompt` 或填空字符串。
+   - `suggested_order`：**仅在第一轮**（尚未有 DHA 发言时）建议填写。用于任务规划：一个数组，表示建议的发言顺序，如 `["dha-需求分析", "dha-方案设计", "user"]`，便于用户了解大致的 DHA 运行流程。元素只能是当前参与者的 dha_id 或 `"user"`，可省略或空数组。
 
-注意：`next_speaker` 只能是系统提供的 dha_id 之一，或 `user`、`end`，不能编造 id。
+注意：`next_speaker` 只能是系统提供的 dha_id 之一，或 `user`、`end`，不能编造 id。给下一发言人的 `next_prompt` 要具体、可执行，便于该 DHA 紧扣讨论发言。
 
 ## 执行原则
 

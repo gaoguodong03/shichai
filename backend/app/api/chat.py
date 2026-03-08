@@ -411,6 +411,179 @@ def _build_history_summary(session_id: str, history: List[BaseMessage], max_char
     return "\n".join(lines).strip()
 
 
+def _build_history_summary_from_dicts(history: List[Dict[str, Any]], max_chars: int = 200) -> str:
+    """从 {role, content} 列表构建简要摘要，供单聊模式（如 0-DHA 群聊）多轮上下文使用。"""
+    if not history:
+        return ""
+    turns = []
+    i = 0
+    while i < len(history):
+        m = history[i]
+        i += 1
+        role = (m.get("role") or "").strip().lower()
+        content = (m.get("content") or "")
+        if isinstance(content, list):
+            content = content[0].get("text", str(content)) if content and isinstance(content[0], dict) else str(content)
+        content = str(content).strip()
+        if role == "user":
+            up = content[:max_chars] + ("…" if len(content) > max_chars else "")
+            ap = ""
+            while i < len(history):
+                n = history[i]
+                i += 1
+                if (n.get("role") or "").strip().lower() in ("assistant", "host"):
+                    ap = (n.get("content") or "")
+                    if isinstance(ap, list):
+                        ap = ap[0].get("text", str(ap)) if ap and isinstance(ap[0], dict) else str(ap)
+                    ap = str(ap)[:max_chars] + ("…" if len(str(ap)) > max_chars else "")
+                    break
+            turns.append((up, ap))
+    recent = turns[-_HISTORY_WINDOW_TURNS:]
+    lines = []
+    for idx, (up, ap) in enumerate(recent, start=1):
+        lines.append(f"第{idx}轮：用户：{up}" + (f" 助手：{ap}" if ap else ""))
+    return "\n".join(lines)
+
+
+async def run_single_chat_full_content(
+    session_id: str,
+    message: str,
+    *,
+    history_override: Optional[List[Dict[str, Any]]] = None,
+) -> tuple[str, Optional[str]]:
+    """
+    单聊模式：使用「全部 skill」执行一次对话并返回助手完整回复文本及本次使用的 skill_id。
+    用于 0-DHA 群聊（新建会话单聊）：不写入 _CHAT_HISTORY，由调用方写入群聊历史。
+    history_override: 可选，list of {role, content} 作为多轮上下文摘要来源。
+    返回 (full_content, skill_id)，skill_id 可为 None。
+
+    注意：与 chat_stream 存在重复逻辑（工具/技能选择、history 摘要、agent 构建、流式解析）。
+    若需减少冗余，可抽取 _build_tools_for_request、_select_skill_for_message 等共享函数。
+    """
+    await ensure_initialized()
+    all_tools = _get_mcp_manager().get_tools()
+    skills_for_selection = skills_loader.get_skills_for_selection(None)
+    app_settings = load_app_settings()
+    extra_system_prompt = app_settings.get("system_prompt") or ""
+    provider_id = app_settings.get("default_llm", "qwen")
+    llm = get_llm_from_config(provider_id, app_settings.get("llm_providers"))
+
+    history_summary = None
+    if history_override:
+        history_summary = _build_history_summary_from_dicts(history_override)
+    if not history_summary and session_id:
+        history = _CHAT_HISTORY.get(session_id, [])
+        history_summary = _build_history_summary(session_id, history) if history else None
+
+    if skills_for_selection:
+        selected_skill_id = await select_skill(llm, message, skills_for_selection, history_summary)
+        if selected_skill_id is None and len(skills_for_selection) == 1:
+            selected_skill_id = skills_for_selection[0].get("skill_id")
+        if selected_skill_id is None and skills_for_selection:
+            selected_skill_id = skills_for_selection[0].get("skill_id")
+        if selected_skill_id is None and skills_loader.get_skill_full_content("default"):
+            selected_skill_id = "default"
+    else:
+        selected_skill_id = "default" if skills_loader.get_skill_full_content("default") else None
+
+    server_ids = get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
+    if server_ids:
+        tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]
+        if not tools:
+            tools = list(all_tools)
+    else:
+        tools = list(all_tools)
+    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
+    tool_names = {t.name for t in tools}
+    extra_tools = [
+        create_export_session_tool(session_id),
+        create_write_workspace_file_tool(session_id),
+        call_api,
+    ]
+    if selected_skill_id:
+        extra_tools.append(create_run_skill_script_tool(selected_skill_id))
+    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
+    tools = wrap_filesystem_tools(tools, session_id)
+
+    skill_full_content = ""
+    if selected_skill_id:
+        skill_full_content = skills_loader.get_skill_full_content(selected_skill_id)
+    if not skill_full_content:
+        skill_full_content = "你是通用助手，直接回答用户问题。若需要外部能力可调用工具。"
+
+    agent = create_skill_execution_agent(llm, tools, skill_full_content, extra_system_prompt)
+    user_content = message.strip()
+    if history_summary:
+        user_content = f"历史对话摘要：\n{history_summary}\n\n当前用户输入：\n{user_content}"
+    initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
+
+    accumulated_content: List[str] = []
+    final_state = None
+    has_sent_content = False
+    previous_messages = initial_state.get("messages", [])
+
+    async for stream_item in agent.astream(initial_state, stream_mode=["updates", "messages", "values"]):
+        if isinstance(stream_item, tuple) and len(stream_item) == 2:
+            mode, chunk = stream_item
+            if mode == "values":
+                final_state = chunk
+                continue
+            if mode == "messages":
+                msg_chunk, meta = chunk if isinstance(chunk, tuple) and len(chunk) >= 2 else (chunk, {})
+                if meta.get("langgraph_node") != "agent":
+                    continue
+                if hasattr(msg_chunk, "content") and msg_chunk.content:
+                    txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
+                    if txt:
+                        accumulated_content.append(txt)
+                        has_sent_content = True
+                continue
+            event = chunk
+        else:
+            event = stream_item
+
+        if isinstance(event, dict) and "agent" in event:
+            agent_output = event["agent"]
+            aimsg = None
+            if isinstance(agent_output, dict) and "messages" in agent_output:
+                for m in reversed(agent_output["messages"]):
+                    if isinstance(m, AIMessage):
+                        aimsg = m
+                        break
+            elif isinstance(agent_output, list):
+                for m in reversed(agent_output):
+                    if isinstance(m, AIMessage):
+                        aimsg = m
+                        break
+            if aimsg:
+                if isinstance(agent_output, dict) and "messages" in agent_output:
+                    final_state = {"messages": agent_output["messages"]}
+                content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
+                has_tool_calls = hasattr(aimsg, "tool_calls") and aimsg.tool_calls
+                if content_str.strip():
+                    accumulated_content.append(content_str)
+                    if not has_tool_calls and not has_sent_content:
+                        has_sent_content = True
+                if has_tool_calls:
+                    import json as json_module
+                    for tco in aimsg.tool_calls:
+                        tool_name = tco.get("name") or tco.get("id", "")
+                        args = tco.get("args") or {}
+                        payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
+                        accumulated_content.append(f"\n```json\n{json_module.dumps(payload, ensure_ascii=False, indent=2)}\n```\n")
+
+    if not has_sent_content and final_state and "messages" in final_state:
+        for m in reversed(final_state["messages"]):
+            if isinstance(m, AIMessage):
+                content_str = str(m.content) if m.content else ""
+                if content_str.strip():
+                    accumulated_content.append(content_str)
+                    break
+
+    full_content = "".join(accumulated_content).strip() if accumulated_content else ""
+    return (full_content or "（没有收到响应）", selected_skill_id)
+
+
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
     """流式聊天接口"""

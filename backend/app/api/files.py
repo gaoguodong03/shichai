@@ -45,6 +45,35 @@ def _resolve_workspace_path(workspace_id: str, relative_path: str) -> Path:
     return full
 
 
+# 以下带子路径的路由（如 /files/mkdir）必须注册在 /files 之前，否则 POST /files 可能先匹配导致 404
+class DirCreateBody(BaseModel):
+    dirname: str
+
+
+@router.post("/workspaces/{workspace_id}/files/mkdir")
+async def create_workspace_dir(workspace_id: str, body: DirCreateBody, path: str = ""):
+    """在指定 workspace 内创建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
+    dirname = (body.dirname or "").strip().replace("..", "").replace("\\", "").strip("/")
+    if not dirname:
+        raise HTTPException(status_code=400, detail="dirname is required")
+    try:
+        parent = _resolve_workspace_path(workspace_id, path or "")
+    except HTTPException:
+        raise
+    if not parent.exists():
+        raise HTTPException(status_code=404, detail="Parent path not found")
+    if not parent.is_dir():
+        raise HTTPException(status_code=400, detail="Path must be a directory")
+    new_dir = parent / dirname
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    ws_root = get_workspace_root(workspace_id)
+    rel = str(new_dir.relative_to(ws_root)).replace("\\", "/")
+    return {"status": "ok", "data": {"path": rel}}
+
+
 @router.get("/workspaces/{workspace_id}/files")
 async def list_workspace_files(workspace_id: str, path: str = ""):
     """
@@ -131,7 +160,7 @@ async def update_workspace_file_content(workspace_id: str, path: str, body: File
 
 @router.delete("/workspaces/{workspace_id}/files/content")
 async def delete_workspace_file(workspace_id: str, path: str):
-    """删除 workspace 中的文件（path 为 workspace 内相对路径，且必须是文件）"""
+    """删除 workspace 中的文件或空目录（path 为 workspace 内相对路径）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
@@ -139,13 +168,19 @@ async def delete_workspace_file(workspace_id: str, path: str):
     except HTTPException:
         raise
     if not target.exists():
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="Not found")
     if target.is_dir():
-        raise HTTPException(status_code=400, detail="Cannot delete a directory")
-    try:
-        target.unlink()
-    except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+        if any(target.iterdir()):
+            raise HTTPException(status_code=400, detail="目录非空，请先删除内容")
+        try:
+            target.rmdir()
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    else:
+        try:
+            target.unlink()
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
     return {"status": "ok", "data": {"path": path, "deleted": True}}
 
 

@@ -1,7 +1,7 @@
 <template>
-  <div class="flex h-screen bg-gray-50">
+  <div class="flex h-screen bg-page">
     <!-- 最左侧：导航（图标 + 名称） -->
-    <nav class="w-16 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 py-3">
+    <nav class="w-16 flex-shrink-0 flex flex-col bg-sidebar py-3">
       <div class="px-2 space-y-0.5">
         <button
           v-for="item in navItems"
@@ -10,19 +10,19 @@
           :class="[
             'w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium transition-colors',
             currentModule === item.id
-              ? 'bg-blue-50 text-blue-700'
-              : 'text-gray-700 hover:bg-gray-100'
+              ? 'bg-nav-selected-bg text-nav-selected-text'
+              : 'text-nav-text hover:bg-nav-hover-bg'
           ]"
         >
           <span>{{ item.label }}</span>
         </button>
       </div>
       <div class="flex-1 min-h-2" />
-      <div class="px-2 pb-3 border-t border-gray-100 pt-2">
+      <div class="px-2 pb-3 pt-2 flex flex-col gap-1 bg-section-header">
         <button
           type="button"
           @click="logout"
-          class="w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors"
+          class="w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium text-nav-text hover:bg-nav-hover-bg transition-colors"
         >
           登出
         </button>
@@ -30,33 +30,36 @@
     </nav>
 
     <!-- 中间列：当前模块的列表/摘要 -->
-    <aside class="w-80 flex-shrink-0 flex flex-col bg-white border-r border-gray-200 overflow-hidden">
-      <div class="px-3 py-2 border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+    <aside class="w-60 flex-shrink-0 flex flex-col bg-sidebar-list overflow-hidden">
+      <div class="px-3 py-2 bg-section-header text-xs font-medium text-muted uppercase tracking-wide flex-shrink-0">
         {{ middleColumnTitle }}
       </div>
       <div class="flex-1 overflow-y-auto">
-        <!-- Chat：单聊 + 群聊会话列表 -->
-        <template v-if="currentModule === 'chat'">
+        <!-- 工作台：统一会话列表 -->
+        <template v-if="currentModule === 'workspace'">
+          <button
+            @click="createNewSession"
+            :class="[
+              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+              creatingSession ? 'opacity-70 pointer-events-none' : 'hover:bg-list-hover text-list-hover-text'
+            ]"
+          >
+            + 新建会话
+          </button>
           <button
             @click="enterSingleChat"
             :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-              showSingleChat ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer mb-1',
+              showSingleChat ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
             ]"
           >
-            单聊
+            <div class="flex-1 min-w-0 text-left">
+              <div class="truncate font-medium">单聊</div>
+              <div class="truncate text-xs text-muted mt-0.5">1 个 DHA</div>
+            </div>
           </button>
-          <button
-            @click="createNewGroupChat"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-              showGroupCreateForm ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            + 新对话（群聊）
-          </button>
-          <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-gray-500">暂无会话</div>
+          <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+          <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-muted">暂无群聊会话</div>
           <div
             v-else
             v-for="s in groupSessions"
@@ -64,123 +67,139 @@
             @click="selectGroupSession(s.id)"
             :class="[
               'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-              selectedGroupSessionId === s.id && !showSingleChat ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              selectedGroupSessionId === s.id && !showSingleChat ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
             ]"
           >
             <div class="flex-1 min-w-0 text-left">
               <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
-              <div class="truncate text-xs text-gray-500 mt-0.5">
+              <div class="truncate text-xs text-muted mt-0.5">
                 {{ (s.dha_ids?.length || 0) }} 个 DHA · {{ formatDate(s.updated_at) }}
               </div>
             </div>
             <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 type="button"
-                class="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                class="p-1.5 rounded text-muted hover:text-accent hover:bg-accent-subtle"
                 title="重命名"
                 @click.stop="renameGroupSession(s.id, s.title || '新对话')"
               >
-                ✏️
+                R
               </button>
               <button
                 type="button"
-                class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle"
                 title="删除"
                 @click.stop="deleteGroupSession(s.id)"
               >
-                🗑️
+                ×
               </button>
             </div>
           </div>
         </template>
-        <!-- Skill -->
-        <template v-else-if="currentModule === 'skill'">
-          <button
-            @click="selectedId = '__new__'"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              selectedId === '__new__' ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            + 添加 Skill
-          </button>
-          <div v-if="skillsLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <button
-            v-else
-            v-for="s in skills"
-            :key="s.id"
-            @click="selectedId = s.id"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              selectedId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            <div class="truncate font-medium">{{ s.name || s.id }}</div>
-            <div class="truncate text-xs text-gray-500 mt-0.5">{{ s.enabled ? '已启用' : '已禁用' }}</div>
-          </button>
-        </template>
-        <!-- MCP -->
-        <template v-else-if="currentModule === 'mcp'">
-          <button
-            @click="selectedId = '__new__'"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-              selectedId === '__new__' ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            + 添加 MCP
-          </button>
-          <div v-if="mcpLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <button
-            v-else
-            v-for="s in mcpServers"
-            :key="s.id"
-            @click="selectedId = s.id"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              selectedId === s.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            <div class="truncate font-medium">{{ s.name || s.id }}</div>
-            <div class="truncate text-xs text-gray-500 mt-0.5">{{ s.status === 'connected' ? '已连接' : '未连接' }} · {{ s.tool_count || 0 }} 工具</div>
-          </button>
-        </template>
-        <!-- DHA：中间列显示 DHA 列表 -->
-        <template v-else-if="currentModule === 'dha'">
-          <button
-            @click="selectedId = '__new__'"
-            :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-              selectedId === '__new__' ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-          >
-            + 新建 DHA
-          </button>
-          <div v-if="dhaInstancesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-          <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-gray-500">暂无 DHA</div>
-          <div
-            v-else
-            v-for="d in dhaInstances"
-            :key="d.dha_id"
-            :class="[
-              'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-              selectedId === d.dha_id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-            ]"
-            @click="selectedId = d.dha_id"
-          >
-            <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
-              <div class="truncate text-xs text-gray-500 mt-0.5">{{ d.role || '（无角色）' }}</div>
-            </div>
+        <!-- 资源中心：子 Tab 智能体 / 技能 / 工具 -->
+        <template v-else-if="currentModule === 'resource'">
+          <div class="flex bg-section-header mb-2 flex-shrink-0">
             <button
-              type="button"
-              class="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100"
-              title="删除 DHA"
-              @click.stop="deleteDhaInstance(d.dha_id)"
+              v-for="tab in resourceTabs"
+              :key="tab.id"
+              @click="resourceSubModule = tab.id"
+              :class="[
+                'flex-1 px-2 py-2 text-xs font-medium rounded-t transition-colors',
+                resourceSubModule === tab.id ? 'bg-accent-subtle text-accent-subtle-text' : 'text-primary hover:bg-list-hover'
+              ]"
             >
-              🗑️
+              {{ tab.label }}
             </button>
           </div>
+          <!-- 智能体 DHA -->
+          <template v-if="resourceSubModule === 'dha'">
+            <button
+              @click="selectedId = '__new__'"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
+                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              + 新建 DHA
+            </button>
+            <div v-if="dhaInstancesLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-muted">暂无 DHA</div>
+            <div
+              v-else
+              v-for="d in dhaInstances"
+              :key="d.dha_id"
+              :class="[
+                'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
+                selectedId === d.dha_id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+              @click="selectedId = d.dha_id"
+            >
+              <div class="flex-1 min-w-0 text-left">
+                <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ d.role || '（无角色）' }}</div>
+              </div>
+              <button
+                type="button"
+                class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
+                title="删除 DHA"
+                @click.stop="deleteDhaInstance(d.dha_id)"
+              >
+                ×
+              </button>
+            </div>
+          </template>
+          <!-- 技能 Skills -->
+          <template v-else-if="resourceSubModule === 'skill'">
+            <button
+              @click="selectedId = '__new__'"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              + 添加 Skill
+            </button>
+            <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <button
+              v-else
+              v-for="s in skills"
+              :key="s.id"
+              @click="selectedId = s.id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              <div class="truncate font-medium">{{ s.name || s.id }}</div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ s.enabled ? '已启用' : '已禁用' }}</div>
+            </button>
+          </template>
+          <!-- 工具 MCP -->
+          <template v-else-if="resourceSubModule === 'mcp'">
+            <button
+              @click="selectedId = '__new__'"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              + 添加 MCP
+            </button>
+            <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <button
+              v-else
+              v-for="s in mcpServers"
+              :key="s.id"
+              @click="selectedId = s.id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              <div class="truncate font-medium">{{ s.name || s.id }}</div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ s.status === 'connected' ? '已连接' : '未连接' }} · {{ s.tool_count || 0 }} 工具</div>
+            </button>
+          </template>
         </template>
         <!-- 设置 -->
         <template v-else-if="currentModule === 'settings'">
@@ -190,112 +209,25 @@
             @click="selectedId = c.id"
             :class="[
               'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              selectedId === c.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
+              selectedId === c.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
             ]"
           >
             {{ c.label }}
           </button>
         </template>
-        <!-- 文件系统：当前选中会话的工作区 -->
-        <template v-else-if="currentModule === 'files'">
-          <div v-if="!selectedGroupSessionId" class="px-3 py-4 text-sm text-gray-500">
-            请先在 Chat 中选择一个会话
-          </div>
-          <template v-else>
-            <div class="flex flex-wrap gap-1 mb-1">
-              <button
-                class="flex-1 min-w-0 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
-                @click="createNewFile"
-              >
-                + 新建
-              </button>
-              <button
-                class="flex-1 min-w-0 text-left px-3 py-2.5 rounded-lg text-sm font-medium text-blue-700 bg-blue-100 hover:bg-blue-200"
-                @click="triggerImportFile"
-              >
-                ↑ 导入
-              </button>
-              <button
-                class="px-3 py-2.5 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
-                title="刷新文件列表"
-                @click="fetchFiles(currentFilePath)"
-              >
-                🔄
-              </button>
-              <input
-                ref="importFileInputRef"
-                type="file"
-                multiple
-                class="hidden"
-                @change="onImportFileSelected"
-              />
-            </div>
-            <div v-if="filesLoading" class="px-3 py-4 text-sm text-gray-500">加载中...</div>
-            <div v-else-if="!fileEntries.length && !currentFilePath" class="px-3 py-4 text-sm text-gray-500">该会话工作区暂无文件</div>
-          <template v-else>
-            <button
-              v-if="currentFilePath"
-              @click="goFileUp"
-              class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
-            >
-              ↑ 上一级
-            </button>
-            <div
-              v-for="e in fileEntries"
-              :key="e.path"
-              :class="[
-                'w-full px-3 py-2.5 rounded-lg text-sm transition-colors flex items-start gap-2',
-                selectedId === e.path ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-800'
-              ]"
-            >
-              <button
-                class="flex-1 min-w-0 text-left flex items-start gap-2"
-                @click="onFileEntryClick(e)"
-              >
-                <span class="flex-shrink-0 mt-0.5">{{ e.is_dir ? '📁' : '📄' }}</span>
-                <span class="break-all leading-tight">{{ e.name }}</span>
-              </button>
-              <div
-                v-if="!e.is_dir"
-                class="flex-shrink-0 flex items-center gap-1"
-              >
-                <button
-                  type="button"
-                  class="px-2 py-1 text-[11px] border border-gray-300 rounded hover:bg-gray-100"
-                  @click.stop="renameFileFromList(e)"
-                >
-                  重命名
-                </button>
-                <button
-                  type="button"
-                  class="px-2 py-1 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50"
-                  @click.stop="deleteFileFromList(e)"
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          </template>
-          </template>
-        </template>
       </div>
     </aside>
 
-    <!-- 右侧列：主内容，默认 Chat -->
-    <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Chat 模块：单聊 或 群聊 -->
-      <template v-if="currentModule === 'chat'">
+    <!-- 右侧列：主内容（工作台时加 workspace-main 便于强制文字色） -->
+    <main
+      :class="['flex-1 flex flex-col min-w-0 overflow-hidden bg-page text-primary', currentModule === 'workspace' && 'workspace-main']"
+    >
+      <!-- 工作台：单聊 / 新建会话 / 群聊 -->
+      <template v-if="currentModule === 'workspace'">
         <template v-if="showSingleChat">
           <ChatView
             session-id="single-default"
             session-title="单聊"
-          />
-        </template>
-        <template v-else-if="showGroupCreateForm">
-          <GroupCreateView
-            :dha-instances="dhaInstances"
-            @created="onGroupCreated"
-            @cancel="showGroupCreateForm = false"
           />
         </template>
         <template v-else-if="selectedGroupSessionId && groupSessionDetail">
@@ -315,56 +247,55 @@
           />
         </template>
         <template v-else>
-          <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
-            <p>请在左侧选择「单聊」或「新对话（群聊）」或已有会话</p>
+          <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4 workspace-placeholder">
+            <p style="color: #1a1a1a">请选择左侧会话，或点击「新建会话」直接开始单聊（可稍后邀请 DHA 变为群聊）</p>
           </div>
         </template>
       </template>
-      <!-- Skill：添加 或 详情/编辑 -->
-      <template v-else-if="currentModule === 'skill' && selectedId === '__new__'">
-        <SkillAddView @created="onSkillCreated" />
+      <!-- 资源中心：智能体 / 技能 / 工具 -->
+      <template v-else-if="currentModule === 'resource'">
+        <template v-if="resourceSubModule === 'dha'">
+          <DHAView
+            :selected-dha-id="selectedId"
+            :dha-instances="dhaInstances"
+            @created="onDHACreated"
+            @updated="fetchDHA"
+            @cancel="selectedId = null"
+          />
+        </template>
+        <template v-else-if="resourceSubModule === 'skill' && selectedId === '__new__'">
+          <SkillAddView @created="onSkillCreated" />
+        </template>
+        <template v-else-if="resourceSubModule === 'skill' && selectedId">
+          <SkillDetailView :skill-id="selectedId" @updated="fetchSkills" @deleted="selectedId = null; fetchSkills()" />
+        </template>
+        <template v-else-if="resourceSubModule === 'skill'">
+          <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
+            <p>请从左侧选择技能或添加新技能</p>
+          </div>
+        </template>
+        <template v-else-if="resourceSubModule === 'mcp' && selectedId === '__new__'">
+          <MCPAddView @created="onMCPCreated" />
+        </template>
+        <template v-else-if="resourceSubModule === 'mcp' && selectedId">
+          <MCPDetailView :server-id="selectedId" @updated="fetchMCP" @deleted="selectedId = null; fetchMCP()" />
+        </template>
+        <template v-else-if="resourceSubModule === 'mcp'">
+          <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
+            <p>请从左侧选择 MCP 或添加新 MCP</p>
+          </div>
+        </template>
       </template>
-      <template v-else-if="currentModule === 'skill' && selectedId">
-        <SkillDetailView :skill-id="selectedId" @updated="fetchSkills" @deleted="selectedId = null; fetchSkills()" />
-      </template>
-      <!-- MCP：添加 或 详情/编辑 -->
-      <template v-else-if="currentModule === 'mcp' && selectedId === '__new__'">
-        <MCPAddView @created="onMCPCreated" />
-      </template>
-      <template v-else-if="currentModule === 'mcp' && selectedId">
-        <MCPDetailView :server-id="selectedId" @updated="fetchMCP" @deleted="selectedId = null; fetchMCP()" />
-      </template>
-      <!-- 设置：应用设置 -->
-      <template v-else-if="currentModule === 'settings' && selectedId === 'app'">
-        <AppSettingsView />
-      </template>
+      <!-- 设置 -->
       <template v-else-if="currentModule === 'settings'">
-        <AppSettingsView />
-      </template>
-      <!-- 文件系统：选中文件时预览/下载 -->
-      <template v-else-if="currentModule === 'files' && selectedId && selectedFileEntry && !selectedFileEntry.is_dir && selectedGroupSessionId">
-        <FileDetailView :workspace-id="selectedGroupSessionId" :path="selectedId" @renamed="onFileRenamed" />
-      </template>
-      <!-- 文件系统：选中目录或未选时显示提示 -->
-      <template v-else-if="currentModule === 'files'">
-        <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
-          <p v-if="!selectedGroupSessionId">请先在左侧 Chat 中选择一个会话，以查看该会话的工作区文件。</p>
-          <p v-else-if="selectedFileEntry?.is_dir">当前选中为目录，请在左侧继续浏览。</p>
-          <p v-else>请在左侧选择文件以预览或下载。</p>
+        <AppSettingsView v-if="selectedId === 'app'" />
+        <ThemeSettingsView v-else-if="selectedId === 'theme'" />
+        <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
+          <p>请从左侧选择设置项</p>
         </div>
       </template>
-      <!-- DHA：右侧显示选中 DHA 的详情 -->
-      <template v-else-if="currentModule === 'dha'">
-        <DHAView
-          :selected-dha-id="currentModule === 'dha' ? selectedId : null"
-          :dha-instances="dhaInstances"
-          @created="onDHACreated"
-          @updated="fetchDHA"
-          @cancel="selectedId = null"
-        />
-      </template>
       <template v-else>
-        <div class="flex flex-col h-full items-center justify-center text-gray-500 text-sm p-4">
+        <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择功能</p>
         </div>
       </template>
@@ -373,20 +304,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import SkillDetailView from './SkillDetailView.vue'
 import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
-import FileDetailView from './FileDetailView.vue'
+import ThemeSettingsView from './ThemeSettingsView.vue'
 import DHAView from './DHAView.vue'
 import GroupChatView from './GroupChatView.vue'
-import GroupCreateView from './GroupCreateView.vue'
 import ChatView from './ChatView.vue'
+import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
+const themeApi = inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
 
@@ -396,18 +328,23 @@ function logout() {
   router.push('/login')
 }
 
-type ModuleId = 'chat' | 'files' | 'skill' | 'mcp' | 'dha' | 'settings'
+type ModuleId = 'workspace' | 'resource' | 'settings'
+type ResourceSubModule = 'dha' | 'skill' | 'mcp'
 
 const navItems: { id: ModuleId; label: string }[] = [
-  { id: 'chat', label: 'Chat' },
-  { id: 'dha', label: 'DHA' },
-  { id: 'files', label: 'Files' },
-  { id: 'skill', label: 'Skills' },
-  { id: 'mcp', label: 'MCPs' },
+  { id: 'workspace', label: '工作台' },
+  { id: 'resource', label: '资源中心' },
   { id: 'settings', label: '设置' },
 ]
 
-const currentModule = ref<ModuleId>('chat')
+const resourceTabs: { id: ResourceSubModule; label: string }[] = [
+  { id: 'dha', label: '智能体' },
+  { id: 'skill', label: '技能' },
+  { id: 'mcp', label: '工具' },
+]
+
+const currentModule = ref<ModuleId>('workspace')
+const resourceSubModule = ref<ResourceSubModule>('dha')
 const selectedId = ref<string | null>(null)
 
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
@@ -416,6 +353,7 @@ const mcpServers = ref<{ id: string; name: string; status: string; tool_count: n
 const mcpLoading = ref(false)
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
+  { id: 'theme', label: '配色' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
@@ -430,23 +368,15 @@ const groupSessionDetail = ref<{
   leader_dha_id?: string
   speak_mode?: string
 } | null>(null)
-const showGroupCreateForm = ref(false)
+const creatingSession = ref(false)
 const showSingleChat = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
-const fileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
-const filesLoading = ref(false)
-const currentFilePath = ref('')
-const selectedFileEntry = ref<{ name: string; path: string; is_dir: boolean } | null>(null)
-const importFileInputRef = ref<HTMLInputElement | null>(null)
 
 const middleColumnTitle = computed(() => {
   const t: Record<ModuleId, string> = {
-    chat: '会话列表',
-    files: '文件列表',
-    skill: '技能列表',
-    mcp: 'MCP Server',
-    dha: 'DHA 实例',
+    workspace: '会话列表',
+    resource: '资源中心',
     settings: '设置分类',
   }
   return t[currentModule.value]
@@ -466,16 +396,17 @@ function formatDate(iso: string) {
 function onNavClick(item: { id: ModuleId }) {
   currentModule.value = item.id
   selectedId.value = null
-  if (item.id === 'chat') {
+  if (item.id === 'workspace') {
     selectedGroupSessionId.value = null
-    showGroupCreateForm.value = false
     showSingleChat.value = false
     groupSessionDetail.value = null
     fetchGroupSessions()
     fetchDHA()
   }
-  if (item.id === 'dha') {
+  if (item.id === 'resource') {
     fetchDHA()
+    fetchSkills()
+    fetchMCP()
   }
 }
 
@@ -500,7 +431,7 @@ async function fetchGroupSessions() {
     if (j.status === 'ok' && j.data?.sessions) {
       groupSessions.value = j.data.sessions
       // 无选中且未在新建时，默认打开第一个 Group
-      if (!selectedGroupSessionId.value && !showGroupCreateForm.value && groupSessions.value.length > 0) {
+      if (!selectedGroupSessionId.value && groupSessions.value.length > 0) {
         selectedGroupSessionId.value = groupSessions.value[0].id
       }
     }
@@ -525,29 +456,40 @@ async function fetchGroupSessionDetail() {
 
 function onChatMessageSent() {
   fetchGroupSessionDetail()
-  // 对话结束后刷新工作区文件列表，使新生成的文件直接出现
-  fetchFiles(currentFilePath.value)
 }
 
 function enterSingleChat() {
   showSingleChat.value = true
   selectedGroupSessionId.value = null
-  showGroupCreateForm.value = false
   groupSessionDetail.value = null
 }
 
-function createNewGroupChat() {
-  showSingleChat.value = false
-  selectedGroupSessionId.value = null
-  showGroupCreateForm.value = true
-  groupSessionDetail.value = null
-  fetchDHA()
+async function createNewSession() {
+  if (creatingSession.value) return
+  creatingSession.value = true
+  try {
+    const r = await fetch('/api/group-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '新对话', dha_ids: [] }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.id) {
+      showSingleChat.value = false
+      selectedGroupSessionId.value = j.data.id
+      await fetchGroupSessions()
+      await fetchGroupSessionDetail()
+    } else {
+      alert(j.detail || '新建会话失败')
+    }
+  } finally {
+    creatingSession.value = false
+  }
 }
 
 function selectGroupSession(id: string) {
   showSingleChat.value = false
   selectedGroupSessionId.value = id
-  showGroupCreateForm.value = false
 }
 
 async function deleteGroupSession(id: string) {
@@ -565,12 +507,6 @@ async function deleteGroupSession(id: string) {
   }
 }
 
-function onGroupCreated(id: string) {
-  showGroupCreateForm.value = false
-  selectedGroupSessionId.value = id
-  fetchGroupSessions()
-  fetchGroupSessionDetail()
-}
 
 async function renameGroupSession(id: string, currentTitle: string) {
   const next = prompt('重命名 Group', currentTitle)
@@ -636,211 +572,36 @@ async function fetchMCP() {
   }
 }
 
-async function fetchFiles(path: string = '') {
-  const wsId = selectedGroupSessionId.value
-  if (!wsId) {
-    fileEntries.value = []
-    return
-  }
-  filesLoading.value = true
-  try {
-    const base = `/api/workspaces/${encodeURIComponent(wsId)}/files`
-    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
-    const r = await fetch(url)
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.entries) {
-      fileEntries.value = j.data.entries
-    } else {
-      fileEntries.value = []
-    }
-  } finally {
-    filesLoading.value = false
-  }
-}
-
-function goFileUp() {
-  const p = currentFilePath.value.replace(/\/?[^/]+\/?$/, '').replace(/\/$/, '')
-  currentFilePath.value = p
-  selectedId.value = null
-  selectedFileEntry.value = null
-  fetchFiles(p)
-}
-
-function onFileEntryClick(e: { name: string; path: string; is_dir: boolean }) {
-  selectedFileEntry.value = e
-  selectedId.value = e.path
-  if (e.is_dir) {
-    currentFilePath.value = e.path
-    fetchFiles(e.path)
-  }
-}
-
-async function renameFileFromList(e: { name: string; path: string; is_dir: boolean }) {
-  const wsId = selectedGroupSessionId.value
-  if (!wsId) return
-  const current = e.name
-  const next = window.prompt('重命名文件为：', current)
-  if (!next || next.trim() === '' || next.trim() === current) return
-  try {
-    const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/files/rename?path=${encodeURIComponent(e.path)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ new_name: next.trim() }),
-    })
-    const j = await resp.json()
-    if (j.status !== 'ok' || !j.data?.path) {
-      alert(j.detail || '重命名失败')
-      return
-    }
-    const newPath = j.data.path as string
-    // 刷新列表并更新选中项
-    await fetchFiles(currentFilePath.value)
-    selectedId.value = newPath
-    selectedFileEntry.value = { name: next.trim(), path: newPath, is_dir: false }
-  } catch (err) {
-    console.error('重命名文件失败', err)
-    alert('重命名失败')
-  }
-}
-
-async function deleteFileFromList(e: { name: string; path: string; is_dir: boolean }) {
-  const wsId = selectedGroupSessionId.value
-  if (!wsId) return
-  if (!window.confirm(`确定要删除文件「${e.name}」吗？此操作无法恢复。`)) return
-  try {
-    const resp = await fetch(`/api/workspaces/${encodeURIComponent(wsId)}/files/content?path=${encodeURIComponent(e.path)}`, {
-      method: 'DELETE',
-    })
-    if (!resp.ok) {
-      const j = await resp.json().catch(() => ({}))
-      alert(j.detail || '删除失败')
-      return
-    }
-    // 删除成功后刷新列表，若当前选中的是该文件则清空右侧预览
-    await fetchFiles(currentFilePath.value)
-    if (selectedId.value === e.path) {
-      selectedId.value = null
-      selectedFileEntry.value = null
-    }
-  } catch (err) {
-    console.error('删除文件失败', err)
-    alert('删除失败')
-  }
-}
-
 function onSkillCreated(id: string) {
   selectedId.value = id
   fetchSkills()
 }
+
 function onMCPCreated(id: string) {
   selectedId.value = id
   fetchMCP()
 }
 
-function onFileRenamed(newPath: string) {
-  selectedId.value = newPath
-  selectedFileEntry.value = { name: newPath.split('/').pop() || newPath, path: newPath, is_dir: false }
-  fetchFiles(currentFilePath.value)
-}
-
-function onSavedAsFile(path: string) {
-  currentModule.value = 'files'
-  selectedId.value = path
-  selectedFileEntry.value = { name: path.split('/').pop() || path, path, is_dir: false }
-  currentFilePath.value = path.includes('/') ? path.replace(/\/[^/]+$/, '') : ''
-  fetchFiles(currentFilePath.value)
-}
-
-function triggerImportFile() {
-  importFileInputRef.value?.click()
-}
-
-const uploadApiBase = import.meta.env.DEV ? 'http://localhost:8000' : ''
-
-async function onImportFileSelected(ev: Event) {
-  const wsId = selectedGroupSessionId.value
-  if (!wsId) return
-  const input = ev.target as HTMLInputElement
-  const files = input.files
-  if (!files?.length) return
-  const path = currentFilePath.value
-  let lastPath: string | null = null
-  let hasError = false
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      const url = `${uploadApiBase}/api/workspaces/${encodeURIComponent(wsId)}/files/upload${path ? `?path=${encodeURIComponent(path)}` : ''}`
-      const r = await fetch(url, {
-        method: 'POST',
-        body: form,
-      })
-      const j = await r.json()
-      if (j.status === 'ok' && j.data?.path) {
-        lastPath = j.data.path
-      } else {
-        hasError = true
-        console.error('导入失败:', j.detail || j)
-      }
-    } catch (e) {
-      hasError = true
-      console.error('导入文件失败', e)
-    }
-  }
-  input.value = ''
-  if (hasError) {
-    alert('部分或全部文件导入失败，请确保后端服务已启动（backend 目录下运行 uvicorn）')
-  }
-  if (lastPath) {
-    fetchFiles(path)
-    selectedId.value = lastPath
-    selectedFileEntry.value = { name: lastPath.split('/').pop() || lastPath, path: lastPath, is_dir: false }
-  }
-}
-
-async function createNewFile() {
-  const wsId = selectedGroupSessionId.value
-  if (!wsId) return
-  const name = window.prompt('请输入文件名（如 note.md）')
-  if (!name?.trim()) return
-  try {
-    const base = `/api/workspaces/${encodeURIComponent(wsId)}/files`
-    const url = currentFilePath.value ? `${base}?path=${encodeURIComponent(currentFilePath.value)}` : base
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename: name.trim(), content: '' }),
-    })
-    const j = await r.json()
-    if (j.status === 'ok' && j.data?.path) {
-      fetchFiles(currentFilePath.value)
-      selectedId.value = j.data.path
-      selectedFileEntry.value = { name: name.trim(), path: j.data.path, is_dir: false }
-    }
-  } catch (e) {
-    console.error('创建文件失败', e)
-  }
-}
-
 watch(currentModule, (mod) => {
-  if (mod !== 'skill' && mod !== 'mcp') selectedId.value = null
-  selectedFileEntry.value = null
-  if (mod === 'skill') fetchSkills()
-  if (mod === 'mcp') fetchMCP()
-  if (mod === 'settings') selectedId.value = 'app'
-  if (mod === 'files') {
-    currentFilePath.value = ''
-    selectedId.value = null
-    selectedFileEntry.value = null
-    fetchFiles()
+  if (mod !== 'resource') selectedId.value = null
+  if (mod === 'resource') {
+    if (resourceSubModule.value === 'skill') fetchSkills()
+    if (resourceSubModule.value === 'mcp') fetchMCP()
+    if (resourceSubModule.value === 'dha') fetchDHA()
   }
-  if (mod === 'chat') {
+  if (mod === 'settings') selectedId.value = 'app'
+  if (mod === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
   }
-  if (mod === 'dha') fetchDHA()
 }, { immediate: true })
+
+watch(resourceSubModule, (sub) => {
+  selectedId.value = null
+  if (sub === 'dha') fetchDHA()
+  if (sub === 'skill') fetchSkills()
+  if (sub === 'mcp') fetchMCP()
+})
 
 watch(selectedGroupSessionId, (id) => {
   if (id) {
