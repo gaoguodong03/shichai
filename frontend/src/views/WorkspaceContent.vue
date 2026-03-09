@@ -744,7 +744,7 @@ function groupWorkspaceDownloadUrl(filePath: string) {
   return `/api/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`
 }
 
-const TEXT_EXT = ['.md', '.txt', '.json', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log']
+const TEXT_EXT = ['.md', '.txt', '.json', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
 function isTextFile(name: string) {
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
   return TEXT_EXT.includes(ext)
@@ -1550,6 +1550,7 @@ defineExpose({ refresh: loadGroupDetail })
   color: var(--color-text);
   resize: vertical;
   min-height: 2.5rem;
+  max-height: 18rem;
 }
 .group-chat-input-merged .group-chat-next-prompt-input::placeholder {
   color: var(--color-text-muted);
@@ -1589,6 +1590,7 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 8px;
   resize: vertical;
   min-height: 2.5rem;
+  max-height: 18rem;
 }
 .group-chat-next-prompt-input:focus {
   outline: none;
