@@ -19,11 +19,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 从构建阶段复制 Node/npm/npx（运行基于 npx 的本地 MCP 如 amap-maps、zhipu-web-search）
+# 从构建阶段复制 Node/npm/npx 及完整 lib（npx 依赖 ../lib/cli.js 等，须复制整份 /usr/local/lib）
 COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/
 COPY --from=frontend-builder /usr/local/bin/npm /usr/local/bin/
 COPY --from=frontend-builder /usr/local/bin/npx /usr/local/bin/
-COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=frontend-builder /usr/local/lib /usr/local/lib
+# npx 及其依赖（@npmcli/* 等）在 npm 的 node_modules 内，需让 Node 能解析
+ENV NODE_PATH=/usr/local/lib/node_modules:/usr/local/lib/node_modules/npm/node_modules
+# node:20-bookworm-slim 中 npx 依赖 ../lib/cli.js 与 ./npm-cli.js（相对 /usr/local/bin），补符号链接
+RUN ln -sf /usr/local/lib/node_modules/npm/lib/cli.js /usr/local/lib/cli.js \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm-cli.js
 
 # 后端依赖与代码（保持 backend 目录结构，便于与本地一致）
 COPY backend/ ./backend/
@@ -50,6 +55,20 @@ EXPOSE 8000
 
 # 数据与配置目录（运行时挂载 volume）
 RUN mkdir -p /app/data/sessions /app/data/agent-outputs /app/data/skills /app/config
+
+# ========== Playwright Chromium（供 Playwright MCP 在无头环境使用，镜像体积会增大）==========
+# 见 https://playwright.dev/docs/docker ；仅安装 Chromium 及其系统依赖
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
+RUN apt-get update \
+    && npx -y playwright install-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+RUN npx -y playwright install chromium
+
+# 预拉取 MCP 所需 npm 包，便于 1Panel/阿里云等环境首次连接无需外网（可选：若构建网络受限可注释掉本段）
+WORKDIR /app/backend
+RUN timeout 30 npx -y @modelcontextprotocol/server-filesystem ./data/agent-outputs 2>/dev/null || true
+RUN timeout 30 npx -y @amap/amap-maps-mcp-server 2>/dev/null || true
+RUN timeout 30 npx -y @playwright/mcp@latest 2>/dev/null || true
 
 WORKDIR /app/backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

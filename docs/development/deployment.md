@@ -73,6 +73,60 @@ docker run -p 8000:8000 -v dha_data:/app/data -v dha_config:/app/config --env-fi
   - **原因**：Docker 部署时 `.env` 文件只存在于宿主机，Compose 读取后以环境变量形式注入容器，容器内本身没有 `/app/backend/.env` 文件可供读取展示。
   - **说明**：这是预期行为，不影响实际环境变量生效。需要查看具体值时，应在宿主机直接打开 `backend/.env`，或通过 `docker compose run --rm dha env` 等方式查看。
 
+### 1Panel + 阿里云镜像部署（启用 Playwright / 文件系统 / 高德 MCP）
+
+当使用 **1Panel** 从 **阿里云镜像** 拉取并运行 DHA 时，若希望「Playwright」「本地文件系统」「高德地图」等 MCP 显示为已连接，需满足以下条件（与前端打包无关，均为运行环境与配置）。
+
+#### 1. 镜像已包含 Node.js
+
+当前 Dockerfile 已从构建阶段复制 `node` / `npm` / `npx` 到运行镜像，无需在 1Panel 里再装 Node。只要使用本项目构建出的镜像（或按同一 Dockerfile 在阿里云构建的镜像），容器内即可用 `npx` 启动上述 MCP。
+
+#### 2. 在 1Panel 中为容器配置环境变量
+
+在 1Panel 的「容器」→ 选择 DHA 容器 →「编辑」→「环境变量」中，至少配置：
+
+| 变量名 | 说明 |
+|--------|------|
+| `QWEN_API_KEY` | 通义千问等 LLM 调用（必填，否则聊天 500） |
+| `AMAP_MAPS_API_KEY` | 高德地图 MCP（需在高德开放平台申请） |
+| `ZHIPU_WEB_SEARCH_API_KEY` | 智谱 Web 搜索 MCP（若启用） |
+
+其他如 `LINKUP_API_KEY`、`EXA_API_KEY`、`VOLCES_IMAGE_API_KEY` 等按需添加。**不配置的 MCP 会连接失败，前端会显示「未连接」。**
+
+若本地有 `backend/.env`，可把其中需要的键值在 1Panel 里逐条添加；1Panel 通常不支持直接挂载 `.env` 文件，只能以环境变量形式填写。
+
+#### 3. 卷挂载与 MCP 配置路径
+
+- **不挂载 `/app/config`**：容器使用镜像内的 `/app/backend/config/mcp_servers.json`，无需任何操作即可使用内置 MCP 配置。
+- **若在 1Panel 中挂载了「配置目录」到 `/app/config`**：请勿再设置 `MCP_CONFIG_PATH=/app/config/mcp_servers.json`，否则会读挂载卷里的文件；若该卷为空或没有 `mcp_servers.json`，MCP 会加载失败。要么不挂载 config，要么在挂载的目录中放入与仓库一致的 `mcp_servers.json`。
+
+数据目录建议挂载，便于持久化会话与 agent 产出：
+
+- 将宿主机某目录挂载到 `/app/data`（或保持镜像默认的 `/app/backend/data`，不挂载亦可）。
+- 若设置了 `AGENT_OUTPUTS_DIR=/app/data/agent-outputs`，需保证该路径在容器内存在（例如挂载的卷中包含 `agent-outputs` 目录）。
+
+#### 4. 首次连接 MCP 需要容器能访问外网
+
+高德、文件系统、Playwright 等 MCP 通过 `npx -y <包名>` 启动，**首次运行会在容器内拉取 npm 包**。若 1Panel 所在环境限制出网或无法访问 npm  registry，会导致连接超时、前端显示「未连接」。解决办法：
+
+- **允许容器访问外网**（推荐）：在 1Panel/防火墙/安全组中放行出站 HTTPS，确保容器内可访问 `registry.npmmirror.com` 或 `registry.npmjs.org`。
+- **使用预缓存镜像**：项目 Dockerfile 中已包含可选的「预拉取 MCP 所需 npm 包」步骤（`npx -y @modelcontextprotocol/server-filesystem` 等）。用该 Dockerfile 重新构建并推送到阿里云后，容器内首次连接 MCP 时无需再访问外网。
+
+#### 5. Playwright 在服务器上的方案
+
+Playwright MCP 会启动浏览器（Chromium）。当前 **Dockerfile 已包含 Chromium 及系统依赖的安装**（仅 Chromium，以控制镜像体积），开箱即可在无头环境下使用 Playwright MCP。
+
+- **若不需要线上浏览器能力**：在 `mcp_servers.json` 中把 `playwright-mcp` 的 `enabled` 设为 `false`，可避免启动浏览器、减小内存占用。
+- **若需在 1Panel/Docker 中跑 Playwright**：使用本仓库构建的镜像即可；建议运行容器时加上 **`--ipc=host`**（或在 1Panel 的「容器」→「高级」中勾选 IPC 与主机一致），否则 Chromium 可能因内存不足崩溃。1Panel 若支持「额外运行参数」，可填 `--ipc=host`。
+
+#### 6. 小结检查清单（1Panel）
+
+- [ ] 使用本仓库构建的镜像（或阿里云上按同 Dockerfile 构建的镜像），保证含 Node/npx。
+- [ ] 在 1Panel 环境变量中配置 `QWEN_API_KEY`、`AMAP_MAPS_API_KEY` 等所需 Key。
+- [ ] 不覆盖 `MCP_CONFIG_PATH`，或挂载的 config 目录中提供完整 `mcp_servers.json`。
+- [ ] 容器能访问外网（或使用预缓存 npx 的镜像），以便首次连接 MCP 时拉包。
+- [ ] 若不需要线上浏览器能力，将 Playwright MCP 关闭，避免无头环境下的兼容问题。
+
 ---
 
 ## 环境要求
