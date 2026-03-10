@@ -236,24 +236,35 @@
           <aside v-if="showGroupWorkspace" class="group-chat-workspace">
             <div class="group-chat-workspace-toolbar">
               <span class="group-chat-workspace-title">工作区</span>
-              <button
-                v-if="groupWorkspacePath"
-                type="button"
-                class="group-chat-workspace-back"
-                @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = ''; loadGroupWorkspace()"
-              >
-                根目录
-              </button>
+              <div class="group-chat-workspace-toolbar-actions">
+                <button
+                  v-if="groupWorkspacePath"
+                  type="button"
+                  class="group-chat-workspace-back"
+                  @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = ''; loadGroupWorkspace()"
+                >
+                  根目录
+                </button>
+                <button type="button" class="group-chat-workspace-toolbar-sm" title="新建文件夹" @click="createGroupWorkspaceDir">新建文件夹</button>
+                <button type="button" class="group-chat-workspace-toolbar-sm" title="新建文件" @click="createGroupWorkspaceFile">新建文件</button>
+                <button type="button" class="group-chat-workspace-toolbar-sm" title="上传文件" @click="groupWorkspaceUploadInputRef?.click()">上传</button>
+                <input
+                  ref="groupWorkspaceUploadInputRef"
+                  type="file"
+                  class="hidden"
+                  @change="onGroupWorkspaceUpload"
+                />
+              </div>
             </div>
             <div class="group-chat-workspace-body">
               <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
               <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
               <ul v-else class="group-chat-workspace-list">
-                <li v-for="e in groupWorkspaceEntries" :key="e.path" class="group-chat-workspace-item">
+                <li v-for="e in groupWorkspaceEntries" :key="e.path" class="group-chat-workspace-item group-chat-workspace-item-row">
                   <button
                     v-if="e.is_dir"
                     type="button"
-                    class="group-chat-workspace-item-btn"
+                    class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
                     @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = groupWorkspacePath ? groupWorkspacePath + '/' + e.name : e.name; loadGroupWorkspace()"
                   >
                     <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -262,13 +273,28 @@
                   <button
                     v-else
                     type="button"
-                    class="group-chat-workspace-item-btn"
+                    class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
                     :class="{ 'group-chat-workspace-item-selected': groupWorkspacePreviewPath === e.path }"
                     @click="previewWorkspaceFile(e)"
                   >
                     <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                     <span class="truncate">{{ e.name }}</span>
                   </button>
+                  <div class="group-chat-workspace-item-actions">
+                    <button
+                      v-if="!e.is_dir"
+                      type="button"
+                      class="group-chat-workspace-item-action"
+                      title="重命名"
+                      @click.stop="renameGroupWorkspaceEntry(e)"
+                    >R</button>
+                    <button
+                      type="button"
+                      class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
+                      :title="e.is_dir ? '删除空目录' : '删除文件'"
+                      @click.stop="deleteGroupWorkspaceEntry(e)"
+                    >×</button>
+                  </div>
                 </li>
                 <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
               </ul>
@@ -373,6 +399,7 @@ const groupWorkspacePreviewPath = ref('')
 const groupWorkspacePreviewName = ref('')
 const groupWorkspacePreviewContent = ref('')
 const groupWorkspacePreviewLoading = ref(false)
+const groupWorkspaceUploadInputRef = ref<HTMLInputElement | null>(null)
 
 function formatSkillId(skillId?: string) {
   if (!skillId) return ''
@@ -742,6 +769,134 @@ function groupWorkspaceDownloadUrl(filePath: string) {
   const id = groupDetail.value?.id
   if (!id) return '#'
   return `/api/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`
+}
+
+async function createGroupWorkspaceDir() {
+  const id = groupDetail.value?.id
+  if (!id) return
+  const name = window.prompt('新建文件夹名称', '新文件夹')?.trim()
+  if (!name) return
+  try {
+    const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/mkdir${pathParam}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dirname: name }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      await loadGroupWorkspace()
+    } else {
+      alert((j as { detail?: string }).detail || '新建文件夹失败')
+    }
+  } catch {
+    alert('新建文件夹失败，请检查网络或后端')
+  }
+}
+
+async function createGroupWorkspaceFile() {
+  const id = groupDetail.value?.id
+  if (!id) return
+  const name = window.prompt('新建文件名（如 note.md）', 'note.md')?.trim()
+  if (!name) return
+  try {
+    const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${pathParam}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: name, content: '' }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      await loadGroupWorkspace()
+    } else {
+      alert((j as { detail?: string }).detail || '新建文件失败')
+    }
+  } catch {
+    alert('新建文件失败，请检查网络或后端')
+  }
+}
+
+async function onGroupWorkspaceUpload(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const id = groupDetail.value?.id
+  if (!id || !input.files?.length) return
+  const file = input.files[0]
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${pathParam}`, {
+      method: 'POST',
+      body: form,
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      await loadGroupWorkspace()
+    } else {
+      alert((j as { detail?: string }).detail || '上传失败')
+    }
+  } catch {
+    alert('上传失败，请检查网络或后端')
+  } finally {
+    input.value = ''
+  }
+}
+
+async function renameGroupWorkspaceEntry(e: { name: string; path: string; is_dir: boolean }) {
+  if (e.is_dir) return
+  const id = groupDetail.value?.id
+  if (!id) return
+  const name = window.prompt('重命名为', e.name)?.trim()
+  if (name == null || name === '' || name === e.name) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/rename?path=${encodeURIComponent(e.path)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_name: name }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      if (groupWorkspacePreviewPath.value === e.path) {
+        groupWorkspacePreviewPath.value = ''
+        groupWorkspacePreviewName.value = ''
+        groupWorkspacePreviewContent.value = ''
+      }
+      await loadGroupWorkspace()
+    } else {
+      alert((j as { detail?: string }).detail || '重命名失败')
+    }
+  } catch {
+    alert('重命名失败，请检查网络或后端')
+  }
+}
+
+async function deleteGroupWorkspaceEntry(e: { name: string; path: string; is_dir: boolean }) {
+  const id = groupDetail.value?.id
+  if (!id) return
+  const label = e.is_dir ? `目录「${e.name}」` : `文件「${e.name}」`
+  const msg = e.is_dir
+    ? '确定要删除该空目录吗？非空目录请先清空内容。'
+    : `确定要删除 ${label} 吗？此操作不可恢复。`
+  if (!window.confirm(msg)) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`, {
+      method: 'DELETE',
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      if (groupWorkspacePreviewPath.value === e.path) {
+        groupWorkspacePreviewPath.value = ''
+        groupWorkspacePreviewName.value = ''
+        groupWorkspacePreviewContent.value = ''
+      }
+      await loadGroupWorkspace()
+    } else {
+      alert((j as { detail?: string }).detail || '删除失败')
+    }
+  } catch {
+    alert('删除失败，请检查网络或后端')
+  }
 }
 
 const TEXT_EXT = ['.md', '.txt', '.json', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
@@ -1859,6 +2014,32 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-workspace-back:hover {
   text-decoration: underline;
 }
+.group-chat-workspace-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.group-chat-workspace-toolbar-sm {
+  font-size: 0.6875rem;
+  padding: 0.2rem 0.4rem;
+  color: var(--color-text-muted);
+  background: var(--color-list-hover);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.group-chat-workspace-toolbar-sm:hover {
+  color: var(--color-text);
+  background: var(--color-border-light);
+}
+.hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .group-chat-workspace-body {
   flex: 1 1 0%;
   min-height: 0;
@@ -1884,6 +2065,42 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-workspace-item {
   margin-bottom: 0.125rem;
+}
+.group-chat-workspace-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.group-chat-workspace-item-btn-main {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.group-chat-workspace-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex-shrink: 0;
+}
+.group-chat-workspace-item-action {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.group-chat-workspace-item-action:hover {
+  color: var(--color-accent-subtle-text);
+  background: var(--color-accent-subtle);
+}
+.group-chat-workspace-item-action-danger:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle, rgba(220, 38, 38, 0.1));
 }
 .group-chat-workspace-item-btn,
 .group-chat-workspace-item-link {
