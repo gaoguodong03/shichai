@@ -30,7 +30,10 @@
     </nav>
 
     <!-- 中间列：当前模块的列表/摘要 -->
-    <aside class="w-60 flex-shrink-0 flex flex-col bg-sidebar overflow-hidden">
+    <aside
+      class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
+      :style="{ width: middleColumnWidth + 'px' }"
+    >
       <!-- 顶部品牌区：所有模块统一 Digital Human Agent -->
       <div class="px-3 pt-3 pb-3 flex-shrink-0">
         <div class="mb-2 flex justify-center">
@@ -246,8 +249,11 @@
       </div>
     </aside>
 
+    <!-- 拖动分隔条：调整中间列与右侧工作区宽度 -->
+    <div class="workspace-resizer" @mousedown="onMiddleResizeMouseDown" />
+
     <!-- 右侧列：主内容。工作空间时用单一包裹层保证占满高度且内容可见 -->
-    <main class="main-right w-0 flex-1 flex flex-col min-h-0 overflow-hidden bg-page text-primary">
+    <main class="main-right flex-1 flex flex-col min-h-0 overflow-hidden bg-page text-primary">
       <!-- 工作空间右侧：由 WorkspaceContent 统一负责单聊/群聊/占位与拉取 -->
       <WorkspaceContent
         v-if="currentModule === 'workspace'"
@@ -312,7 +318,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, inject } from 'vue'
+import { ref, computed, watch, inject, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import SkillDetailView from './SkillDetailView.vue'
@@ -327,6 +333,7 @@ import GroupChatView from './GroupChatView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
 import ChatView from './ChatView.vue'
 import { useTheme } from '@/composables/useTheme'
+import './MainView.css'
 
 const router = useRouter()
 const themeApi = inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
@@ -376,7 +383,39 @@ const showSingleChat = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
 
-const middleColumnTitle = computed(() => '')
+// 中间列宽度（可拖动调整）
+const middleColumnWidth = ref(240)
+let resizeStartX = 0
+let resizeStartWidth = 240
+const isResizingMiddle = ref(false)
+
+function onMiddleResizeMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  isResizingMiddle.value = true
+  resizeStartX = e.clientX
+  resizeStartWidth = middleColumnWidth.value
+  window.addEventListener('mousemove', onMiddleResizeMouseMove)
+  window.addEventListener('mouseup', onMiddleResizeMouseUp)
+}
+
+function onMiddleResizeMouseMove(e: MouseEvent) {
+  if (!isResizingMiddle.value) return
+  const delta = e.clientX - resizeStartX
+  const next = Math.min(420, Math.max(220, resizeStartWidth + delta))
+  middleColumnWidth.value = next
+}
+
+function onMiddleResizeMouseUp() {
+  if (!isResizingMiddle.value) return
+  isResizingMiddle.value = false
+  window.removeEventListener('mousemove', onMiddleResizeMouseMove)
+  window.removeEventListener('mouseup', onMiddleResizeMouseUp)
+}
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onMiddleResizeMouseMove)
+  window.removeEventListener('mouseup', onMiddleResizeMouseUp)
+})
 
 /** 会话列表展示用标题：为空或默认值时用更友好的「AI 命名」 */
 function displaySessionTitle(s: { id: string; title: string; dha_ids?: string[]; updated_at: string }): string {

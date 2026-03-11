@@ -1,0 +1,8 @@
+ .workspace-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background-color: transparent;
+}
+.workspace-resizer:hover {
+  background-color: var(--color-sidebar-border);
+}

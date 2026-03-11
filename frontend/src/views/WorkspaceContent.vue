@@ -105,6 +105,18 @@
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
               <div class="group-chat-input-blocks">
+                <div v-if="attachedFiles.length" class="group-chat-file-tags">
+                  <button
+                    v-for="f in attachedFiles"
+                    :key="f.path"
+                    type="button"
+                    class="group-chat-file-tag"
+                    @click="removeAttachedFile(f.path)"
+                  >
+                    <span>【文件引用：{{ f.name }}】</span>
+                    <span class="group-chat-file-tag-close">×</span>
+                  </button>
+                </div>
                 <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词输入框」时） -->
                 <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single">
                   <textarea
@@ -302,7 +314,16 @@
             </div>
           </div>
           </div>
-          <aside v-if="showGroupWorkspace" class="group-chat-workspace">
+          <div
+            v-if="showGroupWorkspace"
+            class="group-chat-resizer"
+            @mousedown="onGroupWorkspaceResizeMouseDown"
+          />
+          <aside
+            v-if="showGroupWorkspace"
+            class="group-chat-workspace"
+            :style="{ width: groupWorkspaceWidth + 'px', minWidth: groupWorkspaceWidth + 'px' }"
+          >
             <div class="group-chat-workspace-toolbar">
               <span class="group-chat-workspace-title">工作区</span>
               <div class="group-chat-workspace-toolbar-actions">
@@ -314,9 +335,68 @@
                 >
                   根目录
                 </button>
-                <button type="button" class="group-chat-workspace-toolbar-sm" title="新建文件夹" @click="createGroupWorkspaceDir">新建文件夹</button>
-                <button type="button" class="group-chat-workspace-toolbar-sm" title="新建文件" @click="createGroupWorkspaceFile">新建文件</button>
-                <button type="button" class="group-chat-workspace-toolbar-sm" title="上传文件" @click="groupWorkspaceUploadInputRef?.click()">上传</button>
+                <button
+                  type="button"
+                  class="group-chat-workspace-toolbar-sm"
+                  title="新建文件夹"
+                  aria-label="新建文件夹"
+                  @click="createGroupWorkspaceDir"
+                >
+                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 7h4l2 3h10v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
+                    <path d="M12 11v6" />
+                    <path d="M9 14h6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="group-chat-workspace-toolbar-sm"
+                  title="新建文件"
+                  aria-label="新建文件"
+                  @click="createGroupWorkspaceFile"
+                >
+                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <path d="M12 12v4" />
+                    <path d="M10 14h4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="group-chat-workspace-toolbar-sm"
+                  title="上传文件"
+                  aria-label="上传文件"
+                  @click="groupWorkspaceUploadInputRef?.click()"
+                >
+                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4" />
+                    <path d="M8 8l4-4 4 4" />
+                    <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="group-chat-workspace-toolbar-sm"
+                  :title="groupWorkspacePreviewCollapsed ? '展开预览' : '收起预览'"
+                  aria-label="切换预览"
+                  @click="toggleWorkspacePreview()"
+                >
+                  <svg
+                    class="group-chat-workspace-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="3" y="4" width="18" height="16" rx="2" />
+                    <path v-if="!groupWorkspacePreviewCollapsed" d="M11 8l-3 4 3 4" />
+                    <path v-else d="M13 8l3 4-3 4" />
+                    <path d="M12 4v16" />
+                  </svg>
+                </button>
                 <input
                   ref="groupWorkspaceUploadInputRef"
                   type="file"
@@ -326,7 +406,15 @@
               </div>
             </div>
             <div class="group-chat-workspace-body">
-              <div class="group-chat-workspace-list-col">
+              <div
+                class="group-chat-workspace-list-col"
+                :style="{
+                  flex: groupWorkspacePreviewCollapsed ? '1 1 0%' : undefined,
+                  flexBasis: groupWorkspacePreviewCollapsed ? 'auto' : groupWorkspaceListWidth + 'px',
+                  maxWidth: groupWorkspacePreviewCollapsed ? '100%' : undefined,
+                  borderRight: groupWorkspacePreviewCollapsed ? 'none' : undefined
+                }"
+              >
                 <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
                 <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
                 <ul v-else class="group-chat-workspace-list">
@@ -369,7 +457,15 @@
                   <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
                 </ul>
               </div>
-              <div class="group-chat-workspace-preview-col">
+              <div
+                v-if="!groupWorkspacePreviewCollapsed"
+                class="group-chat-workspace-resizer"
+                @mousedown="onWorkspaceInnerResizeMouseDown"
+              />
+              <div
+                v-if="!groupWorkspacePreviewCollapsed"
+                class="group-chat-workspace-preview-col"
+              >
               <div v-if="groupWorkspacePreviewPath" class="group-chat-workspace-preview">
                 <div class="group-chat-workspace-preview-header">
                   <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
@@ -493,6 +589,17 @@ const groupWorkspacePreviewLoading = ref(false)
 const groupWorkspacePreviewEditing = ref(false)
 const groupWorkspacePreviewEditContent = ref('')
 const groupWorkspaceUploadInputRef = ref<HTMLInputElement | null>(null)
+const groupWorkspaceWidth = ref(360)
+const groupWorkspaceListWidth = ref(192)
+// 工作区预览区默认收起，初始总宽度略窄，仅文件列表为主
+const groupWorkspacePreviewCollapsed = ref(true)
+let workspaceResizeStartX = 0
+let workspaceResizeStartWidth = 360
+let workspaceInnerResizeStartX = 0
+let workspaceInnerResizeStartWidth = 192
+const isResizingWorkspace = ref(false)
+const isResizingWorkspaceInner = ref(false)
+const lastExpandedWorkspaceWidth = ref(672)
 
 function formatSkillId(skillId?: string) {
   if (!skillId) return ''
@@ -820,6 +927,11 @@ const showInsertFile = ref(false)
 const insertFileRef = ref<HTMLElement | null>(null)
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
+const attachedFiles = ref<{ name: string; path: string }[]>([])
+
+function removeAttachedFile(path: string) {
+  attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
+}
 const showNextSpeakerPicker = ref(false)
 const nextSpeakerRef = ref<HTMLElement | null>(null)
 const addMemberRef = ref<HTMLElement | null>(null)
@@ -903,8 +1015,15 @@ const effectiveNextSpeaker = computed(() => {
   return ids[0] ?? ''
 })
 
-/** 有讨论目标或提示词即可发送 */
-const canSend = computed(() => !!((groupDiscussionGoal.value || '').trim() || (groupNextPrompt.value || '').trim()))
+/** 有讨论目标、提示词或文件引用即可发送 */
+const canSend = computed(
+  () =>
+    !!(
+      (groupDiscussionGoal.value || '').trim() ||
+      (groupNextPrompt.value || '').trim() ||
+      attachedFiles.value.length
+    ),
+)
 
 watch(
   () => groupDetail.value?.messages,
@@ -1137,6 +1256,11 @@ async function saveWorkspacePreviewEdit() {
 }
 
 async function previewWorkspaceFile(e: { name: string; path: string }) {
+  // 若当前为收起状态，自动展开预览并恢复上次宽度
+  if (groupWorkspacePreviewCollapsed.value) {
+    groupWorkspacePreviewCollapsed.value = false
+    groupWorkspaceWidth.value = lastExpandedWorkspaceWidth.value || 672
+  }
   groupWorkspacePreviewPath.value = e.path
   groupWorkspacePreviewName.value = e.name
   groupWorkspacePreviewContent.value = ''
@@ -1180,22 +1304,11 @@ async function loadInsertFileEntries() {
 }
 
 async function insertFileContent(e: { name: string; path: string }) {
-  const id = groupDetail.value?.id
-  if (!id) return
-  try {
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`)
-    const j = await r.json().catch(() => ({}))
-    if (j?.status !== 'ok' || typeof j?.data?.content !== 'string') {
-      alert((j as { detail?: string })?.detail || '读取文件内容失败')
-      return
-    }
-    const text = (j.data.content as string).trim()
-    const sep = (groupNextPrompt.value || '').trim() ? '\n\n' : ''
-    groupNextPrompt.value = (groupNextPrompt.value || '').trim() + sep + (text ? `\n${text}\n` : '')
-    showInsertFile.value = false
-  } catch {
-    alert('读取文件失败，请检查网络')
+  // 仅记录文件引用，不直接把内容插入到输入框
+  if (!attachedFiles.value.find((f) => f.path === e.path)) {
+    attachedFiles.value.push({ name: e.name, path: e.path })
   }
+  showInsertFile.value = false
 }
 
 function defaultDhaFilename(msg: MsgExt & { dha_id?: string }): string {
@@ -1229,6 +1342,66 @@ async function saveDhaMessageToFile(msg: MsgExt & { content?: string; dha_id?: s
   }
 }
 
+function onGroupWorkspaceResizeMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  isResizingWorkspace.value = true
+  workspaceResizeStartX = e.clientX
+  workspaceResizeStartWidth = groupWorkspaceWidth.value
+  window.addEventListener('mousemove', onGroupWorkspaceResizeMouseMove)
+  window.addEventListener('mouseup', onGroupWorkspaceResizeMouseUp)
+}
+
+function onGroupWorkspaceResizeMouseMove(e: MouseEvent) {
+  if (!isResizingWorkspace.value) return
+  const delta = workspaceResizeStartX - e.clientX
+  const next = Math.min(840, Math.max(420, workspaceResizeStartWidth + delta))
+  groupWorkspaceWidth.value = next
+}
+
+function onGroupWorkspaceResizeMouseUp() {
+  if (!isResizingWorkspace.value) return
+  isResizingWorkspace.value = false
+  window.removeEventListener('mousemove', onGroupWorkspaceResizeMouseMove)
+  window.removeEventListener('mouseup', onGroupWorkspaceResizeMouseUp)
+}
+
+function onWorkspaceInnerResizeMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  if (groupWorkspacePreviewCollapsed.value) return
+  isResizingWorkspaceInner.value = true
+  workspaceInnerResizeStartX = e.clientX
+  workspaceInnerResizeStartWidth = groupWorkspaceListWidth.value
+  window.addEventListener('mousemove', onWorkspaceInnerResizeMouseMove)
+  window.addEventListener('mouseup', onWorkspaceInnerResizeMouseUp)
+}
+
+function onWorkspaceInnerResizeMouseMove(e: MouseEvent) {
+  if (!isResizingWorkspaceInner.value) return
+  const delta = e.clientX - workspaceInnerResizeStartX
+  const next = Math.min(320, Math.max(140, workspaceInnerResizeStartWidth + delta))
+  groupWorkspaceListWidth.value = next
+}
+
+function onWorkspaceInnerResizeMouseUp() {
+  if (!isResizingWorkspaceInner.value) return
+  isResizingWorkspaceInner.value = false
+  window.removeEventListener('mousemove', onWorkspaceInnerResizeMouseMove)
+  window.removeEventListener('mouseup', onWorkspaceInnerResizeMouseUp)
+}
+
+function toggleWorkspacePreview() {
+  if (!groupWorkspacePreviewCollapsed.value) {
+    // 从展开切换为收起：记录当前宽度，并把工作区缩到仅文件列表宽度，释放更多空间给对话区
+    lastExpandedWorkspaceWidth.value = groupWorkspaceWidth.value
+    groupWorkspaceWidth.value = Math.max(320, groupWorkspaceListWidth.value + 40)
+    groupWorkspacePreviewCollapsed.value = true
+  } else {
+    // 从收起切回展开：恢复之前的工作区宽度
+    groupWorkspacePreviewCollapsed.value = false
+    groupWorkspaceWidth.value = lastExpandedWorkspaceWidth.value || 672
+  }
+}
+
 function scrollGroupToBottom() {
   nextTick(() => {
     const el = groupMessagesRef.value
@@ -1247,12 +1420,39 @@ function builtMessage(): string {
   return parts.join('\n\n')
 }
 
+/** 发送前将所有文件引用展开为实际内容，并与当前输入拼接 */
+async function buildMessageWithFiles(detail: GroupDetail, base: string): Promise<string> {
+  const refs = attachedFiles.value
+  if (!refs.length) return base
+  const parts: string[] = []
+  for (const f of refs) {
+    try {
+      const r = await fetch(
+        `/api/workspaces/${encodeURIComponent(detail.id)}/files/content?path=${encodeURIComponent(f.path)}`,
+      )
+      const j = await r.json().catch(() => ({}))
+      if (j?.status !== 'ok' || typeof j?.data?.content !== 'string') continue
+      const text = (j.data.content as string).trim()
+      if (!text) continue
+      parts.push(`【文件引用：${f.name}】\n${text}`)
+    } catch {
+      // 网络错误时忽略该文件，继续其它引用
+    }
+  }
+  const filesBlock = parts.join('\n\n')
+  if (!filesBlock) return base
+  if (!base) return filesBlock
+  return `${filesBlock}\n\n${base}`
+}
+
 async function sendGroupMessage() {
   const detail = groupDetail.value
-  const msg = builtMessage()
-  if (!detail || groupStreaming.value || !msg) return
+  const base = builtMessage()
+  const hasFiles = attachedFiles.value.length > 0
+  if (!detail || groupStreaming.value || (!base && !hasFiles)) return
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
+  const msg = await buildMessageWithFiles(detail, base)
   const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
   groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
   scrollGroupToBottom()
@@ -1315,6 +1515,8 @@ async function sendGroupMessage() {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
+    // 发送完成后清空文件引用，避免遗留到下一条消息
+    attachedFiles.value = []
   }
 }
 
@@ -1631,9 +1833,9 @@ defineExpose({ refresh: loadGroupDetail })
   left: 0;
   top: 100%;
   margin-top: 0.25rem;
-  min-width: 12rem;
-  max-width: 20rem;
-  max-height: 10rem;
+  min-width: 20rem;
+  max-width: 40rem;
+  max-height: 26rem;
   overflow: auto;
   padding: 0.375rem 0.5rem;
   background: var(--color-card);
@@ -1968,6 +2170,29 @@ defineExpose({ refresh: loadGroupDetail })
   flex-direction: column;
   gap: 0.75rem;
   width: 100%;
+}
+.group-chat-file-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.group-chat-file-tag {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background-color: var(--color-sidebar-list);
+  color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.group-chat-file-tag-close {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.group-chat-file-tag-close:hover {
+  opacity: 1;
 }
 .group-chat-input-block {
   background: var(--color-page);
@@ -2342,8 +2567,6 @@ defineExpose({ refresh: loadGroupDetail })
   cursor: not-allowed;
 }
 .group-chat-workspace {
-  width: 42rem;
-  min-width: 42rem;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2390,6 +2613,14 @@ defineExpose({ refresh: loadGroupDetail })
   border: 1px solid var(--color-border);
   border-radius: 4px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+.group-chat-workspace-icon {
+  width: 14px;
+  height: 14px;
 }
 .group-chat-workspace-toolbar-sm:hover {
   color: var(--color-text);
@@ -2408,6 +2639,22 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: row;
   overflow: hidden;
+}
+.group-chat-workspace-resizer {
+  width: 3px;
+  cursor: col-resize;
+  background-color: transparent;
+}
+.group-chat-workspace-resizer:hover {
+  background-color: var(--color-border-light);
+}
+.group-chat-resizer {
+  width: 4px;
+  cursor: col-resize;
+  background-color: transparent;
+}
+.group-chat-resizer:hover {
+  background-color: var(--color-border-light);
 }
 .group-chat-workspace-list-col {
   flex: 0 0 12rem;
