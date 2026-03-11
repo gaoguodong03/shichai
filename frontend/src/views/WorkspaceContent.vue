@@ -192,8 +192,26 @@
                     </div>
                   </div>
                   <div ref="insertFileRef" class="group-chat-add-member-wrap">
-                    <button type="button" class="group-chat-toolbar-btn" @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()">
-                      插入文件
+                    <button
+                      type="button"
+                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
+                      @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()"
+                    >
+                      <svg
+                        class="group-chat-toolbar-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <path d="M12 13v4" />
+                        <path d="M10 15h4" />
+                      </svg>
+                      <span>文件</span>
                     </button>
                     <div v-if="showInsertFile" class="group-chat-add-member-dropdown group-chat-insert-file-dropdown">
                       <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
@@ -213,51 +231,154 @@
                     </div>
                   </div>
                   <div ref="moreMenuRef" class="group-chat-add-member-wrap">
-                    <button type="button" class="group-chat-toolbar-btn" @click="showMoreMenu = !showMoreMenu">
-                      更多
+                    <button
+                      type="button"
+                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
+                      @click="showMoreMenu = !showMoreMenu"
+                    >
+                      <svg
+                        class="group-chat-toolbar-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <circle cx="5" cy="12" r="1.5" />
+                        <circle cx="12" cy="12" r="1.5" />
+                        <circle cx="19" cy="12" r="1.5" />
+                      </svg>
+                      <span>更多</span>
                     </button>
                     <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
                       <p class="group-chat-members-dropdown-title">更多选项</p>
-                      <label class="group-chat-more-row">
-                        <input
-                          type="checkbox"
-                          :checked="showNextPromptField"
-                          class="group-chat-auto-checkbox"
-                          @change="onShowNextPromptFieldChange"
-                        />
-                        <span>显示下一 DHA 提示词输入框</span>
-                      </label>
-                      <label class="group-chat-more-row">
-                        <input type="checkbox" v-model="groupAutoConfirm" class="group-chat-auto-checkbox" />
-                        <span>自动确认</span>
-                      </label>
-                      <button type="button" class="group-chat-more-row group-chat-more-row-btn" @click="showMemberSkill = true; showMoreMenu = false">
-                        成员 Skill
-                      </button>
-                      <div class="group-chat-more-row group-chat-more-add-remove">
-                        <span>增删成员</span>
-                        <button type="button" class="group-chat-toolbar-btn" @click.stop="showAddMember = true; showMoreMenu = false">打开</button>
+                      <div class="group-chat-more-row group-chat-more-toggle-row">
+                        <button
+                          type="button"
+                          class="group-chat-toggle-pill"
+                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField }"
+                          @click="onShowNextPromptFieldChangeByClick"
+                        >
+                          <svg
+                            class="group-chat-toggle-pill-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <rect x="4" y="5" width="16" height="14" rx="2" />
+                            <path d="M8 9h8" />
+                            <path d="M8 13h5" />
+                          </svg>
+                          <span>提示词框</span>
+                        </button>
+                      </div>
+                      <div class="group-chat-more-row group-chat-more-toggle-row">
+                        <button
+                          type="button"
+                          class="group-chat-toggle-pill"
+                          :class="{ 'group-chat-toggle-pill-active': groupAutoConfirm }"
+                          @click="groupAutoConfirm = !groupAutoConfirm"
+                        >
+                          <svg
+                            class="group-chat-toggle-pill-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <circle cx="9" cy="12" r="3" />
+                            <circle cx="15" cy="12" r="3" />
+                            <path d="M4 12h2" />
+                            <path d="M18 12h2" />
+                          </svg>
+                          <span>手动控制</span>
+                        </button>
+                      </div>
+                      <div class="group-chat-more-row group-chat-more-toggle-row">
+                        <button
+                          type="button"
+                          class="group-chat-toggle-pill group-chat-toggle-pill-full group-chat-member-skill-toggle"
+                          :class="{ 'group-chat-toggle-pill-active': !!memberSkillButtonLabel }"
+                          @click="openMemberSkillPanel"
+                        >
+                          <svg
+                            class="group-chat-toggle-pill-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <circle cx="9" cy="8" r="3" />
+                            <circle cx="15" cy="16" r="3" />
+                            <path d="M4 20c0-2.2 1.8-4 4-4h2" />
+                            <path d="M14 8h2c2.2 0 4 1.8 4 4" />
+                          </svg>
+                          <span>{{ memberSkillButtonLabel || '成员 Skill' }}</span>
+                        </button>
+                      </div>
+                      <div class="group-chat-more-row group-chat-more-toggle-row">
+                        <button
+                          type="button"
+                          class="group-chat-toggle-pill group-chat-toggle-pill-full group-chat-add-member-toggle"
+                          @click="showAddMember = true; showMoreMenu = false"
+                        >
+                          <svg
+                            class="group-chat-toggle-pill-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          >
+                            <circle cx="8" cy="8" r="3" />
+                            <circle cx="16" cy="8" r="3" />
+                            <path d="M4 20c0-2.2 1.8-4 4-4" />
+                            <path d="M16 16c2.2 0 4 1.8 4 4" />
+                          </svg>
+                          <span>成员管理</span>
+                        </button>
                       </div>
                     </div>
                   </div>
                   <div v-if="showMemberSkill" ref="memberSkillRef" class="group-chat-add-member-wrap">
                     <div class="group-chat-add-member-dropdown group-chat-member-skill-dropdown">
                       <p class="group-chat-members-dropdown-title">各成员使用的 Skill</p>
-                      <ul v-if="groupDetail?.dha_ids?.length" class="group-chat-members-list">
-                        <li v-for="(id, idx) in (groupDetail?.dha_ids || [])" :key="id" class="group-chat-members-item group-chat-member-skill-row">
-                          <span class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(idx) }">{{ dhaAvatarChar(id) }}</span>
-                          <span class="group-chat-member-skill-name">{{ (groupDetail?.dha_map || {})[id]?.name || id }}</span>
+                      <ul v-if="memberSkillTargetIds.length" class="group-chat-members-list">
+                        <li
+                          v-for="(id, idx) in memberSkillTargetIds"
+                          :key="id"
+                          class="group-chat-members-item group-chat-member-skill-row"
+                        >
+                          <span
+                            class="group-chat-avatar group-chat-avatar-sm"
+                            :style="{ backgroundColor: dhaAvatarColor(idx) }"
+                          >
+                            {{ dhaAvatarChar(id) }}
+                          </span>
+                          <span class="group-chat-member-skill-name">
+                            {{ (groupDetail?.dha_map || {})[id]?.name || id }}
+                          </span>
                           <select
                             :value="memberSkillFor(id)"
                             class="group-chat-member-skill-select"
                             @change="(e) => setMemberSkill(id, (e.target as HTMLSelectElement).value)"
                           >
-                            <option v-for="s in skillOptionsFor(id)" :key="s.id" :value="s.id">{{ s.name }}</option>
+                            <option v-for="s in skillOptionsFor(id)" :key="s.id" :value="s.id">
+                              {{ s.name }}
+                            </option>
                           </select>
                         </li>
                       </ul>
                       <p v-else class="group-chat-add-member-empty">暂无成员</p>
-                      <button type="button" class="group-chat-toolbar-btn" @click="showMemberSkill = false">关闭</button>
                     </div>
                   </div>
                   <div v-if="showAddMember" ref="addMemberRef" class="group-chat-add-member-wrap group-chat-add-remove-panel">
@@ -700,8 +821,14 @@ function closeMembersDropdown(e: MouseEvent) {
   const target = e.target as Node
   const el = e.target as HTMLElement
   const isOpeningAddMember = el?.closest?.('.group-chat-add-remove-in-picker')
-  if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember) showAddMember.value = false
-  if (memberSkillRef.value && !memberSkillRef.value.contains(target)) showMemberSkill.value = false
+  const isOpeningAddMemberFromMore = el?.closest?.('.group-chat-add-member-toggle')
+  const isOpeningMemberSkillFromMore = el?.closest?.('.group-chat-member-skill-toggle')
+  if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember && !isOpeningAddMemberFromMore) {
+    showAddMember.value = false
+  }
+  if (memberSkillRef.value && !memberSkillRef.value.contains(target) && !isOpeningMemberSkillFromMore) {
+    showMemberSkill.value = false
+  }
   if (insertFileRef.value && !insertFileRef.value.contains(target)) showInsertFile.value = false
   if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(target)) showNextSpeakerPicker.value = false
   if (moreMenuRef.value && !moreMenuRef.value.contains(target)) showMoreMenu.value = false
@@ -762,7 +889,8 @@ async function confirmGroupNext(override: string) {
                 if (endData.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
-                if (groupAutoConfirm.value && endData.suggested_next_speaker) {
+                // groupAutoConfirm=true 表示「手动控制」开启，此时不自动确认；false 时自动确认
+                if (!groupAutoConfirm.value && endData.suggested_next_speaker) {
                   nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
                 }
               }
@@ -920,6 +1048,11 @@ function onShowNextPromptFieldChange(e: Event) {
   showNextPromptField.value = target.checked
   if (target.checked) showMoreMenu.value = false // 勾选后关闭「更多」以便看到下方输入框
 }
+
+function onShowNextPromptFieldChangeByClick() {
+  showNextPromptField.value = !showNextPromptField.value
+  if (showNextPromptField.value) showMoreMenu.value = false
+}
 const memberSkillRef = ref<HTMLElement | null>(null)
 const skillsList = ref<{ id: string; name: string }[]>([])
 const groupMemberSkillOverride = ref<Record<string, string>>({})
@@ -928,6 +1061,35 @@ const insertFileRef = ref<HTMLElement | null>(null)
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
 const attachedFiles = ref<{ name: string; path: string }[]>([])
+// 成员 Skill 只针对一个「当前成员」（默认是下一发言人），按钮显示该成员当前使用的 skill
+const memberSkillTargetDhaId = ref<string | null>(null)
+const memberSkillTargetIds = computed(() => {
+  const d = groupDetail.value
+  const ids = d?.dha_ids || []
+  const target = memberSkillTargetDhaId.value || effectiveNextSpeaker.value || ids[0]
+  if (!target || !ids.includes(target)) return []
+  return [target]
+})
+const memberSkillButtonLabel = computed(() => {
+  const dhaId = memberSkillTargetDhaId.value || effectiveNextSpeaker.value
+  if (!dhaId) return ''
+  const skillId = memberSkillFor(dhaId)
+  if (!skillId) return ''
+  const found = skillsList.value.find((s) => s.id === skillId)
+  const name = found?.name || formatSkillId(skillId)
+  if (!name) return ''
+  return name.length > 4 ? name.slice(0, 4) + '…' : name
+})
+
+function openMemberSkillPanel() {
+  const d = groupDetail.value
+  const ids = d?.dha_ids || []
+  const target = effectiveNextSpeaker.value || ids[0]
+  if (!target || !ids.includes(target)) return
+  memberSkillTargetDhaId.value = target
+  showMoreMenu.value = false
+  showMemberSkill.value = true
+}
 
 function removeAttachedFile(path: string) {
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
@@ -984,6 +1146,9 @@ function memberSkillFor(dhaId: string): string {
 
 function setMemberSkill(dhaId: string, skillId: string) {
   groupMemberSkillOverride.value = { ...groupMemberSkillOverride.value, [dhaId]: skillId }
+  // 选完 Skill 后，关闭面板并回到「更多」界面
+  showMemberSkill.value = false
+  showMoreMenu.value = true
 }
 
 /** 某成员可选的 skill 列表：仅该角色拥有的 skill（按昵称展示） */
@@ -2543,10 +2708,34 @@ defineExpose({ refresh: loadGroupDetail })
   cursor: pointer;
 }
 .group-chat-auto-toggle span { user-select: none; }
-.group-chat-auto-checkbox {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--color-accent);
+.group-chat-more-toggle-row {
+  justify-content: flex-start;
+}
+.group-chat-toggle-pill {
+  padding: 0.18rem 0.6rem;
+  width: 100%;
+  border-radius: 999px;
+  border: 2px solid var(--color-border);
+  background: var(--color-list-hover);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.group-chat-toggle-pill-full {
+  text-align: center;
+}
+.group-chat-toggle-pill-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+.group-chat-toggle-pill-active {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-subtle-text);
+  border-color: var(--color-accent);
 }
 .group-chat-confirm-btn {
   padding: 0.375rem 0.75rem;
@@ -2870,7 +3059,10 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 6px;
   color: var(--color-text);
 }
-.group-chat-more-dropdown { min-width: 14rem; }
+.group-chat-more-dropdown {
+  min-width: 8rem;
+  width: 8rem;
+}
 .group-chat-more-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.8125rem; color: var(--color-text); }
 .group-chat-more-row-btn { width: 100%; justify-content: flex-start; background: none; border: none; cursor: pointer; text-align: left; }
 .group-chat-more-row-btn:hover { background: var(--color-list-hover); }
@@ -2887,6 +3079,18 @@ defineExpose({ refresh: loadGroupDetail })
   height: 1rem;
   flex-shrink: 0;
   color: var(--color-text-muted);
+}
+.group-chat-toolbar-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+.group-chat-toolbar-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: 0.25rem;
+  flex-shrink: 0;
 }
 
 /* 右侧分区继承主题（避免被父级覆盖） */
