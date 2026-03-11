@@ -13,28 +13,25 @@
   },
   {
     "dha_id": "dha-c9b8ae32",
-    "name": "导航负责人",
+    "name": "导航专家",
     "role": "负责查找路径",
     "system_prompt": "",
     "skill_ids": [
       "amap-maps"
     ],
-    "mcp_server_ids": [
-      "amap-maps"
-    ],
-    "is_leader": false
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": ""
   },
   {
     "dha_id": "dha-440b26f8",
-    "name": "图片生成负责人",
+    "name": "图片生成专家",
     "role": "负责生成图标",
     "system_prompt": "",
     "skill_ids": [
       "app-icon-generator"
     ],
-    "mcp_server_ids": [
-      "volces-icon"
-    ],
+    "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": ""
   },
@@ -54,11 +51,12 @@
   },
   {
     "dha_id": "dha-c1bf68ba",
-    "name": "内容核查员 ",
-    "role": "负责检查内容是否准确",
+    "name": "内容核查专家",
+    "role": "负责检查内容是否准确，对用户提供的文本进行严格的排版和数据格式审计。",
     "system_prompt": "",
     "skill_ids": [
-      "content-checker"
+      "content-checker",
+      "文本规则检查"
     ],
     "mcp_server_ids": [],
     "is_leader": false,

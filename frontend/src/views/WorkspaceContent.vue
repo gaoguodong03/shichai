@@ -24,8 +24,8 @@
             </button>
           </div>
         </header>
-        <div class="flex-1 min-h-0 flex overflow-hidden">
-          <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div class="flex-1 min-h-0 flex overflow-visible">
+          <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-visible">
             <div ref="groupMessagesRef" class="group-chat-messages">
               <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
                 <div :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']">
@@ -97,6 +97,7 @@
               <p v-if="!groupDisplayMessages.length" class="group-chat-empty-hint">暂无消息，在下方输入并发送。</p>
             </div>
             <div class="group-chat-input-wrap">
+              <div class="group-chat-input-inner">
               <p v-if="groupStreaming" class="group-chat-streaming-hint">{{ groupStreamingPhase }}</p>
               <div v-if="groupSuggestedAddDhaId && !groupStreaming" class="group-chat-suggested-invite-bar">
                 <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
@@ -106,11 +107,10 @@
               <div class="group-chat-input-blocks">
                 <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词输入框」时） -->
                 <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single">
-                  <label class="group-chat-input-block-label">输入消息或讨论目标</label>
                   <textarea
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
-                    placeholder="输入消息或讨论目标，按 Cmd+Enter 发送"
+                    placeholder="按 Cmd+Enter 发送"
                     rows="3"
                     @keydown.enter.meta.prevent="sendGroupMessage()"
                   />
@@ -162,7 +162,7 @@
                         <li
                           v-for="opt in nextSpeakerOptions"
                           :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-clickable"
+                          class="group-chat-members-item group-chat-members-item-next-speaker"
                           :class="{ 'group-chat-members-item-selected': effectiveNextSpeaker === opt.id }"
                           @click="groupNextSpeakerOverride = opt.id; showNextSpeakerPicker = false"
                         >
@@ -172,21 +172,13 @@
                           >
                             {{ dhaAvatarChar(opt.id) }}
                           </span>
-                          <span>{{ opt.name }}</span>
+                          <span class="group-chat-next-speaker-name-in-list">{{ opt.name }}</span>
+                          <button type="button" class="group-chat-member-delete-icon" title="移出群聊" @click.stop="removeMember(opt.id)">×</button>
                         </li>
                       </ul>
-                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMember = true; showNextSpeakerPicker = false">增删成员</button>
+                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMember = true; showNextSpeakerPicker = false">新增成员</button>
                     </div>
                   </div>
-                  <button
-                    v-if="(groupDetail?.dha_ids?.length ?? 0) > 0"
-                    type="button"
-                    class="group-chat-toolbar-btn"
-                    title="增删成员"
-                    @click="showAddMember = true"
-                  >
-                    增删成员
-                  </button>
                   <div ref="insertFileRef" class="group-chat-add-member-wrap">
                     <button type="button" class="group-chat-toolbar-btn" @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()">
                       插入文件
@@ -302,6 +294,7 @@
                 >
                   {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
                 </button>
+              </div>
               </div>
             </div>
           </div>
@@ -594,12 +587,15 @@ const expandedToolKey = ref<string | null>(null)
 const moreMenuRef = ref<HTMLElement | null>(null)
 
 function closeMembersDropdown(e: MouseEvent) {
-  if (addMemberRef.value && !addMemberRef.value.contains(e.target as Node)) showAddMember.value = false
-  if (memberSkillRef.value && !memberSkillRef.value.contains(e.target as Node)) showMemberSkill.value = false
-  if (insertFileRef.value && !insertFileRef.value.contains(e.target as Node)) showInsertFile.value = false
-  if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(e.target as Node)) showNextSpeakerPicker.value = false
-  if (moreMenuRef.value && !moreMenuRef.value.contains(e.target as Node)) showMoreMenu.value = false
-  if (!(e.target as HTMLElement)?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
+  const target = e.target as Node
+  const el = e.target as HTMLElement
+  const isOpeningAddMember = el?.closest?.('.group-chat-add-remove-in-picker')
+  if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember) showAddMember.value = false
+  if (memberSkillRef.value && !memberSkillRef.value.contains(target)) showMemberSkill.value = false
+  if (insertFileRef.value && !insertFileRef.value.contains(target)) showInsertFile.value = false
+  if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(target)) showNextSpeakerPicker.value = false
+  if (moreMenuRef.value && !moreMenuRef.value.contains(target)) showMoreMenu.value = false
+  if (!el?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
 }
 
 async function confirmGroupNext(override: string) {
@@ -802,7 +798,7 @@ function dhaAvatarChar(dhaId?: string): string {
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaId = ref<string | null>(null) // 主持人推荐的待邀请 DHA（0 成员时）
-const groupAutoConfirm = ref(true) // 默认为自动发送
+const groupAutoConfirm = ref(false) // 默认关闭自动确认
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
 const showMemberSkill = ref(false)
@@ -1886,9 +1882,28 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-input-wrap {
   flex-shrink: 0;
-  padding: 0.75rem 0;
-  background: var(--color-card);
-  border-top: 1px solid var(--color-border-light);
+  padding: 20px;
+  background: var(--color-page);
+  position: relative;
+  z-index: 10;
+}
+.group-chat-input-inner {
+  width: 90%;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: var(--color-page);
+  border: 1px solid var(--color-input-border);
+  border-radius: 24px;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 768px) {
+  .group-chat-input-inner {
+    width: 100%;
+  }
 }
 .group-chat-streaming-hint {
   margin: 0 0 0.5rem 0;
@@ -1942,7 +1957,7 @@ defineExpose({ refresh: loadGroupDetail })
   width: 100%;
 }
 .group-chat-input-block {
-  background: var(--color-input-bg);
+  background: var(--color-page);
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
@@ -1956,6 +1971,7 @@ defineExpose({ refresh: loadGroupDetail })
   min-height: 0;
   display: flex;
   flex-direction: column;
+  border: none;
 }
 .group-chat-input-block-label {
   display: block;
@@ -2097,13 +2113,48 @@ defineExpose({ refresh: loadGroupDetail })
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 25;
+  z-index: 1000;
 }
 .group-chat-members-item-clickable {
   cursor: pointer;
 }
-.group-chat-members-item-clickable:hover {
+.group-chat-members-item-clickable:hover,
+.group-chat-members-item-next-speaker:hover {
   background: var(--color-list-hover);
+}
+.group-chat-members-item-next-speaker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.375rem;
+  cursor: pointer;
+}
+.group-chat-next-speaker-name-in-list {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-chat-member-delete-icon {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.group-chat-member-delete-icon:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-subtle, rgba(220,38,38,0.1));
 }
 .group-chat-members-item-selected {
   background: var(--color-accent-subtle);
@@ -2114,7 +2165,7 @@ defineExpose({ refresh: loadGroupDetail })
   color: var(--color-text-muted);
   background: var(--color-list-hover);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 16px;
   cursor: pointer;
 }
 .group-chat-toolbar-btn:hover {
@@ -2141,7 +2192,7 @@ defineExpose({ refresh: loadGroupDetail })
   border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 30;
+  z-index: 1000;
 }
 .group-chat-add-remove-dropdown,
 .group-chat-member-skill-dropdown {
@@ -2571,7 +2622,7 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-theme .group-chat-header-btn-active { color: var(--color-accent-subtle-text); background: var(--color-accent-subtle); border-color: var(--color-accent); }
 .group-chat-theme .group-chat-goal-card { background: var(--color-card); border-color: var(--color-border-light); }
 .group-chat-theme .group-chat-bubble-dha { background: var(--color-card); border-color: var(--color-border-light); color: var(--color-text); }
-.group-chat-theme .group-chat-input-wrap { background: var(--color-card); border-color: var(--color-border-light); }
+.group-chat-theme .group-chat-input-wrap { background: var(--color-page); border-color: var(--color-border-light); }
 .group-chat-theme .group-chat-textarea { background: var(--color-input-bg); border-color: var(--color-input-border); color: var(--color-text); }
 .group-chat-theme .group-chat-send-btn { background: var(--color-accent); color: var(--color-text-inverse); }
 

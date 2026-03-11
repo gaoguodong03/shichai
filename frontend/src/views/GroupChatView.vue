@@ -279,64 +279,144 @@
         </div>
       </div>
 
-      <!-- 输入区：默认单输入框，更多中可展开讨论目标/最近讨论/下一 DHA 提示词、自动确认、增删成员 -->
-      <div class="flex-1 flex flex-col gap-2 px-4 py-2 min-h-0 overflow-auto relative">
-        <!-- 默认单输入框 -->
-        <div v-if="!showExtendedInputs" class="flex flex-col min-h-0 flex-1">
-          <div class="flex items-center gap-2 mb-1">
-            <label class="text-[11px] font-medium text-muted">输入消息或讨论目标</label>
-            <button type="button" class="p-0.5 rounded text-muted hover:bg-border" title="插入文件" @click="openFilePicker">⊕</button>
-            <button type="button" class="text-[11px] text-muted hover:text-primary" @click="showMoreMenu = !showMoreMenu">更多</button>
-          </div>
-          <textarea
-            :value="singleInputValue"
-            @input="singleInputValue = ($event.target as HTMLTextAreaElement).value"
-            placeholder="输入消息或讨论目标，按 Cmd+空格 发送"
-            rows="3"
-            class="flex-1 min-h-[60px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
-            :disabled="isStreaming"
-            @keydown="onChatInputKeydown"
-          />
-        </div>
-        <!-- 扩展输入框（更多 -> 显示讨论目标/最近讨论/下一 DHA 提示词） -->
-        <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1">
-          <div class="flex flex-col min-h-0">
-            <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
-              【群聊讨论目标】
-              <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePickerForGoal">⊕</button>
-            </label>
+      <!-- 输入区：宽度 90% 最大 1400px，左右 20px 内边距；下一发言人等已在输入框内 -->
+      <div class="group-chat-input-outer flex-1 flex flex-col gap-2 min-h-0 overflow-auto relative">
+        <!-- 默认单输入框：圆角容器内 = 输入区 + 功能按钮行 + 下一发言人/发送 -->
+        <div v-if="!showExtendedInputs" class="group-chat-input-box flex flex-col min-h-0 flex-1">
+          <div class="group-chat-input-area flex-1 min-h-0 flex flex-col">
             <textarea
-              v-model="discussionGoalText"
-              placeholder="输入本场讨论要达成的目标…"
-              rows="2"
-              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
-              :disabled="isStreaming"
-            />
-          </div>
-          <div class="flex flex-col min-h-0">
-            <label class="text-[11px] font-medium text-muted mb-0.5">最近讨论</label>
-            <textarea
-              v-model="recentDiscussionText"
-              placeholder="由消息自动生成，可编辑补充或修正…"
-              rows="2"
-              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm bg-list-hover text-primary overflow-auto resize-none placeholder:text-muted focus:ring-2 focus:ring-primary focus:border-primary"
-              :disabled="isStreaming"
-            />
-          </div>
-          <div class="flex flex-col min-h-0">
-            <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
-              下一 DHA 提示词
-              <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePicker">⊕</button>
-              <button v-if="speakMode === 'manual' && overrideNextSpeaker && overrideNextSpeaker !== 'user'" type="button" class="ml-1 text-[10px] text-accent hover:underline" @click="openPromptEditor">从预览加载</button>
-            </label>
-            <textarea
-              v-model="inputText"
-              placeholder="每次 DHA 发言前自动填充本轮提示词，可编辑后点「确认并继续」"
-              rows="2"
-              class="flex-1 min-h-[44px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+              :value="singleInputValue"
+              @input="singleInputValue = ($event.target as HTMLTextAreaElement).value"
+              placeholder="按 Cmd+空格 发送"
+              rows="3"
+              class="flex-1 min-h-[60px] w-full border-0 bg-transparent px-4 py-3 text-sm text-primary placeholder:text-muted focus:ring-0 focus:outline-none resize-none"
               :disabled="isStreaming"
               @keydown="onChatInputKeydown"
             />
+          </div>
+          <div class="group-chat-input-btn-row flex items-center flex-wrap gap-2 px-4 pb-3 pt-1">
+            <button type="button" class="group-chat-func-btn" title="插入文件" @click="openFilePicker">插入文件</button>
+            <button type="button" class="group-chat-func-btn" @click="showMoreMenu = !showMoreMenu">更多</button>
+          </div>
+          <!-- 下一发言人 + 发送：移入输入框内 -->
+          <div v-if="!isSingleDha" class="group-chat-input-footer flex flex-wrap items-center gap-2 px-4 pb-3 pt-1 border-t border-border-light">
+            <span class="text-[11px] text-muted">下一发言人</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label
+                v-for="opt in nextSpeakerOptions"
+                :key="opt.value"
+                :class="[
+                  'inline-flex items-center gap-2 px-3 py-2 rounded-[16px] border-2 cursor-pointer transition-all',
+                  overrideNextSpeaker === opt.value
+                    ? 'border-accent bg-accent-subtle text-accent-subtle-text shadow-sm'
+                    : 'border-border bg-card text-primary hover:border-input-border hover:bg-list-hover',
+                ]"
+              >
+                <input type="radio" :value="opt.value" v-model="overrideNextSpeaker" class="sr-only" :disabled="speakMode === 'auto'" />
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-text-inverse shrink-0" :style="opt.value === 'user' ? { backgroundColor: '#64748b' } : { backgroundColor: getDhaAvatarBg(opt.value) }">{{ opt.value === 'user' ? '我' : getDhaAvatarChar(opt.value) }}</span>
+                <span class="text-sm font-medium">{{ opt.label }}</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-[16px] text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              :disabled="isStreaming || (!canSend && speakMode !== 'auto')"
+              @click="sendMessage"
+              title="Cmd+空格"
+            >
+              {{ overrideNextSpeaker ? '确认并继续' : '发送' }}
+            </button>
+          </div>
+          <div v-else class="group-chat-input-footer flex justify-end px-4 pb-3 pt-1 border-t border-border-light">
+            <button
+              type="button"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-[16px] text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="isStreaming || !inputText.trim()"
+              @click="sendMessage"
+            >
+              发送
+            </button>
+          </div>
+        </div>
+        <!-- 扩展输入框（更多 -> 显示讨论目标/最近讨论/下一 DHA 提示词），同样放入圆角容器并带下一发言人+发送 -->
+        <div v-else class="group-chat-input-box flex flex-col min-h-0 flex-1">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1 p-4">
+            <div class="flex flex-col min-h-0">
+              <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
+                【群聊讨论目标】
+                <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePickerForGoal">⊕</button>
+              </label>
+              <textarea
+                v-model="discussionGoalText"
+                placeholder="输入本场讨论要达成的目标…"
+                rows="2"
+                class="flex-1 min-h-[44px] w-full border border-border rounded-[16px] px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+                :disabled="isStreaming"
+              />
+            </div>
+            <div class="flex flex-col min-h-0">
+              <label class="text-[11px] font-medium text-muted mb-0.5">最近讨论</label>
+              <textarea
+                v-model="recentDiscussionText"
+                placeholder="由消息自动生成，可编辑补充或修正…"
+                rows="2"
+                class="flex-1 min-h-[44px] w-full border border-border rounded-[16px] px-2.5 py-1.5 text-sm bg-list-hover text-primary overflow-auto resize-none placeholder:text-muted focus:ring-2 focus:ring-primary focus:border-primary"
+                :disabled="isStreaming"
+              />
+            </div>
+            <div class="flex flex-col min-h-0">
+              <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
+                下一 DHA 提示词
+                <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePicker">⊕</button>
+                <button v-if="speakMode === 'manual' && overrideNextSpeaker && overrideNextSpeaker !== 'user'" type="button" class="ml-1 text-[10px] text-accent hover:underline" @click="openPromptEditor">从预览加载</button>
+              </label>
+              <textarea
+                v-model="inputText"
+                placeholder="每次 DHA 发言前自动填充本轮提示词，可编辑后点「确认并继续」"
+                rows="2"
+                class="flex-1 min-h-[44px] w-full border border-border rounded-[16px] px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+                :disabled="isStreaming"
+                @keydown="onChatInputKeydown"
+              />
+            </div>
+          </div>
+          <div v-if="!isSingleDha" class="group-chat-input-footer flex flex-wrap items-center gap-2 px-4 pb-3 pt-1 border-t border-border-light">
+            <span class="text-[11px] text-muted">下一发言人</span>
+            <div class="flex flex-wrap gap-1.5">
+              <label
+                v-for="opt in nextSpeakerOptions"
+                :key="opt.value"
+                :class="[
+                  'inline-flex items-center gap-2 px-3 py-2 rounded-[16px] border-2 cursor-pointer transition-all',
+                  overrideNextSpeaker === opt.value
+                    ? 'border-accent bg-accent-subtle text-accent-subtle-text shadow-sm'
+                    : 'border-border bg-card text-primary hover:border-input-border hover:bg-list-hover',
+                ]"
+              >
+                <input type="radio" :value="opt.value" v-model="overrideNextSpeaker" class="sr-only" :disabled="speakMode === 'auto'" />
+                <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-text-inverse shrink-0" :style="opt.value === 'user' ? { backgroundColor: '#64748b' } : { backgroundColor: getDhaAvatarBg(opt.value) }">{{ opt.value === 'user' ? '我' : getDhaAvatarChar(opt.value) }}</span>
+                <span class="text-sm font-medium">{{ opt.label }}</span>
+              </label>
+            </div>
+            <button
+              type="button"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-[16px] text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              :disabled="isStreaming || (!canSend && speakMode !== 'auto')"
+              @click="sendMessage"
+              title="Cmd+空格"
+            >
+              {{ overrideNextSpeaker ? '确认并继续' : '发送' }}
+            </button>
+          </div>
+          <div v-else class="group-chat-input-footer flex justify-end px-4 pb-3 pt-1 border-t border-border-light">
+            <button
+              type="button"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-[16px] text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="isStreaming || !inputText.trim()"
+              @click="sendMessage"
+            >
+              发送
+            </button>
           </div>
         </div>
 
@@ -352,46 +432,6 @@
           </label>
           <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-list-hover text-sm" @click="showInviteDha = true; showMoreMenu = false">
             增删成员
-          </button>
-        </div>
-
-        <!-- 下一发言人：单选卡片 + 确认 -->
-        <div v-if="!isSingleDha" class="flex flex-wrap items-center gap-2 flex-shrink-0">
-          <span class="text-[11px] text-muted">下一发言人</span>
-          <div class="flex flex-wrap gap-1.5">
-            <label
-              v-for="opt in nextSpeakerOptions"
-              :key="opt.value"
-              :class="[
-                'inline-flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer transition-all',
-                overrideNextSpeaker === opt.value
-                  ? 'border-accent bg-accent-subtle text-accent-subtle-text shadow-sm'
-                  : 'border-border bg-card text-primary hover:border-input-border hover:bg-list-hover',
-              ]"
-            >
-              <input type="radio" :value="opt.value" v-model="overrideNextSpeaker" class="sr-only" :disabled="speakMode === 'auto'" />
-              <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-text-inverse shrink-0" :style="opt.value === 'user' ? { backgroundColor: '#64748b' } : { backgroundColor: getDhaAvatarBg(opt.value) }">{{ opt.value === 'user' ? '我' : getDhaAvatarChar(opt.value) }}</span>
-              <span class="text-sm font-medium">{{ opt.label }}</span>
-            </label>
-          </div>
-          <button
-            type="button"
-            class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            :disabled="isStreaming || (!canSend && speakMode !== 'auto')"
-            @click="sendMessage"
-            title="Cmd+空格"
-          >
-            {{ overrideNextSpeaker ? '确认并继续' : '发送' }}
-          </button>
-        </div>
-        <div v-else class="flex-shrink-0 flex justify-end">
-          <button
-            type="button"
-            class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
-            :disabled="isStreaming || !inputText.trim()"
-            @click="sendMessage"
-          >
-            发送
           </button>
         </div>
       </div>
@@ -1673,5 +1713,48 @@ watch(
 }
 .docx-preview :deep(*) {
   max-width: 100%;
+}
+
+/* 群聊输入区：圆角 24px，功能按钮 16px，宽度 90% 最大 1400px，响应式 100%+20px */
+.group-chat-input-outer {
+  padding: 20px;
+}
+.group-chat-input-box {
+  width: 90%;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: var(--color-page);
+  border: 1px solid var(--color-input-border);
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+@media (max-width: 768px) {
+  .group-chat-input-box {
+    width: 100%;
+  }
+}
+.group-chat-input-area {
+  border-radius: 0;
+}
+.group-chat-input-btn-row {
+  border-top: 1px solid var(--color-border-light);
+}
+.group-chat-input-footer {
+  flex-shrink: 0;
+}
+.group-chat-func-btn {
+  background: var(--color-sidebar-list);
+  border: none;
+  border-radius: 16px;
+  color: var(--color-text-muted);
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.group-chat-func-btn:hover {
+  background: var(--color-list-hover);
+  color: var(--color-text);
 }
 </style>

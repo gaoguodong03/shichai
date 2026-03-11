@@ -175,59 +175,59 @@
       </div>
     </div>
 
-    <!-- 输入框：多行，上/下都可拖拽调高度，Enter 换行，Ctrl+Enter 发送 -->
-    <div class="bg-card px-4 py-4 flex-shrink-0">
-      <form @submit.prevent="sendMessage" class="flex gap-2 items-end">
-        <div class="flex-1 flex flex-col min-w-0 rounded-lg border border-input-border overflow-hidden bg-card focus-within:ring-2 focus-within:ring-input-focus-ring focus-within:border-input-focus-ring">
+    <!-- 输入框：圆角 24px，功能按钮 16px，宽度 90% 最大 1400px / 响应式 100%+20px 内边距 -->
+    <div class="chat-input-wrap flex-shrink-0">
+      <form @submit.prevent="sendMessage" class="chat-input-box">
+        <div class="chat-input-area">
           <div
-            class="chat-input-resize-top cursor-ns-resize flex-shrink-0 h-1.5 hover:bg-accent-subtle"
+            class="chat-input-resize-top cursor-ns-resize flex-shrink-0 h-1.5 rounded-t-xl hover:opacity-80 transition-opacity"
             title="拖动调整输入框高度"
             @mousedown.prevent="startResizeFromTop"
           />
           <textarea
             ref="inputTextareaRef"
             v-model="inputMessage"
-            placeholder="输入消息...（Enter 换行，Cmd+空格 发送）"
+            placeholder="Enter 换行，Cmd+空格 发送"
             :style="inputAreaHeightPx ? { height: inputAreaHeightPx + 'px' } : undefined"
-            class="chat-input-textarea w-full min-h-[2.5rem] max-h-[40rem] resize-y px-4 py-2 border-0 focus:outline-none focus:ring-0"
+            class="chat-input-textarea"
             @keydown="onInputKeydown"
           />
         </div>
-        <button
-          type="submit"
-          :disabled="!inputMessage.trim()"
-          class="px-6 py-2 h-[2.5rem] flex-shrink-0 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
-          title="发送 (Cmd+空格)"
-        >
-          发送
-        </button>
+        <div class="chat-input-btn-group">
+          <button
+            type="button"
+            class="chat-input-func-btn"
+            :disabled="isStreaming"
+            title="选择文件插入到消息"
+            @click="openFilePicker"
+          >
+            选择文件插入
+          </button>
+          <button
+            type="button"
+            class="chat-input-func-btn"
+            :disabled="isStreaming"
+            title="选择本次对话使用的 Skill"
+            @click="openSkillPicker"
+          >
+            选择 Skill
+          </button>
+          <div class="chat-input-status truncate" v-if="selectedInsertFilePath">
+            已选文件：{{ selectedInsertFilePath }}
+          </div>
+          <div class="chat-input-status" v-if="selectedSkillIds.length">
+            已选 Skill：{{ selectedSkillIds.join(', ') }}
+          </div>
+          <button
+            type="submit"
+            :disabled="!inputMessage.trim()"
+            class="chat-input-send-btn"
+            title="发送 (Cmd+空格)"
+          >
+            <span aria-hidden="true">↑</span>
+          </button>
+        </div>
       </form>
-      <div class="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="isStreaming"
-          title="选择文件插入到消息"
-          @click="openFilePicker"
-        >
-          选择文件插入
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="isStreaming"
-          title="选择本次对话使用的 Skill"
-          @click="openSkillPicker"
-        >
-          选择 Skill
-        </button>
-        <div class="text-xs text-muted truncate" v-if="selectedInsertFilePath">
-          已选文件：{{ selectedInsertFilePath }}
-        </div>
-        <div class="text-xs text-muted" v-if="selectedSkillIds.length">
-          已选 Skill：{{ selectedSkillIds.join(', ') }}
-        </div>
-      </div>
     </div>
 
     <!-- 文件选择弹窗 -->
@@ -1033,6 +1033,109 @@ const sendMessage = async () => {
     transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+/* 输入区：圆角 24px，功能按钮 16px，PC 宽 90% 最大 1400px，响应式 100%+20px 内边距 */
+.chat-input-wrap {
+  background: var(--color-page);
+  padding: 20px;
+}
+.chat-input-box {
+  width: 90%;
+  max-width: 1400px;
+  margin: 0 auto;
+  min-height: 180px;
+  background: var(--color-page);
+  border: 1px solid var(--color-input-border);
+  border-radius: 24px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .chat-input-box {
+    width: 100%;
+  }
+}
+.chat-input-area {
+  flex: 1;
+  min-height: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+}
+.chat-input-textarea {
+  width: 100%;
+  min-height: 2.5rem;
+  max-height: 40rem;
+  resize: vertical;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.chat-input-textarea::placeholder {
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.chat-input-btn-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.chat-input-func-btn {
+  background: var(--color-sidebar-list);
+  border: none;
+  border-radius: 16px;
+  color: var(--color-text-muted);
+  padding: 10px 20px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.chat-input-func-btn:hover:not(:disabled) {
+  background: var(--color-list-hover);
+  color: var(--color-text);
+}
+.chat-input-func-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.chat-input-status {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  max-width: 12rem;
+}
+.chat-input-send-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-input-send-btn:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+.chat-input-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 对话中的 Markdown 样式：标题、分行、列表、代码块等，与 files 展示一致 */
