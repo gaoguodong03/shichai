@@ -292,7 +292,7 @@
                 <button
                   type="button"
                   :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
-                  :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend) || groupAutoConfirm"
+                  :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
                   @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
                 >
                   {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
@@ -1758,14 +1758,15 @@ defineExpose({ refresh: loadGroupDetail })
   align-self: flex-start;
 }
 .group-chat-bubble {
-  max-width: 100%;
-  padding: 0.625rem 0.875rem;
+  max-width: 90%;
+  padding: 10px 15px;
   font-size: 0.875rem;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  margin-bottom: 20px;
 }
 .group-chat-bubble-user {
   background: var(--color-user-bubble, var(--color-accent));
@@ -1784,6 +1785,9 @@ defineExpose({ refresh: loadGroupDetail })
   font-style: italic;
   text-align: center;
   border-bottom-left-radius: 4px;
+}
+.group-chat-msg-row-user .group-chat-bubble {
+  margin-left: auto;
 }
 .group-chat-bubble-meta {
   display: flex;

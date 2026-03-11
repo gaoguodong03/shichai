@@ -296,13 +296,13 @@
   --color-border: #333333;
 }
 
-/* 工作台右侧内容区：仅用主题变量，不写死颜色 */
+/* 工作空间右侧内容区：仅用主题变量，不写死颜色 */
 .workspace-right-content {
   background-color: var(--color-page);
   color: var(--color-text);
 }
 
-/* 工作台主区强制文字可见（与变量同文件，避免统一到单文件后顺序导致不生效） */
+/* 工作空间主区强制文字可见（与变量同文件，避免统一到单文件后顺序导致不生效） */
 main {
   color: var(--color-text, #000000);
   background-color: var(--color-page, #f2f2f7);

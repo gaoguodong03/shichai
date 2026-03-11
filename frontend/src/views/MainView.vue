@@ -30,22 +30,47 @@
     </nav>
 
     <!-- 中间列：当前模块的列表/摘要 -->
-    <aside class="w-60 flex-shrink-0 flex flex-col bg-sidebar-list overflow-hidden">
-      <div class="px-3 py-2 bg-section-header text-xs font-medium text-muted uppercase tracking-wide flex-shrink-0">
-        {{ middleColumnTitle }}
-      </div>
-      <div class="flex-1 overflow-y-auto">
-        <!-- 工作台：统一会话列表 -->
-        <template v-if="currentModule === 'workspace'">
+    <aside class="w-60 flex-shrink-0 flex flex-col bg-sidebar overflow-hidden">
+      <!-- 顶部品牌区：所有模块统一 Digital Human Agent -->
+      <div class="px-3 pt-3 pb-3 flex-shrink-0">
+        <div class="mb-2 flex justify-center">
+          <span class="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted text-center">Digital Human Agent</span>
+        </div>
+        <div v-if="currentModule === 'workspace'">
           <button
             @click="createNewSession"
             :class="[
-              'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-              creatingSession ? 'opacity-70 pointer-events-none' : 'hover:bg-list-hover text-list-hover-text'
+              'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+              creatingSession
+                ? 'opacity-70 pointer-events-none bg-nav-selected-bg text-nav-selected-text'
+                : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
             ]"
           >
-            + 新建会话
+            <span class="text-base leading-none">＋</span>
+            <span>新建会话</span>
           </button>
+        </div>
+        <div v-else-if="currentModule === 'resource'">
+          <div class="mt-2 flex rounded-lg overflow-hidden bg-sidebar">
+            <button
+              v-for="tab in resourceTabs"
+              :key="tab.id"
+              @click="resourceSubModule = tab.id"
+              :class="[
+                'flex-1 px-2 py-2 text-xs font-medium transition-colors text-center',
+                resourceSubModule === tab.id
+                  ? 'bg-nav-selected-bg text-nav-selected-text'
+                  : 'text-nav-text hover:bg-nav-hover-bg'
+              ]"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <!-- 工作空间：统一会话列表 -->
+        <template v-if="currentModule === 'workspace'">
           <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
           <div v-else-if="!groupSessions.length" class="px-3 py-4 text-sm text-muted">暂无群聊会话</div>
           <div
@@ -59,9 +84,28 @@
             ]"
           >
             <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">{{ s.title || '新对话' }}</div>
-              <div class="truncate text-xs text-muted mt-0.5">
-                {{ (s.dha_ids?.length || 0) }} 个 DHA · {{ formatDate(s.updated_at) }}
+              <div class="truncate font-medium">{{ displaySessionTitle(s) }}</div>
+              <div class="mt-0.5 flex items-center gap-1">
+                <template v-if="(s.dha_ids?.length || 0) > 0">
+                  <div class="flex -space-x-1">
+                    <span
+                      v-for="id in (s.dha_ids || []).slice(0, 3)"
+                      :key="id"
+                      class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-semibold text-text-inverse shrink-0 ring-1 ring-sidebar"
+                      :style="{ backgroundColor: dhaAvatarColorForId(id) }"
+                    >
+                      {{ dhaAvatarCharForId(id) }}
+                    </span>
+                  </div>
+                  <span class="truncate text-xs text-muted">
+                    {{ (s.dha_ids?.length || 0) }} 位专家 · {{ formatDate(s.updated_at) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="truncate text-xs text-muted">
+                    0 位专家 · {{ formatDate(s.updated_at) }}
+                  </span>
+                </template>
               </div>
             </div>
             <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -84,34 +128,24 @@
             </div>
           </div>
         </template>
-        <!-- 资源中心：子 Tab 智能体 / 技能 / 工具 -->
+        <!-- 资源中心：子 Tab 专家 / Skill / MCP -->
         <template v-else-if="currentModule === 'resource'">
-          <div class="flex bg-section-header mb-2 flex-shrink-0">
-            <button
-              v-for="tab in resourceTabs"
-              :key="tab.id"
-              @click="resourceSubModule = tab.id"
-              :class="[
-                'flex-1 px-2 py-2 text-xs font-medium rounded-t transition-colors',
-                resourceSubModule === tab.id ? 'bg-accent-subtle text-accent-subtle-text' : 'text-primary hover:bg-list-hover'
-              ]"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-          <!-- 智能体 DHA -->
+          <!-- 专家 DHA -->
           <template v-if="resourceSubModule === 'dha'">
             <button
               @click="selectedId = '__new__'"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-1',
-                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
+                selectedId === '__new__'
+                  ? 'bg-nav-selected-bg text-nav-selected-text'
+                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
               ]"
             >
-              + 新建 DHA
+              <span class="text-base leading-none">＋</span>
+              <span>新建专家</span>
             </button>
             <div v-if="dhaInstancesLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-muted">暂无 DHA</div>
+            <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-muted">暂无专家</div>
             <div
               v-else
               v-for="d in dhaInstances"
@@ -123,29 +157,32 @@
               @click="selectedId = d.dha_id"
             >
               <div class="flex-1 min-w-0 text-left">
-                <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
+              <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
                 <div class="truncate text-xs text-muted mt-0.5">{{ d.role || '（无角色）' }}</div>
               </div>
               <button
                 type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
-                title="删除 DHA"
+                title="删除专家"
                 @click.stop="deleteDhaInstance(d.dha_id)"
               >
                 ×
               </button>
             </div>
           </template>
-          <!-- 技能 Skills -->
+          <!-- Skill -->
           <template v-else-if="resourceSubModule === 'skill'">
             <button
               @click="selectedId = '__new__'"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
+                selectedId === '__new__'
+                  ? 'bg-nav-selected-bg text-nav-selected-text'
+                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
               ]"
             >
-              + 添加 Skill
+              <span class="text-base leading-none">＋</span>
+              <span>新建 Skill</span>
             </button>
             <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <button
@@ -162,16 +199,19 @@
               <div class="truncate text-xs text-muted mt-0.5">{{ s.enabled ? '已启用' : '已禁用' }}</div>
             </button>
           </template>
-          <!-- 工具 MCP -->
+          <!-- MCP -->
           <template v-else-if="resourceSubModule === 'mcp'">
             <button
               @click="selectedId = '__new__'"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                selectedId === '__new__' ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
+                selectedId === '__new__'
+                  ? 'bg-nav-selected-bg text-nav-selected-text'
+                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
               ]"
             >
-              + 添加 MCP
+              <span class="text-base leading-none">＋</span>
+              <span>新建 MCP</span>
             </button>
             <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <button
@@ -206,9 +246,9 @@
       </div>
     </aside>
 
-    <!-- 右侧列：主内容。工作台时用单一包裹层保证占满高度且内容可见 -->
+    <!-- 右侧列：主内容。工作空间时用单一包裹层保证占满高度且内容可见 -->
     <main class="main-right w-0 flex-1 flex flex-col min-h-0 overflow-hidden bg-page text-primary">
-      <!-- 工作台右侧：由 WorkspaceContent 统一负责单聊/群聊/占位与拉取 -->
+      <!-- 工作空间右侧：由 WorkspaceContent 统一负责单聊/群聊/占位与拉取 -->
       <WorkspaceContent
         v-if="currentModule === 'workspace'"
         ref="workspaceContentRef"
@@ -303,15 +343,15 @@ type ModuleId = 'workspace' | 'resource' | 'settings'
 type ResourceSubModule = 'dha' | 'skill' | 'mcp'
 
 const navItems: { id: ModuleId; label: string }[] = [
-  { id: 'workspace', label: '工作台' },
+  { id: 'workspace', label: '工作空间' },
   { id: 'resource', label: '资源中心' },
   { id: 'settings', label: '设置' },
 ]
 
 const resourceTabs: { id: ResourceSubModule; label: string }[] = [
-  { id: 'dha', label: '智能体' },
-  { id: 'skill', label: '技能' },
-  { id: 'mcp', label: '工具' },
+  { id: 'dha', label: '专家' },
+  { id: 'skill', label: 'Skill' },
+  { id: 'mcp', label: 'MCP' },
 ]
 
 const currentModule = ref<ModuleId>('workspace')
@@ -336,14 +376,47 @@ const showSingleChat = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
 
-const middleColumnTitle = computed(() => {
-  const t: Record<ModuleId, string> = {
-    workspace: '会话列表',
-    resource: '资源中心',
-    settings: '设置分类',
+const middleColumnTitle = computed(() => '')
+
+/** 会话列表展示用标题：为空或默认值时用更友好的「AI 命名」 */
+function displaySessionTitle(s: { id: string; title: string; dha_ids?: string[]; updated_at: string }): string {
+  const raw = (s.title || '').trim()
+  if (!raw || raw === '新对话') {
+    const dhaCount = s.dha_ids?.length || 0
+    if (dhaCount === 0) return '空白会话'
+    if (dhaCount === 1) return '单 DHA 协作会话'
+    if (dhaCount <= 3) return `${dhaCount} DHA 协作会话`
+    return `多 DHA 协作会话`
   }
-  return t[currentModule.value]
-})
+  return raw
+}
+
+const DHA_AVATAR_COLORS = [
+  'var(--color-dha-box-0)',
+  'var(--color-dha-box-1)',
+  'var(--color-dha-box-2)',
+  'var(--color-dha-box-3)',
+  'var(--color-dha-box-4)',
+  'var(--color-dha-box-5)',
+  'var(--color-dha-box-6)',
+  'var(--color-dha-box-7)',
+]
+
+function dhaAvatarColorForId(dhaId: string): string {
+  const list = dhaInstances.value || []
+  const idx = Math.max(
+    0,
+    list.findIndex((d) => d.dha_id === dhaId),
+  )
+  return DHA_AVATAR_COLORS[idx % DHA_AVATAR_COLORS.length]
+}
+
+function dhaAvatarCharForId(dhaId: string): string {
+  const list = dhaInstances.value || []
+  const found = list.find((d) => d.dha_id === dhaId)
+  const name = (found?.name || dhaId || '?').trim()
+  return name ? name.slice(0, 1).toUpperCase() : '?'
+}
 
 
 function formatDate(iso: string) {
@@ -432,12 +505,44 @@ async function createNewSession() {
       showSingleChat.value = false
       selectedGroupSessionId.value = j.data.id
       await fetchGroupSessions()
+      // 新会话创建后，尝试自动生成更具语义的标题
+      try {
+        const autoTitle = generateAiSessionTitle()
+        if (autoTitle) {
+          const r2 = await fetch(`/api/group-sessions/${encodeURIComponent(j.data.id)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: autoTitle }),
+          })
+          const j2 = await r2.json()
+          if (j2.status === 'ok') {
+            await fetchGroupSessions()
+            if (selectedGroupSessionId.value === j.data.id) {
+              workspaceContentRef.value?.refresh()
+            }
+          }
+        }
+      } catch {
+        // 自动命名失败时静默降级，不影响创建流程
+      }
     } else {
       alert(j.detail || '新建会话失败')
     }
   } finally {
     creatingSession.value = false
   }
+}
+
+/** 基于当前时间生成一个简短的「AI 风格」会话标题 */
+function generateAiSessionTitle(): string {
+  const now = new Date()
+  const ts = now.toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  return `DHA 协作 · ${ts}`
 }
 
 function selectGroupSession(id: string) {
