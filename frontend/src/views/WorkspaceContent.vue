@@ -99,10 +99,10 @@
             <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
               <p v-if="groupStreaming" class="group-chat-streaming-hint">{{ groupStreamingPhase }}</p>
-              <div v-if="groupSuggestedAddDhaId && !groupStreaming" class="group-chat-suggested-invite-bar">
+              <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
                 <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
                 <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">邀请加入</button>
-                <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaId = null">忽略</button>
+                <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
               <div class="group-chat-input-blocks">
                 <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词输入框」时） -->
@@ -637,7 +637,8 @@ async function confirmGroupNext(override: string) {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
                 if (data.next_prompt) groupNextPrompt.value = data.next_prompt
-                if (data.suggested_add_dha_id) groupSuggestedAddDhaId.value = data.suggested_add_dha_id
+                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -648,7 +649,8 @@ async function confirmGroupNext(override: string) {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.suggested_add_dha_id) groupSuggestedAddDhaId.value = endData.suggested_add_dha_id
+                if (endData.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
                 if (groupAutoConfirm.value && endData.suggested_next_speaker) {
                   nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
@@ -797,7 +799,7 @@ function dhaAvatarChar(dhaId?: string): string {
 
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
-const groupSuggestedAddDhaId = ref<string | null>(null) // 主持人推荐的待邀请 DHA（0 成员时）
+const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或两位）
 const groupAutoConfirm = ref(false) // 默认关闭自动确认
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
@@ -826,27 +828,27 @@ const invitableDhas = computed(() => {
   return (props.dhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
 })
 
-/** 主持人推荐的 DHA 的展示名（来自资源中心实例列表） */
+/** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
 const suggestedAddDhaName = computed(() => {
-  const id = groupSuggestedAddDhaId.value
-  if (!id) return ''
-  const d = (props.dhaInstances || []).find((x) => x.dha_id === id)
-  return d?.name || id
+  const ids = groupSuggestedAddDhaIds.value
+  if (!ids.length) return ''
+  const names = ids.map((id) => (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || id)
+  return names.join('、')
 })
 
 async function inviteSuggestedDha() {
-  const id = groupSuggestedAddDhaId.value
+  const ids = groupSuggestedAddDhaIds.value
   const groupId = groupDetail.value?.id
-  if (!id || !groupId) return
+  if (!ids.length || !groupId) return
   try {
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_dha_ids: [id] }),
+      body: JSON.stringify({ add_dha_ids: ids }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
-      groupSuggestedAddDhaId.value = null
+      groupSuggestedAddDhaIds.value = []
       emit('dha-added')
       await loadGroupDetail()
     } else {
@@ -1176,19 +1178,19 @@ async function loadInsertFileEntries() {
   }
 }
 
-async function insertFileContent(e: { name: string; path: string }) {
+function insertFileContent(e: { name: string; path: string }) {
   const id = groupDetail.value?.id
   if (!id) return
-  try {
-    const url = `/api/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(e.path)}`
-    const r = await fetch(url)
-    const text = await r.text()
+  const refPath = `workspaces/${id}/${e.path}`
+  const block = `\n【文件引用：${refPath}】\n`
+  if (showNextPromptField.value) {
     const sep = (groupNextPrompt.value || '').trim() ? '\n\n' : ''
-    groupNextPrompt.value = (groupNextPrompt.value || '').trim() + sep + (text || '').trim()
-    showInsertFile.value = false
-  } catch {
-    alert('读取文件失败')
+    groupNextPrompt.value = (groupNextPrompt.value || '').trim() + sep + block.trim()
+  } else {
+    const sep = (groupDiscussionGoal.value || '').trim() ? '\n\n' : ''
+    groupDiscussionGoal.value = (groupDiscussionGoal.value || '').trim() + sep + block.trim()
   }
+  showInsertFile.value = false
 }
 
 function defaultDhaFilename(msg: MsgExt & { dha_id?: string }): string {
@@ -1278,7 +1280,8 @@ async function sendGroupMessage() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
                 if (data.next_prompt) groupNextPrompt.value = data.next_prompt
-                if (data.suggested_add_dha_id) groupSuggestedAddDhaId.value = data.suggested_add_dha_id
+                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -1289,7 +1292,8 @@ async function sendGroupMessage() {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.suggested_add_dha_id) groupSuggestedAddDhaId.value = endData.suggested_add_dha_id
+                if (endData.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
                 if (groupAutoConfirm.value && endData.suggested_next_speaker) {
                   nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
@@ -1380,7 +1384,7 @@ watch(
       groupError.value = null
       groupWaitingForUser.value = false
       groupSuggestedNextSpeaker.value = null
-      groupSuggestedAddDhaId.value = null
+      groupSuggestedAddDhaIds.value = []
       loadGroupDetail()
     }
   },

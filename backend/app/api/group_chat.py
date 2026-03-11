@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -272,17 +273,17 @@ async def _host_only_respond_and_recommend(
     recent_messages: str,
     all_instances: List[Dict[str, Any]],
     extra_system_prompt: str,
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, Optional[List[str]]]:
     """
-    当前群聊 0 个成员时：主持人回复用户并推荐一位 DHA 加入。
-    返回 (主持人回复正文, suggested_add_dha_id 或 None)。
+    当前群聊 0 个成员时：主持人回复用户并推荐一位或两位 DHA 加入。
+    返回 (主持人回复正文, suggested_add_dha_ids 或 None)。
     """
     skill_content = skills_loader.get_skill_full_content("group-host")
     if not skill_content:
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的 DHA 加入。"
     system_content = (
         "你是群聊的主持人。当前群聊尚无成员，用户正在与你交流。"
-        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位适合加入讨论的 DHA。"
+        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位或两位适合加入讨论的 DHA。"
         "可选 DHA 列表见下方。\n\n"
         f"{skill_content}"
     )
@@ -298,9 +299,9 @@ async def _host_only_respond_and_recommend(
     user_content = (
         f"讨论目标/用户消息：\n{discussion_goal}\n\n"
         f"最近对话：\n{recent_messages}\n\n"
-        f"可选 DHA 列表（请从中推荐一位加入，输出其 dha_id）：\n{dha_text}\n\n"
-        "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON，格式："
-        '{"suggested_add_dha_id": "dha_id"}'
+        f"可选 DHA 列表（请从中推荐一位或两位加入，输出其 dha_id）：\n{dha_text}\n\n"
+        "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON。"
+        '格式任选其一：{"suggested_add_dha_id": "dha_id"} 或 {"suggested_add_dha_ids": ["dha_id1", "dha_id2"]}'
     )
     app_settings = load_app_settings()
     llm = _get_llm_for_dha(None, app_settings)
@@ -318,7 +319,8 @@ async def _host_only_respond_and_recommend(
             return "我已收到您的需求，您可以在「增删成员」中邀请合适的 DHA 加入讨论。", None
         text = content_str.strip()
         announcement = text
-        suggested_add_dha_id = None
+        suggested_add_dha_ids: Optional[List[str]] = None
+        valid_ids = {d.get("dha_id") for d in all_instances if d.get("dha_id")}
         for sep in ("\n{", "{"):
             if sep in text:
                 idx = text.find(sep) if sep == "{" else text.find(sep) + 1
@@ -326,13 +328,22 @@ async def _host_only_respond_and_recommend(
                 json_str = text[idx:].strip()
                 try:
                     data = json.loads(json_str)
-                    sid = (data.get("suggested_add_dha_id") or "").strip()
-                    if sid and any(d.get("dha_id") == sid for d in all_instances):
-                        suggested_add_dha_id = sid
+                    ids_raw = data.get("suggested_add_dha_ids")
+                    if isinstance(ids_raw, list) and ids_raw:
+                        suggested_add_dha_ids = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids][:2]
+                    if not suggested_add_dha_ids:
+                        sid = (data.get("suggested_add_dha_id") or "").strip()
+                        if sid and sid in valid_ids:
+                            suggested_add_dha_ids = [sid]
                 except Exception:
                     pass
                 break
-        return announcement or text, suggested_add_dha_id
+        # 若 JSON 未解析出推荐列表，从正文中提取 dha-xxx 作为备用（主持人常在正文中写专家 id）
+        if not suggested_add_dha_ids and valid_ids:
+            dha_id_pattern = re.compile(r"dha-[a-f0-9]{8,12}", re.I)
+            found = list(dict.fromkeys(dha_id_pattern.findall(text)))
+            suggested_add_dha_ids = [x for x in found if x in valid_ids][:2]
+        return announcement or text, suggested_add_dha_ids
     except Exception as e:
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
         return "我已收到您的需求，您可以在「更多」→「增删成员」中邀请 DHA 加入讨论。", None
@@ -513,10 +524,25 @@ async def get_group_session(group_session_id: str):
 
 @router.put("/group-sessions/{group_session_id}")
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、发言模式、追加 DHA 等"""
+    """更新群聊：重命名、发言模式、追加 DHA 等。若会话不在 meta 中但请求为邀请（add_dha_ids），则自动创建该会话条目以避免 404。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
-        raise HTTPException(status_code=404, detail="Group session not found")
+        if body.add_dha_ids:
+            now = datetime.now(timezone.utc).isoformat()
+            meta[group_session_id] = {
+                "title": "新群聊",
+                "dha_ids": [],
+                "leader_dha_id": "",
+                "speak_mode": "auto",
+                "created_at": now,
+                "updated_at": now,
+            }
+            _save_group_meta(meta)
+            path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+            if not path.exists():
+                _save_group_history(group_session_id, [])
+        else:
+            raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
         meta[group_session_id]["title"] = body.title.strip()
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
@@ -624,11 +650,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             next_speaker = None
 
-            # 0 个 DHA：主持人为先，主持人回复用户并推荐一位 DHA 加入（不再使用 Chat）
+            # 0 个 DHA：主持人为先，主持人回复用户并推荐一位或两位 DHA 加入（不再使用 Chat）
             if len(dha_ids) == 0:
                 recent = _messages_to_context(messages)
                 all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
-                host_content, suggested_add_dha_id = await _host_only_respond_and_recommend(
+                host_content, suggested_add_dha_ids = await _host_only_respond_and_recommend(
                     discussion_goal, recent, all_instances, extra_system_prompt
                 )
                 host_msg = {
@@ -637,16 +663,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "content": host_content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-                if suggested_add_dha_id:
-                    host_msg["suggested_add_dha_id"] = suggested_add_dha_id
+                if suggested_add_dha_ids:
+                    host_msg["suggested_add_dha_ids"] = suggested_add_dha_ids
+                    host_msg["suggested_add_dha_id"] = suggested_add_dha_ids[0]
                 messages.append(host_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
                 _save_group_meta(meta)
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 end_data = {"type": "end", "waiting_for_user": True}
-                if suggested_add_dha_id:
-                    end_data["suggested_add_dha_id"] = suggested_add_dha_id
+                if suggested_add_dha_ids:
+                    end_data["suggested_add_dha_ids"] = suggested_add_dha_ids
+                    end_data["suggested_add_dha_id"] = suggested_add_dha_ids[0]
                 yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                 return
 
@@ -1038,11 +1066,11 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
     speak_mode = m.get("speak_mode", "auto")
     single_dha_mode = len(dha_ids) == 1
 
-    # 0 个 DHA：主持人为先，主持人回复并推荐 DHA 加入
+    # 0 个 DHA：主持人为先，主持人回复并推荐一位或两位 DHA 加入
     if len(dha_ids) == 0:
         recent = _messages_to_context(messages)
         all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
-        host_content, suggested_add_dha_id = await _host_only_respond_and_recommend(
+        host_content, suggested_add_dha_ids = await _host_only_respond_and_recommend(
             discussion_goal, recent, all_instances, extra_system_prompt
         )
         host_msg = {
@@ -1051,8 +1079,9 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             "content": host_content,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        if suggested_add_dha_id:
-            host_msg["suggested_add_dha_id"] = suggested_add_dha_id
+        if suggested_add_dha_ids:
+            host_msg["suggested_add_dha_ids"] = suggested_add_dha_ids
+            host_msg["suggested_add_dha_id"] = suggested_add_dha_ids[0]
         messages.append(host_msg)
         _save_group_history(group_session_id, messages)
         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1061,7 +1090,8 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
             "status": "ok",
             "data": {
                 "messages": messages,
-                "suggested_add_dha_id": suggested_add_dha_id,
+                "suggested_add_dha_ids": suggested_add_dha_ids,
+                "suggested_add_dha_id": suggested_add_dha_ids[0] if suggested_add_dha_ids else None,
             },
         }
 

@@ -1,5 +1,5 @@
 {
-  "default_llm": "gemini",
+  "default_llm": "jeniya",
   "llm_providers": {
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",

@@ -52,7 +52,7 @@
   {
     "dha_id": "dha-c1bf68ba",
     "name": "内容核查专家",
-    "role": "负责检查内容是否准确，对用户提供的文本进行严格的排版和数据格式审计。",
+    "role": "负责检查内容是否准确",
     "system_prompt": "",
     "skill_ids": [
       "content-checker",
@@ -136,6 +136,30 @@
     "role": "当学生或学伴在研讨中提出问题时，主动解答",
     "system_prompt": "你是讨论课的助教。只有当主持人指定你发言时才发言。你的职责是回答讨论中学生或学伴提出的问题：针对最近对话中的问题给出清晰、专业的解答，不要使用有序列表时尽量用自然段，仅输出回答内容。",
     "skill_ids": [],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": ""
+  },
+  {
+    "dha_id": "dha-b6dba178",
+    "name": "格式与数据规范检查专家",
+    "role": "严格基于规则（正则、结构）检查日期、空格、标点混用及数据语法。不涉及语义对错。",
+    "system_prompt": "",
+    "skill_ids": [
+      "skill-format-validator"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": ""
+  },
+  {
+    "dha_id": "dha-2be73edd",
+    "name": "文字校对与错别字检查专家",
+    "role": "基于语义理解检查错别字、词语误用、语法不通、敏感词。不修改数据格式。",
+    "system_prompt": "",
+    "skill_ids": [
+      "text-proofreader"
+    ],
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": ""
