@@ -1035,6 +1035,20 @@ watch(
   { immediate: true }
 )
 
+// 切换会话时，清空上一场的「下一 DHA 提示词」、文件引用等状态，避免串场
+watch(
+  () => props.selectedGroupSessionId,
+  () => {
+    groupDiscussionGoal.value = null
+    groupNextPrompt.value = ''
+    attachedFiles.value = []
+    groupWaitingForUser.value = false
+    groupSuggestedNextSpeaker.value = null
+    groupSuggestedAddDhaIds.value = []
+    groupNextSpeakerOverride.value = ''
+  }
+)
+
 watch(
   () => [showGroupWorkspace.value, groupDetail.value?.id] as const,
   ([show, id]) => {
