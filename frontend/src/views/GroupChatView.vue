@@ -279,9 +279,27 @@
         </div>
       </div>
 
-      <!-- 多输入框：讨论目标 + 最近讨论 + 下一 DHA 提示词 -->
-      <div class="flex-1 flex flex-col gap-2 px-4 py-2 min-h-0 overflow-auto">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1">
+      <!-- 输入区：默认单输入框，更多中可展开讨论目标/最近讨论/下一 DHA 提示词、自动确认、增删成员 -->
+      <div class="flex-1 flex flex-col gap-2 px-4 py-2 min-h-0 overflow-auto relative">
+        <!-- 默认单输入框 -->
+        <div v-if="!showExtendedInputs" class="flex flex-col min-h-0 flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <label class="text-[11px] font-medium text-muted">输入消息或讨论目标</label>
+            <button type="button" class="p-0.5 rounded text-muted hover:bg-border" title="插入文件" @click="openFilePicker">⊕</button>
+            <button type="button" class="text-[11px] text-muted hover:text-primary" @click="showMoreMenu = !showMoreMenu">更多</button>
+          </div>
+          <textarea
+            :value="singleInputValue"
+            @input="singleInputValue = ($event.target as HTMLTextAreaElement).value"
+            placeholder="输入消息或讨论目标，按 Cmd+空格 发送"
+            rows="3"
+            class="flex-1 min-h-[60px] w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring placeholder:text-muted"
+            :disabled="isStreaming"
+            @keydown="onChatInputKeydown"
+          />
+        </div>
+        <!-- 扩展输入框（更多 -> 显示讨论目标/最近讨论/下一 DHA 提示词） -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1">
           <div class="flex flex-col min-h-0">
             <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
               【群聊讨论目标】
@@ -322,7 +340,22 @@
           </div>
         </div>
 
-        <!-- 下一发言人：单选卡片 + 自动 + 确认 -->
+        <!-- 更多下拉：显示扩展输入框、自动确认、增删成员 -->
+        <div v-if="showMoreMenu" class="absolute left-4 right-4 md:right-auto md:w-56 bg-card border border-border rounded-lg shadow-lg py-2 z-20">
+          <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-list-hover cursor-pointer text-sm">
+            <input type="checkbox" v-model="showExtendedInputs" class="rounded border-input-border text-accent focus:ring-input-focus-ring" />
+            <span>显示讨论目标 / 最近讨论 / 下一 DHA 提示词</span>
+          </label>
+          <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-list-hover cursor-pointer text-sm">
+            <input type="checkbox" :checked="speakMode === 'auto'" class="rounded border-input-border text-accent focus:ring-input-focus-ring" @change="onAutoSwitchChange" />
+            <span>自动确认</span>
+          </label>
+          <button type="button" class="w-full text-left px-3 py-1.5 hover:bg-list-hover text-sm" @click="showInviteDha = true; showMoreMenu = false">
+            增删成员
+          </button>
+        </div>
+
+        <!-- 下一发言人：单选卡片 + 确认 -->
         <div v-if="!isSingleDha" class="flex flex-wrap items-center gap-2 flex-shrink-0">
           <span class="text-[11px] text-muted">下一发言人</span>
           <div class="flex flex-wrap gap-1.5">
@@ -341,10 +374,6 @@
               <span class="text-sm font-medium">{{ opt.label }}</span>
             </label>
           </div>
-          <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-card cursor-pointer hover:bg-list-hover text-sm">
-            <input type="checkbox" :checked="speakMode === 'auto'" class="rounded border-input-border text-accent focus:ring-input-focus-ring" @change="onAutoSwitchChange" />
-            <span>自动确认</span>
-          </label>
           <button
             type="button"
             class="px-4 py-2 bg-accent text-text-inverse rounded-xl text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
@@ -709,6 +738,7 @@ function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
     discussionGoalText.value = (discussionGoalText.value || '') + ref
   } else {
     inputText.value = (inputText.value || '') + ref
+    singleInputValue.value = (singleInputValue.value || '') + ref
   }
   filePickerTarget = 'prompt'
   closeFilePicker()
@@ -1118,6 +1148,7 @@ function confirmPromptEditor() {
   const v = promptEditorText.value || ''
   customPrompt.value = v
   inputText.value = v  // 同步到输入框，用户可直接发送
+  singleInputValue.value = v
   showPromptEditor.value = false
 }
 
@@ -1129,10 +1160,12 @@ watch(
       const lastWithPrompt = next?.slice().reverse().find((m: { next_prompt?: string }) => m?.next_prompt)
       if (lastWithPrompt?.next_prompt) {
         inputText.value = lastWithPrompt.next_prompt
+        if (!showExtendedInputs.value) singleInputValue.value = lastWithPrompt.next_prompt
       }
       const firstUser = next?.find((m: { role: string }) => m.role === 'user')
       if (firstUser?.content && !discussionGoalText.value) {
         discussionGoalText.value = (firstUser.content || '').trim()
+        if (!showExtendedInputs.value && !singleInputValue.value) singleInputValue.value = (firstUser.content || '').trim()
       }
       recentDiscussionText.value = recentDiscussionPreview.value
     }
@@ -1219,6 +1252,7 @@ const nextSpeakerOptions = computed(() => {
 
 const canSend = computed(() => {
   if (overrideNextSpeaker.value) return true
+  if (!showExtendedInputs.value) return !!singleInputValue.value.trim()
   return !!(discussionGoalText.value.trim() || inputText.value.trim())
 })
 
@@ -1244,6 +1278,10 @@ const invitableDhas = computed(() => {
 
 const showInviteDha = ref(false)
 const inviteSelectedIds = ref<string[]>([])
+const showExtendedInputs = ref(false)
+const showMoreMenu = ref(false)
+/** 默认单输入框时的内容：无用户消息时作为讨论目标，有用户消息时作为下一 DHA 提示词 */
+const singleInputValue = ref('')
 
 async function confirmInviteDha() {
   if (!inviteSelectedIds.value.length) return
@@ -1411,8 +1449,9 @@ function onChatInputKeydown(e: KeyboardEvent) {
 
 async function sendMessage() {
   const hasOverride = !!overrideNextSpeaker.value
-  const promptText = inputText.value.trim()
-  const goalText = discussionGoalText.value.trim()
+  const useSingle = !showExtendedInputs.value
+  const goalText = useSingle ? singleInputValue.value.trim() : discussionGoalText.value.trim()
+  const promptText = useSingle ? singleInputValue.value.trim() : inputText.value.trim()
   if (isStreaming.value) return
   if (!hasOverride && !goalText && !promptText) return
 
@@ -1420,8 +1459,11 @@ async function sendMessage() {
   const msg = hasOverride ? '' : (goalText || promptText)
   if (!hasOverride) {
     inputText.value = ''
+    if (useSingle) singleInputValue.value = ''
+    else discussionGoalText.value = ''
   } else {
-    inputText.value = ''  // 确认后清空，等主持人返回新 next_prompt 再自动填充
+    inputText.value = ''
+    if (useSingle) singleInputValue.value = ''
   }
   isStreaming.value = true
 
@@ -1478,6 +1520,7 @@ async function sendMessage() {
                 displayedMessages.value = [...displayedMessages.value, data]
                 if (data.next_prompt) {
                   inputText.value = data.next_prompt
+                  singleInputValue.value = data.next_prompt
                 }
                 recentDiscussionText.value = recentDiscussionPreview.value
                 scrollToBottom()
@@ -1493,6 +1536,7 @@ async function sendMessage() {
                 }
                 if (endData.next_prompt) {
                   inputText.value = endData.next_prompt
+                  singleInputValue.value = endData.next_prompt
                 }
                 // clear any pending auto-confirm to avoid auto-send
                 if (endData.suggested_next_speaker != null) {
@@ -1563,6 +1607,7 @@ async function onAutoSwitchChange(e: Event) {
                         displayedMessages.value = [...displayedMessages.value, data]
                         if (data.next_prompt) {
                           inputText.value = data.next_prompt
+                          singleInputValue.value = data.next_prompt
                         }
                         scrollToBottom()
                       }

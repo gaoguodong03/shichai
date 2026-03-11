@@ -20,7 +20,6 @@ from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
 from app.api.settings import get_mcp_servers_for_skill
 from app.api.files import get_workspace_root_path, get_workspace_root
-from app.api.chat import run_single_chat_full_content
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
@@ -38,7 +37,7 @@ SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./data/sessions")
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
 
-# 新建会话时若未选 DHA，默认使用该 DHA（拥有全部技能）；后续添加成员时会从会话中移除，历史保留
+# 已废弃：不再使用 dha-chat，新建会话 0 个 DHA 时由主持人先与用户交流并推荐 DHA 加入
 CHAT_DHA_ID = "dha-chat"
 
 skills_loader = SkillsLoader()
@@ -268,6 +267,77 @@ async def _host_decide_by_dha(
         return None
 
 
+async def _host_only_respond_and_recommend(
+    discussion_goal: str,
+    recent_messages: str,
+    all_instances: List[Dict[str, Any]],
+    extra_system_prompt: str,
+) -> tuple[str, Optional[str]]:
+    """
+    当前群聊 0 个成员时：主持人回复用户并推荐一位 DHA 加入。
+    返回 (主持人回复正文, suggested_add_dha_id 或 None)。
+    """
+    skill_content = skills_loader.get_skill_full_content("group-host")
+    if not skill_content:
+        skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的 DHA 加入。"
+    system_content = (
+        "你是群聊的主持人。当前群聊尚无成员，用户正在与你交流。"
+        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位适合加入讨论的 DHA。"
+        "可选 DHA 列表见下方。\n\n"
+        f"{skill_content}"
+    )
+    dha_lines = []
+    for d in all_instances:
+        did = d.get("dha_id", "")
+        if did == CHAT_DHA_ID:
+            continue
+        name = d.get("name") or did
+        role = d.get("role") or "参与者"
+        dha_lines.append(f"- {name} ({did}): {role}")
+    dha_text = "\n".join(dha_lines) if dha_lines else "（暂无可选 DHA）"
+    user_content = (
+        f"讨论目标/用户消息：\n{discussion_goal}\n\n"
+        f"最近对话：\n{recent_messages}\n\n"
+        f"可选 DHA 列表（请从中推荐一位加入，输出其 dha_id）：\n{dha_text}\n\n"
+        "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON，格式："
+        '{"suggested_add_dha_id": "dha_id"}'
+    )
+    app_settings = load_app_settings()
+    llm = _get_llm_for_dha(None, app_settings)
+    agent = create_skill_execution_agent(llm, [], system_content, extra_system_prompt or "")
+    initial_state = {"messages": [HumanMessage(content=user_content)], "tools": []}
+    try:
+        final_state = await agent.ainvoke(initial_state)
+        out_msgs = final_state.get("messages", [])
+        content_str = ""
+        for m in reversed(out_msgs):
+            if isinstance(m, AIMessage):
+                content_str = str(m.content) if isinstance(m.content, str) else str(m.content or "")
+                break
+        if not content_str or not content_str.strip():
+            return "我已收到您的需求，您可以在「增删成员」中邀请合适的 DHA 加入讨论。", None
+        text = content_str.strip()
+        announcement = text
+        suggested_add_dha_id = None
+        for sep in ("\n{", "{"):
+            if sep in text:
+                idx = text.find(sep) if sep == "{" else text.find(sep) + 1
+                announcement = text[:idx].strip()
+                json_str = text[idx:].strip()
+                try:
+                    data = json.loads(json_str)
+                    sid = (data.get("suggested_add_dha_id") or "").strip()
+                    if sid and any(d.get("dha_id") == sid for d in all_instances):
+                        suggested_add_dha_id = sid
+                except Exception:
+                    pass
+                break
+        return announcement or text, suggested_add_dha_id
+    except Exception as e:
+        logger.warning("主持人 0 成员推荐调用失败: %s", e)
+        return "我已收到您的需求，您可以在「更多」→「增删成员」中邀请 DHA 加入讨论。", None
+
+
 # ========== Pydantic 模型 ==========
 
 
@@ -282,6 +352,7 @@ class GroupSessionUpdate(BaseModel):
     title: Optional[str] = None
     speak_mode: Optional[str] = None
     add_dha_ids: Optional[List[str]] = None  # 向已有群聊追加 DHA
+    remove_dha_ids: Optional[List[str]] = None  # 从群聊中移除 DHA
 
 
 class GroupChatRequest(BaseModel):
@@ -358,16 +429,14 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
 @router.post("/group-sessions")
 async def create_group_session(body: GroupSessionCreate):
-    """创建群聊会话。dha_ids 为空时默认包含 Chat（全部技能）；之后通过邀请追加 DHA 时会将 Chat 移除，历史保留。"""
+    """创建群聊会话。dha_ids 为空时表示「主持人为先」：用户先与主持人交流，由主持人推荐 DHA 加入后变为群聊；不再使用 Chat。"""
     if body.leader_dha_id and body.dha_ids and body.leader_dha_id not in body.dha_ids:
         raise HTTPException(status_code=400, detail="leader_dha_id 必须在 dha_ids 中")
 
     instances = load_dha_instances()
     valid_ids = {d.get("dha_id") for d in instances}
     dha_ids = list(body.dha_ids) if body.dha_ids else []
-    # 未选任何 DHA 时默认使用 Chat（与用户交流，拥有全部技能）
-    if not dha_ids and CHAT_DHA_ID in valid_ids:
-        dha_ids = [CHAT_DHA_ID]
+    # 未选任何 DHA 时保持为空：用户与主持人对话，主持人可推荐 DHA 加入（不再默认使用 Chat）
     for did in dha_ids:
         if did not in valid_ids:
             raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
@@ -452,16 +521,19 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         meta[group_session_id]["title"] = body.title.strip()
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
         meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
-    if body.add_dha_ids:
+    if body.add_dha_ids or body.remove_dha_ids:
         instances = load_dha_instances()
         valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
         current = set(meta[group_session_id].get("dha_ids", []))
-        for did in body.add_dha_ids:
-            if did not in valid_ids:
-                raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
-            current.add(did)
-        # 添加成员后移除默认 Chat，会话变为多成员群聊；已有对话历史不删除
-        current.discard(CHAT_DHA_ID)
+        if body.add_dha_ids:
+            for did in body.add_dha_ids:
+                if did not in valid_ids:
+                    raise HTTPException(status_code=400, detail=f"DHA {did} 不存在")
+                current.add(did)
+            current.discard(CHAT_DHA_ID)
+        if body.remove_dha_ids:
+            for did in body.remove_dha_ids:
+                current.discard(did)
         meta[group_session_id]["dha_ids"] = list(current)
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)
@@ -552,33 +624,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             next_speaker = None
 
-            # 0 个 DHA：单聊模式，用「全部 skill」的默认 DHA 回复
+            # 0 个 DHA：主持人为先，主持人回复用户并推荐一位 DHA 加入（不再使用 Chat）
             if len(dha_ids) == 0:
-                history_override = [{"role": m.get("role"), "content": m.get("content")} for m in messages[:-1]]
-                try:
-                    full_content, used_skill_id = await run_single_chat_full_content(
-                        group_session_id,
-                        (request.message or "").strip(),
-                        history_override=history_override if history_override else None,
-                    )
-                except Exception as e:
-                    logger.exception("单聊模式 run_single_chat_full_content 失败")
-                    full_content = f"回复时出错：{e}"
-                    used_skill_id = None
-                assistant_msg = {
+                recent = _messages_to_context(messages)
+                all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
+                host_content, suggested_add_dha_id = await _host_only_respond_and_recommend(
+                    discussion_goal, recent, all_instances, extra_system_prompt
+                )
+                host_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                    "role": "assistant",
-                    "content": full_content,
+                    "role": "host",
+                    "content": host_content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-                if used_skill_id:
-                    assistant_msg["skill_id"] = used_skill_id
-                messages.append(assistant_msg)
+                if suggested_add_dha_id:
+                    host_msg["suggested_add_dha_id"] = suggested_add_dha_id
+                messages.append(host_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
                 _save_group_meta(meta)
-                yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
-                yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'waiting_for_user': True})}\n\n"
+                yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                end_data = {"type": "end", "waiting_for_user": True}
+                if suggested_add_dha_id:
+                    end_data["suggested_add_dha_id"] = suggested_add_dha_id
+                yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                 return
 
             # 仅 1 个 DHA 时跳过主持人，直接 user -> DHA（chat 风格）
@@ -968,6 +1037,33 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
     extra_system_prompt = app_settings.get("system_prompt") or ""
     speak_mode = m.get("speak_mode", "auto")
     single_dha_mode = len(dha_ids) == 1
+
+    # 0 个 DHA：主持人为先，主持人回复并推荐 DHA 加入
+    if len(dha_ids) == 0:
+        recent = _messages_to_context(messages)
+        all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
+        host_content, suggested_add_dha_id = await _host_only_respond_and_recommend(
+            discussion_goal, recent, all_instances, extra_system_prompt
+        )
+        host_msg = {
+            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+            "role": "host",
+            "content": host_content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if suggested_add_dha_id:
+            host_msg["suggested_add_dha_id"] = suggested_add_dha_id
+        messages.append(host_msg)
+        _save_group_history(group_session_id, messages)
+        meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_group_meta(meta)
+        return {
+            "status": "ok",
+            "data": {
+                "messages": messages,
+                "suggested_add_dha_id": suggested_add_dha_id,
+            },
+        }
 
     next_speaker = None
     if request.override_next_speaker is not None:

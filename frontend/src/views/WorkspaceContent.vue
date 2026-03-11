@@ -98,23 +98,45 @@
             </div>
             <div class="group-chat-input-wrap">
               <p v-if="groupStreaming" class="group-chat-streaming-hint">{{ groupStreamingPhase }}</p>
-              <div class="group-chat-input-merged" :class="{ 'group-chat-input-merged-single': !groupDisplayMessages.length }">
-                <input
-                  v-model="groupDiscussionGoal"
-                  type="text"
-                  class="group-chat-goal-input"
-                  :placeholder="groupDisplayMessages.length ? '群聊讨论目标' : '输入消息或讨论目标，按 Enter 发送'"
-                  @keydown.enter.exact.prevent="!groupDisplayMessages.length && sendGroupMessage()"
-                />
-                <template v-if="groupDisplayMessages.length">
-                  <div class="group-chat-input-divider" aria-hidden="true" />
+              <div v-if="groupSuggestedAddDhaId && !groupStreaming" class="group-chat-suggested-invite-bar">
+                <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
+                <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">邀请加入</button>
+                <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaId = null">忽略</button>
+              </div>
+              <div class="group-chat-input-blocks">
+                <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词输入框」时） -->
+                <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single">
+                  <label class="group-chat-input-block-label">输入消息或讨论目标</label>
                   <textarea
-                    v-model="groupNextPrompt"
-                    class="group-chat-next-prompt-input"
-                    placeholder="给下一个 DHA 的提示词"
-                    rows="2"
-                    @keydown.enter.meta="sendGroupMessage"
+                    v-model="groupDiscussionGoal"
+                    class="group-chat-input-block-textarea"
+                    placeholder="输入消息或讨论目标，按 Cmd+Enter 发送"
+                    rows="3"
+                    @keydown.enter.meta.prevent="sendGroupMessage()"
                   />
+                </div>
+                <!-- 双框模式：仅当勾选「显示下一 DHA 提示词输入框」时显示两个框 -->
+                <template v-else>
+                  <div class="group-chat-input-block">
+                    <label class="group-chat-input-block-label">【讨论目标】</label>
+                    <textarea
+                      v-model="groupDiscussionGoal"
+                      class="group-chat-input-block-textarea"
+                      placeholder="输入本场讨论要达成的目标…"
+                      rows="3"
+                      @keydown.enter.meta.prevent="sendGroupMessage()"
+                    />
+                  </div>
+                  <div class="group-chat-input-block">
+                    <label class="group-chat-input-block-label">下一 DHA 提示词</label>
+                    <textarea
+                      v-model="groupNextPrompt"
+                      class="group-chat-input-block-textarea"
+                      placeholder="给下一个 DHA 的提示词（可留空由主持人自动生成）"
+                      rows="3"
+                      @keydown.enter.meta.prevent="sendGroupMessage()"
+                    />
+                  </div>
                 </template>
               </div>
               <div class="group-chat-input-toolbar">
@@ -153,13 +175,69 @@
                           <span>{{ opt.name }}</span>
                         </li>
                       </ul>
+                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMember = true; showNextSpeakerPicker = false">增删成员</button>
                     </div>
                   </div>
-                  <div ref="memberSkillRef" class="group-chat-add-member-wrap">
-                    <button type="button" class="group-chat-toolbar-btn" @click="showMemberSkill = !showMemberSkill">
-                      成员 Skill
+                  <button
+                    v-if="(groupDetail?.dha_ids?.length ?? 0) > 0"
+                    type="button"
+                    class="group-chat-toolbar-btn"
+                    title="增删成员"
+                    @click="showAddMember = true"
+                  >
+                    增删成员
+                  </button>
+                  <div ref="insertFileRef" class="group-chat-add-member-wrap">
+                    <button type="button" class="group-chat-toolbar-btn" @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()">
+                      插入文件
                     </button>
-                    <div v-if="showMemberSkill" class="group-chat-add-member-dropdown group-chat-member-skill-dropdown">
+                    <div v-if="showInsertFile" class="group-chat-add-member-dropdown group-chat-insert-file-dropdown">
+                      <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
+                      <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
+                      <ul v-if="insertFileEntries.length" class="group-chat-members-list">
+                        <li
+                          v-for="e in insertFileEntries"
+                          :key="e.path"
+                          class="group-chat-members-item group-chat-members-item-clickable"
+                          @click="insertFileContent(e)"
+                        >
+                          <span class="truncate">{{ e.name }}</span>
+                        </li>
+                      </ul>
+                      <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
+                      <p v-else class="group-chat-add-member-empty">暂无文件（请先打开工作区或从本地上传）</p>
+                    </div>
+                  </div>
+                  <div ref="moreMenuRef" class="group-chat-add-member-wrap">
+                    <button type="button" class="group-chat-toolbar-btn" @click="showMoreMenu = !showMoreMenu">
+                      更多
+                    </button>
+                    <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
+                      <p class="group-chat-members-dropdown-title">更多选项</p>
+                      <label class="group-chat-more-row">
+                        <input
+                          type="checkbox"
+                          :checked="showNextPromptField"
+                          class="group-chat-auto-checkbox"
+                          @change="onShowNextPromptFieldChange"
+                        />
+                        <span>显示下一 DHA 提示词输入框</span>
+                      </label>
+                      <label class="group-chat-more-row">
+                        <input type="checkbox" v-model="groupAutoConfirm" class="group-chat-auto-checkbox" />
+                        <span>自动确认</span>
+                      </label>
+                      <button type="button" class="group-chat-more-row group-chat-more-row-btn" @click="showMemberSkill = true; showMoreMenu = false">
+                        成员 Skill
+                      </button>
+                      <div class="group-chat-more-row group-chat-more-add-remove">
+                        <span>增删成员</span>
+                        <button type="button" class="group-chat-toolbar-btn" @click.stop="showAddMember = true; showMoreMenu = false">打开</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="showMemberSkill" ref="memberSkillRef" class="group-chat-add-member-wrap">
+                    <div class="group-chat-add-member-dropdown group-chat-member-skill-dropdown">
                       <p class="group-chat-members-dropdown-title">各成员使用的 Skill</p>
                       <ul v-if="groupDetail?.dha_ids?.length" class="group-chat-members-list">
                         <li v-for="(id, idx) in (groupDetail?.dha_ids || [])" :key="id" class="group-chat-members-item group-chat-member-skill-row">
@@ -175,46 +253,45 @@
                         </li>
                       </ul>
                       <p v-else class="group-chat-add-member-empty">暂无成员</p>
+                      <button type="button" class="group-chat-toolbar-btn" @click="showMemberSkill = false">关闭</button>
                     </div>
                   </div>
-                  <div ref="addMemberRef" class="group-chat-add-member-wrap">
-                    <button type="button" class="group-chat-toolbar-btn" @click="showAddMember = !showAddMember">
-                      新增成员
-                    </button>
-                    <div v-if="showAddMember" class="group-chat-add-member-dropdown">
-                      <p class="group-chat-members-dropdown-title">邀请 DHA 加入</p>
-                      <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                        <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-selectable">
-                          <input type="checkbox" :value="d.dha_id" v-model="addMemberSelectedIds" :id="'add-' + d.dha_id" />
-                          <label :for="'add-' + d.dha_id" class="group-chat-add-member-label">{{ d.name || d.dha_id }}</label>
-                        </li>
-                      </ul>
-                      <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
-                      <button type="button" class="group-chat-invite-confirm-btn" :disabled="!addMemberSelectedIds.length" @click="confirmAddMembers">
-                        邀请选中 ({{ addMemberSelectedIds.length }})
-                      </button>
+                  <div v-if="showAddMember" ref="addMemberRef" class="group-chat-add-member-wrap group-chat-add-remove-panel">
+                    <div class="group-chat-add-member-dropdown group-chat-add-remove-dropdown">
+                      <p class="group-chat-members-dropdown-title">增删成员</p>
+                      <section class="group-chat-add-remove-section">
+                        <p class="group-chat-members-dropdown-title">当前成员</p>
+                        <ul v-if="(groupDetail?.dha_ids?.length ?? 0) > 0" class="group-chat-members-list">
+                          <li v-for="id in (groupDetail?.dha_ids || [])" :key="id" class="group-chat-members-item group-chat-member-skill-row">
+                            <span class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail!.dha_ids!.indexOf(id)) }">{{ dhaAvatarChar(id) }}</span>
+                            <span class="group-chat-member-skill-name">{{ (groupDetail?.dha_map || {})[id]?.name || id }}</span>
+                            <button type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
+                          </li>
+                        </ul>
+                        <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
+                      </section>
+                      <section class="group-chat-add-remove-section">
+                        <p class="group-chat-members-dropdown-title">可邀请的 DHA</p>
+                        <ul v-if="invitableDhas.length" class="group-chat-members-list">
+                          <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-selectable">
+                            <input type="checkbox" :value="d.dha_id" v-model="addMemberSelectedIds" :id="'add-' + d.dha_id" />
+                            <label :for="'add-' + d.dha_id" class="group-chat-add-member-label">{{ d.name || d.dha_id }}</label>
+                          </li>
+                        </ul>
+                        <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
+                        <button type="button" class="group-chat-invite-confirm-btn" :disabled="!addMemberSelectedIds.length" @click="confirmAddMembers">
+                          邀请选中 ({{ addMemberSelectedIds.length }})
+                        </button>
+                      </section>
+                      <button type="button" class="group-chat-toolbar-btn" @click="showAddMember = false">关闭</button>
                     </div>
                   </div>
-                  <div ref="insertFileRef" class="group-chat-add-member-wrap">
-                    <button type="button" class="group-chat-toolbar-btn" @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()">
-                      插入文件
-                    </button>
-                    <div v-if="showInsertFile" class="group-chat-add-member-dropdown group-chat-insert-file-dropdown">
-                      <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
-                      <ul v-if="insertFileEntries.length" class="group-chat-members-list">
-                        <li
-                          v-for="e in insertFileEntries"
-                          :key="e.path"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          @click="insertFileContent(e)"
-                        >
-                          <span class="truncate">{{ e.name }}</span>
-                        </li>
-                      </ul>
-                      <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
-                      <p v-else class="group-chat-add-member-empty">暂无文件（请先打开工作区）</p>
-                    </div>
-                  </div>
+                  <input
+                    ref="insertLocalFileInputRef"
+                    type="file"
+                    class="hidden"
+                    @change="onInsertLocalFile"
+                  />
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
                 <button
@@ -225,10 +302,6 @@
                 >
                   {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
                 </button>
-                <label class="group-chat-auto-toggle">
-                  <input type="checkbox" v-model="groupAutoConfirm" class="group-chat-auto-checkbox" />
-                  <span>自动确认</span>
-                </label>
               </div>
             </div>
           </div>
@@ -257,54 +330,76 @@
               </div>
             </div>
             <div class="group-chat-workspace-body">
-              <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
-              <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
-              <ul v-else class="group-chat-workspace-list">
-                <li v-for="e in groupWorkspaceEntries" :key="e.path" class="group-chat-workspace-item group-chat-workspace-item-row">
-                  <button
-                    v-if="e.is_dir"
-                    type="button"
-                    class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
-                    @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = groupWorkspacePath ? groupWorkspacePath + '/' + e.name : e.name; loadGroupWorkspace()"
-                  >
-                    <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    <span class="truncate">{{ e.name }}</span>
-                  </button>
-                  <button
-                    v-else
-                    type="button"
-                    class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
-                    :class="{ 'group-chat-workspace-item-selected': groupWorkspacePreviewPath === e.path }"
-                    @click="previewWorkspaceFile(e)"
-                  >
-                    <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    <span class="truncate">{{ e.name }}</span>
-                  </button>
-                  <div class="group-chat-workspace-item-actions">
+              <div class="group-chat-workspace-list-col">
+                <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
+                <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
+                <ul v-else class="group-chat-workspace-list">
+                  <li v-for="e in groupWorkspaceEntries" :key="e.path" class="group-chat-workspace-item group-chat-workspace-item-row">
                     <button
-                      v-if="!e.is_dir"
+                      v-if="e.is_dir"
                       type="button"
-                      class="group-chat-workspace-item-action"
-                      title="重命名"
-                      @click.stop="renameGroupWorkspaceEntry(e)"
-                    >R</button>
+                      class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
+                      @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = groupWorkspacePath ? groupWorkspacePath + '/' + e.name : e.name; loadGroupWorkspace()"
+                    >
+                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      <span class="truncate">{{ e.name }}</span>
+                    </button>
                     <button
+                      v-else
                       type="button"
-                      class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
-                      :title="e.is_dir ? '删除空目录' : '删除文件'"
-                      @click.stop="deleteGroupWorkspaceEntry(e)"
-                    >×</button>
-                  </div>
-                </li>
-                <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
-              </ul>
+                      class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
+                      :class="{ 'group-chat-workspace-item-selected': groupWorkspacePreviewPath === e.path }"
+                      @click="previewWorkspaceFile(e)"
+                    >
+                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      <span class="truncate">{{ e.name }}</span>
+                    </button>
+                    <div class="group-chat-workspace-item-actions">
+                      <button
+                        v-if="!e.is_dir"
+                        type="button"
+                        class="group-chat-workspace-item-action"
+                        title="重命名"
+                        @click.stop="renameGroupWorkspaceEntry(e)"
+                      >R</button>
+                      <button
+                        type="button"
+                        class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
+                        :title="e.is_dir ? '删除空目录' : '删除文件'"
+                        @click.stop="deleteGroupWorkspaceEntry(e)"
+                      >×</button>
+                    </div>
+                  </li>
+                  <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
+                </ul>
+              </div>
+              <div class="group-chat-workspace-preview-col">
               <div v-if="groupWorkspacePreviewPath" class="group-chat-workspace-preview">
                 <div class="group-chat-workspace-preview-header">
                   <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
-                  <a :href="groupWorkspaceDownloadUrl(groupWorkspacePreviewPath)" target="_blank" rel="noopener" class="group-chat-workspace-preview-download">下载</a>
+                  <div class="group-chat-workspace-preview-actions">
+                    <a :href="groupWorkspaceDownloadUrl(groupWorkspacePreviewPath)" target="_blank" rel="noopener" class="group-chat-workspace-preview-download">下载</a>
+                    <template v-if="groupWorkspacePreviewIsMd && !groupWorkspacePreviewLoading">
+                      <template v-if="!groupWorkspacePreviewEditing">
+                        <button type="button" class="group-chat-workspace-preview-edit-btn" @click="startWorkspacePreviewEdit">编辑</button>
+                      </template>
+                      <template v-else>
+                        <button type="button" class="group-chat-workspace-preview-save-btn" @click="saveWorkspacePreviewEdit">保存</button>
+                        <button type="button" class="group-chat-workspace-toolbar-sm" @click="cancelWorkspacePreviewEdit">取消</button>
+                      </template>
+                    </template>
+                  </div>
                 </div>
                 <div v-if="groupWorkspacePreviewLoading" class="group-chat-workspace-preview-loading">加载中…</div>
+                <textarea
+                  v-else-if="groupWorkspacePreviewEditing"
+                  v-model="groupWorkspacePreviewEditContent"
+                  class="group-chat-workspace-preview-textarea"
+                  spellcheck="false"
+                />
                 <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
+              </div>
+              <div v-else class="group-chat-workspace-preview-placeholder">选择左侧文件以预览</div>
               </div>
             </div>
           </aside>
@@ -399,6 +494,8 @@ const groupWorkspacePreviewPath = ref('')
 const groupWorkspacePreviewName = ref('')
 const groupWorkspacePreviewContent = ref('')
 const groupWorkspacePreviewLoading = ref(false)
+const groupWorkspacePreviewEditing = ref(false)
+const groupWorkspacePreviewEditContent = ref('')
 const groupWorkspaceUploadInputRef = ref<HTMLInputElement | null>(null)
 
 function formatSkillId(skillId?: string) {
@@ -494,11 +591,14 @@ function renderMarkdown(text: string) {
 
 const expandedToolKey = ref<string | null>(null)
 
+const moreMenuRef = ref<HTMLElement | null>(null)
+
 function closeMembersDropdown(e: MouseEvent) {
   if (addMemberRef.value && !addMemberRef.value.contains(e.target as Node)) showAddMember.value = false
   if (memberSkillRef.value && !memberSkillRef.value.contains(e.target as Node)) showMemberSkill.value = false
   if (insertFileRef.value && !insertFileRef.value.contains(e.target as Node)) showInsertFile.value = false
   if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(e.target as Node)) showNextSpeakerPicker.value = false
+  if (moreMenuRef.value && !moreMenuRef.value.contains(e.target as Node)) showMoreMenu.value = false
   if (!(e.target as HTMLElement)?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
 }
 
@@ -541,6 +641,7 @@ async function confirmGroupNext(override: string) {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
                 if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.suggested_add_dha_id) groupSuggestedAddDhaId.value = data.suggested_add_dha_id
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -551,7 +652,11 @@ async function confirmGroupNext(override: string) {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.suggested_add_dha_id) groupSuggestedAddDhaId.value = endData.suggested_add_dha_id
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
+                if (groupAutoConfirm.value && endData.suggested_next_speaker) {
+                  nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
+                }
               }
             } catch (_) {}
           }
@@ -586,6 +691,62 @@ async function confirmAddMembers() {
     }
   } catch {
     alert('邀请失败，请检查网络')
+  }
+}
+
+async function removeMember(dhaId: string) {
+  const id = groupDetail.value?.id
+  if (!id || !window.confirm('确定将该成员移出群聊？')) return
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remove_dha_ids: [dhaId] }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      emit('dha-added')
+      await loadGroupDetail()
+      if (groupNextSpeakerOverride.value === dhaId) groupNextSpeakerOverride.value = ''
+    } else {
+      alert((j as { detail?: string }).detail || '移出失败')
+    }
+  } catch {
+    alert('移出失败，请检查网络')
+  }
+}
+
+const insertLocalFileInputRef = ref<HTMLInputElement | null>(null)
+function triggerInsertLocalFile() {
+  insertLocalFileInputRef.value?.click()
+}
+async function onInsertLocalFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const id = groupDetail.value?.id
+  if (!id || !input.files?.length) return
+  const file = input.files[0]
+  const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${pathParam}`, {
+      method: 'POST',
+      body: form,
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok' && j?.data?.path) {
+      await loadGroupWorkspace()
+      const refPath = `workspaces/${id}/${j.data.path}`
+      const block = `\n【文件引用：${refPath}】\n`
+      groupNextPrompt.value = (groupNextPrompt.value || '').trim() + (groupNextPrompt.value?.trim() ? '\n\n' : '') + block
+      showInsertFile.value = false
+    } else {
+      alert((j as { detail?: string })?.detail || '上传失败')
+    }
+  } catch {
+    alert('上传失败，请检查网络或后端')
+  } finally {
+    input.value = ''
   }
 }
 
@@ -640,10 +801,18 @@ function dhaAvatarChar(dhaId?: string): string {
 
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
-const groupAutoConfirm = ref(false)
+const groupSuggestedAddDhaId = ref<string | null>(null) // 主持人推荐的待邀请 DHA（0 成员时）
+const groupAutoConfirm = ref(true) // 默认为自动发送
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
 const showMemberSkill = ref(false)
+const showMoreMenu = ref(false)
+const showNextPromptField = ref(false) // 更多 -> 显示下一 DHA 提示词，默认隐藏
+function onShowNextPromptFieldChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  showNextPromptField.value = target.checked
+  if (target.checked) showMoreMenu.value = false // 勾选后关闭「更多」以便看到下方输入框
+}
 const memberSkillRef = ref<HTMLElement | null>(null)
 const skillsList = ref<{ id: string; name: string }[]>([])
 const groupMemberSkillOverride = ref<Record<string, string>>({})
@@ -660,6 +829,37 @@ const invitableDhas = computed(() => {
   const inGroup = new Set(groupDetail.value?.dha_ids || [])
   return (props.dhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
 })
+
+/** 主持人推荐的 DHA 的展示名（来自资源中心实例列表） */
+const suggestedAddDhaName = computed(() => {
+  const id = groupSuggestedAddDhaId.value
+  if (!id) return ''
+  const d = (props.dhaInstances || []).find((x) => x.dha_id === id)
+  return d?.name || id
+})
+
+async function inviteSuggestedDha() {
+  const id = groupSuggestedAddDhaId.value
+  const groupId = groupDetail.value?.id
+  if (!id || !groupId) return
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(groupId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add_dha_ids: [id] }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      groupSuggestedAddDhaId.value = null
+      emit('dha-added')
+      await loadGroupDetail()
+    } else {
+      alert((j as { detail?: string }).detail || '邀请失败')
+    }
+  } catch {
+    alert('邀请失败，请检查网络')
+  }
+}
 
 /** 某成员当前使用的 skill（override 或实例的 skill_ids[0] 或 default） */
 function memberSkillFor(dhaId: string): string {
@@ -905,10 +1105,43 @@ function isTextFile(name: string) {
   return TEXT_EXT.includes(ext)
 }
 
+const groupWorkspacePreviewIsMd = computed(() => /\.md$/i.test(groupWorkspacePreviewName.value))
+
+function startWorkspacePreviewEdit() {
+  groupWorkspacePreviewEditContent.value = groupWorkspacePreviewContent.value
+  groupWorkspacePreviewEditing.value = true
+}
+
+function cancelWorkspacePreviewEdit() {
+  groupWorkspacePreviewEditing.value = false
+}
+
+async function saveWorkspacePreviewEdit() {
+  const id = groupDetail.value?.id
+  if (!id || !groupWorkspacePreviewPath.value) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(groupWorkspacePreviewPath.value)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: groupWorkspacePreviewEditContent.value }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      groupWorkspacePreviewContent.value = groupWorkspacePreviewEditContent.value
+      groupWorkspacePreviewEditing.value = false
+    } else {
+      alert((j as { detail?: string }).detail || '保存失败')
+    }
+  } catch {
+    alert('保存失败，请检查网络或后端')
+  }
+}
+
 async function previewWorkspaceFile(e: { name: string; path: string }) {
   groupWorkspacePreviewPath.value = e.path
   groupWorkspacePreviewName.value = e.name
   groupWorkspacePreviewContent.value = ''
+  groupWorkspacePreviewEditing.value = false
   if (!isTextFile(e.name)) {
     groupWorkspacePreviewContent.value = '[ 非文本文件，请点击「下载」查看 ]'
     return
@@ -1049,6 +1282,7 @@ async function sendGroupMessage() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
                 if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.suggested_add_dha_id) groupSuggestedAddDhaId.value = data.suggested_add_dha_id
                 scrollGroupToBottom()
               }
             } catch (_) {}
@@ -1059,6 +1293,7 @@ async function sendGroupMessage() {
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = true
                 if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.suggested_add_dha_id) groupSuggestedAddDhaId.value = endData.suggested_add_dha_id
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
                 if (groupAutoConfirm.value && endData.suggested_next_speaker) {
                   nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
@@ -1149,6 +1384,7 @@ watch(
       groupError.value = null
       groupWaitingForUser.value = false
       groupSuggestedNextSpeaker.value = null
+      groupSuggestedAddDhaId.value = null
       loadGroupDetail()
     }
   },
@@ -1659,62 +1895,99 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.75rem;
   color: var(--color-text-muted);
 }
-/* 合并输入区：上框讨论目标 + 分隔线 + 下框给下一 DHA 的提示词，无内容时用 placeholder 提示 */
-.group-chat-input-merged {
+.group-chat-suggested-invite-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+}
+.group-chat-suggested-invite-text {
+  flex: 1;
+  color: var(--color-accent-subtle-text);
+}
+.group-chat-invite-suggested-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-inverse);
+  background: var(--color-accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.group-chat-invite-suggested-btn:hover {
+  background: var(--color-accent-hover, var(--color-accent));
+}
+.group-chat-dismiss-suggested-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.group-chat-dismiss-suggested-btn:hover {
+  color: var(--color-text);
+}
+/* 底部输入区：整块对话框，单框或双框（讨论目标 + 下一 DHA 提示词） */
+.group-chat-input-blocks {
   display: flex;
   flex-direction: column;
+  gap: 0.75rem;
   width: 100%;
+}
+.group-chat-input-block {
   background: var(--color-input-bg);
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
-  overflow: hidden;
+  padding: 0.5rem 0.75rem;
+  transition: border-color 0.15s;
 }
-.group-chat-input-merged:focus-within {
+.group-chat-input-block:focus-within {
   border-color: var(--color-accent);
 }
-.group-chat-input-merged .group-chat-goal-input {
+.group-chat-input-block-single {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.group-chat-input-block-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 0 0 0.35rem 0;
+}
+.group-chat-input-block-textarea {
   width: 100%;
   box-sizing: border-box;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  padding: 0.5rem 0.75rem;
+  min-height: 4.5rem;
+  max-height: 16rem;
+  padding: 0.5rem 0;
   font-size: 0.875rem;
+  line-height: 1.5;
   color: var(--color-text);
-}
-.group-chat-input-merged .group-chat-goal-input::placeholder {
-  color: var(--color-text-muted);
-}
-.group-chat-input-merged .group-chat-goal-input:focus {
-  outline: none;
-}
-.group-chat-input-divider {
-  height: 1px;
-  background: var(--color-input-border);
-  flex-shrink: 0;
-  margin: 0 0.5rem;
-}
-.group-chat-input-merged .group-chat-next-prompt-input {
-  width: 100%;
-  box-sizing: border-box;
-  border: none;
-  border-radius: 0;
   background: transparent;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8125rem;
-  color: var(--color-text);
+  border: none;
   resize: vertical;
-  min-height: 2.5rem;
-  max-height: 18rem;
+  font-family: inherit;
 }
-.group-chat-input-merged .group-chat-next-prompt-input::placeholder {
+.group-chat-input-block-textarea::placeholder {
   color: var(--color-text-muted);
 }
-.group-chat-input-merged .group-chat-next-prompt-input:focus {
+.group-chat-input-block-textarea:focus {
   outline: none;
 }
-.group-chat-input-merged-single .group-chat-goal-input {
-  padding: 0.5rem 0.75rem;
+.group-chat-add-remove-in-picker {
+  width: 100%;
+  margin-top: 0.35rem;
+  justify-content: center;
 }
 
 .group-chat-input-grid {
@@ -1811,8 +2084,10 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-next-speaker-dropdown {
   position: absolute;
-  left: 0;
+  right: 0;
+  left: auto;
   bottom: 100%;
+  top: auto;
   margin-bottom: 0.25rem;
   padding: 0.375rem 0.5rem;
   min-width: 10rem;
@@ -1853,8 +2128,11 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-add-member-dropdown {
   position: absolute;
   right: 0;
+  left: auto;
   bottom: 100%;
+  top: auto;
   margin-bottom: 0.25rem;
+  margin-left: 0;
   padding: 0.5rem 0.75rem;
   min-width: 12rem;
   max-height: 14rem;
@@ -1864,6 +2142,10 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   z-index: 30;
+}
+.group-chat-add-remove-dropdown,
+.group-chat-member-skill-dropdown {
+  max-height: 20rem;
 }
 .group-chat-current-members-dropdown {
   left: 0;
@@ -1981,7 +2263,8 @@ defineExpose({ refresh: loadGroupDetail })
   cursor: not-allowed;
 }
 .group-chat-workspace {
-  width: 18rem;
+  width: 42rem;
+  min-width: 42rem;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2043,8 +2326,34 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-workspace-body {
   flex: 1 1 0%;
   min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+.group-chat-workspace-list-col {
+  flex: 0 0 12rem;
+  min-width: 10rem;
+  max-width: 16rem;
   overflow-y: auto;
   padding: 0.5rem;
+  border-right: 1px solid var(--color-border);
+}
+.group-chat-workspace-preview-col {
+  flex: 1 1 0%;
+  min-width: 28rem;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.group-chat-workspace-preview-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  padding: 1rem;
 }
 .group-chat-workspace-muted,
 .group-chat-workspace-error {
@@ -2127,13 +2436,12 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-list-hover);
 }
 .group-chat-workspace-preview {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--color-border);
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 .group-chat-workspace-preview-header {
   display: flex;
@@ -2150,14 +2458,59 @@ defineExpose({ refresh: loadGroupDetail })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.group-chat-workspace-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
 .group-chat-workspace-preview-download {
   font-size: 0.75rem;
   color: var(--color-accent-subtle-text);
   text-decoration: none;
-  flex-shrink: 0;
 }
 .group-chat-workspace-preview-download:hover {
   text-decoration: underline;
+}
+.group-chat-workspace-preview-edit-btn,
+.group-chat-workspace-preview-save-btn {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-list-hover);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.group-chat-workspace-preview-edit-btn:hover,
+.group-chat-workspace-preview-save-btn:hover {
+  background: var(--color-border-light);
+}
+.group-chat-workspace-preview-save-btn {
+  border-color: var(--color-accent);
+  color: var(--color-accent-subtle-text);
+  background: var(--color-accent-subtle);
+}
+.group-chat-workspace-preview-textarea {
+  flex: 1;
+  min-height: 8rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  resize: vertical;
+  font-family: inherit;
+}
+.group-chat-workspace-preview-textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
 }
 .group-chat-workspace-preview-loading {
   font-size: 0.8125rem;
@@ -2177,6 +2530,18 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 6px;
   color: var(--color-text);
 }
+.group-chat-more-dropdown { min-width: 14rem; }
+.group-chat-more-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.8125rem; color: var(--color-text); }
+.group-chat-more-row-btn { width: 100%; justify-content: flex-start; background: none; border: none; cursor: pointer; text-align: left; }
+.group-chat-more-row-btn:hover { background: var(--color-list-hover); }
+.group-chat-more-add-remove { justify-content: space-between; flex-wrap: wrap; }
+.group-chat-more-inner { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--color-border-light); }
+.group-chat-remove-member-btn { flex-shrink: 0; font-size: 0.6875rem; padding: 0.2rem 0.4rem; color: var(--color-danger); background: var(--color-danger-subtle, rgba(220,38,38,0.1)); border: 1px solid var(--color-border); border-radius: 4px; cursor: pointer; }
+.group-chat-remove-member-btn:hover { opacity: 0.9; }
+.group-chat-add-remove-section { margin-top: 0.5rem; }
+.group-chat-add-remove-section:first-of-type { margin-top: 0; }
+.group-chat-add-remove-dropdown { min-width: 16rem; max-height: 20rem; overflow-y: auto; }
+.group-chat-insert-local-btn { margin-bottom: 0.5rem; width: 100%; }
 .group-chat-workspace-svg {
   width: 1rem;
   height: 1rem;
