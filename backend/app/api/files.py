@@ -133,6 +133,26 @@ class FileContentBody(BaseModel):
     content: str = ""
 
 
+@router.get("/workspaces/{workspace_id}/files/content")
+async def get_workspace_file_content(workspace_id: str, path: str):
+    """读取 workspace 中文本文件内容（path 为 workspace 内相对路径），供插入到提示词等场景使用"""
+    if not path or path.strip() == "":
+        raise HTTPException(status_code=400, detail="path is required")
+    try:
+        target = _resolve_workspace_path(workspace_id, path)
+    except HTTPException:
+        raise
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if target.is_dir():
+        raise HTTPException(status_code=400, detail="Cannot read directory as text")
+    try:
+        content = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="文件不是 UTF-8 文本，无法作为提示词插入")
+    return {"status": "ok", "data": {"path": path, "content": content}}
+
+
 class FileCreateBody(BaseModel):
     filename: str
     content: str = ""

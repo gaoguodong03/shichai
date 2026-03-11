@@ -766,22 +766,34 @@ function openFilePickerForGoal() {
   filePickerTarget = 'goal'
   openFilePicker()
 }
-function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
+async function onPickFileEntry(e: { path: string; name: string; is_dir?: boolean }) {
   if (e.is_dir) {
     loadFilePickerEntries(e.path)
     return
   }
-  const workspacePrefix = `workspaces/${props.groupSessionId}`
-  const globalPath = e.path ? `${workspacePrefix}/${e.path}` : workspacePrefix
-  const ref = `\n【文件引用：${globalPath}】\n`
-  if (filePickerTarget === 'goal') {
-    discussionGoalText.value = (discussionGoalText.value || '') + ref
-  } else {
-    inputText.value = (inputText.value || '') + ref
-    singleInputValue.value = (singleInputValue.value || '') + ref
+  const sid = props.groupSessionId
+  if (!sid) return
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(sid)}/files/content?path=${encodeURIComponent(e.path)}`)
+    const j = await r.json().catch(() => ({}))
+    if (j?.status !== 'ok' || typeof j?.data?.content !== 'string') {
+      alert((j as { detail?: string })?.detail || '读取文件内容失败')
+      return
+    }
+    const text = (j.data.content as string).trim()
+    const block = text ? `\n${text}\n` : ''
+    if (filePickerTarget === 'goal') {
+      discussionGoalText.value = (discussionGoalText.value || '') + (discussionGoalText.value?.trim() ? '\n\n' : '') + block
+    } else {
+      const sep = (inputText.value || '').trim() ? '\n\n' : ''
+      inputText.value = (inputText.value || '').trim() + sep + block
+      singleInputValue.value = (singleInputValue.value || '').trim() + sep + block
+    }
+    filePickerTarget = 'prompt'
+    closeFilePicker()
+  } catch {
+    alert('读取文件失败，请检查网络')
   }
-  filePickerTarget = 'prompt'
-  closeFilePicker()
 }
 
 function openWorkspaceViewer() {

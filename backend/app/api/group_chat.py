@@ -330,7 +330,11 @@ async def _host_only_respond_and_recommend(
                     data = json.loads(json_str)
                     ids_raw = data.get("suggested_add_dha_ids")
                     if isinstance(ids_raw, list) and ids_raw:
-                        suggested_add_dha_ids = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids][:2]
+                        # 不对数量设硬性上限，仅过滤合法 id 并去重
+                        cleaned = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids]
+                        if cleaned:
+                            # 保持顺序去重
+                            suggested_add_dha_ids = list(dict.fromkeys(cleaned))
                     if not suggested_add_dha_ids:
                         sid = (data.get("suggested_add_dha_id") or "").strip()
                         if sid and sid in valid_ids:
@@ -342,7 +346,8 @@ async def _host_only_respond_and_recommend(
         if not suggested_add_dha_ids and valid_ids:
             dha_id_pattern = re.compile(r"dha-[a-f0-9]{8,12}", re.I)
             found = list(dict.fromkeys(dha_id_pattern.findall(text)))
-            suggested_add_dha_ids = [x for x in found if x in valid_ids][:2]
+            # 同样不过度限制数量，只保留当前有效实例中的 id
+            suggested_add_dha_ids = [x for x in found if x in valid_ids]
         return announcement or text, suggested_add_dha_ids
     except Exception as e:
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
@@ -650,7 +655,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             next_speaker = None
 
-            # 0 个 DHA：主持人为先，主持人回复用户并推荐一位或两位 DHA 加入（不再使用 Chat）
+            # 0 个 DHA：主持人为先，主持人回复用户并推荐若干 DHA 加入（不再使用 Chat）
             if len(dha_ids) == 0:
                 recent = _messages_to_context(messages)
                 all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
@@ -1066,7 +1071,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
     speak_mode = m.get("speak_mode", "auto")
     single_dha_mode = len(dha_ids) == 1
 
-    # 0 个 DHA：主持人为先，主持人回复并推荐一位或两位 DHA 加入
+    # 0 个 DHA：主持人为先，主持人回复并推荐若干 DHA 加入
     if len(dha_ids) == 0:
         recent = _messages_to_context(messages)
         all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]

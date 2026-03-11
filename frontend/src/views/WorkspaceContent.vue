@@ -265,17 +265,20 @@
                       <section class="group-chat-add-remove-section">
                         <p class="group-chat-members-dropdown-title">可邀请的 DHA</p>
                         <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                          <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-selectable">
-                            <input type="checkbox" :value="d.dha_id" v-model="addMemberSelectedIds" :id="'add-' + d.dha_id" />
-                            <label :for="'add-' + d.dha_id" class="group-chat-add-member-label">{{ d.name || d.dha_id }}</label>
+                          <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-member-skill-row">
+                            <span class="group-chat-add-member-label">{{ d.name || d.dha_id }}</span>
+                            <button
+                              type="button"
+                              class="group-chat-invite-member-btn"
+                              title="邀请加入群聊"
+                              @click="inviteSingleMember(d.dha_id)"
+                            >
+                              邀请
+                            </button>
                           </li>
                         </ul>
                         <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
-                        <button type="button" class="group-chat-invite-confirm-btn" :disabled="!addMemberSelectedIds.length" @click="confirmAddMembers">
-                          邀请选中 ({{ addMemberSelectedIds.length }})
-                        </button>
                       </section>
-                      <button type="button" class="group-chat-toolbar-btn" @click="showAddMember = false">关闭</button>
                     </div>
                   </div>
                   <input
@@ -670,18 +673,17 @@ async function confirmGroupNext(override: string) {
   }
 }
 
-async function confirmAddMembers() {
-  if (!addMemberSelectedIds.value.length || !groupDetail.value?.id) return
+async function inviteSingleMember(dhaId: string) {
+  const id = groupDetail.value?.id
+  if (!id) return
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(groupDetail.value.id)}`, {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_dha_ids: addMemberSelectedIds.value }),
+      body: JSON.stringify({ add_dha_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
-      showAddMember.value = false
-      addMemberSelectedIds.value = []
       emit('dha-added')
       await loadGroupDetail()
     } else {
@@ -820,7 +822,6 @@ const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>
 const insertFileLoading = ref(false)
 const showNextSpeakerPicker = ref(false)
 const nextSpeakerRef = ref<HTMLElement | null>(null)
-const addMemberSelectedIds = ref<string[]>([])
 const addMemberRef = ref<HTMLElement | null>(null)
 
 const invitableDhas = computed(() => {
@@ -1178,19 +1179,23 @@ async function loadInsertFileEntries() {
   }
 }
 
-function insertFileContent(e: { name: string; path: string }) {
+async function insertFileContent(e: { name: string; path: string }) {
   const id = groupDetail.value?.id
   if (!id) return
-  const refPath = `workspaces/${id}/${e.path}`
-  const block = `\n【文件引用：${refPath}】\n`
-  if (showNextPromptField.value) {
+  try {
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`)
+    const j = await r.json().catch(() => ({}))
+    if (j?.status !== 'ok' || typeof j?.data?.content !== 'string') {
+      alert((j as { detail?: string })?.detail || '读取文件内容失败')
+      return
+    }
+    const text = (j.data.content as string).trim()
     const sep = (groupNextPrompt.value || '').trim() ? '\n\n' : ''
-    groupNextPrompt.value = (groupNextPrompt.value || '').trim() + sep + block.trim()
-  } else {
-    const sep = (groupDiscussionGoal.value || '').trim() ? '\n\n' : ''
-    groupDiscussionGoal.value = (groupDiscussionGoal.value || '').trim() + sep + block.trim()
+    groupNextPrompt.value = (groupNextPrompt.value || '').trim() + sep + (text ? `\n${text}\n` : '')
+    showInsertFile.value = false
+  } catch {
+    alert('读取文件失败，请检查网络')
   }
-  showInsertFile.value = false
 }
 
 function defaultDhaFilename(msg: MsgExt & { dha_id?: string }): string {
@@ -2265,6 +2270,21 @@ defineExpose({ refresh: loadGroupDetail })
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.group-chat-invite-member-btn {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  color: #ffffff;
+  background: #22c55e;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.group-chat-invite-member-btn:hover {
+  background: #16a34a;
+}
+
 .group-chat-send-row {
   display: flex;
   align-items: center;
