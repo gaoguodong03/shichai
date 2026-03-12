@@ -2453,23 +2453,46 @@ defineExpose({ refresh: loadGroupDetail })
   margin: 0;
 }
 .group-chat-markdown {
-  font-size: 0.875rem;
-  line-height: 1.5;
+  font-size: 0.9rem;
+  line-height: 1.45;
   word-break: break-word;
 }
 .group-chat-markdown :deep(p) {
-  margin: 0 0 0.35em 0;
+  margin: 0 0 0.15em 0;
 }
 .group-chat-markdown :deep(p:last-child) {
   margin-bottom: 0;
 }
 .group-chat-markdown :deep(h1), .group-chat-markdown :deep(h2), .group-chat-markdown :deep(h3) {
   font-weight: 600;
-  margin: 0.5em 0 0.25em 0;
+  line-height: 1.25;
+  margin: 0.25em 0 0.15em 0;
+}
+.group-chat-markdown :deep(h1) {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--color-border-light);
+  padding-bottom: 0.3em;
+}
+.group-chat-markdown :deep(h2) {
+  font-size: 1.16em;
+}
+.group-chat-markdown :deep(h3) {
+  font-size: 1.05em;
 }
 .group-chat-markdown :deep(ul), .group-chat-markdown :deep(ol) {
-  margin: 0.25em 0;
-  padding-left: 1.25em;
+  margin: 0.2em 0 0.2em 0;
+  padding-left: 1.4em;
+}
+.group-chat-markdown :deep(li) {
+  margin: 0.05em 0;
+}
+.group-chat-markdown :deep(li > p) {
+  margin: 0.05em 0;
+}
+.group-chat-markdown :deep(h1 + p),
+.group-chat-markdown :deep(h2 + p),
+.group-chat-markdown :deep(h3 + p) {
+  margin-top: 0.05em;
 }
 .group-chat-markdown :deep(pre) {
   margin: 0.5em 0;
@@ -2491,7 +2514,51 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-markdown :deep(a) {
   color: var(--color-accent-subtle-text);
-  text-decoration: underline;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--color-accent-subtle-text);
+}
+.group-chat-markdown :deep(a:hover) {
+  text-decoration: none;
+  border-bottom-style: solid;
+}
+.group-chat-markdown :deep(strong) {
+  font-weight: 600;
+}
+.group-chat-markdown :deep(em) {
+  font-style: italic;
+}
+.group-chat-markdown :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.4em 0 0.6em 0;
+  font-size: 0.8125rem;
+}
+.group-chat-markdown :deep(th),
+.group-chat-markdown :deep(td) {
+  border: 1px solid var(--color-border-light);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+}
+.group-chat-markdown :deep(thead) {
+  background-color: var(--color-list-hover);
+}
+.group-chat-markdown :deep(tbody tr:nth-child(odd)) {
+  background-color: var(--color-page);
+}
+.group-chat-markdown :deep(tbody tr:nth-child(even)) {
+  background-color: var(--color-card);
+}
+.group-chat-markdown :deep(blockquote) {
+  margin: 0.6em 0;
+  padding: 0.35rem 0.75rem;
+  border-left: 3px solid var(--color-border);
+  background: var(--color-list-hover);
+  color: var(--color-text-muted);
+}
+.group-chat-markdown :deep(hr) {
+  border: 0;
+  border-top: 1px solid var(--color-border-light);
+  margin: 0.8em 0;
 }
 .group-chat-bubble-actions {
   margin-top: 0.5rem;
