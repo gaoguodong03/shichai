@@ -946,9 +946,55 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
 
                 last_speaker_dha_id = next_speaker
-                # 1 DHA 或非自动模式：该 DHA 回答后直接结束
-                if single_dha_mode or speak_mode != "auto":
+                # 单 DHA：直接结束，等用户下一条
+                if single_dha_mode:
                     end_data = {"type": "end", "waiting_for_user": True}
+                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
+                    return
+                # 手动模式：仍由主持人决定下一发言人并展示建议，再结束，等用户点「确认并继续」
+                if speak_mode != "auto":
+                    host_msg = {}
+                    decision = None
+                    host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
+                    if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                        llm_host = _get_llm_for_dha(host_dha, app_settings)
+                        decision = await _host_decide_by_dha(
+                            llm_host, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
+                            last_speaker_dha_id, extra_system_prompt
+                        )
+                    if decision is None:
+                        llm_default = _get_llm_for_dha(None, app_settings)
+                        decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id)
+                    next_speaker_manual = decision.get("next_speaker", "user")
+                    if not decision.get("task_done", True) and last_speaker_dha_id:
+                        next_speaker_manual = last_speaker_dha_id
+                    announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
+                    if next_speaker_manual in dha_ids or next_speaker_manual in ("user", "end"):
+                        host_content = announcement
+                        if not host_content and next_speaker_manual in dha_ids:
+                            next_dha = dha_map.get(next_speaker_manual)
+                            host_content = f"下面由 {next_dha.get('name') or next_speaker_manual} 发言。" if next_dha else f"下面由 {next_speaker_manual} 发言。"
+                        if not host_content:
+                            host_content = "请用户补充或继续提问。" if next_speaker_manual == "user" else "讨论结束。"
+                        host_msg = {
+                            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                            "role": "host" if not leader_dha_id else "assistant",
+                            "content": host_content,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        }
+                        if leader_dha_id:
+                            host_msg["dha_id"] = leader_dha_id
+                        messages.append(host_msg)
+                        if next_speaker_manual in dha_ids:
+                            context = _messages_to_context(messages)
+                            next_dha = dha_map.get(next_speaker_manual)
+                            host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker_manual) if next_dha else next_speaker_manual
+                            host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                        _save_group_history(group_session_id, messages)
+                        yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                    end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker_manual}
+                    if next_speaker_manual in dha_ids and host_msg.get("next_prompt"):
+                        end_data["next_prompt"] = host_msg["next_prompt"]
                     yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
                     return
                 # auto 且多 DHA：主持人决定下一发言人

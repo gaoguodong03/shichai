@@ -117,8 +117,8 @@
                     <span class="group-chat-file-tag-close">×</span>
                   </button>
                 </div>
-                <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词输入框」时） -->
-                <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single">
+                <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词」且未开「手动控制」时） -->
+                <div v-if="!showNextPromptField && !groupAutoConfirm" class="group-chat-input-block group-chat-input-block-single">
                   <textarea
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
@@ -127,7 +127,7 @@
                     @keydown.enter.meta.prevent="sendGroupMessage()"
                   />
                 </div>
-                <!-- 双框模式：仅当勾选「显示下一 DHA 提示词输入框」时显示两个框 -->
+                <!-- 双框模式：勾选「显示下一 DHA 提示词」或开启「手动控制」时显示（手动控制下可编辑主持人给的提示词再点发送） -->
                 <template v-else>
                   <div class="group-chat-input-block">
                     <label class="group-chat-input-block-label">【讨论目标】</label>
@@ -140,7 +140,10 @@
                     />
                   </div>
                   <div class="group-chat-input-block">
-                    <label class="group-chat-input-block-label">下一 DHA 提示词</label>
+                    <label class="group-chat-input-block-label">
+                      下一 DHA 提示词
+                      <span v-if="groupAutoConfirm && groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
+                    </label>
                     <textarea
                       v-model="groupNextPrompt"
                       class="group-chat-input-block-textarea"
@@ -257,7 +260,7 @@
                         <button
                           type="button"
                           class="group-chat-toggle-pill"
-                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField }"
+                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField || groupAutoConfirm }"
                           @click="onShowNextPromptFieldChangeByClick"
                         >
                           <svg
@@ -281,22 +284,8 @@
                           type="button"
                           class="group-chat-toggle-pill"
                           :class="{ 'group-chat-toggle-pill-active': groupAutoConfirm }"
-                          @click="
-                            groupAutoConfirm = !groupAutoConfirm;
-                            fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
-                              body: JSON.stringify({
-                                sessionId: '075e2b',
-                                runId: 'pre-fix',
-                                hypothesisId: 'H1',
-                                location: 'WorkspaceContent.vue:manualToggle',
-                                message: 'manual control toggled',
-                                data: { groupAutoConfirm: groupAutoConfirm },
-                                timestamp: Date.now(),
-                              }),
-                            }).catch(() => {})
-                          "
+                          :title="groupAutoConfirm ? '每轮 DHA 发言后暂停，由你点「确认并继续」再继续' : '自动连续执行直到任务完成'"
+                          @click="toggleGroupManualControl"
                         >
                           <svg
                             class="group-chat-toggle-pill-icon"
@@ -1082,7 +1071,7 @@ function dhaAvatarChar(dhaId?: string): string {
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
-const groupAutoConfirm = ref(false) // 默认关闭自动确认
+const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
 const showMemberSkill = ref(false)
@@ -1244,6 +1233,28 @@ async function continueGroupStream() {
   }
 }
 
+/** 切换「手动控制」：同步到会话 speak_mode，后端据此每轮暂停或一气跑完 */
+async function toggleGroupManualControl() {
+  const id = groupDetail.value?.id
+  if (!id) return
+  const next = !groupAutoConfirm.value
+  groupAutoConfirm.value = next
+  const speakMode = next ? 'manual' : 'auto'
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ speak_mode: speakMode }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status !== 'ok') {
+      groupAutoConfirm.value = !next
+    }
+  } catch {
+    groupAutoConfirm.value = !next
+  }
+}
+
 async function inviteSuggestedDha() {
   const ids = groupSuggestedAddDhaIds.value
   const groupId = groupDetail.value?.id
@@ -1331,6 +1342,15 @@ watch(
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
     const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
     groupDiscussionGoal.value = firstUser?.content?.trim() ?? null
+  },
+  { immediate: true }
+)
+
+// 会话的 speak_mode 与「手动控制」开关同步
+watch(
+  () => groupDetail.value?.speak_mode,
+  (mode) => {
+    groupAutoConfirm.value = mode === 'manual'
   },
   { immediate: true }
 )
@@ -2575,6 +2595,10 @@ defineExpose({ refresh: loadGroupDetail })
   font-weight: 600;
   color: var(--color-text-muted);
   margin: 0 0 0.35rem 0;
+}
+.group-chat-prompt-hint {
+  font-weight: 400;
+  opacity: 0.9;
 }
 .group-chat-input-block-textarea {
   width: 100%;
