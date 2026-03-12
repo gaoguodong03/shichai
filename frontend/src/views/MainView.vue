@@ -339,10 +339,12 @@ const router = useRouter()
 const themeApi = inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
+const TOKEN_STORAGE_KEY = 'dha_token'
 
 function logout() {
   localStorage.removeItem(LOGIN_STORAGE_KEY)
   localStorage.removeItem(USER_STORAGE_KEY)
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
   router.push('/login')
 }
 

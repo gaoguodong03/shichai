@@ -28,6 +28,7 @@ from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.call_api import call_api
+from app.core.user_context import get_current_user_context
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -89,6 +90,18 @@ def _update_meta_skill_from_tool_calls(meta_context: Dict[str, Any], message) ->
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./data/sessions")
 
 
+def _get_sessions_dir() -> Path:
+    """根据当前用户返回会话存储目录，实现多用户隔离。
+
+    - 若存在当前用户上下文，则使用 data/users/{username}/sessions；
+    - 否则回退到全局 SESSIONS_DIR（兼容历史数据）。
+    """
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return user_ctx.sessions_dir
+    return Path(SESSIONS_DIR)
+
+
 # 会话级对话历史（每段对话是一段记忆）：session_id -> [HumanMessage, AIMessage, ...]
 # 不再对历史消息条数做硬性上限，轮次（Turn）数量理论上不设上限。
 _CHAT_HISTORY: Dict[str, List[BaseMessage]] = {}
@@ -113,7 +126,7 @@ def _ensure_sessions_loaded() -> None:
 
 
 def _ensure_sessions_dir() -> Path:
-    root = Path(SESSIONS_DIR).resolve()
+    root = _get_sessions_dir().resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

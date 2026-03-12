@@ -13,6 +13,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+
+from app.core.user_context import get_current_user_context
+
 router = APIRouter(tags=["settings"])
 
 # 使用 mcp.manager 的全局单例，与 chat 共用
@@ -21,10 +24,41 @@ def get_mcp_manager():
     from app.mcp.manager import get_mcp_manager as _get_mcp
     return _get_mcp()
 
-# 配置文件路径
+# 配置文件路径（当没有用户上下文时使用）
 MCP_CONFIG_PATH = os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
 SKILLS_DIR = os.getenv("SKILLS_DIR", "./skills")
 APP_SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "./config/app_settings.json")
+
+
+def _get_app_settings_path() -> Path:
+    """根据当前用户返回 app_settings.json 路径，实现设置级隔离。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return (user_ctx.config_dir / "app_settings.json").resolve()
+    path = Path(APP_SETTINGS_PATH)
+    return path if path.is_absolute() else path.resolve()
+
+
+def _get_mcp_config_path() -> Path:
+    """根据当前用户返回 mcp_servers.json 路径。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return (user_ctx.config_dir / "mcp_servers.json").resolve()
+    path = Path(MCP_CONFIG_PATH)
+    return path if path.is_absolute() else path.resolve()
+
+
+def _get_skills_dir() -> Path:
+    """根据当前用户返回 skills 目录。
+
+    当前设计为：优先使用用户私有 skills 目录（data/users/{username}/skills），
+    若无上下文则回退到全局 SKILLS_DIR。
+    """
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return user_ctx.skills_dir.resolve()
+    path = Path(SKILLS_DIR)
+    return path if path.is_absolute() else path.resolve()
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
@@ -76,7 +110,7 @@ _DEFAULT_LLM_PROVIDERS = {
 
 def load_app_settings() -> Dict[str, Any]:
     """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
-    path = Path(APP_SETTINGS_PATH)
+    path = _get_app_settings_path()
     data = {"default_llm": "qwen", "llm_providers": dict(_DEFAULT_LLM_PROVIDERS), "system_prompt": ""}
     if path.exists():
         try:
@@ -95,7 +129,7 @@ def load_app_settings() -> Dict[str, Any]:
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""
-    path = Path(APP_SETTINGS_PATH)
+    path = _get_app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     current = load_app_settings()
     current.update({k: v for k, v in data.items() if v is not None})
@@ -143,7 +177,7 @@ class MCPServerUpdate(BaseModel):
 
 def load_mcp_config() -> List[Dict[str, Any]]:
     """加载 MCP 配置"""
-    config_path = Path(MCP_CONFIG_PATH)
+    config_path = _get_mcp_config_path()
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -151,7 +185,7 @@ def load_mcp_config() -> List[Dict[str, Any]]:
 
 def save_mcp_config(servers: List[Dict[str, Any]]):
     """保存 MCP 配置"""
-    config_path = Path(MCP_CONFIG_PATH)
+    config_path = _get_mcp_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
@@ -630,7 +664,7 @@ class SkillUpdate(BaseModel):
 def load_skills_config() -> List[Dict[str, Any]]:
     """加载 Skills 配置"""
     # 从 skills 目录读取
-    skills_dir = Path(SKILLS_DIR)
+    skills_dir = _get_skills_dir()
     if not skills_dir.exists():
         return []
     
@@ -726,7 +760,7 @@ def _slugify(name: str) -> str:
 @router.post("/settings/skills")
 async def create_skill(skill: SkillCreate):
     """创建 Skill：在 skills 目录下创建 <id>/SKILL.md"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
     raw_id = _slugify(skill.name)
     skill_id = raw_id
@@ -779,7 +813,7 @@ def _write_skill_file(skill_dir: Path, frontmatter: Dict, body: str):
 @router.put("/settings/skills/{skill_id}")
 async def update_skill(skill_id: str, skill_update: SkillUpdate):
     """更新 Skill：修改 SKILL.md 的 frontmatter 与/或正文 body"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -800,7 +834,7 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
 @router.delete("/settings/skills/{skill_id}")
 async def delete_skill(skill_id: str):
     """删除 Skill：删除对应目录"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -810,7 +844,7 @@ async def delete_skill(skill_id: str):
 @router.post("/settings/skills/{skill_id}/enable")
 async def enable_skill(skill_id: str):
     """启用 Skill"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -822,7 +856,7 @@ async def enable_skill(skill_id: str):
 @router.post("/settings/skills/{skill_id}/disable")
 async def disable_skill(skill_id: str):
     """禁用 Skill"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -835,7 +869,7 @@ async def disable_skill(skill_id: str):
 @router.get("/settings/skills/{skill_id}/content")
 async def get_skill_content(skill_id: str):
     """获取技能 SKILL.md 的完整内容（raw 全文）及 frontmatter 解析结果，用于详情页展示。"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -888,7 +922,7 @@ def _list_skill_part_dir(skill_dir: Path, part_type: str) -> List[Dict[str, str]
 @router.get("/settings/skills/{skill_id}/parts")
 async def get_skill_parts(skill_id: str):
     """获取某 skill 目录下 references、assets、scripts 的文件列表。"""
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -909,7 +943,7 @@ async def get_skill_part_file(skill_id: str, part_type: str, file_path: str):
         raise HTTPException(status_code=400, detail="Invalid part type")
     if ".." in file_path or file_path.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -942,7 +976,7 @@ async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCr
     path = (body.path or "").strip().lstrip("/")
     if ".." in path or not path:
         raise HTTPException(status_code=400, detail="Invalid path")
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -962,7 +996,7 @@ async def update_skill_part_file(skill_id: str, part_type: str, file_path: str, 
         raise HTTPException(status_code=400, detail="Invalid part type")
     if ".." in file_path or file_path.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
@@ -980,7 +1014,7 @@ async def delete_skill_part_file(skill_id: str, part_type: str, file_path: str):
         raise HTTPException(status_code=400, detail="Invalid part type")
     if ".." in file_path or file_path.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    base = Path(SKILLS_DIR)
+    base = _get_skills_dir()
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")

@@ -1,9 +1,10 @@
 """FastAPI 应用入口"""
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.api import chat, settings, files, auth, dha, group_chat
+from app.core.security import user_context_dependency
 from app.mcp.manager import get_mcp_manager
 from dotenv import load_dotenv
 import os
@@ -24,7 +25,8 @@ app = FastAPI(
     title="心像 EchoTwin API",
     description="EchoTwin - Personal AI Twin with MCP and Skills",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    dependencies=[Depends(user_context_dependency)],
 )
 
 # CORS 配置

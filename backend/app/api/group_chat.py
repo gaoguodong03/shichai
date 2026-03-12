@@ -29,6 +29,7 @@ from app.skills.loader import SkillsLoader
 from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.call_api import call_api
+from app.core.user_context import get_current_user_context
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,12 @@ async def _ensure_initialized():
 
 
 def _ensure_sessions_dir() -> Path:
-    root = Path(SESSIONS_DIR).resolve()
+    """根据当前用户返回群聊会话目录，实现多用户隔离。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        root = user_ctx.sessions_dir.resolve()
+    else:
+        root = Path(SESSIONS_DIR).resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

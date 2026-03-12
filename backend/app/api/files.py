@@ -2,41 +2,67 @@
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+from app.core.security import CurrentUser, user_context_dependency
 
 router = APIRouter(tags=["files"])
 
 # Agent 产出文件根目录（仅在此目录内列出/下载，防止路径穿越）
+# 多用户场景下，真正的根目录来自 UserContext.agent_outputs_dir
 AGENT_OUTPUTS_DIR = os.getenv("AGENT_OUTPUTS_DIR", "./data/agent-outputs")
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 
 
-def get_workspace_root_path(workspace_id: str) -> Path:
+def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:
+    """返回当前用户的 agent 输出根目录。
+
+    若设置了全局 AGENT_OUTPUTS_DIR，则在其下再按用户分目录；否则落到 user.ctx.agent_outputs_dir。
+    这样可以兼容旧数据（全局单用户），也支持新用户隔离。
+    """
+    global_root = Path(AGENT_OUTPUTS_DIR).resolve()
+    try:
+        global_root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    # 对于默认用户 free4inno，为了兼容旧数据，直接使用全局根目录；
+    # 其他用户则在其下再加一层用户名目录，实现物理隔离。
+    if user.username == "free4inno":
+        return global_root
+    return (global_root / user.username).resolve()
+
+
+def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
     返回指定 workspace 的根目录路径（不保证已创建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
     """
-    root = Path(AGENT_OUTPUTS_DIR).resolve()
+    if user is None:
+        # 兼容老调用（如 chat._export_session_to_md），按当前请求上下文用户推导
+        from app.core.security import get_current_user as _get_user
+
+        user = _get_user()
+    root = _get_agent_outputs_root_for_user(user)
     return (root / WORKSPACES_SUBDIR / workspace_id).resolve()
 
 
-def get_workspace_root(workspace_id: str) -> Path:
+def get_workspace_root(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
     确保指定 workspace 根目录存在并返回路径。
     供创建 Chat / Workspace 文件操作等场景使用。
     """
-    ws_root = get_workspace_root_path(workspace_id)
+    ws_root = get_workspace_root_path(workspace_id, user=user)
     ws_root.mkdir(parents=True, exist_ok=True)
     return ws_root
 
 
-def _resolve_workspace_path(workspace_id: str, relative_path: str) -> Path:
+def _resolve_workspace_path(workspace_id: str, relative_path: str, user: CurrentUser) -> Path:
     """
     将 workspace 内的相对路径解析为绝对路径，并确保落在该 workspace 根目录内。
     workspace 根目录位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id}。
     """
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=user)
     # 去掉前导斜杠、归一化，禁止 ..
     normalized = (relative_path or "").strip("/").replace("..", "")
     full = (ws_root / normalized).resolve()
@@ -51,13 +77,18 @@ class DirCreateBody(BaseModel):
 
 
 @router.post("/workspaces/{workspace_id}/files/mkdir")
-async def create_workspace_dir(workspace_id: str, body: DirCreateBody, path: str = ""):
+async def create_workspace_dir(
+    workspace_id: str,
+    body: DirCreateBody,
+    path: str = "",
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """在指定 workspace 内创建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
     dirname = (body.dirname or "").strip().replace("..", "").replace("\\", "").strip("/")
     if not dirname:
         raise HTTPException(status_code=400, detail="dirname is required")
     try:
-        parent = _resolve_workspace_path(workspace_id, path or "")
+        parent = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
         raise
     if not parent.exists():
@@ -69,13 +100,17 @@ async def create_workspace_dir(workspace_id: str, body: DirCreateBody, path: str
         new_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=current_user)
     rel = str(new_dir.relative_to(ws_root)).replace("\\", "/")
     return {"status": "ok", "data": {"path": rel}}
 
 
 @router.get("/workspaces/{workspace_id}/files")
-async def list_workspace_files(workspace_id: str, path: str = ""):
+async def list_workspace_files(
+    workspace_id: str,
+    path: str = "",
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """
     列出指定 workspace 下的文件/子目录。
     - workspace_id 通常与 Chat / Group Session ID 对应；
@@ -83,14 +118,14 @@ async def list_workspace_files(workspace_id: str, path: str = ""):
     - 返回的 entries.path 亦为 workspace 内相对路径，供前端在该 workspace 内继续导航。
     """
     try:
-        target = _resolve_workspace_path(workspace_id, path or "")
+        target = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
         raise
     if not target.exists():
         raise HTTPException(status_code=404, detail="Path not found")
     if not target.is_dir():
         raise HTTPException(status_code=400, detail="Path is not a directory")
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=current_user)
     entries = []
     for p in sorted(target.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
         try:
@@ -110,12 +145,16 @@ async def list_workspace_files(workspace_id: str, path: str = ""):
 
 
 @router.get("/workspaces/{workspace_id}/files/download")
-async def download_workspace_file(workspace_id: str, path: str):
+async def download_workspace_file(
+    workspace_id: str,
+    path: str,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """下载指定 workspace 中的文件（path 为 workspace 内相对路径）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path)
+        target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -134,12 +173,16 @@ class FileContentBody(BaseModel):
 
 
 @router.get("/workspaces/{workspace_id}/files/content")
-async def get_workspace_file_content(workspace_id: str, path: str):
+async def get_workspace_file_content(
+    workspace_id: str,
+    path: str,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """读取 workspace 中文本文件内容（path 为 workspace 内相对路径），供插入到提示词等场景使用"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path)
+        target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -163,12 +206,17 @@ class FileRenameBody(BaseModel):
 
 
 @router.put("/workspaces/{workspace_id}/files/content")
-async def update_workspace_file_content(workspace_id: str, path: str, body: FileContentBody):
+async def update_workspace_file_content(
+    workspace_id: str,
+    path: str,
+    body: FileContentBody,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """更新 workspace 中文件内容（仅限文本文件，path 为 workspace 内相对路径）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path)
+        target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
         raise
     if target.exists() and target.is_dir():
@@ -179,12 +227,16 @@ async def update_workspace_file_content(workspace_id: str, path: str, body: File
 
 
 @router.delete("/workspaces/{workspace_id}/files/content")
-async def delete_workspace_file(workspace_id: str, path: str):
+async def delete_workspace_file(
+    workspace_id: str,
+    path: str,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """删除 workspace 中的文件或空目录（path 为 workspace 内相对路径）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path)
+        target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -205,7 +257,12 @@ async def delete_workspace_file(workspace_id: str, path: str):
 
 
 @router.post("/workspaces/{workspace_id}/files")
-async def create_workspace_file(workspace_id: str, body: FileCreateBody, path: str = ""):
+async def create_workspace_file(
+    workspace_id: str,
+    body: FileCreateBody,
+    path: str = "",
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """在指定 workspace 内创建新文件（path 为 workspace 内目录相对路径，body.filename 为文件名）"""
     if not body.filename or not body.filename.strip():
         raise HTTPException(status_code=400, detail="filename is required")
@@ -213,13 +270,13 @@ async def create_workspace_file(workspace_id: str, body: FileCreateBody, path: s
     if not fn:
         raise HTTPException(status_code=400, detail="Invalid filename")
     try:
-        dir_path = _resolve_workspace_path(workspace_id, path or "")
+        dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
         raise
     if not dir_path.is_dir():
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=current_user)
     if not str(target).startswith(str(ws_root)):
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
@@ -228,7 +285,12 @@ async def create_workspace_file(workspace_id: str, body: FileCreateBody, path: s
 
 
 @router.post("/workspaces/{workspace_id}/files/upload")
-async def upload_workspace_file(workspace_id: str, path: str = "", file: UploadFile = File(...)):
+async def upload_workspace_file(
+    workspace_id: str,
+    path: str = "",
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """向指定 workspace 目录上传文件（path 为 workspace 内相对路径，空表示该 workspace 根目录）"""
     if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=400, detail="filename is required")
@@ -236,13 +298,13 @@ async def upload_workspace_file(workspace_id: str, path: str = "", file: UploadF
     if not fn:
         raise HTTPException(status_code=400, detail="Invalid filename")
     try:
-        dir_path = _resolve_workspace_path(workspace_id, path or "")
+        dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
         raise
     if not dir_path.is_dir():
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=current_user)
     if not str(target).startswith(str(ws_root)):
         raise HTTPException(status_code=400, detail="Invalid path")
     try:
@@ -255,7 +317,12 @@ async def upload_workspace_file(workspace_id: str, path: str = "", file: UploadF
 
 
 @router.put("/workspaces/{workspace_id}/files/rename")
-async def rename_workspace_file(workspace_id: str, path: str, body: FileRenameBody):
+async def rename_workspace_file(
+    workspace_id: str,
+    path: str,
+    body: FileRenameBody,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """重命名 workspace 中文件（path 为 workspace 内原相对路径，body.new_name 为新文件名）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
@@ -263,7 +330,7 @@ async def rename_workspace_file(workspace_id: str, path: str, body: FileRenameBo
     if not new_name:
         raise HTTPException(status_code=400, detail="new_name is required")
     try:
-        target = _resolve_workspace_path(workspace_id, path)
+        target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
         raise
     if not target.exists():
@@ -272,6 +339,6 @@ async def rename_workspace_file(workspace_id: str, path: str, body: FileRenameBo
         raise HTTPException(status_code=400, detail="Cannot rename a directory")
     new_path = target.parent / new_name
     target.rename(new_path)
-    ws_root = get_workspace_root(workspace_id)
+    ws_root = get_workspace_root(workspace_id, user=current_user)
     rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
     return {"status": "ok", "data": {"path": rel}}

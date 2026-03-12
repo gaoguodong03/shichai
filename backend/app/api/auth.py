@@ -1,10 +1,14 @@
-"""认证 API - 基于文本文件的账密校验（暂不接入数据库）"""
+"""认证 API - 文本文件账密 + 简单 JWT token"""
 import os
 from pathlib import Path
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from datetime import datetime, timezone
+
+from app.core.security import create_access_token
+from app.core.users_store import ensure_user_profile
 
 router = APIRouter(tags=["auth"])
 
@@ -50,17 +54,32 @@ class RegisterBody(BaseModel):
 
 @router.post("/auth/login")
 async def login(body: LoginBody):
-    """校验用户名密码，成功返回 status ok，失败返回 401"""
+    """校验用户名密码，成功返回 access_token + 用户信息，失败返回 401"""
+    name = body.username.strip()
     users = _load_users()
-    pwd = users.get(body.username.strip())
+    pwd = users.get(name)
     if pwd is None or pwd != body.password:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return {"status": "ok", "data": {"username": body.username.strip()}}
+
+    # 确保有用户档案（users.json）
+    created_at = datetime.now(timezone.utc).isoformat()
+    profile = ensure_user_profile(name, created_at=created_at)
+
+    token = create_access_token(name)
+    return {
+        "status": "ok",
+        "data": {
+            "username": name,
+            "display_name": profile.display_name or name,
+            "access_token": token,
+            "token_type": "bearer",
+        },
+    }
 
 
 @router.post("/auth/register")
 async def register(body: RegisterBody):
-    """创建新账户：写入用户文件，用户名已存在则返回 400"""
+    """创建新账户：写入用户文件，并初始化用户档案"""
     name = body.username.strip()
     pwd = body.password
     if not name:
@@ -72,4 +91,17 @@ async def register(body: RegisterBody):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"{name}:{pwd}\n")
-    return {"status": "ok", "data": {"username": name}}
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    profile = ensure_user_profile(name, created_at=created_at)
+
+    token = create_access_token(name)
+    return {
+        "status": "ok",
+        "data": {
+            "username": name,
+            "display_name": profile.display_name or name,
+            "access_token": token,
+            "token_type": "bearer",
+        },
+    }

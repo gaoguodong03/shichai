@@ -70,6 +70,7 @@ import { useRouter } from 'vue-router'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
+const TOKEN_STORAGE_KEY = 'dha_token'
 
 const router = useRouter()
 const username = ref('')
@@ -111,12 +112,13 @@ async function onSubmit() {
       error.value = parseError(j)
       return
     }
-    if (j.status !== 'ok') {
+    if (j.status !== 'ok' || !j.data?.access_token) {
       error.value = (j.detail as string) || '登录失败'
       return
     }
     localStorage.setItem(LOGIN_STORAGE_KEY, 'true')
     localStorage.setItem(USER_STORAGE_KEY, name)
+    localStorage.setItem(TOKEN_STORAGE_KEY, j.data.access_token as string)
     router.replace('/')
   } catch (e) {
     error.value = '网络错误，请稍后重试'
@@ -154,14 +156,15 @@ async function onRegister() {
       error.value = parseError(j)
       return
     }
-    if (j.status !== 'ok') {
+    if (j.status !== 'ok' || !j.data?.access_token) {
       error.value = (j.detail as string) || '创建失败'
       return
     }
-    error.value = ''
-    isRegister.value = false
-    passwordConfirm.value = ''
-    error.value = '账户已创建，请登录'
+    // 注册成功后直接视为已登录
+    localStorage.setItem(LOGIN_STORAGE_KEY, 'true')
+    localStorage.setItem(USER_STORAGE_KEY, name)
+    localStorage.setItem(TOKEN_STORAGE_KEY, j.data.access_token as string)
+    router.replace('/')
   } catch (e) {
     error.value = '网络错误，请稍后重试'
   } finally {

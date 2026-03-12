@@ -14,6 +14,21 @@ router = APIRouter(tags=["dha"])
 
 DHA_INSTANCES_PATH = os.getenv("DHA_INSTANCES_PATH", "./config/dha_instances.json")
 
+from app.core.user_context import get_current_user_context
+
+
+def _get_dha_instances_path() -> Path:
+    """根据当前用户返回 DHA 配置文件路径，实现多用户隔离。
+
+    - 用户级：data/users/{username}/config/dha_instances.json
+    - 无上下文：回退到全局 DHA_INSTANCES_PATH
+    """
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return (user_ctx.config_dir / "dha_instances.json").resolve()
+    path = Path(DHA_INSTANCES_PATH)
+    return path if path.is_absolute() else path.resolve()
+
 
 class DHACreate(BaseModel):
     """创建 DHA 实例请求"""
@@ -40,7 +55,7 @@ class DHAUpdate(BaseModel):
 
 
 def _ensure_config_dir() -> Path:
-    path = Path(DHA_INSTANCES_PATH).resolve()
+    path = _get_dha_instances_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
