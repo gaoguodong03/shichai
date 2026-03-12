@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本项目是一个类似 **Gemini Chat / ChatGPT** 的 AI 聊天工具，对于每一个聊天工具都可以将其视为一个数字人智能体（Digital Human Agent，DHA），有自己的 skill 和 mcp，核心特点是**所有对话都支持 ReAct Agent 模式**，可以自动调用 MCP 工具和自定义 Skills。参考了 Manus 的设计思路。对于 MCP 的设计部分应该参考官方的 MCP 设计理念（[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)）。
+心像 EchoTwin 是一个类似 **Gemini Chat / ChatGPT** 的 AI 聊天工具，对于每一个聊天工具都可以将其视为一个数字人智能体（Digital Human Agent，DHA），有自己的 skill 和 mcp，核心特点是**所有对话都支持 ReAct Agent 模式**，可以自动调用 MCP 工具和自定义 Skills。参考了 Manus 的设计思路。对于 MCP 的设计部分应该参考官方的 MCP 设计理念（[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)）。
 
 提供对话、Session 管理、MCP/Skills/模型配置等功能。
 

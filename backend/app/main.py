@@ -21,8 +21,8 @@ async def lifespan(app: FastAPI):
     await get_mcp_manager().cleanup()
 
 app = FastAPI(
-    title="DHA API",
-    description="Digital Human Agent - Chat API with MCP and Skills",
+    title="心像 EchoTwin API",
+    description="EchoTwin - Personal AI Twin with MCP and Skills",
     version="0.1.0",
     lifespan=lifespan
 )
@@ -66,7 +66,7 @@ if _static_dir and Path(_static_dir).is_dir():
 else:
     @app.get("/")
     async def root():
-        return {"message": "DHA API", "version": "0.1.0"}
+        return {"message": "心像 EchoTwin API", "version": "0.1.0"}
 
 @app.get("/health")
 async def health():

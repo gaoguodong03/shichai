@@ -1,6 +1,6 @@
-# DHA Backend
+# 心像 EchoTwin Backend
 
-DHA (Digital Human Agent) 后端服务
+心像 EchoTwin 后端服务（原 DHA，Digital Human Agent）
 
 ## 快速开始
 

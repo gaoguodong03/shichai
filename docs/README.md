@@ -1,6 +1,6 @@
-# DHA 项目文档
+# 心像 EchoTwin 项目文档
 
-DHA（Digital Human Agent）项目文档中心，**面向文档开发**：以文档为单一信息源，开发时优先查阅与更新文档。
+心像 EchoTwin（原 DHA，Digital Human Agent）项目文档中心，**面向文档开发**：以文档为单一信息源，开发时优先查阅与更新文档。
 
 ---
 

@@ -1,6 +1,6 @@
-# DHA Frontend
+# 心像 EchoTwin Frontend
 
-DHA (Digital Human Agent) 前端应用
+心像 EchoTwin 前端应用（原 DHA，Digital Human Agent）
 
 ## 快速开始
 
