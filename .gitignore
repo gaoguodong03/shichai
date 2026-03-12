@@ -1,0 +1,6 @@
+# Cursor / IDE debug logs
+.cursor/debug*.log
+backend/.cursor/debug*.log
+
+# Agent 临时输出（错误文字等）
+backend/data/agent-outputs/workspaces/*/错误文字.md

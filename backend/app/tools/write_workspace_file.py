@@ -1,7 +1,26 @@
 """写入当前会话工作区文件工具 - 供单聊/群聊共用"""
+import json
 from langchain.tools import Tool
 
 from app.api.files import get_workspace_root
+
+
+def _normalize_path(path_or_input) -> str:
+    """从多种输入格式提取 path 字符串，避免把 {\"__arg1\": \"xxx.md\"} 当文件名写入。"""
+    if path_or_input is None:
+        return ""
+    if isinstance(path_or_input, dict):
+        return str(path_or_input.get("path") or path_or_input.get("__arg1") or "").strip()
+    s = str(path_or_input).strip()
+    if not s:
+        return ""
+    if s.startswith("{"):
+        try:
+            data = json.loads(s)
+            return str(data.get("path") or data.get("__arg1") or "")
+        except json.JSONDecodeError:
+            pass
+    return s
 
 
 def create_write_workspace_file_tool(workspace_id: str) -> Tool:
@@ -11,9 +30,9 @@ def create_write_workspace_file_tool(workspace_id: str) -> Tool:
     """
 
     def _write_to_workspace_file(path: str, content: str = "", **kwargs) -> str:
-        path_value = path or kwargs.get("path") or ""
+        path_value = _normalize_path(path) or _normalize_path(kwargs.get("path")) or _normalize_path(kwargs.get("__arg1")) or ""
         content_value = content if content is not None else kwargs.get("content") or ""
-        path_value = str(path_value).strip()
+        path_value = path_value.strip()
         if not path_value:
             return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report.md）。"
         try:

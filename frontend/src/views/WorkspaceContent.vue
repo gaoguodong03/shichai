@@ -281,7 +281,22 @@
                           type="button"
                           class="group-chat-toggle-pill"
                           :class="{ 'group-chat-toggle-pill-active': groupAutoConfirm }"
-                          @click="groupAutoConfirm = !groupAutoConfirm"
+                          @click="
+                            groupAutoConfirm = !groupAutoConfirm;
+                            fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
+                              body: JSON.stringify({
+                                sessionId: '075e2b',
+                                runId: 'pre-fix',
+                                hypothesisId: 'H1',
+                                location: 'WorkspaceContent.vue:manualToggle',
+                                message: 'manual control toggled',
+                                data: { groupAutoConfirm: groupAutoConfirm },
+                                timestamp: Date.now(),
+                              }),
+                            }).catch(() => {})
+                          "
                         >
                           <svg
                             class="group-chat-toggle-pill-icon"
@@ -836,15 +851,33 @@ function closeMembersDropdown(e: MouseEvent) {
 }
 
 async function confirmGroupNext(override: string) {
-  const id = groupDetail.value?.id
-  if (!id || groupStreaming.value) return
+  const detail = groupDetail.value
+  const id = detail?.id
+  if (!detail || !id || groupStreaming.value) return
   groupStreaming.value = true
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
   const body: { override_next_speaker: string; custom_prompt?: string } = { override_next_speaker: override }
-  const msg = builtMessage()
+  const base = builtMessage()
+  const hasFiles = attachedFiles.value.length > 0
+  const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
   if (msg) body.custom_prompt = msg
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
+    body: JSON.stringify({
+      sessionId: '075e2b',
+      runId: 'pre-fix',
+      hypothesisId: 'H4',
+      location: 'WorkspaceContent.vue:confirmGroupNext',
+      message: 'confirmGroupNext called',
+      data: { override, groupAutoConfirm: groupAutoConfirm.value, hasFiles, msgLength: msg?.length || 0 },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion agent log
   try {
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
       method: 'POST',
@@ -884,14 +917,24 @@ async function confirmGroupNext(override: string) {
             try {
               const endData = JSON.parse(dataStr)
               if (endData.waiting_for_user) {
-                groupWaitingForUser.value = true
-                if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
-                else if (endData.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                // 只有在「手动控制」开启时才让前端进入“等待用户确认”的 UI 状态。
+                // 关闭手动控制时，仍然可以利用 waiting_for_user 里的信息（next_prompt 等），
+                // 但不会显示“确认并继续”按钮，而是直接自动进入下一位 DHA。
+                groupWaitingForUser.value = groupAutoConfirm.value
+                if (endData.suggested_next_speaker != null)
+                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.suggested_add_dha_ids?.length)
+                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id)
+                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
-                // groupAutoConfirm=true 表示「手动控制」开启，此时不自动确认；false 时自动确认
-                if (!groupAutoConfirm.value && endData.suggested_next_speaker) {
-                  nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
+                // 手动控制：关闭 = 自动进入下一位 DHA；开启 = 等待用户点确认。
+                // 若后端未显式给出 suggested_next_speaker，则在自动模式下回退为 effectiveNextSpeaker
+                if (!groupAutoConfirm.value) {
+                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
+                  if (fallbackNext) {
+                    nextTick(() => confirmGroupNext(fallbackNext))
+                  }
                 }
               }
             } catch (_) {}
@@ -905,6 +948,8 @@ async function confirmGroupNext(override: string) {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
+    // 确认后清空文件引用，避免影响后续轮次
+    attachedFiles.value = []
   }
 }
 
@@ -1051,6 +1096,21 @@ function onShowNextPromptFieldChange(e: Event) {
 
 function onShowNextPromptFieldChangeByClick() {
   showNextPromptField.value = !showNextPromptField.value
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
+    body: JSON.stringify({
+      sessionId: '075e2b',
+      runId: 'pre-fix',
+      hypothesisId: 'H3',
+      location: 'WorkspaceContent.vue:onShowNextPromptFieldChangeByClick',
+      message: 'toggle next prompt field',
+      data: { showNextPromptField: showNextPromptField.value },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion agent log
   if (showNextPromptField.value) showMoreMenu.value = false
 }
 const memberSkillRef = ref<HTMLElement | null>(null)
@@ -1632,6 +1692,21 @@ async function sendGroupMessage() {
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
   const msg = await buildMessageWithFiles(detail, base)
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
+    body: JSON.stringify({
+      sessionId: '075e2b',
+      runId: 'pre-fix',
+      hypothesisId: 'H1',
+      location: 'WorkspaceContent.vue:sendGroupMessage',
+      message: 'sendGroupMessage called',
+      data: { groupAutoConfirm: groupAutoConfirm.value, hasFiles, msgLength: msg.length },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion agent log
   const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
   groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
   scrollGroupToBottom()
@@ -1674,13 +1749,42 @@ async function sendGroupMessage() {
             try {
               const endData = JSON.parse(dataStr)
               if (endData.waiting_for_user) {
-                groupWaitingForUser.value = true
-                if (endData.suggested_next_speaker != null) groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
-                else if (endData.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                // 只有在「手动控制」开启时才展示“确认并继续”按钮。
+                groupWaitingForUser.value = groupAutoConfirm.value
+                if (endData.suggested_next_speaker != null)
+                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.suggested_add_dha_ids?.length)
+                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id)
+                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
-                if (groupAutoConfirm.value && endData.suggested_next_speaker) {
-                  nextTick(() => confirmGroupNext(endData.suggested_next_speaker))
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
+                  body: JSON.stringify({
+                    sessionId: '075e2b',
+                    runId: 'pre-fix',
+                    hypothesisId: 'H2',
+                    location: 'WorkspaceContent.vue:sendGroupMessage:end',
+                    message: 'end event received',
+                    data: {
+                      waiting_for_user: endData.waiting_for_user,
+                      suggested_next_speaker: endData.suggested_next_speaker,
+                      suggested_add_dha_ids: endData.suggested_add_dha_ids,
+                      groupAutoConfirm: groupAutoConfirm.value,
+                    },
+                    timestamp: Date.now(),
+                  }),
+                }).catch(() => {})
+                // #endregion agent log
+                // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA；
+                // 手动控制打开时：只更新 UI，不自动继续。
+                if (!groupAutoConfirm.value) {
+                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
+                  if (fallbackNext) {
+                    nextTick(() => confirmGroupNext(fallbackNext))
+                  }
                 }
               }
             } catch (_) {}

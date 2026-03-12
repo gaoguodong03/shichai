@@ -1,102 +1,71 @@
 {
-  "group-44836bb0353c": {
-    "title": "新多 DHA 对话",
+  "group-a666d45c4288": {
+    "title": "DHA 协作 · 3/11 21:54",
     "dha_ids": [
-      "dha-df1f712a",
-      "dha-c9b8ae32",
-      "dha-440b26f8"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-02T11:10:51.866443+00:00",
-    "updated_at": "2026-03-02T11:12:08.866805+00:00"
-  },
-  "group-6ccfab495c09": {
-    "title": "国际新闻推广",
-    "dha_ids": [
-      "dha-195b8c3a",
-      "dha-c1bf68ba"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-05T13:20:04.908196+00:00",
-    "updated_at": "2026-03-05T13:29:50.382404+00:00"
-  },
-  "group-c64d23deb264": {
-    "title": "浏览器控制",
-    "dha_ids": [
-      "dha-browser-ops"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-05T14:12:53.154355+00:00",
-    "updated_at": "2026-03-10T00:52:36.213135+00:00"
-  },
-  "group-d01d16a67a95": {
-    "title": "教学研讨",
-    "dha_ids": [
-      "dha-seminar-teacher",
-      "dha-seminar-host",
-      "dha-seminar-companion-qiang",
-      "dha-seminar-companion-hong",
-      "dha-seminar-ta"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-07T12:28:51.572796+00:00",
-    "updated_at": "2026-03-07T12:40:28.068182+00:00"
-  },
-  "group-4b45e418f79f": {
-    "title": "验证文件能力",
-    "dha_ids": [
-      "dha-195b8c3a"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-07T14:17:11.223514+00:00",
-    "updated_at": "2026-03-07T14:21:55.630995+00:00"
-  },
-  "group-30600f5601a3": {
-    "title": "调研与搜索会话",
-    "dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
+      "dha-c1bf68ba",
       "dha-df1f712a"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-07T14:37:13.652426+00:00",
-    "updated_at": "2026-03-11T08:39:56.114560+00:00"
+    "created_at": "2026-03-11T13:54:30.371655+00:00",
+    "updated_at": "2026-03-11T13:56:31.525448+00:00"
   },
-  "group-73ca7104a976": {
-    "title": "新对话",
+  "group-a13e6ea4f7d8": {
+    "title": "DHA 协作 · 3/11 22:01",
+    "dha_ids": [
+      "dha-c1bf68ba",
+      "dha-df1f712a"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-11T14:01:09.821178+00:00",
+    "updated_at": "2026-03-11T14:01:58.644623+00:00"
+  },
+  "group-2a8453b96024": {
+    "title": "DHA 协作 · 3/11 22:12",
     "dha_ids": [
       "dha-df1f712a",
-      "dha-195b8c3a",
+      "dha-c1bf68ba",
       "dha-440b26f8"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-08T16:55:25.813385+00:00",
-    "updated_at": "2026-03-08T16:59:15.887992+00:00"
+    "created_at": "2026-03-11T14:12:19.566281+00:00",
+    "updated_at": "2026-03-11T14:13:07.378986+00:00"
   },
-  "group-40da7abe7f56": {
-    "title": "规则检查",
+  "group-4a6df3519356": {
+    "title": "DHA 协作 · 3/12 09:07",
     "dha_ids": [
-      "dha-b6dba178",
-      "dha-2be73edd"
+      "dha-df1f712a",
+      "dha-c1bf68ba",
+      "dha-440b26f8"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-11T05:44:17.729094+00:00",
-    "updated_at": "2026-03-11T05:51:38.067876+00:00"
+    "created_at": "2026-03-12T01:07:48.573680+00:00",
+    "updated_at": "2026-03-12T01:09:33.695383+00:00"
   },
-  "group-2c11a0873ece": {
-    "title": "新对话",
-    "dha_ids": [],
+  "group-7b0c50924934": {
+    "title": "DHA 协作 · 3/12 09:15",
+    "dha_ids": [
+      "dha-df1f712a",
+      "dha-440b26f8"
+    ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-11T06:05:04.113542+00:00",
-    "updated_at": "2026-03-11T06:05:27.530400+00:00"
+    "created_at": "2026-03-12T01:15:37.921205+00:00",
+    "updated_at": "2026-03-12T01:15:54.925952+00:00"
+  },
+  "group-ae77cad59691": {
+    "title": "DHA 协作 · 3/12 09:16",
+    "dha_ids": [
+      "dha-440b26f8",
+      "dha-df1f712a",
+      "dha-c1bf68ba"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T01:16:24.084424+00:00",
+    "updated_at": "2026-03-12T01:20:23.439004+00:00"
   }
 }

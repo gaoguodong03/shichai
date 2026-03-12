@@ -251,6 +251,10 @@ async def _host_decide_by_dha(
         user_content += f"刚发言的 DHA：{last_speaker_dha_id}\n\n请判断该 DHA 是否完成任务，并指定下一发言人。"
     else:
         user_content += "请指定第一个发言人（next_speaker 为某 dha_id）。此时 task_done 可设为 true。"
+    user_content += (
+        "\n\n若 next_speaker 为某 dha_id，请在 JSON 中同时输出 next_prompt：给该发言人的简要提示，"
+        "仅包含讨论目标与与该 DHA 职责/当前步骤相关的关键信息或摘要，不要整段复制全部讨论内容。"
+    )
 
     try:
         agent = create_skill_execution_agent(llm, [], skill_content, extra_system_prompt or "")
@@ -299,7 +303,7 @@ async def _host_only_respond_and_recommend(
     user_content = (
         f"讨论目标/用户消息：\n{discussion_goal}\n\n"
         f"最近对话：\n{recent_messages}\n\n"
-        f"可选 DHA 列表（请从中推荐一位或两位加入，输出其 dha_id）：\n{dha_text}\n\n"
+        f"可选 DHA 列表（请从中推荐一位或多位加入，输出其 dha_id）：\n{dha_text}\n\n"
         "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON。"
         '格式任选其一：{"suggested_add_dha_id": "dha_id"} 或 {"suggested_add_dha_ids": ["dha_id1", "dha_id2"]}'
     )
@@ -700,7 +704,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # 1 DHA：直接指定该 DHA 发言，无主持人
                 next_speaker = dha_ids[0]
             elif speak_mode != "auto":
-                # 非自动：仅让主持人给出建议，不下发 DHA，等用户选人后下次请求再跑
+                # 非自动（manual）模式：主持人先给出建议。
+                # 如果已经明确推荐了下一位 DHA，则在同一条流中直接进入该 DHA 的发言；
+                # 仅在主持人没有给出明确下一位时，才等待用户选择。
                 recent = _messages_to_context(messages)
                 decision = None
                 host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
@@ -729,6 +735,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if leader_dha_id:
                     host_msg["dha_id"] = leader_dha_id
                 messages.append(host_msg)
+                # 保存并把主持人建议发给前端
                 if suggested in dha_ids:
                     context = _messages_to_context(messages)
                     next_dha = dha_map.get(suggested)
@@ -738,12 +745,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_msg["suggested_order"] = decision["suggested_order"]
                 _save_group_history(group_session_id, messages)
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": suggested}
-                # If available, include next_prompt to help frontend fill input for next DHA
-                if decision is not None and isinstance(decision, dict) and decision.get("next_prompt"):
-                    end_data["next_prompt"] = decision["next_prompt"]
-                yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
-                return
+                # 如果主持人已经明确推荐了下一位 DHA，则直接把该 DHA 作为下一发言人继续往下走，
+                # 不再发 waiting_for_user，让前端自动看到该 DHA 的发言。
+                if suggested in dha_ids:
+                    next_speaker = suggested
+                    # host_msg.next_prompt 已写入，后续 DHA 会自动读取最近的 next_prompt 作为输入
+                else:
+                    # 否则仍然等待用户选择
+                    end_data = {"type": "end", "waiting_for_user": True}
+                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
+                    return
             else:
                 # auto：由主持人 DHA 或默认调度决定下一发言人
                 recent = _messages_to_context(messages)
@@ -758,10 +769,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     llm_default = _get_llm_for_dha(None, app_settings)
                     decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id)
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
+                # 由主持人/调度明确给出下一位发言人。
+                # 不再根据 task_done 强制让上一位 DHA 连续发言，
+                # 每一小轮都回到主持人决策，再由 decision["next_speaker"] 指定下一位。
                 next_speaker = decision.get("next_speaker", "user")
-                task_done = decision.get("task_done", True)
-                if not task_done and last_speaker_dha_id:
-                    next_speaker = last_speaker_dha_id
                 if last_speaker_dha_id is None and next_speaker == "user" and dha_ids:
                     next_speaker = dha_ids[0]
                 if messages and messages[-1].get("role") == "user" and next_speaker == "user" and dha_ids:
@@ -791,13 +802,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                    # auto 模式下：每次 DHA（非主持人）发言前暂停，等待用户确认；给该 DHA 的提示词已放在 host_msg.next_prompt 中供前端展示
-                    if speak_mode == "auto" and not single_dha_mode and next_speaker in dha_ids:
-                        end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker}
-                        if host_msg.get("next_prompt"):
-                            end_data["next_prompt"] = host_msg["next_prompt"]
-                        yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
-                        return
+                    # 这里不再发送 waiting_for_user 的 end 事件，而是直接在同一条流中继续执行
+                    # 下方 while next_speaker 循环会立刻进入对应 DHA 的发言，实现“主持人点名后自动发言”。
 
             while next_speaker and next_speaker in dha_ids:
                 dha = dha_map.get(next_speaker)
