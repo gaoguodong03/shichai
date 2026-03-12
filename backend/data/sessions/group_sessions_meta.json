@@ -1,1 +1,24 @@
-{}
+{
+  "group-49cac14ee026": {
+    "title": "DHA 协作 · 3/12 17:16",
+    "dha_ids": [
+      "dha-66bafc4e"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T09:16:18.635046+00:00",
+    "updated_at": "2026-03-12T09:17:27.620203+00:00"
+  },
+  "group-af6abd2817cc": {
+    "title": "DHA 协作 · 3/12 18:08",
+    "dha_ids": [
+      "dha-66bafc4e",
+      "dha-9f6a2b8d",
+      "dha-ae100f7a"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T10:08:38.961704+00:00",
+    "updated_at": "2026-03-12T10:18:00.795856+00:00"
+  }
+}

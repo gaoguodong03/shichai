@@ -111,11 +111,20 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
 
 
 def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
-    """当主持人未输出 next_prompt 时使用的默认提示词模板。"""
+    """当主持人未输出 next_prompt 时使用的默认提示词模板。
+    相比早期版本，这里刻意给出更丰富的上下文、小结和任务说明，
+    避免下一轮 DHA 只拿到几个要点而信息过少。"""
     return (
         f"【群聊讨论目标】\n{discussion_goal}\n\n"
-        f"【最近讨论】\n{context}\n\n"
-        "请紧扣讨论目标发言，不要偏离主题。"
+        f"【最近几轮讨论要点（按时间顺序）】\n{context}\n\n"
+        "【你这一轮的任务】\n"
+        "1. 在不重复前面内容的前提下，先用 1～3 句话总结当前讨论已经达成的阶段性结论或共识。\n"
+        "2. 结合你的角色和专长，围绕上述目标推进 1～2 个具体子问题或子任务；必要时可以适当补充背景说明或示例。\n"
+        "3. 若需要后续其他 DHA 或用户继续配合，请明确点出「接下来可以由谁做什么」。\n\n"
+        "【输出要求】\n"
+        "- 语言简洁但信息量充足，可以分条说明。\n"
+        "- 紧扣讨论目标，不要跑题到无关方向。\n"
+        "- 不要大段复述完整对话原文，侧重提炼、推进和安排后续步骤。"
     )
 
 
@@ -250,14 +259,21 @@ async def _host_decide_by_dha(
         did = d.get("dha_id", "")
         dha_lines.append(f"- {n} ({did}): {r}")
     dha_text = "\n".join(dha_lines)
-    user_content = f"当前群聊参与者（next_speaker 必须使用以下 dha_id 之一）：\n{dha_text}\n\n讨论目标：{discussion_goal}\n\n最近讨论内容：\n\n{recent_messages}\n\n"
+    user_content = (
+        f"当前群聊参与者（next_speaker 必须使用以下 dha_id 之一）：\n{dha_text}\n\n"
+        f"讨论目标：{discussion_goal}\n\n"
+        "【最近讨论内容（按时间顺序，供你理解上下文）：】\n"
+        f"{recent_messages}\n\n"
+    )
     if last_speaker_dha_id:
         user_content += f"刚发言的 DHA：{last_speaker_dha_id}\n\n请判断该 DHA 是否完成任务，并指定下一发言人。"
     else:
         user_content += "请指定第一个发言人（next_speaker 为某 dha_id）。此时 task_done 可设为 true。"
     user_content += (
-        "\n\n若 next_speaker 为某 dha_id，请在 JSON 中同时输出 next_prompt：给该发言人的简要提示，"
-        "仅包含讨论目标与与该 DHA 职责/当前步骤相关的关键信息或摘要，不要整段复制全部讨论内容。"
+        "\n\n若 next_speaker 为某 dha_id，请在 JSON 中同时输出 next_prompt：\n"
+        "- 这是给下一位 DHA 的「详细一点的任务提示词」，信息量可以适当丰富，不必只给几个要点。\n"
+        "- 建议结构包括：当前阶段小结 / 这一轮要完成的具体子任务 / 输出风格或格式要求 / 后续可由谁接力。\n"
+        "- 可以适度摘取关键上下文，但避免原样复制整段长对话；更推荐用自己的话进行精炼与组织。"
     )
 
     try:
