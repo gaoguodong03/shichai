@@ -141,8 +141,12 @@ def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
         else:
             # skill 无 MCP 依赖（如 weather-service），只传内置工具
             tools = []
-    # 内置工具：调用外部 HTTP API、写入当前 workspace；读文件统一用 filesystem MCP（已按会话包装）
-    tools = tools + [call_api, create_write_workspace_file_tool(workspace_id)]
+    # 始终提供 filesystem_ 工具（读取工作区文件等），避免 DHA 误用 call_api 访问相对 URL（会触发“缺少 http/https 协议”错误）。
+    # 其余 MCP 工具仍按 mcp_server_ids / skill 依赖过滤，避免跨职责调用。
+    filesystem_tools = [t for t in all_tools if getattr(t, "name", "").startswith("filesystem_")]
+
+    # 内置工具：调用外部 HTTP API、写入当前 workspace
+    tools = tools + filesystem_tools + [call_api, create_write_workspace_file_tool(workspace_id)]
     tools = wrap_filesystem_tools(tools, workspace_id)
     return tools
 

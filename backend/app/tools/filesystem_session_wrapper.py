@@ -1,5 +1,6 @@
 """为 filesystem MCP 工具按会话做 path 校验与重写，避免重复提供 read_file。"""
 import os
+import json
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -18,8 +19,29 @@ def _path_arg_keys() -> List[str]:
 
 
 def _normalize_path_for_session(path: str, session_id: str) -> str:
-    """确保 path 落在 workspaces/{session_id}/ 下，并返回 MCP 可解析的路径（相对 backend）。"""
-    path = (path or "").strip().lstrip("/")
+    """确保 path 落在 workspaces/{session_id}/ 下，并返回 MCP 可解析的路径（相对 backend）。
+
+    兼容一些旧模板 / LLM 误用的调用方式，例如把
+        '{"__arg1": "错误文字.md"}'
+    整个 JSON 字符串塞到 path 里。
+    此时应先解析 JSON，提取其中的 path 或 __arg1，再做 workspace 前缀拼接。
+    """
+    raw = (path or "").strip()
+    # 若 path 看起来是 JSON，尝试从中提取真正的路径字段
+    if raw.startswith("{") and raw.endswith("}"):
+        try:
+            data = json.loads(raw)
+            extracted = str(data.get("path") or data.get("__arg1") or "").strip()
+            if extracted:
+                path = extracted
+            else:
+                path = raw
+        except Exception:
+            path = raw
+    else:
+        path = raw
+
+    path = path.lstrip("/")
     if not path:
         return f"{_REL_PREFIX}/{WORKSPACES_SUBDIR}/{session_id}"
     # 已是 workspaces/{session_id}/ 形式

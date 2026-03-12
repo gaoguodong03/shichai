@@ -137,5 +137,82 @@
     "speak_mode": "manual",
     "created_at": "2026-03-12T01:56:01.718545+00:00",
     "updated_at": "2026-03-12T01:59:58.779472+00:00"
+  },
+  "group-d4cfff0ae087": {
+    "title": "DHA 协作 · 3/12 10:04",
+    "dha_ids": [
+      "dha-2be73edd",
+      "dha-b6dba178"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:04:27.456058+00:00",
+    "updated_at": "2026-03-12T02:06:26.169772+00:00"
+  },
+  "group-2d0d9833f0d4": {
+    "title": "DHA 协作 · 3/12 10:14",
+    "dha_ids": [
+      "dha-2be73edd",
+      "dha-b6dba178"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:14:14.760815+00:00",
+    "updated_at": "2026-03-12T02:16:40.157750+00:00"
+  },
+  "group-c52c6033c146": {
+    "title": "DHA 协作 · 3/12 10:25",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:25:08.344360+00:00",
+    "updated_at": "2026-03-12T02:26:43.272181+00:00"
+  },
+  "group-e463b2e7a880": {
+    "title": "DHA 协作 · 3/12 10:34",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:34:37.372053+00:00",
+    "updated_at": "2026-03-12T02:35:57.433046+00:00"
+  },
+  "group-9f6e0648068a": {
+    "title": "DHA 协作 · 3/12 10:42",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:42:09.531299+00:00",
+    "updated_at": "2026-03-12T02:42:47.162106+00:00"
+  },
+  "group-c9861f8f9d17": {
+    "title": "DHA 协作 · 3/12 10:51",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:51:07.314531+00:00",
+    "updated_at": "2026-03-12T02:54:11.575813+00:00"
+  },
+  "group-66f1905a8cd6": {
+    "title": "DHA 协作 · 3/12 10:54",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T02:54:33.076871+00:00",
+    "updated_at": "2026-03-12T02:56:25.910182+00:00"
   }
 }

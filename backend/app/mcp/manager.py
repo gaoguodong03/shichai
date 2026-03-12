@@ -135,8 +135,8 @@ def normalize_mcp_kwargs_for_call(
                 if _k in _parsed and _k not in call_kwargs:
                     call_kwargs[_k] = _parsed[_k]
 
-    # file-reader: 若仍收到 __arg1，则将其视为 path（统一兼容老模板）
-    if server_id == "file-reader" and "__arg1" in call_kwargs:
+    # file-reader / filesystem 系列: 若仍收到 __arg1，则将其视为 path（统一兼容老模板）
+    if server_id in ("file-reader", "filesystem") and "__arg1" in call_kwargs:
         if "path" not in call_kwargs:
             call_kwargs["path"] = str(call_kwargs["__arg1"]) if call_kwargs["__arg1"] is not None else ""
 
@@ -575,7 +575,56 @@ class MCPToolManager:
                         pass
                 # 使用原始工具名调用 MCP Server
                 logger.info(f"调用 MCP Session: call_tool({original_tool_name}, {call_Kwargs})")
-                result = await session.call_tool(original_tool_name, call_Kwargs)
+                # 额外写入 debug 日志，便于排查「卡在 call_tool」的问题
+                try:
+                    import json as _json_call, time as _time_call
+                    with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                        _f.write(
+                            _json_call.dumps(
+                                {
+                                    "id": f"log_mcp_call_start_{server_id or 'unknown'}_{original_tool_name}_{int(_time_call.time() * 1000)}",
+                                    "timestamp": int(_time_call.time() * 1000),
+                                    "location": "backend/app/mcp/manager.py:call_tool_start",
+                                    "message": "MCP call_tool start",
+                                    "data": {"server_id": server_id, "tool": original_tool_name, "kwargs": call_Kwargs},
+                                    "runId": "mcp-call",
+                                    "hypothesisId": "H-call-start",
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+
+                # 为 MCP 调用增加超时，防止长时间无响应导致前端感觉「卡死」
+                try:
+                    result = await asyncio.wait_for(session.call_tool(original_tool_name, call_Kwargs), timeout=60.0)
+                except asyncio.TimeoutError:
+                    timeout_msg = f"MCP 工具 {original_tool_name} 调用超时（60s）"
+                    logger.error(timeout_msg)
+                    try:
+                        import json as _json_call_to, time as _time_call_to
+                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
+                            _f.write(
+                                _json_call_to.dumps(
+                                    {
+                                        "id": f"log_mcp_call_timeout_{server_id or 'unknown'}_{original_tool_name}_{int(_time_call_to.time() * 1000)}",
+                                        "timestamp": int(_time_call_to.time() * 1000),
+                                        "location": "backend/app/mcp/manager.py:call_tool_timeout",
+                                        "message": "MCP call_tool timeout",
+                                        "data": {"server_id": server_id, "tool": original_tool_name},
+                                        "runId": "mcp-call",
+                                        "hypothesisId": "H-call-timeout",
+                                    },
+                                    ensure_ascii=False,
+                                )
+                                + "\n"
+                            )
+                    except Exception:
+                        pass
+                    return f"Error: MCP 工具 {original_tool_name} 调用超时（60s），请稍后重试。"
+
                 logger.info(f"MCP 调用返回结果类型: {type(result)}")
                 
                 if result.content:
@@ -646,10 +695,24 @@ class MCPToolManager:
             if props:
                 parts = [f"{k} ({v.get('type', 'string')})" for k, v in props.items()]
                 description = f"{description} 参数: {', '.join(parts)}。"
+        # LangChain 的 Tool 默认期望同步函数；若直接把 async 函数赋给 func，
+        # 上游不会 await，而是把协程对象当结果用，用户就会看到
+        # "<coroutine object MCPToolManager._create_langchain_tool.<locals>.tool_func at 0x...>"。
+        # 这里包一层同步函数，在内部显式跑异步逻辑，保证返回的是实际字符串结果。
+        def sync_tool_func(*args, **kwargs):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                # 当前线程没有事件循环：直接新建一个跑完
+                return asyncio.run(tool_func(**kwargs))
+            else:
+                # 已有事件循环（例如在某些异步环境下被调用）：同步等待该协程完成
+                return loop.run_until_complete(tool_func(**kwargs))
+
         langchain_tool = Tool(
             name=tool_name,
             description=description,
-            func=tool_func,
+            func=sync_tool_func,
         )
         # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
         # LangChain Tool 为 Pydantic 模型，不能直接赋未声明属性，用 object.__setattr__ 绕过

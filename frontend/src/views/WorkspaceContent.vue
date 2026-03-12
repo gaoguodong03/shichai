@@ -907,8 +907,6 @@ async function confirmGroupNext(override: string) {
               const endData = JSON.parse(dataStr)
               if (endData.waiting_for_user) {
                 // 只有在「手动控制」开启时才让前端进入“等待用户确认”的 UI 状态。
-                // 关闭手动控制时，仍然可以利用 waiting_for_user 里的信息（next_prompt 等），
-                // 但不会显示“确认并继续”按钮，而是直接自动进入下一位 DHA。
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
@@ -916,15 +914,24 @@ async function confirmGroupNext(override: string) {
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
-                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
-                // 手动控制：关闭 = 自动进入下一位 DHA；开启 = 等待用户点确认。
-                // 若后端未显式给出 suggested_next_speaker，则在自动模式下回退为 effectiveNextSpeaker
+                if (endData.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                }
+                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
+                  attachedFiles.value = []
+                }
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
                   if (fallbackNext && fallbackNext !== 'user') {
                     nextTick(() => confirmGroupNext(fallbackNext))
                   }
                 }
+              }
+              if (endData.discussion_ended) {
+                attachedFiles.value = []
               }
             } catch (_) {}
           }
@@ -937,8 +944,6 @@ async function confirmGroupNext(override: string) {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
-    // 确认后清空文件引用，避免影响后续轮次
-    attachedFiles.value = []
   }
 }
 
@@ -1005,8 +1010,12 @@ async function onInsertLocalFile(ev: Event) {
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data?.path) {
       await loadGroupWorkspace()
-      const refPath = `workspaces/${id}/${j.data.path}`
-      const block = `\n【文件引用：${refPath}】\n`
+      const relPath = j.data.path as string
+      const name = file.name || relPath.split('/').pop() || relPath
+      if (!attachedFiles.value.find((f) => f.path === relPath)) {
+        attachedFiles.value.push({ name, path: relPath })
+      }
+      const block = `\n【文件引用：${name}】\n`
       groupNextPrompt.value = (groupNextPrompt.value || '').trim() + (groupNextPrompt.value?.trim() ? '\n\n' : '') + block
       showInsertFile.value = false
     } else {
@@ -1213,11 +1222,22 @@ async function continueGroupStream() {
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
-                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
+                if (endData.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                }
+                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
+                  attachedFiles.value = []
+                }
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
                   if (fallbackNext && fallbackNext !== 'user') nextTick(() => confirmGroupNext(fallbackNext))
                 }
+              }
+              if (endData.discussion_ended) {
+                attachedFiles.value = []
               }
             } catch (_) {}
           }
@@ -1754,29 +1774,11 @@ function builtMessage(): string {
   return parts.join('\n\n')
 }
 
-/** 发送前将所有文件引用展开为实际内容，并与当前输入拼接 */
+/** 发送前将所有文件引用展开为实际内容，并与当前输入拼接（群聊中不再展开，只保留标签，由 DHA 自己通过 filesystem_* 读取） */
 async function buildMessageWithFiles(detail: GroupDetail, base: string): Promise<string> {
-  const refs = attachedFiles.value
-  if (!refs.length) return base
-  const parts: string[] = []
-  for (const f of refs) {
-    try {
-      const r = await fetch(
-        `/api/workspaces/${encodeURIComponent(detail.id)}/files/content?path=${encodeURIComponent(f.path)}`,
-      )
-      const j = await r.json().catch(() => ({}))
-      if (j?.status !== 'ok' || typeof j?.data?.content !== 'string') continue
-      const text = (j.data.content as string).trim()
-      if (!text) continue
-      parts.push(`【文件引用：${f.name}】\n${text}`)
-    } catch {
-      // 网络错误时忽略该文件，继续其它引用
-    }
-  }
-  const filesBlock = parts.join('\n\n')
-  if (!filesBlock) return base
-  if (!base) return filesBlock
-  return `${filesBlock}\n\n${base}`
+  // 群聊场景：不在用户侧消息里展开文件内容，只保留诸如「【文件引用：xxx】」的标签，
+  // 由 DHA 自己通过 filesystem_read_text_file 等工具按标签中的 path 读取内容。
+  return base
 }
 
 async function sendGroupMessage() {
@@ -1852,7 +1854,15 @@ async function sendGroupMessage() {
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
-                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
+                if (endData.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                }
+                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
+                  attachedFiles.value = []
+                }
                 // #region agent log
                 fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
                   method: 'POST',
@@ -1873,14 +1883,16 @@ async function sendGroupMessage() {
                   }),
                 }).catch(() => {})
                 // #endregion agent log
-                // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA；
-                // 手动控制打开时：只更新 UI，不自动继续。
+                // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
                   if (fallbackNext && fallbackNext !== 'user') {
                     nextTick(() => confirmGroupNext(fallbackNext))
                   }
                 }
+              }
+              if (endData.discussion_ended) {
+                attachedFiles.value = []
               }
             } catch (_) {}
           }
@@ -1893,8 +1905,6 @@ async function sendGroupMessage() {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
-    // 发送完成后清空文件引用，避免遗留到下一条消息
-    attachedFiles.value = []
   }
 }
 
