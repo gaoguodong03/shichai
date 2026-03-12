@@ -214,5 +214,38 @@
     "speak_mode": "auto",
     "created_at": "2026-03-12T02:54:33.076871+00:00",
     "updated_at": "2026-03-12T02:56:25.910182+00:00"
+  },
+  "group-86ddca89d42f": {
+    "title": "DHA 协作 · 3/12 11:05",
+    "dha_ids": [
+      "dha-2be73edd",
+      "dha-b6dba178"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T03:05:49.939640+00:00",
+    "updated_at": "2026-03-12T03:09:19.080056+00:00"
+  },
+  "group-675d1725d84a": {
+    "title": "DHA 协作 · 3/12 11:11",
+    "dha_ids": [
+      "dha-b6dba178",
+      "dha-2be73edd"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T03:11:23.098823+00:00",
+    "updated_at": "2026-03-12T03:16:24.791656+00:00"
+  },
+  "group-faff79c4e868": {
+    "title": "DHA 协作 · 3/12 11:23",
+    "dha_ids": [
+      "dha-2be73edd",
+      "dha-b6dba178"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T03:23:56.078679+00:00",
+    "updated_at": "2026-03-12T03:33:28.250142+00:00"
   }
 }

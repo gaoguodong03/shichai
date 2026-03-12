@@ -333,6 +333,10 @@ async def _host_only_respond_and_recommend(
             if sep in text:
                 idx = text.find(sep) if sep == "{" else text.find(sep) + 1
                 announcement = text[:idx].strip()
+                # 去掉正文末尾可能残留的 ```json 或 ``` 代码块标记，避免在前端展示出多余的 “```json”
+                for fence in ("```json", "```"):
+                    if announcement.endswith(fence):
+                        announcement = announcement[: -len(fence)].rstrip()
                 json_str = text[idx:].strip()
                 try:
                     data = json.loads(json_str)
@@ -658,6 +662,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         nonlocal last_speaker_dha_id
         consecutive_same_dha = 0  # 限制同一 DHA 连续发言次数
         custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
+        dha_turns = 0  # 本次流中 DHA 总发言轮次
         try:
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
@@ -810,6 +815,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     # 下方 while next_speaker 循环会立刻进入对应 DHA 的发言，实现“主持人点名后自动发言”。
 
             while next_speaker and next_speaker in dha_ids:
+                # 在自动或手动模式下，单次流中 DHA 发言超过一定轮次（例如 10）时强制停下来，让用户确认是否继续，
+                # 避免在服务器上长时间无限循环。
+                if dha_turns >= 10:
+                    end_data = {
+                        "type": "end",
+                        "waiting_for_user": True,
+                        "suggested_next_speaker": next_speaker,
+                        "turns_limit_reached": True,
+                    }
+                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
+                    return
+                dha_turns += 1
                 dha = dha_map.get(next_speaker)
                 if not dha:
                     next_speaker = "user"

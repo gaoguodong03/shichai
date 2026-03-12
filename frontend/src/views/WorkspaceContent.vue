@@ -426,15 +426,26 @@
                   />
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
-                <button
-                  type="button"
-                  :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
-                  :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
-                  @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
-                >
-                  {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
-                </button>
-              </div>
+                  <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
+                    已自动暂停（已运行 10 轮）。如需继续，请检查并编辑「下一 DHA 提示词」，然后点击「确认并继续」。
+                  </span>
+                  <button
+                    v-if="groupStreaming"
+                    type="button"
+                    class="group-chat-stop-btn"
+                    @click="stopGroupStream"
+                  >
+                    停止
+                  </button>
+                  <button
+                    type="button"
+                    :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
+                    :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
+                    @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
+                  >
+                    {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -868,10 +879,13 @@ async function confirmGroupNext(override: string) {
   }).catch(() => {})
   // #endregion agent log
   try {
+    const abort = new AbortController()
+    groupStreamAbort.value = abort
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: abort.signal,
     })
     if (!r.ok) throw new Error(r.statusText)
     emit('message-sent')
@@ -895,7 +909,12 @@ async function confirmGroupNext(override: string) {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
-                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                }
                 if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 scrollGroupToBottom()
@@ -922,6 +941,10 @@ async function confirmGroupNext(override: string) {
                 }
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
+                }
+                groupTurnLimitReached.value = !!endData.turns_limit_reached
+                if (groupTurnLimitReached.value) {
+                  window.alert('已自动暂停：本次任务中 DHA 已连续运行 10 轮。\n\n如需继续，请检查并必要时编辑「下一 DHA 提示词」，然后点击「确认并继续」。')
                 }
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
@@ -1081,6 +1104,8 @@ const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
 const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
+const groupStreamAbort = ref<AbortController | null>(null)
+const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
 const showMemberSkill = ref(false)
@@ -1177,10 +1202,13 @@ async function continueGroupStream() {
   groupStreaming.value = true
   groupStreamingPhase.value = '正在继续…'
   try {
+    const abort = new AbortController()
+    groupStreamAbort.value = abort
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: '' }),
+      signal: abort.signal,
     })
     if (!r.ok) throw new Error(r.statusText)
     emit('message-sent')
@@ -1204,7 +1232,12 @@ async function continueGroupStream() {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
-                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                }
                 if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 scrollGroupToBottom()
@@ -1808,10 +1841,13 @@ async function sendGroupMessage() {
   groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
   scrollGroupToBottom()
   try {
+    const abort = new AbortController()
+    groupStreamAbort.value = abort
     const r = await fetch(`/api/group-sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg }),
+      signal: abort.signal,
     })
     if (!r.ok) throw new Error(r.statusText)
     emit('message-sent')
@@ -1835,7 +1871,12 @@ async function sendGroupMessage() {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 groupDisplayMessages.value = [...groupDisplayMessages.value, data]
-                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.next_prompt) {
+                  const fileRefs = attachedFiles.value.length
+                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
+                    : ''
+                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                }
                 if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 scrollGroupToBottom()
@@ -1906,6 +1947,18 @@ async function sendGroupMessage() {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
   }
+}
+
+function stopGroupStream() {
+  if (groupStreamAbort.value) {
+    try {
+      groupStreamAbort.value.abort()
+    } catch {
+      // ignore
+    }
+  }
+  groupStreaming.value = false
+  groupStreamingPhase.value = '已停止'
 }
 
 /** 标准化为 GroupDetail，保证 messages/dha_map/dha_ids 必为数组/对象 */
@@ -2974,6 +3027,22 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
+}
+.group-chat-stop-btn {
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-accent-subtle, var(--color-accent));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.group-chat-stop-btn:hover:not(:disabled) {
+  background: var(--color-accent, var(--color-accent-subtle));
 }
 .group-chat-send-btn:hover:not(:disabled) {
   background: var(--color-accent-hover, var(--color-accent));
