@@ -67,5 +67,16 @@
     "speak_mode": "auto",
     "created_at": "2026-03-12T01:16:24.084424+00:00",
     "updated_at": "2026-03-12T01:20:23.439004+00:00"
+  },
+  "group-25f42b5b8246": {
+    "title": "DHA 协作 · 3/12 09:31",
+    "dha_ids": [
+      "dha-df1f712a",
+      "dha-c1bf68ba"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T01:31:37.861545+00:00",
+    "updated_at": "2026-03-12T01:33:19.349581+00:00"
   }
 }

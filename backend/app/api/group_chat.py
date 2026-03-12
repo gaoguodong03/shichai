@@ -279,7 +279,7 @@ async def _host_only_respond_and_recommend(
     extra_system_prompt: str,
 ) -> tuple[str, Optional[List[str]]]:
     """
-    当前群聊 0 个成员时：主持人回复用户并推荐一位或两位 DHA 加入。
+    当前群聊 0 个成员时：主持人回复用户并推荐一位或多位 DHA 加入。
     返回 (主持人回复正文, suggested_add_dha_ids 或 None)。
     """
     skill_content = skills_loader.get_skill_full_content("group-host")
@@ -287,7 +287,7 @@ async def _host_only_respond_and_recommend(
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的 DHA 加入。"
     system_content = (
         "你是群聊的主持人。当前群聊尚无成员，用户正在与你交流。"
-        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位或两位适合加入讨论的 DHA。"
+        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位或多位适合加入讨论的 DHA。"
         "可选 DHA 列表见下方。\n\n"
         f"{skill_content}"
     )
@@ -1005,13 +1005,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         consecutive_same_dha += 1
                 else:
                     consecutive_same_dha = 0
-                # auto 模式下：DHA 发言后主持人已给出下一发言人，暂停等待用户确认并把该 DHA 的提示词展示在「下一 DHA 提示词」中
-                if speak_mode == "auto" and next_speaker and next_speaker in dha_ids:
-                    end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker}
-                    if host_msg.get("next_prompt"):
-                        end_data["next_prompt"] = host_msg["next_prompt"]
-                    yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
-                    return
+                # auto 模式下：不再每轮暂停，直接继续 while 循环让下一 DHA 发言，直到任务完成（next_speaker 为 user/end）再结束
 
             if next_speaker == "end":
                 yield f"event: end\ndata: {json_module.dumps({'type': 'end', 'discussion_ended': True})}\n\n"

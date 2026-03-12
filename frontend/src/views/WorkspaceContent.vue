@@ -932,7 +932,7 @@ async function confirmGroupNext(override: string) {
                 // 若后端未显式给出 suggested_next_speaker，则在自动模式下回退为 effectiveNextSpeaker
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
-                  if (fallbackNext) {
+                  if (fallbackNext && fallbackNext !== 'user') {
                     nextTick(() => confirmGroupNext(fallbackNext))
                   }
                 }
@@ -1081,7 +1081,7 @@ function dhaAvatarChar(dhaId?: string): string {
 
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
-const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或两位）
+const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
 const groupAutoConfirm = ref(false) // 默认关闭自动确认
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
@@ -1171,6 +1171,79 @@ const suggestedAddDhaName = computed(() => {
   return names.join('、')
 })
 
+/** 邀请后自动继续执行任务（不要求用户再点发送） */
+async function continueGroupStream() {
+  const detail = groupDetail.value
+  const id = detail?.id
+  if (!detail || !id || groupStreaming.value) return
+  groupStreaming.value = true
+  groupStreamingPhase.value = '正在继续…'
+  try {
+    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: '' }),
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    emit('message-sent')
+    const reader = r.body?.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() || ''
+        for (const block of parts) {
+          if (!block.startsWith('event: ')) continue
+          const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
+          const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          if (eventType === 'message' && dataStr) {
+            groupStreamingPhase.value = '正在生成回复…'
+            try {
+              const data = JSON.parse(dataStr)
+              if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
+                groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.next_prompt) groupNextPrompt.value = data.next_prompt
+                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
+                scrollGroupToBottom()
+              }
+            } catch (_) {}
+          }
+          if (eventType === 'end' && dataStr) {
+            try {
+              const endData = JSON.parse(dataStr)
+              if (endData.waiting_for_user) {
+                groupWaitingForUser.value = groupAutoConfirm.value
+                if (endData.suggested_next_speaker != null)
+                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.suggested_add_dha_ids?.length)
+                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id)
+                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                if (endData.next_prompt) groupNextPrompt.value = endData.next_prompt
+                if (!groupAutoConfirm.value) {
+                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
+                  if (fallbackNext && fallbackNext !== 'user') nextTick(() => confirmGroupNext(fallbackNext))
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+    emit('message-sent')
+  } catch (e) {
+    console.error('继续任务失败', e)
+  } finally {
+    groupStreaming.value = false
+    groupStreamingPhase.value = ''
+  }
+}
+
 async function inviteSuggestedDha() {
   const ids = groupSuggestedAddDhaIds.value
   const groupId = groupDetail.value?.id
@@ -1186,6 +1259,8 @@ async function inviteSuggestedDha() {
       groupSuggestedAddDhaIds.value = []
       emit('dha-added')
       await loadGroupDetail()
+      // 邀请成功后自动继续执行任务，无需用户再点发送
+      nextTick(() => continueGroupStream())
     } else {
       alert((j as { detail?: string }).detail || '邀请失败')
     }
@@ -1782,7 +1857,7 @@ async function sendGroupMessage() {
                 // 手动控制打开时：只更新 UI，不自动继续。
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
-                  if (fallbackNext) {
+                  if (fallbackNext && fallbackNext !== 'user') {
                     nextTick(() => confirmGroupNext(fallbackNext))
                   }
                 }
