@@ -10,7 +10,7 @@
     "updated_at": "2026-03-12T09:17:27.620203+00:00"
   },
   "group-af6abd2817cc": {
-    "title": "DHA 协作 · 3/12 18:08",
+    "title": "美食探讨",
     "dha_ids": [
       "dha-66bafc4e",
       "dha-9f6a2b8d",
@@ -19,6 +19,26 @@
     "leader_dha_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-12T10:08:38.961704+00:00",
-    "updated_at": "2026-03-12T10:18:00.795856+00:00"
+    "updated_at": "2026-03-12T12:46:50.832672+00:00"
+  },
+  "group-a71ad0c519f5": {
+    "title": "组会 Agent 讨论",
+    "dha_ids": [
+      "dha-66bafc4e",
+      "dha-ae100f7a",
+      "dha-9f6a2b8d"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T12:44:55.824061+00:00",
+    "updated_at": "2026-03-12T12:46:42.260917+00:00"
+  },
+  "group-b1e7927b73ce": {
+    "title": "DHA 协作 · 3/12 20:46",
+    "dha_ids": [],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-12T12:46:21.805661+00:00",
+    "updated_at": "2026-03-12T12:46:21.828345+00:00"
   }
 }
