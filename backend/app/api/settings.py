@@ -707,6 +707,8 @@ _SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
     "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
     "amap-maps": ["amap-maps"],
     "app-icon-generator": ["volces-icon"],
+    "cover-image": ["volces-icon"],
+    "article-illustrator": ["volces-icon"],
     "blog-write": ["linkup", "exa", "fetch", "zhipu-web-search", "filesystem"],
     "data-report": ["linkup", "exa", "fetch", "filesystem"],
     "zhipu-web-search": ["zhipu-web-search"],

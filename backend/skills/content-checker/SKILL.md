@@ -3,7 +3,6 @@ name: 内容核查专家
 description: 面向互联网上的文章、新闻、博客或公众号内容，进行事实核查与可信度评估。根据多方权威信息源交叉比对，判断文章中的关键说法是否真实可靠，并给出「大致正确 / 部分失真 / 严重失实 / 无法判定」等明确结论。
 enabled: true
 mcp_server_ids:
-  - linkup
   - exa
   - fetch
   - file-reader

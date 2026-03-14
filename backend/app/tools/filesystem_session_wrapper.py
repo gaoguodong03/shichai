@@ -1,4 +1,4 @@
-"""为 filesystem MCP 工具按会话做 path 校验与重写，避免重复提供 read_file。"""
+"""为 filesystem / file-reader MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 workspaces/{session_id}/ 下。"""
 import os
 import json
 from pathlib import Path
@@ -72,7 +72,9 @@ def _ensure_path_in_session(args: Dict[str, Any], session_id: str) -> Dict[str, 
 
 def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
     """包装 filesystem MCP 工具：调用前将 path 限制并重写为当前会话 workspace。"""
-    orig_func: Callable[..., str] = tool.func
+    orig_func = getattr(tool, "func", None)
+    if not callable(orig_func):
+        return tool
 
     def wrapped_func(*args: Any, **kwargs: Any) -> str:
         # LangChain Tool 可能用 *args 或 **kwargs 传参
@@ -94,12 +96,12 @@ def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
 
 
 def wrap_filesystem_tools(tools: List[Tool], session_id: Optional[str]) -> List[Tool]:
-    """对工具列表中所有 filesystem_ 开头的工具按 session_id 包装；session_id 为空则不包装。"""
+    """对工具列表中所有 filesystem_ 或 file-reader_ 开头的工具按 session_id 包装，path 限定到当前会话工作区；session_id 为空则不包装。"""
     if not session_id:
         return tools
     out = []
     for t in tools:
-        if t.name.startswith("filesystem_"):
+        if getattr(t, "name", "").startswith("filesystem_") or getattr(t, "name", "").startswith("file-reader_"):
             out.append(wrap_filesystem_tool_for_session(t, session_id))
         else:
             out.append(t)

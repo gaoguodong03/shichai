@@ -26,7 +26,6 @@ from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
 from app.mcp.manager import get_mcp_manager
 from app.skills.loader import SkillsLoader
-from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.call_api import call_api
 from app.core.user_context import get_current_user_context
@@ -138,7 +137,7 @@ def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
     """根据 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖获取工具列表。
     - mcp_server_ids 有值：只传这些 MCP 的工具。
     - mcp_server_ids 为空：按 skill_ids 的 MCP 依赖过滤；若 skill 无 MCP 依赖（如 weather-service），
-      只传内置工具（call_api、write_workspace_file），不传任何 MCP 工具，避免跨职责调用（如天气专家调用高德）。"""
+      只传内置工具（call_api）及只读 filesystem/file-reader 工具。不提供写文件工具；若用户要保存内容到文件，请在本条回复中写出完整内容，并提示用户选中回复后点击「保存为文件」按钮。"""
     mcp_manager = get_mcp_manager()
     all_tools = mcp_manager.get_tools()
     server_ids = dha.get("mcp_server_ids") or []
@@ -158,10 +157,18 @@ def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
             tools = []
     # 始终提供 filesystem_ 工具（读取工作区文件等），避免 DHA 误用 call_api 访问相对 URL（会触发“缺少 http/https 协议”错误）。
     # 其余 MCP 工具仍按 mcp_server_ids / skill 依赖过滤，避免跨职责调用。
-    filesystem_tools = [t for t in all_tools if getattr(t, "name", "").startswith("filesystem_")]
-
-    # 内置工具：调用外部 HTTP API、写入当前 workspace
-    tools = tools + filesystem_tools + [call_api, create_write_workspace_file_tool(workspace_id)]
+    def _is_write_tool(name: str) -> bool:
+        if (name or "").startswith("filesystem_"):
+            return "write" in (name or "") or "edit" in (name or "")
+        return (name or "") == "file-reader_write_file"
+    filesystem_tools = [
+        t for t in all_tools
+        if (getattr(t, "name", "").startswith("filesystem_") and not _is_write_tool(getattr(t, "name", "")))
+        or (getattr(t, "name", "").startswith("file-reader_") and getattr(t, "name", "") != "file-reader_write_file")
+    ]
+    tools = tools + filesystem_tools + [call_api]
+    # 最终再过滤一次：技能若依赖 filesystem MCP 会带入 filesystem_write_file，必须排除
+    tools = [t for t in tools if not _is_write_tool(getattr(t, "name", ""))]
     tools = wrap_filesystem_tools(tools, workspace_id)
     return tools
 

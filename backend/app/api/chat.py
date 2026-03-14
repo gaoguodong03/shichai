@@ -24,7 +24,6 @@ from app.mcp.manager import get_mcp_manager, normalize_mcp_kwargs_for_call
 from app.skills.loader import SkillsLoader
 from app.api.settings import load_app_settings, get_mcp_servers_for_skill
 from app.tools.export_session import create_export_session_tool
-from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.call_api import call_api
@@ -506,16 +505,14 @@ async def run_single_chat_full_content(
             tools = list(all_tools)
     else:
         tools = list(all_tools)
-    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
+    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_") and t.name != "file-reader_write_file"]
     tool_names = {t.name for t in tools}
-    extra_tools = [
-        create_export_session_tool(session_id),
-        create_write_workspace_file_tool(session_id),
-        call_api,
-    ]
+    extra_tools = [create_export_session_tool(session_id), call_api]
     if selected_skill_id:
         extra_tools.append(create_run_skill_script_tool(selected_skill_id))
     tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
+    # 不提供写文件工具；保存内容请用户用前端「保存为文件」按钮
+    tools = [t for t in tools if not (_name := getattr(t, "name", "")).startswith("filesystem_") or "write" not in _name and "edit" not in _name]
     tools = wrap_filesystem_tools(tools, session_id)
 
     skill_full_content = ""
@@ -696,17 +693,14 @@ async def chat_stream(request: ChatRequest):
             logger.info(f"已按技能 {selected_skill_id} 过滤工具，仅传入 {server_ids} 的 {len(tools)} 个工具")
     else:
         tools = list(all_tools)
-    # file-reader MCP 用于读取 PDF/DOC/Excel，始终加入（技能过滤时可能被排除）
-    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_")]
+    # file-reader MCP 用于读取 PDF/DOC/Excel；不提供 file-reader_write_file；不提供 filesystem 写文件工具
+    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_") and t.name != "file-reader_write_file"]
     tool_names = {t.name for t in tools}
-    extra_tools = [
-        create_export_session_tool(session_id),
-        create_write_workspace_file_tool(session_id),
-        call_api,
-    ]
+    extra_tools = [create_export_session_tool(session_id), call_api]
     if selected_skill_id:
         extra_tools.append(create_run_skill_script_tool(selected_skill_id))
     tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
+    tools = [t for t in tools if not (_n := getattr(t, "name", "")).startswith("filesystem_") or "write" not in _n and "edit" not in _n]
     tools = wrap_filesystem_tools(tools, session_id)
     logger.info(f"最终可用工具数量: {len(tools)}")
 

@@ -3,7 +3,6 @@ name: 深度研究
 description: 适用于复杂主题的多阶段深度研究：先和用户对齐研究目标，再拆分子问题，批量使用搜索/抓取类 MCP 工具收集资料，最后输出结构化研究报告或长文。
 enabled: true
 mcp_server_ids:
-  - linkup
   - exa
   - fetch
   - zhipu-web-search
@@ -57,8 +56,8 @@ mcp_server_ids:
 
 | 用途               | MCP 工具（示例）                                | 说明 |
 |--------------------|--------------------------------------------------|------|
-| **网络搜索/全网检索** | `exa_web_search_exa`、`linkup_linkup-search`、`zhipu-web-search_web-search` | 按子问题分别搜索，关键词要具体（主题 + 角度 + 时间/地域），并适当限制结果数量（如 10–20 条）。 |
-| **抓取单个网页/长文** | `fetch_fetch`、`linkup_linkup-fetch`           | 用户给出重要链接，或你从搜索结果中选出重点页面时，用抓取工具把内容转成可读 Markdown 后再分析。 |
+| **网络搜索/全网检索** | `exa_web_search_exa`、`zhipu-web-search_web-search` | 按子问题分别搜索，关键词要具体（主题 + 角度 + 时间/地域），并适当限制结果数量（如 10–20 条）。 |
+| **抓取单个网页/长文** | `fetch_fetch`           | 用户给出重要链接，或你从搜索结果中选出重点页面时，用抓取工具把内容转成可读 Markdown 后再分析。 |
 | **读取本地文件**     | `file-reader_read_file`、`file-reader_read_pdf`、`file-reader_read_docx`、`file-reader_read_xlsx` | 用户引用了本地报告/数据文件（或消息里有【文件引用：path】）时，用相应工具读取再研究。 |
 
 **使用原则：**

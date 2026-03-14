@@ -131,8 +131,8 @@
   },
   {
     "id": "file-reader",
-    "name": "文件读取",
-    "enabled": false,
+    "name": "文件读取与写入",
+    "enabled": true,
     "transport": {
       "type": "stdio",
       "command": "python",
@@ -141,7 +141,7 @@
       ]
     },
     "metadata": {
-      "description": "（已废弃）本地 MCP：read_file（纯文本）、read_pdf、read_docx、read_xlsx。从 data/agent-outputs 提取文本供 LLM 使用，现已由官方 Filesystem MCP 取代。"
+      "description": "本地 MCP：read_file、write_file、read_pdf、read_docx、read_xlsx。工作区内读写文件，与 Filesystem MCP 互补；按会话使用时 path 会限定在 workspaces/{会话ID}/ 下。"
     }
   },
   {

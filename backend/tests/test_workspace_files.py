@@ -104,7 +104,11 @@ def test_write_workspace_file_tool(temp_agent_outputs):
     from app.tools.write_workspace_file import create_write_workspace_file_tool
 
     tool = create_write_workspace_file_tool("sess-w")
-    out = tool.func("written.md", "written content")
+    # StructuredTool 使用 .invoke(dict) 或 .run(dict)；兼容有 .func 的 Tool
+    if hasattr(tool, "func"):
+        out = tool.func("written.md", "written content")
+    else:
+        out = tool.invoke({"path": "written.md", "content": "written content"})
     assert "已写入" in out
     ws = get_workspace_root("sess-w")
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"

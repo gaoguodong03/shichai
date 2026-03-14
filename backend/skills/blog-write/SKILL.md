@@ -3,7 +3,6 @@ name: 博客写作
 description: 以博客写作师的身份与用户聊天，了解他想写什么、对哪些方面感兴趣；随着交流自然收集选题与素材，信息足够时自动开始撰写文章。
 enabled: true
 mcp_server_ids:
-  - linkup
   - exa
   - fetch
   - zhipu-web-search
@@ -55,8 +54,8 @@ mcp_server_ids:
 
 | 用途 | 可用的 MCP 工具 | 说明 |
 |------|-----------------|------|
-| **抓取网页/URL** | `fetch_fetch`、`linkup_linkup-fetch` | 把用户给的参考链接、文档 URL 抓成正文，再基于内容写；不要只凭标题猜测。 |
-| **网页/资讯搜索** | `linkup_linkup-search`、`exa_web_search_exa`、`zhipu-web-search_web-search` | 查最新资料、官方文档、技术说明、案例时使用；关键词要简洁具体。调用搜索时请使用参数名 `query` 传搜索关键词。 |
+| **抓取网页/URL** | `fetch_fetch` | 把用户给的参考链接、文档 URL 抓成正文，再基于内容写；不要只凭标题猜测。调用时**必须**使用参数名 `url` 传链接（例如 `{"url": "https://..."}`），不要使用 `__arg1`。 |
+| **网页/资讯搜索** | `exa_web_search_exa`、`zhipu-web-search_web-search` | 查最新资料、官方文档、技术说明、案例时使用；关键词要简洁具体。调用搜索时请使用参数名 `query` 传搜索关键词。 |
 | **读本地文件** | `file-reader_read_file`、`file-reader_read_pdf`、`file-reader_read_docx`、`file-reader_read_xlsx` | 用户提到「文件」「附件」或消息里出现【文件引用：路径】时，用对应工具读取后再写。 |
 
 **使用原则**：

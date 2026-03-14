@@ -1,21 +1,8 @@
 #!/usr/bin/env python3
-"""文件读取 MCP Server（本地 stdio）
+"""文件读取与写入 MCP Server（本地 stdio）
 
-提供 read_pdf、read_docx、read_xlsx 工具，从 AGENT_OUTPUTS_DIR 提取文本供 LLM 使用。
-当用户消息中出现【文件引用：path】时，Agent 可调用对应工具读取 PDF/DOC/Excel 文件内容。
-
-配置到 DHA：
-    在 backend/config/mcp_servers.json 中添加：
-    {
-      "id": "file-reader",
-      "name": "文件读取 MCP（本地）",
-      "enabled": true,
-      "transport": {
-        "type": "stdio",
-        "command": "python",
-        "args": ["/absolute/path/to/backend/mcp_servers/file_reader_mcp.py"]
-      }
-    }
+提供 read_file、read_pdf、read_docx、read_xlsx、write_file。
+路径均相对 AGENT_OUTPUTS_DIR；在 DHA 中按会话使用时，后端会将 path 重写为 workspaces/{session_id}/ 下，实现工作区隔离。
 """
 import os
 from pathlib import Path
@@ -30,10 +17,15 @@ ROOT = Path(os.getenv("AGENT_OUTPUTS_DIR", str(DEFAULT_ROOT))).resolve()
 
 
 def _resolve_path(relative_path: str) -> Path:
-    """将相对路径解析为绝对路径，且必须落在 ROOT 内"""
-    normalized = (relative_path or "").strip().strip("/").replace("..", "")
-    if not normalized:
+    """将相对路径解析为绝对路径，且必须落在 ROOT 内。接受相对 ROOT 的路径，或带 data/agent-outputs/ 前缀的路径（与 session wrapper 一致）。"""
+    raw = (relative_path or "").strip().strip("/").replace("..", "")
+    if not raw:
         return None
+    # 后端 wrapper 可能传入 data/agent-outputs/workspaces/{session_id}/xxx，去掉与 ROOT 同名的前缀
+    prefix = "data/agent-outputs/"
+    if raw.startswith(prefix):
+        raw = raw[len(prefix) :].lstrip("/")
+    normalized = raw
     full = (ROOT / normalized).resolve()
     if not str(full).startswith(str(ROOT)):
         return None
@@ -50,15 +42,31 @@ def _safe_read_text(path: Path, encoding: str = "utf-8") -> str:
         return f"错误：读取文件失败 - {e}"
 
 
-mcp = FastMCP("File Reader Server")
+mcp = FastMCP("File Reader Server", description="在工作区内读取与写入文件（文本、PDF、DOCX、XLSX）")
 
-# 兼容 read_file：纯文本也通过此工具，LLM 可统一用 file-reader_read_file
+
+@mcp.tool()
+def write_file(path: str, content: str) -> str:
+    """将文本内容写入文件。path 为相对路径（如 notes/report.md 或 workspace-write-test.txt）。
+
+    当用户要求「保存到工作区」「写入文件」「把内容写到 xxx」时使用。path 与 content 必填；若未传 content 会报错。"""
+    p = _resolve_path(path)
+    if not p:
+        return "错误：无效路径或路径超出允许范围。"
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content or "", encoding="utf-8")
+        rel = str(p.relative_to(ROOT)).replace("\\", "/")
+        return f"已写入：{rel}"
+    except Exception as e:
+        return f"错误：写入文件失败 - {e}"
+
+
 @mcp.tool()
 def read_file(path: str) -> str:
-    """读取纯文本文件（txt、md、json、yaml 等）。path 为相对路径（如 report.txt）。
+    """读取纯文本文件（txt、md、json、yaml 等）。path 为相对路径（如 report.txt 或 workspaces/{会话ID}/notes.md）。
 
-    当用户消息中出现【文件引用：path】时，若文件是文本格式，使用此工具。
-    若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
+    当用户消息中出现【文件引用：path】时，若文件是文本格式，使用此工具；若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
     p = _resolve_path(path)
     if not p:
         return "错误：无效路径或路径超出允许范围。"

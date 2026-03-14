@@ -12,6 +12,21 @@ from app.agent.llm_client import QwenLLM
 
 logger = logging.getLogger(__name__)
 
+
+def _get_tool_call_arguments(tool_call: dict) -> dict:
+    """从 tool_call 得到参数字典。支持 args / arguments，若为 JSON 字符串则解析。"""
+    raw = tool_call.get("args") or tool_call.get("arguments")
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("tool_call arguments 非合法 JSON: %s", raw[:200])
+    return {}
+
 # 可通过 LLM_AGENT_TIMEOUT 调整（秒），默认 180。多轮工具调用时上下文较长，需更长时间
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
 
@@ -87,6 +102,7 @@ def create_react_agent(
 ## 文件引用
 当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
 - **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
 - 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 
@@ -229,8 +245,7 @@ def create_react_agent(
             logger.info(f"call_tool: 处理 {len(last_message.tool_calls)} 个结构化工具调用")
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call.get("name") or tool_call.get("id", "")
-                arguments = normalize_tool_args(tool_name, tool_call.get("args", {}))
-                
+                arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
                 
@@ -308,8 +323,7 @@ def create_react_agent(
             logger.info(f"call_tool: 提取的 JSON: {json_str}")
             tool_call = json.loads(json_str)
             tool_name = tool_call.get("tool")
-            arguments = normalize_tool_args(tool_name, tool_call.get("arguments", {}))
-            
+            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
             
@@ -473,6 +487,7 @@ def create_skill_execution_agent(
 ## 文件引用
 当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
 - **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
 - 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 """
@@ -579,7 +594,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:
             tool_name = tool_call.get("name") or tool_call.get("id", "")
-            arguments = normalize_tool_args(tool_name, tool_call.get("args", {}))
+            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
             tool = None
             for t in state["tools"]:
                 if t.name == tool_name:
@@ -622,7 +637,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             json_str = content
         tool_call = json.loads(json_str)
         tool_name = tool_call.get("tool")
-        arguments = normalize_tool_args(tool_name, tool_call.get("arguments", {}))
+        arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
         tool = None
         for t in state["tools"]:
             if t.name == tool_name:

@@ -3,7 +3,6 @@ name: 数据收集与报告
 description: 从网页搜索、URL 抓取或外部 API 收集数据，整理成结构化内容并生成 Markdown 报告。
 enabled: true
 mcp_server_ids:
-  - linkup
   - exa
   - fetch
   - file-reader
@@ -27,7 +26,7 @@ mcp_server_ids:
 
 | 需求         | 推荐工具                    | 说明 |
 |--------------|-----------------------------|------|
-| 网络搜索     | exa_web_search_exa、linkup_linkup-search | 按关键词/时间搜索，获取链接与摘要 |
+| 网络搜索     | exa_web_search_exa | 按关键词/时间搜索，获取链接与摘要 |
 
 ### exa_web_search_exa 使用说明
 
@@ -40,23 +39,7 @@ mcp_server_ids:
 
 示例：`{"query": "北京 烟花 燃放情况", "numResults": 10, "livecrawl": "preferred", "type": "auto"}`。
 
-### linkup_linkup-search 使用说明
-
-调用 `linkup_linkup-search` 时**也必须**使用参数名 `query`（必需）传递搜索关键词，不要使用 `__arg1`。
-
-- `query`（必需）：要搜索的自然语言问题或关键词，例如 `"天安门 经纬度"`、`"北京邮电大学 海淀 经纬度"`。
-- 其他可选参数（若 MCP 提供）：如 `depth` 等，请按 inputSchema 中的字段名直接填写，**不要把整个对象塞进 `__arg1`**。
-
-示例：
-
-```json
-{
-  "query": "北京 天安门 经纬度",
-  "depth": 2
-}
-```
-
-| 抓取单个 URL | linkup_linkup-search（fetch 能力）、fetch_fetch | 将网页内容抓取为 Markdown |
+| 抓取单个 URL | fetch_fetch | 将网页内容抓取为 Markdown |
 | 调用外部 API | call_api                    | 用户提供 URL/方法/请求体时使用 |
 | 读取本地文件 | filesystem_read_text_file、file-reader_* | 用户引用文件或需读取已有数据时使用（工作区文件用 filesystem_read_text_file） |
 | 可选：脚本聚合 | run_skill_script           | 若 scripts/ 下有汇总脚本，可按需调用 |
@@ -67,8 +50,8 @@ mcp_server_ids:
 
 1. **确认需求**：与用户确认报告主题、时间范围、希望包含的字段或指标、数据来源偏好（搜索/链接/API/文件）。
 2. **收集数据**：
-   - 需要「搜索」时：使用 exa 或 linkup 搜索，获取足够条数（如 10–20 条），注意去重。
-   - 需要「抓取网页」时：使用 fetch 或 linkup 的抓取能力，将关键 URL 转为可读文本。
+   - 需要「搜索」时：使用 exa_web_search_exa 搜索，获取足够条数（如 10–20 条），注意去重。
+   - 需要「抓取网页」时：使用 fetch_fetch 将关键 URL 转为可读文本。
    - 需要「调 API」时：使用 call_api，按用户给出的 URL、方法、参数调用。
    - 需要「读文件」时：使用 filesystem_read_text_file（工作区文本）或 file-reader 系列工具（PDF/DOCX 等）。
 3. **结构化整理**：将收集到的内容提取为统一字段（如标题、来源、时间、摘要、链接），可先整理成列表或表格结构。

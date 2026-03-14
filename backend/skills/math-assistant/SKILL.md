@@ -1,10 +1,11 @@
 ---
+description: 使用 math-mcp 提供的数学工具进行高精度计算与推导。当用户有公式推导、复杂算式、微积分、线性代数、概率统计等数学问题时使用本 Skill，优先调用
+  math-mcp 相关工具，而不是凭空口算或仅用大模型“估算”。
+enabled: true
 mcp_server_ids:
-  - calculator
-name: math-assistant
-description: 使用 math-mcp 提供的数学工具进行高精度计算与推导。当用户有公式推导、复杂算式、微积分、线性代数、概率统计等数学问题时使用本 Skill，优先调用 math-mcp 相关工具，而不是凭空口算或仅用大模型“估算”。
+- calculator
+name: 计算助手
 ---
-
 # 数学助手 Skill（基于 math-mcp）
 
 当用户提出与**数学相关**的问题时（如：计算复杂表达式、求导/积分、线性代数运算、概率计算、公式变形、单位换算等），请按以下原则工作：
