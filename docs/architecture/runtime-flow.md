@@ -75,14 +75,14 @@
 - 加载 `.env`、挂载路由（如 `/api/chat/stream`、`/api/settings/*`）。
 - **不在此阶段**连接 MCP 或加载 Skill 正文；仅准备好 API。
 
-### 2.2 延迟初始化（第一次聊天请求时）
+### 2.2 MCP 与 Skills 初始化（应用启动时）
 
-在**第一次**收到聊天请求时执行一次：
+在 FastAPI **lifespan 启动阶段**执行一次（与关闭时 cleanup 同任务，避免 MCP/anyio 跨任务错误）：
 
 1. **MCP Manager**
-   - 读取 `config/mcp_servers.json`，对每个 `enabled: true` 的 Server 建立连接（stdio 或 HTTP）。
+   - 读取 `config/mcp_servers.json`，对每个 `enabled: true` 的 Server 建立连接（stdio 或 Streamable HTTP）。
    - 对每个 Server 调用 `list_tools()`，得到工具列表；工具在系统内命名为 `{server_id}_{tool_name}`（如 `time_get_time`、`exa_web_search_exa`）。
-   - 将 MCP 工具封装为 LangChain Tool，供技能执行 Agent 使用。
+   - 将 MCP 工具封装为 LangChain Tool（**异步 func**，直接 `session.call_tool`），供技能执行 Agent 使用。
 
 2. **Skills Loader**
    - 扫描 `skills/` 下各子目录，读取每个目录下的 `SKILL.md`。
@@ -93,7 +93,7 @@
 3. **标记已初始化**
    - 之后同一进程内不再重复做上述 MCP 连接与 Skill 扫描。
 
-**要点**：MCP Manager 和 Skills Loader 为**技能选择**和**技能执行**两阶段提供工具列表与技能内容。
+**要点**：MCP Manager 和 Skills Loader 为**技能选择**和**技能执行**两阶段提供工具列表与技能内容。MCP 工具调用为**纯异步**（Agent 侧 `await tool.func(...)`），无同步包装，与主事件循环同任务。
 
 ---
 
@@ -181,9 +181,9 @@
 
 **call_tool 节点**：
 
-- 从上一条 AIMessage 里取出每个 `tool_call` 的 `name` 和 `args`。
-- 在 `state["tools"]` 中按 `name` 查找 LangChain Tool。
-- 执行对应 MCP 工具，将结果封装成 `HumanMessage(content="工具 xxx 的执行结果: …")`，**追加到 messages**。
+- 从上一条 AIMessage 里取出每个 `tool_call` 的 `name` 和 `args`；对 MCP 工具做参数规范化（如 `__arg1` → schema 首参）。
+- 在 `state["tools"]` 中按 `name` 查找 LangChain Tool；MCP 工具的 `func` 为异步，直接 `await tool.func(**args)` 执行，与主循环同任务。
+- 将结果封装成 `HumanMessage(content="工具 xxx 的执行结果: …")`，**追加到 messages**。
 - 下一轮迭代：**再次进入 agent 节点**，LLM 继续按 Skill 步骤决定：要么再调工具，要么输出最终回复。
 
 ### 3.6 流式输出（SSE）

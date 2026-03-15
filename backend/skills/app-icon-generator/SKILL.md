@@ -26,7 +26,7 @@ name: 图标生成
 
 ### 备选：volces-icon_generate_app_icon（MCP）
 
-若本技能关联了 volces-icon MCP，也可用 **volces-icon_generate_app_icon**：参数 `description`（必填）、`pic_size`（可选）。必须使用参数名 `description`，不要用 `__arg1` 或 `prompt`。
+若本技能关联了 volces-icon MCP，也可用 **volces-icon_generate_app_icon**：参数 `description`（必填）、`pic_size`（可选）。请直接使用参数名 `description`、`pic_size`；系统会对 `__arg1` 等做自动映射，但使用 schema 参数名兼容性最佳。
 
 ---
 

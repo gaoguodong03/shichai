@@ -1,35 +1,5 @@
 [
   {
-    "id": "calculator",
-    "name": "计算器",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "mcp_servers/example_calculator.py"
-      ]
-    },
-    "metadata": {
-      "description": "提供数学计算工具（加法、减法、乘法、除法)"
-    }
-  },
-  {
-    "id": "time",
-    "name": "时间查询",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "mcp_servers/example_time.py"
-      ]
-    },
-    "metadata": {
-      "description": "获取当前时间"
-    }
-  },
-  {
     "id": "linkup",
     "name": "Linkup抓取网页",
     "enabled": true,

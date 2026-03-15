@@ -78,7 +78,6 @@
           </div>
           <div class="rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2">
             <label class="block text-xs font-medium text-gray-500 mb-1">MCP 依赖（可选）</label>
-            <p class="text-xs text-gray-500 mb-2">该 skill 可使用的 MCP 工具。空表示只用内置工具（call_api、read_file）。</p>
             <div class="flex flex-wrap gap-2">
               <label
                 v-for="srv in mcpServers"

@@ -54,6 +54,11 @@ Skill 的每一步可能走以下某一类路径；**应在 SKILL.md 中写明�
 - **创建**：若会话 API 提供导出能力，则注入 `create_export_session_tool(session_id)`。
 - **用途**：将会话历史导出为 Markdown 并写入当前会话工作区；也可由「导出会话」意图走 HTTP 导出接口。
 
+### MCP 工具调用方式
+
+- **执行**：MCP 工具封装为 LangChain Tool，`func` 为异步，Agent 侧 `await tool.func(**args)`，与主事件循环同任务，无同步包装。
+- **参数**：调用前对参数做规范化（`normalize_mcp_kwargs_for_call`）：如 `__arg1` 映射到工具 inputSchema 的首参，再传给 `session.call_tool`。SKILL 中推荐直接使用 schema 参数名（如 `path`、`description`、`query`），兼容性最佳。
+
 ### 只读文件（MCP）
 
 - **来源**：file-reader、filesystem 等 MCP 提供的工具；写文件类（如 `file-reader_write_file`、名称含 write/edit 的 filesystem 工具）在组装时已过滤，不提供给 Agent。

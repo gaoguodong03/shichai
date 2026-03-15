@@ -21,7 +21,7 @@ name: 高德地图
 
    | 工具名 | 必填参数 | 可选参数 | 说明 |
    |--------|----------|----------|------|
-   | `amap-maps_maps_geo` | `address` | `city` | 地理编码：地址→坐标。**必须用 `address` 传地址、`city` 传城市**，不要用 `__arg1`。**必须传 city**（城市名如「北京」），否则全国检索会误匹配到其他省份 |
+   | `amap-maps_maps_geo` | `address` | `city` | 地理编码：地址→坐标。**必须用 `address` 传地址、`city` 传城市**（系统会对 `__arg1` 等做自动映射，但请优先使用本表参数名）。**必须传 city**（城市名如「北京」），否则全国检索会误匹配到其他省份 |
    | `amap-maps_maps_regeocode` | `location` | - | 逆地理编码：坐标→省市区地址 |
    | `amap-maps_maps_ip_location` | `ip` | - | IP 定位 |
    | `amap-maps_maps_weather` | `city` | - | 天气：城市名或 adcode |
@@ -76,7 +76,7 @@ name: 高德地图
 
 6. **不要做的事情**
    - **每次只调用一个工具**：工具名必须与上表完全一致（如 `amap-maps_maps_geo`、`amap-maps_maps_weather`），**严禁**将多个工具名拼接（如 `amap-maps_maps_geoamap-maps_maps_weather` 是错误写法）。
-   - **maps_geo 必须用 `address` 传地址**：不要用 `__arg1` 等占位参数，必须用 `{"address": "郑州东站", "city": "郑州"}` 格式。
+   - **maps_geo 必须用 `address`、`city` 传参**：推荐直接用 `{"address": "郑州东站", "city": "郑州"}` 格式；系统会做 `__arg1` 等自动映射，但使用 schema 参数名最稳妥。
    - 不要自造参数名（如 `from`/`to` 代替 `origin`/`destination`，`query` 代替 `keywords`）。
    - 不要在没有调用工具的情况下编造坐标、路线或天气数据。
    - 不要混淆经纬度顺序（高德使用 GCJ-02，格式为 `经度,纬度`）。

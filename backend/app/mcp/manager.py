@@ -1,4 +1,10 @@
-"""MCP Server 管理器"""
+"""
+MCP Server 管理器：规范、轻量的调用方式。
+
+- 生命周期：在 FastAPI lifespan 中 initialize_all / cleanup，保证与 anyio 同任务，避免跨任务 exit 报错。
+- 调用方式：Tool.func 为异步函数，直接 session.call_tool；不在外层包 sync（asyncio.run/run_until_complete 会拖慢且易出错），由 graph/agent 侧 await。
+- 参数：LLM 可能传 __arg1 等；normalize_mcp_kwargs_for_call（含 tool_arg_normalizers）在调用前统一映射到 MCP schema 参数名。
+"""
 import os
 import re
 import logging
@@ -76,40 +82,6 @@ class MCPToolManager:
             logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
             for config in self.server_configs:
                 logger.info(f"  - {config.get('id')}: {config.get('name')}, enabled: {config.get('enabled')}")
-            # #region agent log
-            # 调试：记录当前加载到的 MCP Server 基本信息（不包含任何敏感字段）
-            try:
-                import json as _json_cfg, time as _time_cfg
-                summary = []
-                for _cfg in self.server_configs:
-                    _transport = _cfg.get("transport") or {}
-                    summary.append(
-                        {
-                            "id": _cfg.get("id"),
-                            "enabled": bool(_cfg.get("enabled", True)),
-                            "transport_type": _transport.get("type", ""),
-                        }
-                    )
-                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                    _f.write(
-                        _json_cfg.dumps(
-                            {
-                                "id": f"log_mcp_load_config_{int(_time_cfg.time() * 1000)}",
-                                "timestamp": int(_time_cfg.time() * 1000),
-                                "location": "backend/app/mcp/manager.py:205",
-                                "message": "MCP load_config summary",
-                                "data": {"config_path": config_path, "servers": summary},
-                                "runId": "mcp-config",
-                                "hypothesisId": "H-config",
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                # 日志失败不影响正常逻辑
-                pass
-            # #endregion
         else:
             logger.warning(f"MCP 配置文件不存在: {config_path}")
             # 默认配置示例
@@ -120,35 +92,7 @@ class MCPToolManager:
         try:
             transport = config.get("transport", {})
             transport_type = transport.get("type", "stdio")
-            # #region agent log
-            # 调试：记录连接前的关键信息，用于排查 Docker 环境下某些 MCP 未能成功连接的问题
-            try:
-                import json as _json_conn, time as _time_conn
-                env_keys = sorted(list((transport.get("env") or {}).keys()))
-                url_or_base = (transport.get("url") or transport.get("base_url") or "").strip()
-                _payload = {
-                    "id": f"log_mcp_connect_try_{server_id}_{int(_time_conn.time() * 1000)}",
-                    "timestamp": int(_time_conn.time() * 1000),
-                    "location": "backend/app/mcp/manager.py:222",
-                    "message": "MCP connect attempt",
-                    "data": {
-                        "server_id": server_id,
-                        "transport_type": transport_type,
-                        "has_command": bool(transport.get("command")),
-                        "has_args": bool(transport.get("args")),
-                        "env_keys": env_keys,
-                        "has_url_or_base": bool(url_or_base),
-                    },
-                    "runId": "mcp-connect",
-                    "hypothesisId": "H-connect",
-                }
-                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                    _f.write(_json_conn.dumps(_payload, ensure_ascii=False) + "\n")
-            except Exception:
-                # 日志失败不影响正常逻辑
-                pass
-            # #endregion
-            
+
             if transport_type == "stdio":
                 command = transport.get("command", "python")
                 args = transport.get("args", [])
@@ -198,37 +142,6 @@ class MCPToolManager:
                 
                 self.sessions[server_id] = session
                 await self._load_tools_from_server(server_id, session)
-                # #region agent log
-                # 调试：记录成功连接的 MCP Server 及加载到的工具数量
-                try:
-                    import json as _json_conn_ok, time as _time_conn_ok
-                    tool_count = len(
-                        [t for name, t in self.tools.items() if isinstance(name, str) and name.startswith(f"{server_id}_")]
-                    )
-                    with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                        _f.write(
-                            _json_conn_ok.dumps(
-                                {
-                                    "id": f"log_mcp_connect_ok_{server_id}_{int(_time_conn_ok.time() * 1000)}",
-                                    "timestamp": int(_time_conn_ok.time() * 1000),
-                                    "location": "backend/app/mcp/manager.py:275",
-                                    "message": "MCP connect success",
-                                    "data": {
-                                        "server_id": server_id,
-                                        "transport_type": transport_type,
-                                        "tool_count": tool_count,
-                                    },
-                                    "runId": "mcp-connect",
-                                    "hypothesisId": "H-connect-ok",
-                                },
-                                ensure_ascii=False,
-                            )
-                            + "\n"
-                        )
-                except Exception:
-                    # 日志失败不影响正常逻辑
-                    pass
-                # #endregion
                 return True
 
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
@@ -269,34 +182,6 @@ class MCPToolManager:
                 return False
         except Exception as e:
             logger.error(f"Failed to connect MCP server {server_id}: {e}", exc_info=True)
-            # #region agent log
-            # 调试：记录连接失败的原因（不包含任何敏感字段）
-            try:
-                import json as _json_conn_err, time as _time_conn_err
-                with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                    _f.write(
-                        _json_conn_err.dumps(
-                            {
-                                "id": f"log_mcp_connect_error_{server_id}_{int(_time_conn_err.time() * 1000)}",
-                                "timestamp": int(_time_conn_err.time() * 1000),
-                                "location": "backend/app/mcp/manager.py:318",
-                                "message": "MCP connect failed",
-                                "data": {
-                                    "server_id": server_id,
-                                    "transport_type": locals().get("transport_type", ""),
-                                    "error": str(e),
-                                },
-                                "runId": "mcp-connect",
-                                "hypothesisId": "H-connect-error",
-                            },
-                            ensure_ascii=False,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                # 日志失败不影响正常逻辑
-                pass
-            # #endregion
             return False
     
     async def _load_tools_from_server(self, server_id: str, session: ClientSession):
@@ -324,261 +209,37 @@ class MCPToolManager:
             _input_schema = None
 
         async def tool_func(**kwargs):
-            logger.info(f"执行工具: {original_tool_name}, 参数: {kwargs}")
+            """异步执行 MCP 工具。直接使用 session.call_tool，与主事件循环同任务，避免 sync 包装带来的额外开销与 anyio 跨任务错误。"""
             try:
-                call_Kwargs = dict(kwargs)
-                # #region agent log
-                try:
-                    if server_id == "volces-icon" and original_tool_name == "generate_app_icon":
-                        import json as _json
-                        import time as _time
-                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                            _f.write(
-                                _json.dumps(
-                                    {
-                                        "id": "log_volces_icon_pre",
-                                        "timestamp": int(_time.time() * 1000),
-                                        "location": "backend/app/mcp/manager.py:201",
-                                        "message": "volces-icon_generate_app_icon raw kwargs",
-                                        "data": {
-                                            "server_id": server_id,
-                                            "original_tool_name": original_tool_name,
-                                            "kwargs": call_Kwargs,
-                                        },
-                                        "runId": "pre-fix",
-                                        "hypothesisId": "A",
-                                    },
-                                    ensure_ascii=False,
-                                )
-                                + "\n"
-                            )
-                except Exception:
-                    # 日志失败不影响正常逻辑
-                    pass
-                # #endregion
-                # 若工具参数中仍然出现 __arg1，记录调试信息，便于排查提示词/技能是否仍在使用旧示例
-                if "__arg1" in call_Kwargs:
-                    try:
-                        import json as _json3, time as _time3
-                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                            _f.write(
-                                _json3.dumps(
-                                    {
-                                        "id": f"log_mcp_arg1_{int(_time3.time() * 1000)}",
-                                        "timestamp": int(_time3.time() * 1000),
-                                        "location": "backend/app/mcp/manager.py:231",
-                                        "message": "__arg1 still present in MCP tool kwargs",
-                                        "data": {
-                                            "server_id": server_id,
-                                            "original_tool_name": original_tool_name,
-                                            "keys": list(call_Kwargs.keys()),
-                                        },
-                                        "runId": "mcp-arg1",
-                                        "hypothesisId": "cleanup",
-                                    },
-                                    ensure_ascii=False,
-                                )
-                                + "\n"
-                            )
-                    except Exception:
-                        pass
-                # 归一化 MCP 调用参数（纯函数逻辑提取到 normalize_mcp_kwargs_for_call，便于前端展示复用）
-                call_Kwargs = normalize_mcp_kwargs_for_call(
-                    server_id, original_tool_name, call_Kwargs, input_schema=_input_schema
+                call_kwargs = normalize_mcp_kwargs_for_call(
+                    server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
                 )
-                if server_id == "volces-icon" and original_tool_name == "generate_app_icon":
-                    logger.info(f"generate_app_icon: 归一化参数为 {call_Kwargs}")
-                    # #region agent log
-                    try:
-                        import json as _json2, time as _time2
-                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                            _f.write(
-                                _json2.dumps(
-                                    {
-                                        "id": "log_volces_icon_mapped",
-                                        "timestamp": int(_time2.time() * 1000),
-                                        "location": "backend/app/mcp/manager.py:236",
-                                        "message": "volces-icon_generate_app_icon mapped kwargs",
-                                        "data": {
-                                            "server_id": server_id,
-                                            "original_tool_name": original_tool_name,
-                                            "kwargs": call_Kwargs,
-                                        },
-                                        "runId": "fix-mapped",
-                                        "hypothesisId": "B",
-                                    },
-                                    ensure_ascii=False,
-                                )
-                                + "\n"
-                            )
-                    except Exception:
-                        # 日志失败不影响正常逻辑
-                        pass
-                # amap-maps: 调用前记录参数，便于排查「返回参数不对/INVALID_PARAMS」类问题
-                if server_id == "amap-maps":
-                    try:
-                        import json as _json_amap, time as _time_amap
-                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                            _f.write(
-                                _json_amap.dumps(
-                                    {
-                                        "id": f"log_amap_kwargs_{int(_time_amap.time() * 1000)}",
-                                        "timestamp": int(_time_amap.time() * 1000),
-                                        "location": "backend/app/mcp/manager.py:309",
-                                        "message": "amap-maps tool kwargs before call",
-                                        "data": {
-                                            "original_tool_name": original_tool_name,
-                                            "kwargs": call_Kwargs,
-                                        },
-                                        "runId": "amap-maps",
-                                        "hypothesisId": "amap-params",
-                                    },
-                                    ensure_ascii=False,
-                                )
-                                + "\n"
-                            )
-                    except Exception:
-                        pass
-                # 使用原始工具名调用 MCP Server
-                logger.info(f"调用 MCP Session: call_tool({original_tool_name}, {call_Kwargs})")
-                # 额外写入 debug 日志，便于排查「卡在 call_tool」的问题
-                try:
-                    import json as _json_call, time as _time_call
-                    with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                        _f.write(
-                            _json_call.dumps(
-                                {
-                                    "id": f"log_mcp_call_start_{server_id or 'unknown'}_{original_tool_name}_{int(_time_call.time() * 1000)}",
-                                    "timestamp": int(_time_call.time() * 1000),
-                                    "location": "backend/app/mcp/manager.py:call_tool_start",
-                                    "message": "MCP call_tool start",
-                                    "data": {"server_id": server_id, "tool": original_tool_name, "kwargs": call_Kwargs},
-                                    "runId": "mcp-call",
-                                    "hypothesisId": "H-call-start",
-                                },
-                                ensure_ascii=False,
-                            )
-                            + "\n"
-                        )
-                except Exception:
-                    pass
-
-                # 为 MCP 调用增加超时，防止长时间无响应导致前端感觉「卡死」
-                try:
-                    result = await asyncio.wait_for(session.call_tool(original_tool_name, call_Kwargs), timeout=60.0)
-                except asyncio.TimeoutError:
-                    timeout_msg = f"MCP 工具 {original_tool_name} 调用超时（60s）"
-                    logger.error(timeout_msg)
-                    try:
-                        import json as _json_call_to, time as _time_call_to
-                        with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                            _f.write(
-                                _json_call_to.dumps(
-                                    {
-                                        "id": f"log_mcp_call_timeout_{server_id or 'unknown'}_{original_tool_name}_{int(_time_call_to.time() * 1000)}",
-                                        "timestamp": int(_time_call_to.time() * 1000),
-                                        "location": "backend/app/mcp/manager.py:call_tool_timeout",
-                                        "message": "MCP call_tool timeout",
-                                        "data": {"server_id": server_id, "tool": original_tool_name},
-                                        "runId": "mcp-call",
-                                        "hypothesisId": "H-call-timeout",
-                                    },
-                                    ensure_ascii=False,
-                                )
-                                + "\n"
-                            )
-                    except Exception:
-                        pass
-                    return f"Error: MCP 工具 {original_tool_name} 调用超时（60s），请稍后重试。"
-
-                logger.info(f"MCP 调用返回结果类型: {type(result)}")
-                
+                logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
+                result = await asyncio.wait_for(
+                    session.call_tool(original_tool_name, call_kwargs), timeout=60.0
+                )
                 if result.content:
-                    text_result = result.content[0].text if hasattr(result.content[0], 'text') else str(result.content[0])
-                    logger.info(f"工具执行结果: {text_result}")
-                    # amap-maps: 记录返回内容（截断），用于分析参数是否正确
-                    if server_id == "amap-maps":
-                        try:
-                            import json as _json_amap2, time as _time_amap2
-                            preview = text_result[:300]
-                            with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                                _f.write(
-                                    _json_amap2.dumps(
-                                        {
-                                            "id": f"log_amap_result_{int(_time_amap2.time() * 1000)}",
-                                            "timestamp": int(_time_amap2.time() * 1000),
-                                            "location": "backend/app/mcp/manager.py:327",
-                                            "message": "amap-maps tool result",
-                                            "data": {
-                                                "original_tool_name": original_tool_name,
-                                                "result_preview": preview,
-                                            },
-                                            "runId": "amap-maps",
-                                            "hypothesisId": "amap-params",
-                                        },
-                                        ensure_ascii=False,
-                                    )
-                                    + "\n"
-                                )
-                        except Exception:
-                            pass
-                    return text_result
-                logger.info(f"工具执行结果（无 content）: {str(result)}")
+                    block = result.content[0]
+                    return block.text if hasattr(block, "text") else str(block)
                 return str(result)
+            except asyncio.TimeoutError:
+                logger.error("MCP 工具 %s 调用超时（60s）", original_tool_name)
+                return f"Error: MCP 工具 {original_tool_name} 调用超时（60s），请稍后重试。"
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
-                logger.error(f"工具执行错误: {error_msg}", exc_info=True)
-                # amap-maps: 记录异常信息
-                try:
-                    import json as _json_amap3, time as _time_amap3
-                    with open("/Users/ggd/mycode/DHA/.cursor/debug.log", "a", encoding="utf-8") as _f:
-                        _f.write(
-                            _json_amap3.dumps(
-                                {
-                                    "id": f"log_amap_error_{int(_time_amap3.time() * 1000)}",
-                                    "timestamp": int(_time_amap3.time() * 1000),
-                                    "location": "backend/app/mcp/manager.py:333",
-                                    "message": "amap-maps tool exception",
-                                    "data": {
-                                        "original_tool_name": original_tool_name,
-                                        "error": error_msg,
-                                    },
-                                    "runId": "amap-maps",
-                                    "hypothesisId": "amap-params",
-                                },
-                                ensure_ascii=False,
-                            )
-                            + "\n"
-                        )
-                except Exception:
-                    pass
-                return error_msg
-        
-        # 若有 inputSchema，把参数说明拼进 description，避免 LLM 误以为只接受一个参数
+                logger.error("MCP 工具执行错误: %s", e, exc_info=True)
+                return f"Error: {e}"
+
         description = mcp_tool.description or f"MCP tool: {mcp_tool.name}"
         if getattr(mcp_tool, "inputSchema", None) and isinstance(mcp_tool.inputSchema, dict):
-            props = mcp_tool.inputSchema.get("properties") or {}
+            props = (mcp_tool.inputSchema or {}).get("properties") or {}
             if props:
                 parts = [f"{k} ({v.get('type', 'string')})" for k, v in props.items()]
                 description = f"{description} 参数: {', '.join(parts)}。"
-        # LangChain 的 Tool 默认期望同步函数；若直接把 async 函数赋给 func，
-        # 上游不会 await，而是把协程对象当结果用，用户就会看到
-        # "<coroutine object MCPToolManager._create_langchain_tool.<locals>.tool_func at 0x...>"。
-        # 这里包一层同步函数，在内部显式跑异步逻辑，保证返回的是实际字符串结果。
-        def sync_tool_func(*args, **kwargs):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # 当前线程没有事件循环：直接新建一个跑完
-                return asyncio.run(tool_func(**kwargs))
-            else:
-                # 已有事件循环（例如在某些异步环境下被调用）：同步等待该协程完成
-                return loop.run_until_complete(tool_func(**kwargs))
-
+        # 使用异步 func：graph/agent 侧已按 iscoroutinefunction 做 await，无需 sync 包装，避免 asyncio.run/run_until_complete 带来的新循环或跨任务问题
         langchain_tool = Tool(
             name=tool_name,
             description=description,
-            func=sync_tool_func,
+            func=tool_func,
         )
         # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
         # LangChain Tool 为 Pydantic 模型，不能直接赋未声明属性，用 object.__setattr__ 绕过

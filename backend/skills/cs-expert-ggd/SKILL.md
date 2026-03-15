@@ -1,10 +1,10 @@
 ---
-name: 计算机系统知识模块
-description: 面向计算机基础课程与 Agent 技术栈的知识模块 Skill，仅提供计算机网络、操作系统、数据库、软件工程、人工智能基础、Python 以及 Agent 相关的结构化知识与推理流程，不包含具体人设或口吻。
+description: 面向计算机基础课程与 Agent 技术栈的知识模块 Skill，仅提供计算机网络、操作系统、数据库、软件工程、人工智能基础、Python
+  以及 Agent 相关的结构化知识与推理流程。
 enabled: true
 mcp_server_ids: []
+name: 计算机系统知识模块
 ---
-
 # 计算机系统知识模块 Skill
 
 ## 模块定位

@@ -113,80 +113,36 @@ MCP Server 支持多种传输方式：
 
 ## 实现要点
 
-### Python MCP SDK 集成
+### 生命周期与连接
 
-使用 MCP Python SDK（从 PyPI 或 GitHub 安装）：
+- **初始化时机**：在 FastAPI **lifespan 启动阶段**执行 `ensure_mcp_and_skills_initialized()`，建立所有已启用 MCP Server 的连接（stdio 或 Streamable HTTP）。与 anyio/MCP SDK 要求一致：同一 asyncio 任务内 enter/exit，避免关闭时报「跨任务 cancel scope」错误。
+- **清理时机**：在 lifespan **关闭阶段**于同一任务中调用 `get_mcp_manager().cleanup()`，关闭所有 session 与传输。
+
+### 调用方式（规范、异步）
+
+- **Tool 形态**：每个 MCP 工具被封装为一个 LangChain `Tool`，**`func` 为异步函数**，直接在该函数内调用 `session.call_tool(tool_name, arguments)`，不包同步壳（不使用 `asyncio.run` / `run_until_complete`）。
+- **执行路径**：技能执行 Agent（ReAct）在需要调用工具时，通过 `await tool.func(**arguments)` 执行，与主事件循环同任务，无额外线程或新事件循环。
+- **参数规范**：LLM 可能输出通用占位参数（如 `__arg1`）；在调用 MCP 前由 `normalize_mcp_kwargs_for_call`（及 `tool_arg_normalizers`）按工具 `inputSchema` 做映射（如 `__arg1` → schema 首参），并去除占位键，保证传给 MCP 的是 schema 要求的参数名。
+
+### Python MCP SDK 使用示例
 
 ```python
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-# 创建 MCP Client
-server_params = StdioServerParameters(
-    command="python",
-    args=["-m", "mcp_server_fs"]
-)
-
-async with stdio_client(server_params) as (read, write):
+params = StdioServerParameters(command="python", args=["-m", "mcp_server_fs"])
+async with stdio_client(params) as (read, write):
     async with ClientSession(read, write) as session:
-        # 初始化连接
         await session.initialize()
-        
-        # 列出可用工具
         tools = await session.list_tools()
-        
-        # 调用工具（示例；DHA 中实际工具名为 file-reader_* / filesystem_*，如 file-reader_read_pdf、filesystem_read_text_file）
-        result = await session.call_tool("file-reader_read_pdf", {"path": "/tmp/test.pdf"})
+        # 调用时使用 MCP 工具原始名 + schema 参数名
+        result = await session.call_tool("read_pdf", {"path": "/tmp/test.pdf"})
 ```
 
-### 工具注册到 LangChain
+### 工具名与参数
 
-将 MCP 工具转换为 LangChain 工具：
-
-```python
-from langchain.tools import Tool
-from typing import Callable
-
-def create_langchain_tool(mcp_tool, session: ClientSession) -> Tool:
-    """将 MCP 工具转换为 LangChain 工具"""
-    async def tool_func(**kwargs):
-        result = await session.call_tool(mcp_tool.name, kwargs)
-        return result.content[0].text if result.content else ""
-    
-    return Tool(
-        name=mcp_tool.name,
-        description=mcp_tool.description,
-        func=tool_func
-    )
-```
-
-### 工具注册表管理
-
-```python
-from app.tools.registry import ToolRegistry
-
-class MCPToolManager:
-    def __init__(self):
-        self.registry = ToolRegistry()
-        self.sessions: Dict[str, ClientSession] = {}
-    
-    async def register_mcp_server(self, config: MCPServerConfig):
-        """注册 MCP Server 并加载其工具"""
-        session = await self.connect_to_server(config)
-        tools = await session.list_tools()
-        
-        for tool in tools:
-            langchain_tool = create_langchain_tool(tool, session)
-            self.registry.register_tool(langchain_tool)
-        
-        self.sessions[config.id] = session
-    
-    async def unregister_mcp_server(self, server_id: str):
-        """注销 MCP Server"""
-        if server_id in self.sessions:
-            await self.sessions[server_id].close()
-            del self.sessions[server_id]
-```
+- **系统内工具名**：`{server_id}_{tool_name}`，例如 `file-reader_read_pdf`、`filesystem_read_text_file`。Agent 与前端使用该名称；底层调用 MCP 时使用 `tool_name`（如 `read_pdf`）和规范化后的参数字典。
+- **推荐**：在 SKILL 中写明「使用参数名 `description` / `path` / `query` 等」，与 MCP 的 inputSchema 一致；系统会对 `__arg1` 等做自动映射，但直接使用 schema 参数名兼容性最佳。
 
 ## API 设计
 
