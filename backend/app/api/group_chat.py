@@ -644,6 +644,21 @@ async def delete_group_session(group_session_id: str):
     return {"status": "ok", "data": {"id": group_session_id, "deleted": True}}
 
 
+@router.delete("/group-sessions/{group_session_id}/messages/{message_id}")
+async def delete_group_message(group_session_id: str, message_id: str):
+    """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 DHA 的上下文。"""
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+    messages = _load_group_history(group_session_id)
+    before = len(messages)
+    messages = [m for m in messages if m.get("message_id") != message_id]
+    if len(messages) == before:
+        raise HTTPException(status_code=404, detail="Message not found")
+    _save_group_history(group_session_id, messages)
+    return {"status": "ok", "data": {"message_id": message_id, "deleted": True}}
+
+
 @router.post("/group-sessions/{group_session_id}/chat/stream")
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     """群聊流式对话：用户消息或继续下一轮，支持 override_next_speaker"""
@@ -850,9 +865,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     # 下方 while next_speaker 循环会立刻进入对应 DHA 的发言，实现“主持人点名后自动发言”。
 
             while next_speaker and next_speaker in dha_ids:
-                # 在自动或手动模式下，单次流中 DHA 发言超过一定轮次（例如 10）时强制停下来，让用户确认是否继续，
+                # 在自动或手动模式下，单次流中专家发言超过一定轮次（默认 32）时强制停下来，让用户确认是否继续，
                 # 避免在服务器上长时间无限循环。
-                if dha_turns >= 10:
+                if dha_turns >= 32:
                     end_data = {
                         "type": "end",
                         "waiting_for_user": True,

@@ -10,6 +10,7 @@ from app.api.group_chat import (
     get_group_session,
     update_group_session,
     delete_group_session,
+    delete_group_message,
     group_chat_stream,
     preview_next_speaker_prompt,
     GroupSessionUpdate,
@@ -71,6 +72,12 @@ async def update_session(session_id: str, body: GroupSessionUpdate):
 async def delete_session(session_id: str):
     """删除会话"""
     return await delete_group_session(session_id)
+
+
+@router.delete("/sessions/{session_id}/messages/{message_id}")
+async def delete_session_message(session_id: str, message_id: str):
+    """从会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 DHA 的上下文。"""
+    return await delete_group_message(session_id, message_id)
 
 
 @router.post("/sessions/{session_id}/chat/stream")

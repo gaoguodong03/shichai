@@ -72,10 +72,20 @@
                       <template v-else>{{ stripDiscussionGoalForDisplay(msg.content || '') }}</template>
                     </div>
                     <div
-                      v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
+                      v-if="msg.role !== 'user' && (msg.role !== 'host' && (msg.content || '').trim() || msg.role === 'host')"
                       class="group-chat-bubble-actions"
                     >
                       <button
+                        v-if="msg.message_id"
+                        type="button"
+                        class="group-chat-delete-msg-btn"
+                        title="从会话中彻底删除该条发言，避免污染下一轮 DHA 上下文"
+                        @click="deleteGroupMessage(msg)"
+                      >
+                        删除该条发言
+                      </button>
+                      <button
+                        v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
                         type="button"
                         class="group-chat-save-file-btn"
                         @click="saveDhaMessageToFile(msg)"
@@ -482,7 +492,7 @@
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
                   <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
-                    已自动暂停（已运行 10 轮）。如需继续，请检查并编辑「下一 DHA 提示词」，然后点击「确认并继续」。
+                    已自动暂停（已运行 32 轮）。如需继续，请检查并编辑「下一 DHA 提示词」，然后点击「确认并继续」。
                   </span>
                   <button
                     v-if="groupStreaming"
@@ -996,7 +1006,7 @@ async function confirmGroupNext(override: string) {
                 }
                 groupTurnLimitReached.value = !!endData.turns_limit_reached
                 if (groupTurnLimitReached.value) {
-                  window.alert('已自动暂停：本次任务中 DHA 已连续运行 10 轮。\n\n如需继续，请检查并必要时编辑「下一 DHA 提示词」，然后点击「确认并继续」。')
+                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
                 }
                 if (!groupAutoConfirm.value) {
                   const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
@@ -1920,6 +1930,26 @@ async function saveDhaMessageToFile(msg: MsgExt & { content?: string; dha_id?: s
   }
 }
 
+async function deleteGroupMessage(msg: { message_id?: string; role?: string }) {
+  const id = groupDetail.value?.id
+  const messageId = msg?.message_id
+  if (!id || !messageId) return
+  if (!window.confirm('确定从会话中彻底删除该条发言？删除后下一轮 DHA 将不再看到这条内容。')) return
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
+      method: 'DELETE',
+    })
+    const j = await r.json().catch(() => null)
+    if (r.ok && j?.status === 'ok') {
+      await loadGroupDetail()
+    } else {
+      alert(j?.detail || '删除失败')
+    }
+  } catch {
+    alert('删除失败')
+  }
+}
+
 function onGroupWorkspaceResizeMouseDown(e: MouseEvent) {
   e.preventDefault()
   isResizingWorkspace.value = true
@@ -2769,6 +2799,18 @@ defineExpose({ refresh: loadGroupDetail })
   cursor: pointer;
 }
 .group-chat-save-file-btn:hover {
+  opacity: 0.9;
+}
+.group-chat-delete-msg-btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--color-danger-text, #b91c1c);
+  background: var(--color-danger-subtle, rgba(185, 28, 28, 0.1));
+  border: 1px solid var(--color-danger, #b91c1c);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.group-chat-delete-msg-btn:hover {
   opacity: 0.9;
 }
 .group-chat-next-prompt {
