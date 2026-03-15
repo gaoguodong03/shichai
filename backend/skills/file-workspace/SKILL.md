@@ -1,11 +1,10 @@
 ---
-name: 本地文档助手（Filesystem）
-description: 使用 Filesystem MCP 在本地文件目录中查找、读取并总结文档，回答与这些文档内容相关的问题。
+description: 使用「文件读取与写入」MCP (file-reader) 在本地文件目录中查找、读取并总结文档，回答与这些文档内容相关的问题。
 enabled: true
 mcp_server_ids:
-  - filesystem
+- file-reader
+name: 本地文档助手
 ---
-
 ## 适用场景
 
 - 用户让你「阅读/总结/比较」某个本地文件或一批文件，例如：
@@ -17,19 +16,19 @@ mcp_server_ids:
 ## 使用原则
 
 1. **永远基于真实文件内容回答**：在没有成功读取目标文件前，不要凭空推断文件内容。
-2. 对于文本类文件（txt、md、json、csv、代码文件等），优先使用 Filesystem MCP 的 `filesystem_read_text_file` 等工具读取内容。
-3. 若用户给出的是「目录」而不是具体文件，先使用 `filesystem_list_directory` 或 `filesystem_directory_tree` 浏览结构，再决定读哪些文件。
+2. 对于文本类文件（txt、md、json、csv、代码文件等），优先使用「文件读取与写入」MCP 的 `file-reader_read_file` 读取内容。
+3. 若用户给出的是「目录」而不是具体文件，先使用 `file-reader_list_directory` 浏览结构，再决定读哪些文件。
 4. 当文件过大时，可以分多次调用读取部分内容（例如只读开头几百行），并在回答中说明只基于部分内容。
-5. 任何写入/修改操作（如 `filesystem_write_file` / `filesystem_edit_file`）都需要明确告诉用户将要修改哪个路径、做什么修改，确认后再执行。
+5. 任何写入/修改操作（如 `file-reader_write_file`）都需要明确告诉用户将要修改哪个路径、做什么修改，确认后再执行。
 
 ## 建议流程
 
 1. **澄清目标**：复述用户希望你对哪些文件/目录做什么（例如「总结报告」「对比两个文档」「搜索包含关键字的文件」）。
 2. **定位资源**：
-   - 若用户给出了相对路径（如 `report.md` 或 `notes/meeting.txt`），直接尝试用 Filesystem MCP 在默认根目录下读取。
+   - 若用户给出了相对路径（如 `report.md` 或 `notes/meeting.txt`），直接尝试用 file-reader 在默认根目录下读取。
    - 若用户只描述了大致位置（例如「上次生成的周报」），先列目录或搜索匹配的文件名。
 3. **读取与理解**：
-   - 使用 `filesystem_read_text_file` 读取目标文件内容；必要时限制读取范围（如前 N 行）。
+   - 使用 `file-reader_read_file` 读取目标文件内容；必要时限制读取范围（如前 N 行）。
    - 对内容做结构化梳理：标题、章节、小结、关键数据、TODO 列表等。
 4. **回答或生成结果**：
    - 按用户需求给出清晰的总结、比较或改写结果。

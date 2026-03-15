@@ -2,381 +2,376 @@
 description: 引导用户通过结构化的文档共同编写工作流程。当用户想撰写文档、提案、技术规范、决策文档或类似结构化内容时使用。该工作流程帮助用户高效传递上下文，通过迭代优化内容，并验证文档对读者有效。当用户提到写文档、创建提案、起草规范或类似文档任务时触发。
 enabled: true
 mcp_server_ids:
-  - file-reader
+- file-reader
 name: 文档合著
 ---
----
-name: doc-coauthoring
-description: Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.
----
+# 文档合著工作流程
 
-# Doc Co-Authoring Workflow
+这项技能为引导用户协作创建文档提供了结构化的工作流程。作为主动引导者，引导用户完成三个阶段：背景收集、细化与结构化，以及阅读测试。
 
-This skill provides a structured workflow for guiding users through collaborative document creation. Act as an active guide, walking users through three stages: Context Gathering, Refinement & Structure, and Reader Testing.
+## 何时提供此工作流程
 
-## When to Offer This Workflow
+**触发条件：**
+- 用户提到写文档：“写文档”、“起草提案”、“创建规范”、“写文档”
+- 用户提及特定文档类型：“PRD”、“design doc”、“decision doc”、“RFC”
+- 用户似乎开始了一项较大的写作任务
 
-**Trigger conditions:**
-- User mentions writing documentation: "write a doc", "draft a proposal", "create a spec", "write up"
-- User mentions specific doc types: "PRD", "design doc", "decision doc", "RFC"
-- User seems to be starting a substantial writing task
+**初次报价：**
+为用户提供一个结构化的共著文档工作流程。请解释三个阶段：
 
-**Initial offer:**
-Offer the user a structured workflow for co-authoring the document. Explain the three stages:
+1. **背景收集**：用户提供所有相关背景，Claude 提出澄清问题
+2. **精炼与结构**：通过头脑风暴和编辑，逐步构建每个部分
+3. **读者测试**：用全新的 Claude（无上下文）测试文档，在别人阅读前发现盲点
 
-1. **Context Gathering**: User provides all relevant context while Claude asks clarifying questions
-2. **Refinement & Structure**: Iteratively build each section through brainstorming and editing
-3. **Reader Testing**: Test the doc with a fresh Claude (no context) to catch blind spots before others read it
+解释这种方法有助于确保文档在他人阅读时（包括他们粘贴到 Claude 时）能顺利运行。问问他们是否想尝试这种工作流程，还是更喜欢自由形式工作。
 
-Explain that this approach helps ensure the doc works well when others read it (including when they paste it into Claude). Ask if they want to try this workflow or prefer to work freeform.
+如果用户拒绝，就自由创作。如果用户接受，进入第一阶段。
 
-If user declines, work freeform. If user accepts, proceed to Stage 1.
+## 第一阶段：背景收集
 
-## Stage 1: Context Gathering
+**目标：** 缩小用户所知与 Claude 所知之间的差距，从而实现后续智能指导。
 
-**Goal:** Close the gap between what the user knows and what Claude knows, enabling smart guidance later.
+### 初步问题
 
-### Initial Questions
+首先请用户提供关于该文档的元上下文：
 
-Start by asking the user for meta-context about the document:
+1. 这是什么类型的文件？（例如，技术规范、决策文件、提案）
+2. 主要受众是谁？
+3. 当有人阅读这些内容时，期望产生什么样的影响？
+4. 有没有模板或特定的格式需要遵循？
+5. 还有其他限制或背景需要了解吗？
 
-1. What type of document is this? (e.g., technical spec, decision doc, proposal)
-2. Who's the primary audience?
-3. What's the desired impact when someone reads this?
-4. Is there a template or specific format to follow?
-5. Any other constraints or context to know?
+告诉他们可以用速记回答，也可以根据自己的方式直接分享信息。
 
-Inform them they can answer in shorthand or dump information however works best for them.
+**如果用户提供了模板或提及文档类型：**
+- 询问他们是否有模板文档可供分享
+- 如果他们提供了共享文档的链接，使用相应的集成来获取
+- 如果他们提供文件，请阅读
 
-**If user provides a template or mentions a doc type:**
-- Ask if they have a template document to share
-- If they provide a link to a shared document, use the appropriate integration to fetch it
-- If they provide a file, read it
+**如果用户提到编辑已有的共享文档：**
+- 使用相应的积分来读取当前状态
+- 检查无替代文本的图片
+- 如果存在没有备用文本的图片，解释当其他人用 Claude 理解文档时，Claude 无法看到这些图片。问问他们是否需要生成替代文本。如果是这样，请要求他们把每张图片粘贴到聊天中，以便生成描述性替代文本。
 
-**If user mentions editing an existing shared document:**
-- Use the appropriate integration to read the current state
-- Check for images without alt-text
-- If images exist without alt-text, explain that when others use Claude to understand the doc, Claude won't be able to see them. Ask if they want alt-text generated. If so, request they paste each image into chat for descriptive alt-text generation.
+### 信息倾倒
 
-### Info Dumping
+一旦初步问题得到解答，鼓励用户倾倒所有上下文。请求以下信息：
+- 项目/问题背景介绍
+- 相关团队讨论或共享文档
+- 为什么没有采用其他解决方案
+- 组织背景（团队动态、过往事件、政治）
+- 时间线压力或约束
+- 技术架构或依赖
+- 利益相关者关切
 
-Once initial questions are answered, encourage the user to dump all the context they have. Request information such as:
-- Background on the project/problem
-- Related team discussions or shared documents
-- Why alternative solutions aren't being used
-- Organizational context (team dynamics, past incidents, politics)
-- Timeline pressures or constraints
-- Technical architecture or dependencies
-- Stakeholder concerns
+建议他们不用担心整理——只要把所有东西都说出来就好。提供多种提供背景信息的方式：
+- 信息倾倒意识流
+- 指向球队频道或线程以阅读
+- 共享文档链接
 
-Advise them not to worry about organizing it - just get it all out. Offer multiple ways to provide context:
-- Info dump stream-of-consciousness
-- Point to team channels or threads to read
-- Link to shared documents
+**如果有集成工具**（例如 Slack、Teams、Google Drive、SharePoint 或其他 MCP 服务器），请说明这些集成可以直接拉取上下文。
 
-**If integrations are available** (e.g., Slack, Teams, Google Drive, SharePoint, or other MCP servers), mention that these can be used to pull in context directly.
+**如果在 Claude.ai 或 Claude 应用中检测不到集成：**建议他们可以在 Claude 设置中启用连接器，允许直接从消息应用和文档存储中拉取上下文。
 
-**If no integrations are detected and in Claude.ai or Claude app:** Suggest they can enable connectors in their Claude settings to allow pulling context from messaging apps and document storage directly.
+告诉他们，在他们完成初步倾倒后会提出澄清问题。
 
-Inform them clarifying questions will be asked once they've done their initial dump.
+**在背景收集过程中：**
 
-**During context gathering:**
+- 如果用户提及团队频道或共享文档：
+- 如果有集成：告知他们内容将被立即阅读，然后使用相应的集成
+- 如果无法实现集成：解释无法访问的原因。建议他们在 Claude 设置中启用连接器，或者直接粘贴相关内容。
 
-- If user mentions team channels or shared documents:
-  - If integrations available: Inform them the content will be read now, then use the appropriate integration
-  - If integrations not available: Explain lack of access. Suggest they enable connectors in Claude settings, or paste the relevant content directly.
+- 如果用户提及未知的实体/项目：
+- 询问是否应搜索相关工具以了解更多信息
+- 在搜索前等待用户确认
 
-- If user mentions entities/projects that are unknown:
-  - Ask if connected tools should be searched to learn more
-  - Wait for user confirmation before searching
+- 用户提供上下文时，跟踪正在学习的内容和尚未明确的内容
 
-- As user provides context, track what's being learned and what's still unclear
+**提出澄清性问题：**
 
-**Asking clarifying questions:**
+当用户表示他们已经完成了初步倾倒（或在提供了充分的上下文后），请提出澄清性问题以确保理解：
 
-When user signals they've done their initial dump (or after substantial context provided), ask clarifying questions to ensure understanding:
+根据上下文中的空白，生成 5 到 10 个编号问题。
 
-Generate 5-10 numbered questions based on gaps in the context.
+告诉他们可以用简记方式回答（例如，“1：是，2：看 #channel，3：不是，因为向后兼容”），链接更多文档，指向频道阅读，或者继续倾倒信息。以他们最高效的方式。
 
-Inform them they can use shorthand to answer (e.g., "1: yes, 2: see #channel, 3: no because backwards compat"), link to more docs, point to channels to read, or just keep info-dumping. Whatever's most efficient for them.
+**出口条件：**
+当问题表现出理解时，已经积累了足够的背景信息——当边缘情况和权衡问题可以被提出而无需解释基础知识时。
 
-**Exit condition:**
-Sufficient context has been gathered when questions show understanding - when edge cases and trade-offs can be asked about without needing basics explained.
+**过渡：**
+问问他们在这个阶段是否还想提供更多背景信息，或者是否该开始起草文件了。
 
-**Transition:**
-Ask if there's any more context they want to provide at this stage, or if it's time to move on to drafting the document.
+如果用户想添加更多内容，就让他们去吧。准备好后，进入第二阶段。
 
-If user wants to add more, let them. When ready, proceed to Stage 2.
+## 第二阶段：精炼与结构
 
-## Stage 2: Refinement & Structure
+**目标：** 通过头脑风暴、策划和反复完善，逐节构建文档。
 
-**Goal:** Build the document section by section through brainstorming, curation, and iterative refinement.
+**用户说明：**
+说明文档将逐节构建。每个部分：
+1. 将会就包含哪些内容进行澄清性问题
+2. 将集结 5 到 20 个选项
+3. 用户会指示哪些内容要保留/移除/合并
+4. 该章节将被起草
+5. 通过外科手术式的修改进行精炼
 
-**Instructions to user:**
-Explain that the document will be built section by section. For each section:
-1. Clarifying questions will be asked about what to include
-2. 5-20 options will be brainstormed
-3. User will indicate what to keep/remove/combine
-4. The section will be drafted
-5. It will be refined through surgical edits
+从最有未知的部分开始（通常是核心决策或提案），然后再梳理剩下的部分。
 
-Start with whichever section has the most unknowns (usually the core decision/proposal), then work through the rest.
+**章节顺序：**
 
-**Section ordering:**
+如果文档结构清晰：
+问问他们想从哪个部分开始。
 
-If the document structure is clear:
-Ask which section they'd like to start with.
+建议从未知最多的部分开始。对于决策文件，这通常是核心提案。规格方面，通常是技术层面。总结部分最好留到最后。
 
-Suggest starting with whichever section has the most unknowns. For decision docs, that's usually the core proposal. For specs, it's typically the technical approach. Summary sections are best left for last.
+如果用户不知道需要哪些部分：
+根据文档类型和模板，建议为文档类型划分 3 到 5 个合适的部分。
 
-If user doesn't know what sections they need:
-Based on the type of document and template, suggest 3-5 sections appropriate for the doc type.
+问问这种结构是否可行，或者他们是否愿意调整。
 
-Ask if this structure works, or if they want to adjust it.
+**一旦结构确定：**
 
-**Once structure is agreed:**
+为所有部分创建带有占位文本的初始文档结构。
 
-Create the initial document structure with placeholder text for all sections.
+**如果可以访问文物：**
+用“create_file”来创建一个神器。这为克劳德和使用者都提供了一个可以依靠的支架。
 
-**If access to artifacts is available:**
-Use `create_file` to create an artifact. This gives both Claude and the user a scaffold to work from.
+告诉他们将创建带有所有部分占位符的初始结构。
 
-Inform them that the initial structure with placeholders for all sections will be created.
+创建带有所有部分标题和简短占位文本的工件，如“[待写]”或“[内容在此]”。
 
-Create artifact with all section headers and brief placeholder text like "[To be written]" or "[Content here]".
+提供脚手架链接，并注明是时候填写每个部分了。
 
-Provide the scaffold link and indicate it's time to fill in each section.
+**如果无法访问文物：**
+在工作目录里创建一个 Markdown 文件。给它起个合适的名字（例如，'decision-doc.md'，'technical-spec.md'）。
 
-**If no access to artifacts:**
-Create a markdown file in the working directory. Name it appropriately (e.g., `decision-doc.md`, `technical-spec.md`).
+告诉他们将创建带有所有部分占位符的初始结构。
 
-Inform them that the initial structure with placeholders for all sections will be created.
+创建一个包含所有章节标题和占位文本的文件。
 
-Create file with all section headers and placeholder text.
+确认文件名已创建，并表示是时候填写每个部分了。
 
-Confirm the filename has been created and indicate it's time to fill in each section.
+**每个部分：**
 
-**For each section:**
+### 第一步：澄清问题
 
-### Step 1: Clarifying Questions
+公告将开始[区名]部分的工作。询问 5 到 10 个关于应包含哪些内容的澄清性问题：
 
-Announce work will begin on the [SECTION NAME] section. Ask 5-10 clarifying questions about what should be included:
+根据上下文和章节目的，生成 5 到 10 个具体问题。
 
-Generate 5-10 specific questions based on context and section purpose.
+告诉他们可以用速记回答，或者只指出需要覆盖的重要内容。
 
-Inform them they can answer in shorthand or just indicate what's important to cover.
+### 第二步：头脑风暴
 
-### Step 2: Brainstorming
+在[SECTION NAME]部分，根据该部分的复杂度，头脑风暴[5-20]个可能包含的内容。注意：
+- 可能被遗忘的共享语境
+- 尚未提及的角度或考虑因素
 
-For the [SECTION NAME] section, brainstorm [5-20] things that might be included, depending on the section's complexity. Look for:
-- Context shared that might have been forgotten
-- Angles or considerations not yet mentioned
+根据部分复杂度生成 5 到 20 个编号选项。最后，如果他们想要更多选择，可以提出更多集思广益。
 
-Generate 5-20 numbered options based on section complexity. At the end, offer to brainstorm more if they want additional options.
+### 第三步：策展
 
-### Step 3: Curation
+询问哪些点应该保留、移除或合并。请求简短的理由，帮助了解接下来部分的优先事项。
 
-Ask which points should be kept, removed, or combined. Request brief justifications to help learn priorities for the next sections.
+举例说明：
+- “保留 1,4,7,9”
+- “移除 3 个（重复 1 个）”
+- “移除 6（观众已经知道）”
+- “联合 11 和 12”
 
-Provide examples:
-- "Keep 1,4,7,9"
-- "Remove 3 (duplicates 1)"
-- "Remove 6 (audience already knows this)"
-- "Combine 11 and 12"
+**如果用户给出自由反馈（例如“看起来不错”或“我大部分喜欢，但......”）而非编号选项，提取他们的偏好并继续。解析他们想保留、删除或更改的内容并应用。
 
-**If user gives freeform feedback** (e.g., "looks good" or "I like most of it but...") instead of numbered selections, extract their preferences and proceed. Parse what they want kept/removed/changed and apply it.
+### 第四步：间隙检查
 
-### Step 4: Gap Check
+根据他们选的内容，询问[SECTION NAME]部分是否缺少什么重要内容。
 
-Based on what they've selected, ask if there's anything important missing for the [SECTION NAME] section.
+### 第五步：起草
 
-### Step 5: Drafting
+使用“str_replace”将本节的占位文本替换为实际草拟的内容。
 
-Use `str_replace` to replace the placeholder text for this section with the actual drafted content.
+宣布[SECTION NAME]部分将根据他们选定的内容立即起草。
 
-Announce the [SECTION NAME] section will be drafted now based on what they've selected.
+**如果使用伪造物：**
+起草后，提供该文物的链接。
 
-**If using artifacts:**
-After drafting, provide a link to the artifact.
+让他们仔细阅读，并指出需要修改的地方。注意，具体内容有助于后续部分的学习。
 
-Ask them to read through it and indicate what to change. Note that being specific helps learning for the next sections.
+**如果使用文件（无伪真）:**
+起草后，确认完成。
 
-**If using a file (no artifacts):**
-After drafting, confirm completion.
+告诉他们[SECTION NAME]部分已经在[filename]中草拟好了。让他们仔细阅读，并指出需要修改的地方。注意，具体内容有助于后续部分的学习。
 
-Inform them the [SECTION NAME] section has been drafted in [filename]. Ask them to read through it and indicate what to change. Note that being specific helps learning for the next sections.
+**用户关键说明（起草第一部分时包含）:**
+提供说明：不要直接编辑文档，而是让他们指出需要修改的地方。这有助于在后续章节中了解他们的风格。例如：“移除 X 项目符号——已经被 Y 覆盖了”或“让第三段更简洁”。
 
-**Key instruction for user (include when drafting the first section):**
-Provide a note: Instead of editing the doc directly, ask them to indicate what to change. This helps learning of their style for future sections. For example: "Remove the X bullet - already covered by Y" or "Make the third paragraph more concise".
+### 第 6 步：迭代精炼
 
-### Step 6: Iterative Refinement
+用户反馈：
+- 使用“str_replace”进行编辑（切勿重印整份文档）
+- **如果使用工件：** 每次编辑后提供工件链接
+- **如果使用文件：** 只需确认编辑已完成
+- 如果用户直接编辑文档并要求阅读：在心里记下他们所做的修改，并在后续章节中记住（这显示了他们的偏好）
 
-As user provides feedback:
-- Use `str_replace` to make edits (never reprint the whole doc)
-- **If using artifacts:** Provide link to artifact after each edit
-- **If using files:** Just confirm edits are complete
-- If user edits doc directly and asks to read it: mentally note the changes they made and keep them in mind for future sections (this shows their preferences)
+**请继续迭代**直到用户对该部分满意。
 
-**Continue iterating** until user is satisfied with the section.
+### 质量检查
 
-### Quality Checking
+连续三次迭代且无实质性变化后，询问是否有内容可以删除而不丢失重要信息。
 
-After 3 consecutive iterations with no substantial changes, ask if anything can be removed without losing important information.
+章节完成后，请确认[章节名称]已完成。问问是否准备好进入下一部分。
 
-When section is done, confirm [SECTION NAME] is complete. Ask if ready to move to the next section.
+**所有部分重复。**
 
-**Repeat for all sections.**
+### 接近完成
 
-### Near Completion
+随着章节完成（80%+完成），宣布打算重读整份文档并检查：
+- 各段间的流畅性和一致性
+- 冗余或矛盾
+- 任何感觉像“粗糙”或普通填充物的内容
+- 每句话是否具有分量
 
-As approaching completion (80%+ of sections done), announce intention to re-read the entire document and check for:
-- Flow and consistency across sections
-- Redundancy or contradictions
-- Anything that feels like "slop" or generic filler
-- Whether every sentence carries weight
+请阅读整份文件并提供反馈。
 
-Read entire document and provide feedback.
+**当所有章节都已起草和完善：**
+宣布所有章节已起草。表示打算再次审阅完整文档。
 
-**When all sections are drafted and refined:**
-Announce all sections are drafted. Indicate intention to review the complete document one more time.
+复习整体连贯性、流畅度和完整性。
 
-Review for overall coherence, flow, completeness.
+请提供最后的建议。
 
-Provide any final suggestions.
+问问他们是否准备好转向读者测试，或者是否想改进其他内容。
 
-Ask if ready to move to Reader Testing, or if they want to refine anything else.
+## 第三阶段：读卡测试
 
-## Stage 3: Reader Testing
+**目标：** 用全新的 Claude（无上下文流失）测试文档，确认对读者有效。
 
-**Goal:** Test the document with a fresh Claude (no context bleed) to verify it works for readers.
+**用户说明：**
+解释现在将进行测试，以确认文档是否对读者有效。这能捕捉盲点——那些对作者来说合理但可能让其他人困惑的事情。
 
-**Instructions to user:**
-Explain that testing will now occur to see if the document actually works for readers. This catches blind spots - things that make sense to the authors but might confuse others.
+### 测试方法
 
-### Testing Approach
+**如果可以访问子代理（例如，在 Claude 代码中）:**
 
-**If access to sub-agents is available (e.g., in Claude Code):**
+直接进行测试，无需用户参与。
 
-Perform the testing directly without user involvement.
+### 第一步：预测读者问题
 
-### Step 1: Predict Reader Questions
+宣布意图预测读者在寻找本文档时可能会提出的问题。
 
-Announce intention to predict what questions readers might ask when trying to discover this document.
+提出 5 到 10 个读者会现实提出的问题。
 
-Generate 5-10 questions that readers would realistically ask.
+### 第二步：与副特工测试
 
-### Step 2: Test with Sub-Agent
+宣布这些问题将用全新的 Claude 实例测试（这次对话中没有上下文）。
 
-Announce that these questions will be tested with a fresh Claude instance (no context from this conversation).
+对于每个问题，调用一个仅包含文档内容和问题的子代理。
 
-For each question, invoke a sub-agent with just the document content and the question.
+总结读者克劳德在每道题中答对和答错的地方。
 
-Summarize what Reader Claude got right/wrong for each question.
+### 第三步：进行额外检查
 
-### Step 3: Run Additional Checks
+公告将进行额外检查。
 
-Announce additional checks will be performed.
+调用子代理来检查歧义、错误假设和矛盾。
 
-Invoke sub-agent to check for ambiguity, false assumptions, contradictions.
+总结发现的任何问题。
 
-Summarize any issues found.
+### 第四步：报告与修正
 
-### Step 4: Report and Fix
+如果发现问题：
+报告说读者克劳德在某些问题上遇到了困难。
 
-If issues found:
-Report that Reader Claude struggled with specific issues.
+列出具体问题。
 
-List the specific issues.
+表明有意弥补这些空白。
 
-Indicate intention to fix these gaps.
-
-Loop back to refinement for problematic sections.
+问题部分回归精细化。
 
 ---
 
-**If no access to sub-agents (e.g., claude.ai web interface):**
+**如果无法访问子代理（例如 claude.ai 网页界面）:**
 
-The user will need to do the testing manually.
+用户需要手动进行测试。
 
-### Step 1: Predict Reader Questions
+### 第一步：预测读者问题
 
-Ask what questions people might ask when trying to discover this document. What would they type into Claude.ai?
+询问人们在寻找这份文件时可能会问什么问题。他们会在 Claude.ai 里输入什么？
 
-Generate 5-10 questions that readers would realistically ask.
+提出 5 到 10 个读者会现实提出的问题。
 
-### Step 2: Setup Testing
+### 步骤 2：设置测试
 
-Provide testing instructions:
-1. Open a fresh Claude conversation: https://claude.ai
-2. Paste or share the document content (if using a shared doc platform with connectors enabled, provide the link)
-3. Ask Reader Claude the generated questions
+提供测试说明：
+1. 开启新的克劳德对话：https://claude.ai
+2. 粘贴或分享文档内容（如果使用启用连接器的共享文档平台，请提供链接）
+3. 向读者克劳德提问生成的问题
 
-For each question, instruct Reader Claude to provide:
-- The answer
-- Whether anything was ambiguous or unclear
-- What knowledge/context the doc assumes is already known
+对于每个问题，请指示读者克劳德提供：
+- 答案
+- 是否有任何模糊或不明确的地方
+- 文档假设已知的知识/背景
 
-Check if Reader Claude gives correct answers or misinterprets anything.
+检查 Reader Claude 是否给出正确答案或误解内容。
 
-### Step 3: Additional Checks
+### 第三步：额外检查
 
-Also ask Reader Claude:
-- "What in this doc might be ambiguous or unclear to readers?"
-- "What knowledge or context does this doc assume readers already have?"
-- "Are there any internal contradictions or inconsistencies?"
+也可以问问读者克劳德：
+- “这份文档中哪些内容对读者来说可能模糊或不清楚？”
+- “本文档假设读者已经具备哪些知识或背景？”
+- “内部有矛盾或不一致吗？”
 
-### Step 4: Iterate Based on Results
+### 步骤 4：根据结果迭代
 
-Ask what Reader Claude got wrong or struggled with. Indicate intention to fix those gaps.
+问问读者克劳德哪里做错了什么或遇到了什么困难。表明有意修复这些空白。
 
-Loop back to refinement for any problematic sections.
+回溯到精细阶段，处理任何有问题的部分。
 
 ---
 
-### Exit Condition (Both Approaches)
+### 出口条件（双方进近）
 
-When Reader Claude consistently answers questions correctly and doesn't surface new gaps or ambiguities, the doc is ready.
+当读者克劳德始终正确回答问题，不发现新的空白或模糊之处时，文档就准备好了。
 
-## Final Review
+## 最终评测
 
-When Reader Testing passes:
-Announce the doc has passed Reader Claude testing. Before completion:
+当读者测试通过：
+宣布该纪录片通过了 Reader Claude 测试。完成前：
 
-1. Recommend they do a final read-through themselves - they own this document and are responsible for its quality
-2. Suggest double-checking any facts, links, or technical details
-3. Ask them to verify it achieves the impact they wanted
+1. 建议他们自己做最后一遍审核——他们拥有这份文件，并对其质量负责
+2. 建议对任何事实、链接或技术细节进行反复核查
+3. 让他们核实它是否达到了他们想要的效果
 
-Ask if they want one more review, or if the work is done.
+问问他们是否还要再审查一次，或者工作是否完成。
 
-**If user wants final review, provide it. Otherwise:**
-Announce document completion. Provide a few final tips:
-- Consider linking this conversation in an appendix so readers can see how the doc was developed
-- Use appendices to provide depth without bloating the main doc
-- Update the doc as feedback is received from real readers
+**如果用户想要最终审核，请提供。否则：**
+宣布文档完成。提供最后几点建议：
+- 考虑在附录中链接这次对话，让读者了解文档的开发过程
+- 利用附录提供深度而不使主文档臃肿
+- 根据真实读者反馈，更新文档
 
-## Tips for Effective Guidance
+## 有效指导的技巧
 
-**Tone:**
-- Be direct and procedural
-- Explain rationale briefly when it affects user behavior
-- Don't try to "sell" the approach - just execute it
+**语气：**
+- 直接且程序化
+- 在影响用户行为时简要说明理由
+- 不要试图“推销”这个方法——只要执行它
 
-**Handling Deviations:**
-- If user wants to skip a stage: Ask if they want to skip this and write freeform
-- If user seems frustrated: Acknowledge this is taking longer than expected. Suggest ways to move faster
-- Always give user agency to adjust the process
+**处理偏差：**
+- 如果用户想跳过某个阶段：询问他们是否想跳过，然后自由写作
+- 如果用户感到沮丧：承认这比预期花费的时间更长。建议加快进展的方法
+- 始终赋予用户调整流程的自主权
 
-**Context Management:**
-- Throughout, if context is missing on something mentioned, proactively ask
-- Don't let gaps accumulate - address them as they come up
+**上下文管理：**
+- 在整个过程中，如果提及的某些内容缺乏上下文，主动询问
+- 不要让空白积累——及时解决
 
-**Artifact Management:**
-- Use `create_file` for drafting full sections
-- Use `str_replace` for all edits
-- Provide artifact link after every change
-- Never use artifacts for brainstorming lists - that's just conversation
+**遗物管理：**
+- 使用“create_file”来起草完整部分
+- 所有编辑使用“str_replace”
+- 每次更改后提供工件链接
+- 千万别用工件来头脑风暴列表——那只是对话
 
-**Quality over Speed:**
-- Don't rush through stages
-- Each iteration should make meaningful improvements
-- The goal is a document that actually works for readers
+**质量胜过速度：**
+- 不要急于完成关卡
+- 每次迭代都应做出有意义的改进
+- 目标是一份真正适合读者的文档

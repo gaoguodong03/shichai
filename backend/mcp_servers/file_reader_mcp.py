@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""文件读取与写入 MCP Server（本地 stdio）
+"""文件读取与写入 MCP Server（本地 stdio，统一替代 Filesystem MCP）
 
-提供 read_file、read_pdf、read_docx、read_xlsx、write_file。
+提供 read_file、write_file、read_pdf、read_docx、read_xlsx、list_allowed_directories、list_directory。
 路径均相对 AGENT_OUTPUTS_DIR；在 DHA 中按会话使用时，后端会将 path 重写为 workspaces/{session_id}/ 下，实现工作区隔离。
+无需 Node.js，仅需 Python 与 pypdf/python-docx/openpyxl。
 """
 import os
 from pathlib import Path
@@ -60,6 +61,30 @@ def write_file(path: str, content: str) -> str:
         return f"已写入：{rel}"
     except Exception as e:
         return f"错误：写入文件失败 - {e}"
+
+
+@mcp.tool()
+def list_allowed_directories() -> str:
+    """返回当前允许读写的根目录（AGENT_OUTPUTS_DIR）。Agent 可在此目录及其子目录下使用 read_file、write_file 等。"""
+    return f"Allowed directories:\n{ROOT}"
+
+
+@mcp.tool()
+def list_directory(path: str = "") -> str:
+    """列出目录下的文件与子目录名。path 为空或 '.' 表示根目录（data/agent-outputs）；可为 workspaces/某会话ID 等相对路径。"""
+    p = _resolve_path(path or ".")
+    if not p:
+        return "错误：无效路径或路径超出允许范围。"
+    if not p.exists():
+        return f"错误：路径不存在：{path}"
+    if not p.is_dir():
+        return f"错误：{path} 不是目录。"
+    try:
+        names = sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+        lines = [f"{'[DIR]  ' if x.is_dir() else '       '}{x.name}" for x in names]
+        return "\n".join(lines) if lines else "（空目录）"
+    except Exception as e:
+        return f"错误：列出目录失败 - {e}"
 
 
 @mcp.tool()

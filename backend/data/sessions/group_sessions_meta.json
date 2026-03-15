@@ -9,18 +9,6 @@
     "created_at": "2026-03-12T09:16:18.635046+00:00",
     "updated_at": "2026-03-12T09:17:27.620203+00:00"
   },
-  "group-af6abd2817cc": {
-    "title": "美食探讨",
-    "dha_ids": [
-      "dha-66bafc4e",
-      "dha-9f6a2b8d",
-      "dha-ae100f7a"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-12T10:08:38.961704+00:00",
-    "updated_at": "2026-03-12T12:46:50.832672+00:00"
-  },
   "group-a71ad0c519f5": {
     "title": "组会 Agent 讨论",
     "dha_ids": [
@@ -33,18 +21,6 @@
     "created_at": "2026-03-12T12:44:55.824061+00:00",
     "updated_at": "2026-03-12T12:46:42.260917+00:00"
   },
-  "group-5c63fbb8afda": {
-    "title": "DHA 协作 · 3/15 13:09",
-    "dha_ids": [
-      "dha-blog-cover",
-      "dha-df1f712a",
-      "dha-440b26f8"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T05:09:21.592680+00:00",
-    "updated_at": "2026-03-15T05:46:19.298907+00:00"
-  },
   "group-8515c0c5329f": {
     "title": "DHA 协作 · 3/15 14:01",
     "dha_ids": [
@@ -56,36 +32,53 @@
     "created_at": "2026-03-15T06:01:33.451897+00:00",
     "updated_at": "2026-03-15T07:14:26.999588+00:00"
   },
-  "group-23a213e57acb": {
-    "title": "播客生成",
-    "dha_ids": [
-      "dha-url-to-blog",
-      "dha-blog-cover"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T09:01:27.305419+00:00",
-    "updated_at": "2026-03-15T09:28:26.146189+00:00"
-  },
   "group-773ce83d1c02": {
-    "title": "DHA 协作 · 3/15 18:15",
+    "title": "导航测试",
     "dha_ids": [
       "dha-c9b8ae32"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-15T10:15:58.510729+00:00",
-    "updated_at": "2026-03-15T10:16:57.810568+00:00"
+    "updated_at": "2026-03-15T11:50:51.118243+00:00"
   },
-  "group-954f949e34cb": {
-    "title": "DHA 协作 · 3/15 18:22",
+  "group-d0fa081b948b": {
+    "title": "博客编辑",
     "dha_ids": [
-      "dha-file-workspace",
-      "dha-browser-ops"
+      "dha-440b26f8",
+      "dha-195b8c3a"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-15T10:22:36.579823+00:00",
-    "updated_at": "2026-03-15T10:52:04.877928+00:00"
+    "created_at": "2026-03-15T11:28:31.332968+00:00",
+    "updated_at": "2026-03-15T11:46:23.547675+00:00"
+  },
+  "group-df9ed69e52dc": {
+    "title": "内容核实和调研",
+    "dha_ids": [
+      "dha-c1bf68ba",
+      "dha-deepresearch-exp"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-15T11:46:48.170002+00:00",
+    "updated_at": "2026-03-15T11:50:36.580925+00:00"
+  },
+  "group-757aa495cbbb": {
+    "title": "对 OpenCode 的调研",
+    "dha_ids": [
+      "dha-file-workspace",
+      "dha-440b26f8",
+      "dha-195b8c3a",
+      "dha-web-fetch",
+      "dha-c1bf68ba",
+      "dha-seminar-guide",
+      "dha-deepresearch-exp",
+      "dha-thinking-ext"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-15T11:51:01.356044+00:00",
+    "updated_at": "2026-03-15T12:09:36.443015+00:00"
   }
 }

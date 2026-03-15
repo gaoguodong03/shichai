@@ -155,9 +155,9 @@ def create_react_agent(
 
 ## 文件引用
 当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
-- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **file-reader_read_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
 - **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
+- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 file-reader_read_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 
 """
@@ -332,13 +332,16 @@ def create_react_agent(
                         
                         logger.info(f"call_tool: 参数: {arguments}")
                         
-                        # 优先直接调用工具函数（如果是异步函数）
-                        if hasattr(tool, 'func') and asyncio.iscoroutinefunction(tool.func):
-                            logger.info(f"call_tool: 直接调用异步工具函数")
-                            result = await tool.func(**arguments)
+                        # 优先调用 tool.func：若返回值为 coroutine 则 await，避免 MCP/包装后 async 未被 await
+                        if hasattr(tool, 'func'):
+                            raw = tool.func(**arguments)
+                            if asyncio.iscoroutine(raw):
+                                logger.info(f"call_tool: 调用异步工具函数并 await")
+                                result = await raw
+                            else:
+                                logger.info(f"call_tool: 调用同步工具函数")
+                                result = raw
                         elif hasattr(tool, 'arun'):
-                            # LangChain BaseTool.arun() 需要 tool_input 参数（字符串）
-                            # 将字典转换为 JSON 字符串
                             tool_input = json.dumps(arguments) if arguments else "{}"
                             logger.info(f"call_tool: 使用异步方法 arun，tool_input: {tool_input}")
                             result = await tool.arun(tool_input)
@@ -346,9 +349,6 @@ def create_react_agent(
                             logger.info(f"call_tool: 使用同步方法 run（在线程中执行）")
                             tool_input = json.dumps(arguments) if arguments else "{}"
                             result = await asyncio.to_thread(tool.run, tool_input)
-                        elif hasattr(tool, 'func'):
-                            logger.info(f"call_tool: 直接调用同步工具函数")
-                            result = await asyncio.to_thread(tool.func, **arguments)
                         else:
                             result = f"工具 {tool_name} 无法执行"
                             logger.error(f"call_tool: 工具 {tool_name} 没有可用的执行方法")
@@ -417,13 +417,15 @@ def create_react_agent(
                 logger.info(f"call_tool: 参数: {arguments}")
                 try:
                     import asyncio
-                    # 与结构化 tool_calls 分支保持一致：优先以 **kwargs 调用 func
-                    if hasattr(tool, 'func') and asyncio.iscoroutinefunction(tool.func):
-                        logger.info("call_tool: 直接调用异步工具函数")
-                        result = await tool.func(**arguments)
-                    elif hasattr(tool, 'func'):
-                        logger.info("call_tool: 直接调用同步工具函数（在线程中执行）")
-                        result = await asyncio.to_thread(tool.func, **arguments)
+                    # 与结构化 tool_calls 分支一致：调用 func，若返回 coroutine 则 await
+                    if hasattr(tool, 'func'):
+                        raw = tool.func(**arguments)
+                        if asyncio.iscoroutine(raw):
+                            logger.info("call_tool: 调用异步工具函数并 await")
+                            result = await raw
+                        else:
+                            logger.info("call_tool: 调用同步工具函数")
+                            result = raw
                     elif hasattr(tool, 'arun'):
                         # arun 接受 tool_input（通常是字符串）；这里统一传 JSON 字符串，避免位置参数误传
                         tool_input = json.dumps(arguments) if arguments else "{}"
@@ -553,9 +555,9 @@ def create_skill_execution_agent(
 
 ## 文件引用
 当用户消息中出现【文件引用：path】时，**必须先读取该文件**再根据内容回答。path 为当前会话工作区内相对路径（如 report.md 或 notes/report.txt）。
-- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **filesystem_read_text_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
+- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **file-reader_read_file**，path 填工作区内相对路径（如 test.md）或 workspaces/<会话ID>/xxx。
 - **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 filesystem_read_text_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
+- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 file-reader_read_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
 不要猜测文件内容。
 """
 
@@ -671,16 +673,18 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             if tool:
                 try:
                     t_tool = time.perf_counter()
-                    if hasattr(tool, "func") and asyncio.iscoroutinefunction(tool.func):
-                        result = await tool.func(**arguments)
+                    if hasattr(tool, "func"):
+                        raw = tool.func(**arguments)
+                        if asyncio.iscoroutine(raw):
+                            result = await raw
+                        else:
+                            result = raw
                     elif hasattr(tool, "arun"):
                         tool_input = json.dumps(arguments) if arguments else "{}"
                         result = await tool.arun(tool_input)
                     elif hasattr(tool, "run"):
                         tool_input = json.dumps(arguments) if arguments else "{}"
                         result = await asyncio.to_thread(tool.run, tool_input)
-                    elif hasattr(tool, "func"):
-                        result = await asyncio.to_thread(tool.func, **arguments)
                     else:
                         result = f"工具 {tool_name} 无法执行"
                     tool_results.append(f"工具 {tool_name} 的执行结果: {result}")
@@ -689,7 +693,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             else:
                 if tool_name == "read_file":
                     tool_results.append(
-                        "工具 read_file 已废弃。请改用 filesystem_read_text_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。"
+                        "工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。"
                     )
                 else:
                     tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
@@ -713,10 +717,9 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 break
         if tool:
             try:
-                if hasattr(tool, "func") and asyncio.iscoroutinefunction(tool.func):
-                    result = await tool.func(**arguments)
-                elif hasattr(tool, "func"):
-                    result = await asyncio.to_thread(tool.func, **arguments)
+                if hasattr(tool, "func"):
+                    raw = tool.func(**arguments)
+                    result = await raw if asyncio.iscoroutine(raw) else raw
                 elif hasattr(tool, "arun"):
                     result = await tool.arun(json.dumps(arguments) if arguments else "{}")
                 else:
@@ -725,7 +728,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             except Exception as e:
                 return {"messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")]}
         if tool_name == "read_file":
-            return {"messages": [HumanMessage(content="工具 read_file 已废弃。请改用 filesystem_read_text_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。")]}
+            return {"messages": [HumanMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。")]}
         return {"messages": [HumanMessage(content=f"工具 {tool_name} 不存在")]}
     except Exception as e:
         return {"messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")]}

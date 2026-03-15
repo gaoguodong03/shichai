@@ -2,6 +2,8 @@
 
 > 设计原则：每位专家只负责自己的专项区域（如各部门），拥有该部分所需的若干 skill；每个 skill 专精一事。博客生成类任务拆分为：内容核实、网页爬取、思维延伸、文字创作、图片生成、格式转换等专家，各司其职。**北邮学生三位专家及其 skill 不改动**。
 
+**执行记录**：已按此方案执行（DHA 增删改、url-fetch 技能新建、图片生成统一为 app-icon-generator、file-reader 合并 Filesystem、本地文档助手文案更新等）。办学研讨已简化：删除主持人/教师/学伴/助教 5 个 DHA，仅保留「内容核实专家」+「内容引导与发散专家」，技能按内容发散、内容核实、当前研究进展整理，讨论由用户主导。
+
 ---
 
 ## 一、当前专家（DHA）清单
@@ -17,18 +19,14 @@
 | 7 | dha-c1bf68ba | 内容核查专家 | 事实核查与可信度评估 | content-checker | [] | 保留，对应「内容核实专家」 |
 | 8 | dha-browser-ops | 浏览器操作助手 | Playwright 浏览器自动化 | browser-playwright | [] | 保留 |
 | 9 | dha-file-workspace | 本地文档助手 | 工作区文档查找/读取/总结、合著、技术文档 | file-workspace, doc-coauthoring, docs-write | [filesystem] | 保留 |
-| 10 | dha-seminar-host | 学伴研讨主持人 | 主持研讨流程 | seminar-companion | [] | **不动（北邮学伴）** |
-| 11 | dha-seminar-teacher | 研讨教师 | 给主题、点评 | [] | [] | **不动（北邮学伴）** |
-| 12 | dha-seminar-companion-qiang | 日常滑水的小强 | 学伴讨论 | [] | [] | **不动（北邮学伴）** |
-| 13 | dha-seminar-companion-hong | 积极上进的小红 | 学伴讨论 | [] | [] | **不动（北邮学伴）** |
-| 14 | dha-seminar-ta | 研讨助教 | 回答问题 | [] | [] | **不动（北邮学伴）** |
-| 15 | dha-b6dba178 | 格式与数据规范检查专家 | 日期/空格/标点/JSON 等格式检查 | skill-format-validator | [] | 保留，对应「格式转换专家」一侧或独立 |
-| 16 | dha-2be73edd | 文字校对与错别字检查专家 | 错别字、病句、去 AI 痕 | text-proofreader, humanizer-zh | [] | 保留 |
-| 17 | dha-66bafc4e | 果冻 | 河南、计算机、Agent 的北邮研究生 | cs-expert-ggd, henan-knowledge, agent-engineering-module | [] | **不动（北邮学生）** |
-| 18 | dha-9f6a2b8d | 万辙 | 四川、工程/系统、Switch 的北邮研究生 | agent-engineering-module, sichuan-knowledge, nintendo-switch-games, cs-expert-ggd, ai-infra-module | [] | **不动（北邮学生）** |
-| 19 | dha-ae100f7a | 若雨 | 山东、记忆系统、扑克牌的北邮学生 | shandong-knowledge, poker-card-games, agent-engineering-module, cs-expert-ggd | [] | **不动（北邮学生）** |
-| 20 | dha-cf4de333 | 测试使用 | 测试 | script-demo | [] | 保留或删除 |
-| 21 | dha-deepresearch-exp | 深度研究专家 | 核查→研究→报告 | deep-research, content-checker | [exa, fetch, zhipu-web-search, file-reader] | 可保留；「思维延伸」可由此或单独专家承担 |
+| 10 | dha-seminar-guide | 内容引导与发散专家 | 办学研讨：内容引导与发散、当前研究进展提要 | seminar-guide | [] | 办学研讨简化后保留 |
+| 11 | dha-b6dba178 | 格式与数据规范检查专家 | 日期/空格/标点/JSON 等格式检查 | skill-format-validator | [] | 保留，对应「格式转换专家」一侧或独立 |
+| 12 | dha-2be73edd | 文字校对与错别字检查专家 | 错别字、病句、去 AI 痕 | text-proofreader, humanizer-zh | [] | 保留 |
+| 13 | dha-66bafc4e | 果冻 | 河南、计算机、Agent 的北邮研究生 | cs-expert-ggd, henan-knowledge, agent-engineering-module | [] | **不动（北邮学生）** |
+| 14 | dha-9f6a2b8d | 万辙 | 四川、工程/系统、Switch 的北邮研究生 | agent-engineering-module, sichuan-knowledge, nintendo-switch-games, cs-expert-ggd, ai-infra-module | [] | **不动（北邮学生）** |
+| 15 | dha-ae100f7a | 若雨 | 山东、记忆系统、扑克牌的北邮学生 | shandong-knowledge, poker-card-games, agent-engineering-module, cs-expert-ggd | [] | **不动（北邮学生）** |
+| 16 | dha-cf4de333 | 测试使用 | 测试 | script-demo | [] | 保留或删除 |
+| 17 | dha-deepresearch-exp | 深度研究专家 | 核查→研究→报告 | deep-research, content-checker | [exa, fetch, zhipu-web-search, file-reader] | 可保留；「思维延伸」可由此或单独专家承担 |
 
 ---
 

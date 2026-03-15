@@ -264,7 +264,7 @@
           :dha-instances="dhaInstances"
           @message-sent="onChatMessageSent"
           @speak-mode-changed="onGroupChatRefresh"
-          @dha-added="onGroupChatRefresh"
+          @dha-added="onDhaAdded"
         />
       </div>
       <!-- 资源中心：智能体 / 技能 / 工具 -->
@@ -518,11 +518,18 @@ async function fetchGroupSessions() {
 }
 
 const workspaceContentRef = ref<{ refresh: () => void } | null>(null)
-function onChatMessageSent() {
+async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()
+  await fetchGroupSessions()
 }
 function onGroupChatRefresh() {
   workspaceContentRef.value?.refresh()
+}
+
+/** 新加成员后：刷新当前会话详情并刷新左侧会话列表，使成员数立即更新 */
+async function onDhaAdded() {
+  workspaceContentRef.value?.refresh()
+  await fetchGroupSessions()
 }
 
 async function createNewSession() {

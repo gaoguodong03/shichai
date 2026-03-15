@@ -72,7 +72,7 @@
                       <template v-else>{{ stripDiscussionGoalForDisplay(msg.content || '') }}</template>
                     </div>
                     <div
-                      v-if="msg.role !== 'user' && (msg.role !== 'host' && (msg.content || '').trim() || msg.role === 'host')"
+                      v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
                       class="group-chat-bubble-actions"
                     >
                       <button
@@ -144,7 +144,7 @@
                       >
                         <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
                         <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
-                        <span>{{ opt.label }}</span>
+                        <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
                     </ul>
                     <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
@@ -177,7 +177,7 @@
                         >
                           <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
-                          <span>{{ opt.label }}</span>
+                          <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
                       <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
@@ -211,7 +211,7 @@
                         >
                           <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
-                          <span>{{ opt.label }}</span>
+                          <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
                       <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
@@ -823,45 +823,11 @@ function tryFormatJson(s: string): string {
   }
 }
 
-/** 正文中不展示 tool_call 的 JSON 块，只保留自然语言部分（含单行与多行 JSON） */
+/** 正文中保留全部内容；合并多余空行，避免渲染出过大段落间距 */
 function dhaBodyContent(content: string): string {
   if (!content?.trim()) return ''
-  let s = content
-  const out: string[] = []
-  let i = 0
-  while (i < s.length) {
-    const start = s.indexOf('{', i)
-    if (start === -1) {
-      out.push(s.slice(i))
-      break
-    }
-    out.push(s.slice(i, start))
-    let depth = 0
-    let end = -1
-    for (let j = start; j < s.length; j++) {
-      if (s[j] === '{') depth++
-      else if (s[j] === '}') {
-        depth--
-        if (depth === 0) {
-          end = j + 1
-          break
-        }
-      }
-    }
-    if (end === -1) {
-      out.push(s.slice(start))
-      break
-    }
-    const block = s.slice(start, end)
-    try {
-      const obj = JSON.parse(block) as { action?: string }
-      if (obj?.action !== 'tool_call') out.push(block)
-    } catch {
-      out.push(block)
-    }
-    i = end
-  }
-  return out.join('').replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '').trim()
+  const s = content.trim()
+  return collapseBlankLines(s)
 }
 
 function escapeHtml(s: string) {
@@ -873,9 +839,15 @@ function escapeHtml(s: string) {
     .replace(/"/g, '&quot;')
 }
 
-function normalizeContent(s: string) {
+/** 把任意连续空行（含 \r\n、仅空白行）压成单个 \n，避免多 <p> 导致“多出一行空白” */
+function collapseBlankLines(s: string): string {
   if (!s) return ''
-  return s.trim().replace(/\n{2,}/g, '\n')
+  return s
+    .trim()
+    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
+    .replace(/^\s+/, '')
+    .replace(/\s+$/, '')
+    .trim()
 }
 
 const mdRef = ref<{ render: (s: string) => string } | null>(null)
@@ -884,7 +856,10 @@ function renderMarkdown(text: string) {
   if (!text) return ''
   if (!mdRef.value) return escapeHtml(text)
   try {
-    return mdRef.value.render(normalizeContent(text))
+    const normalized = collapseBlankLines(text)
+    let html = mdRef.value.render(normalized)
+    html = html.replace(/<p>\s*<\/p>/gi, '')
+    return html
   } catch {
     return escapeHtml(text)
   }
@@ -965,21 +940,32 @@ async function confirmGroupNext(override: string) {
           if (!block.startsWith('event: ')) continue
           const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
           const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          if (eventType === 'content' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
+              if (data?.text != null && data?.dha_id) {
+                appendStreamingContent(data.dha_id, data.text)
+              }
+            } catch (_) {}
+          }
           if (eventType === 'message' && dataStr) {
             groupStreamingPhase.value = '正在生成回复…'
             try {
-              const data = JSON.parse(dataStr)
+              const data = JSON.parse(dataStr) as Record<string, unknown>
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.role === 'assistant') {
+                  replaceOrPushAssistantMessage(data)
+                } else {
+                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+                }
                 if (data.next_prompt) {
                   const fileRefs = attachedFiles.value.length
                     ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
                     : ''
-                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
-                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
-                scrollGroupToBottom()
+                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
             } catch (_) {}
           }
@@ -1288,21 +1274,32 @@ async function continueGroupStream() {
           if (!block.startsWith('event: ')) continue
           const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
           const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          if (eventType === 'content' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
+              if (data?.text != null && data?.dha_id) {
+                appendStreamingContent(data.dha_id, data.text)
+              }
+            } catch (_) {}
+          }
           if (eventType === 'message' && dataStr) {
             groupStreamingPhase.value = '正在生成回复…'
             try {
-              const data = JSON.parse(dataStr)
+              const data = JSON.parse(dataStr) as Record<string, unknown>
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.role === 'assistant') {
+                  replaceOrPushAssistantMessage(data)
+                } else {
+                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+                }
                 if (data.next_prompt) {
                   const fileRefs = attachedFiles.value.length
                     ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
                     : ''
-                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
-                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
-                scrollGroupToBottom()
+                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
             } catch (_) {}
           }
@@ -1472,6 +1469,9 @@ function openAtDropdown(source: 'goal' | 'nextPrompt', value: string, insertStar
   showAtDropdown.value = true
 }
 
+/** 空格或标点视为已 @ 完，不再匹配候选 */
+const AT_END_REG = /[\s，。、；：！？,.\-;:!?（）【】《》""''\[\]{}]/
+
 function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
   const el = e.target as HTMLTextAreaElement
   const value = el.value
@@ -1482,11 +1482,16 @@ function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
     showAtDropdown.value = false
     return
   }
+  const segment = value.slice(lastAt + 1, end)
+  if (segment && AT_END_REG.test(segment)) {
+    showAtDropdown.value = false
+    return
+  }
   openAtDropdown(source, value, lastAt, end)
 }
 
 function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string }) {
-  const insertText = opt.type === 'host' ? '@主持人' : `@${opt.label}`
+  const insertText = opt.type === 'host' ? '@主持人 ' : `@${opt.label} `
   if (atSource.value === 'goal') {
     const raw = (groupDiscussionGoal.value ?? '') as string
     const before = raw.slice(0, atInsertStart.value)
@@ -2017,6 +2022,32 @@ function scrollGroupToBottom() {
   })
 }
 
+type GroupMessage = GroupDetail['messages'][number]
+
+/** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
+function appendStreamingContent(dhaId: string, text: string) {
+  const list = [...groupDisplayMessages.value]
+  const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
+  if (last?.role === 'assistant' && last?.dha_id === dhaId && (last as { _streaming?: boolean })._streaming) {
+    const next: GroupDetail['messages'] = [...list.slice(0, -1), { ...last, content: (last.content || '') + text } as GroupMessage]
+    groupDisplayMessages.value = next
+  } else {
+    groupDisplayMessages.value = [...list, { role: 'assistant', dha_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
+  }
+}
+
+/** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
+function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
+  const list = groupDisplayMessages.value
+  const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
+  if (data.role === 'assistant' && last?.role === 'assistant' && last?.dha_id === data.dha_id && (last as { _streaming?: boolean })._streaming) {
+    const { _streaming: _, ...rest } = data
+    groupDisplayMessages.value = [...list.slice(0, -1), rest as GroupMessage]
+  } else {
+    groupDisplayMessages.value = [...list, data as GroupMessage]
+  }
+}
+
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
   const goal = (groupDiscussionGoal.value || '').trim()
@@ -2074,7 +2105,7 @@ async function sendGroupMessage() {
       signal: abort.signal,
     })
     if (!r.ok) throw new Error(r.statusText)
-    emit('message-sent')
+    // 不在此时 emit('message-sent')，否则父组件会立即 refresh → loadGroupDetail 用服务端数据覆盖 groupDisplayMessages，导致列表重渲染并滚动回顶部；改为在流式结束后再 emit
     const reader = r.body?.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
@@ -2089,21 +2120,32 @@ async function sendGroupMessage() {
           if (!block.startsWith('event: ')) continue
           const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
           const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          if (eventType === 'content' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
+              if (data?.text != null && data?.dha_id) {
+                appendStreamingContent(data.dha_id, data.text)
+              }
+            } catch (_) {}
+          }
           if (eventType === 'message' && dataStr) {
             groupStreamingPhase.value = '正在生成回复…'
             try {
-              const data = JSON.parse(dataStr)
+              const data = JSON.parse(dataStr) as Record<string, unknown>
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                groupDisplayMessages.value = [...groupDisplayMessages.value, data]
+                if (data.role === 'assistant') {
+                  replaceOrPushAssistantMessage(data)
+                } else {
+                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+                }
                 if (data.next_prompt) {
                   const fileRefs = attachedFiles.value.length
                     ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
                     : ''
-                  groupNextPrompt.value = (data.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
-                if (data.suggested_add_dha_ids?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id]
-                scrollGroupToBottom()
+                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
+                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
             } catch (_) {}
           }
@@ -2676,26 +2718,40 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-bubble-body {
   margin: 0;
 }
+/* 回复正文 Markdown：整段压紧，所有块级统一极小间距 */
 .group-chat-markdown {
   font-size: 0.9rem;
-  line-height: 1.45;
+  line-height: 1.4;
   word-break: break-word;
 }
+/* 所有直接子块（p/h/ul/ol/pre/blockquote 等）统一：仅下边距 0.12em，首尾无额外留白 */
+.group-chat-markdown :deep(> *) {
+  margin-top: 0 !important;
+  margin-bottom: 0.12em !important;
+}
+.group-chat-markdown :deep(> *:last-child) {
+  margin-bottom: 0 !important;
+}
 .group-chat-markdown :deep(p) {
-  margin: 0 0 0.15em 0;
+  margin: 0 0 0.12em 0 !important;
 }
 .group-chat-markdown :deep(p:last-child) {
-  margin-bottom: 0;
+  margin-bottom: 0 !important;
 }
-.group-chat-markdown :deep(h1), .group-chat-markdown :deep(h2), .group-chat-markdown :deep(h3) {
+.group-chat-markdown :deep(h1), .group-chat-markdown :deep(h2), .group-chat-markdown :deep(h3),
+.group-chat-markdown :deep(h4), .group-chat-markdown :deep(h5), .group-chat-markdown :deep(h6) {
   font-weight: 600;
   line-height: 1.25;
-  margin: 0.25em 0 0.15em 0;
+  margin: 0 0 0.12em 0 !important;
+}
+.group-chat-markdown :deep(h1:first-child), .group-chat-markdown :deep(h2:first-child), .group-chat-markdown :deep(h3:first-child),
+.group-chat-markdown :deep(h4:first-child), .group-chat-markdown :deep(h5:first-child), .group-chat-markdown :deep(h6:first-child) {
+  margin-top: 0 !important;
 }
 .group-chat-markdown :deep(h1) {
   font-size: 1.3em;
   border-bottom: 1px solid var(--color-border-light);
-  padding-bottom: 0.3em;
+  padding-bottom: 0.15em;
 }
 .group-chat-markdown :deep(h2) {
   font-size: 1.16em;
@@ -2703,28 +2759,33 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-markdown :deep(h3) {
   font-size: 1.05em;
 }
+.group-chat-markdown :deep(h4), .group-chat-markdown :deep(h5), .group-chat-markdown :deep(h6) {
+  font-size: 1em;
+}
 .group-chat-markdown :deep(ul), .group-chat-markdown :deep(ol) {
-  margin: 0.2em 0 0.2em 0;
+  margin: 0 0 0.12em 0 !important;
   padding-left: 1.4em;
+  line-height: 1.4;
 }
 .group-chat-markdown :deep(li) {
-  margin: 0.05em 0;
+  margin: 0;
+  padding: 0;
 }
 .group-chat-markdown :deep(li > p) {
-  margin: 0.05em 0;
+  margin: 0 !important;
 }
-.group-chat-markdown :deep(h1 + p),
-.group-chat-markdown :deep(h2 + p),
-.group-chat-markdown :deep(h3 + p) {
-  margin-top: 0.05em;
+.group-chat-markdown :deep(h1 + p), .group-chat-markdown :deep(h2 + p), .group-chat-markdown :deep(h3 + p),
+.group-chat-markdown :deep(h4 + p), .group-chat-markdown :deep(h5 + p), .group-chat-markdown :deep(h6 + p) {
+  margin-top: 0 !important;
 }
 .group-chat-markdown :deep(pre) {
-  margin: 0.5em 0;
-  padding: 0.5rem 0.75rem;
+  margin: 0.12em 0 !important;
+  padding: 0.35rem 0.5rem;
   overflow-x: auto;
   border-radius: 6px;
   background: var(--color-input-bg);
   font-size: 0.8125em;
+  line-height: 1.35;
 }
 .group-chat-markdown :deep(code) {
   padding: 0.15em 0.35em;
@@ -2754,13 +2815,16 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-markdown :deep(table) {
   width: 100%;
   border-collapse: collapse;
-  margin: 0.4em 0 0.6em 0;
+  margin: 0.12em 0 !important;
   font-size: 0.8125rem;
+}
+.group-chat-markdown :deep(tr) {
+  line-height: 1.35;
 }
 .group-chat-markdown :deep(th),
 .group-chat-markdown :deep(td) {
   border: 1px solid var(--color-border-light);
-  padding: 0.35rem 0.6rem;
+  padding: 0.2rem 0.4rem;
   text-align: left;
 }
 .group-chat-markdown :deep(thead) {
@@ -2773,8 +2837,8 @@ defineExpose({ refresh: loadGroupDetail })
   background-color: var(--color-card);
 }
 .group-chat-markdown :deep(blockquote) {
-  margin: 0.6em 0;
-  padding: 0.35rem 0.75rem;
+  margin: 0.12em 0 !important;
+  padding: 0.15rem 0.4rem;
   border-left: 3px solid var(--color-border);
   background: var(--color-list-hover);
   color: var(--color-text-muted);
@@ -2782,7 +2846,7 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-markdown :deep(hr) {
   border: 0;
   border-top: 1px solid var(--color-border-light);
-  margin: 0.8em 0;
+  margin: 0.2em 0 !important;
 }
 .group-chat-bubble-actions {
   margin-top: 0.5rem;
@@ -2965,8 +3029,8 @@ defineExpose({ refresh: loadGroupDetail })
   bottom: 100%;
   margin-bottom: 0.25rem;
   padding: 0.5rem 0.75rem;
-  min-width: 12rem;
-  max-height: 14rem;
+  min-width: 10rem;
+  max-height: 10rem;
   overflow-y: auto;
   background: var(--color-card);
   border: 1px solid var(--color-border);
@@ -2978,6 +3042,12 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+.group-chat-at-dropdown .group-chat-members-item .group-chat-at-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10em;
 }
 .group-chat-at-item-selected {
   background: var(--color-list-hover);

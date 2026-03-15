@@ -111,24 +111,7 @@
       ]
     },
     "metadata": {
-      "description": "本地 MCP：read_file、write_file、read_pdf、read_docx、read_xlsx。工作区内读写文件，与 Filesystem MCP 互补；按会话使用时 path 会限定在 workspaces/{会话ID}/ 下。"
-    }
-  },
-  {
-    "id": "filesystem",
-    "name": "本地文件系统（Filesystem MCP）",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "./data/agent-outputs"
-      ]
-    },
-    "metadata": {
-      "description": "官方 Filesystem MCP：在 AGENT_OUTPUTS_DIR（./data/agent-outputs） 下读写文件、列目录、搜索和获取元数据，作为原 file-reader 的替代方案。需要本机安装 Node.js 18+。"
+      "description": "统一文件 MCP（已合并原 Filesystem 能力）：read_file、write_file、read_pdf、read_docx、read_xlsx、list_allowed_directories、list_directory。工作区 path 按会话限定在 workspaces/{会话ID}/ 下。仅需 Python，无需 Node.js。"
     }
   },
   {

@@ -1,13 +1,18 @@
 ---
-description: 生成应用图标的提示词与调用规范（配合 volces-icon_generate_app_icon 工具或 run_skill_script
-  的 generate_image.py）。
+description: 统一图片生成技能。负责应用图标、文章封面、文内配图、小红书信息图等；由技能决定生成张数与每张的提示词（description）。支持 run_skill_script 的 generate_image.py 或 volces-icon MCP。
 enabled: true
-mcp_server_ids: []
-name: 图标生成
+mcp_server_ids:
+  - volces-icon
+name: 图片生成
 ---
-## 目标
+## 目标与范围
 
-把用户的想法转换成**稳定可复用**的应用图标生成流程：先澄清需求，再组装高质量提示词，最后用**CLI（run_skill_script）** 生成并迭代。
+本技能负责**所有类型的图片生成**：应用图标、文章封面、文内配图、小红书风格信息图。由你根据任务决定**生成几张图**以及**每张图的描述（description）**，再调用工具产出。
+
+- **图标/Logo**：先澄清需求，再组装高质量提示词，用 run_skill_script 或 volces-icon 生成。
+- **封面图**：根据文章主题与风格，给出类型/色板/渲染等维度（见下方「封面与配图」），写一条 description 调用一次工具。
+- **文内配图**：按段落或要点决定张数与每张内容，逐张写 description 调用。
+- **小红书信息图**：1～10 张风格统一的系列图，每张 description 明确风格与版式。
 
 ---
 
@@ -105,6 +110,16 @@ name: 图标生成
 无文字、无数字、无水印、无边框、无复杂背景、无杂乱细节、画面干净、图标可读性强。
 ```
 
+
+---
+
+## 其它场景（封面、配图、小红书）
+
+- **封面图**：description 中可包含类型（hero/conceptual/minimal 等）、色板（warm/elegant/cool 等）、渲染（flat-vector/painterly 等）、情绪（subtle/bold）。比例可用 pic_size 如 1792x1024（横版）、1024x1024（方图）。
+- **文内配图**：按文章段落或要点逐张生成，每张 description 写明画面主体与风格，保持风格一致。
+- **小红书信息图**：多张统一风格（如 cute/fresh/minimal），description 中写明「小红书风格」「信息图」「第 N 张」及本张内容要点。
+
+以上场景均使用同一工具（run_skill_script 的 generate_image.py 或 volces-icon_generate_app_icon），仅 description 与 pic_size 不同。
 
 ---
 

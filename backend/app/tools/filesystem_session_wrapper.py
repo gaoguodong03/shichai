@@ -1,6 +1,7 @@
 """为 filesystem / file-reader MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 workspaces/{session_id}/ 下。"""
 import os
 import json
+import asyncio
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -71,12 +72,12 @@ def _ensure_path_in_session(args: Dict[str, Any], session_id: str) -> Dict[str, 
 
 
 def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
-    """包装 filesystem MCP 工具：调用前将 path 限制并重写为当前会话 workspace。"""
+    """包装 filesystem MCP 工具：调用前将 path 限制并重写为当前会话 workspace。包装后的 func 保持与 orig 一致（异步则仍为异步），避免 coroutine 未被 await。"""
     orig_func = getattr(tool, "func", None)
     if not callable(orig_func):
         return tool
 
-    def wrapped_func(*args: Any, **kwargs: Any) -> str:
+    async def wrapped_func(*args: Any, **kwargs: Any) -> str:
         # LangChain Tool 可能用 *args 或 **kwargs 传参
         if kwargs:
             kwargs = _ensure_path_in_session(kwargs, session_id)
@@ -86,7 +87,10 @@ def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
         elif args and isinstance(args[0], str):
             kwargs = _ensure_path_in_session({"path": args[0]}, session_id)
             args = ()
-        return orig_func(*args, **kwargs)
+        result = orig_func(*args, **kwargs)
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
 
     return Tool(
         name=tool.name,

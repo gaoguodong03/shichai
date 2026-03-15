@@ -1538,17 +1538,30 @@ function escapeHtml(s: string) {
     .replace(/"/g, '&quot;')
 }
 
-/** 去掉末尾空行，并把连续换行压成单个，减少段落间空行 */
+/** 把任意连续空行（含 \r\n、仅空白行）压成单个 \n，避免多 <p> 导致“多出一行空白” */
+function collapseBlankLines(s: string): string {
+  if (!s) return ''
+  return s
+    .trim()
+    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
+    .replace(/^\s+/, '')
+    .replace(/\s+$/, '')
+    .trim()
+}
+
 function normalizeContent(s: string) {
   if (!s) return ''
-  return s.trimEnd().replace(/\n{2,}/g, '\n')
+  return collapseBlankLines(s)
 }
 
 function renderMarkdown(text: string) {
   if (!text) return ''
   if (!mdRef.value) return escapeHtml(text)
   try {
-    return mdRef.value.render(normalizeContent(text))
+    const normalized = collapseBlankLines(text)
+    let html = mdRef.value.render(normalized)
+    html = html.replace(/<p>\s*<\/p>/gi, '')
+    return html
   } catch {
     return escapeHtml(text)
   }
@@ -1790,11 +1803,48 @@ watch(
     opacity: 1;
   }
 }
+/* 群聊回复 Markdown：整段压紧，与工作区一致 */
+.chat-markdown {
+  line-height: 1.4;
+  word-break: break-word;
+}
+.chat-markdown :deep(> *) {
+  margin-top: 0 !important;
+  margin-bottom: 0.12em !important;
+}
+.chat-markdown :deep(> *:last-child) {
+  margin-bottom: 0 !important;
+}
 .chat-markdown :deep(p) {
-  margin: 0 0 0.35em 0;
+  margin: 0 0 0.12em 0 !important;
 }
 .chat-markdown :deep(p:last-child) {
-  margin-bottom: 0;
+  margin-bottom: 0 !important;
+}
+.chat-markdown :deep(h1), .chat-markdown :deep(h2), .chat-markdown :deep(h3),
+.chat-markdown :deep(h4), .chat-markdown :deep(h5), .chat-markdown :deep(h6) {
+  font-weight: 600;
+  margin: 0 0 0.12em 0 !important;
+  line-height: 1.25;
+}
+.chat-markdown :deep(h1:first-child), .chat-markdown :deep(h2:first-child), .chat-markdown :deep(h3:first-child),
+.chat-markdown :deep(h4:first-child), .chat-markdown :deep(h5:first-child), .chat-markdown :deep(h6:first-child) {
+  margin-top: 0 !important;
+}
+.chat-markdown :deep(ul), .chat-markdown :deep(ol) {
+  margin: 0 0 0.12em 0 !important;
+  line-height: 1.4;
+}
+.chat-markdown :deep(li), .chat-markdown :deep(li > p) {
+  margin: 0 !important;
+  padding: 0;
+}
+.chat-markdown :deep(pre) {
+  line-height: 1.35;
+  margin: 0.12em 0 !important;
+}
+.chat-markdown :deep(tr) {
+  line-height: 1.35;
 }
 .docx-preview :deep(*) {
   max-width: 100%;

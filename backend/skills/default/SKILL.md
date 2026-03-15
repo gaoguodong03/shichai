@@ -17,7 +17,7 @@ mcp_server_ids: []
    - 理解用户意图后直接回应
 
 2. **按需调用工具**
-   - 若用户需要搜索、抓取、计算、读文件等，可调用 MCP 工具（工具名为 `{server_id}_{tool_name}`，如 `filesystem_read_text_file`）
+   - 若用户需要搜索、抓取、计算、读文件等，可调用 MCP 工具（工具名为 `{server_id}_{tool_name}`，如 `file-reader_read_file`）
    - 调用时请使用工具 schema 中的参数名（如 `path`、`query`、`description`）；系统会对 `__arg1` 等做自动映射，但直接使用参数名兼容性最佳
    - 若无明确需求，直接回答即可；工具使用以用户需求为准，不预设必须调用
 
