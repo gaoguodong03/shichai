@@ -42,7 +42,7 @@ def _safe_read_text(path: Path, encoding: str = "utf-8") -> str:
         return f"错误：读取文件失败 - {e}"
 
 
-mcp = FastMCP("File Reader Server", description="在工作区内读取与写入文件（文本、PDF、DOCX、XLSX）")
+mcp = FastMCP("File Reader Server")
 
 
 @mcp.tool()

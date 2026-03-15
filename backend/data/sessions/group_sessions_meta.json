@@ -53,5 +53,17 @@
     "speak_mode": "auto",
     "created_at": "2026-03-14T14:21:17.057711+00:00",
     "updated_at": "2026-03-14T14:30:04.038384+00:00"
+  },
+  "group-5c63fbb8afda": {
+    "title": "DHA 协作 · 3/15 13:09",
+    "dha_ids": [
+      "dha-blog-cover",
+      "dha-df1f712a",
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-15T05:09:21.592680+00:00",
+    "updated_at": "2026-03-15T05:27:22.234394+00:00"
   }
 }

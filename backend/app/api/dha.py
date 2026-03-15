@@ -82,8 +82,9 @@ def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
 
 @router.get("/dha/instances")
 async def get_dha_instances():
-    """获取 DHA 实例列表"""
+    """获取 DHA 实例列表（按名称排序）"""
     instances = load_dha_instances()
+    instances = sorted(instances, key=lambda d: (d.get("name") or "").strip())
     return {"status": "ok", "data": {"instances": instances}}
 
 

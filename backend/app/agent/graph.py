@@ -235,7 +235,13 @@ def create_react_agent(
                 if depth not in ("standard", "deep"):
                     args["depth"] = "standard"
                     logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
-            # exa_web_search_exa: 参数约束已在 MCP manager 的工具描述中说明，由 LLM 按正确参数调用
+            # volces-icon_generate_app_icon: 将 prompt/input/text/content 统一为 description
+            if tool_name == "volces-icon_generate_app_icon" and "description" not in args:
+                args["description"] = (
+                    args.get("prompt") or args.get("input") or args.get("text") or args.get("content") or ""
+                )
+                for k in ("prompt", "input", "text", "content"):
+                    args.pop(k, None)
             return args
 
         tool_results = []
@@ -585,9 +591,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             if depth not in ("standard", "deep"):
                 args["depth"] = "standard"
         if tool_name == "volces-icon_generate_app_icon":
-            if "description" not in args and ("prompt" in args or "input" in args):
-                args["description"] = args.get("prompt") or args.get("input", "")
-                for k in ("prompt", "input"):
+            if "description" not in args:
+                args["description"] = (
+                    args.get("prompt") or args.get("input") or args.get("text") or args.get("content") or ""
+                )
+                for k in ("prompt", "input", "text", "content"):
                     args.pop(k, None)
         return args
 

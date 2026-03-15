@@ -118,39 +118,102 @@
                   </button>
                 </div>
                 <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词」且未开「手动控制」时） -->
-                <div v-if="!showNextPromptField && !groupAutoConfirm" class="group-chat-input-block group-chat-input-block-single">
+                <div v-if="!showNextPromptField && !groupAutoConfirm" class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
                   <textarea
+                    ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
-                    placeholder="按 Cmd+Enter 发送"
+                    placeholder="按 Cmd+Enter 发送，输入 @ 可提及主持人或专家"
                     rows="3"
+                    @input="onAtInput('goal', $event)"
+                    @keydown="onAtKeydown('goal', $event)"
+                    @blur="closeAtDropdownOnBlur"
                     @keydown.enter.meta.prevent="sendGroupMessage()"
                   />
+                  <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
+                    <ul class="group-chat-members-list">
+                      <li
+                        v-for="(opt, idx) in atMentionOptions"
+                        :key="opt.id"
+                        class="group-chat-members-item group-chat-members-item-clickable"
+                        :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
+                        @mousedown.prevent
+                        @click="selectMention(opt)"
+                      >
+                        <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                        <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                        <span>{{ opt.label }}</span>
+                      </li>
+                    </ul>
+                    <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
+                  </div>
                 </div>
                 <!-- 双框模式：勾选「显示下一 DHA 提示词」或开启「手动控制」时显示（手动控制下可编辑主持人给的提示词再点发送） -->
                 <template v-else>
-                  <div class="group-chat-input-block">
+                  <div class="group-chat-input-block group-chat-input-block-at">
                     <label class="group-chat-input-block-label">【讨论目标】</label>
                     <textarea
+                      ref="goalTextareaRef"
                       v-model="groupDiscussionGoal"
                       class="group-chat-input-block-textarea"
-                      placeholder="输入本场讨论要达成的目标…"
+                      placeholder="输入本场讨论要达成的目标… 输入 @ 可提及主持人或专家"
                       rows="3"
+                      @input="onAtInput('goal', $event)"
+                      @keydown="onAtKeydown('goal', $event)"
+                      @blur="closeAtDropdownOnBlur"
                       @keydown.enter.meta.prevent="sendGroupMessage()"
                     />
+                    <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
+                      <ul class="group-chat-members-list">
+                        <li
+                          v-for="(opt, idx) in atMentionOptions"
+                          :key="opt.id"
+                          class="group-chat-members-item group-chat-members-item-clickable"
+                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
+                          @mousedown.prevent
+                          @click="selectMention(opt)"
+                        >
+                          <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span>{{ opt.label }}</span>
+                        </li>
+                      </ul>
+                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
+                    </div>
                   </div>
-                  <div class="group-chat-input-block">
+                  <div class="group-chat-input-block group-chat-input-block-at">
                     <label class="group-chat-input-block-label">
                       下一 DHA 提示词
                       <span v-if="groupAutoConfirm && groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
                     </label>
                     <textarea
+                      ref="nextPromptTextareaRef"
                       v-model="groupNextPrompt"
                       class="group-chat-input-block-textarea"
-                      placeholder="给下一个 DHA 的提示词（可留空由主持人自动生成）"
+                      placeholder="给下一个 DHA 的提示词（可留空由主持人自动生成），输入 @ 可提及主持人或专家"
                       rows="3"
+                      @input="onAtInput('nextPrompt', $event)"
+                      @keydown="onAtKeydown('nextPrompt', $event)"
+                      @blur="closeAtDropdownOnBlur"
                       @keydown.enter.meta.prevent="sendGroupMessage()"
                     />
+                    <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
+                      <ul class="group-chat-members-list">
+                        <li
+                          v-for="(opt, idx) in atMentionOptions"
+                          :key="opt.id"
+                          class="group-chat-members-item group-chat-members-item-clickable"
+                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
+                          @mousedown.prevent
+                          @click="selectMention(opt)"
+                        >
+                          <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span>{{ opt.label }}</span>
+                        </li>
+                      </ul>
+                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
+                    </div>
                   </div>
                 </template>
               </div>
@@ -1379,6 +1442,106 @@ const effectiveNextSpeaker = computed(() => {
   return ids[0] ?? ''
 })
 
+/** @ 提及：输入 @ 后显示的候选（主持人 + 当前群内专家），按输入过滤 */
+const showAtDropdown = ref(false)
+const atSource = ref<'goal' | 'nextPrompt'>('goal')
+const atFilter = ref('')
+const atInsertStart = ref(0)
+const atSelectionEnd = ref(0)
+const atSelectedIndex = ref(0)
+const goalTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
+
+const atMentionOptions = computed(() => {
+  const host = { type: 'host' as const, id: 'host', label: '主持人' }
+  const d = groupDetail.value
+  const ids = d?.dha_ids || []
+  const map = d?.dha_map || {}
+  const experts = ids.map((id) => ({ type: 'dha' as const, id, label: map[id]?.name || id }))
+  const list = [host, ...experts]
+  const q = (atFilter.value || '').trim().toLowerCase()
+  if (!q) return list
+  return list.filter((o) => (o.label || '').toLowerCase().includes(q) || (o.id || '').toLowerCase().includes(q))
+})
+
+function openAtDropdown(source: 'goal' | 'nextPrompt', value: string, insertStart: number, selectionEnd: number) {
+  atSource.value = source
+  atInsertStart.value = insertStart
+  atSelectionEnd.value = selectionEnd
+  atFilter.value = value.slice(insertStart + 1, selectionEnd)
+  atSelectedIndex.value = 0
+  showAtDropdown.value = true
+}
+
+function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
+  const el = e.target as HTMLTextAreaElement
+  const value = el.value
+  const start = el.selectionStart ?? 0
+  const end = el.selectionEnd ?? start
+  const lastAt = value.lastIndexOf('@', end - 1)
+  if (lastAt === -1 || (lastAt > 0 && /[\w\u4e00-\u9fa5]/.test(value[lastAt - 1]))) {
+    showAtDropdown.value = false
+    return
+  }
+  openAtDropdown(source, value, lastAt, end)
+}
+
+function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string }) {
+  const insertText = opt.type === 'host' ? '@主持人' : `@${opt.label}`
+  if (atSource.value === 'goal') {
+    const raw = (groupDiscussionGoal.value ?? '') as string
+    const before = raw.slice(0, atInsertStart.value)
+    const after = raw.slice(atSelectionEnd.value)
+    groupDiscussionGoal.value = before + insertText + after
+    showAtDropdown.value = false
+    nextTick(() => {
+      goalTextareaRef.value?.focus()
+      const newPos = atInsertStart.value + insertText.length
+      goalTextareaRef.value?.setSelectionRange(newPos, newPos)
+    })
+  } else {
+    const raw = groupNextPrompt.value
+    const before = raw.slice(0, atInsertStart.value)
+    const after = raw.slice(atSelectionEnd.value)
+    groupNextPrompt.value = before + insertText + after
+    showAtDropdown.value = false
+    nextTick(() => {
+      nextPromptTextareaRef.value?.focus()
+      const newPos = atInsertStart.value + insertText.length
+      nextPromptTextareaRef.value?.setSelectionRange(newPos, newPos)
+    })
+  }
+}
+
+function onAtKeydown(source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
+  if (!showAtDropdown.value || atMentionOptions.value.length === 0) return
+  const el = e.target as HTMLTextAreaElement
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    atSelectedIndex.value = (atSelectedIndex.value + 1) % atMentionOptions.value.length
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    atSelectedIndex.value = (atSelectedIndex.value - 1 + atMentionOptions.value.length) % atMentionOptions.value.length
+    return
+  }
+  if (e.key === 'Enter' && atMentionOptions.value[atSelectedIndex.value]) {
+    e.preventDefault()
+    selectMention(atMentionOptions.value[atSelectedIndex.value])
+    return
+  }
+  if (e.key === 'Escape') {
+    showAtDropdown.value = false
+  }
+}
+
+function closeAtDropdownOnBlur() {
+  setTimeout(() => {
+    showAtDropdown.value = false
+  }, 150)
+}
+
 /** 有讨论目标、提示词或文件引用即可发送 */
 const canSend = computed(
   () =>
@@ -1389,12 +1552,21 @@ const canSend = computed(
     ),
 )
 
+/** 从首条用户消息中取出纯讨论目标，去掉「【讨论目标】」前缀，避免预填后再次发送时重复 */
+function normalizeDiscussionGoalFromContent(content: string | null | undefined): string | null {
+  const raw = (content ?? '').trim()
+  if (!raw) return null
+  const prefix = '【讨论目标】'
+  if (raw.startsWith(prefix)) return raw.slice(prefix.length).replace(/^\s*\n?/, '').trim() || null
+  return raw
+}
+
 watch(
   () => groupDetail.value?.messages,
   (messages) => {
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
     const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
-    groupDiscussionGoal.value = firstUser?.content?.trim() ?? null
+    groupDiscussionGoal.value = normalizeDiscussionGoalFromContent(firstUser?.content) ?? null
   },
   { immediate: true }
 )
@@ -2718,6 +2890,38 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   border: none;
+}
+.group-chat-input-block-at {
+  position: relative;
+}
+.group-chat-at-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  margin-bottom: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  min-width: 12rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+.group-chat-at-dropdown .group-chat-members-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.group-chat-at-item-selected {
+  background: var(--color-list-hover);
+  border-radius: 6px;
+}
+.group-chat-at-host-icon {
+  font-size: 1rem;
+  line-height: 1;
 }
 .group-chat-input-block-label {
   display: block;

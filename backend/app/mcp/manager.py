@@ -48,7 +48,22 @@ def normalize_mcp_kwargs_for_call(
     call_kwargs: Dict[str, Any] = dict(kwargs or {})
 
     # volces-icon generate_app_icon:
-    # 兼容 __arg1 + pic_size / 纯字符串 / JSON，统一映射为 description/pic_size
+    # 1) 优先从 prompt / input / text / content 映射到 description（LLM 常传这些别名而非 description）
+    if (
+        server_id == "volces-icon"
+        and original_tool_name == "generate_app_icon"
+        and "description" not in call_kwargs
+    ):
+        desc_candidate = (
+            call_kwargs.pop("prompt", None)
+            or call_kwargs.pop("input", None)
+            or call_kwargs.pop("text", None)
+            or call_kwargs.pop("content", None)
+        )
+        if desc_candidate is not None:
+            call_kwargs["description"] = str(desc_candidate).strip() or ""
+
+    # 2) 兼容 __arg1 + pic_size / 纯字符串 / JSON，统一映射为 description/pic_size
     if (
         server_id == "volces-icon"
         and original_tool_name == "generate_app_icon"
@@ -73,6 +88,14 @@ def normalize_mcp_kwargs_for_call(
         # 否则，直接把 __arg1 当成 description 文本
         if not _mapped:
             call_kwargs["description"] = str(arg1) if arg1 is not None else ""
+
+    # 3) 确保 volces-icon generate_app_icon 必有 description，避免 MCP 报「缺少必填项」
+    if (
+        server_id == "volces-icon"
+        and original_tool_name == "generate_app_icon"
+        and "description" not in call_kwargs
+    ):
+        call_kwargs["description"] = ""
 
     # amap-maps maps_geo:
     # 若仍然收到 __arg1，则兼容以下几种常见写法，归一化为 address/city

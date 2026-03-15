@@ -115,6 +115,17 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
     return "\n\n".join(lines)
 
 
+def _normalize_discussion_goal(raw: str, max_len: int = 200) -> str:
+    """从首条用户消息中提取纯讨论目标，去掉前端的「【讨论目标】」前缀，避免在 prompt 中重复出现。"""
+    if not raw or not isinstance(raw, str):
+        return (raw or "").strip()[:max_len] if raw else ""
+    s = (raw or "").strip()
+    prefix = "【讨论目标】"
+    if s.startswith(prefix):
+        s = s[len(prefix) :].lstrip("\n ")
+    return s[:max_len] if len(s) > max_len else s
+
+
 def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
     """当主持人未输出 next_prompt 时使用的默认提示词模板。
     相比早期版本，这里刻意给出更丰富的上下文、小结和任务说明，
@@ -464,11 +475,11 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
     messages = _load_group_history(group_session_id)
 
-    # 讨论目标：取首条用户消息
+    # 讨论目标：取首条用户消息（去掉前端已加的「【讨论目标】」前缀，避免重复）
     discussion_goal = ""
     for msg in messages:
         if msg.get("role") == "user":
-            discussion_goal = (msg.get("content") or "")[:200]
+            discussion_goal = _normalize_discussion_goal(msg.get("content") or "")
             break
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
@@ -671,11 +682,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             last_speaker_dha_id = msg.get("dha_id")
             break
 
-    # 讨论目标：取首条用户消息
+    # 讨论目标：取首条用户消息（去掉前端已加的「【讨论目标】」前缀，避免重复）
     discussion_goal = ""
     for msg in messages:
         if msg.get("role") == "user":
-            discussion_goal = (msg.get("content") or "")[:200]
+            discussion_goal = _normalize_discussion_goal(msg.get("content") or "")
             break
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
@@ -1157,7 +1168,7 @@ async def group_chat(group_session_id: str, request: GroupChatRequest):
     discussion_goal = ""
     for msg in messages:
         if msg.get("role") == "user":
-            discussion_goal = (msg.get("content") or "")[:200]
+            discussion_goal = _normalize_discussion_goal(msg.get("content") or "")
             break
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"

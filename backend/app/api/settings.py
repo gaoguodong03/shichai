@@ -699,6 +699,7 @@ def load_skills_config() -> List[Dict[str, Any]]:
                         except:
                             pass
     
+    skills.sort(key=lambda x: (x.get("name") or x.get("id") or "").strip())
     return skills
 
 # 当 skill 的 frontmatter 未显式配置 mcp_server_ids 时使用的默认映射（向后兼容）
