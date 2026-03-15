@@ -52,7 +52,6 @@ name: 文章配图
 ### 1. 预检与偏好
 
 - 若项目或用户有配图偏好（类型/风格/密度），先读取或询问。
-- 确认输出目录（如 `illustrations/{文章主题-slug}/`），slug 建议 2–4 词 kebab-case；若冲突可加时间后缀。
 
 ### 2. 分析内容
 
@@ -88,8 +87,10 @@ name: 文章配图
 
 ### 5. 生成图像
 
-- **先写 prompt**：为每张图写结构化 prompt（含 ZONES/LABELS/COLORS/STYLE/比例等），LABELS 必须用文章里的真实数据、术语、指标，不要泛泛而谈。将 prompt 保存到 `prompts/NN-{type}-{slug}.md`，便于复现与修改。
-- **再出图**：使用本项目的图片生成能力（MCP 图像工具或 `run_skill_script` 调用的生图脚本），按 prompt 依次生成，保存为 `NN-{type}-{slug}.png`。失败可重试一次。
+- **先写 prompt**：为每张图写结构化 prompt（含 ZONES/LABELS/COLORS/STYLE/比例等），LABELS 必须用文章里的真实数据、术语、指标，不要泛泛而谈。
+- **再出图**：使用本项目的图片生成能力，按 prompt 依次生成，保存为 `NN-{type}-{slug}.png`。**必须**使用以下方式：
+    **CLI（推荐）**：调用工具 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 `{"description": "该张图的 prompt 内容", "pic_size": "1024x1024"}`。
+- **禁止使用 call_api 生图**：不要用 `call_api` 请求 example.com、任意 URL 或“假设的接口”来生成图片；生图只能通过上述 run_skill_script 或 MCP 图像工具。
 - 若用户启用水印等设置，在生成后按规则添加。
 
 **禁止**：在未保存 prompt 文件前就用临时随口写的 prompt 直接生图；必须用类型化、结构化的 prompt 模板。
@@ -99,16 +100,6 @@ name: 文章配图
 - 在文章对应位置插入 `![描述](path/NN-{type}-{slug}.png)`。
 - 向用户汇报：文章路径、类型、密度、风格、成功张数（如 5/6）。
 
-## 输出目录结构
-
-```
-illustrations/{topic-slug}/
-├── source-{slug}.md（或原文拷贝）
-├── outline.md
-├── prompts/
-│   └── NN-{type}-{slug}.md
-└── NN-{type}-{slug}.png
-```
 
 ## 修改与增删
 

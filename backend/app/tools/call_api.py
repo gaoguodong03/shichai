@@ -50,6 +50,10 @@ def call_api(
         # 解析失败则退回原始字符串
         url = raw_url_param
 
+    # 若 url 未带协议，自动补 https://（避免模型只填域名导致 httpx 报错）
+    if url and not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url.lstrip("/")
+
     method = (method or "GET").strip().upper()
     headers = {}
     if headers_json and headers_json.strip():
@@ -182,4 +186,15 @@ def call_api(
         except Exception:
             pass
         # #endregion agent log: call_api error
+        err_str = str(e)
+        if "protocol" in err_str.lower() and ("missing" in err_str.lower() or "http" in err_str.lower()):
+            return (
+                f"错误：请求失败 - {e}\n\n"
+                "提示：call_api 的 url 需包含 http:// 或 https://。若您要**生成图片**，请使用 run_skill_script（script_path=generate_image.py）或 volces-icon_generate_app_icon，不要用 call_api。"
+            )
+        if "nodename" in err_str or "not known" in err_str or getattr(e, "errno", None) == 8:
+            return (
+                "错误：无法解析请求的域名（网络或 DNS 异常）。请检查本机网络、代理或防火墙。\n\n"
+                "若您要**生成图片**，请改用 run_skill_script（script_path=generate_image.py）或 volces-icon_generate_app_icon，不要用 call_api 请求外部 URL。"
+            )
         return f"错误：请求失败 - {e}"

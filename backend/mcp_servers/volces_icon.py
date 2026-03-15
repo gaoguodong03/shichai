@@ -89,6 +89,9 @@ def generate_app_icon(
     注意：必须使用参数名 description 传入提示词，不要使用 __arg1 / prompt 等其他字段名。
     函数返回值为图片 URL 或错误信息字符串。
     """
+    if not (description and str(description).strip()):
+        return "错误：description（图标的文字描述）不能为空。请提供具体描述后再调用本工具，例如：「应用图标，极简扁平矢量风格：一只小羊……」"
+    description = str(description).strip()
     try:
         api_key = _get_api_key()
     except ValueError as e:

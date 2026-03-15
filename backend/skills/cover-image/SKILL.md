@@ -51,11 +51,12 @@ name: 文章封面图生成器
   - 构图要点：留白 40–60%、主视觉居中或偏左、人物用简笔剪影勿写实
   - 若有参考图，在 frontmatter 或正文中写明如何用（direct 传图 / style 提取描述）
 
-### 4. 用图片生成 MCP 生成图片
+### 4. 生成图片（MCP 或 CLI 二选一）
 
-- prompt 写好后，**使用图片生成的 MCP** 生成封面图。将 `prompts/cover.md` 中的完整描述（或提炼出的英文/模型可用的 prompt 文本）作为输入，按所选比例输出。
-- 若已有 `cover.png` 且为重新生成，先备份再覆盖。
-- 若 MCP 支持参考图，按 prompt 中说明传入 ref；失败时重试一次。
+- prompt 写好后，用以下任一方式生成封面图，将 `prompts/cover.md` 中的完整描述（或提炼出的 prompt 文本）作为输入，按所选比例输出。
+- **方式 A（MCP）**：使用图片生成的 MCP 工具。
+- **方式 B（CLI，推荐）**：调用 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 JSON：`{"description": "从 cover.md 提炼的提示词", "pic_size": "1024x1024"}`（比例 16:9 可用 `1024x576` 等）。API Key 与 MCP 相同：环境变量 **VOLCES_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式可为 `Bearer xxx` 或仅 `xxx`）。工具返回的 stdout 为图片 URL 或错误信息。
+- 若已有 `cover.png` 且为重新生成，先备份再覆盖。失败时重试一次。
 - 生成的图片保存到工作区同一输出目录下的 `cover.png`。
 
 ### 5. 完成报告
@@ -79,9 +80,9 @@ name: 文章封面图生成器
 └── cover.png
 ```
 
-若无法写入工作区，则至少把 `prompts/cover.md` 的完整内容输出到对话，并说明「请将上述 prompt 保存后，使用图片生成 MCP 或本地工具生成 cover.png」。
+若无法写入工作区，则至少把 `prompts/cover.md` 的完整内容输出到对话，并说明「请将上述 prompt 保存后，使用 run_skill_script（generate_image.py）或图片生成 MCP 生成 cover.png」。
 
 ## 修改与重做
 
-- **改某一维**：在工作区中更新 `prompts/cover.md` 后，再次调用图片生成 MCP 生成，并备份原 `cover.png`。
+- **改某一维**：在工作区中更新 `prompts/cover.md` 后，再次调用 run_skill_script（generate_image.py）或图片生成 MCP 生成，并备份原 `cover.png`。
 - **换参考图**：更新 refs 与 prompt 中的引用说明后，再调用 MCP 生成。

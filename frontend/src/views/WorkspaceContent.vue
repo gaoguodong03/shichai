@@ -2011,6 +2011,9 @@ async function sendGroupMessage() {
   // #endregion agent log
   const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
   groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
+  // 发送后立即从当前展示的首条用户消息同步讨论目标，否则 watch 只依赖 groupDetail.messages（此处未更新）不会触发
+  const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
+  groupDiscussionGoal.value = normalizeDiscussionGoalFromContent(firstUser?.content) ?? null
   scrollGroupToBottom()
   try {
     const abort = new AbortController()

@@ -27,6 +27,50 @@ def _get_tool_call_arguments(tool_call: dict) -> dict:
             logger.warning("tool_call arguments 非合法 JSON: %s", raw[:200])
     return {}
 
+
+def _extract_description_from_content(content: str, tool_name: str) -> str | None:
+    """当 tool_calls 的 args 为空时，从同条 AIMessage 的 content 中解析 description。
+    兼容 content 中的 ```json { "tool": "...", "arguments": { "description": "..." } } ``` 或 "description": "..."。
+    """
+    if not (content and isinstance(content, str) and tool_name.strip()):
+        return None
+    import re
+    # 1) 先尝试从代码块中的 JSON 解析（含 tool / arguments）
+    for block in re.findall(r"```(?:json)?\s*([\s\S]*?)```", content):
+        block = block.strip()
+        if not block:
+            continue
+        try:
+            obj = json.loads(block)
+            if not isinstance(obj, dict):
+                continue
+            # 若指定了 tool，需匹配当前工具名
+            if "tool" in obj and obj.get("tool") != tool_name:
+                continue
+            args = obj.get("arguments") or obj
+            desc = args.get("description") if isinstance(args, dict) else None
+            if desc and isinstance(desc, str) and desc.strip():
+                return desc.strip()
+        except (json.JSONDecodeError, TypeError):
+            continue
+    # 2) 整段 content 当作 JSON 试一次（部分模型直接输出单个 JSON）
+    try:
+        obj = json.loads(content.strip())
+        if isinstance(obj, dict):
+            args = obj.get("arguments") or obj
+            desc = args.get("description") if isinstance(args, dict) else None
+            if desc and isinstance(desc, str) and desc.strip():
+                return desc.strip()
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # 3) 正则匹配 "description": "..."（含简单转义）
+    m = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', content)
+    if m:
+        s = m.group(1).encode().decode("unicode_escape") if "\\" in m.group(1) else m.group(1)
+        if s.strip():
+            return s.strip()
+    return None
+
 # 可通过 LLM_AGENT_TIMEOUT 调整（秒），默认 180。多轮工具调用时上下文较长，需更长时间
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
 
@@ -252,6 +296,12 @@ def create_react_agent(
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call.get("name") or tool_call.get("id", "")
                 arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+                # 若 volces-icon 的 description 仍为空，从同条消息 content 中解析（模型常把参数写在正文 JSON 里）
+                if tool_name == "volces-icon_generate_app_icon" and not (arguments.get("description") or "").strip():
+                    fallback = _extract_description_from_content(str(last_message.content or ""), tool_name)
+                    if fallback:
+                        arguments["description"] = fallback
+                        logger.info(f"call_tool: 已从 content 补全 description，长度: {len(fallback)}")
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
                 
@@ -330,6 +380,11 @@ def create_react_agent(
             tool_call = json.loads(json_str)
             tool_name = tool_call.get("tool")
             arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+            if tool_name == "volces-icon_generate_app_icon" and not (arguments.get("description") or "").strip():
+                fallback = _extract_description_from_content(str(last_message.content or ""), tool_name)
+                if fallback:
+                    arguments["description"] = fallback
+                    logger.info(f"call_tool: 已从 content 补全 description，长度: {len(fallback)}")
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
             

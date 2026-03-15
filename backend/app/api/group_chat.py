@@ -167,7 +167,6 @@ def _get_dha_tools(dha: Dict[str, Any], workspace_id: str) -> List:
             # skill 无 MCP 依赖（如 weather-service），只传内置工具
             tools = []
     # 始终提供 filesystem_ 工具（读取工作区文件等），避免 DHA 误用 call_api 访问相对 URL（会触发“缺少 http/https 协议”错误）。
-    # 其余 MCP 工具仍按 mcp_server_ids / skill 依赖过滤，避免跨职责调用。
     def _is_write_tool(name: str) -> bool:
         if (name or "").startswith("filesystem_"):
             return "write" in (name or "") or "edit" in (name or "")

@@ -27,15 +27,14 @@
     "dha_id": "dha-440b26f8",
     "name": "图片生成专家",
     "role": "负责应用图标、Logo 等品牌视觉元素的生成与规范输出",
-    "system_prompt": "你是应用图标与品牌视觉专家。根据产品名称、使用场景或风格描述，生成符合规范的应用图标提示词并调用图片生成 MCP 产出图标。输出前简要说明风格与构图要点，产出后告知保存路径。不负责文章封面或文内配图（由「博客封面与配图专家」负责），专注 App/品牌图标类需求。",
+    "system_prompt": "你是应用图标与品牌视觉专家。根据产品名称、使用场景或风格描述，生成符合规范的应用图标提示词并调用图片生成CLI产出图标。输出前简要说明风格与构图要点，产出后告知保存路径。不负责文章封面或文内配图（由「博客封面与配图专家」负责），专注 App/品牌图标类需求。",
     "skill_ids": [
       "app-icon-generator"
     ],
-    "mcp_server_ids": [
-      "volces-icon"
-    ],
+    "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": ""
   },
   {
     "dha_id": "dha-blog-cover",
@@ -238,7 +237,9 @@
     "name": "测试使用",
     "role": "用于测试",
     "system_prompt": "",
-    "skill_ids": [],
+    "skill_ids": [
+      "script-demo"
+    ],
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",

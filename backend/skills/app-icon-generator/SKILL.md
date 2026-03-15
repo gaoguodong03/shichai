@@ -1,42 +1,35 @@
 ---
-description: 生成应用图标的提示词与调用规范（配合 volces-icon_generate_app_icon 工具）。
+description: 生成应用图标的提示词与调用规范（配合 volces-icon_generate_app_icon 工具或 run_skill_script
+  的 generate_image.py）。
 enabled: true
-mcp_server_ids:
-- volces-icon
+mcp_server_ids: []
 name: 图标生成
 ---
 ## 目标
 
-把用户的想法转换成**稳定可复用**的应用图标生成流程：先澄清需求，再组装高质量提示词，最后用 `volces-icon_generate_app_icon` 生成并迭代。
+把用户的想法转换成**稳定可复用**的应用图标生成流程：先澄清需求，再组装高质量提示词，最后用**CLI（run_skill_script）** 生成并迭代。
 
 ---
 
-## 你必须遵守的工具调用规范
-
-- **工具名**：`volces-icon_generate_app_icon`
-- **参数**：
-  - **description**（必填，string）：图标提示词（prompt）
-  - **pic_size**（可选，string）：图片尺寸（默认 `1024x1024`），例如 `1024x1024`、`768x768`
-- **只允许这两个参数名**，不要自造字段（如 `size` / `prompt` / `text`）。
+## 图片生成方式（
 
 工具调用示例：
 
-```json
-{
-  "action": "tool_call",
-  "tool": "volces-icon_generate_app_icon",
-  "arguments": {
-    "description": "……你的图标提示词……",
-    "pic_size": "1024x1024"
-  }
-}
-```
+
+本技能在 `scripts/` 下提供 `generate_image.py`，通过 **run_skill_script** 调用，与 MCP 使用同一套火山引擎 API 与 Key。
+
+- **工具名**：`run_skill_script`
+- **参数**：
+  - `script_path`：`"generate_image.py"`
+  - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`
+- **API Key**：与 MCP 相同，使用环境变量 **VOLCES_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式可为 `Bearer xxx` 或仅 `xxx`）。
+- 工具返回的 stdout 即为图片 URL 或错误信息；你须在最终回复中用 `![图标](URL)` 或可点击链接呈现给用户。
 
 ---
 
 ## 工具返回后必须做的事（重要）
 
-- 工具 `volces-icon_generate_app_icon` 执行成功后会返回**图片 URL**（该原始返回仅存于「原始输出」，用户点击蓝色 MCP 调用块上的「原始输出」可查看）。
+- 工具（ run_skill_script 的 generate_image.py）执行成功后会返回**图片 URL**（该原始返回仅存于「原始输出」，用户点击蓝色 MCP 调用块上的「原始输出」可查看）。
 - **你必须在最终回复（最终输出）中把该图片呈现给用户**，否则用户在对话里看不到图标：
   - **优先**用 Markdown 图片语法：`![生成的图标](这里填工具返回的图片URL)`。
   - 或至少提供可点击链接：`[点击查看生成的图标](图片URL)`。

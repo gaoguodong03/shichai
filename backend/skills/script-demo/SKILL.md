@@ -8,6 +8,11 @@ name: 简单 Script 测试
 
 **目标**：只测试「scripts/ 下脚本 + run_skill_script」是否能跑通，不做普通闲聊。
 
+## 执行分支（本 Skill 仅用 script）
+
+- **本 Skill 唯一一步走 script 分支**：使用工具 `run_skill_script`，不使用 MCP，**不使用 call_api**。
+- 若本步去调 call_api 或其它 MCP，则错误；应仅调用 `run_skill_script`。
+
 ## 使用规则（给 Agent）
 
 1. 无论用户说什么，本 Skill 下**第一步必须调用一次** `run_skill_script` 工具。

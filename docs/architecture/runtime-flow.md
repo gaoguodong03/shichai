@@ -61,11 +61,12 @@
 
 流程形态上可以是**多步重复**或**跳过**某些 step。
 
-**当前实现**：技能执行阶段由单一 ReAct Agent 根据 SKILL 正文自然语言理解步骤；**显式可执行体**包括：
-- **MCP 工具**（及 file-reader、read_file、export_session 等内置工具）；
-- **run_skill_script**：执行当前技能 `scripts/` 目录下的 .py / .sh 脚本，参数为 script_path（相对 scripts 的路径）、可选 input_json（作为 stdin）；技能在 SKILL.md 或 scripts 中描述「运行某脚本」时由 LLM 调用；
-- **call_api**：调用外部 HTTP API，参数为 url、method、可选 headers_json、body；技能在 SKILL.md 或脚本中描述「调用某接口」时由 LLM 调用。
-多步/跳过仍由 LLM 在 ReAct 循环中决定，**没有**显式编排器按 step 类型分发；script 与 service 已作为**工具**提供，LLM 按技能说明选择调用。
+**当前实现**：技能执行阶段由单一 ReAct Agent 根据 SKILL 正文理解步骤。每一步可走三种执行分支之一：
+- **MCP**：调用按技能过滤的 MCP 工具（及 file-reader、export_session 等内置工具）；
+- **script**：工具 **run_skill_script**，执行当前技能 `scripts/` 下 .py/.sh，参数 script_path、input_json；
+- **service**：工具 **call_api**，调用外部 HTTP API，参数 url、method、headers_json、body。
+
+**约定**：SKILL.md 中**每步应写明本步走哪一分支**（见 [步骤类型与工具](step-types-and-tools.md)），例如「本步使用 run_skill_script」「本步使用 MCP 工具 xxx」「本步使用 call_api 请求某 URL」，避免模型误选 call_api 当 script 或反之。多步/跳过由 LLM 在 ReAct 循环中决定，无显式编排器；三种分支均以工具形式提供，LLM 按技能说明选择调用。
 
 ---
 
