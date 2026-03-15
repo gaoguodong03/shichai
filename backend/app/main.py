@@ -3,7 +3,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.api import chat, settings, files, auth, dha, group_chat
+from app.api import settings, files, auth, dha, group_chat, sessions
 from app.core.security import user_context_dependency
 from app.mcp.manager import get_mcp_manager
 from dotenv import load_dotenv
@@ -11,14 +11,19 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-load_dotenv()
+# 显式加载 backend/.env（__file__ 为 app/main.py，parent.parent 为 backend）
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_env_path)
+load_dotenv()  # 仍从 cwd 再加载一次，兼容在 backend 目录下启动
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时
+    """应用生命周期管理。MCP 必须在 lifespan 内初始化与清理，保证 enter/exit 在同一 asyncio 任务，否则 anyio 会报 cancel scope 跨任务错误。"""
+    from app.core.init import ensure_mcp_and_skills_initialized
+    # 启动时：在 lifespan 任务中初始化 MCP/Skills，与下方 cleanup 同一任务
+    await ensure_mcp_and_skills_initialized()
     yield
-    # 关闭时清理 MCP 连接
+    # 关闭时：在同一任务中清理 MCP 连接，避免 RuntimeError: exit cancel scope in a different task
     await get_mcp_manager().cleanup()
 
 app = FastAPI(
@@ -39,13 +44,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由
-app.include_router(chat.router, prefix="/api")
+# 注册路由（单聊 chat 已下线，统一使用 sessions + group_chat）
 app.include_router(settings.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(dha.router, prefix="/api")
 app.include_router(group_chat.router, prefix="/api")
+app.include_router(sessions.router, prefix="/api")
 
 # Docker/生产：挂载前端静态并 SPA 回退
 _static_dir = os.getenv("STATIC_DIR")

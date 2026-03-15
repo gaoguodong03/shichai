@@ -87,10 +87,10 @@ name: 文章配图
 
 ### 5. 生成图像
 
+- **本技能要求使用 run_skill_script 调用 `scripts/generate_image.py` 生成配图**；脚本在自带环境中执行并内部调用 ChatAnywhere 图像 API，**不要使用 call_api 工具**做图片生成。
 - **先写 prompt**：为每张图写结构化 prompt（含 ZONES/LABELS/COLORS/STYLE/比例等），LABELS 必须用文章里的真实数据、术语、指标，不要泛泛而谈。
-- **再出图**：使用本项目的图片生成能力，按 prompt 依次生成，保存为 `NN-{type}-{slug}.png`。**必须**使用以下方式：
-    **CLI（推荐）**：调用工具 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 `{"description": "该张图的 prompt 内容", "pic_size": "1024x1024"}`。
-- **禁止使用 call_api 生图**：不要用 `call_api` 请求 example.com、任意 URL 或“假设的接口”来生成图片；生图只能通过上述 run_skill_script 或 MCP 图像工具。
+- **再出图**：调用 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 `{"description": "该张图的 prompt 内容", "pic_size": "1024x1024"}`（或所需比例如 `1024x576`）。脚本读取环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置）。工具返回的 stdout 为图片 URL 或错误信息。按 prompt 依次生成，保存为 `NN-{type}-{slug}.png`。
+- **禁止使用 call_api 生图**：生图只能通过上述 run_skill_script，不要用 call_api 请求任意 URL。
 - 若用户启用水印等设置，在生成后按规则添加。
 
 **禁止**：在未保存 prompt 文件前就用临时随口写的 prompt 直接生图；必须用类型化、结构化的 prompt 模板。

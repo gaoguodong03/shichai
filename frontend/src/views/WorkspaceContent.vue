@@ -1,15 +1,7 @@
 <template>
   <div class="workspace-right-content">
-    <!-- 单聊 -->
-    <div v-if="showSingleChat" class="workspace-right-inner">
-      <ChatView
-        session-id="single-default"
-        session-title="单聊"
-      />
-    </div>
-
-    <!-- 群聊：线型图标、讨论目标/提示词可填入输入框、skill/系统调用展示、主题变量 -->
-    <div v-else-if="groupDetail" class="workspace-right-inner workspace-group-root group-chat-theme">
+    <!-- 会话（带主持人，可选专家）：讨论目标/提示词、skill/系统调用展示、主题变量 -->
+    <div v-if="groupDetail" class="workspace-right-inner workspace-group-root group-chat-theme">
       <div :key="'group-' + (groupDetail?.id ?? '')" class="workspace-group-wrap flex flex-col min-h-0">
         <header class="group-chat-header">
           <h1 class="group-chat-title">群聊：{{ groupDetail.title || '未命名' }}</h1>
@@ -77,7 +69,7 @@
                       <template v-if="msg.role !== 'user' && msg.role !== 'host'">
                         <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
                       </template>
-                      <template v-else>{{ msg.content || '' }}</template>
+                      <template v-else>{{ stripDiscussionGoalForDisplay(msg.content || '') }}</template>
                     </div>
                     <div
                       v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
@@ -101,7 +93,7 @@
               <p v-if="groupStreaming" class="group-chat-streaming-hint">{{ groupStreamingPhase }}</p>
               <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
                 <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
-                <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">邀请加入</button>
+                <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
               <div class="group-chat-input-blocks">
@@ -151,7 +143,7 @@
                 <!-- 双框模式：勾选「显示下一 DHA 提示词」或开启「手动控制」时显示（手动控制下可编辑主持人给的提示词再点发送） -->
                 <template v-else>
                   <div class="group-chat-input-block group-chat-input-block-at">
-                    <label class="group-chat-input-block-label">【讨论目标】</label>
+                    <label class="group-chat-input-block-label">输入消息</label>
                     <textarea
                       ref="goalTextareaRef"
                       v-model="groupDiscussionGoal"
@@ -724,7 +716,7 @@
       </div>
       <h2 class="workspace-empty-title">选择会话开始协作</h2>
       <p class="workspace-empty-desc">
-        在左侧选择已有会话，或点击「新建会话」创建单聊（0 个 DHA）或群聊（选择 DHA）。
+        在左侧选择已有会话，或点击「新建会话」创建新会话（默认仅主持人，可在会话内邀请专家）。
       </p>
       <p class="workspace-empty-hint">
         会话内可使用工作区、邀请 DHA 等能力。
@@ -735,8 +727,6 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
-import ChatView from './ChatView.vue'
-
 interface MsgExt {
   timestamp?: string
   skill_id?: string
@@ -746,7 +736,6 @@ interface MsgExt {
 }
 
 const props = defineProps<{
-  showSingleChat: boolean
   selectedGroupSessionId: string | null
   dhaInstances: { dha_id: string; name: string; role?: string; skill_ids?: string[] }[]
 }>()
@@ -944,7 +933,7 @@ async function confirmGroupNext(override: string) {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1037,7 +1026,7 @@ async function inviteSingleMember(dhaId: string) {
   const id = groupDetail.value?.id
   if (!id) return
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ add_dha_ids: [dhaId] }),
@@ -1058,7 +1047,7 @@ async function removeMember(dhaId: string) {
   const id = groupDetail.value?.id
   if (!id || !window.confirm('确定将该成员移出群聊？')) return
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ remove_dha_ids: [dhaId] }),
@@ -1267,7 +1256,7 @@ async function continueGroupStream() {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}/chat/stream`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: '' }),
@@ -1357,7 +1346,7 @@ async function toggleGroupManualControl() {
   groupAutoConfirm.value = next
   const speakMode = next ? 'manual' : 'auto'
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ speak_mode: speakMode }),
@@ -1376,7 +1365,7 @@ async function inviteSuggestedDha() {
   const groupId = groupDetail.value?.id
   if (!ids.length || !groupId) return
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(groupId)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ add_dha_ids: ids }),
@@ -1552,13 +1541,26 @@ const canSend = computed(
     ),
 )
 
+/** 展示时去掉「【讨论目标】」前缀，不在前端显示 */
+function stripDiscussionGoalForDisplay(content: string): string {
+  const raw = (content ?? '').trim()
+  if (!raw) return ''
+  const prefix = '【讨论目标】'
+  if (raw.startsWith(prefix)) return raw.slice(prefix.length).replace(/^\s*\n?/, '').trim() || ''
+  return raw
+}
+
 /** 从首条用户消息中取出纯讨论目标，去掉「【讨论目标】」前缀，避免预填后再次发送时重复 */
 function normalizeDiscussionGoalFromContent(content: string | null | undefined): string | null {
-  const raw = (content ?? '').trim()
-  if (!raw) return null
-  const prefix = '【讨论目标】'
-  if (raw.startsWith(prefix)) return raw.slice(prefix.length).replace(/^\s*\n?/, '').trim() || null
-  return raw
+  const stripped = stripDiscussionGoalForDisplay(content ?? '')
+  return stripped ? stripped : null
+}
+
+/** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_dha_ids 时仍能显示邀请条） */
+function parseDhaIdsFromHostContent(content: string | null | undefined): string[] {
+  if (!content) return []
+  const matches = content.match(/dha-[a-zA-Z0-9\-]+/gi) || []
+  return [...new Set(matches)]
 }
 
 watch(
@@ -1567,6 +1569,23 @@ watch(
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
     const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
     groupDiscussionGoal.value = normalizeDiscussionGoalFromContent(firstUser?.content) ?? null
+    // 0 成员时：若最后一条主持人消息没有 suggested_add_dha_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
+    const dhaIds = groupDetail.value?.dha_ids ?? []
+    if (dhaIds.length === 0 && Array.isArray(messages) && messages.length) {
+      const lastHost = [...messages].reverse().find((m: { role?: string }) => m.role === 'host')
+      const lastMsg = lastHost as { suggested_add_dha_ids?: string[]; suggested_add_dha_id?: string; content?: string } | undefined
+      if (lastMsg) {
+        if (lastMsg.suggested_add_dha_ids?.length) {
+          groupSuggestedAddDhaIds.value = lastMsg.suggested_add_dha_ids
+        } else if (lastMsg.suggested_add_dha_id) {
+          groupSuggestedAddDhaIds.value = [lastMsg.suggested_add_dha_id]
+        } else if (lastMsg.content) {
+          const validIds = new Set((props.dhaInstances || []).map((d) => d.dha_id))
+          const parsed = parseDhaIdsFromHostContent(lastMsg.content).filter((id) => validIds.has(id))
+          if (parsed.length) groupSuggestedAddDhaIds.value = parsed
+        }
+      }
+    }
   },
   { immediate: true }
 )
@@ -1968,13 +1987,13 @@ function scrollGroupToBottom() {
   })
 }
 
-/** 按提示词工程拼接：明确区分讨论目标与给下一 DHA 的指令，便于模型理解 */
+/** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
   const goal = (groupDiscussionGoal.value || '').trim()
   const prompt = (groupNextPrompt.value || '').trim()
   if (!goal && !prompt) return ''
   const parts: string[] = []
-  if (goal) parts.push(`【讨论目标】\n${goal}`)
+  if (goal) parts.push(goal)
   if (prompt) parts.push(`【给下一 DHA 的提示】\n${prompt}`)
   return parts.join('\n\n')
 }
@@ -2018,7 +2037,7 @@ async function sendGroupMessage() {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg }),
@@ -2177,7 +2196,7 @@ async function loadGroupDetail() {
   groupLoading.value = true
   groupError.value = null
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`)
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
     const body = await r.json().catch(() => null)
     const parsed = parseGroupResponse(id, body)
     // 仅当当前选中的仍是本次请求的 id 时才更新，避免竞态覆盖

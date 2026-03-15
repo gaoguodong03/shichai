@@ -56,9 +56,9 @@ DHA 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messag
 ```
 
 - **工具来源**：
-  - MCP 工具：`mcp_manager.get_tools()`，根据 `mcp_server_ids` 筛选
-  - 内置工具：`export_session_to_md`、`read_file`
-- **工具名格式**：MCP 工具为 `{server_id}_{tool_name}`（如 `exa_web_search_exa`、`fetch_fetch`）
+  - MCP 工具：`mcp_manager.get_tools()`，按技能或请求过滤；读文件为 file-reader/filesystem 的 MCP 工具（如 `filesystem_read_text_file`、`file-reader_read_pdf`）
+  - 内置工具：`export_session_to_md`、`call_api`、`run_skill_script`（已选技能时）
+- **工具名格式**：MCP 工具为 `{server_id}_{tool_name}`（如 `exa_web_search_exa`、`filesystem_read_text_file`）
 
 ### 3.3 工具调用格式说明
 
@@ -75,7 +75,7 @@ DHA 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messag
 当你不需要使用工具时，直接回复用户的问题。
 
 ## 文件引用
-当用户消息中出现【文件引用：path】时，**必须先调用 read_file 工具**读取该文件内容（path 为相对路径，如 genimi.txt），再根据文件内容回答用户问题。不要猜测文件内容。
+当用户消息中出现【文件引用：path】时，**必须先调用 file-reader 或 filesystem 的读文件工具**（如 `filesystem_read_text_file`、`file-reader_read_pdf` 等，path 为相对工作区路径）读取内容，再根据文件内容回答。不要猜测文件内容。
 ```
 
 > 说明：实际调用时，LLM 使用 LangChain 的 `bind_tools` 返回结构化 `tool_calls`，上述 JSON 格式为兼容旧解析逻辑保留。

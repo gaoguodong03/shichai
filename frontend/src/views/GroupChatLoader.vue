@@ -120,7 +120,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(id)}`)
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
     const j = await r.json().catch(() => null)
     const parsed = normalizeDetail(id, j)
     if (parsed) {

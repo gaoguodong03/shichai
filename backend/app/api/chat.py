@@ -20,13 +20,12 @@ except ImportError:
 from app.agent.llm_client import get_llm_from_config, QwenLLM
 from app.agent.graph import create_skill_execution_agent
 from app.agent.skill_selector import select_skill
+from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.mcp.manager import get_mcp_manager, normalize_mcp_kwargs_for_call
-from app.skills.loader import SkillsLoader
+from app.skills.loader import get_skills_loader
+from app.core.init import ensure_mcp_and_skills_initialized
 from app.api.settings import load_app_settings, get_mcp_servers_for_skill
 from app.tools.export_session import create_export_session_tool
-from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
-from app.tools.run_skill_script import create_run_skill_script_tool
-from app.tools.call_api import call_api
 from app.core.user_context import get_current_user_context
 
 # 配置日志
@@ -44,8 +43,7 @@ def _get_mcp_manager():
     if mcp_manager is None:
         mcp_manager = get_mcp_manager()
     return mcp_manager
-skills_loader = SkillsLoader()
-initialized = False
+skills_loader = get_skills_loader()
 
 # 从工具结果文本中提取工具名（graph.py 会输出：工具 <tool_name> 的执行结果: ...）
 _TOOL_NAME_RE = re.compile(r"工具\s+([^\s]+)\s+的执行结果")
@@ -162,8 +160,10 @@ def _save_sessions_to_disk() -> None:
 
 
 def _load_sessions_from_disk() -> None:
-    """从本地 JSON 文件加载会话历史与元数据"""
+    """从本地 JSON 文件加载会话历史与元数据（全局只执行一次）。"""
     global _sessions_loaded
+    if _sessions_loaded:
+        return
     try:
         root = _ensure_sessions_dir()
         history_file = root / "history.json"
@@ -223,34 +223,9 @@ def _load_sessions_from_disk() -> None:
         logger.error(f"从磁盘加载会话历史失败: {e}", exc_info=True)
 
 async def ensure_initialized():
-    """确保管理器已初始化"""
-    global initialized
-    if not initialized:
-        logger.info("开始初始化 MCP Manager 和 Skills Loader")
-        try:
-            await _get_mcp_manager().initialize_all()
-            mgr = _get_mcp_manager()
-            logger.info(f"MCP Manager 初始化完成，加载了 {len(mgr.tools)} 个工具")
-            for tool_name in mgr.tools.keys():
-                logger.info(f"  - 工具: {tool_name}")
-        except asyncio.CancelledError:
-            raise  # 请求被取消（如前端断开/超时），直接向上抛，不转为 500
-        except Exception as e:
-            logger.error(f"Failed to initialize MCP managers: {e}", exc_info=True)
-        
-        try:
-            skills_loader.load_all_skills()
-            logger.info(f"Skills Loader 初始化完成，加载了 {len(skills_loader.skills)} 个技能")
-            for skill_name in skills_loader.skills.keys():
-                logger.info(f"  - 技能: {skill_name}")
-        except Exception as e:
-            logger.error(f"Failed to load skills: {e}", exc_info=True)
-
-        # 从磁盘加载历史会话
-        _load_sessions_from_disk()
-
-        initialized = True
-        logger.info("初始化完成")
+    """确保 MCP/Skills 已初始化，并加载单聊会话历史（仅一次）。"""
+    await ensure_mcp_and_skills_initialized()
+    _load_sessions_from_disk()
 
 class ChatRequest(BaseModel):
     """聊天请求"""
@@ -498,22 +473,11 @@ async def run_single_chat_full_content(
     else:
         selected_skill_id = "default" if skills_loader.get_skill_full_content("default") else None
 
-    server_ids = get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
-    if server_ids:
-        tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]
-        if not tools:
-            tools = list(all_tools)
-    else:
-        tools = list(all_tools)
-    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_") and t.name != "file-reader_write_file"]
-    tool_names = {t.name for t in tools}
-    extra_tools = [create_export_session_tool(session_id), call_api]
-    if selected_skill_id:
-        extra_tools.append(create_run_skill_script_tool(selected_skill_id))
-    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
-    # 不提供写文件工具；保存内容请用户用前端「保存为文件」按钮
-    tools = [t for t in tools if not (_name := getattr(t, "name", "")).startswith("filesystem_") or "write" not in _name and "edit" not in _name]
-    tools = wrap_filesystem_tools(tools, session_id)
+    _dha = {
+        "skill_ids": [selected_skill_id] if selected_skill_id else [],
+        "mcp_server_ids": (get_mcp_servers_for_skill(selected_skill_id) or []) if selected_skill_id else [],
+    }
+    tools = build_tools_for_group_chat(all_tools, _dha, session_id)
 
     skill_full_content = ""
     if selected_skill_id:
@@ -680,28 +644,20 @@ async def chat_stream(request: ChatRequest):
         if selected_skill_id is None and skills_loader.get_skill_full_content("default"):
             selected_skill_id = "default"
 
-    # 按选中技能过滤工具：只传入该技能关联的 MCP 工具，加快响应、减少混淆
-    server_ids = get_mcp_servers_for_skill(selected_skill_id) if selected_skill_id else []
-    skill_tools_fallback = False  # 是否因技能 MCP 无工具而回退到全部工具
-    if server_ids:
-        tools = [t for t in all_tools if "_" in t.name and t.name.split("_", 1)[0] in server_ids]
-        if not tools:
-            logger.warning(f"技能 {selected_skill_id} 关联的 MCP {server_ids} 无可用工具（可能未启动），回退到全部工具")
-            tools = list(all_tools)
-            skill_tools_fallback = True
-        else:
-            logger.info(f"已按技能 {selected_skill_id} 过滤工具，仅传入 {server_ids} 的 {len(tools)} 个工具")
-    else:
-        tools = list(all_tools)
-    # file-reader MCP 用于读取 PDF/DOC/Excel；不提供 file-reader_write_file；不提供 filesystem 写文件工具
-    file_reader_tools = [t for t in all_tools if "_" in t.name and t.name.startswith("file-reader_") and t.name != "file-reader_write_file"]
-    tool_names = {t.name for t in tools}
-    extra_tools = [create_export_session_tool(session_id), call_api]
-    if selected_skill_id:
-        extra_tools.append(create_run_skill_script_tool(selected_skill_id))
-    tools = tools + [t for t in file_reader_tools if t.name not in tool_names] + extra_tools
-    tools = [t for t in tools if not (_n := getattr(t, "name", "")).startswith("filesystem_") or "write" not in _n and "edit" not in _n]
-    tools = wrap_filesystem_tools(tools, session_id)
+    _mcp_ids = request.mcp_server_ids if request.mcp_server_ids else (get_mcp_servers_for_skill(selected_skill_id) or [])
+    _dha = {
+        "skill_ids": [selected_skill_id] if selected_skill_id else [],
+        "mcp_server_ids": _mcp_ids,
+    }
+    tools = build_tools_for_group_chat(all_tools, _dha, session_id)
+    server_ids = get_mcp_servers_for_skill(selected_skill_id) or [] if selected_skill_id else []
+    skill_tools_fallback = bool(
+        server_ids
+        and not any(
+            "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in server_ids
+            for t in all_tools
+        )
+    )
     logger.info(f"最终可用工具数量: {len(tools)}")
 
     skill_full_content = ""

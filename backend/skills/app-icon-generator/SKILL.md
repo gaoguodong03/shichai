@@ -11,19 +11,22 @@ name: 图标生成
 
 ---
 
-## 图片生成方式（
+## 图片生成方式（CLI / 工具使用）
 
-工具调用示例：
+本技能要求使用 **run_skill_script** 调用 `scripts/generate_image.py` 生成图标；脚本在自带环境中执行并内部调用火山引擎 API，**不要使用 call_api 工具**做图片生成。
 
+### run_skill_script（唯一推荐）
 
-本技能在 `scripts/` 下提供 `generate_image.py`，通过 **run_skill_script** 调用，与 MCP 使用同一套火山引擎 API 与 Key。
-
-- **工具名**：`run_skill_script`
+- **工具名**：单聊为 `run_skill_script`；群聊为 `run_skill_script_app-icon-generator`。生成图标时只调用此工具，不要调用 list_allowed_directories、read_file 等文件/目录类 MCP 来「检查」配置。
 - **参数**：
   - `script_path`：`"generate_image.py"`
   - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`
-- **API Key**：与 MCP 相同，使用环境变量 **VOLCES_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式可为 `Bearer xxx` 或仅 `xxx`）。
+- 脚本内部使用 **ChatAnywhere 图像 API**（POST `https://api.chatanywhere.com.cn/v1/images/generations`），读取环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式 `Bearer sk-xxx` 或仅 `sk-xxx`），与 call_api 无关。
 - 工具返回的 stdout 即为图片 URL 或错误信息；你须在最终回复中用 `![图标](URL)` 或可点击链接呈现给用户。
+
+### 备选：volces-icon_generate_app_icon（MCP）
+
+若本技能关联了 volces-icon MCP，也可用 **volces-icon_generate_app_icon**：参数 `description`（必填）、`pic_size`（可选）。必须使用参数名 `description`，不要用 `__arg1` 或 `prompt`。
 
 ---
 

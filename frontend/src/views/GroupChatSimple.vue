@@ -92,7 +92,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg }),

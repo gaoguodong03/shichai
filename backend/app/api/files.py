@@ -115,8 +115,12 @@ async def list_workspace_files(
     列出指定 workspace 下的文件/子目录。
     - workspace_id 通常与 Chat / Group Session ID 对应；
     - path 为 workspace 内相对路径，空表示该 workspace 根目录；
-    - 返回的 entries.path 亦为 workspace 内相对路径，供前端在该 workspace 内继续导航。
+    - 工作区根目录未创建时（用户尚未使用过该工作区）直接返回空列表，不创建目录。
     """
+    ws_root_path = get_workspace_root_path(workspace_id, user=current_user)
+    if (path or "").strip() == "":
+        if not ws_root_path.exists() or not ws_root_path.is_dir():
+            return {"status": "ok", "data": {"path": "/", "entries": []}}
     try:
         target = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:

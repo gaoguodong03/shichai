@@ -33,27 +33,6 @@
     "created_at": "2026-03-12T12:44:55.824061+00:00",
     "updated_at": "2026-03-12T12:46:42.260917+00:00"
   },
-  "group-365c07fc7ed9": {
-    "title": "DHA 协作 · 3/14 22:10",
-    "dha_ids": [
-      "dha-cf4de333"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-14T14:10:12.274541+00:00",
-    "updated_at": "2026-03-14T14:14:52.400868+00:00"
-  },
-  "group-bbe786ec176d": {
-    "title": "DHA 协作 · 3/14 22:21",
-    "dha_ids": [
-      "dha-195b8c3a",
-      "dha-c1bf68ba"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-14T14:21:17.057711+00:00",
-    "updated_at": "2026-03-14T14:30:04.038384+00:00"
-  },
   "group-5c63fbb8afda": {
     "title": "DHA 协作 · 3/15 13:09",
     "dha_ids": [
@@ -66,44 +45,26 @@
     "created_at": "2026-03-15T05:09:21.592680+00:00",
     "updated_at": "2026-03-15T05:46:19.298907+00:00"
   },
-  "group-e703c813bba0": {
-    "title": "DHA 协作 · 3/15 13:50",
-    "dha_ids": [
-      "dha-440b26f8"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T05:50:30.674038+00:00",
-    "updated_at": "2026-03-15T06:01:02.704316+00:00"
-  },
   "group-8515c0c5329f": {
     "title": "DHA 协作 · 3/15 14:01",
     "dha_ids": [
-      "dha-440b26f8"
+      "dha-440b26f8",
+      "dha-cf4de333"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-15T06:01:33.451897+00:00",
-    "updated_at": "2026-03-15T06:06:24.991314+00:00"
+    "updated_at": "2026-03-15T07:14:26.999588+00:00"
   },
-  "group-457acda33f5d": {
-    "title": "DHA 协作 · 3/15 14:06",
+  "group-23a213e57acb": {
+    "title": "播客生成",
     "dha_ids": [
-      "dha-cf4de333"
+      "dha-url-to-blog",
+      "dha-blog-cover"
     ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-15T06:06:49.462689+00:00",
-    "updated_at": "2026-03-15T06:19:04.245508+00:00"
-  },
-  "group-fa0e55ad4538": {
-    "title": "DHA 协作 · 3/15 14:19",
-    "dha_ids": [
-      "dha-cf4de333"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T06:19:45.974452+00:00",
-    "updated_at": "2026-03-15T06:21:12.548777+00:00"
+    "created_at": "2026-03-15T09:01:27.305419+00:00",
+    "updated_at": "2026-03-15T09:28:26.146189+00:00"
   }
 }

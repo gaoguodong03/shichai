@@ -40,7 +40,7 @@
               class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-user-bubble text-text-inverse shadow-sm"
             >
               <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
-                <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(msg.content || '')"></div>
+                <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(stripDiscussionGoalForDisplay(msg.content || ''))"></div>
               </div>
             </div>
             <!-- 主持人消息（灰色标签，先于 DHA 发言出现） -->
@@ -281,6 +281,12 @@
 
       <!-- 输入区：宽度 90% 最大 1400px，左右 20px 内边距；下一发言人等已在输入框内 -->
       <div class="group-chat-input-outer flex-1 flex flex-col gap-2 min-h-0 overflow-auto relative">
+        <!-- 主持人建议邀请（0 成员时）：同意并邀请 / 忽略 -->
+        <div v-if="suggestedAddDhaIds.length && !isStreaming" class="flex items-center gap-3 px-4 py-2 rounded-lg bg-accent-subtle/50 border border-accent/30 text-sm">
+          <span class="text-muted">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
+          <button type="button" class="px-3 py-1.5 rounded-lg bg-accent text-text-inverse font-medium hover:opacity-90" @click="inviteSuggestedDha">同意并邀请</button>
+          <button type="button" class="px-2 py-1 rounded text-muted hover:bg-list-hover" @click="suggestedAddDhaIds = []">忽略</button>
+        </div>
         <!-- 默认单输入框：圆角容器内 = 输入区 + 功能按钮行 + 下一发言人/发送 -->
         <div v-if="!showExtendedInputs" class="group-chat-input-box flex flex-col min-h-0 flex-1">
           <div class="group-chat-input-area flex-1 min-h-0 flex flex-col">
@@ -343,7 +349,7 @@
           <div class="grid grid-cols-1 md:grid-cols-3 gap-2 min-h-0 flex-1 p-4">
             <div class="flex flex-col min-h-0">
               <label class="text-[11px] font-medium text-muted mb-0.5 flex items-center gap-1">
-                【群聊讨论目标】
+                输入消息
                 <button type="button" class="p-0.5 rounded text-muted hover:bg-border hover:text-muted" title="插入文件" @click="openFilePickerForGoal">⊕</button>
               </label>
               <textarea
@@ -424,7 +430,7 @@
         <div v-if="showMoreMenu" class="absolute left-4 right-4 md:right-auto md:w-56 bg-card border border-border rounded-lg shadow-lg py-2 z-20">
           <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-list-hover cursor-pointer text-sm">
             <input type="checkbox" v-model="showExtendedInputs" class="rounded border-input-border text-accent focus:ring-input-focus-ring" />
-            <span>显示讨论目标 / 最近讨论 / 下一 DHA 提示词</span>
+            <span>显示消息区 / 最近讨论 / 下一 DHA 提示词</span>
           </label>
           <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-list-hover cursor-pointer text-sm">
             <input type="checkbox" :checked="speakMode === 'auto'" class="rounded border-input-border text-accent focus:ring-input-focus-ring" @change="onAutoSwitchChange" />
@@ -654,7 +660,7 @@ const emit = defineEmits<{
 }>()
 
 const inputText = ref('')
-const discussionGoalText = ref('') // 【群聊讨论目标】，与首条用户消息同步，可编辑
+const discussionGoalText = ref('') // 与首条用户消息同步，可编辑
 const recentDiscussionText = ref('') // 最近讨论，由消息自动生成并可编辑
 const isStreaming = ref(false)
 const streamingPhase = ref('')
@@ -1175,7 +1181,7 @@ async function openPromptEditor() {
     return
   }
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/prompt-preview`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}/prompt-preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dha_id: overrideNextSpeaker.value }),
@@ -1216,15 +1222,30 @@ watch(
       }
       const firstUser = next?.find((m: { role: string }) => m.role === 'user')
       if (firstUser?.content && !discussionGoalText.value) {
-        discussionGoalText.value = (firstUser.content || '').trim()
-        if (!showExtendedInputs.value && !singleInputValue.value) singleInputValue.value = (firstUser.content || '').trim()
+        discussionGoalText.value = stripDiscussionGoalForDisplay(firstUser.content)
+        if (!showExtendedInputs.value && !singleInputValue.value) singleInputValue.value = stripDiscussionGoalForDisplay(firstUser.content)
       }
       recentDiscussionText.value = recentDiscussionPreview.value
+      // 0 成员时：从最后一条带 suggested_add_dha_ids 的主持人消息恢复邀请条
+      if (!props.dhaIds?.length) {
+        const lastHost = next?.slice().reverse().find((m: { role?: string; suggested_add_dha_ids?: string[]; suggested_add_dha_id?: string }) => m.role === 'host' && (m.suggested_add_dha_ids?.length || m.suggested_add_dha_id))
+        if (lastHost) {
+          if ((lastHost as { suggested_add_dha_ids?: string[] }).suggested_add_dha_ids?.length)
+            suggestedAddDhaIds.value = (lastHost as { suggested_add_dha_ids: string[] }).suggested_add_dha_ids
+          else if ((lastHost as { suggested_add_dha_id?: string }).suggested_add_dha_id)
+            suggestedAddDhaIds.value = [(lastHost as { suggested_add_dha_id: string }).suggested_add_dha_id]
+        }
+      }
     }
   },
   { immediate: true }
 )
-
+watch(
+  () => props.dhaIds?.length ?? 0,
+  (len) => {
+    if (len > 0) suggestedAddDhaIds.value = []
+  }
+)
 const dhaList = computed(() => {
   return props.dhaIds.map((id) => ({
     dha_id: id,
@@ -1328,8 +1349,18 @@ const invitableDhas = computed(() => {
   return (props.allDhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
 })
 
+/** 主持人推荐的 DHA 的展示名（多位用顿号连接） */
+const suggestedAddDhaName = computed(() => {
+  const ids = suggestedAddDhaIds.value
+  if (!ids.length) return ''
+  const names = ids.map((id) => (props.allDhaInstances || []).find((x) => x.dha_id === id)?.name || id)
+  return names.join('、')
+})
+
 const showInviteDha = ref(false)
 const inviteSelectedIds = ref<string[]>([])
+/** 主持人推荐的待邀请 DHA（0 成员时从 message/end 的 suggested_add_dha_ids 解析） */
+const suggestedAddDhaIds = ref<string[]>([])
 const showExtendedInputs = ref(false)
 const showMoreMenu = ref(false)
 /** 默认单输入框时的内容：无用户消息时作为讨论目标，有用户消息时作为下一 DHA 提示词 */
@@ -1338,7 +1369,7 @@ const singleInputValue = ref('')
 async function confirmInviteDha() {
   if (!inviteSelectedIds.value.length) return
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ add_dha_ids: inviteSelectedIds.value }),
@@ -1347,6 +1378,28 @@ async function confirmInviteDha() {
     if (j.status === 'ok') {
       showInviteDha.value = false
       inviteSelectedIds.value = []
+      emit('dha-added')
+    } else {
+      alert((j as { detail?: string }).detail || '邀请失败')
+    }
+  } catch {
+    alert('邀请失败，请检查网络')
+  }
+}
+
+/** 同意主持人推荐并邀请（0 成员时展示的「同意并邀请」按钮） */
+async function inviteSuggestedDha() {
+  const ids = suggestedAddDhaIds.value
+  if (!ids.length) return
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add_dha_ids: ids }),
+    })
+    const j = await r.json()
+    if ((j as { status?: string }).status === 'ok') {
+      suggestedAddDhaIds.value = []
       emit('dha-added')
     } else {
       alert((j as { detail?: string }).detail || '邀请失败')
@@ -1389,6 +1442,15 @@ function getDhaSkillLabel(dhaId: string, msg?: { skill_id?: string; meta?: { ski
   if (msg?.skill_id) return msg.skill_id
   if (msg?.meta?.skills?.length) return msg.meta.skills[0]
   return '无'
+}
+
+/** 展示时去掉「【讨论目标】」前缀，不在前端显示 */
+function stripDiscussionGoalForDisplay(content: string): string {
+  const raw = (content ?? '').trim()
+  if (!raw) return ''
+  const prefix = '【讨论目标】'
+  if (raw.startsWith(prefix)) return raw.slice(prefix.length).replace(/^\s*\n?/, '').trim() || ''
+  return raw
 }
 
 function formatMsgTime(iso?: string): string {
@@ -1540,7 +1602,7 @@ async function sendMessage() {
 
   try {
     streamingPhase.value = '正在准备…'
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1574,6 +1636,8 @@ async function sendMessage() {
                   inputText.value = data.next_prompt
                   singleInputValue.value = data.next_prompt
                 }
+                if (data.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = data.suggested_add_dha_ids
+                else if (data.suggested_add_dha_id) suggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 recentDiscussionText.value = recentDiscussionPreview.value
                 scrollToBottom()
               }
@@ -1590,6 +1654,8 @@ async function sendMessage() {
                   inputText.value = endData.next_prompt
                   singleInputValue.value = endData.next_prompt
                 }
+                if (endData.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                else if (endData.suggested_add_dha_id) suggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 // clear any pending auto-confirm to avoid auto-send
                 if (endData.suggested_next_speaker != null) {
                   pendingAutoConfirmSpeaker.value = null
@@ -1619,7 +1685,7 @@ async function onAutoSwitchChange(e: Event) {
   const next = target.checked ? 'auto' : 'manual'
   const wasAuto = props.speakMode === 'auto'
   try {
-    const r = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}`, {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ speak_mode: next }),
@@ -1632,7 +1698,7 @@ async function onAutoSwitchChange(e: Event) {
         isStreaming.value = true
         streamingPhase.value = '正在切换模式…'
         try {
-          const res = await fetch(`/api/group-sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(props.groupSessionId)}/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: '' }),
@@ -1661,11 +1727,18 @@ async function onAutoSwitchChange(e: Event) {
                           inputText.value = data.next_prompt
                           singleInputValue.value = data.next_prompt
                         }
+                        if (data.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = data.suggested_add_dha_ids
+                        else if (data.suggested_add_dha_id) suggestedAddDhaIds.value = [data.suggested_add_dha_id]
                         scrollToBottom()
                       }
                     } catch {}
-                  } else if (eventType === 'end') {
+                  } else if (eventType === 'end' && dataStr) {
                     streamingPhase.value = ''
+                    try {
+                      const endData = JSON.parse(dataStr)
+                      if (endData.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = endData.suggested_add_dha_ids
+                      else if (endData.suggested_add_dha_id) suggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                    } catch {}
                   }
                 }
               }

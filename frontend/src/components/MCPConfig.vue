@@ -287,15 +287,13 @@ const stdioArgs = computed({
   }
 })
 
-const API_BASE = 'http://localhost:8000/api'
-
 const loadServers = async () => {
   loading.value = true
   try {
-    const response = await fetch(`${API_BASE}/settings/mcp`)
-    const result = await response.json()
+    const { getMcpServers } = await import('@/api')
+    const result = await getMcpServers()
     if (result.status === 'ok') {
-      servers.value = result.data.servers || []
+      servers.value = result.data?.servers || []
     }
   } catch (error) {
     console.error('Failed to load servers:', error)
@@ -306,19 +304,9 @@ const loadServers = async () => {
 
 const saveServer = async () => {
   try {
-    const url = editingServer.value
-      ? `${API_BASE}/settings/mcp/${editingServer.value.id}`
-      : `${API_BASE}/settings/mcp`
-    
-    const method = editingServer.value ? 'PUT' : 'POST'
-    
-    const response = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData.value)
-    })
-    
-    const result = await response.json()
+    const { saveMcpServer } = await import('@/api')
+    const payload = { ...formData.value, ...(editingServer.value?.id ? { id: editingServer.value.id } : {}) }
+    const result = await saveMcpServer(payload)
     if (result.status === 'ok') {
       await loadServers()
       closeModal()
@@ -343,17 +331,11 @@ const editServer = (server: MCPServer) => {
 
 const deleteServer = async (id: string) => {
   if (!confirm('确定要删除这个 MCP Server 吗？')) return
-  
   try {
-    const response = await fetch(`${API_BASE}/settings/mcp/${id}`, {
-      method: 'DELETE'
-    })
-    const result = await response.json()
-    if (result.status === 'ok') {
-      await loadServers()
-    } else {
-      alert(result.error?.message || '删除失败')
-    }
+    const { deleteMcpServer } = await import('@/api')
+    const result = await deleteMcpServer(id)
+    if (result.status === 'ok') await loadServers()
+    else alert(result.error?.message || '删除失败')
   } catch (error) {
     console.error('Failed to delete server:', error)
     alert('删除失败')
@@ -362,16 +344,10 @@ const deleteServer = async (id: string) => {
 
 const toggleServer = async (id: string, enabled: boolean) => {
   try {
-    const endpoint = enabled ? 'enable' : 'disable'
-    const response = await fetch(`${API_BASE}/settings/mcp/${id}/${endpoint}`, {
-      method: 'POST'
-    })
-    const result = await response.json()
-    if (result.status === 'ok') {
-      await loadServers()
-    } else {
-      alert(result.error?.message || '操作失败')
-    }
+    const { toggleMcpServer } = await import('@/api')
+    const result = await toggleMcpServer(id, enabled)
+    if (result.status === 'ok') await loadServers()
+    else alert(result.error?.message || '操作失败')
   } catch (error) {
     console.error('Failed to toggle server:', error)
     alert('操作失败')
@@ -380,15 +356,13 @@ const toggleServer = async (id: string, enabled: boolean) => {
 
 const testConnection = async (id: string) => {
   try {
-    const response = await fetch(`${API_BASE}/settings/mcp/${id}/test`, {
-      method: 'POST'
-    })
-    const result = await response.json()
-    if (result.status === 'ok' && result.data.connected) {
+    const { testMcpServer } = await import('@/api')
+    const result = await testMcpServer(id)
+    if (result.status === 'ok' && (result.data as { connected?: boolean })?.connected) {
       alert('连接测试成功！')
       await loadServers()
     } else {
-      alert(result.data.error || '连接测试失败')
+      alert((result.data as { error?: string })?.error || '连接测试失败')
     }
   } catch (error) {
     console.error('Failed to test connection:', error)

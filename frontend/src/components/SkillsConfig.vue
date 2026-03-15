@@ -224,15 +224,13 @@ const formData = ref({
   url: ''
 })
 
-const API_BASE = 'http://localhost:8000/api'
-
 const loadSkills = async () => {
   loading.value = true
   try {
-    const response = await fetch(`${API_BASE}/settings/skills`)
-    const result = await response.json()
+    const { getSkillsList } = await import('@/api')
+    const result = await getSkillsList()
     if (result.status === 'ok') {
-      skills.value = result.data.skills || []
+      skills.value = result.data?.skills || []
     }
   } catch (error) {
     console.error('Failed to load skills:', error)
@@ -243,31 +241,16 @@ const loadSkills = async () => {
 
 const saveSkill = async () => {
   try {
-    const url = editingSkill.value
-      ? `${API_BASE}/settings/skills/${editingSkill.value.id}`
-      : `${API_BASE}/settings/skills`
-    
-    const method = editingSkill.value ? 'PUT' : 'POST'
-    
+    const { saveSkill: apiSaveSkill } = await import('@/api')
     const payload: any = {
       name: formData.value.name,
       description: formData.value.description,
-      source: formData.value.source
+      source: formData.value.source,
+      ...(editingSkill.value?.id ? { id: editingSkill.value.id } : {}),
     }
-    
-    if (formData.value.source === 'local') {
-      payload.path = formData.value.path
-    } else {
-      payload.url = formData.value.url
-    }
-    
-    const response = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-    
-    const result = await response.json()
+    if (formData.value.source === 'local') payload.path = formData.value.path
+    else payload.url = formData.value.url
+    const result = await apiSaveSkill(payload)
     if (result.status === 'ok') {
       await loadSkills()
       closeModal()
@@ -294,17 +277,11 @@ const editSkill = (skill: Skill) => {
 
 const deleteSkill = async (id: string) => {
   if (!confirm('确定要删除这个 Skill 吗？')) return
-  
   try {
-    const response = await fetch(`${API_BASE}/settings/skills/${id}`, {
-      method: 'DELETE'
-    })
-    const result = await response.json()
-    if (result.status === 'ok') {
-      await loadSkills()
-    } else {
-      alert(result.error?.message || '删除失败')
-    }
+    const { deleteSkill: apiDeleteSkill } = await import('@/api')
+    const result = await apiDeleteSkill(id)
+    if (result.status === 'ok') await loadSkills()
+    else alert(result.error?.message || '删除失败')
   } catch (error) {
     console.error('Failed to delete skill:', error)
     alert('删除失败')
@@ -313,16 +290,10 @@ const deleteSkill = async (id: string) => {
 
 const toggleSkill = async (id: string, enabled: boolean) => {
   try {
-    const endpoint = enabled ? 'enable' : 'disable'
-    const response = await fetch(`${API_BASE}/settings/skills/${id}/${endpoint}`, {
-      method: 'POST'
-    })
-    const result = await response.json()
-    if (result.status === 'ok') {
-      await loadSkills()
-    } else {
-      alert(result.error?.message || '操作失败')
-    }
+    const { toggleSkill: apiToggleSkill } = await import('@/api')
+    const result = await apiToggleSkill(id, enabled)
+    if (result.status === 'ok') await loadSkills()
+    else alert(result.error?.message || '操作失败')
   } catch (error) {
     console.error('Failed to toggle skill:', error)
     alert('操作失败')

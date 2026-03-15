@@ -167,3 +167,14 @@ class SkillsLoader:
         if not skill:
             return None
         return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"
+
+
+_skills_loader: Optional[SkillsLoader] = None
+
+
+def get_skills_loader() -> SkillsLoader:
+    """返回全局单例 SkillsLoader，供 chat、group_chat、settings 等共用。"""
+    global _skills_loader
+    if _skills_loader is None:
+        _skills_loader = SkillsLoader()
+    return _skills_loader

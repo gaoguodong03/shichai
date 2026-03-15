@@ -5,6 +5,8 @@
 - 用于 run_skill_script 调用的脚本，供各图片生成 Skill 复用。
 """
 import os
+from pathlib import Path
+
 import httpx
 
 API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
@@ -12,8 +14,18 @@ MODEL = "ep-20250705144856-6jcl6"
 
 
 def get_api_key() -> str:
-    """从环境变量读取 API Key，与 volces_icon MCP 一致。"""
+    """从环境变量读取 API Key，与 volces_icon MCP 一致。若未设置则尝试从 backend/.env 加载。"""
     key = os.environ.get("VOLCES_IMAGE_API_KEY", "").strip()
+    if not key:
+        try:
+            from dotenv import load_dotenv
+            # run_skill_script 子进程 cwd 为 skill/scripts，需按 __file__ 定位 backend/.env
+            _backend_dir = Path(__file__).resolve().parent.parent
+            _env_path = _backend_dir / ".env"
+            load_dotenv(_env_path)
+            key = os.environ.get("VOLCES_IMAGE_API_KEY", "").strip()
+        except Exception:
+            pass
     if not key:
         raise ValueError(
             "未配置 VOLCES_IMAGE_API_KEY。请在 backend/.env 或 transport.env 中设置，"

@@ -18,7 +18,7 @@
 
 4. **决定下一发言人**（三种情况）  
    - **前端指定了 override_next_speaker**：直接用该值（可为某 dha_id、user、end），不再调用主持人。  
-   - **仅 1 个 DHA**：不经过主持人，直接让该 DHA 发言。  
+   - **仅 1 个 DHA**：也经主持人点名后，再让该 DHA 发言。  
    - **多 DHA 且未指定**：  
      - **手动模式**：只调用主持人，得到「建议的下一发言人 + 主持词 + next_prompt + suggested_order」，写一条主持人消息，然后 **end + waiting_for_user**，等用户下次请求再带 override 或新 message。  
      - **自动模式**：调用主持人得到 decision，若有「下一发言人是某 DHA」则先写一条主持人消息，再进入下面的 DHA 执行循环。
@@ -80,13 +80,13 @@
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 前端 POST /api/group-sessions/{id}/chat 或 .../chat/stream      │
-│ body: { message?, override_next_speaker?, action? }              │
+│ 前端 POST /api/sessions/{id}/chat/stream（或 .../group-sessions/..）│
+│ body: { message?, override_next_speaker?, custom_prompt? }        │
 └─────────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ 后端 group_chat / group_chat_stream                              │
+│ 后端 group_chat_stream（仅流式）                                  │
 │ 1. 若有 message：追加 user 消息并落盘                             │
 │ 2. 从历史中取 last_speaker_dha_id（最近一条非主持人的 assistant）│
 │ 3. 若未指定 override_next_speaker → 由主持人 DHA 或默认调度决策   │
@@ -124,7 +124,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| `backend/app/api/group_chat.py` | 群聊 API：会话 CRUD、`/chat`（非流式）、`/chat/stream`（流式） |
+| `backend/app/api/group_chat.py` | 群聊 API：会话 CRUD、`/chat/stream`（仅流式） |
 | `backend/app/agent/leader_scheduler.py` | 领导人调度：根据历史与上一发言人决定 task_done 与 next_speaker |
 
 - **会话与历史**：`group_sessions_meta.json` 存会话元数据；`group_history_{id}.json` 存消息列表。
@@ -155,10 +155,9 @@
 | 文件 | 说明 |
 |------|------|
 | `MainView.vue` | 左侧导航选 Group → 中间列会话列表 → 右侧 `GroupChatView`；`groupSessionDetail` 来自 `GET /api/group-sessions/{id}` |
-| `GroupChatView.vue` | 展示 `messages`（props）、发送消息时 POST `/api/group-sessions/{id}/chat`，成功后 `emit('message-sent')`，父组件拉取详情刷新列表 |
+| `GroupChatView.vue` | 展示 `messages`（props）、发送消息时 POST `/api/sessions/{id}/chat/stream`，通过 SSE 接收 message/content/end，父组件拉取详情刷新列表 |
 
-- 当前 Group 聊天使用的是**非流式**接口：`POST .../chat`，一次返回完整 `messages`，前端不处理 SSE。
-- 流式接口 `.../chat/stream` 存在，但若前端未调用，则不会出现流式行为。
+- 会话聊天**仅使用流式**接口：`POST .../chat/stream`，前端通过 SSE 逐条接收 start → message → content → end。
 
 ### 3.2 展示规则
 
@@ -181,7 +180,7 @@
      - 若 `task_done=true`，或已连续同一人发言过（`consecutive_same_dha >= 1`），则强制轮转到下一个 DHA（或结束到 user）。  
      - 若 `task_done=false` 且尚未连续同一人，则允许该 DHA 再发一次，并令 `consecutive_same_dha += 1`。  
    - 若 `next_speaker != last_speaker_dha_id`，则 `consecutive_same_dha = 0`。  
-   - 流式与非流式接口均已按上述逻辑实现。
+   - 流式接口已按上述逻辑实现。
 
 2. **主持人提示消息**  
    - 在每次某 DHA 发言前，向 `messages` 追加一条 `role="host"` 的消息，`content` 为「主持人：接下来由 {name} 发言。」并落盘。  

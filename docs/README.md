@@ -12,6 +12,8 @@
 |------|------|
 | [架构概述](./architecture/overview.md) | 项目定位、前后端架构、Skill 与 MCP 设计 |
 | [运行流程](./architecture/runtime-flow.md) | 请求完整流程（技能选择 → 执行 → 工具调用） |
+| [步骤类型与工具](./architecture/step-types-and-tools.md) | MCP / script / service / export / 只读文件等执行路径（单聊已合并为统一会话） |
+| [统一对话模型](./architecture/unified-conversation-model.md) | 单聊与群聊合并：带主持人的唯一会话类型、数据格式与 API |
 | [Skill + MCP 设计](./architecture/skill-mcp-design-draft.md) | 两阶段技能选择与执行（已实现） |
 | [LLM 提示词结构](./architecture/llm-prompt-structure.md) | 每次请求发给大模型的内容 |
 | [会话与记忆设计](./architecture/session-round-memory.md) | 轮对话、Turn、摘要与记忆 |
@@ -29,7 +31,6 @@
 | [记忆功能](./features/memory.md) | Agent 记忆管理 |
 | [MCP 配置](./features/mcp-config.md) | MCP Server 配置与管理 |
 | [Skills 配置](./features/skills-config.md) | Skills 配置与管理 |
-| [领域数据与报告 Skill+MCP](./features/domain-data-report-skill-mcp.md) | 数据收集与报告技能设计（data-report） |
 | [多模型配置](./features/multi-model-config.md) | 多 LLM 模型配置 |
 | [文件预览方案](./features/file-preview-research.md) | PDF/DOC/Excel 预览方案调研 |
 
@@ -39,18 +40,18 @@
 |------|------|
 | [项目依赖](./requirements.md) | 前后端依赖清单 |
 | [开发设置](./development/setup.md) | 环境配置、安装、启动 |
-| [会话记录](./development/session-notes.md) | 近期对话中已完成的修改与结论 |
-| [下一步开发计划](./development/next-plan.md) | 待开发项（左侧栏、Skill 详情、领域报告 Skill+MCP、MCP 沙箱方向） |
-| [MCP Server 配置](./development/mcp-server-setup.md) | 创建与配置 MCP Server |
 | [MCP 操作指南](./development/mcp-operation-guide.md) | 从 MCP.so 搜选、远程接入、本地编写 |
-| [Node/JSAPI Skills](./development/setup-node-and-jsapi-skills.md) | 百度地图等需 Node 的 Skills 配置 |
 | [部署](./development/deployment.md) | 生产环境部署 |
+| [多 DHA 群聊方案](./development/multi-dha-group-chat-plan.md) | 群聊多 DHA 架构与规划 |
 
-### 四、设计文档
+### 四、规划与历史
 
 | 文档 | 说明 |
 |------|------|
-| [UI/UX 设计](./design/ui-ux.md) | 布局、菜单、交互规范 |
+| [下一步计划](./next-plan/next-plan.md) | 待开发项与暂缓内容 |
+| [群聊逻辑](./next-plan/group-chat-logic.md) | 群聊逻辑规划 |
+| [前端 UI 改造](./next-plan/frontend-ui-reform.md) | 前端 UI 改造规划 |
+| [演示场景](./demo/demo-scenarios.md) | 演示场景说明 |
 
 ---
 

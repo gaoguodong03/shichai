@@ -428,8 +428,8 @@ GET /api/settings/mcp/{server_id}/tools
   "data": {
     "tools": [
       {
-        "name": "read_file",
-        "description": "读取文件内容",
+        "name": "file-reader_read_pdf",
+        "description": "读取 PDF 文件内容（示例，实际工具名以 MCP 为准）",
         "parameters": {
           "type": "object",
           "properties": {

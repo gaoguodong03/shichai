@@ -61,12 +61,9 @@
 
 流程形态上可以是**多步重复**或**跳过**某些 step。
 
-**当前实现**：技能执行阶段由单一 ReAct Agent 根据 SKILL 正文理解步骤。每一步可走三种执行分支之一：
-- **MCP**：调用按技能过滤的 MCP 工具（及 file-reader、export_session 等内置工具）；
-- **script**：工具 **run_skill_script**，执行当前技能 `scripts/` 下 .py/.sh，参数 script_path、input_json；
-- **service**：工具 **call_api**，调用外部 HTTP API，参数 url、method、headers_json、body。
+**当前实现**：技能执行阶段由单一 ReAct Agent 根据 SKILL 正文理解步骤。每一步可走**多种执行路径**之一：MCP、script（run_skill_script）、service（call_api）、export（export_session_to_md，仅单聊）、只读文件（file-reader/filesystem）、或仅推理。完整清单与单聊/群聊差异见 [步骤类型与工具](step-types-and-tools.md)。
 
-**约定**：SKILL.md 中**每步应写明本步走哪一分支**（见 [步骤类型与工具](step-types-and-tools.md)），例如「本步使用 run_skill_script」「本步使用 MCP 工具 xxx」「本步使用 call_api 请求某 URL」，避免模型误选 call_api 当 script 或反之。多步/跳过由 LLM 在 ReAct 循环中决定，无显式编排器；三种分支均以工具形式提供，LLM 按技能说明选择调用。
+**约定**：SKILL.md 中**每步应写明本步走哪一路径**（见 [步骤类型与工具](step-types-and-tools.md)），避免模型误选工具。多步/跳过由 LLM 在 ReAct 循环中决定；所有路径均以工具形式提供（或仅回复文本），LLM 按技能说明选择调用。
 
 ---
 
@@ -107,13 +104,23 @@
 - 前端：`POST /api/chat/stream`，body：`{ "message": "…", "session_id": "…" }`。
 - 后端：`chat_stream(request)`。
 
-### 3.2 准备与第一次调用（技能选择）
+### 3.2 单聊主流程摘要（已下线）
+
+单聊已合并为统一会话，现仅保留群聊路径。以下为历史说明：
+
+1. **ensure_initialized()** — 若未初始化则执行 MCP 连接与 Skills 加载。
+2. **导出意图分支** — 若识别为「导出会话」等意图，走导出逻辑后返回。
+3. **工具组装** — 现由 `build_tools_for_group_chat(all_tools, dha, workspace_id)` 得到工具列表（见 [步骤类型与工具](step-types-and-tools.md)）；会话内由主持人或选 DHA/技能决定执行体。
+4. **create_skill_execution_agent** — 用技能完整内容与 tools 构建 ReAct Agent。
+5. **流式执行** — Agent 按 Skill 步骤运行，每步可走 MCP / run_skill_script / call_api 等，结果流式返回前端。
+
+### 3.3 准备与第一次调用（技能选择）
 
 1. **ensure_initialized()**  
    若未初始化，则执行上节的 MCP 连接与 Skills 加载。
 
 2. **获取工具与技能列表**
-   - `tools = mcp_manager.get_tools()` + 内置工具（`export_session_to_md`、`read_file`）。
+   - `tools = mcp_manager.get_tools()` + 内置工具（`export_session_to_md`）；读文件由 MCP 的 file-reader/filesystem 工具提供（如 `filesystem_read_text_file`），无独立 `read_file` 工具。
    - `skills_for_selection = skills_loader.get_skills_for_selection()`：仅含 name、description（若有）。
 
 3. **构建历史摘要**（多轮 chat）
@@ -125,7 +132,7 @@
    - 输入：用户消息 + 各 skill 的 name+description（**不给完整 skill 内容**）。
    - 输出：选中的 `skill_id`（如 `wechat-article-writer`）。
 
-### 3.3 第二次调用（技能执行）
+### 3.4 第二次调用（技能执行）
 
 1. **获取选中技能的完整内容**
    - `skill_full_content = skills_loader.get_skill_full_content(selected_skill_id)`。
@@ -142,7 +149,7 @@
    - `messages` = 用户问题（含历史摘要，若有）；
    - `tools` = 上面拿到的工具列表。
 
-### 3.4 ReAct 循环（技能执行 Agent，步骤中可能调 MCP）
+### 3.5 ReAct 循环（技能执行 Agent，步骤中可能调 MCP）
 
 图结构（LangGraph）：
 
@@ -179,7 +186,7 @@
 - 执行对应 MCP 工具，将结果封装成 `HumanMessage(content="工具 xxx 的执行结果: …")`，**追加到 messages**。
 - 下一轮迭代：**再次进入 agent 节点**，LLM 继续按 Skill 步骤决定：要么再调工具，要么输出最终回复。
 
-### 3.5 流式输出（SSE）
+### 3.6 流式输出（SSE）
 
 - 后端在 `agent.astream(initial_state)` 的迭代中，根据事件类型向前端推送：
   - `event: start`
@@ -188,7 +195,7 @@
   - `event: end` / `event: error`
 - meta 中的 `skills` 为选中的 `skill_id`；若本轮有 tool_calls，则按工具所属 server 更新 `mcp_servers`。
 
-### 3.6 会话历史
+### 3.7 会话历史
 
 - 流式结束后，将本轮「用户消息 + 助手完整回复」追加到该 `session_id` 的对话历史中，并做长度截断。
 - 下次同一 session 的请求会带上**历史摘要**，参与技能选择与技能执行的输入。
@@ -272,6 +279,6 @@ T0  用户点击发送
 
 - [架构概述](./overview.md)：协作关系图与 Skill/MCP 定位  
 - [Skill + MCP 设计](./skill-mcp-design-draft.md)：两阶段设计说明  
-- [流式处理](./react-stream.md)：ReAct 流式实现细节  
+- [流式与记忆](streaming-and-memory-update.md)：流式输出与记忆窗口  
 - [API 设计](./api-design.md)：接口与事件格式  
 - [LLM 提示词结构](./llm-prompt-structure.md)：每次请求发送给大模型的具体内容  

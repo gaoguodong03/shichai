@@ -28,6 +28,16 @@ def _get_tool_call_arguments(tool_call: dict) -> dict:
     return {}
 
 
+def _get_mcp_input_schema(tool_name: str, tools: Sequence[BaseTool]) -> dict | None:
+    """从 tools 列表中按 tool_name 取出 MCP 工具的 inputSchema，供 __arg1 等通用参数映射。"""
+    if not tools:
+        return None
+    for t in tools:
+        if getattr(t, "name", None) == tool_name:
+            return getattr(t, "_mcp_input_schema", None)
+    return None
+
+
 def _extract_description_from_content(content: str, tool_name: str) -> str | None:
     """当 tool_calls 的 args 为空时，从同条 AIMessage 的 content 中解析 description。
     兼容 content 中的 ```json { "tool": "...", "arguments": { "description": "..." } } ``` 或 "description": "..."。
@@ -270,22 +280,18 @@ def create_react_agent(
         
         logger.info(f"call_tool: 开始处理工具调用，最后一条消息类型: {type(last_message).__name__}")
         
-        def normalize_tool_args(tool_name: str, arguments: dict) -> dict:
-            """规范化各 MCP 工具的参数，避免 LLM 传入非法值导致调用失败"""
+        def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
+            """规范化工具参数。run_skill_script_* 不做 MCP 规范化；其余名含 '_' 的用 MCP 规范化，并传入 schema 以便 __arg1 自动映射到首参。"""
             args = dict(arguments) if arguments else {}
-            # linkup_linkup-search: depth 仅接受 standard 或 deep
-            if tool_name == "linkup_linkup-search":
-                depth = args.get("depth")
-                if depth not in ("standard", "deep"):
-                    args["depth"] = "standard"
-                    logger.info(f"call_tool: linkup_linkup-search depth 规范化为 standard（原值: {depth!r}）")
-            # volces-icon_generate_app_icon: 将 prompt/input/text/content 统一为 description
-            if tool_name == "volces-icon_generate_app_icon" and "description" not in args:
-                args["description"] = (
-                    args.get("prompt") or args.get("input") or args.get("text") or args.get("content") or ""
-                )
-                for k in ("prompt", "input", "text", "content"):
-                    args.pop(k, None)
+            if tool_name.startswith("run_skill_script_"):
+                return args
+            idx = tool_name.find("_")
+            if idx >= 0:
+                server_id = tool_name[:idx]
+                original_tool_name = tool_name[idx + 1:]
+                input_schema = _get_mcp_input_schema(tool_name, tools_list)
+                from app.mcp.manager import normalize_mcp_kwargs_for_call
+                return normalize_mcp_kwargs_for_call(server_id, original_tool_name, args, input_schema=input_schema)
             return args
 
         tool_results = []
@@ -295,7 +301,7 @@ def create_react_agent(
             logger.info(f"call_tool: 处理 {len(last_message.tool_calls)} 个结构化工具调用")
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call.get("name") or tool_call.get("id", "")
-                arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+                arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), state["tools"])
                 # 若 volces-icon 的 description 仍为空，从同条消息 content 中解析（模型常把参数写在正文 JSON 里）
                 if tool_name == "volces-icon_generate_app_icon" and not (arguments.get("description") or "").strip():
                     fallback = _extract_description_from_content(str(last_message.content or ""), tool_name)
@@ -379,7 +385,7 @@ def create_react_agent(
             logger.info(f"call_tool: 提取的 JSON: {json_str}")
             tool_call = json.loads(json_str)
             tool_name = tool_call.get("tool")
-            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), state["tools"])
             if tool_name == "volces-icon_generate_app_icon" and not (arguments.get("description") or "").strip():
                 fallback = _extract_description_from_content(str(last_message.content or ""), tool_name)
                 if fallback:
@@ -639,25 +645,24 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     last_message = messages[-1]
     tool_results = []
 
-    def normalize_tool_args(tool_name: str, arguments: dict) -> dict:
+    def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
+        """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
         args = dict(arguments) if arguments else {}
-        if tool_name == "linkup_linkup-search":
-            depth = args.get("depth")
-            if depth not in ("standard", "deep"):
-                args["depth"] = "standard"
-        if tool_name == "volces-icon_generate_app_icon":
-            if "description" not in args:
-                args["description"] = (
-                    args.get("prompt") or args.get("input") or args.get("text") or args.get("content") or ""
-                )
-                for k in ("prompt", "input", "text", "content"):
-                    args.pop(k, None)
+        if tool_name.startswith("run_skill_script_"):
+            return args
+        idx = tool_name.find("_")
+        if idx >= 0:
+            server_id = tool_name[:idx]
+            original_tool_name = tool_name[idx + 1:]
+            input_schema = _get_mcp_input_schema(tool_name, tools_list)
+            from app.mcp.manager import normalize_mcp_kwargs_for_call
+            return normalize_mcp_kwargs_for_call(server_id, original_tool_name, args, input_schema=input_schema)
         return args
 
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:
             tool_name = tool_call.get("name") or tool_call.get("id", "")
-            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+            arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
             tool = None
             for t in state["tools"]:
                 if t.name == tool_name:
@@ -700,7 +705,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             json_str = content
         tool_call = json.loads(json_str)
         tool_name = tool_call.get("tool")
-        arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call))
+        arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
         tool = None
         for t in state["tools"]:
             if t.name == tool_name:

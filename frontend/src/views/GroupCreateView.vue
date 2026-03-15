@@ -4,10 +4,10 @@
     <form @submit.prevent="create" class="space-y-4 max-w-xl">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">会话标题</label>
-        <input v-model="title" type="text" required class="w-full border border-gray-300 rounded px-3 py-2" placeholder="如：产品方案讨论（选 0 个 DHA 即为单聊）" />
+        <input v-model="title" type="text" required class="w-full border border-gray-300 rounded px-3 py-2" placeholder="如：产品方案讨论（选 0 个 = 仅主持人）" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">参与的 DHA（选 0 个 = 单聊，选 1 个及以上 = 群聊）</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">参与的 DHA（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
         <div class="flex flex-wrap gap-2">
           <label v-for="d in dhaInstances" :key="d.dha_id" class="inline-flex items-center gap-1">
             <input type="checkbox" :value="d.dha_id" v-model="selectedDhaIds" />
@@ -44,12 +44,7 @@ const title = ref('新会话')
 const selectedDhaIds = ref<string[]>([])
 
 async function create() {
-  // 0 个 DHA = 单聊，不创建群会话，直接进入单聊
-  if (selectedDhaIds.value.length === 0) {
-    emit('created', 'single-default')
-    return
-  }
-  const r = await fetch('/api/group-sessions', {
+  const r = await fetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

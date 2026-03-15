@@ -80,7 +80,7 @@ name: 小红书信息图系列
 2. **分析**：主题、核心信息点、目标读者（小红书为主）、适合的预设或风格×版式。
 3. **确认**：向用户推荐 1 个预设或「风格 + 版式」组合，或让用户自选。
 4. **大纲**：将内容拆成 1–10 张图，每张对应一个文件条目标题、要点、版式说明（如「第 1 张：封面 sparse」「第 2–4 张：list 清单」）。保存为 `outline.md`。
-5. **Prompt 与出图**：为每张图写结构化 prompt（风格、版式、文案、配色、禁止项），保存到 `prompts/NN-{slug}.md`，再调用本项目图像生成能力依次生成 `01-xxx.png` …，放入统一输出目录（如 `xhs-images/{内容-slug}/`）。推荐 **CLI 方式**：调用 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 `{"description": "该张图的 prompt 内容", "pic_size": "1024x1024"}`；API Key 与 MCP 相同：环境变量 **VOLCES_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式可为 `Bearer xxx` 或仅 `xxx`）。
+5. **Prompt 与出图**：为每张图写结构化 prompt（风格、版式、文案、配色、禁止项），保存到 `prompts/NN-{slug}.md`，再调用本项目图像生成能力依次生成 `01-xxx.png` …，放入统一输出目录（如 `xhs-images/{内容-slug}/`）。**本技能要求使用 run_skill_script 调用 `scripts/generate_image.py` 生成图片**；脚本在自带环境中执行并内部调用 ChatAnywhere 图像 API，**不要使用 call_api 工具**。调用方式：`run_skill_script`，`script_path=generate_image.py`，`input_json` 为 `{"description": "该张图的 prompt 内容", "pic_size": "1024x1024"}`；环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式 `Bearer sk-xxx` 或仅 `sk-xxx`）。
 6. **收尾**：给用户图列表与路径，并简要说明每张图用途（封面/要点/对比/流程等）。
 
 ## 输出目录结构

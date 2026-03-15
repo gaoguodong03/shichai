@@ -92,5 +92,5 @@ async def chat_stream(request: ChatRequest):
 
 ## 参考资源
 
-- [流式处理架构文档](../architecture/react-stream.md)
+- [流式与记忆](../architecture/streaming-and-memory-update.md)
 - [API 设计文档](../architecture/api-design.md)

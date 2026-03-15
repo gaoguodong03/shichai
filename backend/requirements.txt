@@ -22,6 +22,9 @@ mem0-mcp-server>=0.2.0
 # HTTP Client
 httpx==0.28.1
 
+# 网页正文提取（url-to-blog 等技能抓取 URL 后提取中心文字）
+trafilatura>=1.6.0
+
 # Data Validation
 pydantic==2.12.5
 pydantic-settings==2.12.0

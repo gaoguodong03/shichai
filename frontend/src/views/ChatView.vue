@@ -624,11 +624,20 @@ function formatMsgTime(iso?: string): string {
   }
 }
 
+/** 内置工具的前端显示名：MCP 工具（名称含 _）保持原样显示，仅对内置工具做友好映射 */
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  run_skill_script: '执行脚本',
+  call_api: '调用 API',
+  export_session_to_md: '导出会话',
+}
+
 function getToolNameFromToolCall(toolCallStr: string | null): string {
   if (!toolCallStr) return '执行工具'
   try {
     const obj = JSON.parse(toolCallStr)
-    return (obj && typeof obj.tool === 'string' && obj.tool) ? obj.tool : '执行工具'
+    const tool = obj && typeof obj.tool === 'string' ? obj.tool : ''
+    if (!tool) return '执行工具'
+    return TOOL_DISPLAY_NAMES[tool] ?? tool
   } catch {
     return '执行工具'
   }
@@ -719,14 +728,11 @@ const parseMessageContent = (content: string): ParsedSegment[] => {
 async function saveAsFile() {
   if (!messages.value.length) return
   try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(props.sessionId || 'default')}/export`, {
-      method: 'POST',
-    })
-    const j = await r.json()
+    const { exportSession, downloadUrl } = await import('@/api')
+    const j = await exportSession(props.sessionId || 'default')
     if (j.status === 'ok' && j.data?.path) {
-      const base = window.location.origin
-      const url = j.data.download_url ? `${base}${j.data.download_url}` : `${base}/api/files/download?path=${encodeURIComponent(j.data.path)}`
-      window.open(url, '_blank')
+      const url = downloadUrl(j.data)
+      if (url) window.open(url, '_blank')
       emit('savedAsFile', j.data.path)
     }
   } catch (e) {
@@ -749,10 +755,8 @@ async function loadFilePickerEntries(path: string) {
   filePickerLoading.value = true
   filePickerError.value = ''
   try {
-    const base = `/api/workspaces/${encodeURIComponent(sessionId)}/files`
-    const url = path ? `${base}?path=${encodeURIComponent(path)}` : base
-    const r = await fetch(url)
-    const j = await r.json()
+    const { listWorkspaceFiles } = await import('@/api')
+    const j = await listWorkspaceFiles(sessionId, path || undefined)
     if (j.status === 'ok' && j.data?.entries) {
       filePickerEntries.value = j.data.entries as FileEntry[]
       filePickerPath.value = path
@@ -789,8 +793,7 @@ async function insertFileToInput(filePath: string) {
 function openSkillPicker() {
   showSkillPicker.value = true
   skillPickerLoading.value = true
-  fetch('/api/settings/skills')
-    .then((r) => r.json())
+  import('@/api').then(({ getSkills }) => getSkills())
     .then((j) => {
       if (j.status === 'ok' && j.data?.skills) {
         skillPickerList.value = j.data.skills.filter((s: { enabled?: boolean }) => s.enabled !== false)
@@ -857,16 +860,11 @@ const sendMessage = async () => {
   let streamTimeoutId: number | undefined
 
   try {
-    const response = await fetch('/api/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: userMessage,
-        session_id: props.sessionId || 'default',
-        ...(selectedSkillIds.value.length ? { skill_ids: selectedSkillIds.value } : {}),
-      })
+    const { chatStreamRequest } = await import('@/api')
+    const response = await chatStreamRequest({
+      message: userMessage,
+      session_id: props.sessionId || 'default',
+      ...(selectedSkillIds.value.length ? { skill_ids: selectedSkillIds.value } : {}),
     })
 
     if (!response.body) {

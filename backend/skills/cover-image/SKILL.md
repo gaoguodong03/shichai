@@ -51,11 +51,10 @@ name: 文章封面图生成器
   - 构图要点：留白 40–60%、主视觉居中或偏左、人物用简笔剪影勿写实
   - 若有参考图，在 frontmatter 或正文中写明如何用（direct 传图 / style 提取描述）
 
-### 4. 生成图片（MCP 或 CLI 二选一）
+### 4. 生成图片（CLI，唯一方式）
 
-- prompt 写好后，用以下任一方式生成封面图，将 `prompts/cover.md` 中的完整描述（或提炼出的 prompt 文本）作为输入，按所选比例输出。
-- **方式 A（MCP）**：使用图片生成的 MCP 工具。
-- **方式 B（CLI，推荐）**：调用 `run_skill_script`，`script_path=generate_image.py`，`input_json` 为 JSON：`{"description": "从 cover.md 提炼的提示词", "pic_size": "1024x1024"}`（比例 16:9 可用 `1024x576` 等）。API Key 与 MCP 相同：环境变量 **VOLCES_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式可为 `Bearer xxx` 或仅 `xxx`）。工具返回的 stdout 为图片 URL 或错误信息。
+- **本技能要求使用 run_skill_script 调用 `scripts/generate_image.py` 生成封面图**；脚本在自带环境中执行并内部调用 ChatAnywhere 图像 API，**不要使用 call_api 工具**做图片生成。
+- **调用方式**：`run_skill_script`，`script_path=generate_image.py`，`input_json` 为 JSON 字符串：`{"description": "从 cover.md 提炼的提示词", "pic_size": "1024x1024"}`（比例 16:9 用 `1024x576` 等）。脚本读取环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式 `Bearer sk-xxx` 或仅 `sk-xxx`）。工具返回的 stdout 为图片 URL 或错误信息。
 - 若已有 `cover.png` 且为重新生成，先备份再覆盖。失败时重试一次。
 - 生成的图片保存到工作区同一输出目录下的 `cover.png`。
 

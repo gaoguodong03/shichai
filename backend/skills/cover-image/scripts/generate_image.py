@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""封面图 / 通用图片生成 CLI。供 run_skill_script 调用，与 volces-icon MCP 使用相同 API 与 KEY。
+"""封面图 / 通用图片生成 CLI。供 run_skill_script 调用，使用 ChatAnywhere 图像 API。
 
 stdin：JSON 字符串，如 {"description": "封面描述...", "pic_size": "1024x1024"}，pic_size 可选默认 1024x1024。
-stdout：图片 URL 或错误信息。环境变量 VOLCES_IMAGE_API_KEY 与 MCP 一致（见 backend/.env）。
+stdout：图片 URL 或错误信息。环境变量 CHATANYWHERE_IMAGE_API_KEY（在 backend/.env 中配置，Bearer sk-xxx 或仅 sk-xxx）。
 """
 import json
 import sys
@@ -12,7 +12,7 @@ _backend = Path(__file__).resolve().parents[3]
 if str(_backend) not in sys.path:
     sys.path.insert(0, str(_backend))
 
-from app.tools.volces_image_cli_lib import generate_image
+from app.tools.chatanywhere_image_cli_lib import generate_image
 
 
 def main() -> None:

@@ -135,8 +135,8 @@ async with stdio_client(server_params) as (read, write):
         # 列出可用工具
         tools = await session.list_tools()
         
-        # 调用工具
-        result = await session.call_tool("read_file", {"path": "/tmp/test.txt"})
+        # 调用工具（示例；DHA 中实际工具名为 file-reader_* / filesystem_*，如 file-reader_read_pdf、filesystem_read_text_file）
+        result = await session.call_tool("file-reader_read_pdf", {"path": "/tmp/test.pdf"})
 ```
 
 ### 工具注册到 LangChain
@@ -239,7 +239,7 @@ Response:
 {
   "id": "mcp-server-1",
   "status": "connected",
-  "tools": ["read_file", "write_file", "list_directory"]
+  "tools": ["file-reader_read_pdf", "filesystem_read_text_file", "filesystem_list_dir"]
 }
 ```
 
