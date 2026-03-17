@@ -132,15 +132,55 @@ def save_app_settings(data: Dict[str, Any]):
     path = _get_app_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     current = load_app_settings()
-    current.update({k: v for k, v in data.items() if v is not None})
+    patch = {k: v for k, v in data.items() if v is not None}
+
+    # llm_providers 需要“保留密钥”的合并语义：
+    # - GET 返回会隐藏 api_key，前端通常不会回传；若直接覆盖会导致已保存的 key 被清空。
+    # - 支持通过传入 api_key 显式更新；传入空字符串表示删除。
+    if "llm_providers" in patch and isinstance(patch["llm_providers"], dict):
+        # 以现有配置为底，增量覆盖 incoming，避免只传部分 provider 时丢失其他项
+        merged: Dict[str, Dict[str, Any]] = {
+            pid: (dict(meta) if isinstance(meta, dict) else {}) for pid, meta in (existing or {}).items()
+        }
+        existing = (current.get("llm_providers") or {}) if isinstance(current.get("llm_providers"), dict) else {}
+        incoming = patch["llm_providers"]
+        for pid, meta in incoming.items():
+            base: Dict[str, Any] = dict(existing.get(pid) or {})
+            if isinstance(meta, dict):
+                base.update(meta)
+                if "api_key" not in meta and "api_key" in existing.get(pid, {}):
+                    # 前端未传 api_key 时，保留旧值
+                    base["api_key"] = existing[pid].get("api_key")
+                if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
+                    # 显式清空
+                    base.pop("api_key", None)
+            merged[pid] = base
+        patch["llm_providers"] = merged
+
+    current.update(patch)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=2)
 
 @router.get("/settings/app")
 async def get_app_settings():
     """获取应用设置（LLM 选择、系统提示词）"""
+    # 出于安全考虑：不把 api_key 明文返回给前端，只返回是否已设置
     data = load_app_settings()
-    return {"status": "ok", "data": data}
+    safe = dict(data)
+    providers = safe.get("llm_providers") or {}
+    if isinstance(providers, dict):
+        safe_providers: Dict[str, Dict[str, Any]] = {}
+        for pid, meta in providers.items():
+            m = dict(meta or {}) if isinstance(meta, dict) else {}
+            api_key = (m.get("api_key") or "").strip()
+            if api_key:
+                m["api_key_set"] = True
+            else:
+                m["api_key_set"] = False
+            m.pop("api_key", None)
+            safe_providers[pid] = m
+        safe["llm_providers"] = safe_providers
+    return {"status": "ok", "data": safe}
 
 @router.put("/settings/app")
 async def update_app_settings(body: AppSettingsBody):

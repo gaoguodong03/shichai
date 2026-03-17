@@ -831,11 +831,62 @@ function tryFormatJson(s: string): string {
   }
 }
 
-/** 正文中保留全部内容；合并多余空行，避免渲染出过大段落间距 */
+/** 正文中保留全部内容；合并多余空行，避免渲染出过大段落间距
+ *  同时为 markdown 标题自动加上递增序号（仅专家/主持人正文使用）：
+ *  - #   → 加粗标题：**1. 标题**
+ *  - ##  → 「一、标题」「二、标题」…
+ *  - ### → 「1. 标题」「2. 标题」…
+ *  - ####→ 「1.1 标题」「1.2 标题」…
+ */
 function dhaBodyContent(content: string): string {
   if (!content?.trim()) return ''
-  const s = content.trim()
-  return collapseBlankLines(s)
+  const s = collapseBlankLines(content.trim())
+  const lines = s.split('\n')
+  let h1 = 0, h2 = 0, h3 = 0, h4 = 0
+  const cnNums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+  const out = lines.map((line) => {
+    const m = line.match(/^(#{1,4})\s+(.*)$/)
+    if (!m) return line
+    const level = m[1].length
+    const title = m[2].trim()
+    if (!title) return line
+    if (level === 1) {
+      h1 += 1
+      h2 = 0
+      h3 = 0
+      h4 = 0
+      // # → **1. 标题**
+      return `**${h1}. ${title}**`
+    }
+    if (level === 2) {
+      if (h1 === 0) h1 = 1
+      h2 += 1
+      h3 = 0
+      h4 = 0
+      // ## → 一、标题 / 二、标题 …
+      const idx = h2 - 1
+      const cn = cnNums[idx] ?? String(h2)
+      return `${cn}、${title}`
+    }
+    if (level === 3) {
+      if (h1 === 0) h1 = 1
+      if (h2 === 0) h2 = 1
+      h3 += 1
+      h4 = 0
+      // ### → 1. 标题
+      return `${h3}. ${title}`
+    }
+    if (level === 4) {
+      if (h1 === 0) h1 = 1
+      if (h2 === 0) h2 = 1
+      if (h3 === 0) h3 = 1
+      h4 += 1
+      // #### → 1.1 标题（使用 三级.四级）
+      return `${h3}.${h4} ${title}`
+    }
+    return line
+  })
+  return out.join('\n')
 }
 
 function escapeHtml(s: string) {

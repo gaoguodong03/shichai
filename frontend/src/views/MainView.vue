@@ -135,23 +135,41 @@
         <template v-else-if="currentModule === 'resource'">
           <!-- 专家 DHA -->
           <template v-if="resourceSubModule === 'dha'">
-            <button
-              @click="selectedId = '__new__'"
-              :class="[
-                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
-                selectedId === '__new__'
-                  ? 'bg-nav-selected-bg text-nav-selected-text'
-                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-              ]"
-            >
-              <span class="text-base leading-none">＋</span>
-              <span>新建专家</span>
-            </button>
+            <div class="flex items-center gap-2 mb-2 px-3">
+              <button
+                @click="selectedId = '__new__'"
+                :class="[
+                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                  selectedId === '__new__'
+                    ? 'bg-nav-selected-bg text-nav-selected-text'
+                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                ]"
+              >
+                <span class="text-base leading-none">＋</span>
+                <span>新建专家</span>
+              </button>
+              <button
+                type="button"
+                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                title="搜索专家"
+                @click="toggleSearch('dha')"
+              >
+                🔍
+              </button>
+            </div>
+            <div v-if="showDhaSearch" class="px-3 mb-2">
+              <input
+                v-model="dhaSearch"
+                type="text"
+                placeholder="搜索专家（名称/ID/角色）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+            </div>
             <div v-if="dhaInstancesLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <div v-else-if="!dhaInstances.length" class="px-3 py-4 text-sm text-muted">暂无专家</div>
+            <div v-else-if="!filteredDhaInstances.length" class="px-3 py-4 text-sm text-muted">暂无专家</div>
             <div
               v-else
-              v-for="d in dhaInstances"
+              v-for="d in filteredDhaInstances"
               :key="d.dha_id"
               :class="[
                 'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
@@ -175,22 +193,40 @@
           </template>
           <!-- Skill -->
           <template v-else-if="resourceSubModule === 'skill'">
-            <button
-              @click="selectedId = '__new__'"
-              :class="[
-                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
-                selectedId === '__new__'
-                  ? 'bg-nav-selected-bg text-nav-selected-text'
-                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-              ]"
-            >
-              <span class="text-base leading-none">＋</span>
-              <span>新建 Skill</span>
-            </button>
+            <div class="flex items-center gap-2 mb-2 px-3">
+              <button
+                @click="selectedId = '__new__'"
+                :class="[
+                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                  selectedId === '__new__'
+                    ? 'bg-nav-selected-bg text-nav-selected-text'
+                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                ]"
+              >
+                <span class="text-base leading-none">＋</span>
+                <span>新建 Skill</span>
+              </button>
+              <button
+                type="button"
+                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                title="搜索 Skill"
+                @click="toggleSearch('skill')"
+              >
+                🔍
+              </button>
+            </div>
+            <div v-if="showSkillSearch" class="px-3 mb-2">
+              <input
+                v-model="skillSearch"
+                type="text"
+                placeholder="搜索 Skill（名称/ID）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+            </div>
             <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <button
               v-else
-              v-for="s in skills"
+              v-for="s in filteredSkills"
               :key="s.id"
               @click="selectedId = s.id"
               :class="[
@@ -204,22 +240,40 @@
           </template>
           <!-- MCP -->
           <template v-else-if="resourceSubModule === 'mcp'">
-            <button
-              @click="selectedId = '__new__'"
-              :class="[
-                'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm mb-2',
-                selectedId === '__new__'
-                  ? 'bg-nav-selected-bg text-nav-selected-text'
-                  : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-              ]"
-            >
-              <span class="text-base leading-none">＋</span>
-              <span>新建 MCP</span>
-            </button>
+            <div class="flex items-center gap-2 mb-2 px-3">
+              <button
+                @click="selectedId = '__new__'"
+                :class="[
+                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                  selectedId === '__new__'
+                    ? 'bg-nav-selected-bg text-nav-selected-text'
+                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                ]"
+              >
+                <span class="text-base leading-none">＋</span>
+                <span>新建 MCP</span>
+              </button>
+              <button
+                type="button"
+                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                title="搜索 MCP"
+                @click="toggleSearch('mcp')"
+              >
+                🔍
+              </button>
+            </div>
+            <div v-if="showMcpSearch" class="px-3 mb-2">
+              <input
+                v-model="mcpSearch"
+                type="text"
+                placeholder="搜索 MCP（名称/ID）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+            </div>
             <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <button
               v-else
-              v-for="s in mcpServers"
+              v-for="s in filteredMcpServers"
               :key="s.id"
               @click="selectedId = s.id"
               :class="[
@@ -229,6 +283,46 @@
             >
               <div class="truncate font-medium">{{ s.name || s.id }}</div>
               <div class="truncate text-xs text-muted mt-0.5">{{ s.status === 'connected' ? '已连接' : '未连接' }} · {{ s.tool_count || 0 }} 工具</div>
+            </button>
+          </template>
+          <!-- LLM -->
+          <template v-else-if="resourceSubModule === 'llm'">
+            <div class="flex items-center gap-2 mb-2 px-3">
+              <button
+                @click="selectedId = '__new__'"
+                :class="[
+                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                  selectedId === '__new__'
+                    ? 'bg-nav-selected-bg text-nav-selected-text'
+                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                ]"
+              >
+                <span class="text-base leading-none">＋</span>
+                <span>新建 LLM</span>
+              </button>
+            </div>
+            <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <div v-else-if="!llmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
+            <button
+              v-else
+              v-for="id in llmProviderIds"
+              :key="id"
+              @click="selectedId = id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              <div class="truncate font-medium flex items-center gap-2">
+                <span class="truncate">{{ id }}</span>
+                <span
+                  v-if="id === llmDefault"
+                  class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
+                >
+                  默认
+                </span>
+              </div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '—' }}</div>
             </button>
           </template>
         </template>
@@ -300,12 +394,17 @@
             <p>请从左侧选择 MCP 或添加新 MCP</p>
           </div>
         </template>
+        <template v-else-if="resourceSubModule === 'llm'">
+          <LLMSettingsView
+            :provider-id="selectedId"
+            @updated="(id: string | undefined) => { fetchLLM(); if (id) selectedId = id }"
+          />
+        </template>
       </template>
       <!-- 设置 -->
       <template v-if="currentModule === 'settings'">
         <AppSettingsView v-if="selectedId === 'app'" />
         <ThemeSettingsView v-else-if="selectedId === 'theme'" />
-        <LLMSettingsView v-else-if="selectedId === 'llm'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择设置项</p>
         </div>
@@ -336,7 +435,8 @@ import { useTheme } from '@/composables/useTheme'
 import './MainView.css'
 
 const router = useRouter()
-const themeApi = inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
+// 主题 composable 在该视图内会触发全局样式变量初始化；无需直接读取其返回值
+inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
 const TOKEN_STORAGE_KEY = 'dha_token'
@@ -349,7 +449,7 @@ function logout() {
 }
 
 type ModuleId = 'workspace' | 'resource' | 'settings'
-type ResourceSubModule = 'dha' | 'skill' | 'mcp'
+type ResourceSubModule = 'dha' | 'skill' | 'mcp' | 'llm'
 
 const navItems: { id: ModuleId; label: string }[] = [
   { id: 'workspace', label: '工作空间' },
@@ -361,6 +461,7 @@ const resourceTabs: { id: ResourceSubModule; label: string }[] = [
   { id: 'dha', label: '专家' },
   { id: 'skill', label: 'Skill' },
   { id: 'mcp', label: 'MCP' },
+  { id: 'llm', label: 'LLM' },
 ]
 
 const currentModule = ref<ModuleId>('workspace')
@@ -371,10 +472,70 @@ const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
 const mcpServers = ref<{ id: string; name: string; status: string; tool_count: number }[]>([])
 const mcpLoading = ref(false)
+const llmDefault = ref<string>('qwen')
+const llmProviders = ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>({})
+const llmLoading = ref(false)
+const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
+
+// 资源中心列表搜索（专家 / Skill / MCP）
+const showDhaSearch = ref(false)
+const showSkillSearch = ref(false)
+const showMcpSearch = ref(false)
+const dhaSearch = ref('')
+const skillSearch = ref('')
+const mcpSearch = ref('')
+
+function toggleSearch(kind: 'dha' | 'skill' | 'mcp') {
+  if (kind === 'dha') {
+    showDhaSearch.value = !showDhaSearch.value
+    if (!showDhaSearch.value) dhaSearch.value = ''
+  }
+  if (kind === 'skill') {
+    showSkillSearch.value = !showSkillSearch.value
+    if (!showSkillSearch.value) skillSearch.value = ''
+  }
+  if (kind === 'mcp') {
+    showMcpSearch.value = !showMcpSearch.value
+    if (!showMcpSearch.value) mcpSearch.value = ''
+  }
+}
+
+function _q(s: string) {
+  return (s || '').trim().toLowerCase()
+}
+
+const filteredDhaInstances = computed(() => {
+  const q = _q(dhaSearch.value)
+  const list = dhaInstances.value || []
+  if (!q) return list
+  return list.filter((d) => {
+    const hay = `${d.dha_id || ''} ${d.name || ''} ${d.role || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
+
+const filteredSkills = computed(() => {
+  const q = _q(skillSearch.value)
+  const list = skills.value || []
+  if (!q) return list
+  return list.filter((s) => {
+    const hay = `${s.id || ''} ${s.name || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
+
+const filteredMcpServers = computed(() => {
+  const q = _q(mcpSearch.value)
+  const list = mcpServers.value || []
+  if (!q) return list
+  return list.filter((s) => {
+    const hay = `${s.id || ''} ${s.name || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
 const settingsCategories = [
   { id: 'app', label: '应用设置' },
   { id: 'theme', label: '配色' },
-  { id: 'llm', label: '模型选择' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
@@ -480,6 +641,7 @@ function onNavClick(item: { id: ModuleId }) {
     fetchDHA()
     fetchSkills()
     fetchMCP()
+    fetchLLM()
   }
 }
 
@@ -665,6 +827,29 @@ async function fetchMCP() {
   }
 }
 
+async function fetchLLM() {
+  llmLoading.value = true
+  try {
+    const r = await fetch('/api/settings/app')
+    const j = await r.json()
+    if (j?.status === 'ok' && j?.data) {
+      llmDefault.value = j.data.default_llm || 'qwen'
+      llmProviders.value = { ...(j.data.llm_providers || {}) }
+      if (resourceSubModule.value === 'llm' && !selectedId.value) {
+        selectedId.value = llmDefault.value
+      }
+    } else {
+      llmDefault.value = 'qwen'
+      llmProviders.value = {}
+    }
+  } catch {
+    llmDefault.value = 'qwen'
+    llmProviders.value = {}
+  } finally {
+    llmLoading.value = false
+  }
+}
+
 function onSkillCreated(id: string) {
   selectedId.value = id
   fetchSkills()
@@ -681,6 +866,7 @@ watch(currentModule, (mod) => {
     if (resourceSubModule.value === 'skill') fetchSkills()
     if (resourceSubModule.value === 'mcp') fetchMCP()
     if (resourceSubModule.value === 'dha') fetchDHA()
+    if (resourceSubModule.value === 'llm') fetchLLM()
   }
   if (mod === 'settings') selectedId.value = 'app'
   if (mod === 'workspace') {
@@ -691,9 +877,17 @@ watch(currentModule, (mod) => {
 
 watch(resourceSubModule, (sub) => {
   selectedId.value = null
+  // 切换子栏目时收起搜索，避免“跨栏目残留过滤”造成误解
+  showDhaSearch.value = false
+  showSkillSearch.value = false
+  showMcpSearch.value = false
+  dhaSearch.value = ''
+  skillSearch.value = ''
+  mcpSearch.value = ''
   if (sub === 'dha') fetchDHA()
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()
+  if (sub === 'llm') fetchLLM()
 })
 
 // 初始加载：切到对应模块时再请求数据

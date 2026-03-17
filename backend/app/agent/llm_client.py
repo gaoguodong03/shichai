@@ -29,15 +29,17 @@ def get_llm_from_config(
 ) -> "QwenLLM":
     """
     根据 provider_id 从配置创建 LLM 客户端。
-    api_key 从 api_key_env 指定的环境变量读取，不落库。
+    api_key 优先从配置读取（可在线保存），否则从 api_key_env 指定的环境变量读取。
     """
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
     cfg = providers.get(provider_id) or providers.get("qwen")
     if not cfg:
         return QwenLLM()
 
-    api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
-    api_key = os.getenv(api_key_env)
+    api_key = (cfg.get("api_key") or "").strip() or None
+    if not api_key:
+        api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
+        api_key = os.getenv(api_key_env)
     base_url = cfg.get("base_url")
     model = cfg.get("model")
     return QwenLLM(

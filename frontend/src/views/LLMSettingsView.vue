@@ -1,166 +1,97 @@
 <template>
   <div class="flex flex-col h-full bg-page overflow-y-auto">
-    <header class="bg-card px-4 py-3 flex-shrink-0">
-      <h1 class="text-lg font-semibold text-primary">模型选择</h1>
+    <header class="bg-card px-4 py-3 flex-shrink-0 flex items-center justify-between">
+      <h1 class="text-lg font-semibold text-primary">LLM 配置</h1>
+      <span v-if="defaultLlmLabel" class="text-xs text-muted">当前默认：{{ defaultLlmLabel }}</span>
     </header>
-    <div class="flex-1 overflow-y-auto p-4 space-y-6">
-      <section class="space-y-4">
-        <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">默认模型</h2>
-        <div>
-          <label class="block text-sm font-medium text-primary mb-1">默认 LLM</label>
-          <select
-            v-model="form.default_llm"
-            class="w-full max-w-xs px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-          >
-            <option v-for="id in providerIds" :key="id" :value="id">{{ id }}</option>
-          </select>
-          <p class="mt-1 text-xs text-muted">对话与群聊将使用该模型；API Key 从下方各模型对应的环境变量读取。</p>
-        </div>
-      </section>
 
-      <section class="space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">模型列表</h2>
-          <button
-            type="button"
-            @click="openAdd"
-            class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90"
-          >
-            + 添加模型
-          </button>
-        </div>
-        <p class="text-sm text-muted">每个模型需配置：URL、模型型号、API Key 环境变量名（密钥在 .env 中配置）。</p>
+    <div class="flex-1 overflow-y-auto p-4">
+      <div v-if="loading" class="text-sm text-muted py-6">加载中...</div>
 
-        <div v-if="loading" class="text-sm text-muted py-4">加载中...</div>
-        <div v-else class="space-y-3">
-          <div
-            v-for="(meta, id) in form.llm_providers"
-            :key="id"
-            class="rounded-xl p-4 border-2 border-border bg-card text-primary hover:border-border transition-colors"
-          >
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-2">
-                  <h3 class="font-medium text-primary">{{ id }}</h3>
-                  <span
-                    v-if="form.default_llm === id"
-                    class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
-                  >
-                    默认
-                  </span>
-                </div>
-                <dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <dt class="text-muted">URL</dt>
-                    <dd class="font-mono truncate text-primary" :title="meta.base_url">{{ meta.base_url || '—' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted">模型型号</dt>
-                    <dd class="font-mono text-primary">{{ meta.model || '—' }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-muted">API Key 环境变量</dt>
-                    <dd class="font-mono text-primary">{{ meta.api_key_env || '—' }}</dd>
-                  </div>
-                </dl>
-              </div>
-              <div class="flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  @click="openEdit(id)"
-                  class="px-3 py-1.5 text-sm bg-list-hover text-primary rounded-lg hover:bg-accent-subtle hover:text-accent-subtle-text"
-                >
-                  编辑
-                </button>
-                <button
-                  type="button"
-                  @click="removeProvider(id)"
-                  class="px-3 py-1.5 text-sm bg-danger-subtle text-danger rounded-lg hover:opacity-90"
-                >
-                  删除
-                </button>
-              </div>
+      <div v-else-if="!effectiveProviderId" class="text-sm text-muted py-6">
+        请在左侧选择一个模型，或点击「新建 LLM」。
+      </div>
+
+      <div v-else class="max-w-2xl space-y-5">
+        <div class="rounded-xl border border-border bg-card p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-sm text-muted">Provider</div>
+              <div class="text-base font-semibold text-primary truncate">{{ isNew ? '新建 LLM' : effectiveProviderId }}</div>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="!isNew && form.default_llm !== effectiveProviderId"
+                type="button"
+                class="px-3 py-1.5 text-sm bg-accent-subtle text-accent-subtle-text rounded-lg hover:opacity-90"
+                @click="setAsDefault"
+              >
+                设为默认
+              </button>
+              <button
+                v-if="!isNew"
+                type="button"
+                class="px-3 py-1.5 text-sm bg-danger-subtle text-danger rounded-lg hover:opacity-90"
+                @click="removeProvider"
+              >
+                删除
+              </button>
             </div>
           </div>
         </div>
-      </section>
 
-      <div class="flex items-center gap-3 pt-2">
-        <button
-          type="button"
-          @click="save"
-          :disabled="saving"
-          class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90 disabled:opacity-50"
-        >
-          {{ saving ? '保存中...' : '保存' }}
-        </button>
-        <span v-if="saved" class="text-sm text-accent">已保存</span>
-      </div>
-    </div>
-
-    <!-- 添加/编辑弹层 -->
-    <div
-      v-if="showModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      @click.self="showModal = false"
-    >
-      <div class="bg-card border border-border rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 text-primary">
-        <h3 class="text-lg font-semibold mb-4">{{ editingId == null ? '添加模型' : '编辑模型' }}</h3>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">标识（英文，如 qwen、my-openai）</label>
+        <div class="rounded-xl border border-border bg-card p-4 space-y-4">
+          <div v-if="isNew">
+            <label class="block text-sm font-medium text-primary mb-1">标识（英文，如 gemini、my-openai）</label>
             <input
-              v-model="modalForm.id"
+              v-model="edit.id"
               type="text"
-              placeholder="qwen"
+              placeholder="gemini"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              :readonly="editingId != null"
             />
           </div>
+
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">URL（API 基础地址）</label>
+            <label class="block text-sm font-medium text-primary mb-1">URL</label>
             <input
-              v-model="modalForm.base_url"
+              v-model="edit.base_url"
               type="url"
-              placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+              placeholder="http://jeniya.top/v1"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
           </div>
+
           <div>
             <label class="block text-sm font-medium text-primary mb-1">模型型号</label>
             <input
-              v-model="modalForm.model"
+              v-model="edit.model"
               type="text"
-              placeholder="qwen3-max"
+              placeholder="gemini-3-pro-preview"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
           </div>
+
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">API Key 环境变量名</label>
+            <label class="block text-sm font-medium text-primary mb-1">API Key 环境变量</label>
             <input
-              v-model="modalForm.api_key_env"
+              v-model="edit.api_key_env"
               type="text"
-              placeholder="QWEN_API_KEY"
+              placeholder="JENIYA_API_KEY"
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
-            <p class="mt-1 text-xs text-muted">在 .env 中配置该变量，不在此处填写密钥</p>
           </div>
-        </div>
-        <div class="flex justify-end gap-2 mt-6">
-          <button
-            type="button"
-            @click="showModal = false"
-            class="px-4 py-2 text-primary bg-list-hover rounded-lg hover:bg-accent-subtle hover:text-accent-subtle-text"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            @click="submitModal"
-            class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90"
-          >
-            {{ editingId == null ? '添加' : '保存' }}
-          </button>
+
+          <div class="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              @click="saveProvider"
+              :disabled="saving"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90 disabled:opacity-50"
+            >
+              {{ saving ? '保存中...' : (isNew ? '创建' : '保存') }}
+            </button>
+            <span v-if="saved" class="text-sm text-accent">已保存</span>
+          </div>
         </div>
       </div>
     </div>
@@ -168,29 +99,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+
+const props = defineProps<{
+  providerId?: string | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'updated', selectedId?: string): void
+}>()
 
 const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const form = ref<{
   default_llm: string
-  llm_providers: Record<string, { base_url?: string; model?: string; api_key_env?: string }>
-}>({
-  default_llm: 'qwen',
-  llm_providers: {},
-})
+  llm_providers: Record<string, { base_url?: string; model?: string; api_key_env?: string; api_key_set?: boolean }>
+}>({ default_llm: 'qwen', llm_providers: {} })
 
-const providerIds = computed(() => Object.keys(form.value.llm_providers))
-
-const showModal = ref(false)
-const editingId = ref<string | null>(null)
-const modalForm = ref({
+const edit = ref({
   id: '',
   base_url: '',
   model: '',
   api_key_env: '',
 })
+
+const effectiveProviderId = computed(() => (props.providerId || '').trim() || null)
+const isNew = computed(() => effectiveProviderId.value === '__new__')
+const defaultLlmLabel = computed(() => (form.value.default_llm || '').trim())
 
 async function load() {
   loading.value = true
@@ -208,65 +144,7 @@ async function load() {
   }
 }
 
-function openAdd() {
-  editingId.value = null
-  modalForm.value = { id: '', base_url: '', model: '', api_key_env: '' }
-  showModal.value = true
-}
-
-function openEdit(id: string) {
-  const meta = form.value.llm_providers[id]
-  if (!meta) return
-  editingId.value = id
-  modalForm.value = {
-    id,
-    base_url: meta.base_url ?? '',
-    model: meta.model ?? '',
-    api_key_env: meta.api_key_env ?? '',
-  }
-  showModal.value = true
-}
-
-function submitModal() {
-  const { id, base_url, model, api_key_env } = modalForm.value
-  const tid = (id || '').trim().toLowerCase().replace(/\s+/g, '-')
-  if (!tid) {
-    alert('请填写标识')
-    return
-  }
-  const isNew = editingId.value == null
-  if (isNew && form.value.llm_providers[tid]) {
-    alert('该标识已存在')
-    return
-  }
-  const next = { ...form.value.llm_providers }
-  if (isNew) {
-    next[tid] = { base_url: base_url.trim() || undefined, model: model.trim() || undefined, api_key_env: api_key_env.trim() || undefined }
-  } else {
-    const key = editingId.value!
-    if (key !== tid) {
-      delete next[key]
-      next[tid] = { base_url: base_url.trim() || undefined, model: model.trim() || undefined, api_key_env: api_key_env.trim() || undefined }
-      if (form.value.default_llm === key) form.value.default_llm = tid
-    } else {
-      next[key] = { base_url: base_url.trim() || undefined, model: model.trim() || undefined, api_key_env: api_key_env.trim() || undefined }
-    }
-  }
-  form.value.llm_providers = next
-  showModal.value = false
-}
-
-function removeProvider(id: string) {
-  if (!confirm(`确定删除模型「${id}」？`)) return
-  const next = { ...form.value.llm_providers }
-  delete next[id]
-  form.value.llm_providers = next
-  if (form.value.default_llm === id) {
-    form.value.default_llm = Object.keys(next)[0] || 'qwen'
-  }
-}
-
-async function save() {
+async function saveAll(nextSelectedId?: string) {
   saving.value = true
   saved.value = false
   try {
@@ -280,8 +158,10 @@ async function save() {
     })
     const j = await r.json()
     if (j?.status === 'ok') {
+      await load()
       saved.value = true
       setTimeout(() => { saved.value = false }, 2000)
+      emit('updated', nextSelectedId)
     } else {
       alert((j as { detail?: string }).detail || '保存失败')
     }
@@ -291,4 +171,84 @@ async function save() {
 }
 
 onMounted(load)
+
+watch(
+  () => [effectiveProviderId.value, form.value.llm_providers],
+  () => {
+    const pid = effectiveProviderId.value
+    if (!pid) return
+    if (pid === '__new__') {
+      edit.value = { id: '', base_url: 'http://jeniya.top/v1', model: '', api_key_env: 'JENIYA_API_KEY' }
+      return
+    }
+    const meta = form.value.llm_providers[pid]
+    if (!meta) return
+    edit.value = {
+      id: pid,
+      base_url: meta.base_url ?? '',
+      model: meta.model ?? '',
+      api_key_env: meta.api_key_env ?? '',
+    }
+  },
+  { deep: true },
+)
+
+async function saveProvider() {
+  const pid = effectiveProviderId.value
+  if (!pid) return
+
+  if (pid === '__new__') {
+    const nid = (edit.value.id || '').trim().toLowerCase().replace(/\s+/g, '-')
+    if (!nid) {
+      alert('请填写标识')
+      return
+    }
+    if (form.value.llm_providers[nid]) {
+      alert('该标识已存在')
+      return
+    }
+    form.value.llm_providers = {
+      ...form.value.llm_providers,
+      [nid]: {
+        base_url: (edit.value.base_url || '').trim() || undefined,
+        model: (edit.value.model || '').trim() || undefined,
+        api_key_env: (edit.value.api_key_env || '').trim() || undefined,
+      },
+    }
+    await saveAll(nid)
+    return
+  }
+
+  if (!form.value.llm_providers[pid]) return
+  form.value.llm_providers = {
+    ...form.value.llm_providers,
+    [pid]: {
+      ...(form.value.llm_providers[pid] || {}),
+      base_url: (edit.value.base_url || '').trim() || undefined,
+      model: (edit.value.model || '').trim() || undefined,
+      api_key_env: (edit.value.api_key_env || '').trim() || undefined,
+    },
+  }
+  await saveAll()
+}
+
+async function setAsDefault() {
+  const pid = effectiveProviderId.value
+  if (!pid || pid === '__new__') return
+  form.value.default_llm = pid
+  await saveAll()
+}
+
+async function removeProvider() {
+  const pid = effectiveProviderId.value
+  if (!pid || pid === '__new__') return
+  if (!confirm(`确定删除模型「${pid}」？`)) return
+  const next = { ...form.value.llm_providers }
+  delete next[pid]
+  form.value.llm_providers = next
+  if (form.value.default_llm === pid) {
+    form.value.default_llm = Object.keys(next)[0] || 'qwen'
+  }
+  await saveAll(form.value.default_llm)
+}
 </script>
