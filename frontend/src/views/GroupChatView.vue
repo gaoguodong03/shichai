@@ -40,22 +40,29 @@
               class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-user-bubble text-text-inverse shadow-sm"
             >
               <div class="chat-markdown-wrap break-words min-w-0 overflow-hidden">
-                <div class="chat-markdown whitespace-pre-wrap" v-html="renderMarkdown(stripDiscussionGoalForDisplay(msg.content || ''))"></div>
+                <div class="user-bubble-text">
+                  {{ normalizeSingleLineDisplay(stripDiscussionGoalForDisplay(msg.content || '')) }}
+                </div>
               </div>
             </div>
-            <!-- 主持人消息（灰色标签，先于 DHA 发言出现） -->
+            <!-- 主持人消息：左侧头像 + 左对齐气泡 -->
             <div
               v-else-if="msg.role === 'host'"
-              class="max-w-3xl min-w-0 w-full flex flex-col items-center gap-2"
+              class="max-w-3xl min-w-0 w-full flex gap-2"
             >
-              <div class="text-xs text-muted italic px-3 py-1.5 bg-list-hover rounded-full">
-                {{ msg.content || '' }}
+              <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-text-inverse bg-muted">
+                主
               </div>
-              <div v-if="msg.next_prompt" class="w-full max-w-2xl">
+              <div class="min-w-0 flex-1 flex flex-col gap-1">
+                <div class="inline-block max-w-full text-xs text-muted px-3 py-1.5 bg-list-hover rounded-lg break-words text-left host-bubble-text">
+                  {{ normalizeSingleLineDisplay(msg.content) }}
+                </div>
+                <div v-if="msg.next_prompt" class="w-full max-w-2xl">
                 <details class="text-xs border border-border rounded-lg bg-card overflow-hidden">
                   <summary class="px-3 py-2 cursor-pointer hover:bg-list-hover text-muted">{{ (msg.next_dha_name || '下一 DHA') }} 的提示词</summary>
                   <pre class="p-3 m-0 text-primary whitespace-pre-wrap break-words font-mono bg-list-hover border-t border-border-light max-h-60 overflow-auto">{{ msg.next_prompt }}</pre>
                 </details>
+                </div>
               </div>
             </div>
             <!-- DHA 消息：头像（首字）+ 名称 + 简介 + 输出框 -->
@@ -293,7 +300,7 @@
             <textarea
               :value="singleInputValue"
               @input="singleInputValue = ($event.target as HTMLTextAreaElement).value"
-              placeholder="按 Cmd+空格 发送"
+              placeholder="回车发送，Shift+Enter 换行"
               rows="3"
               class="flex-1 min-h-[60px] w-full border-0 bg-transparent px-4 py-3 text-sm text-primary placeholder:text-muted focus:ring-0 focus:outline-none resize-none"
               :disabled="isStreaming"
@@ -328,7 +335,7 @@
               class="px-4 py-2 bg-accent text-text-inverse rounded-[16px] text-sm font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
               :disabled="isStreaming || (!canSend && speakMode !== 'auto')"
               @click="sendMessage"
-              title="Cmd+空格"
+              title="回车发送，Shift+Enter 换行"
             >
               {{ overrideNextSpeaker ? '确认并继续' : '发送' }}
             </button>
@@ -1215,16 +1222,13 @@ watch(
   (next) => {
     if (!isStreaming.value && next?.length !== undefined) {
       displayedMessages.value = [...next]
-      const lastWithPrompt = next?.slice().reverse().find((m: { next_prompt?: string }) => m?.next_prompt)
-      if (lastWithPrompt?.next_prompt) {
-        inputText.value = lastWithPrompt.next_prompt
-        if (!showExtendedInputs.value) singleInputValue.value = lastWithPrompt.next_prompt
-      }
       const firstUser = next?.find((m: { role: string }) => m.role === 'user')
+      // 不再自动把历史用户消息/主持人提示词填回输入框；只更新最近讨论摘要，并清空当前输入
       if (firstUser?.content && !discussionGoalText.value) {
         discussionGoalText.value = stripDiscussionGoalForDisplay(firstUser.content)
-        if (!showExtendedInputs.value && !singleInputValue.value) singleInputValue.value = stripDiscussionGoalForDisplay(firstUser.content)
       }
+      singleInputValue.value = ''
+      inputText.value = ''
       recentDiscussionText.value = recentDiscussionPreview.value
       // 0 成员时：从最后一条带 suggested_add_dha_ids 的主持人消息恢复邀请条
       if (!props.dhaIds?.length) {
@@ -1525,7 +1529,8 @@ const mdRef = ref<{ render: (s: string) => string } | null>(null)
 onMounted(() => {
   import('markdown-it').then((M) => {
     const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
-    mdRef.value = new Md({ breaks: true })
+    // 使用默认换行规则：单个换行视为空格，空行才分段
+    mdRef.value = new Md({ breaks: false })
   }).catch(() => {})
 })
 
@@ -1554,21 +1559,29 @@ function normalizeContent(s: string) {
   return collapseBlankLines(s)
 }
 
+function normalizeSingleLineDisplay(s?: string): string {
+  const normalized = normalizeContent(s || '')
+  if (!normalized) return ''
+  // 把所有换行压成单个空格，避免视觉上强制“拆成两行”
+  return normalized.replace(/[\r\n]+/g, ' ')
+}
+
 function renderMarkdown(text: string) {
-  if (!text) return ''
-  if (!mdRef.value) return escapeHtml(text)
+  const normalized = normalizeContent(text)
+  if (!normalized) return ''
+  if (!mdRef.value) return escapeHtml(normalized)
   try {
-    const normalized = collapseBlankLines(text)
     let html = mdRef.value.render(normalized)
     html = html.replace(/<p>\s*<\/p>/gi, '')
     return html
   } catch {
-    return escapeHtml(text)
+    return escapeHtml(normalized)
   }
 }
 
 function onChatInputKeydown(e: KeyboardEvent) {
-  if (e.key === ' ' && e.metaKey) {
+  // 回车发送，Shift+Enter 换行
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     sendMessage()
   }
@@ -1577,21 +1590,20 @@ function onChatInputKeydown(e: KeyboardEvent) {
 async function sendMessage() {
   const hasOverride = !!overrideNextSpeaker.value
   const useSingle = !showExtendedInputs.value
-  const goalText = useSingle ? singleInputValue.value.trim() : discussionGoalText.value.trim()
-  const promptText = useSingle ? singleInputValue.value.trim() : inputText.value.trim()
+  // 统一把换行压成空格，避免“同一条内容被拆成两行”
+  const rawGoal = useSingle ? singleInputValue.value : discussionGoalText.value
+  const rawPrompt = useSingle ? singleInputValue.value : inputText.value
+  const goalText = (rawGoal || '').replace(/[\r\n]+/g, ' ').trim()
+  const promptText = (rawPrompt || '').replace(/[\r\n]+/g, ' ').trim()
   if (isStreaming.value) return
   if (!hasOverride && !goalText && !promptText) return
 
   // 选择下一发言人时：发送「确认并继续」，message 为空，custom_prompt 为输入框提示词；否则发送用户消息（讨论目标）
   const msg = hasOverride ? '' : (goalText || promptText)
-  if (!hasOverride) {
-    inputText.value = ''
-    if (useSingle) singleInputValue.value = ''
-    else discussionGoalText.value = ''
-  } else {
-    inputText.value = ''
-    if (useSingle) singleInputValue.value = ''
-  }
+  // 发送后立即清空前端输入框，不再保留任何历史文案
+  inputText.value = ''
+  singleInputValue.value = ''
+  discussionGoalText.value = useSingle ? discussionGoalText.value : ''
   isStreaming.value = true
 
   if (msg) {
@@ -1645,10 +1657,6 @@ async function sendMessage() {
               const data = JSON.parse(dataStr)
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 displayedMessages.value = [...displayedMessages.value, data]
-                if (data.next_prompt) {
-                  inputText.value = data.next_prompt
-                  singleInputValue.value = data.next_prompt
-                }
                 if (data.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = data.suggested_add_dha_ids
                 else if (data.suggested_add_dha_id) suggestedAddDhaIds.value = [data.suggested_add_dha_id]
                 recentDiscussionText.value = recentDiscussionPreview.value
@@ -1663,10 +1671,7 @@ async function sendMessage() {
                 if (endData.waiting_for_user && endData.suggested_next_speaker != null) {
                   overrideNextSpeaker.value = endData.suggested_next_speaker
                 }
-                if (endData.next_prompt) {
-                  inputText.value = endData.next_prompt
-                  singleInputValue.value = endData.next_prompt
-                }
+                // 不再自动把 next_prompt 填回输入框，只在主持人消息中展示
                 if (endData.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id) suggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 // clear any pending auto-confirm to avoid auto-send
@@ -1736,10 +1741,6 @@ async function onAutoSwitchChange(e: Event) {
                       const data = JSON.parse(dataStr)
                       if (data && data.content) {
                         displayedMessages.value = [...displayedMessages.value, data]
-                        if (data.next_prompt) {
-                          inputText.value = data.next_prompt
-                          singleInputValue.value = data.next_prompt
-                        }
                         if (data.suggested_add_dha_ids?.length) suggestedAddDhaIds.value = data.suggested_add_dha_ids
                         else if (data.suggested_add_dha_id) suggestedAddDhaIds.value = [data.suggested_add_dha_id]
                         scrollToBottom()
@@ -1805,6 +1806,8 @@ watch(
 }
 /* 群聊回复 Markdown：整段压紧，与工作区一致 */
 .chat-markdown {
+  /* 避免 whitespace-pre-wrap 把单行拆成多行 */
+  white-space: normal;
   line-height: 1.4;
   word-break: break-word;
 }
@@ -1848,6 +1851,18 @@ watch(
 }
 .docx-preview :deep(*) {
   max-width: 100%;
+}
+
+/* 明确主持人文本为左对齐，避免被其他样式影响 */
+.host-bubble-text {
+  text-align: left !important;
+}
+
+/* 用户消息：按单行文本渲染，不保留换行和 markdown */
+.user-bubble-text {
+  white-space: normal;
+  line-height: 1.4;
+  text-align: left;
 }
 
 /* 群聊输入区：圆角 24px，功能按钮 16px，宽度 90% 最大 1400px，响应式 100%+20px */

@@ -69,7 +69,15 @@
                       <template v-if="msg.role !== 'user' && msg.role !== 'host'">
                         <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
                       </template>
-                      <template v-else>{{ stripDiscussionGoalForDisplay(msg.content || '') }}</template>
+                      <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
+                      <template v-else>
+                        <p
+                          class="group-chat-plain-text"
+                          :class="msg.role === 'user' && isShortSingleLine(normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')))"
+                        >
+                          {{ normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')) }}
+                        </p>
+                      </template>
                     </div>
                     <div
                       v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
@@ -125,12 +133,12 @@
                     ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
-                    placeholder="按 Cmd+Enter 发送，输入 @ 可提及主持人或专家"
+                    placeholder="回车发送，Shift+Enter 换行，输入 @ 可提及主持人或专家"
                     rows="3"
                     @input="onAtInput('goal', $event)"
                     @keydown="onAtKeydown('goal', $event)"
+                    @keydown.enter.exact.prevent="sendGroupMessage()"
                     @blur="closeAtDropdownOnBlur"
-                    @keydown.enter.meta.prevent="sendGroupMessage()"
                   />
                   <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
                     <ul class="group-chat-members-list">
@@ -158,12 +166,12 @@
                       ref="goalTextareaRef"
                       v-model="groupDiscussionGoal"
                       class="group-chat-input-block-textarea"
-                      placeholder="输入本场讨论要达成的目标… 输入 @ 可提及主持人或专家"
+                      placeholder="输入本场讨论要达成的目标…（回车发送，Shift+Enter 换行），输入 @ 可提及主持人或专家"
                       rows="3"
                       @input="onAtInput('goal', $event)"
                       @keydown="onAtKeydown('goal', $event)"
+                      @keydown.enter.exact.prevent="sendGroupMessage()"
                       @blur="closeAtDropdownOnBlur"
-                      @keydown.enter.meta.prevent="sendGroupMessage()"
                     />
                     <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
                       <ul class="group-chat-members-list">
@@ -192,12 +200,12 @@
                       ref="nextPromptTextareaRef"
                       v-model="groupNextPrompt"
                       class="group-chat-input-block-textarea"
-                      placeholder="给下一个 DHA 的提示词（可留空由主持人自动生成），输入 @ 可提及主持人或专家"
+                      placeholder="给下一个 DHA 的提示词（可留空由主持人自动生成，回车发送，Shift+Enter 换行），输入 @ 可提及主持人或专家"
                       rows="3"
                       @input="onAtInput('nextPrompt', $event)"
                       @keydown="onAtKeydown('nextPrompt', $event)"
+                      @keydown.enter.exact.prevent="sendGroupMessage()"
                       @blur="closeAtDropdownOnBlur"
-                      @keydown.enter.meta.prevent="sendGroupMessage()"
                     />
                     <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
                       <ul class="group-chat-members-list">
@@ -856,8 +864,8 @@ function renderMarkdown(text: string) {
   if (!text) return ''
   if (!mdRef.value) return escapeHtml(text)
   try {
-    const normalized = collapseBlankLines(text)
-    let html = mdRef.value.render(normalized)
+    // 直接交给 markdown-it，避免单行被强制换行成多行
+    let html = mdRef.value.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
     return html
   } catch {
@@ -1565,10 +1573,26 @@ function stripDiscussionGoalForDisplay(content: string): string {
   return raw
 }
 
+/** 压缩空行并把所有换行替换为空格，用于用户/主持人纯文本展示 */
+function normalizeSingleLineForDisplay(s: string): string {
+  if (!s) return ''
+  return s
+    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+}
+
 /** 从首条用户消息中取出纯讨论目标，去掉「【讨论目标】」前缀，避免预填后再次发送时重复 */
 function normalizeDiscussionGoalFromContent(content: string | null | undefined): string | null {
   const stripped = stripDiscussionGoalForDisplay(content ?? '')
   return stripped ? stripped : null
+}
+
+/** 判断是否是“短单行”文案，短文案强制不换行，长文案允许正常换行 */
+function isShortSingleLine(text: string): string | null {
+  const len = (text || '').length
+  // 小于等于 12 个字符视为短句：例如“今天北京天气如何”
+  return len > 0 && len <= 12 ? 'group-chat-plain-text-nowrap' : null
 }
 
 /** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_dha_ids 时仍能显示邀请条） */
@@ -1582,8 +1606,7 @@ watch(
   () => groupDetail.value?.messages,
   (messages) => {
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
-    const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
-    groupDiscussionGoal.value = normalizeDiscussionGoalFromContent(firstUser?.content) ?? null
+    // 不再从历史首条用户消息回填输入框，避免发送后又被自动填充回来
     // 0 成员时：若最后一条主持人消息没有 suggested_add_dha_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
     const dhaIds = groupDetail.value?.dha_ids ?? []
     if (dhaIds.length === 0 && Array.isArray(messages) && messages.length) {
@@ -2050,7 +2073,9 @@ function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
 
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
-  const goal = (groupDiscussionGoal.value || '').trim()
+  // 发送时统一把换行压成空格，避免同一条被拆成“逻辑两行”
+  const rawGoal = groupDiscussionGoal.value || ''
+  const goal = rawGoal.replace(/[\r\n]+/g, ' ').trim()
   const prompt = (groupNextPrompt.value || '').trim()
   if (!goal && !prompt) return ''
   const parts: string[] = []
@@ -2071,6 +2096,9 @@ async function sendGroupMessage() {
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   if (!detail || groupStreaming.value || (!base && !hasFiles)) return
+  // 发送后输入框必须清空：前端不保留历史内容
+  groupDiscussionGoal.value = ''
+  groupNextPrompt.value = ''
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
   const msg = await buildMessageWithFiles(detail, base)
@@ -2091,9 +2119,7 @@ async function sendGroupMessage() {
   // #endregion agent log
   const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
   groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
-  // 发送后立即从当前展示的首条用户消息同步讨论目标，否则 watch 只依赖 groupDetail.messages（此处未更新）不会触发
-  const firstUser = groupDisplayMessages.value.find((m) => m.role === 'user')
-  groupDiscussionGoal.value = normalizeDiscussionGoalFromContent(firstUser?.content) ?? null
+  // 不再从首条用户消息回填讨论目标，避免重新把历史文本写回输入框
   scrollGroupToBottom()
   try {
     const abort = new AbortController()
@@ -2667,11 +2693,11 @@ defineExpose({ refresh: loadGroupDetail })
   align-self: flex-start;
 }
 .group-chat-bubble {
-  max-width: 90%;
+  /* 允许根据内容自然拉伸，不再强行限制 90% 导致换行 */
+  max-width: 100%;
   padding: 10px 15px;
   font-size: 0.875rem;
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
   border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -2717,12 +2743,24 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-bubble-body {
   margin: 0;
+  text-align: left;
 }
 /* 回复正文 Markdown：整段压紧，所有块级统一极小间距 */
 .group-chat-markdown {
   font-size: 0.9rem;
   line-height: 1.4;
   word-break: break-word;
+}
+.group-chat-plain-text {
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+}
+.group-chat-plain-text-nowrap {
+  white-space: nowrap;
 }
 /* 所有直接子块（p/h/ul/ol/pre/blockquote 等）统一：仅下边距 0.12em，首尾无额外留白 */
 .group-chat-markdown :deep(> *) {

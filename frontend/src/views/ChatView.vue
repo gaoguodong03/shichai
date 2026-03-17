@@ -457,7 +457,8 @@ const MAX_INSERT_FILE_CHARS = 6000
 const md = new MarkdownIt({
   html: false,
   linkify: true,
-  breaks: true,
+  // 使用默认换行规则：单个换行当空格处理，空行才分段
+  breaks: false,
   typographer: true,
 })
 
@@ -480,8 +481,8 @@ function normalizeContent(s: string): string {
 function renderMarkdown(text: string): string {
   if (!text) return ''
   try {
-    const normalized = collapseBlankLines(text)
-    let html = md.render(normalized)
+    // 直接交给 markdown-it，避免一行被拆成多行
+    let html = md.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
     return html
   } catch {

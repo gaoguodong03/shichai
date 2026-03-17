@@ -150,7 +150,8 @@ const isEditableText = computed(() => {
 
 const isMarkdown = computed(() => /\.md$/i.test(currentPath.value))
 const showMdSource = ref(false)
-const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+// 与对话区保持一致：单个换行当空格处理
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
 function renderMarkdown(text: string): string {
   if (!text) return ''
   try {
