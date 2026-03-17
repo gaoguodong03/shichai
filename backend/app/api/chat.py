@@ -451,7 +451,8 @@ async def run_single_chat_full_content(
     all_tools = _get_mcp_manager().get_tools()
     skills_for_selection = skills_loader.get_skills_for_selection(None)
     app_settings = load_app_settings()
-    extra_system_prompt = app_settings.get("system_prompt") or ""
+    # 已废弃：不再提供全局 system_prompt；主持人提示词改为在 DHA（is_leader）实例上维护
+    extra_system_prompt = ""
     provider_id = app_settings.get("default_llm", "qwen")
     llm = get_llm_from_config(provider_id, app_settings.get("llm_providers"))
 
@@ -608,7 +609,8 @@ async def chat_stream(request: ChatRequest):
     logger.info(f"技能数量（用于选择）: {len(skills_for_selection)}")
 
     app_settings = load_app_settings()
-    extra_system_prompt = app_settings.get("system_prompt") or ""
+    # 已废弃：不再提供全局 system_prompt；主持人提示词改为在 DHA（is_leader）实例上维护
+    extra_system_prompt = ""
     provider_id = app_settings.get("default_llm", "qwen")
     llm = get_llm_from_config(provider_id, app_settings.get("llm_providers"))
     logger.info(f"使用 LLM provider: {provider_id}")

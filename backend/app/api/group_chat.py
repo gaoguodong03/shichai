@@ -1,7 +1,6 @@
 """群聊 API - 多 DHA 群聊会话与消息"""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -15,7 +14,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
@@ -45,6 +44,14 @@ skills_loader = get_skills_loader()
 
 async def _ensure_initialized():
     await ensure_mcp_and_skills_initialized()
+
+
+def _safe_format_template(tpl: str, **kwargs) -> str:
+    """安全格式化设置中的主持人模板：避免 KeyError 导致群聊中断。"""
+    try:
+        return (tpl or "").format(**kwargs)
+    except Exception:
+        return str(tpl or "")
 
 
 def _ensure_sessions_dir() -> Path:
@@ -241,6 +248,9 @@ async def _host_decide_by_dha(
     name = host_dha.get("name") or host_dha.get("dha_id", "主持人")
     role = host_dha.get("role") or "群聊主持人"
     skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{skill_content}"
+    host_system = (host_dha.get("system_prompt") or "").strip()
+    if host_system:
+        skill_content = f"{host_system}\n\n{skill_content}"
 
     dha_lines = []
     for d in dha_list:
@@ -249,27 +259,29 @@ async def _host_decide_by_dha(
         did = d.get("dha_id", "")
         dha_lines.append(f"- {n} ({did}): {r}")
     dha_text = "\n".join(dha_lines)
-    user_content = (
-        f"当前群聊参与者（next_speaker 必须使用以下 dha_id 之一）：\n{dha_text}\n\n"
-        f"讨论目标：{discussion_goal}\n\n"
-        "【最近讨论内容（按时间顺序）——你能看到当前会话的这段历史，包含用户与各位专家的发言。】\n"
-        f"{recent_messages}\n\n"
+    app_settings = load_app_settings()
+    host_prompts = app_settings.get("host_prompts") or {}
+    if not isinstance(host_prompts, dict):
+        host_prompts = {}
+    host_context_template = str(host_prompts.get("host_context_template") or "")
+    host_next_prompt_rules = str(host_prompts.get("host_next_prompt_rules") or "")
+    host_after_last_speaker_template = str(host_prompts.get("host_after_last_speaker_template") or "")
+    host_first_speaker_instruction = str(host_prompts.get("host_first_speaker_instruction") or "")
+    host_single_dha_loop_rules = str(host_prompts.get("host_single_dha_loop_rules") or "")
+
+    user_content = _safe_format_template(
+        host_context_template,
+        dha_text=dha_text,
+        discussion_goal=discussion_goal,
+        recent_messages=recent_messages,
     )
     if last_speaker_dha_id:
-        user_content += f"刚发言的专家：{last_speaker_dha_id}\n\n请判断该专家是否完成任务，并指定下一发言人。"
+        user_content += _safe_format_template(host_after_last_speaker_template, last_speaker_dha_id=last_speaker_dha_id)
     else:
-        user_content += "请指定第一个发言人（next_speaker 为某 dha_id）。此时 task_done 可设为 true。"
-    user_content += (
-        "\n\n若 next_speaker 为某 dha_id，请在 JSON 中同时输出 next_prompt（给下一位专家的提示词）：\n"
-        "- **【重要】每位专家只能看到你本轮给出的这一条 next_prompt**，看不到历史轮次中发给其他专家或该专家的过往提示词。因此 next_prompt 必须「自包含」：与根本任务相关的每一个关键细节（链接、用户原话/偏好、已有结论、文案要点、风格与格式要求等）都要在本条中写清楚，不能依赖「前面某轮已经写过」而省略。\n"
-        "- 尽量详细：信息量要充足，让下一位专家能直接执行。建议结构：当前阶段小结 + 这一轮要完成的具体子任务（可摘录上方历史中的关键表述）+ 输出风格/格式/字数等要求 + 若需其他专家接力可简要说明。\n"
-        "- 若下一位专家涉及生成图片、配图、封面：next_prompt 中必须包含文案要点、风格要求、以及从历史中摘录的关键信息（链接、主题、用户偏好等）。\n"
-        "- 可从「最近讨论内容」中适度摘录原句或关键段落。"
-    )
+        user_content += host_first_speaker_instruction
+    user_content += host_next_prompt_rules
     if len(dha_list) == 1:
-        user_content += (
-            "\n\n【当前仅有一位专家】你可多次指定同一专家（next_speaker 仍为该 dha_id），每次根据其上一轮回复提取或补充参数、细化任务，在 next_prompt 中给出本轮具体指引，直到产出最终结果再设 task_done=true 且 next_speaker=user。"
-        )
+        user_content += host_single_dha_loop_rules
 
     try:
         agent = create_skill_execution_agent(llm, [], skill_content, extra_system_prompt or "")
@@ -300,12 +312,13 @@ async def _host_only_respond_and_recommend(
     skill_content = skills_loader.get_skill_full_content("group-host")
     if not skill_content:
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的专家加入。"
-    system_content = (
-        "你是群聊的主持人。当前群聊尚无成员，用户正在与你交流。"
-        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位或多位适合加入讨论的专家。"
-        "可选专家列表见下方。\n\n"
-        f"{skill_content}"
-    )
+    app_settings = load_app_settings()
+    host_prompts = app_settings.get("host_prompts") or {}
+    if not isinstance(host_prompts, dict):
+        host_prompts = {}
+    zero_member_system_template = str(host_prompts.get("host_zero_member_system_template") or "")
+    zero_member_user_template = str(host_prompts.get("host_zero_member_user_template") or "")
+    system_content = _safe_format_template(zero_member_system_template, skill_content=skill_content)
     dha_lines = []
     for d in all_instances:
         did = d.get("dha_id", "")
@@ -315,15 +328,13 @@ async def _host_only_respond_and_recommend(
         role = d.get("role") or "参与者"
         dha_lines.append(f"- {name} ({did}): {role}")
     dha_text = "\n".join(dha_lines) if dha_lines else "（暂无可选专家）"
-    user_content = (
-        f"讨论目标/用户消息：\n{discussion_goal}\n\n"
-        f"最近对话：\n{recent_messages}\n\n"
-        f"可选专家列表（请从中推荐一位或多位加入，输出其 dha_id）：\n{dha_text}\n\n"
-        "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON。"
-        '格式任选其一：{"suggested_add_dha_id": "dha_id"} 或 {"suggested_add_dha_ids": ["dha_id1", "dha_id2"]}'
-    )
-    app_settings = load_app_settings()
     llm = _get_llm_for_dha(None, app_settings)
+    user_content = _safe_format_template(
+        zero_member_user_template,
+        discussion_goal=discussion_goal,
+        recent_messages=recent_messages,
+        dha_text=dha_text,
+    )
     agent = create_skill_execution_agent(llm, [], system_content, extra_system_prompt or "")
     initial_state = {"messages": [HumanMessage(content=user_content)], "tools": []}
     try:
@@ -730,7 +741,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         discussion_goal = "待用户提出讨论主题"
 
     app_settings = load_app_settings()
-    extra_system_prompt = app_settings.get("system_prompt") or ""
+    # 已废弃：不再提供全局 system_prompt；主持人提示词改为在主持人 DHA（is_leader）实例上维护
+    extra_system_prompt = ""
     # speak_mode 从会话 meta 读取（m 为 meta[group_session_id]），manual 时仅主持人给建议并结束，等用户选人/改提示词后再发
     speak_mode = m.get("speak_mode", "auto")
 

@@ -534,7 +534,7 @@ const filteredMcpServers = computed(() => {
   })
 })
 const settingsCategories = [
-  { id: 'app', label: '应用设置' },
+  { id: 'app', label: '主持人提示词' },
   { id: 'theme', label: '配色' },
 ]
 // Group

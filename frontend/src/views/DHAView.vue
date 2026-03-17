@@ -88,13 +88,6 @@
             </div>
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
-            <!-- 已注释：是否领导人应在创建 Group 时指定，不在 DHA 编辑中设置 -->
-            <!-- <div>
-              <label class="inline-flex items-center gap-2">
-                <input type="checkbox" v-model="form.is_leader" />
-                <span class="text-sm">设为领导人（主持人）</span>
-              </label>
-            </div> -->
 
             <div class="flex gap-2 pt-2">
               <button
