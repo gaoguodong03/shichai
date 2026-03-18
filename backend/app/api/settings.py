@@ -108,53 +108,58 @@ _DEFAULT_LLM_PROVIDERS = {
 }
 
 _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
-    # 对应 backend/app/api/group_chat.py:_host_decide_by_dha 的主持人输入（原硬编码 255-260 行附近）
-    # 可用变量：
-    # - {dha_text}：当前群聊参与者列表
-    # - {discussion_goal}：讨论目标
-    # - {recent_messages}：最近讨论内容
-    "host_context_template": (
-        "当前群聊参与者（next_speaker 必须使用以下 dha_id 之一）：\n{dha_text}\n\n"
-        "讨论目标：{discussion_goal}\n\n"
-        "【最近讨论内容（按时间顺序）——你能看到当前会话的这段历史，包含用户与各位专家的发言。】\n"
-        "{recent_messages}\n\n"
+    # 方案 A：只保留两个字段，避免“首轮/非首轮、0/1 成员”等碎片化配置
+    "host_master_prompt": (
+        "你是群聊的主持人（调度器），你的职责只有三件事：\n"
+        "1) 决定下一位发言人（next_speaker）；\n"
+        "2) 为下一位专家生成本轮 next_prompt（必须自包含，能直接执行）；\n"
+        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_dha_ids（系统会自动邀请并继续跑）。\n\n"
+        "【输入中你将看到】\n"
+        "- 当前群聊参与者列表（含 dha_id/角色/技能）\n"
+        "- 讨论目标与最近讨论内容\n"
+        "- 可邀请专家列表（当需要补人时，从此列表选 suggested_add_dha_ids）\n\n"
+        "【输出规则（必须遵守）】\n"
+        "- 你必须输出一段简短主持词（1～4 句，说明下一步安排/为何补人）。\n"
+        "- 然后在最后输出且仅输出一段 JSON（可放在 ```json 代码块中或直接输出 JSON）。\n"
+        "- JSON 字段：\n"
+        '  {"task_done": bool, "next_speaker": "user|dha_id", "announcement": str, "reason": str, "next_prompt": str, "suggested_add_dha_ids": [dha_id,...]}\n'
+        "- next_speaker 若为某 dha_id：必须输出 next_prompt。\n"
+        "- next_prompt 必须「自包含」：与根本任务相关的关键细节都要写清楚，不能依赖“前面某轮写过”。\n"
+        "- 当你判断当前成员无法完成任务/明显不适合/连续两轮无进展/缺少专长或工具时：\n"
+        "  - 在 JSON 输出 suggested_add_dha_ids（按优先级排序，不设上限：只要可能有帮助都列出来）。\n"
+        '  - 并把 next_speaker 设为 "user"（系统会自动邀请这些成员加入并继续调度执行）。\n'
     ),
-    # 对应 backend/app/api/group_chat.py:_host_decide_by_dha 的 next_prompt 规则（原硬编码 265-271 行附近）
-    "host_next_prompt_rules": (
-        "\n\n若 next_speaker 为某 dha_id，请在 JSON 中同时输出 next_prompt（给下一位专家的提示词）：\n"
-        "- **【重要】每位专家只能看到你本轮给出的这一条 next_prompt**，看不到历史轮次中发给其他专家或该专家的过往提示词。因此 next_prompt 必须「自包含」：与根本任务相关的每一个关键细节（链接、用户原话/偏好、已有结论、文案要点、风格与格式要求等）都要在本条中写清楚，不能依赖「前面某轮已经写过」而省略。\n"
-        "- 尽量详细：信息量要充足，让下一位专家能直接执行。建议结构：当前阶段小结 + 这一轮要完成的具体子任务（可摘录上方历史中的关键表述）+ 输出风格/格式/字数等要求 + 若需其他专家接力可简要说明。\n"
-        "- 若下一位专家涉及生成图片、配图、封面：next_prompt 中必须包含文案要点、风格要求、以及从历史中摘录的关键信息（链接、主题、用户偏好等）。\n"
-        "- 可从「最近讨论内容」中适度摘录原句或关键段落。"
-    ),
-    # 对应 _host_decide_by_dha：有上一位专家时，主持人追加的判断指令
-    # 可用变量：{last_speaker_dha_id}
-    "host_after_last_speaker_template": "刚发言的专家：{last_speaker_dha_id}\n\n请判断该专家是否完成任务，并指定下一发言人。",
-    # 对应 _host_decide_by_dha：首轮无上一位专家时，主持人追加的指令
-    "host_first_speaker_instruction": "请指定第一个发言人（next_speaker 为某 dha_id）。此时 task_done 可设为 true。",
-    # 对应 _host_decide_by_dha：仅 1 位专家时的循环指导
-    "host_single_dha_loop_rules": (
-        "\n\n【当前仅有一位专家】你可多次指定同一专家（next_speaker 仍为该 dha_id），"
-        "每次根据其上一轮回复提取或补充参数、细化任务，在 next_prompt 中给出本轮具体指引，"
-        "直到产出最终结果再设 task_done=true 且 next_speaker=user。"
-    ),
-    # 对应 _host_only_respond_and_recommend：system_content（0 成员推荐专家）
-    "host_zero_member_system_template": (
-        "你是群聊的主持人。当前群聊尚无成员，用户正在与你交流。"
-        "请根据用户的需求或讨论目标，用自然语言回复用户，并推荐一位或多位适合加入讨论的专家。"
-        "可选专家列表见下方。\n\n"
-        "{skill_content}"
-    ),
-    # 对应 _host_only_respond_and_recommend：user_content（0 成员推荐专家）
-    # 可用变量：{discussion_goal} {recent_messages} {dha_text}
-    "host_zero_member_user_template": (
-        "讨论目标/用户消息：\n{discussion_goal}\n\n"
-        "最近对话：\n{recent_messages}\n\n"
-        "可选专家列表（请从中推荐一位或多位加入，输出其 dha_id）：\n{dha_text}\n\n"
-        "请先写一段给用户的回复（说明你推荐谁加入及理由），然后在最后单独一行输出 JSON。"
-        '格式任选其一：{"suggested_add_dha_id": "dha_id"} 或 {"suggested_add_dha_ids": ["dha_id1", "dha_id2"]}'
+    "host_zero_member_policy": (
+        "当前群聊 0 成员。你的目标是先组队：从可选专家列表中推荐尽可能合适的专家加入讨论（不设上限，按优先级排序）。\n"
+        "输出要求：\n"
+        "- 先用 1～4 句回复用户：说明你将邀请哪些专家以及理由。\n"
+        "- 最后一段输出 JSON：必须包含 suggested_add_dha_ids（从可选专家列表选，不设上限）。\n"
+        "系统会自动邀请并继续调度执行。"
     ),
 }
+
+
+def _normalize_host_prompts(hp: Dict[str, Any]) -> Dict[str, str]:
+    """将历史的 host_prompts 结构迁移/归一为方案 A 的两字段结构。"""
+    base = dict(_DEFAULT_HOST_PROMPTS)
+    if not isinstance(hp, dict):
+        return base
+    # 新字段优先
+    if isinstance(hp.get("host_master_prompt"), str) and hp.get("host_master_prompt").strip():
+        base["host_master_prompt"] = hp["host_master_prompt"]
+    else:
+        # 迁移：保留旧 next_prompt 规则（若存在）以减少用户已调优内容丢失
+        legacy_rules = hp.get("host_next_prompt_rules")
+        if isinstance(legacy_rules, str) and legacy_rules.strip():
+            base["host_master_prompt"] = base["host_master_prompt"].rstrip() + "\n\n【补充规则（来自旧配置）】\n" + legacy_rules.strip()
+    if isinstance(hp.get("host_zero_member_policy"), str) and hp.get("host_zero_member_policy").strip():
+        base["host_zero_member_policy"] = hp["host_zero_member_policy"]
+    else:
+        # 迁移：若旧 0 成员 user 模板存在，则附加到 policy，减少迁移损失
+        legacy_zero = hp.get("host_zero_member_user_template")
+        if isinstance(legacy_zero, str) and legacy_zero.strip():
+            base["host_zero_member_policy"] = base["host_zero_member_policy"].rstrip() + "\n\n【补充模板（来自旧配置）】\n" + legacy_zero.strip()
+    return base
 
 def load_app_settings() -> Dict[str, Any]:
     """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
@@ -177,10 +182,8 @@ def load_app_settings() -> Dict[str, Any]:
                 if isinstance(loaded, dict):
                     hp = loaded.get("host_prompts")
                     if isinstance(hp, dict):
-                        merged_hp = dict(_DEFAULT_HOST_PROMPTS)
-                        merged_hp.update({k: v for k, v in hp.items() if isinstance(k, str)})
                         loaded = dict(loaded)
-                        loaded["host_prompts"] = merged_hp
+                        loaded["host_prompts"] = _normalize_host_prompts(hp)
                 data.update(loaded)
                 providers = data.get("llm_providers") or {}
                 for k, v in _DEFAULT_LLM_PROVIDERS.items():
@@ -196,23 +199,15 @@ def load_app_settings() -> Dict[str, Any]:
 class HostPromptsBody(BaseModel):
     """主持人提示词（群聊调度用）"""
 
-    host_context_template: Optional[str] = None
-    host_next_prompt_rules: Optional[str] = None
-    host_after_last_speaker_template: Optional[str] = None
-    host_first_speaker_instruction: Optional[str] = None
-    host_single_dha_loop_rules: Optional[str] = None
-    host_zero_member_system_template: Optional[str] = None
-    host_zero_member_user_template: Optional[str] = None
+    host_master_prompt: Optional[str] = None
+    host_zero_member_policy: Optional[str] = None
 
 
 @router.get("/settings/host-prompts")
 async def get_host_prompts():
     data = load_app_settings()
     hp = data.get("host_prompts") or {}
-    if not isinstance(hp, dict):
-        hp = {}
-    payload = dict(_DEFAULT_HOST_PROMPTS)
-    payload.update({k: v for k, v in hp.items() if isinstance(k, str)})
+    payload = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
     return {"status": "ok", "data": payload}
 
 
@@ -221,17 +216,8 @@ async def update_host_prompts(body: HostPromptsBody):
     incoming = body.model_dump(exclude_none=True)
     current = load_app_settings()
     hp = current.get("host_prompts") if isinstance(current.get("host_prompts"), dict) else {}
-    merged = dict(_DEFAULT_HOST_PROMPTS)
-    merged.update({k: v for k, v in (hp or {}).items() if isinstance(k, str)})
-    for k in (
-        "host_context_template",
-        "host_next_prompt_rules",
-        "host_after_last_speaker_template",
-        "host_first_speaker_instruction",
-        "host_single_dha_loop_rules",
-        "host_zero_member_system_template",
-        "host_zero_member_user_template",
-    ):
+    merged = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
+    for k in ("host_master_prompt", "host_zero_member_policy"):
         if k in incoming:
             merged[k] = incoming[k] or ""
     save_app_settings({"host_prompts": merged})

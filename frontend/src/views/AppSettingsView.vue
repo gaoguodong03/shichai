@@ -10,93 +10,28 @@
           <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">主持人提示词</h2>
           <div class="space-y-3">
             <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">主持人输入模板（上下文段）</div>
+              <div class="text-sm font-medium text-primary">主持人总提示词（调度规则）</div>
               <p class="text-xs text-muted">
-                对应 `group_chat.py` 中主持人用于决定下一位发言人的那段输入。可用变量：`{dha_text}`、`{discussion_goal}`、`{recent_messages}`。
+                覆盖所有场景：决定下一发言人、生成 next_prompt、发现不适合时推荐补人（系统会自动邀请并继续跑）。
               </p>
               <textarea
-                v-model="form.host_context_template"
+                v-model="form.host_master_prompt"
+                rows="16"
+                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
+                placeholder="主持人总提示词（host_master_prompt）"
+              />
+            </div>
+
+            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
+              <div class="text-sm font-medium text-primary">0 成员组队策略</div>
+              <p class="text-xs text-muted">
+                仅在会话里没有任何专家时使用：从可选专家列表中推荐尽可能合适的专家加入（系统会自动邀请并继续跑）。
+              </p>
+              <textarea
+                v-model="form.host_zero_member_policy"
                 rows="10"
                 class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="主持人输入模板（上下文段）"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">非首轮：上一位专家判断指令</div>
-              <p class="text-xs text-muted">
-                对应主持人在“上一位专家发言后”追加的判断指令。可用变量：`{last_speaker_dha_id}`。
-              </p>
-              <textarea
-                v-model="form.host_after_last_speaker_template"
-                rows="3"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="上一位专家判断指令"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">首轮：指定第一个发言人指令</div>
-              <p class="text-xs text-muted">
-                对应主持人在“没有上一位专家时”追加的指令。
-              </p>
-              <textarea
-                v-model="form.host_first_speaker_instruction"
-                rows="3"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="首轮指令"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">next_prompt 规则（自包含要求等）</div>
-              <p class="text-xs text-muted">
-                对应 `group_chat.py` 中要求主持人输出 next_prompt 的规则段落。
-              </p>
-              <textarea
-                v-model="form.host_next_prompt_rules"
-                rows="10"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="next_prompt 规则"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">仅 1 位专家：循环推进规则</div>
-              <p class="text-xs text-muted">
-                对应“当前仅有一位专家”时主持人的额外指导。
-              </p>
-              <textarea
-                v-model="form.host_single_dha_loop_rules"
-                rows="4"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="单专家循环规则"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">0 成员：主持人 system 提示词模板</div>
-              <p class="text-xs text-muted">
-                对应 0 成员时主持人回复并推荐专家的 system 提示词。可用变量：`{skill_content}`。
-              </p>
-              <textarea
-                v-model="form.host_zero_member_system_template"
-                rows="6"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="0 成员 system 模板"
-              />
-            </div>
-
-            <div class="rounded-xl border border-border bg-card p-4 space-y-2">
-              <div class="text-sm font-medium text-primary">0 成员：主持人 user 提示词模板</div>
-              <p class="text-xs text-muted">
-                对应 0 成员时主持人回复并推荐专家的 user 提示词。可用变量：`{discussion_goal}`、`{recent_messages}`、`{dha_text}`。
-              </p>
-              <textarea
-                v-model="form.host_zero_member_user_template"
-                rows="10"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
-                placeholder="0 成员 user 模板"
+                placeholder="0 成员组队策略（host_zero_member_policy）"
               />
             </div>
           </div>
@@ -132,13 +67,8 @@ const saving = ref(false)
 const saved = ref(false)
 
 const form = ref({
-  host_context_template: '',
-  host_next_prompt_rules: '',
-  host_after_last_speaker_template: '',
-  host_first_speaker_instruction: '',
-  host_single_dha_loop_rules: '',
-  host_zero_member_system_template: '',
-  host_zero_member_user_template: '',
+  host_master_prompt: '',
+  host_zero_member_policy: '',
 })
 
 async function load() {
@@ -148,13 +78,8 @@ async function load() {
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data) {
       const next = {
-        host_context_template: String(j.data.host_context_template || ''),
-        host_next_prompt_rules: String(j.data.host_next_prompt_rules || ''),
-        host_after_last_speaker_template: String(j.data.host_after_last_speaker_template || ''),
-        host_first_speaker_instruction: String(j.data.host_first_speaker_instruction || ''),
-        host_single_dha_loop_rules: String(j.data.host_single_dha_loop_rules || ''),
-        host_zero_member_system_template: String(j.data.host_zero_member_system_template || ''),
-        host_zero_member_user_template: String(j.data.host_zero_member_user_template || ''),
+        host_master_prompt: String(j.data.host_master_prompt || ''),
+        host_zero_member_policy: String(j.data.host_zero_member_policy || ''),
       }
       // 兜底：如果后端未返回默认值（例如后端未重启/路由未更新），则再拉一次默认值填充空项
       const hasAny = Object.values(next).some((v) => String(v || '').trim())
@@ -183,13 +108,8 @@ async function save() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        host_context_template: form.value.host_context_template,
-        host_next_prompt_rules: form.value.host_next_prompt_rules,
-        host_after_last_speaker_template: form.value.host_after_last_speaker_template,
-        host_first_speaker_instruction: form.value.host_first_speaker_instruction,
-        host_single_dha_loop_rules: form.value.host_single_dha_loop_rules,
-        host_zero_member_system_template: form.value.host_zero_member_system_template,
-        host_zero_member_user_template: form.value.host_zero_member_user_template,
+        host_master_prompt: form.value.host_master_prompt,
+        host_zero_member_policy: form.value.host_zero_member_policy,
       }),
     })
     const j = await r.json().catch(() => ({}))
@@ -214,13 +134,8 @@ async function resetToDefaults() {
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data) {
       form.value = {
-        host_context_template: String(j.data.host_context_template || ''),
-        host_next_prompt_rules: String(j.data.host_next_prompt_rules || ''),
-        host_after_last_speaker_template: String(j.data.host_after_last_speaker_template || ''),
-        host_first_speaker_instruction: String(j.data.host_first_speaker_instruction || ''),
-        host_single_dha_loop_rules: String(j.data.host_single_dha_loop_rules || ''),
-        host_zero_member_system_template: String(j.data.host_zero_member_system_template || ''),
-        host_zero_member_user_template: String(j.data.host_zero_member_user_template || ''),
+        host_master_prompt: String(j.data.host_master_prompt || ''),
+        host_zero_member_policy: String(j.data.host_zero_member_policy || ''),
       }
       saved.value = true
       setTimeout(() => { saved.value = false }, 2000)

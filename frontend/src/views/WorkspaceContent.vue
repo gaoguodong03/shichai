@@ -138,7 +138,47 @@
             </div>
             <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
-              <p v-if="groupStreaming" class="group-chat-streaming-hint">{{ groupStreamingPhase }}</p>
+              <div v-if="showGroupStatusBar" class="group-chat-status-bar">
+                <div class="group-chat-status-left">
+                  <span
+                    v-if="groupActiveSpeakerId"
+                    class="group-chat-avatar group-chat-avatar-sm"
+                    :style="{ backgroundColor: dhaAvatarColor(dhaIndex(groupActiveSpeakerId)) }"
+                  >
+                    {{ dhaAvatarChar(groupActiveSpeakerId) }}
+                  </span>
+                  <div class="group-chat-status-text">
+                    <p class="group-chat-status-line1">
+                      <span v-if="groupActiveSpeakerName">{{ groupActiveSpeakerName }}</span>
+                      <span v-else>正在处理</span>
+                      <span v-if="groupStreaming" class="group-chat-status-dot">·</span>
+                      <span v-if="groupStreaming" class="group-chat-status-muted">{{ groupStreamingPhase || '正在输出…' }}</span>
+                      <span v-else class="group-chat-status-muted">就绪</span>
+                    </p>
+                    <div class="group-chat-stage">
+                      <span v-for="(s, idx) in GROUP_STAGE_LABELS" :key="s" class="group-chat-stage-item">
+                        <span :class="['group-chat-stage-dot', { 'group-chat-stage-dot-active': idx <= groupStageIndex }]" />
+                        <span :class="['group-chat-stage-label', { 'group-chat-stage-label-active': idx === groupStageIndex }]">{{ s }}</span>
+                        <span v-if="idx !== GROUP_STAGE_LABELS.length - 1" class="group-chat-stage-sep">→</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div class="group-chat-status-right">
+                  <div
+                    v-if="showPixelRunner"
+                    class="group-chat-pixel-bar"
+                    tabindex="0"
+                    @click="pixelJump"
+                    @keydown.space.prevent="pixelJump"
+                  >
+                    <div class="group-chat-pixel-track">
+                      <div class="group-chat-pixel-dino" :style="{ transform: `translateY(${pixelDinoY}px)` }" />
+                      <div class="group-chat-pixel-ob" :style="{ transform: `translateX(${pixelObX}px)` }" />
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
                 <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
                 <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
@@ -265,14 +305,13 @@
                       class="group-chat-next-speaker-trigger"
                       @click="showNextSpeakerPicker = !showNextSpeakerPicker"
                     >
-                      <span
-                        v-if="effectiveNextSpeaker"
-                        class="group-chat-avatar group-chat-avatar-sm"
-                        :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(effectiveNextSpeaker) ?? 0) }"
-                      >
+                      <span v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'" class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }">
                         {{ dhaAvatarChar(effectiveNextSpeaker) }}
                       </span>
-                      <span class="group-chat-next-speaker-name">{{ (groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人' }}</span>
+                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                      <span class="group-chat-next-speaker-name">
+                        {{ effectiveNextSpeaker === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
+                      </span>
                       <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                     </button>
                     <div v-if="showNextSpeakerPicker" class="group-chat-next-speaker-dropdown">
@@ -290,18 +329,29 @@
                           >
                             {{ dhaAvatarChar(opt.id) }}
                           </span>
-                          <span class="group-chat-next-speaker-name-in-list">{{ opt.name }}</span>
-                          <button type="button" class="group-chat-member-delete-icon" title="移出群聊" @click.stop="removeMember(opt.id)">×</button>
+                          <span class="group-chat-next-speaker-name-in-list">
+                            {{ opt.name }}
+                            <span v-if="opt.id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
+                          </span>
+                          <button
+                            v-if="opt.id !== leaderDisplayId"
+                            type="button"
+                            class="group-chat-member-delete-icon"
+                            title="移出群聊"
+                            @click.stop="removeMember(opt.id)"
+                          >
+                            ×
+                          </button>
                         </li>
                       </ul>
-                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMember = true; showNextSpeakerPicker = false">新增成员</button>
+                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMemberModal = true; showNextSpeakerPicker = false">新增成员</button>
                     </div>
                   </div>
                   <div ref="insertFileRef" class="group-chat-add-member-wrap">
                     <button
                       type="button"
                       class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
-                      @click="showInsertFile = !showInsertFile; showInsertFile && loadInsertFileEntries()"
+                      @click="openInsertFileModal"
                     >
                       <svg
                         class="group-chat-toolbar-icon"
@@ -319,22 +369,18 @@
                       </svg>
                       <span>文件</span>
                     </button>
-                    <div v-if="showInsertFile" class="group-chat-add-member-dropdown group-chat-insert-file-dropdown">
-                      <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
-                      <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
-                      <ul v-if="insertFileEntries.length" class="group-chat-members-list">
-                        <li
-                          v-for="e in insertFileEntries"
-                          :key="e.path"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          @click="insertFileContent(e)"
-                        >
-                          <span class="truncate">{{ e.name }}</span>
-                        </li>
-                      </ul>
-                      <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
-                      <p v-else class="group-chat-add-member-empty">暂无文件（请先打开工作区或从本地上传）</p>
-                    </div>
+                  </div>
+                  <button type="button" class="group-chat-toolbar-btn group-chat-toolbar-btn-chip" @click="applyShortcutPreset('research')">调研</button>
+                  <button type="button" class="group-chat-toolbar-btn group-chat-toolbar-btn-chip" @click="applyShortcutPreset('blog')">博客</button>
+                  <div ref="shortcutEditorRef" class="group-chat-add-member-wrap">
+                    <button
+                      type="button"
+                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-plus"
+                      title="快捷键"
+                      @click="showShortcutEditorModal = true"
+                    >
+                      <span class="group-chat-plus">+</span>
+                    </button>
                   </div>
                   <div ref="moreMenuRef" class="group-chat-add-member-wrap">
                     <button
@@ -355,7 +401,6 @@
                         <circle cx="12" cy="12" r="1.5" />
                         <circle cx="19" cy="12" r="1.5" />
                       </svg>
-                      <span>更多</span>
                     </button>
                     <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
                       <p class="group-chat-members-dropdown-title">更多选项</p>
@@ -410,32 +455,8 @@
                       <div class="group-chat-more-row group-chat-more-toggle-row">
                         <button
                           type="button"
-                          class="group-chat-toggle-pill group-chat-toggle-pill-full group-chat-member-skill-toggle"
-                          :class="{ 'group-chat-toggle-pill-active': !!memberSkillButtonLabel }"
-                          @click="openMemberSkillPanel"
-                        >
-                          <svg
-                            class="group-chat-toggle-pill-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <circle cx="9" cy="8" r="3" />
-                            <circle cx="15" cy="16" r="3" />
-                            <path d="M4 20c0-2.2 1.8-4 4-4h2" />
-                            <path d="M14 8h2c2.2 0 4 1.8 4 4" />
-                          </svg>
-                          <span>{{ memberSkillButtonLabel || '成员 Skill' }}</span>
-                        </button>
-                      </div>
-                      <div class="group-chat-more-row group-chat-more-toggle-row">
-                        <button
-                          type="button"
                           class="group-chat-toggle-pill group-chat-toggle-pill-full group-chat-add-member-toggle"
-                          @click="showAddMember = true; showMoreMenu = false"
+                          @click="showAddMemberModal = true; showMoreMenu = false"
                         >
                           <svg
                             class="group-chat-toggle-pill-icon"
@@ -456,69 +477,103 @@
                       </div>
                     </div>
                   </div>
-                  <div v-if="showMemberSkill" ref="memberSkillRef" class="group-chat-add-member-wrap">
-                    <div class="group-chat-add-member-dropdown group-chat-member-skill-dropdown">
-                      <p class="group-chat-members-dropdown-title">各成员使用的 Skill</p>
-                      <ul v-if="memberSkillTargetIds.length" class="group-chat-members-list">
-                        <li
-                          v-for="(id, idx) in memberSkillTargetIds"
-                          :key="id"
-                          class="group-chat-members-item group-chat-member-skill-row"
-                        >
-                          <span
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="{ backgroundColor: dhaAvatarColor(idx) }"
-                          >
-                            {{ dhaAvatarChar(id) }}
-                          </span>
-                          <span class="group-chat-member-skill-name">
-                            {{ (groupDetail?.dha_map || {})[id]?.name || id }}
-                          </span>
-                          <select
-                            :value="memberSkillFor(id)"
-                            class="group-chat-member-skill-select"
-                            @change="(e) => setMemberSkill(id, (e.target as HTMLSelectElement).value)"
-                          >
-                            <option v-for="s in skillOptionsFor(id)" :key="s.id" :value="s.id">
-                              {{ s.name }}
-                            </option>
-                          </select>
-                        </li>
-                      </ul>
-                      <p v-else class="group-chat-add-member-empty">暂无成员</p>
+                  <!-- 居中弹窗：文件 -->
+                  <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="showInsertFileModal = false">
+                    <div class="group-chat-modal">
+                      <div class="group-chat-modal-header">
+                        <span class="group-chat-modal-title">文件</span>
+                        <button type="button" class="group-chat-modal-close" @click="showInsertFileModal = false">×</button>
+                      </div>
+                      <div class="group-chat-modal-body">
+                        <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
+                        <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
+                        <ul v-if="insertFileEntries.length" class="group-chat-members-list">
+                          <li v-for="e in insertFileEntries" :key="e.path" class="group-chat-members-item group-chat-members-item-clickable" @click="insertFileContent(e)">
+                            <span class="truncate">{{ e.name }}</span>
+                          </li>
+                        </ul>
+                        <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
+                        <p v-else class="group-chat-add-member-empty">暂无文件（请先打开工作区或从本地上传）</p>
+                      </div>
                     </div>
                   </div>
-                  <div v-if="showAddMember" ref="addMemberRef" class="group-chat-add-member-wrap group-chat-add-remove-panel">
-                    <div class="group-chat-add-member-dropdown group-chat-add-remove-dropdown">
-                      <p class="group-chat-members-dropdown-title">增删成员</p>
-                      <section class="group-chat-add-remove-section">
-                        <p class="group-chat-members-dropdown-title">当前成员</p>
-                        <ul v-if="(groupDetail?.dha_ids?.length ?? 0) > 0" class="group-chat-members-list">
-                          <li v-for="id in (groupDetail?.dha_ids || [])" :key="id" class="group-chat-members-item group-chat-member-skill-row">
-                            <span class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail!.dha_ids!.indexOf(id)) }">{{ dhaAvatarChar(id) }}</span>
-                            <span class="group-chat-member-skill-name">{{ (groupDetail?.dha_map || {})[id]?.name || id }}</span>
-                            <button type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
-                          </li>
-                        </ul>
-                        <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
-                      </section>
-                      <section class="group-chat-add-remove-section">
-                        <p class="group-chat-members-dropdown-title">可邀请的 DHA</p>
-                        <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                          <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-member-skill-row">
-                            <span class="group-chat-add-member-label">{{ d.name || d.dha_id }}</span>
-                            <button
-                              type="button"
-                              class="group-chat-invite-member-btn"
-                              title="邀请加入群聊"
-                              @click="inviteSingleMember(d.dha_id)"
-                            >
-                              邀请
+
+                  <!-- 居中弹窗：快捷键（+） -->
+                  <div v-if="showShortcutEditorModal" class="group-chat-modal-overlay" @click.self="showShortcutEditorModal = false">
+                    <div class="group-chat-modal">
+                      <div class="group-chat-modal-header">
+                        <span class="group-chat-modal-title">快捷键</span>
+                        <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
+                      </div>
+                      <div class="group-chat-modal-body">
+                        <ul v-if="shortcutPresets.length" class="group-chat-members-list">
+                          <li v-for="p in shortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
+                            <button type="button" class="group-chat-shortcut-pill" @click="applyShortcutPreset(p.id)">
+                              <span class="truncate">{{ p.name }}</span>
+                              <span class="group-chat-shortcut-meta">{{ p.dha_ids.length }} 位</span>
                             </button>
+                            <button type="button" class="group-chat-member-delete-icon" title="删除快捷键" @click.stop="deleteShortcutPreset(p.id)">×</button>
                           </li>
                         </ul>
-                        <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
-                      </section>
+                        <p v-else class="group-chat-add-member-empty">暂无快捷键</p>
+                        <div class="group-chat-shortcut-divider" />
+                        <p class="group-chat-members-dropdown-title">新建快捷键</p>
+                        <input v-model="newShortcutName" class="group-chat-shortcut-name-input" placeholder="快捷键名称（如：调研 / 博客）" />
+                        <p class="group-chat-add-member-empty">邀请加入的专家</p>
+                        <ul v-if="(props.dhaInstances || []).length" class="group-chat-members-list">
+                          <li v-for="d in (props.dhaInstances || [])" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-clickable group-chat-shortcut-checkbox-row" @click="toggleNewShortcutDha(d.dha_id)">
+                            <input type="checkbox" :checked="newShortcutDhaIds.includes(d.dha_id)" @change.prevent />
+                            <span class="truncate">{{ d.name || d.dha_id }}</span>
+                          </li>
+                        </ul>
+                        <div class="group-chat-shortcut-actions">
+                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="createShortcutPreset">保存</button>
+                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="resetShortcutPresets">恢复默认</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 居中弹窗：成员（专家） -->
+                  <div v-if="showAddMemberModal" class="group-chat-modal-overlay" @click.self="showAddMemberModal = false">
+                    <div class="group-chat-modal">
+                      <div class="group-chat-modal-header">
+                        <span class="group-chat-modal-title">成员管理</span>
+                        <button type="button" class="group-chat-modal-close" @click="showAddMemberModal = false">×</button>
+                      </div>
+                      <div class="group-chat-modal-body">
+                        <section class="group-chat-add-remove-section">
+                          <p class="group-chat-members-dropdown-title">当前成员</p>
+                          <ul v-if="orderedMemberIds.length > 0" class="group-chat-members-list">
+                            <li v-for="id in orderedMemberIds" :key="id" class="group-chat-members-item group-chat-member-skill-row">
+                              <span
+                                v-if="id !== 'host'"
+                                class="group-chat-avatar group-chat-avatar-sm"
+                                :style="{ backgroundColor: dhaAvatarColor(dhaIndex(id)) }"
+                              >
+                                {{ dhaAvatarChar(id) }}
+                              </span>
+                              <span v-else class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                              <span class="group-chat-member-skill-name">
+                                {{ id === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[id]?.name || id) }}
+                                <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
+                              </span>
+                              <button v-if="id !== leaderDisplayId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
+                            </li>
+                          </ul>
+                          <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
+                        </section>
+                        <section class="group-chat-add-remove-section">
+                          <p class="group-chat-members-dropdown-title">可邀请的 DHA</p>
+                          <ul v-if="invitableDhas.length" class="group-chat-members-list">
+                            <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-member-skill-row">
+                              <span class="group-chat-add-member-label">{{ d.name || d.dha_id }}</span>
+                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.dha_id)">邀请</button>
+                            </li>
+                          </ul>
+                          <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
+                        </section>
+                      </div>
                     </div>
                   </div>
                   <input
@@ -926,6 +981,55 @@ function collapseBlankLines(s: string): string {
 
 const mdRef = ref<{ render: (s: string) => string } | null>(null)
 
+function unescapeHtmlEntities(s: string) {
+  if (!s) return ''
+  return s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+function wrapToolCallPreBlocks(html: string) {
+  if (!html) return html
+
+  const wrapOne = (rawInner: string) => {
+    const inner = rawInner.trim()
+    const text = unescapeHtmlEntities(inner)
+      .replace(/<code[^>]*>/gi, '')
+      .replace(/<\/code>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .trim()
+
+    if (!text.startsWith('{') || !text.includes('"tool"')) return null
+    try {
+      const parsed = JSON.parse(text) as { action?: string; tool?: string; arguments?: unknown }
+      if (parsed?.action !== 'tool_call' || !parsed?.tool) return null
+      const toolName = String(parsed.tool)
+      const pretty = JSON.stringify(parsed, null, 2)
+      return [
+        `<details class="group-chat-tool-call" data-tool="${escapeHtml(toolName)}">`,
+        `<summary class="group-chat-tool-call-summary">`,
+        `<span class="group-chat-tool-call-pill">${escapeHtml(toolName)}</span>`,
+        `<span class="group-chat-tool-call-hint">工具调用</span>`,
+        `</summary>`,
+        `<pre class="group-chat-tool-call-pre">${escapeHtml(pretty)}</pre>`,
+        `</details>`,
+      ].join('')
+    } catch {
+      return null
+    }
+  }
+
+  // markdown-it 常见输出：<pre><code>...</code></pre>
+  html = html.replace(/<pre>([\s\S]*?)<\/pre>/gi, (m, inner) => {
+    const wrapped = wrapOne(inner)
+    return wrapped ?? m
+  })
+  return html
+}
+
 function renderMarkdown(text: string) {
   if (!text) return ''
   if (!mdRef.value) return escapeHtml(text)
@@ -933,6 +1037,7 @@ function renderMarkdown(text: string) {
     // 直接交给 markdown-it，避免单行被强制换行成多行
     let html = mdRef.value.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
+    html = wrapToolCallPreBlocks(html)
     return html
   } catch {
     return escapeHtml(text)
@@ -948,14 +1053,9 @@ function closeMembersDropdown(e: MouseEvent) {
   const el = e.target as HTMLElement
   const isOpeningAddMember = el?.closest?.('.group-chat-add-remove-in-picker')
   const isOpeningAddMemberFromMore = el?.closest?.('.group-chat-add-member-toggle')
-  const isOpeningMemberSkillFromMore = el?.closest?.('.group-chat-member-skill-toggle')
   if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember && !isOpeningAddMemberFromMore) {
     showAddMember.value = false
   }
-  if (memberSkillRef.value && !memberSkillRef.value.contains(target) && !isOpeningMemberSkillFromMore) {
-    showMemberSkill.value = false
-  }
-  if (insertFileRef.value && !insertFileRef.value.contains(target)) showInsertFile.value = false
   if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(target)) showNextSpeakerPicker.value = false
   if (moreMenuRef.value && !moreMenuRef.value.contains(target)) showMoreMenu.value = false
   if (!el?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
@@ -969,6 +1069,7 @@ async function confirmGroupNext(override: string) {
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
+  groupStage.value = 0
   const body: { override_next_speaker: string; custom_prompt?: string } = { override_next_speaker: override }
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
@@ -1019,6 +1120,7 @@ async function confirmGroupNext(override: string) {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
+                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -1029,6 +1131,9 @@ async function confirmGroupNext(override: string) {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
+                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
+                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
+                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -1078,6 +1183,7 @@ async function confirmGroupNext(override: string) {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
+              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -1115,6 +1221,9 @@ async function inviteSingleMember(dhaId: string) {
 
 async function removeMember(dhaId: string) {
   const id = groupDetail.value?.id
+  const leader = (groupDetail.value?.leader_dha_id || '').trim()
+  if (dhaId === 'host') return
+  if (leader && dhaId === leader) return
   if (!id || !window.confirm('确定将该成员移出群聊？')) return
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
@@ -1163,6 +1272,7 @@ async function onInsertLocalFile(ev: Event) {
       const block = `\n【文件引用：${name}】\n`
       groupNextPrompt.value = (groupNextPrompt.value || '').trim() + (groupNextPrompt.value?.trim() ? '\n\n' : '') + block
       showInsertFile.value = false
+      showInsertFileModal.value = false
     } else {
       alert((j as { detail?: string })?.detail || '上传失败')
     }
@@ -1173,18 +1283,18 @@ async function onInsertLocalFile(ev: Event) {
   }
 }
 
+async function openInsertFileModal() {
+  showInsertFileModal.value = true
+  await loadInsertFileEntries()
+}
+
 onMounted(() => {
   document.addEventListener('click', closeMembersDropdown)
   import('markdown-it').then((M) => {
     const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
     mdRef.value = new Md({ breaks: true })
   }).catch(() => {})
-  fetch('/api/settings/skills')
-    .then((r) => r.json())
-    .then((j: { status?: string; data?: { skills?: { id: string; name: string }[] } }) => {
-      if (j?.status === 'ok' && j?.data?.skills) skillsList.value = j.data.skills
-    })
-    .catch(() => {})
+  loadShortcutPresets()
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
@@ -1195,6 +1305,104 @@ const groupMemberNames = computed(() => {
   if (!d?.dha_ids?.length || !d.dha_map) return ''
   return d.dha_ids.map((id) => d.dha_map![id]?.name || id).join('、')
 })
+
+type ShortcutPreset = { id: string; name: string; dha_ids: string[] }
+const shortcutPresets = ref<ShortcutPreset[]>([])
+const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
+function defaultShortcutPresets(): ShortcutPreset[] {
+  const all = props.dhaInstances || []
+  const byNameIncludes = (q: string) => all.filter((d) => (d.name || d.dha_id).includes(q)).map((d) => d.dha_id)
+  const research = Array.from(new Set([...byNameIncludes('调研'), ...byNameIncludes('内容核实')])).filter(Boolean)
+  const blog = Array.from(new Set([...byNameIncludes('爬取'), ...byNameIncludes('博客'), ...byNameIncludes('图片')])).filter(Boolean)
+  return [
+    { id: 'research', name: '调研', dha_ids: research.length ? research : [] },
+    { id: 'blog', name: '博客', dha_ids: blog.length ? blog : [] },
+  ].filter((p) => p.dha_ids.length > 0)
+}
+function loadShortcutPresets() {
+  try {
+    const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
+    if (!raw) {
+      shortcutPresets.value = defaultShortcutPresets()
+      return
+    }
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) shortcutPresets.value = parsed as ShortcutPreset[]
+    else shortcutPresets.value = defaultShortcutPresets()
+  } catch {
+    shortcutPresets.value = defaultShortcutPresets()
+  }
+}
+function saveShortcutPresets() {
+  try {
+    localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(shortcutPresets.value))
+  } catch {}
+}
+function resetShortcutPresets() {
+  shortcutPresets.value = defaultShortcutPresets()
+  saveShortcutPresets()
+}
+function deleteShortcutPreset(id: string) {
+  shortcutPresets.value = shortcutPresets.value.filter((p) => p.id !== id)
+  saveShortcutPresets()
+}
+function toggleNewShortcutDha(dhaId: string) {
+  const set = new Set(newShortcutDhaIds.value)
+  if (set.has(dhaId)) set.delete(dhaId)
+  else set.add(dhaId)
+  newShortcutDhaIds.value = Array.from(set)
+}
+function createShortcutPreset() {
+  const name = (newShortcutName.value || '').trim()
+  const ids = Array.from(new Set(newShortcutDhaIds.value)).filter(Boolean)
+  if (!name || !ids.length) return
+  const id = `sc-${Date.now()}`
+  shortcutPresets.value = [{ id, name, dha_ids: ids }, ...shortcutPresets.value]
+  newShortcutName.value = ''
+  newShortcutDhaIds.value = []
+  saveShortcutPresets()
+}
+async function applyShortcutPreset(id: string) {
+  const detail = groupDetail.value
+  if (!detail) return
+  const p = shortcutPresets.value.find((x) => x.id === id)
+  if (!p) return
+  const inGroup = new Set(detail.dha_ids || [])
+  const toInvite = p.dha_ids.filter((x) => x && !inGroup.has(x))
+  if (!toInvite.length) {
+    showShortcutEditor.value = false
+    showShortcutEditorModal.value = false
+    return
+  }
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add_dha_ids: toInvite }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      showShortcutEditor.value = false
+      showShortcutEditorModal.value = false
+      emit('dha-added')
+      await loadGroupDetail()
+    }
+  } catch {}
+}
+
+watch(
+  () => props.dhaInstances,
+  () => {
+    if (!shortcutPresets.value.length) shortcutPresets.value = defaultShortcutPresets()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => shortcutPresets.value,
+  () => saveShortcutPresets(),
+  { deep: true },
+)
 
 const DHA_AVATAR_COLORS = [
   'var(--color-dha-box-1)',
@@ -1230,7 +1438,7 @@ const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
-const showMemberSkill = ref(false)
+const showAddMemberModal = ref(false)
 const showMoreMenu = ref(false)
 const showNextPromptField = ref(false) // 更多 -> 显示下一 DHA 提示词，默认隐藏
 function onShowNextPromptFieldChange(e: Event) {
@@ -1258,43 +1466,17 @@ function onShowNextPromptFieldChangeByClick() {
   // #endregion agent log
   if (showNextPromptField.value) showMoreMenu.value = false
 }
-const memberSkillRef = ref<HTMLElement | null>(null)
-const skillsList = ref<{ id: string; name: string }[]>([])
-const groupMemberSkillOverride = ref<Record<string, string>>({})
+const showShortcutEditor = ref(false)
+const showShortcutEditorModal = ref(false)
+const shortcutEditorRef = ref<HTMLElement | null>(null)
+const newShortcutName = ref('')
+const newShortcutDhaIds = ref<string[]>([])
 const showInsertFile = ref(false)
+const showInsertFileModal = ref(false)
 const insertFileRef = ref<HTMLElement | null>(null)
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
 const attachedFiles = ref<{ name: string; path: string }[]>([])
-// 成员 Skill 只针对一个「当前成员」（默认是下一发言人），按钮显示该成员当前使用的 skill
-const memberSkillTargetDhaId = ref<string | null>(null)
-const memberSkillTargetIds = computed(() => {
-  const d = groupDetail.value
-  const ids = d?.dha_ids || []
-  const target = memberSkillTargetDhaId.value || effectiveNextSpeaker.value || ids[0]
-  if (!target || !ids.includes(target)) return []
-  return [target]
-})
-const memberSkillButtonLabel = computed(() => {
-  const dhaId = memberSkillTargetDhaId.value || effectiveNextSpeaker.value
-  if (!dhaId) return ''
-  const skillId = memberSkillFor(dhaId)
-  if (!skillId) return ''
-  const found = skillsList.value.find((s) => s.id === skillId)
-  const name = found?.name || formatSkillId(skillId)
-  if (!name) return ''
-  return name.length > 4 ? name.slice(0, 4) + '…' : name
-})
-
-function openMemberSkillPanel() {
-  const d = groupDetail.value
-  const ids = d?.dha_ids || []
-  const target = effectiveNextSpeaker.value || ids[0]
-  if (!target || !ids.includes(target)) return
-  memberSkillTargetDhaId.value = target
-  showMoreMenu.value = false
-  showMemberSkill.value = true
-}
 
 function removeAttachedFile(path: string) {
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
@@ -1306,6 +1488,16 @@ const addMemberRef = ref<HTMLElement | null>(null)
 const invitableDhas = computed(() => {
   const inGroup = new Set(groupDetail.value?.dha_ids || [])
   return (props.dhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
+})
+
+const leaderDhaId = computed(() => (groupDetail.value?.leader_dha_id || '').trim())
+// 后端如果没显式返回 leader_dha_id，也要让 UI 有“主持人”这个常驻成员。
+const leaderDisplayId = computed(() => leaderDhaId.value || 'host')
+const orderedMemberIds = computed(() => {
+  const ids = [...(groupDetail.value?.dha_ids || [])]
+  const leader = leaderDisplayId.value
+  const rest = ids.filter((x) => x !== leader)
+  return [leader, ...rest]
 })
 
 /** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
@@ -1323,6 +1515,7 @@ async function continueGroupStream() {
   if (!detail || !id || groupStreaming.value) return
   groupStreaming.value = true
   groupStreamingPhase.value = '正在继续…'
+  groupStage.value = 0
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
@@ -1353,6 +1546,7 @@ async function continueGroupStream() {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
+                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -1363,6 +1557,9 @@ async function continueGroupStream() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
+                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
+                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
+                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -1405,6 +1602,7 @@ async function continueGroupStream() {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
+              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -1416,6 +1614,7 @@ async function continueGroupStream() {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
+    groupStage.value = 3
   }
 }
 
@@ -1466,47 +1665,19 @@ async function inviteSuggestedDha() {
   }
 }
 
-/** 某成员当前使用的 skill（override 或实例的 skill_ids[0] 或 default） */
-function memberSkillFor(dhaId: string): string {
-  const over = groupMemberSkillOverride.value[dhaId]
-  if (over) return over
-  const inst = (props.dhaInstances || []).find((d) => d.dha_id === dhaId)
-  const ids = inst?.skill_ids
-  if (ids?.length) return ids[0]
-  return 'default'
-}
-
-function setMemberSkill(dhaId: string, skillId: string) {
-  groupMemberSkillOverride.value = { ...groupMemberSkillOverride.value, [dhaId]: skillId }
-  // 选完 Skill 后，关闭面板并回到「更多」界面
-  showMemberSkill.value = false
-  showMoreMenu.value = true
-}
-
-/** 某成员可选的 skill 列表：仅该角色拥有的 skill（按昵称展示） */
-function skillOptionsFor(dhaId: string): { id: string; name: string }[] {
-  const inst = (props.dhaInstances || []).find((d) => d.dha_id === dhaId)
-  const ids = inst?.skill_ids
-  const all = skillsList.value
-  if (ids?.length) {
-    return ids.map((id) => all.find((s) => s.id === id) || { id, name: formatSkillId(id) }).filter((s) => s.name)
-  }
-  return [{ id: 'default', name: '默认' }]
-}
-
 /** 下一发言人：仅 DHA 成员（无结束/用户选项） */
 const nextSpeakerOptions = computed(() => {
   const d = groupDetail.value
-  const ids = d?.dha_ids || []
+  const ids = orderedMemberIds.value
   const map = d?.dha_map || {}
-  return ids.map((id) => ({ id, name: map[id]?.name || id }))
+  return ids.map((id) => ({ id, name: id === 'host' ? '主持人' : (map[id]?.name || id) }))
 })
 
 /** 当前选中的下一发言人（默认为主持人建议的或第一个 DHA） */
 const effectiveNextSpeaker = computed(() => {
   const override = groupNextSpeakerOverride.value
   const suggested = groupSuggestedNextSpeaker.value
-  const ids = groupDetail.value?.dha_ids || []
+  const ids = orderedMemberIds.value
   if (override && ids.includes(override)) return override
   if (suggested && ids.includes(suggested)) return suggested
   return ids[0] ?? ''
@@ -1524,11 +1695,12 @@ const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const atMentionOptions = computed(() => {
   const host = { type: 'host' as const, id: 'host', label: '主持人' }
+  const next = { type: 'role' as const, id: 'next', label: '下一位' }
   const d = groupDetail.value
   const ids = d?.dha_ids || []
   const map = d?.dha_map || {}
   const experts = ids.map((id) => ({ type: 'dha' as const, id, label: map[id]?.name || id }))
-  const list = [host, ...experts]
+  const list = [host, next, ...experts]
   const q = (atFilter.value || '').trim().toLowerCase()
   if (!q) return list
   return list.filter((o) => (o.label || '').toLowerCase().includes(q) || (o.id || '').toLowerCase().includes(q))
@@ -1564,8 +1736,13 @@ function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
   openAtDropdown(source, value, lastAt, end)
 }
 
-function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string }) {
-  const insertText = opt.type === 'host' ? '@主持人 ' : `@${opt.label} `
+function selectMention(opt: { type: 'host' | 'dha' | 'role'; id: string; label: string }) {
+  const insertText =
+    opt.type === 'host'
+      ? '@主持人 '
+      : opt.type === 'role'
+        ? '@下一位 '
+        : `@${opt.label} `
   if (atSource.value === 'goal') {
     const raw = (groupDiscussionGoal.value ?? '') as string
     const before = raw.slice(0, atInsertStart.value)
@@ -2112,9 +2289,58 @@ function scrollGroupToBottom() {
 }
 
 type GroupMessage = GroupDetail['messages'][number]
+const groupActiveSpeakerId = ref<string | null>(null)
+const GROUP_STAGE_LABELS = ['读取材料', '生成草稿', '自检', '完成'] as const
+// 阶段不是固定流水线；由事件覆盖更新：发送=读取材料；工具/查找=生成草稿；开始生成/输出=自检；结束=完成
+const groupStage = ref<0 | 1 | 2 | 3>(3)
+const groupStageIndex = computed(() => groupStage.value)
+const groupActiveSpeakerName = computed(() => {
+  const id = groupActiveSpeakerId.value
+  if (!id) return ''
+  const map = groupDetail.value?.dha_map || {}
+  return map[id]?.name || id
+})
+const showPixelRunner = computed(() => groupStreaming.value && groupStageIndex.value < GROUP_STAGE_LABELS.length - 1)
+const showGroupStatusBar = computed(() => groupStreaming.value || !!groupStreamingPhase.value || showPixelRunner.value)
+const pixelObX = ref(0)
+const pixelDinoY = ref(0)
+const pixelVy = ref(0)
+let pixelTimer: number | null = null
+function startPixelRunner() {
+  if (pixelTimer != null) return
+  pixelObX.value = 220
+  pixelDinoY.value = 0
+  pixelVy.value = 0
+  pixelTimer = window.setInterval(() => {
+    pixelObX.value -= 8
+    if (pixelObX.value < -20) pixelObX.value = 220
+    pixelVy.value += 1.4
+    pixelDinoY.value = Math.min(0, pixelDinoY.value + pixelVy.value)
+    if (pixelDinoY.value === 0) pixelVy.value = 0
+  }, 50)
+}
+function stopPixelRunner() {
+  if (pixelTimer == null) return
+  window.clearInterval(pixelTimer)
+  pixelTimer = null
+}
+function pixelJump() {
+  if (!showPixelRunner.value) return
+  if (pixelDinoY.value < 0) return
+  pixelVy.value = -10
+}
+watch(
+  () => showPixelRunner.value,
+  (on) => {
+    if (on) startPixelRunner()
+    else stopPixelRunner()
+  },
+  { immediate: true },
+)
 
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
 function appendStreamingContent(dhaId: string, text: string) {
+  groupActiveSpeakerId.value = dhaId
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   if (last?.role === 'assistant' && last?.dha_id === dhaId && (last as { _streaming?: boolean })._streaming) {
@@ -2127,6 +2353,7 @@ function appendStreamingContent(dhaId: string, text: string) {
 
 /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
+  if (data.role === 'assistant' && typeof data.dha_id === 'string') groupActiveSpeakerId.value = data.dha_id
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   if (data.role === 'assistant' && last?.role === 'assistant' && last?.dha_id === data.dha_id && (last as { _streaming?: boolean })._streaming) {
@@ -2159,6 +2386,10 @@ async function buildMessageWithFiles(detail: GroupDetail, base: string): Promise
 
 async function sendGroupMessage() {
   const detail = groupDetail.value
+  if (!detail) return
+  const directive = parseAtSpeakerDirective((groupDiscussionGoal.value || '') as string, detail)
+  if (directive.override_next_speaker) groupNextSpeakerOverride.value = directive.override_next_speaker
+  if (directive.cleaned_goal !== (groupDiscussionGoal.value || '')) groupDiscussionGoal.value = directive.cleaned_goal
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   if (!detail || groupStreaming.value || (!base && !hasFiles)) return
@@ -2167,6 +2398,7 @@ async function sendGroupMessage() {
   groupNextPrompt.value = ''
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
+  groupStage.value = 0
   const msg = await buildMessageWithFiles(detail, base)
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
@@ -2190,10 +2422,12 @@ async function sendGroupMessage() {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
+    const body: Record<string, unknown> = { message: msg }
+    if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
     const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: msg }),
+      body: JSON.stringify(body),
       signal: abort.signal,
     })
     if (!r.ok) throw new Error(r.statusText)
@@ -2217,6 +2451,8 @@ async function sendGroupMessage() {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
+                // 开始输出内容：视为进入自检（生成最终回复）
+                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -2227,6 +2463,10 @@ async function sendGroupMessage() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
+                  // 如果该条 assistant 携带工具结果/查找结果：认为是在“生成草稿/查找内容”
+                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
+                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
+                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -2293,6 +2533,7 @@ async function sendGroupMessage() {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
+              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -2304,7 +2545,35 @@ async function sendGroupMessage() {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
+    groupNextSpeakerOverride.value = ''
+    groupStage.value = 3
   }
+}
+
+function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_next_speaker: string; cleaned_goal: string } {
+  const s = (raw || '').trimStart()
+  if (!s.startsWith('@')) return { override_next_speaker: '', cleaned_goal: raw }
+  const firstLine = s.split('\n')[0] || ''
+  const m = firstLine.match(/^@([^\s]+)\s+/)
+  if (!m) return { override_next_speaker: '', cleaned_goal: raw }
+  const token = (m[1] || '').trim()
+  const rest = s.slice(m[0].length)
+  if (!token) return { override_next_speaker: '', cleaned_goal: raw }
+
+  if (token === '主持人') {
+    const leader = (detail.leader_dha_id || '').trim()
+    return { override_next_speaker: leader || '', cleaned_goal: rest }
+  }
+  if (token === '下一位') {
+    const next = effectiveNextSpeaker.value
+    return { override_next_speaker: next || '', cleaned_goal: rest }
+  }
+  const map = detail.dha_map || {}
+  const hit = Object.entries(map).find(([, v]) => (v?.name || '').trim() === token)
+  if (hit) return { override_next_speaker: hit[0], cleaned_goal: rest }
+  const maybeId = token
+  if ((detail.dha_ids || []).includes(maybeId)) return { override_next_speaker: maybeId, cleaned_goal: rest }
+  return { override_next_speaker: '', cleaned_goal: raw }
 }
 
 function stopGroupStream() {
@@ -2972,6 +3241,50 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.8125em;
   line-height: 1.35;
 }
+.group-chat-markdown :deep(.group-chat-tool-call) {
+  margin: 0.12em 0 !important;
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-card) 88%, var(--color-input-bg));
+  overflow: hidden;
+}
+.group-chat-markdown :deep(.group-chat-tool-call-summary) {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  user-select: none;
+}
+.group-chat-markdown :deep(.group-chat-tool-call-summary::-webkit-details-marker) {
+  display: none;
+}
+.group-chat-markdown :deep(.group-chat-tool-call-pill) {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  color: var(--color-accent-subtle-text);
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent);
+}
+.group-chat-markdown :deep(.group-chat-tool-call-hint) {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.group-chat-markdown :deep(.group-chat-tool-call[open] .group-chat-tool-call-summary) {
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-page);
+}
+.group-chat-markdown :deep(.group-chat-tool-call-pre) {
+  margin: 0 !important;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  background: transparent;
+  font-size: 0.8125em;
+  line-height: 1.35;
+}
 .group-chat-markdown :deep(code) {
   padding: 0.15em 0.35em;
   border-radius: 4px;
@@ -3120,6 +3433,226 @@ defineExpose({ refresh: loadGroupDetail })
   margin: 0 0 0.5rem 0;
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+.group-chat-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 0.5rem 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  background: var(--color-card);
+}
+.group-chat-status-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.group-chat-status-text { min-width: 0; }
+.group-chat-status-line1 {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text);
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-chat-status-muted {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.group-chat-status-dot { opacity: 0.6; }
+.group-chat-stage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+.group-chat-stage-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.group-chat-stage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border-light);
+  display: inline-block;
+}
+.group-chat-stage-dot-active { background: var(--color-accent); }
+.group-chat-stage-label-active {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.group-chat-stage-sep { opacity: 0.6; }
+.group-chat-pixel-bar {
+  width: 240px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px dashed var(--color-border-light);
+  background: var(--color-page);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+.group-chat-pixel-bar:focus { border-color: var(--color-accent); }
+.group-chat-pixel-track {
+  position: relative;
+  width: 220px;
+  height: 18px;
+  overflow: hidden;
+}
+.group-chat-pixel-dino {
+  position: absolute;
+  left: 10px;
+  bottom: 2px;
+  width: 10px;
+  height: 10px;
+  background: var(--color-text);
+}
+.group-chat-pixel-ob {
+  position: absolute;
+  right: -10px;
+  bottom: 2px;
+  width: 8px;
+  height: 12px;
+  background: var(--color-text-muted);
+}
+.group-chat-shortcut-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.group-chat-shortcut-meta {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.group-chat-toolbar-btn-plus {
+  width: 40px;
+}
+.group-chat-plus {
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 700;
+}
+.group-chat-shortcut-editor-dropdown {
+  width: 360px;
+}
+.group-chat-shortcut-divider {
+  height: 1px;
+  background: var(--color-border-light);
+  margin: 0.5rem 0;
+  opacity: 0.8;
+}
+.group-chat-shortcut-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-input-border);
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.85rem;
+  outline: none;
+  margin-bottom: 0.5rem;
+}
+.group-chat-shortcut-name-input:focus {
+  border-color: var(--color-accent);
+}
+.group-chat-shortcut-pill {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.group-chat-shortcut-checkbox-row {
+  gap: 0.5rem;
+}
+.group-chat-member-badge {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent-subtle-text);
+  background: var(--color-accent-subtle);
+}
+.group-chat-toolbar-btn-chip {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+}
+.group-chat-toolbar-btn-chip:hover {
+  border-color: var(--color-accent);
+}
+.group-chat-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.group-chat-modal {
+  width: min(880px, 92vw);
+  max-height: min(78vh, 720px);
+  background: var(--color-page);
+  border: 1px solid var(--color-border-light);
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.group-chat-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-card);
+}
+.group-chat-modal-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.group-chat-modal-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-light);
+  background: var(--color-page);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.group-chat-modal-body {
+  padding: 14px 16px 16px;
+  overflow: auto;
 }
 .group-chat-suggested-invite-bar {
   display: flex;
