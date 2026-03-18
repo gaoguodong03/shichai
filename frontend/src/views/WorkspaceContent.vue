@@ -8,6 +8,14 @@
           <div class="group-chat-header-actions">
             <button
               type="button"
+              class="group-chat-header-btn"
+              :class="[archivePanelOpen && 'group-chat-header-btn-active']"
+              @click="archivePanelOpen = !archivePanelOpen"
+            >
+              归档
+            </button>
+            <button
+              type="button"
               :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
               @click="showGroupWorkspace = !showGroupWorkspace"
             >
@@ -17,10 +25,32 @@
           </div>
         </header>
         <div class="flex-1 min-h-0 flex overflow-visible">
+          <aside v-if="archivePanelOpen" class="group-chat-archive-panel">
+            <div class="group-chat-archive-panel-header">
+              <span class="group-chat-archive-panel-title">专家索引</span>
+              <button type="button" class="group-chat-archive-panel-close" @click="archivePanelOpen = false">×</button>
+            </div>
+            <div class="group-chat-archive-panel-body">
+              <div v-if="!archiveItems.length" class="group-chat-archive-empty">暂无专家发言</div>
+              <button
+                v-for="it in archiveItems"
+                :key="it.key"
+                type="button"
+                class="group-chat-archive-item"
+                @click="scrollToMessage(it.message_id)"
+              >
+                <span class="group-chat-archive-item-name">{{ it.name }}</span>
+                <span class="group-chat-archive-item-snippet">{{ it.snippet }}</span>
+              </button>
+            </div>
+          </aside>
           <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-visible">
             <div ref="groupMessagesRef" class="group-chat-messages">
               <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
-                <div :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']">
+                <div
+                  :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']"
+                  :data-message-id="msg.message_id || `idx-${i}`"
+                >
                   <template v-if="msg.role !== 'user'">
                     <span
                       v-if="msg.role !== 'host'"
@@ -807,6 +837,43 @@ const isResizingWorkspace = ref(false)
 const isResizingWorkspaceInner = ref(false)
 const lastExpandedWorkspaceWidth = ref(672)
 
+const archivePanelOpen = ref(false)
+
+function toSnippet(content: string, limit = 20) {
+  const s = (content || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!s) return '（空）'
+  return s.length > limit ? s.slice(0, limit) + '…' : s
+}
+
+const archiveItems = computed(() => {
+  const d = groupDetail.value
+  const map = d?.dha_map || {}
+  return (groupDisplayMessages.value || [])
+    .map((m, idx) => ({ m, idx }))
+    .filter(({ m }) => m.role === 'assistant' && !!m.dha_id) // 只要专家，不要主持人/用户
+    .map(({ m, idx }) => {
+      const did = (m.dha_id || '').trim()
+      const name = (map[did]?.name || did || '专家').trim()
+      return {
+        key: (m.message_id || `idx-${idx}`) + '-' + did,
+        dha_id: did,
+        name,
+        message_id: (m.message_id || `idx-${idx}`) as string,
+        snippet: toSnippet(String(m.content || '')),
+      }
+    })
+})
+
+function scrollToMessage(messageId: string) {
+  const el = groupMessagesRef.value?.querySelector?.(`[data-message-id="${CSS.escape(messageId)}"]`) as HTMLElement | null
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 function formatSkillId(skillId?: string) {
   if (!skillId) return ''
   if (skillId === 'default') return '默认'
@@ -831,62 +898,10 @@ function tryFormatJson(s: string): string {
   }
 }
 
-/** 正文中保留全部内容；合并多余空行，避免渲染出过大段落间距
- *  同时为 markdown 标题自动加上递增序号（仅专家/主持人正文使用）：
- *  - #   → 加粗标题：**1. 标题**
- *  - ##  → 「一、标题」「二、标题」…
- *  - ### → 「1. 标题」「2. 标题」…
- *  - ####→ 「1.1 标题」「1.2 标题」…
- */
+/** 正文中保留全部内容；合并多余空行，避免渲染出过大段落间距 */
 function dhaBodyContent(content: string): string {
   if (!content?.trim()) return ''
-  const s = collapseBlankLines(content.trim())
-  const lines = s.split('\n')
-  let h1 = 0, h2 = 0, h3 = 0, h4 = 0
-  const cnNums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
-  const out = lines.map((line) => {
-    const m = line.match(/^(#{1,4})\s+(.*)$/)
-    if (!m) return line
-    const level = m[1].length
-    const title = m[2].trim()
-    if (!title) return line
-    if (level === 1) {
-      h1 += 1
-      h2 = 0
-      h3 = 0
-      h4 = 0
-      // # → **1. 标题**
-      return `**${h1}. ${title}**`
-    }
-    if (level === 2) {
-      if (h1 === 0) h1 = 1
-      h2 += 1
-      h3 = 0
-      h4 = 0
-      // ## → 一、标题 / 二、标题 …
-      const idx = h2 - 1
-      const cn = cnNums[idx] ?? String(h2)
-      return `${cn}、${title}`
-    }
-    if (level === 3) {
-      if (h1 === 0) h1 = 1
-      if (h2 === 0) h2 = 1
-      h3 += 1
-      h4 = 0
-      // ### → 1. 标题
-      return `${h3}. ${title}`
-    }
-    if (level === 4) {
-      if (h1 === 0) h1 = 1
-      if (h2 === 0) h2 = 1
-      if (h3 === 0) h3 = 1
-      h4 += 1
-      // #### → 1.1 标题（使用 三级.四级）
-      return `${h3}.${h4} ${title}`
-    }
-    return line
-  })
-  return out.join('\n')
+  return collapseBlankLines(content.trim())
 }
 
 function escapeHtml(s: string) {
@@ -2498,6 +2513,84 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-accent-subtle);
   border-color: var(--color-accent);
 }
+
+/* 归档侧栏（专家索引） */
+.group-chat-archive-panel {
+  width: 240px;
+  flex: 0 0 240px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-light);
+  background: var(--color-card);
+}
+.group-chat-archive-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.group-chat-archive-panel-title {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: var(--color-text);
+}
+.group-chat-archive-panel-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.group-chat-archive-panel-close:hover {
+  background: var(--color-list-hover);
+  color: var(--color-text);
+}
+.group-chat-archive-panel-body {
+  padding: 0.5rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.group-chat-archive-empty {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  padding: 0.5rem 0.35rem;
+}
+.group-chat-archive-item {
+  border: 1px solid var(--color-border-light);
+  background: var(--color-page);
+  border-radius: 12px;
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.group-chat-archive-item:hover {
+  background: var(--color-list-hover);
+}
+.group-chat-archive-item-name {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-chat-archive-item-snippet {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .group-chat-svg-icon {
   width: 1rem;
   height: 1rem;
@@ -2729,6 +2822,9 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 90%;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 .group-chat-msg-row {
   display: flex;
@@ -3013,6 +3109,9 @@ defineExpose({ refresh: loadGroupDetail })
   z-index: 1;
 }
 @media (max-width: 768px) {
+  .group-chat-messages {
+    width: 100%;
+  }
   .group-chat-input-inner {
     width: 100%;
   }

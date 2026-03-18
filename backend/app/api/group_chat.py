@@ -97,6 +97,106 @@ def _save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -
     path.write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将会话消息归档分段（按轮次）并按专家聚合，不包含主持人。
+
+    轮次定义（尽量符合用户直觉）：
+    - 遇到 user 消息，开启新一轮；
+    - 在这一轮内收集后续 assistant（专家）发言（按 dha_id 分组，保留顺序）；
+    - role=host 的消息跳过（不归档）。
+    """
+    segments: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+
+    def _ensure_current() -> Dict[str, Any]:
+        nonlocal current
+        if current is None:
+            current = {
+                "user": None,
+                "experts": {},  # dha_id -> {dha_id, messages:[{message_id, content, timestamp, skill_id?}]}
+            }
+        return current
+
+    def _flush():
+        nonlocal current
+        if not current:
+            current = None
+            return
+        # 只要这一轮有 user 或有专家发言就保留
+        has_user = bool(current.get("user"))
+        experts = current.get("experts") or {}
+        has_expert = any((v.get("messages") or []) for v in experts.values()) if isinstance(experts, dict) else False
+        if has_user or has_expert:
+            # experts 由 dict 转 list，保持插入顺序（Python 3.7+ dict 有序）
+            expert_list = []
+            if isinstance(experts, dict):
+                for _, v in experts.items():
+                    if isinstance(v, dict):
+                        expert_list.append(v)
+            segments.append(
+                {
+                    "user": current.get("user"),
+                    "experts": expert_list,
+                }
+            )
+        current = None
+
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        role = (m.get("role") or "").strip()
+        if role == "host":
+            continue
+        if role == "user":
+            _flush()
+            cur = _ensure_current()
+            cur["user"] = {
+                "message_id": m.get("message_id"),
+                "content": m.get("content") or "",
+                "timestamp": m.get("timestamp"),
+            }
+            continue
+        if role == "assistant":
+            cur = _ensure_current()
+            dha_id = (m.get("dha_id") or "").strip()
+            if not dha_id:
+                continue
+            experts = cur.get("experts")
+            if not isinstance(experts, dict):
+                experts = {}
+                cur["experts"] = experts
+            if dha_id not in experts:
+                experts[dha_id] = {"dha_id": dha_id, "messages": []}
+            item = {
+                "message_id": m.get("message_id"),
+                "content": m.get("content") or "",
+                "timestamp": m.get("timestamp"),
+            }
+            if m.get("skill_id") is not None:
+                item["skill_id"] = m.get("skill_id")
+            experts[dha_id]["messages"].append(item)
+            continue
+        # 其他 role 忽略
+
+    _flush()
+    return segments
+
+
+@router.get("/sessions/{group_session_id}/archive")
+async def get_group_archive(group_session_id: str):
+    """会话归档：按轮次分段，并展示每位专家发言（不包含主持人）。"""
+    # 确保会话存在
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+    messages = _load_group_history(group_session_id)
+    segments = _build_archive_segments(messages)
+    # dha_map 用于前端展示名字
+    instances = load_dha_instances()
+    dha_map = {d.get("dha_id"): {"name": d.get("name") or d.get("dha_id"), "role": d.get("role") or ""} for d in instances if d.get("dha_id")}
+    return {"status": "ok", "data": {"segments": segments, "dha_map": dha_map}}
+
+
 def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) -> str:
     """将群聊消息转为供领导人/ DHA 使用的上下文字符串（不截断，完整保留）"""
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
