@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage  # type: ignore
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
@@ -1387,13 +1387,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 content = None
                                 if isinstance(tm, dict) and "messages" in tm and isinstance(tm["messages"], list) and tm["messages"]:
                                     tm = tm["messages"][0]
-                                if isinstance(tm, HumanMessage):
+                                if isinstance(tm, (HumanMessage, ToolMessage)):
                                     content = tm.content
                                 elif isinstance(tm, dict) and tm.get("content"):
                                     content = tm["content"]
+                                elif hasattr(tm, "content"):
+                                    content = getattr(tm, "content", None)
                                 if content is not None:
                                     raw_str = str(content) if not isinstance(content, str) else content
-                                    accumulated_raw_tool_results.append(raw_str)
+                                    if raw_str and raw_str not in accumulated_raw_tool_results:
+                                        accumulated_raw_tool_results.append(raw_str)
                         if isinstance(event, dict) and "agent" in event:
                             agent_out = event["agent"]
                             aimsg = None
@@ -1441,10 +1444,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     accumulated.append(content_str)
                         if not accumulated_raw_tool_results:
                             for msg in out_msgs:
-                                if isinstance(msg, HumanMessage) and msg.content:
+                                if isinstance(msg, (HumanMessage, ToolMessage)) and msg.content:
                                     raw_str = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
-                                    if raw_str and ("工具 " in raw_str and " 的执行结果:" in raw_str or "执行错误" in raw_str):
-                                        accumulated_raw_tool_results.append(raw_str)
+                                    if raw_str and (
+                                        ("工具 " in raw_str and " 的执行结果:" in raw_str)
+                                        or "执行错误" in raw_str
+                                        or raw_str.strip().startswith("{")
+                                        or "Title:" in raw_str
+                                        or "URL:" in raw_str
+                                    ):
+                                        if raw_str not in accumulated_raw_tool_results:
+                                            accumulated_raw_tool_results.append(raw_str)
                     except Exception as invoke_err:
                         logger.exception("群聊 agent ainvoke 也失败: %s", invoke_err)
                         accumulated.append(f"(调用异常: {invoke_err})")

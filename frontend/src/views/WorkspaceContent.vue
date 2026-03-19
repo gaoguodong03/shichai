@@ -101,7 +101,7 @@
                       </span>
                           <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
                           <div
-                            v-for="(raw, tri) in (msg as MsgExt).tool_raw_results"
+                            v-for="(raw, tri) in getToolRawResults(msg)"
                             :key="tri"
                             class="group-chat-tool-tag-wrap"
                             :data-key="`${msg.message_id || i}-${tri}`"
@@ -388,7 +388,7 @@
                     <button
                       type="button"
                       class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-plus"
-                      title="快捷键"
+                      title="协作组合"
                       @click="showShortcutEditorModal = true"
                     >
                       <span class="group-chat-plus">+</span>
@@ -510,11 +510,11 @@
                     </div>
                   </div>
 
-                  <!-- 居中弹窗：快捷键（+） -->
+                  <!-- 居中弹窗：协作组合（+） -->
                   <div v-if="showShortcutEditorModal" class="group-chat-modal-overlay" @click.self="showShortcutEditorModal = false">
                     <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
-                        <span class="group-chat-modal-title">快捷键</span>
+                        <span class="group-chat-modal-title">协作组合</span>
                         <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
                       </div>
                       <div class="group-chat-modal-body">
@@ -524,25 +524,30 @@
                               <span class="truncate">{{ p.name }}</span>
                               <span class="group-chat-shortcut-meta">{{ p.dha_ids.length }} 位</span>
                             </button>
-                            <button type="button" class="group-chat-member-delete-icon" title="修改快捷键" @click.stop="startEditShortcutPreset(p)">✎</button>
-                            <button type="button" class="group-chat-member-delete-icon" title="删除快捷键" @click.stop="deleteShortcutPreset(p.id)">×</button>
+                            <button type="button" class="group-chat-member-delete-icon" title="修改协作组合" @click.stop="startEditShortcutPreset(p)">✎</button>
+                            <button type="button" class="group-chat-member-delete-icon" title="删除协作组合" @click.stop="deleteShortcutPreset(p.id)">×</button>
                           </li>
                         </ul>
-                        <p v-else class="group-chat-add-member-empty">暂无快捷键</p>
+                        <p v-else class="group-chat-add-member-empty">暂无协作组合</p>
                         <div class="group-chat-shortcut-divider" />
-                        <p class="group-chat-members-dropdown-title">{{ editingShortcutId ? '修改快捷键' : '新建快捷键' }}</p>
-                        <input v-model="newShortcutName" class="group-chat-shortcut-name-input" placeholder="快捷键名称（如：调研 / 博客）" />
+                        <p class="group-chat-members-dropdown-title">{{ editingShortcutId ? '修改协作组合' : '新建协作组合' }}</p>
+                        <input v-model="newShortcutName" class="group-chat-shortcut-name-input" placeholder="协作组合名称（如：调研组 / 写作组）" />
                         <p class="group-chat-add-member-empty">邀请加入的专家</p>
-                        <ul v-if="(props.dhaInstances || []).length" class="group-chat-members-list">
-                          <li v-for="d in (props.dhaInstances || [])" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-clickable group-chat-shortcut-checkbox-row" @click="toggleNewShortcutDha(d.dha_id)">
+                        <input
+                          v-model="shortcutExpertSearch"
+                          class="group-chat-shortcut-name-input"
+                          placeholder="搜索专家（按名称或ID）"
+                        />
+                        <ul v-if="filteredShortcutExperts.length" class="group-chat-members-list">
+                          <li v-for="d in filteredShortcutExperts" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-clickable group-chat-shortcut-checkbox-row" @click="toggleNewShortcutDha(d.dha_id)">
                             <input type="checkbox" :checked="newShortcutDhaIds.includes(d.dha_id)" @change.prevent />
                             <span class="truncate">{{ d.name || d.dha_id }}</span>
                           </li>
                         </ul>
+                        <p v-else class="group-chat-add-member-empty">未找到匹配专家</p>
                         <div class="group-chat-shortcut-actions">
                           <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="createShortcutPreset">{{ editingShortcutId ? '更新' : '保存' }}</button>
                           <button v-if="editingShortcutId" type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="cancelEditShortcutPreset">取消修改</button>
-                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="resetShortcutPresets">恢复默认</button>
                         </div>
                       </div>
                     </div>
@@ -1037,7 +1042,42 @@ function formatSkillId(skillId?: string) {
 function parseToolRawResult(raw: string): { toolName: string; rawReturn: string } {
   const m = raw.match(/^工具\s+([^\s]+)\s+的执行结果:\s*/)
   if (m) return { toolName: m[1], rawReturn: raw.slice(m[0].length) || raw }
+  try {
+    const parsed = JSON.parse((raw || '').trim()) as { action?: string; tool?: string }
+    if (parsed?.action === 'tool_call' && parsed?.tool) {
+      return { toolName: String(parsed.tool), rawReturn: raw }
+    }
+  } catch {
+    // ignore
+  }
   return { toolName: 'tool', rawReturn: raw }
+}
+
+function extractToolCallBlocks(content: string): string[] {
+  const text = content || ''
+  if (!text.trim()) return []
+  const blocks = text.match(/```json\s*([\s\S]*?)```/gi) || []
+  const out: string[] = []
+  for (const block of blocks) {
+    const inner = block.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
+    if (!inner) continue
+    try {
+      const parsed = JSON.parse(inner) as { action?: string; tool?: string }
+      if (parsed?.action === 'tool_call' && parsed?.tool) {
+        out.push(inner)
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return out
+}
+
+function getToolRawResults(msg: GroupMessage): string[] {
+  const explicit = ((msg as MsgExt).tool_raw_results || []).filter((x) => !!(x || '').trim())
+  if (explicit.length) return explicit
+  // 兜底：如果后端未带 tool_raw_results，则从正文里的 tool_call 代码块恢复工具标签展示
+  return extractToolCallBlocks(msg.content || '')
 }
 
 /** 尝试格式化 JSON 字符串，失败则返回原串 */
@@ -1414,6 +1454,23 @@ const groupMemberNames = computed(() => {
 type ShortcutPreset = { id: string; name: string; dha_ids: string[] }
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
+function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
+  if (!Array.isArray(input)) return []
+  const out: ShortcutPreset[] = []
+  const seen = new Set<string>()
+  for (const item of input) {
+    const raw = item as Partial<ShortcutPreset>
+    const id = String(raw?.id || '').trim()
+    const name = String(raw?.name || '').trim()
+    const dhaIds = Array.isArray(raw?.dha_ids)
+      ? Array.from(new Set(raw.dha_ids.map((x) => String(x || '').trim()).filter(Boolean)))
+      : []
+    if (!id || !name || !dhaIds.length || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name, dha_ids: dhaIds })
+  }
+  return out
+}
 function defaultShortcutPresets(): ShortcutPreset[] {
   const all = props.dhaInstances || []
   const byNameIncludes = (q: string) => all.filter((d) => (d.name || d.dha_id).includes(q)).map((d) => d.dha_id)
@@ -1429,26 +1486,23 @@ function loadShortcutPresets() {
     const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
     if (!raw) {
       shortcutPresets.value = defaultShortcutPresets()
+      saveShortcutPresets()
       return
     }
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) shortcutPresets.value = parsed as ShortcutPreset[]
-    else shortcutPresets.value = defaultShortcutPresets()
+    const normalized = normalizeShortcutPresets(parsed)
+    shortcutPresets.value = normalized.length ? normalized : defaultShortcutPresets()
+    // 读取时立即回写一次，修复历史脏数据，避免下次重开丢失
+    saveShortcutPresets()
   } catch {
     shortcutPresets.value = defaultShortcutPresets()
+    saveShortcutPresets()
   }
 }
 function saveShortcutPresets() {
   try {
     localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(shortcutPresets.value))
   } catch {}
-}
-function resetShortcutPresets() {
-  shortcutPresets.value = defaultShortcutPresets()
-  editingShortcutId.value = ''
-  newShortcutName.value = ''
-  newShortcutDhaIds.value = []
-  saveShortcutPresets()
 }
 function deleteShortcutPreset(id: string) {
   shortcutPresets.value = shortcutPresets.value.filter((p) => p.id !== id)
@@ -1478,17 +1532,20 @@ function createShortcutPreset() {
   editingShortcutId.value = ''
   newShortcutName.value = ''
   newShortcutDhaIds.value = []
+  shortcutExpertSearch.value = ''
   saveShortcutPresets()
 }
 function startEditShortcutPreset(preset: ShortcutPreset) {
   editingShortcutId.value = preset.id
   newShortcutName.value = preset.name
   newShortcutDhaIds.value = [...preset.dha_ids]
+  shortcutExpertSearch.value = ''
 }
 function cancelEditShortcutPreset() {
   editingShortcutId.value = ''
   newShortcutName.value = ''
   newShortcutDhaIds.value = []
+  shortcutExpertSearch.value = ''
 }
 async function applyShortcutPreset(id: string) {
   const detail = groupDetail.value
@@ -1510,6 +1567,8 @@ async function applyShortcutPreset(id: string) {
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
+      // 显式保存快捷按钮配置，避免用户误以为“加入后未保存”
+      saveShortcutPresets()
       showShortcutEditor.value = false
       showShortcutEditorModal.value = false
       emit('dha-added')
@@ -1600,6 +1659,7 @@ const shortcutEditorRef = ref<HTMLElement | null>(null)
 const editingShortcutId = ref('')
 const newShortcutName = ref('')
 const newShortcutDhaIds = ref<string[]>([])
+const shortcutExpertSearch = ref('')
 const toolbarShortcutPresets = computed(() => shortcutPresets.value)
 const showInsertFile = ref(false)
 const showInsertFileModal = ref(false)
@@ -1618,6 +1678,17 @@ const addMemberRef = ref<HTMLElement | null>(null)
 const invitableDhas = computed(() => {
   const inGroup = new Set(groupDetail.value?.dha_ids || [])
   return (props.dhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
+})
+
+const filteredShortcutExperts = computed(() => {
+  const q = (shortcutExpertSearch.value || '').trim().toLowerCase()
+  const all = props.dhaInstances || []
+  if (!q) return all
+  return all.filter((d) => {
+    const name = (d.name || '').toLowerCase()
+    const id = (d.dha_id || '').toLowerCase()
+    return name.includes(q) || id.includes(q)
+  })
 })
 
 const leaderDhaId = computed(() => (groupDetail.value?.leader_dha_id || '').trim())
