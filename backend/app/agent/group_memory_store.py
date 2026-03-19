@@ -9,11 +9,16 @@ from typing import Any, Dict, List, Optional
 from app.api.files import get_workspace_root_path
 
 
+def _workspace_root(session_id: str, workspace_root: Optional[Path] = None) -> Path:
+    return workspace_root.resolve() if workspace_root else get_workspace_root_path(session_id)
+
+
 def _memory_root(session_id: str, workspace_root: Optional[Path] = None) -> Path:
-    root = workspace_root.resolve() if workspace_root else get_workspace_root_path(session_id)
+    root = _workspace_root(session_id, workspace_root=workspace_root)
     mem = root / "memory"
     mem.mkdir(parents=True, exist_ok=True)
     (mem / "logs").mkdir(parents=True, exist_ok=True)
+    (mem / "messages").mkdir(parents=True, exist_ok=True)
     return mem
 
 
@@ -48,6 +53,7 @@ def append_turn_log(
         f"- dha_id: {turn_record.get('dha_id') or ''}\n"
         f"- timestamp: {turn_record.get('timestamp') or ''}\n"
         f"- skill_id: {turn_record.get('skill_id') or ''}\n\n"
+        f"- full_message_ref: {turn_record.get('full_message_ref') or ''}\n\n"
         f"## Discussion Goal\n{turn_record.get('discussion_goal') or ''}\n\n"
         f"## Input Prompt Summary\n{turn_record.get('input_prompt_summary') or ''}\n\n"
         f"## Response Summary\n{turn_record.get('response_summary') or ''}\n\n"
@@ -63,6 +69,33 @@ def append_turn_log(
         except OSError:
             continue
     return str(path)
+
+
+def append_expert_message_file(
+    session_id: str,
+    dha_id: str,
+    timestamp: Optional[str],
+    content: str,
+    skill_id: str = "",
+    workspace_root: Optional[Path] = None,
+) -> str:
+    """保存专家完整发言到 memory/messages，返回工作区相对路径。"""
+    ws_root = _workspace_root(session_id, workspace_root=workspace_root)
+    mem = _memory_root(session_id, workspace_root=workspace_root)
+    messages_dir = mem / "messages"
+    ts = (timestamp or datetime.now(timezone.utc).isoformat()).replace(":", "-")
+    did = _safe_name(dha_id or "expert")
+    p = messages_dir / f"{ts}_{did}.md"
+    body = (
+        f"# Expert Message\n\n"
+        f"- session_id: {session_id}\n"
+        f"- dha_id: {dha_id or ''}\n"
+        f"- skill_id: {skill_id or ''}\n"
+        f"- timestamp: {timestamp or ''}\n\n"
+        f"## Content\n\n{content or ''}\n"
+    )
+    p.write_text(body, encoding="utf-8")
+    return str(p.relative_to(ws_root)).replace("\\", "/")
 
 
 def upsert_facts(
@@ -137,18 +170,22 @@ def build_dispatch_context(
     facts = facts[-max(1, int(max_facts)) :]
 
     logs: List[Dict[str, str]] = []
+    refs: List[str] = []
     terms = _goal_terms(goal)
     for p in sorted(logs_dir.glob("*.md"), key=lambda x: x.name, reverse=True):
         try:
             raw = p.read_text(encoding="utf-8")
         except OSError:
             continue
+        m = re.search(r"^- full_message_ref:\s*(.+?)\s*$", raw, flags=re.MULTILINE)
+        full_ref = (m.group(1).strip() if m else "")
         score = _score_log(raw, target_dha_id, terms)
         logs.append(
             {
                 "name": p.name,
                 "score": str(score),
                 "excerpt": _truncate(raw.replace("\n", " "), 360),
+                "full_message_ref": full_ref,
             }
         )
     logs.sort(key=lambda x: (int(x["score"]), x["name"]), reverse=True)
@@ -163,11 +200,20 @@ def build_dispatch_context(
         lines.append("【相关历史摘录】")
         for idx, item in enumerate(top_logs, start=1):
             lines.append(f"{idx}. ({item['name']}) {item['excerpt']}")
+            ref = (item.get("full_message_ref") or "").strip()
+            if ref:
+                refs.append(ref)
+    if refs:
+        lines.append("")
+        lines.append("【可读取的历史发言文件】")
+        for ref in list(dict.fromkeys(refs))[:5]:
+            lines.append(f"- 【文件引用：{ref}】")
     rendered = "\n".join(lines).strip()
 
     return {
         "facts": facts,
         "logs": top_logs,
+        "refs": list(dict.fromkeys(refs)),
         "rendered": rendered,
         "has_memory": bool(facts or top_logs),
     }

@@ -23,7 +23,12 @@ from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
-from app.agent.group_memory_store import append_turn_log, upsert_facts, build_dispatch_context
+from app.agent.group_memory_store import (
+    append_turn_log,
+    upsert_facts,
+    build_dispatch_context,
+    append_expert_message_file,
+)
 from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.mcp.manager import get_mcp_manager
 from app.skills.loader import get_skills_loader
@@ -1591,6 +1596,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 try:
                     mem = _get_group_memory_settings(app_settings)
                     if mem["enabled"]:
+                        full_message_ref = append_expert_message_file(
+                            session_id=group_session_id,
+                            dha_id=next_speaker,
+                            timestamp=assistant_msg.get("timestamp"),
+                            content=full_content,
+                            skill_id=skill_id,
+                        )
                         input_summary = (user_content or "")[:800]
                         response_summary = (full_content or "")[:1400]
                         tool_summary = "\n".join((accumulated_raw_tool_results or [])[:2])[:1000]
@@ -1601,6 +1613,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 "dha_id": next_speaker,
                                 "timestamp": assistant_msg.get("timestamp"),
                                 "skill_id": skill_id,
+                                "full_message_ref": full_message_ref,
                                 "discussion_goal": discussion_goal,
                                 "input_prompt_summary": input_summary,
                                 "response_summary": response_summary,
