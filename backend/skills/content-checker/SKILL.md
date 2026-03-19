@@ -4,7 +4,7 @@ description: 面向互联网上的文章、新闻、博客或公众号内容，�
 enabled: true
 mcp_server_ids:
   - exa
-  - fetch
+  - linkup
   - file-reader
 ---
 

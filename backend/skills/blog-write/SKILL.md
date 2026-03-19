@@ -4,8 +4,7 @@ description: 博客撰写与文章评价。以博客写作师身份聊选题、�
 enabled: true
 mcp_server_ids:
   - exa
-  - fetch
-  - zhipu-web-search
+  - linkup
   - file-reader
 ---
 

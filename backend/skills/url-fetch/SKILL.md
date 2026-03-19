@@ -3,7 +3,7 @@ name: 网页抓取
 description: 抓取指定 URL 的网页内容，得到正文或要点。供博客、研究、核查等流程中的「先抓再写/再分析」使用。
 enabled: true
 mcp_server_ids:
-  - fetch
+  - linkup
   - file-reader
 ---
 

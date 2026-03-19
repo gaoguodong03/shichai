@@ -4,16 +4,22 @@
     <div v-if="groupDetail" class="workspace-right-inner workspace-group-root group-chat-theme">
       <div :key="'group-' + (groupDetail?.id ?? '')" class="workspace-group-wrap flex flex-col min-h-0">
         <header class="group-chat-header">
+          <div class="group-chat-header-left">
+            <div class="group-chat-archive-anchor">
+              <button
+                type="button"
+                class="group-chat-header-btn"
+                :class="[archivePanelOpen && 'group-chat-header-btn-active']"
+                @click="archivePanelOpen = !archivePanelOpen"
+              >
+                悬浮侧边目录
+              </button>
+            </div>
+          </div>
+
           <h1 class="group-chat-title">群聊：{{ groupDetail.title || '未命名' }}</h1>
-          <div class="group-chat-header-actions">
-            <button
-              type="button"
-              class="group-chat-header-btn"
-              :class="[archivePanelOpen && 'group-chat-header-btn-active']"
-              @click="archivePanelOpen = !archivePanelOpen"
-            >
-              归档
-            </button>
+
+          <div class="group-chat-header-right">
             <button
               type="button"
               :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
@@ -25,160 +31,127 @@
           </div>
         </header>
         <div class="flex-1 min-h-0 flex overflow-visible">
-          <aside v-if="archivePanelOpen" class="group-chat-archive-panel">
-            <div class="group-chat-archive-panel-header">
-              <span class="group-chat-archive-panel-title">专家索引</span>
-              <button type="button" class="group-chat-archive-panel-close" @click="archivePanelOpen = false">×</button>
-            </div>
-            <div class="group-chat-archive-panel-body">
-              <div v-if="!archiveItems.length" class="group-chat-archive-empty">暂无专家发言</div>
-              <button
-                v-for="it in archiveItems"
-                :key="it.key"
-                type="button"
-                class="group-chat-archive-item"
-                @click="scrollToMessage(it.message_id)"
-              >
-                <span class="group-chat-archive-item-name">{{ it.name }}</span>
-                <span class="group-chat-archive-item-snippet">{{ it.snippet }}</span>
-              </button>
-            </div>
-          </aside>
           <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-visible">
-            <div ref="groupMessagesRef" class="group-chat-messages">
-              <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
-                <div
-                  :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']"
-                  :data-message-id="msg.message_id || `idx-${i}`"
-                >
-                  <template v-if="msg.role !== 'user'">
-                    <span
-                      v-if="msg.role !== 'host'"
-                      class="group-chat-avatar"
-                      :style="{ backgroundColor: dhaAvatarColor(dhaIndex(msg.dha_id)) }"
-                    >
-                      {{ dhaAvatarChar(msg.dha_id) }}
-                    </span>
-                    <div v-else class="group-chat-avatar group-chat-avatar-host" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                    </div>
-                  </template>
-                  <div
-                    :class="[
-                      'group-chat-bubble',
-                      msg.role === 'user' && 'group-chat-bubble-user',
-                      msg.role === 'host' && 'group-chat-bubble-host',
-                      msg.role !== 'user' && msg.role !== 'host' && 'group-chat-bubble-dha'
-                    ]"
+            <div class="group-chat-main-row">
+              <aside v-if="archivePanelOpen" class="group-chat-archive-panel" aria-label="悬浮侧边目录">
+                <div class="group-chat-archive-panel-body">
+                  <div v-if="!archiveItems.length" class="group-chat-archive-empty">暂无专家发言</div>
+                  <button
+                    v-for="it in archiveItems"
+                    :key="it.key"
+                    type="button"
+                    class="group-chat-archive-item"
+                    @click="
+                      scrollToMessage(it.message_id)
+                    "
                   >
-                    <div v-if="msg.role !== 'user' && msg.role !== 'host'" class="group-chat-bubble-meta">
-                      <span class="group-chat-bubble-name">{{ (groupDetail.dha_map || {})[msg.dha_id || '']?.name }}</span>
-                      <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
-                      <div
-                        v-for="(raw, tri) in (msg as MsgExt).tool_raw_results"
-                        :key="tri"
-                        class="group-chat-tool-tag-wrap"
-                        :data-key="`${msg.message_id || i}-${tri}`"
-                      >
-                        <button
-                          type="button"
-                          :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
-                          @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
+                    <span class="group-chat-archive-item-name">{{ it.name }}</span>
+                    <div class="group-chat-archive-item-snippet" v-html="renderSnippetMarkdown(it.snippet)" />
+                  </button>
+                </div>
+              </aside>
+
+              <div :class="['group-chat-main-right', archivePanelOpen ? 'group-chat-main-right-with-toc' : '']">
+                <div ref="groupMessagesRef" class="group-chat-messages">
+                  <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
+                    <div
+                      :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']"
+                      :data-message-id="msg.message_id || `idx-${i}`"
+                    >
+                      <template v-if="msg.role !== 'user'">
+                        <span
+                          v-if="msg.role !== 'host'"
+                          class="group-chat-avatar"
+                          :style="{ backgroundColor: dhaAvatarColor(dhaIndex(msg.dha_id)) }"
                         >
-                          {{ parseToolRawResult(raw).toolName }}
-                          <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                        </button>
-                        <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
-                          <span class="group-chat-tool-popover-title">系统调用 · 原始返回值</span>
-                          <pre class="group-chat-tool-popover-pre">{{ tryFormatJson(parseToolRawResult(raw).rawReturn) }}</pre>
+                          {{ dhaAvatarChar(msg.dha_id) }}
+                        </span>
+                        <div v-else class="group-chat-avatar group-chat-avatar-host" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        </div>
+                      </template>
+                      <div
+                        :class="[
+                          'group-chat-bubble',
+                          msg.role === 'user' && 'group-chat-bubble-user',
+                          msg.role === 'host' && 'group-chat-bubble-host',
+                          msg.role !== 'user' && msg.role !== 'host' && 'group-chat-bubble-dha'
+                        ]"
+                      >
+                        <div v-if="msg.role !== 'user' && msg.role !== 'host'" class="group-chat-bubble-meta">
+                          <span class="group-chat-bubble-name">{{ (groupDetail.dha_map || {})[msg.dha_id || '']?.name }}</span>
+                      <span
+                        v-if="(msg as GroupMessage)._streaming"
+                        class="group-chat-bubble-streaming-indicator"
+                        :title="`正在输出：${activeStreamingSpeakerName}`"
+                      >
+                        正在输出{{ streamingPulse }}
+                      </span>
+                          <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
+                          <div
+                            v-for="(raw, tri) in (msg as MsgExt).tool_raw_results"
+                            :key="tri"
+                            class="group-chat-tool-tag-wrap"
+                            :data-key="`${msg.message_id || i}-${tri}`"
+                          >
+                            <button
+                              type="button"
+                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
+                              @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
+                            >
+                              {{ parseToolRawResult(raw).toolName }}
+                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                            </button>
+                            <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
+                              <span class="group-chat-tool-popover-title">系统调用 · 原始返回值</span>
+                              <pre class="group-chat-tool-popover-pre">{{ tryFormatJson(parseToolRawResult(raw).rawReturn) }}</pre>
+                            </div>
+                          </div>
+                          <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
+                        </div>
+                        <div class="group-chat-bubble-body">
+                          <template v-if="msg.role !== 'user'">
+                            <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
+                          </template>
+                          <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
+                          <template v-else>
+                            <p
+                              class="group-chat-plain-text"
+                              :class="msg.role === 'user' && isShortSingleLine(normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')))"
+                            >
+                              {{ normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')) }}
+                            </p>
+                          </template>
+                        </div>
+                        <div
+                          v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
+                          class="group-chat-bubble-actions"
+                        >
+                          <button
+                            v-if="msg.message_id"
+                            type="button"
+                            class="group-chat-delete-msg-btn"
+                            title="从会话中彻底删除该条发言，避免污染下一轮 DHA 上下文"
+                            @click="deleteGroupMessage(msg)"
+                          >
+                            删除该条发言
+                          </button>
+                          <button
+                            v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
+                            type="button"
+                            class="group-chat-save-file-btn"
+                            @click="saveDhaMessageToFile(msg)"
+                          >
+                            保存为文件
+                          </button>
                         </div>
                       </div>
-                      <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
                     </div>
-                    <div class="group-chat-bubble-body">
-                      <template v-if="msg.role !== 'user' && msg.role !== 'host'">
-                        <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
-                      </template>
-                      <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
-                      <template v-else>
-                        <p
-                          class="group-chat-plain-text"
-                          :class="msg.role === 'user' && isShortSingleLine(normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')))"
-                        >
-                          {{ normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')) }}
-                        </p>
-                      </template>
-                    </div>
-                    <div
-                      v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
-                      class="group-chat-bubble-actions"
-                    >
-                      <button
-                        v-if="msg.message_id"
-                        type="button"
-                        class="group-chat-delete-msg-btn"
-                        title="从会话中彻底删除该条发言，避免污染下一轮 DHA 上下文"
-                        @click="deleteGroupMessage(msg)"
-                      >
-                        删除该条发言
-                      </button>
-                      <button
-                        v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
-                        type="button"
-                        class="group-chat-save-file-btn"
-                        @click="saveDhaMessageToFile(msg)"
-                      >
-                        保存为文件
-                      </button>
-                    </div>
-                  </div>
+                  </template>
+                  <p v-if="!groupDisplayMessages.length" class="group-chat-empty-hint">暂无消息，在下方输入并发送。</p>
                 </div>
-              </template>
-              <p v-if="!groupDisplayMessages.length" class="group-chat-empty-hint">暂无消息，在下方输入并发送。</p>
-            </div>
-            <div class="group-chat-input-wrap">
+                <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
-              <div v-if="showGroupStatusBar" class="group-chat-status-bar">
-                <div class="group-chat-status-left">
-                  <span
-                    v-if="groupActiveSpeakerId"
-                    class="group-chat-avatar group-chat-avatar-sm"
-                    :style="{ backgroundColor: dhaAvatarColor(dhaIndex(groupActiveSpeakerId)) }"
-                  >
-                    {{ dhaAvatarChar(groupActiveSpeakerId) }}
-                  </span>
-                  <div class="group-chat-status-text">
-                    <p class="group-chat-status-line1">
-                      <span v-if="groupActiveSpeakerName">{{ groupActiveSpeakerName }}</span>
-                      <span v-else>正在处理</span>
-                      <span v-if="groupStreaming" class="group-chat-status-dot">·</span>
-                      <span v-if="groupStreaming" class="group-chat-status-muted">{{ groupStreamingPhase || '正在输出…' }}</span>
-                      <span v-else class="group-chat-status-muted">就绪</span>
-                    </p>
-                    <div class="group-chat-stage">
-                      <span v-for="(s, idx) in GROUP_STAGE_LABELS" :key="s" class="group-chat-stage-item">
-                        <span :class="['group-chat-stage-dot', { 'group-chat-stage-dot-active': idx <= groupStageIndex }]" />
-                        <span :class="['group-chat-stage-label', { 'group-chat-stage-label-active': idx === groupStageIndex }]">{{ s }}</span>
-                        <span v-if="idx !== GROUP_STAGE_LABELS.length - 1" class="group-chat-stage-sep">→</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div class="group-chat-status-right">
-                  <div
-                    v-if="showPixelRunner"
-                    class="group-chat-pixel-bar"
-                    tabindex="0"
-                    @click="pixelJump"
-                    @keydown.space.prevent="pixelJump"
-                  >
-                    <div class="group-chat-pixel-track">
-                      <div class="group-chat-pixel-dino" :style="{ transform: `translateY(${pixelDinoY}px)` }" />
-                      <div class="group-chat-pixel-ob" :style="{ transform: `translateX(${pixelObX}px)` }" />
-                    </div>
-                  </div>
-                </div>
-              </div>
               <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
                 <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
                 <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
@@ -607,6 +580,8 @@
                   </button>
                 </div>
               </div>
+                </div>
+              </div>
             </div>
           </div>
           </div>
@@ -864,7 +839,7 @@ type GroupDetail = {
 const groupDetail = ref<GroupDetail | null>(null)
 const groupLoading = ref(false)
 const groupError = ref<string | null>(null)
-const groupDisplayMessages = ref<GroupDetail['messages']>([])
+const groupDisplayMessages = ref<GroupMessage[]>([])
 const groupNextPrompt = ref('')
 const groupStreaming = ref(false)
 const groupStreamingPhase = ref('')
@@ -895,6 +870,8 @@ const isResizingWorkspaceInner = ref(false)
 const lastExpandedWorkspaceWidth = ref(672)
 
 const archivePanelOpen = ref(false)
+// TOC 当前高亮条目（key 与 archiveItems.item.key 一致）
+const tocActiveKey = ref<string>('')
 
 function toSnippet(content: string, limit = 20) {
   const s = (content || '')
@@ -919,7 +896,7 @@ const archiveItems = computed(() => {
         dha_id: did,
         name,
         message_id: (m.message_id || `idx-${idx}`) as string,
-        snippet: toSnippet(String(m.content || '')),
+        snippet: toSnippet(String(m.content || ''), 50),
       }
     })
 })
@@ -930,6 +907,71 @@ function scrollToMessage(messageId: string) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 }
+
+type TocSpyEntry = { key: string; el: HTMLElement }
+let tocSpyEntries: TocSpyEntry[] = []
+let tocSpyScrollEl: HTMLElement | null = null
+let tocSpyScrollHandler: ((e: Event) => void) | null = null
+let tocSpyRaf = 0
+
+function stopTocScrollSpy() {
+  if (tocSpyScrollEl && tocSpyScrollHandler) {
+    tocSpyScrollEl.removeEventListener('scroll', tocSpyScrollHandler)
+  }
+  tocSpyScrollEl = null
+  tocSpyScrollHandler = null
+  if (tocSpyRaf) cancelAnimationFrame(tocSpyRaf)
+  tocSpyRaf = 0
+}
+
+function rebuildTocSpyEntries() {
+  const sc = groupMessagesRef.value
+  if (!sc) return
+  const items = (archiveItems.value || []).map((it) => {
+    const el = sc.querySelector(`[data-message-id="${CSS.escape(it.message_id)}"]`) as HTMLElement | null
+    return el ? ({ key: it.key, el } as TocSpyEntry) : null
+  })
+  tocSpyEntries = items.filter(Boolean) as TocSpyEntry[]
+  // 按在滚动容器里的位置排序，保证后面“最后匹配”逻辑更稳定
+  tocSpyEntries.sort((a, b) => (a.el.offsetTop || 0) - (b.el.offsetTop || 0))
+}
+
+function startTocScrollSpy() {
+  const sc = groupMessagesRef.value
+  if (!sc) return
+  tocSpyScrollEl = sc
+  const offsetTop = 90
+
+  const handler = () => {
+    if (tocSpyRaf) cancelAnimationFrame(tocSpyRaf)
+    tocSpyRaf = requestAnimationFrame(() => {
+      const scRect = sc.getBoundingClientRect()
+      let best: TocSpyEntry | null = null
+      for (const entry of tocSpyEntries) {
+        const r = entry.el.getBoundingClientRect()
+        const relTop = r.top - scRect.top
+        if (relTop <= offsetTop) best = entry
+      }
+      tocActiveKey.value = best?.key || tocSpyEntries[0]?.key || ''
+    })
+  }
+
+  tocSpyScrollHandler = handler
+  sc.addEventListener('scroll', handler, { passive: true })
+}
+
+watch(
+  () => [archivePanelOpen.value, archiveItems.value.map((it) => it.key).join('|')],
+  async ([open]) => {
+    stopTocScrollSpy()
+    tocActiveKey.value = ''
+    if (!open) return
+    await nextTick()
+    rebuildTocSpyEntries()
+    if (tocSpyEntries.length) tocActiveKey.value = tocSpyEntries[0].key
+    startTocScrollSpy()
+  },
+)
 
 function formatSkillId(skillId?: string) {
   if (!skillId) return ''
@@ -1046,6 +1088,12 @@ function renderMarkdown(text: string) {
   }
 }
 
+function renderSnippetMarkdown(text: string): string {
+  // markdown-it 的 render 默认会用 <p> 包一层，TOC 里我们需要“行内化”以便 line-clamp 生效
+  const html = renderMarkdown(text)
+  return html.replace(/^<p>\s*/i, '').replace(/\s*<\/p>\s*$/i, '')
+}
+
 const expandedToolKey = ref<string | null>(null)
 
 const moreMenuRef = ref<HTMLElement | null>(null)
@@ -1071,7 +1119,6 @@ async function confirmGroupNext(override: string) {
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
-  groupStage.value = 0
   const body: { override_next_speaker: string; custom_prompt?: string } = { override_next_speaker: override }
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
@@ -1122,7 +1169,6 @@ async function confirmGroupNext(override: string) {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
-                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -1133,9 +1179,6 @@ async function confirmGroupNext(override: string) {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
-                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
-                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
-                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -1195,7 +1238,6 @@ async function confirmGroupNext(override: string) {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
-              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -1310,6 +1352,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
+  stopTocScrollSpy()
 })
 
 const groupMemberNames = computed(() => {
@@ -1527,7 +1570,6 @@ async function continueGroupStream() {
   if (!detail || !id || groupStreaming.value) return
   groupStreaming.value = true
   groupStreamingPhase.value = '正在继续…'
-  groupStage.value = 0
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
@@ -1558,7 +1600,6 @@ async function continueGroupStream() {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
-                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -1569,9 +1610,6 @@ async function continueGroupStream() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
-                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
-                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
-                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -1624,7 +1662,6 @@ async function continueGroupStream() {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
-              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -1636,7 +1673,6 @@ async function continueGroupStream() {
   } finally {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
-    groupStage.value = 3
   }
 }
 
@@ -2310,72 +2346,51 @@ function scrollGroupToBottom() {
   })
 }
 
-type GroupMessage = GroupDetail['messages'][number]
-const groupActiveSpeakerId = ref<string | null>(null)
-const GROUP_STAGE_LABELS = ['读取材料', '生成草稿', '自检', '完成'] as const
-// 阶段不是固定流水线；由事件覆盖更新：发送=读取材料；工具/查找=生成草稿；开始生成/输出=自检；结束=完成
-const groupStage = ref<0 | 1 | 2 | 3>(3)
-const groupStageIndex = computed(() => groupStage.value)
-const groupActiveSpeakerName = computed(() => {
-  const id = groupActiveSpeakerId.value
+type GroupMessage = GroupDetail['messages'][number] & { _streaming?: boolean }
+
+/** 当前处于流式占位状态的“正在输出”的专家（最后一条 _streaming 置为 true 的 assistant） */
+const activeStreamingMessage = computed<GroupMessage | null>(() => {
+  const list = groupDisplayMessages.value || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i] as GroupMessage
+    if (m?.role === 'assistant' && m?._streaming) return m
+  }
+  return null
+})
+
+const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.dha_id || '')
+
+const activeStreamingSpeakerName = computed(() => {
+  const id = activeStreamingDhaId.value
   if (!id) return ''
+  if (id === 'host') return '主持人'
   const map = groupDetail.value?.dha_map || {}
   return map[id]?.name || id
 })
-const showPixelRunner = computed(() => groupStreaming.value && groupStageIndex.value < GROUP_STAGE_LABELS.length - 1)
-const showGroupStatusBar = computed(() => groupStreaming.value || !!groupStreamingPhase.value || showPixelRunner.value)
-const pixelObX = ref(0)
-const pixelDinoY = ref(0)
-const pixelVy = ref(0)
-let pixelTimer: number | null = null
-function startPixelRunner() {
-  if (pixelTimer != null) return
-  pixelObX.value = 220
-  pixelDinoY.value = 0
-  pixelVy.value = 0
-  pixelTimer = window.setInterval(() => {
-    pixelObX.value -= 8
-    if (pixelObX.value < -20) pixelObX.value = 220
-    pixelVy.value += 1.4
-    pixelDinoY.value = Math.min(0, pixelDinoY.value + pixelVy.value)
-    if (pixelDinoY.value === 0) pixelVy.value = 0
-  }, 50)
-}
-function stopPixelRunner() {
-  if (pixelTimer == null) return
-  window.clearInterval(pixelTimer)
-  pixelTimer = null
-}
-function pixelJump() {
-  if (!showPixelRunner.value) return
-  if (pixelDinoY.value < 0) return
-  pixelVy.value = -10
-}
-watch(
-  () => showPixelRunner.value,
-  (on) => {
-    if (on) startPixelRunner()
-    else stopPixelRunner()
-  },
-  { immediate: true },
-)
+
+/** 流式脉冲点：基于已到达的内容长度滚动切换 */
+const streamingPulse = computed(() => {
+  const len = activeStreamingMessage.value?.content?.length || 0
+  const bucket = Math.floor(len / 20) % 4
+  return ['', '.', '..', '...'][bucket] || ''
+})
 
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
 function appendStreamingContent(dhaId: string, text: string) {
-  groupActiveSpeakerId.value = dhaId
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   if (last?.role === 'assistant' && last?.dha_id === dhaId && (last as { _streaming?: boolean })._streaming) {
     const next: GroupDetail['messages'] = [...list.slice(0, -1), { ...last, content: (last.content || '') + text } as GroupMessage]
     groupDisplayMessages.value = next
   } else {
-    groupDisplayMessages.value = [...list, { role: 'assistant', dha_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
+    // 确保同一时间只有一个“正在输出”的占位消息（只影响 UI 指示）
+    const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
+    groupDisplayMessages.value = [...cleared, { role: 'assistant', dha_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
   }
 }
 
 /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
-  if (data.role === 'assistant' && typeof data.dha_id === 'string') groupActiveSpeakerId.value = data.dha_id
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   if (data.role === 'assistant' && last?.role === 'assistant' && last?.dha_id === data.dha_id && (last as { _streaming?: boolean })._streaming) {
@@ -2420,7 +2435,6 @@ async function sendGroupMessage() {
   groupNextPrompt.value = ''
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
-  groupStage.value = 0
   const msg = await buildMessageWithFiles(detail, base)
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
@@ -2474,7 +2488,6 @@ async function sendGroupMessage() {
               if (data?.text != null && data?.dha_id) {
                 appendStreamingContent(data.dha_id, data.text)
                 // 开始输出内容：视为进入自检（生成最终回复）
-                groupStage.value = 2
               }
             } catch (_) {}
           }
@@ -2486,9 +2499,6 @@ async function sendGroupMessage() {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
                   // 如果该条 assistant 携带工具结果/查找结果：认为是在“生成草稿/查找内容”
-                  const toolResults = (data as { tool_raw_results?: unknown }).tool_raw_results
-                  if (Array.isArray(toolResults) && toolResults.length) groupStage.value = 1
-                  else groupStage.value = 2
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -2565,7 +2575,6 @@ async function sendGroupMessage() {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
-              groupStage.value = 3
             } catch (_) {}
           }
         }
@@ -2578,7 +2587,6 @@ async function sendGroupMessage() {
     groupStreaming.value = false
     groupStreamingPhase.value = ''
     groupNextSpeakerOverride.value = ''
-    groupStage.value = 3
   }
 }
 
@@ -2765,14 +2773,23 @@ defineExpose({ refresh: loadGroupDetail })
 /* 群聊 UI（参考现代聊天产品） */
 .group-chat-header {
   flex-shrink: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
   padding: 0.75rem 1.25rem;
   background: var(--color-card);
   border-bottom: 1px solid var(--color-border-light);
   box-shadow: 0 1px 0 var(--color-border-light);
+  position: relative;
+}
+
+.group-chat-header-left {
+  justify-self: start;
+}
+
+.group-chat-header-right {
+  /* 右侧操作按钮贴到最右侧，避免靠近标题区域 */
+  justify-self: end;
 }
 .group-chat-title {
   margin: 0;
@@ -2784,12 +2801,30 @@ defineExpose({ refresh: loadGroupDetail })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+  justify-self: center;
 }
-.group-chat-header-actions {
+
+.group-chat-main-row {
+  flex: 1 1 0%;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
+  align-items: stretch;
+  gap: 0;
+}
+
+.group-chat-main-right {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-chat-main-right-with-toc .group-chat-messages {
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 .group-chat-header-btn {
   display: inline-flex;
@@ -2815,40 +2850,51 @@ defineExpose({ refresh: loadGroupDetail })
   border-color: var(--color-accent);
 }
 
-/* 归档侧栏（专家索引） */
+/* 归档侧栏（悬浮侧边目录） */
+.group-chat-archive-anchor {
+  position: relative;
+}
+
 .group-chat-archive-panel {
   width: 240px;
   flex: 0 0 240px;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--color-border-light);
-  background: var(--color-card);
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  position: sticky;
+  top: 12px;
+  z-index: 10;
 }
 .group-chat-archive-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.65rem 0.75rem;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 0.2rem 0.1rem 0.35rem;
+  border-bottom: none;
+  background: transparent;
 }
 .group-chat-archive-panel-title {
   font-size: 0.82rem;
   font-weight: 650;
-  color: var(--color-text);
+  color: var(--color-text-muted);
 }
 .group-chat-archive-panel-close {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  border: 1px solid var(--color-border);
-  background: var(--color-card);
+  border: none;
+  background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
 }
 .group-chat-archive-panel-close:hover {
-  background: var(--color-list-hover);
+  background: transparent;
   color: var(--color-text);
 }
 .group-chat-archive-panel-body {
@@ -2857,6 +2903,8 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  flex: 1 1 0%;
+  min-height: 0;
 }
 .group-chat-archive-empty {
   font-size: 0.78rem;
@@ -2864,23 +2912,25 @@ defineExpose({ refresh: loadGroupDetail })
   padding: 0.5rem 0.35rem;
 }
 .group-chat-archive-item {
-  border: 1px solid var(--color-border-light);
-  background: var(--color-page);
-  border-radius: 12px;
-  padding: 0.55rem 0.6rem;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0.35rem 0.4rem;
   text-align: left;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .group-chat-archive-item:hover {
-  background: var(--color-list-hover);
+  background: transparent;
 }
+
 .group-chat-archive-item-name {
   font-size: 0.78rem;
   font-weight: 650;
-  color: var(--color-text);
+  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2888,9 +2938,22 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-archive-item-snippet {
   font-size: 0.75rem;
   color: var(--color-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+
+.group-chat-archive-panel-body::-webkit-scrollbar {
+  width: 8px;
+}
+.group-chat-archive-panel-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+}
+.group-chat-archive-panel-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 .group-chat-svg-icon {
   width: 1rem;
@@ -3466,100 +3529,17 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.75rem;
   color: var(--color-text-muted);
 }
-.group-chat-status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  margin: 0 0 0.5rem 0;
-  border: 1px solid var(--color-border-light);
-  border-radius: 10px;
-  background: var(--color-card);
-}
-.group-chat-status-left {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-.group-chat-status-text { min-width: 0; }
-.group-chat-status-line1 {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--color-text);
-  display: flex;
-  gap: 0.35rem;
-  align-items: baseline;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.group-chat-status-muted {
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-.group-chat-status-dot { opacity: 0.6; }
-.group-chat-stage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.15rem;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-.group-chat-stage-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.group-chat-stage-dot {
-  width: 6px;
-  height: 6px;
+
+.group-chat-bubble-streaming-indicator {
+  font-size: 0.7rem;
+  color: var(--color-accent-subtle-text, var(--color-text-muted));
+  background: var(--color-accent-subtle, var(--color-list-hover));
+  border: 1px solid var(--color-accent-subtle, var(--color-border-light));
   border-radius: 999px;
-  background: var(--color-border-light);
-  display: inline-block;
+  padding: 0.08rem 0.35rem;
+  flex: 0 0 auto;
 }
-.group-chat-stage-dot-active { background: var(--color-accent); }
-.group-chat-stage-label-active {
-  color: var(--color-text);
-  font-weight: 600;
-}
-.group-chat-stage-sep { opacity: 0.6; }
-.group-chat-pixel-bar {
-  width: 240px;
-  height: 26px;
-  border-radius: 8px;
-  border: 1px dashed var(--color-border-light);
-  background: var(--color-page);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  outline: none;
-}
-.group-chat-pixel-bar:focus { border-color: var(--color-accent); }
-.group-chat-pixel-track {
-  position: relative;
-  width: 220px;
-  height: 18px;
-  overflow: hidden;
-}
-.group-chat-pixel-dino {
-  position: absolute;
-  left: 10px;
-  bottom: 2px;
-  width: 10px;
-  height: 10px;
-  background: var(--color-text);
-}
-.group-chat-pixel-ob {
-  position: absolute;
-  right: -10px;
-  bottom: 2px;
-  width: 8px;
-  height: 12px;
-  background: var(--color-text-muted);
-}
+
 .group-chat-shortcut-actions {
   display: flex;
   gap: 0.5rem;
@@ -3572,11 +3552,13 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-toolbar-btn-plus {
   width: 40px;
+  height: 34px;
+  padding: 0;
 }
 .group-chat-plus {
-  font-size: 1.25rem;
+  font-size: 1.05rem;
   line-height: 1;
-  font-weight: 700;
+  font-weight: 500;
 }
 .group-chat-shortcut-editor-dropdown {
   width: 360px;
@@ -3627,7 +3609,10 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-accent-subtle);
 }
 .group-chat-toolbar-btn-chip {
-  padding: 0.35rem 0.6rem;
+  height: 34px;
+  padding: 0 0.6rem;
+  display: inline-flex;
+  align-items: center;
   border-radius: 999px;
   border: 1px solid var(--color-border-light);
   background: var(--color-card);
@@ -3948,8 +3933,8 @@ defineExpose({ refresh: loadGroupDetail })
   margin-bottom: 0.25rem;
   padding: 0.375rem 0.5rem;
   min-width: 10rem;
-  max-height: 12rem;
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -4525,6 +4510,8 @@ defineExpose({ refresh: loadGroupDetail })
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
+  height: 34px;
+  padding: 0 0.625rem;
 }
 .group-chat-toolbar-icon {
   width: 0.9rem;

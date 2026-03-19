@@ -857,25 +857,26 @@ def load_skills_config() -> List[Dict[str, Any]]:
 # 当 skill 的 frontmatter 未显式配置 mcp_server_ids 时使用的默认映射（向后兼容）
 # 与 backend/config/mcp_servers.json 中的 id 对应
 _SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
-    "wechat-article-writer": ["linkup", "exa", "fetch", "mem0"],
+    # 兜底仅使用当前保留的 5 个 MCP：linkup / exa / amap-maps / file-reader / playwright-mcp
+    "wechat-article-writer": ["linkup", "exa", "file-reader"],
     "amap-maps": ["amap-maps"],
-    "app-icon-generator": ["volces-icon"],
-    "cover-image": ["volces-icon"],
-    "article-illustrator": ["volces-icon"],
-    "blog-write": ["linkup", "exa", "fetch", "zhipu-web-search", "file-reader"],
-    "data-report": ["linkup", "exa", "fetch", "file-reader"],
-    "zhipu-web-search": ["zhipu-web-search"],
+    "app-icon-generator": [],
+    "cover-image": [],
+    "article-illustrator": [],
+    "blog-write": ["linkup", "exa", "file-reader"],
+    "data-report": ["linkup", "exa", "file-reader"],
+    "zhipu-web-search": [],
     "weather-service": [],
-    "news-summary": ["linkup", "exa", "fetch", "zhipu-web-search"],
+    "news-summary": ["linkup", "exa", "file-reader"],
     "article-review": ["file-reader"],
-    "deep-research": ["linkup", "exa", "fetch", "zhipu-web-search", "file-reader"],
-    "web-research": ["linkup", "exa", "fetch", "file-reader"],
+    "deep-research": ["linkup", "exa", "file-reader"],
+    "web-research": ["linkup", "exa", "file-reader"],
     "doc-coauthoring": ["file-reader"],
     "docs-write": ["file-reader"],
     "xlsx": ["file-reader"],
-    "math-assistant": ["calculator"],
+    "math-assistant": [],
     "group-host": ["file-reader"],
-    "url-fetch": ["fetch", "file-reader"],
+    "url-fetch": ["file-reader"],
     "seminar-companion": [],
     "seminar-guide": [],
     "seminar-divergence": [],
@@ -892,10 +893,11 @@ def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
     优先从 SKILL.md frontmatter 的 mcp_server_ids 读取（前端可配置）；
     若未配置则使用 _SKILL_MCP_SERVERS_FALLBACK。"""
     skills = load_skills_config()
+    enabled_ids = {s.get("id") for s in load_mcp_config() if s.get("enabled", True)}
     s = next((x for x in skills if x.get("id") == skill_id), None)
     if s is not None and "mcp_server_ids" in s:
-        return list(s.get("mcp_server_ids") or [])
-    return list(_SKILL_MCP_SERVERS_FALLBACK.get(skill_id, []))
+        return [x for x in (s.get("mcp_server_ids") or []) if x in enabled_ids]
+    return [x for x in list(_SKILL_MCP_SERVERS_FALLBACK.get(skill_id, [])) if x in enabled_ids]
 
 @router.get("/settings/skills")
 async def get_skills():

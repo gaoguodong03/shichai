@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
@@ -245,6 +245,57 @@ def _title_from_first_message(text: str, max_chars: int = 10) -> str:
     if len(first_line) > max_chars:
         return first_line[:max_chars].rstrip()
     return first_line
+
+
+async def _ai_title_from_recent_user_messages(
+    llm: Any,
+    messages: List[Dict[str, Any]],
+    max_chars: int = 18,
+    max_user_messages: int = 6,
+) -> str:
+    """根据最近用户发言，AI 生成约 15 字主题（用于群聊标题）。"""
+    try:
+        user_texts: List[str] = []
+        for m in reversed(messages or []):
+            if not isinstance(m, dict):
+                continue
+            if (m.get("role") or "").strip() != "user":
+                continue
+            content = (m.get("content") or "").strip()
+            if not content:
+                continue
+            user_texts.append(_normalize_discussion_goal(content))
+            if len(user_texts) >= max_user_messages:
+                break
+        user_texts.reverse()
+        if not user_texts:
+            return ""
+
+        client = llm.get_client()
+        system_prompt = (
+            "你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。\n"
+            "输出要求：\n"
+            f"- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）\n"
+            f"- 中文主题，长度约 15 字（允许最多 {max_chars} 字）\n"
+            "- 不要使用引号或括号，不要以句号/感叹号/问号结尾\n"
+        )
+        content = "最近用户发言：\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])
+        resp = await client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=content)])
+        raw = (getattr(resp, "content", "") or "").strip()
+        if not raw:
+            return ""
+        # 只取第一行，去掉常见前缀/标点
+        s = raw.splitlines()[0].strip()
+        s = re.sub(r"^(主题|讨论主题|标题|群聊主题|当前主题)\\s*[:：]\\s*", "", s)
+        s = s.strip().strip("“”\"'（）()[]【】")
+        while s and s[-1] in "。！？…":
+            s = s[:-1].strip()
+        if len(s) > max_chars:
+            s = s[:max_chars].rstrip()
+        return s
+    except Exception as e:
+        logger.error(f"AI 生成群聊主题失败: {e}", exc_info=True)
+        return ""
 
 
 def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
@@ -623,8 +674,11 @@ def create_session_internal(
     gsid = f"group-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     meta = _load_group_meta()
+    placeholder_titles = {"新对话", "新群聊", ""}
+    title_auto_generated = (title or "").strip() in placeholder_titles
     meta[gsid] = {
         "title": title or "新对话",
+        "title_auto_generated": title_auto_generated,
         "dha_ids": dha_ids,
         "leader_dha_id": "",
         "speak_mode": (speak_mode or "auto").strip().lower(),
@@ -800,6 +854,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             now = datetime.now(timezone.utc).isoformat()
             meta[group_session_id] = {
                 "title": "新群聊",
+                "title_auto_generated": True,
                 "dha_ids": [],
                 "leader_dha_id": "",
                 "speak_mode": "auto",
@@ -814,6 +869,8 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
         meta[group_session_id]["title"] = body.title.strip()
+        # 用户主动修改标题后，停止自动主题覆盖
+        meta[group_session_id]["title_auto_generated"] = False
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
         meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
     if body.add_dha_ids or body.remove_dha_ids:
@@ -892,6 +949,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     available_to_add = [d for d in instances if d.get("dha_id") and d.get("dha_id") not in dha_ids and d.get("dha_id") != CHAT_DHA_ID]
 
     messages = _load_group_history(group_session_id)
+    app_settings = load_app_settings()
 
     # 用户消息
     if request.message and request.message.strip():
@@ -904,12 +962,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         })
         _save_group_history(group_session_id, messages)
         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if first_user_message:
-            current_title = (meta[group_session_id].get("title") or "").strip()
-            if current_title in ("新对话", "新群聊", ""):
+
+        current_title = (meta[group_session_id].get("title") or "").strip()
+        placeholder_titles = ("新对话", "新群聊", "")
+        title_auto_generated = meta[group_session_id].get("title_auto_generated")
+        if title_auto_generated is None:
+            # 兼容历史：若标题较短或仍是占位符，则视为“自动生成的标题”，允许覆盖更新
+            title_auto_generated = current_title in placeholder_titles or len(current_title) <= 12
+
+        if title_auto_generated or current_title in placeholder_titles:
+            llm_provider_id = app_settings.get("default_llm", "qwen")
+            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"))
+            # 基于最近用户发言生成“当前主题”，避免讨论发散后标题仍停留在旧主题
+            ai_title = await _ai_title_from_recent_user_messages(llm, messages, max_chars=18, max_user_messages=6)
+            if ai_title:
+                meta[group_session_id]["title"] = ai_title
+                meta[group_session_id]["title_auto_generated"] = True
+            elif first_user_message and current_title in placeholder_titles:
+                # AI 失败时的回退：截取首条用户消息（较短，保证可用）
                 auto_title = _title_from_first_message(request.message.strip(), max_chars=10)
                 if auto_title:
                     meta[group_session_id]["title"] = auto_title
+                    meta[group_session_id]["title_auto_generated"] = True
         _save_group_meta(meta)
 
     # 上一发言人（用于主持人/领导人判断 task_done；排除主持人本人，只计参与讨论的 DHA）
@@ -928,7 +1002,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
 
-    app_settings = load_app_settings()
     # 已废弃：不再提供全局 system_prompt；主持人提示词改为在主持人 DHA（is_leader）实例上维护
     extra_system_prompt = ""
     # speak_mode 从会话 meta 读取（m 为 meta[group_session_id]），manual 时仅主持人给建议并结束，等用户选人/改提示词后再发
@@ -972,11 +1045,19 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         if d.get("dha_id")
                     }
                     invited_names = [id_to_name.get(x, x) for x in picked]
+                    invited_lines = []
+                    for x in picked:
+                        n = id_to_name.get(x, x)
+                        invited_lines.append(f"- {n}（{x}）")
+                    invited_md = "\n".join(invited_lines)
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host",
                         "content": (host_content or "").rstrip()
-                        + (("\n\n" if host_content else "") + f"已自动邀请加入讨论：{'、'.join(invited_names)}。继续执行…"),
+                        + (("\n\n" if host_content else "")
+                           + "**已自动邀请加入讨论的专家：**\n"
+                           + invited_md
+                           + "\n\n继续执行…"),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "auto_invited_dha_ids": picked,
                     }
@@ -1113,6 +1194,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     # 追加新成员（去重）
                     new_ids = [x for x in suggested_add if x not in dha_ids]
                     if new_ids:
+                        id_to_name = {
+                            str(d.get("dha_id")): str(d.get("name") or d.get("title") or d.get("display_name") or d.get("dha_id"))
+                            for d in instances
+                            if d.get("dha_id")
+                        }
+                        invited_lines = [f"- {id_to_name.get(x, x)}（{x}）" for x in new_ids]
+                        invited_md = "\n".join(invited_lines)
+                        host_content = (host_content or "").rstrip() + "\n\n**已自动邀请加入讨论的专家：**\n" + invited_md
                         dha_ids = dha_ids + new_ids
                         meta[group_session_id]["dha_ids"] = dha_ids
                         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1406,6 +1495,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if suggested_add and next_speaker == "user":
                     new_ids = [x for x in suggested_add if x not in dha_ids]
                     if new_ids:
+                        id_to_name = {
+                            str(d.get("dha_id")): str(d.get("name") or d.get("title") or d.get("display_name") or d.get("dha_id"))
+                            for d in instances
+                            if d.get("dha_id")
+                        }
+                        invited_lines = [f"- {id_to_name.get(x, x)}（{x}）" for x in new_ids]
+                        invited_md = "\n".join(invited_lines)
                         dha_ids = dha_ids + new_ids
                         meta[group_session_id]["dha_ids"] = dha_ids
                         meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1416,6 +1512,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     else:
                         next_speaker = dha_ids[0] if dha_ids else "user"
                     host_content = announcement or "当前成员无法完成该工作，已自动邀请新成员加入继续处理。"
+                    if new_ids:
+                        host_content = (host_content or "").rstrip() + "\n\n**已自动邀请加入讨论的专家：**\n" + invited_md
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host" if not leader_dha_id else "assistant",

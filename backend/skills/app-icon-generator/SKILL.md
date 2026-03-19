@@ -1,8 +1,8 @@
 ---
-description: 统一图片生成技能。负责应用图标、文章封面、文内配图、小红书信息图等；由技能决定生成张数与每张的提示词（description）。支持 run_skill_script 的 generate_image.py 或 volces-icon MCP。
+description: 统一图片生成技能。负责应用图标、文章封面、文内配图、小红书信息图等；由技能决定生成张数与每张的提示词（description）。支持 run_skill_script
+  的 generate_image.py 或 volces-icon MCP。
 enabled: true
-mcp_server_ids:
-  - volces-icon
+mcp_server_ids: []
 name: 图片生成
 ---
 ## 目标与范围
@@ -28,10 +28,6 @@ name: 图片生成
   - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`
 - 脚本内部使用 **ChatAnywhere 图像 API**（POST `https://api.chatanywhere.com.cn/v1/images/generations`），读取环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式 `Bearer sk-xxx` 或仅 `sk-xxx`），与 call_api 无关。
 - 工具返回的 stdout 即为图片 URL 或错误信息；你须在最终回复中用 `![图标](URL)` 或可点击链接呈现给用户。
-
-### 备选：volces-icon_generate_app_icon（MCP）
-
-若本技能关联了 volces-icon MCP，也可用 **volces-icon_generate_app_icon**：参数 `description`（必填）、`pic_size`（可选）。请直接使用参数名 `description`、`pic_size`；系统会对 `__arg1` 等做自动映射，但使用 schema 参数名兼容性最佳。
 
 ---
 

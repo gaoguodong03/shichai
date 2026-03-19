@@ -4,8 +4,7 @@ description: 适用于复杂主题的多阶段深度研究：先和用户对齐�
 enabled: true
 mcp_server_ids:
   - exa
-  - fetch
-  - zhipu-web-search
+  - linkup
   - file-reader
 ---
 

@@ -3,8 +3,7 @@ description: 智能新闻搜索和摘要工具，帮你快速获取和分析最�
 enabled: true
 mcp_server_ids:
   - exa
-  - fetch
-  - zhipu-web-search
+  - linkup
 name: 新闻搜索摘要
 ---
 # 新闻搜索摘要 Skill

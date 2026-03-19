@@ -38,7 +38,7 @@
         </a>
       </div>
     </header>
-    <div class="flex-1 overflow-auto p-4 flex flex-col">
+    <div ref="scrollContainerRef" class="flex-1 overflow-auto p-4 flex flex-col">
       <!-- 图片预览 -->
       <img
         v-if="isImage"
@@ -88,7 +88,28 @@
         </div>
         <div v-else class="flex flex-col gap-2">
           <!-- .md 默认渲染为 Markdown，可切换为源文件 -->
-          <div v-if="isMarkdown && !showMdSource" class="prose prose-sm max-w-none text-gray-800 file-detail-markdown" v-html="renderMarkdown(previewText ?? '')" />
+          <div v-if="isMarkdown && !showMdSource" class="file-detail-article-layout">
+            <nav v-if="tocItems.length" class="file-detail-toc" aria-label="文章目录">
+              <div class="file-detail-toc-title">目录</div>
+              <button
+                v-for="it in tocItems"
+                :key="it.id"
+                type="button"
+                class="file-detail-toc-item"
+                :class="it.id === activeTocId ? 'file-detail-toc-item-active' : ''"
+                @click="jumpToHeading(it.id)"
+                :title="it.text"
+              >
+                {{ it.text }}
+              </button>
+            </nav>
+
+            <div
+              ref="markdownContainerRef"
+              class="prose prose-sm max-w-none text-gray-800 file-detail-markdown"
+              v-html="renderMarkdown(previewText ?? '')"
+            />
+          </div>
           <pre v-else class="text-sm text-gray-800 whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
           <div class="flex flex-wrap items-center gap-2 mt-1">
             <button
@@ -113,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import VuePdfEmbed from 'vue-pdf-embed'
 import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
@@ -152,10 +173,34 @@ const isMarkdown = computed(() => /\.md$/i.test(currentPath.value))
 const showMdSource = ref(false)
 // 与对话区保持一致：单个换行当空格处理
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
+
+function slugifyHeading(text: string): string {
+  const s = (text || '').trim().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff\-]/g, '')
+  return s || 'section'
+}
+
+// 给 heading_open 自动加 id（用于目录跳转 + 滚动高亮）
+md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  const inline = tokens[idx + 1]
+  const rawText = inline && inline.type === 'inline' ? inline.content : ''
+  const base = slugifyHeading(rawText)
+  const e = (env || {}) as { counts?: Record<string, number> }
+  if (!e.counts) e.counts = {}
+  const cur = e.counts[base] ?? 0
+  e.counts[base] = cur + 1
+  const id = cur === 0 ? base : `${base}-${cur + 1}`
+
+  // markdown-it token 的 attrs 支持 attrSet；若环境不支持则跳过
+  if ((token as any).attrSet) (token as any).attrSet('id', id)
+  return self.renderToken(tokens, idx, options)
+}
 function renderMarkdown(text: string): string {
   if (!text) return ''
   try {
-    return md.render(text)
+    // 每次渲染都用自己的 env，保证同一份 markdown 内 id 可控且唯一
+    const env: any = {}
+    return md.render(text, env)
   } catch {
     return text
   }
@@ -168,6 +213,82 @@ const displayName = computed(() => {
 })
 
 const previewText = ref<string | null>(null)
+const markdownContainerRef = ref<HTMLElement | null>(null)
+const scrollContainerRef = ref<HTMLElement | null>(null)
+
+type TocItem = { id: string; text: string }
+const tocItems = ref<TocItem[]>([])
+const activeTocId = ref<string>('')
+let tocScrollRaf = 0
+let headingsForSpy: HTMLElement[] = []
+
+function getHeadingText(el: HTMLElement): string {
+  const t = (el.textContent || '').trim()
+  // markdown-it 可能会把 “## 用户” 渲染成带空白/换行的文本，这里做个小清洗
+  return t.replace(/\s+/g, ' ')
+}
+
+function buildTocFromDom() {
+  const root = markdownContainerRef.value
+  if (!root) return
+  const headings = Array.from(root.querySelectorAll<HTMLElement>('h1[id], h2[id], h3[id]'))
+
+  // “专家回答段落”在导出 markdown 里通常是 h2，且用户/主持人是固定标题
+  const filtered = headings.filter((h) => {
+    const text = getHeadingText(h)
+    if (!text) return false
+    if (h.tagName.toLowerCase() !== 'h2') return false
+    if (text === '用户') return false
+    if (text === '主持人') return false
+    return true
+  })
+
+  tocItems.value = filtered.map((h) => ({
+    id: h.id,
+    text: getHeadingText(h),
+  }))
+
+  headingsForSpy = filtered
+  activeTocId.value = tocItems.value[0]?.id ?? ''
+}
+
+function jumpToHeading(id: string) {
+  const el = document.getElementById(id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function startScrollSpy() {
+  const sc = scrollContainerRef.value
+  if (!sc) return
+  const spyOffset = 90 // 离顶部多远时认为是“当前章节”
+
+  const onScroll = () => {
+    if (tocScrollRaf) cancelAnimationFrame(tocScrollRaf)
+    tocScrollRaf = requestAnimationFrame(() => {
+      const scRect = sc.getBoundingClientRect()
+      let best: HTMLElement | null = null
+      for (const h of headingsForSpy) {
+        const r = h.getBoundingClientRect()
+        const relTop = r.top - scRect.top
+        // 选择最后一个“已经进入视野顶部”的标题
+        if (relTop <= spyOffset) {
+          best = h
+        } else {
+          break
+        }
+      }
+      activeTocId.value = best?.id ?? tocItems.value[0]?.id ?? ''
+    })
+  }
+
+  sc.addEventListener('scroll', onScroll, { passive: true })
+  // 返回清理函数
+  return () => {
+    sc.removeEventListener('scroll', onScroll)
+  }
+}
+
+let stopScrollSpy: (() => void) | null = null
 const editingName = ref(false)
 const editFileName = ref('')
 const nameInputRef = ref<HTMLInputElement | null>(null)
@@ -329,6 +450,29 @@ watch([currentPath, isExcel], () => {
   if (isExcel.value) loadExcel()
   else { excelError.value = null; excelHtml.value = '' }
 }, { immediate: true })
+
+watch([previewText, showMdSource, isMarkdown], async () => {
+  // 只在渲染 markdown 视图时构建 TOC 与高亮
+  if (!isMarkdown.value || showMdSource.value) {
+    tocItems.value = []
+    headingsForSpy = []
+    activeTocId.value = ''
+    stopScrollSpy?.()
+    stopScrollSpy = null
+    return
+  }
+
+  await nextTick()
+  buildTocFromDom()
+  stopScrollSpy?.()
+  stopScrollSpy = startScrollSpy() ?? null
+})
+
+onBeforeUnmount(() => {
+  stopScrollSpy?.()
+  stopScrollSpy = null
+  if (tocScrollRaf) cancelAnimationFrame(tocScrollRaf)
+})
 </script>
 
 <style scoped>
@@ -361,4 +505,62 @@ watch([currentPath, isExcel], () => {
 .file-detail-markdown :deep(pre) { background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
 .file-detail-markdown :deep(code) { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
 .file-detail-markdown :deep(a) { color: #2563eb; text-decoration: underline; }
+
+.file-detail-article-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.file-detail-toc {
+  position: sticky;
+  top: 12px;
+  width: 220px;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
+  padding: 10px 10px;
+  border-radius: 14px;
+  background: rgba(17, 24, 39, 0.55);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.file-detail-toc-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.file-detail-toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.72);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s, color 0.15s;
+}
+
+.file-detail-toc-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.file-detail-toc-item-active {
+  background: rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(37, 99, 235, 0.45);
+  color: rgba(255, 255, 255, 0.95);
+}
 </style>

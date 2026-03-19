@@ -52,7 +52,6 @@
     "mcp_server_ids": [
       "exa",
       "fetch",
-      "zhipu-web-search",
       "file-reader"
     ],
     "is_leader": false,

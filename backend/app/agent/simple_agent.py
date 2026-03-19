@@ -50,6 +50,8 @@ class SimpleAgent:
 
             tool_calls = getattr(response, "tool_calls", None) or []
             if tool_calls:
+                # 让 group_chat.py 在 stream 中能检测到 tool_calls，并生成 tool_call 代码块/标签
+                yield ("updates", {"agent": {"messages": [response]}})
                 state = {"messages": messages, "tools": tools}
                 tool_out = await self.tool_runner(state, tools)
                 out_msgs = tool_out.get("messages") or []

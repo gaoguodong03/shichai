@@ -3,7 +3,7 @@ description: 专业的微信公众号文章创作助手。当用户提供网站�
 enabled: true
 mcp_server_ids:
 - exa
-- fetch
+- linkup
 name: 微信公众号文章创作助手
 ---
 # 微信公众号文章创作助手

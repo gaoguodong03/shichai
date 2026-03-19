@@ -4,7 +4,7 @@ description: 从网页搜索、URL 抓取或外部 API 收集数据，整理成�
 enabled: true
 mcp_server_ids:
   - exa
-  - fetch
+  - linkup
   - file-reader
 ---
 
