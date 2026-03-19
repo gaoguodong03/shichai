@@ -375,8 +375,15 @@
                       <span>文件</span>
                     </button>
                   </div>
-                  <button type="button" class="group-chat-toolbar-btn group-chat-toolbar-btn-chip" @click="applyShortcutPreset('research')">调研</button>
-                  <button type="button" class="group-chat-toolbar-btn group-chat-toolbar-btn-chip" @click="applyShortcutPreset('blog')">博客</button>
+                  <button
+                    v-for="p in toolbarShortcutPresets"
+                    :key="p.id"
+                    type="button"
+                    class="group-chat-toolbar-btn group-chat-toolbar-btn-chip"
+                    @click="applyShortcutPreset(p.id)"
+                  >
+                    {{ p.name }}
+                  </button>
                   <div ref="shortcutEditorRef" class="group-chat-add-member-wrap">
                     <button
                       type="button"
@@ -484,7 +491,7 @@
                   </div>
                   <!-- 居中弹窗：文件 -->
                   <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="showInsertFileModal = false">
-                    <div class="group-chat-modal">
+                    <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
                         <span class="group-chat-modal-title">文件</span>
                         <button type="button" class="group-chat-modal-close" @click="showInsertFileModal = false">×</button>
@@ -505,7 +512,7 @@
 
                   <!-- 居中弹窗：快捷键（+） -->
                   <div v-if="showShortcutEditorModal" class="group-chat-modal-overlay" @click.self="showShortcutEditorModal = false">
-                    <div class="group-chat-modal">
+                    <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
                         <span class="group-chat-modal-title">快捷键</span>
                         <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
@@ -517,12 +524,13 @@
                               <span class="truncate">{{ p.name }}</span>
                               <span class="group-chat-shortcut-meta">{{ p.dha_ids.length }} 位</span>
                             </button>
+                            <button type="button" class="group-chat-member-delete-icon" title="修改快捷键" @click.stop="startEditShortcutPreset(p)">✎</button>
                             <button type="button" class="group-chat-member-delete-icon" title="删除快捷键" @click.stop="deleteShortcutPreset(p.id)">×</button>
                           </li>
                         </ul>
                         <p v-else class="group-chat-add-member-empty">暂无快捷键</p>
                         <div class="group-chat-shortcut-divider" />
-                        <p class="group-chat-members-dropdown-title">新建快捷键</p>
+                        <p class="group-chat-members-dropdown-title">{{ editingShortcutId ? '修改快捷键' : '新建快捷键' }}</p>
                         <input v-model="newShortcutName" class="group-chat-shortcut-name-input" placeholder="快捷键名称（如：调研 / 博客）" />
                         <p class="group-chat-add-member-empty">邀请加入的专家</p>
                         <ul v-if="(props.dhaInstances || []).length" class="group-chat-members-list">
@@ -532,7 +540,8 @@
                           </li>
                         </ul>
                         <div class="group-chat-shortcut-actions">
-                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="createShortcutPreset">保存</button>
+                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="createShortcutPreset">{{ editingShortcutId ? '更新' : '保存' }}</button>
+                          <button v-if="editingShortcutId" type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="cancelEditShortcutPreset">取消修改</button>
                           <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="resetShortcutPresets">恢复默认</button>
                         </div>
                       </div>
@@ -1230,10 +1239,7 @@ async function confirmGroupNext(override: string) {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
                 if (data.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
                 if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
                   groupSuggestedAddDhaIds.value = []
@@ -1263,10 +1269,7 @@ async function confirmGroupNext(override: string) {
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
@@ -1442,10 +1445,18 @@ function saveShortcutPresets() {
 }
 function resetShortcutPresets() {
   shortcutPresets.value = defaultShortcutPresets()
+  editingShortcutId.value = ''
+  newShortcutName.value = ''
+  newShortcutDhaIds.value = []
   saveShortcutPresets()
 }
 function deleteShortcutPreset(id: string) {
   shortcutPresets.value = shortcutPresets.value.filter((p) => p.id !== id)
+  if (editingShortcutId.value === id) {
+    editingShortcutId.value = ''
+    newShortcutName.value = ''
+    newShortcutDhaIds.value = []
+  }
   saveShortcutPresets()
 }
 function toggleNewShortcutDha(dhaId: string) {
@@ -1458,11 +1469,26 @@ function createShortcutPreset() {
   const name = (newShortcutName.value || '').trim()
   const ids = Array.from(new Set(newShortcutDhaIds.value)).filter(Boolean)
   if (!name || !ids.length) return
-  const id = `sc-${Date.now()}`
-  shortcutPresets.value = [{ id, name, dha_ids: ids }, ...shortcutPresets.value]
+  if (editingShortcutId.value) {
+    shortcutPresets.value = shortcutPresets.value.map((p) => (p.id === editingShortcutId.value ? { ...p, name, dha_ids: ids } : p))
+  } else {
+    const id = `sc-${Date.now()}`
+    shortcutPresets.value = [{ id, name, dha_ids: ids }, ...shortcutPresets.value]
+  }
+  editingShortcutId.value = ''
   newShortcutName.value = ''
   newShortcutDhaIds.value = []
   saveShortcutPresets()
+}
+function startEditShortcutPreset(preset: ShortcutPreset) {
+  editingShortcutId.value = preset.id
+  newShortcutName.value = preset.name
+  newShortcutDhaIds.value = [...preset.dha_ids]
+}
+function cancelEditShortcutPreset() {
+  editingShortcutId.value = ''
+  newShortcutName.value = ''
+  newShortcutDhaIds.value = []
 }
 async function applyShortcutPreset(id: string) {
   const detail = groupDetail.value
@@ -1571,8 +1597,10 @@ function onShowNextPromptFieldChangeByClick() {
 const showShortcutEditor = ref(false)
 const showShortcutEditorModal = ref(false)
 const shortcutEditorRef = ref<HTMLElement | null>(null)
+const editingShortcutId = ref('')
 const newShortcutName = ref('')
 const newShortcutDhaIds = ref<string[]>([])
+const toolbarShortcutPresets = computed(() => shortcutPresets.value)
 const showInsertFile = ref(false)
 const showInsertFileModal = ref(false)
 const insertFileRef = ref<HTMLElement | null>(null)
@@ -1661,10 +1689,7 @@ async function continueGroupStream() {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
                 if (data.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
                 if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
                   groupSuggestedAddDhaIds.value = []
@@ -1693,10 +1718,7 @@ async function continueGroupStream() {
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
@@ -1917,8 +1939,13 @@ function stripDiscussionGoalForDisplay(content: string): string {
   const raw = (content ?? '').trim()
   if (!raw) return ''
   const prefix = '【讨论目标】'
-  if (raw.startsWith(prefix)) return raw.slice(prefix.length).replace(/^\s*\n?/, '').trim() || ''
-  return raw
+  const withoutGoalPrefix = raw.startsWith(prefix)
+    ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
+    : raw
+  // 用户消息展示中，隐藏「给下一 DHA 的提示」整段，仅保留可直接阅读的信息（如讨论目标/文件引用）
+  return withoutGoalPrefix
+    .replace(/(?:^|\n{2,})【给下一 DHA 的提示】[\s\S]*?(?=\n{2,}【文件引用：|$)/g, '')
+    .replace(/^\s+|\s+$/g, '')
 }
 
 /** 压缩空行并把所有换行替换为空格，用于用户/主持人纯文本展示 */
@@ -2484,10 +2511,13 @@ function builtMessage(): string {
 }
 
 /** 发送前将所有文件引用展开为实际内容，并与当前输入拼接（群聊中不再展开，只保留标签，由 DHA 自己通过 filesystem_* 读取） */
-async function buildMessageWithFiles(detail: GroupDetail, base: string): Promise<string> {
-  // 群聊场景：不在用户侧消息里展开文件内容，只保留诸如「【文件引用：xxx】」的标签，
-  // 由 DHA 自己通过 filesystem_read_text_file 等工具按标签中的 path 读取内容。
-  return base
+async function buildMessageWithFiles(_detail: GroupDetail, base: string): Promise<string> {
+  const fileRefs = attachedFiles.value.length
+    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}｜${f.path}】`).join('\n')
+    : ''
+  // 群聊场景：不在用户侧展开文件内容，只把可读标签附到发送文本中，
+  // 由 DHA 通过 filesystem_* 工具按 path 主动读取。
+  return `${base}${fileRefs}`.trim()
 }
 
 async function sendGroupMessage() {
@@ -2572,10 +2602,7 @@ async function sendGroupMessage() {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
                 if (data.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
+                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
                 if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
                   groupSuggestedAddDhaIds.value = []
@@ -2605,10 +2632,7 @@ async function sendGroupMessage() {
                 else if (endData.suggested_add_dha_id)
                   groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
                 if (endData.next_prompt) {
-                  const fileRefs = attachedFiles.value.length
-                    ? '\n\n' + attachedFiles.value.map((f) => `【文件引用：${f.name}】`).join('\n')
-                    : ''
-                  groupNextPrompt.value = (endData.next_prompt || '').trim() + fileRefs
+                  groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
@@ -3777,6 +3801,9 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.group-chat-modal-compact {
+  width: min(440px, 92vw);
 }
 .group-chat-modal-header {
   display: flex;
