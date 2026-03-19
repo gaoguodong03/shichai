@@ -674,8 +674,9 @@ def create_session_internal(
     gsid = f"group-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     meta = _load_group_meta()
+    raw_title = (title or "").strip()
     placeholder_titles = {"新对话", "新群聊", ""}
-    title_auto_generated = (title or "").strip() in placeholder_titles
+    title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("DHA 协作 ·")
     meta[gsid] = {
         "title": title or "新对话",
         "title_auto_generated": title_auto_generated,
@@ -868,9 +869,14 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         else:
             raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
-        meta[group_session_id]["title"] = body.title.strip()
-        # 用户主动修改标题后，停止自动主题覆盖
-        meta[group_session_id]["title_auto_generated"] = False
+        next_title = body.title.strip()
+        meta[group_session_id]["title"] = next_title
+        # 兼容历史前端自动模板标题：仍视为“自动生成”，允许后续被主题标题覆盖
+        if next_title.startswith("DHA 协作 ·") or next_title in {"新对话", "新群聊", ""}:
+            meta[group_session_id]["title_auto_generated"] = True
+        else:
+            # 用户主动修改标题后，停止自动主题覆盖
+            meta[group_session_id]["title_auto_generated"] = False
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
         meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
     if body.add_dha_ids or body.remove_dha_ids:
@@ -965,12 +971,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
         current_title = (meta[group_session_id].get("title") or "").strip()
         placeholder_titles = ("新对话", "新群聊", "")
+        is_template_title = current_title.startswith("DHA 协作 ·")
         title_auto_generated = meta[group_session_id].get("title_auto_generated")
         if title_auto_generated is None:
             # 兼容历史：若标题较短或仍是占位符，则视为“自动生成的标题”，允许覆盖更新
-            title_auto_generated = current_title in placeholder_titles or len(current_title) <= 12
+            title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
 
-        if title_auto_generated or current_title in placeholder_titles:
+        if title_auto_generated or current_title in placeholder_titles or is_template_title:
             llm_provider_id = app_settings.get("default_llm", "qwen")
             llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"))
             # 基于最近用户发言生成“当前主题”，避免讨论发散后标题仍停留在旧主题

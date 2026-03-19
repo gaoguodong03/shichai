@@ -32,7 +32,7 @@
     <!-- 中间列：当前模块的列表/摘要 -->
     <aside
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
-      :style="{ width: middleColumnWidth + 'px' }"
+      :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
       <!-- 顶部品牌区：所有模块统一 心像 EchoTwin -->
       <div class="px-3 pt-3 pb-3 flex-shrink-0">
@@ -344,7 +344,7 @@
     </aside>
 
     <!-- 拖动分隔条：调整中间列与右侧工作区宽度 -->
-    <div class="workspace-resizer" @mousedown="onMiddleResizeMouseDown" />
+    <div v-if="middleColumnOpen" class="workspace-resizer" @mousedown="onMiddleResizeMouseDown" />
 
     <!-- 右侧列：主内容。工作空间用 v-show 保持挂载，切到资源中心再回来不会打断对话（后台保留） -->
     <main class="main-right flex-1 flex flex-col min-h-0 overflow-hidden bg-page text-primary">
@@ -356,6 +356,9 @@
           ref="workspaceContentRef"
           :selected-group-session-id="selectedGroupSessionId"
           :dha-instances="dhaInstances"
+          :middle-column-open="middleColumnOpen"
+          @middle-column-open-request="middleColumnOpen = true"
+          @middle-column-toggle="toggleMiddleColumn"
           @message-sent="onChatMessageSent"
           @speak-mode-changed="onGroupChatRefresh"
           @dha-added="onDhaAdded"
@@ -547,12 +550,25 @@ const dhaInstancesLoading = ref(false)
 
 // 中间列宽度（可拖动调整）
 const middleColumnWidth = ref(240)
+const middleColumnOpen = ref(true)
+const middleColumnPrevWidth = ref(240)
 let resizeStartX = 0
 let resizeStartWidth = 240
 const isResizingMiddle = ref(false)
 
+function toggleMiddleColumn() {
+  if (middleColumnOpen.value) {
+    middleColumnPrevWidth.value = middleColumnWidth.value
+    middleColumnOpen.value = false
+  } else {
+    middleColumnOpen.value = true
+    middleColumnWidth.value = middleColumnPrevWidth.value || 240
+  }
+}
+
 function onMiddleResizeMouseDown(e: MouseEvent) {
   e.preventDefault()
+  if (!middleColumnOpen.value) return
   isResizingMiddle.value = true
   resizeStartX = e.clientX
   resizeStartWidth = middleColumnWidth.value
@@ -706,44 +722,12 @@ async function createNewSession() {
     if (j.status === 'ok' && j.data?.id) {
       selectedGroupSessionId.value = j.data.id
       await fetchGroupSessions()
-      // 新会话创建后，尝试自动生成更具语义的标题
-      try {
-        const autoTitle = generateAiSessionTitle()
-        if (autoTitle) {
-          const r2 = await fetch(`/api/sessions/${encodeURIComponent(j.data.id)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: autoTitle }),
-          })
-          const j2 = await r2.json()
-          if (j2.status === 'ok') {
-            await fetchGroupSessions()
-            if (selectedGroupSessionId.value === j.data.id) {
-              workspaceContentRef.value?.refresh()
-            }
-          }
-        }
-      } catch {
-        // 自动命名失败时静默降级，不影响创建流程
-      }
     } else {
       alert(j.detail || '新建会话失败')
     }
   } finally {
     creatingSession.value = false
   }
-}
-
-/** 基于当前时间生成一个简短的「AI 风格」会话标题 */
-function generateAiSessionTitle(): string {
-  const now = new Date()
-  const ts = now.toLocaleString('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  return `DHA 协作 · ${ts}`
 }
 
 function selectGroupSession(id: string) {

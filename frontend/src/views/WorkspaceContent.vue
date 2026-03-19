@@ -5,14 +5,26 @@
       <div :key="'group-' + (groupDetail?.id ?? '')" class="workspace-group-wrap flex flex-col min-h-0">
         <header class="group-chat-header">
           <div class="group-chat-header-left">
-            <div class="group-chat-archive-anchor">
+            <div
+              :class="['group-chat-archive-anchor', props.middleColumnOpen === false ? 'group-chat-archive-anchor-collapse' : '']"
+            >
+              <button
+                type="button"
+                class="group-chat-header-btn"
+                :aria-label="props.middleColumnOpen === false ? '展开会话列表列' : '收起会话列表列'"
+                @click="emit('middle-column-toggle')"
+              >
+                <span v-if="props.middleColumnOpen === false">▶</span>
+                <span v-else>◀</span>
+              </button>
               <button
                 type="button"
                 class="group-chat-header-btn"
                 :class="[archivePanelOpen && 'group-chat-header-btn-active']"
-                @click="archivePanelOpen = !archivePanelOpen"
+                @click="onArchiveToggleClick"
               >
-                悬浮侧边目录
+                <span v-if="archivePanelOpen">▲</span>
+                <span v-else>▼</span>
               </button>
             </div>
           </div>
@@ -818,12 +830,15 @@ interface MsgExt {
 const props = defineProps<{
   selectedGroupSessionId: string | null
   dhaInstances: { dha_id: string; name: string; role?: string; skill_ids?: string[] }[]
+  middleColumnOpen?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'message-sent'): void
   (e: 'speak-mode-changed'): void
   (e: 'dha-added'): void
+  (e: 'middle-column-open-request'): void
+  (e: 'middle-column-toggle'): void
 }>()
 
 type GroupDetail = {
@@ -906,6 +921,10 @@ function scrollToMessage(messageId: string) {
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+}
+
+function onArchiveToggleClick() {
+  archivePanelOpen.value = !archivePanelOpen.value
 }
 
 type TocSpyEntry = { key: string; el: HTMLElement }
@@ -1016,8 +1035,10 @@ function escapeHtml(s: string) {
 function collapseBlankLines(s: string): string {
   if (!s) return ''
   return s
+    .replace(/\r\n/g, '\n')
     .trim()
-    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
+    // 保留“一个空行”（\n\n）以维持 Markdown 分段与 hr 语义；只把多个空行压缩成一个空行
+    .replace(/\n[ \t]*\n+/g, '\n\n')
     .replace(/^\s+/, '')
     .replace(/\s+$/, '')
     .trim()
@@ -2291,7 +2312,8 @@ function onGroupWorkspaceResizeMouseDown(e: MouseEvent) {
 function onGroupWorkspaceResizeMouseMove(e: MouseEvent) {
   if (!isResizingWorkspace.value) return
   const delta = workspaceResizeStartX - e.clientX
-  const next = Math.min(840, Math.max(420, workspaceResizeStartWidth + delta))
+  // 最小值与 toggleWorkspacePreview() 保持一致，否则首次拖动会被强行跳到更大的宽度
+  const next = Math.min(840, Math.max(320, workspaceResizeStartWidth + delta))
   groupWorkspaceWidth.value = next
 }
 
@@ -2853,6 +2875,10 @@ defineExpose({ refresh: loadGroupDetail })
 /* 归档侧栏（悬浮侧边目录） */
 .group-chat-archive-anchor {
   position: relative;
+}
+
+.group-chat-archive-anchor-collapse {
+  left: -8px;
 }
 
 .group-chat-archive-panel {

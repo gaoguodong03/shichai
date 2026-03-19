@@ -466,8 +466,10 @@ const md = new MarkdownIt({
 function collapseBlankLines(s: string): string {
   if (!s) return ''
   return s
+    .replace(/\r\n/g, '\n')
     .trim()
-    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
+    // 保留“一个空行”（\n\n）以维持 Markdown 分段与 hr 语义；只把多个空行压缩成一个空行
+    .replace(/\n[ \t]*\n+/g, '\n\n')
     .replace(/^\s+/, '')
     .replace(/\s+$/, '')
     .trim()
