@@ -5,13 +5,14 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage  # type: ignore
@@ -27,6 +28,7 @@ from app.mcp.manager import get_mcp_manager
 from app.skills.loader import get_skills_loader
 from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.user_context import get_current_user_context
+from app.core.security import CurrentUser, user_context_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -949,7 +951,10 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
 
 
 @router.delete("/group-sessions/{group_session_id}")
-async def delete_group_session(group_session_id: str):
+async def delete_group_session(
+    group_session_id: str,
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
     """删除群聊会话：同时删除 meta、群聊历史文件与该会话的工作区目录。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
@@ -962,10 +967,8 @@ async def delete_group_session(group_session_id: str):
         path.unlink()
     # 删除该会话对应的工作区目录（若存在）
     try:
-        ws_root = get_workspace_root_path(group_session_id)
+        ws_root = get_workspace_root_path(group_session_id, user=current_user)
         if ws_root.exists() and ws_root.is_dir():
-            import shutil
-
             shutil.rmtree(ws_root)
     except Exception:
         logger.warning("删除群聊 %s 的 workspace 目录失败，可手动清理。", group_session_id, exc_info=True)

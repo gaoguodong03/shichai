@@ -333,6 +333,41 @@
               <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '—' }}</div>
             </button>
           </template>
+          <!-- 文件 -->
+          <template v-else-if="resourceSubModule === 'files'">
+            <div class="px-3 mb-2 space-y-2">
+              <input
+                v-model="fileSessionSearch"
+                type="text"
+                placeholder="搜索会话（标题/ID）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <select
+                v-model="fileSessionSort"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              >
+                <option value="updated_desc">按更新时间（新→旧）</option>
+                <option value="updated_asc">按更新时间（旧→新）</option>
+                <option value="file_count_desc">按文件数（多→少）</option>
+                <option value="file_count_asc">按文件数（少→多）</option>
+              </select>
+            </div>
+            <div v-if="fileSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <div v-else-if="!visibleFileSessions.length" class="px-3 py-4 text-sm text-muted">无匹配会话</div>
+            <button
+              v-else
+              v-for="s in visibleFileSessions"
+              :key="s.id"
+              @click="selectedId = s.id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              <div class="truncate font-medium">{{ displaySessionTitle(s) }}</div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ s.file_count }} 个文件 · {{ formatDate(s.updated_at) }}</div>
+            </button>
+          </template>
         </template>
         <!-- 设置 -->
         <template v-else-if="currentModule === 'settings'">
@@ -411,6 +446,12 @@
             @updated="(id: string | undefined) => { fetchLLM(); if (id) selectedId = id }"
           />
         </template>
+        <template v-else-if="resourceSubModule === 'files'">
+          <WorkspaceFilesView
+            :session-id="selectedId"
+            :session-title="fileSessions.find((x) => x.id === selectedId)?.title || ''"
+          />
+        </template>
       </template>
       <!-- 设置 -->
       <template v-if="currentModule === 'settings'">
@@ -442,6 +483,7 @@ import ThemeSettingsView from './ThemeSettingsView.vue'
 import LLMSettingsView from './LLMSettingsView.vue'
 import DHAView from './DHAView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
+import WorkspaceFilesView from './WorkspaceFilesView.vue'
 import { useTheme } from '@/composables/useTheme'
 import './MainView.css'
 
@@ -460,7 +502,7 @@ function logout() {
 }
 
 type ModuleId = 'workspace' | 'resource' | 'settings'
-type ResourceSubModule = 'dha' | 'skill' | 'mcp' | 'llm'
+type ResourceSubModule = 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
 
 const navItems: { id: ModuleId; label: string }[] = [
   { id: 'workspace', label: '工作空间' },
@@ -473,6 +515,7 @@ const resourceTabs: { id: ResourceSubModule; label: string }[] = [
   { id: 'skill', label: 'Skill' },
   { id: 'mcp', label: 'MCP' },
   { id: 'llm', label: 'LLM' },
+  { id: 'files', label: '文件' },
 ]
 
 const currentModule = ref<ModuleId>('workspace')
@@ -487,6 +530,30 @@ const llmDefault = ref<string>('qwen')
 const llmProviders = ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>({})
 const llmLoading = ref(false)
 const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
+const fileSessions = ref<{ id: string; title: string; updated_at: string; file_count: number }[]>([])
+const fileSessionsLoading = ref(false)
+const fileSessionSearch = ref('')
+const fileSessionSort = ref<'updated_desc' | 'updated_asc' | 'file_count_desc' | 'file_count_asc'>('updated_desc')
+const visibleFileSessions = computed(() => {
+  const q = (fileSessionSearch.value || '').trim().toLowerCase()
+  const list = (fileSessions.value || []).filter((s) => {
+    if (!q) return true
+    const title = (s.title || '').toLowerCase()
+    const id = (s.id || '').toLowerCase()
+    return title.includes(q) || id.includes(q)
+  })
+  const arr = [...list]
+  if (fileSessionSort.value === 'updated_desc') {
+    arr.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+  } else if (fileSessionSort.value === 'updated_asc') {
+    arr.sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''))
+  } else if (fileSessionSort.value === 'file_count_desc') {
+    arr.sort((a, b) => (b.file_count || 0) - (a.file_count || 0))
+  } else {
+    arr.sort((a, b) => (a.file_count || 0) - (b.file_count || 0))
+  }
+  return arr
+})
 
 // 资源中心列表搜索（专家 / Skill / MCP）
 const showDhaSearch = ref(false)
@@ -666,6 +733,7 @@ function onNavClick(item: { id: ModuleId }) {
     fetchSkills()
     fetchMCP()
     fetchLLM()
+    fetchFileSessions()
   }
 }
 
@@ -854,6 +922,55 @@ async function fetchLLM() {
   }
 }
 
+async function fetchFileSessions() {
+  fileSessionsLoading.value = true
+  try {
+    const r = await fetch('/api/workspaces/sessions-with-files')
+    if (r.ok) {
+      const j = await r.json()
+      if (j?.status === 'ok' && j?.data?.sessions) {
+        fileSessions.value = j.data.sessions
+      } else {
+        fileSessions.value = []
+      }
+    } else {
+      // 兼容后端尚未重启到新路由的场景：前端本地回退计算“有文件会话”
+      const sRes = await fetch('/api/sessions')
+      const sJson = await sRes.json()
+      const sessions = (sJson?.status === 'ok' ? (sJson?.data?.sessions || []) : []) as Array<{ id: string; title?: string; updated_at?: string }>
+      const withFiles: { id: string; title: string; updated_at: string; file_count: number }[] = []
+      for (const s of sessions) {
+        const fr = await fetch(`/api/workspaces/${encodeURIComponent(s.id)}/files`)
+        if (!fr.ok) continue
+        const fj = await fr.json()
+        const entries = (fj?.status === 'ok' ? (fj?.data?.entries || []) : []) as Array<{ is_dir?: boolean }>
+        const fileCount = entries.filter((e) => !e.is_dir).length
+        if (fileCount > 0) {
+          withFiles.push({
+            id: s.id,
+            title: s.title || '新对话',
+            updated_at: s.updated_at || '',
+            file_count: fileCount,
+          })
+        }
+      }
+      fileSessions.value = withFiles
+    }
+    if (resourceSubModule.value === 'files') {
+      const ids = visibleFileSessions.value.map((s) => s.id)
+      if (selectedId.value && !ids.includes(selectedId.value)) {
+        selectedId.value = ids[0] || null
+      } else if (!selectedId.value) {
+        selectedId.value = ids[0] || null
+      }
+    }
+  } catch {
+    fileSessions.value = []
+  } finally {
+    fileSessionsLoading.value = false
+  }
+}
+
 function onSkillCreated(id: string) {
   selectedId.value = id
   fetchSkills()
@@ -896,6 +1013,7 @@ watch(currentModule, (mod) => {
     if (resourceSubModule.value === 'mcp') fetchMCP()
     if (resourceSubModule.value === 'dha') fetchDHA()
     if (resourceSubModule.value === 'llm') fetchLLM()
+    if (resourceSubModule.value === 'files') fetchFileSessions()
   }
   if (mod === 'settings') selectedId.value = 'app'
   if (mod === 'workspace') {
@@ -917,6 +1035,7 @@ watch(resourceSubModule, (sub) => {
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()
   if (sub === 'llm') fetchLLM()
+  if (sub === 'files') fetchFileSessions()
 })
 
 // 初始加载：切到对应模块时再请求数据

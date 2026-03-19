@@ -1,5 +1,6 @@
 """Agent 产出文件 API - 文件系统模块用"""
 import os
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
@@ -74,6 +75,47 @@ def _resolve_workspace_path(workspace_id: str, relative_path: str, user: Current
 # 以下带子路径的路由（如 /files/mkdir）必须注册在 /files 之前，否则 POST /files 可能先匹配导致 404
 class DirCreateBody(BaseModel):
     dirname: str
+
+
+def _count_files_recursively(root: Path) -> int:
+    """统计目录下文件数量（递归）。"""
+    if not root.exists() or not root.is_dir():
+        return 0
+    count = 0
+    for _, _, files in os.walk(root):
+        count += len(files)
+    return count
+
+
+@router.get("/workspaces/sessions-with-files")
+async def list_sessions_with_workspace_files(
+    current_user: CurrentUser = Depends(user_context_dependency),
+):
+    """返回有工作区文件的会话列表；空工作区会被自动清理。"""
+    # 延迟导入，避免与 group_chat 形成模块加载循环
+    from app.api.group_chat import _load_group_meta
+
+    meta = _load_group_meta()
+    sessions = []
+    for session_id, session_meta in meta.items():
+        ws_root = get_workspace_root_path(session_id, user=current_user)
+        file_count = _count_files_recursively(ws_root)
+        # 约束：没有文件的会话不应有工作区。若目录存在但为空，顺手清理。
+        if file_count == 0:
+            try:
+                if ws_root.exists() and ws_root.is_dir():
+                    shutil.rmtree(ws_root)
+            except Exception:
+                pass
+            continue
+        sessions.append({
+            "id": session_id,
+            "title": session_meta.get("title", "新对话"),
+            "updated_at": session_meta.get("updated_at", ""),
+            "file_count": file_count,
+        })
+    sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+    return {"status": "ok", "data": {"sessions": sessions}}
 
 
 @router.post("/workspaces/{workspace_id}/files/mkdir")
