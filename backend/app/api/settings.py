@@ -6,9 +6,12 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import tempfile
 import uuid
 import yaml
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -797,10 +800,11 @@ class SkillCreate(BaseModel):
     """创建 Skill 请求"""
     name: str
     description: Optional[str] = None
-    source: str  # local or remote
+    source: str = "local"  # local or git
     path: Optional[str] = None
     url: Optional[str] = None
     enabled: bool = True
+    write_mode: str = "readonly"  # readonly or workspace_all
 
 class SkillUpdate(BaseModel):
     """更新 Skill 请求"""
@@ -812,6 +816,109 @@ class SkillUpdate(BaseModel):
     enabled: Optional[bool] = None
     body: Optional[str] = None  # SKILL.md frontmatter 之后的正文
     mcp_server_ids: Optional[List[str]] = None  # 该 skill 依赖的 MCP server id 列表，空表示只用内置工具
+    write_mode: Optional[str] = None  # readonly or workspace_all
+
+
+_GIT_URL_RE = re.compile(r"^(https://[^\s]+|git@[^\s:]+:[^\s]+)$")
+
+
+def _validate_skill_write_mode(write_mode: str) -> str:
+    mode = (write_mode or "readonly").strip()
+    if mode not in {"readonly", "workspace_all"}:
+        raise HTTPException(status_code=400, detail="Invalid write_mode, must be readonly or workspace_all")
+    return mode
+
+
+def _validate_git_url(url: Optional[str]) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="url is required when source=git")
+    if ".." in raw:
+        raise HTTPException(status_code=400, detail="Invalid git url")
+    if not _GIT_URL_RE.match(raw):
+        raise HTTPException(status_code=400, detail="Only https:// or git@ URLs are allowed")
+    return raw
+
+
+def _normalize_git_import_source(url: str) -> tuple[str, str]:
+    """将导入 URL 归一化为 (clone_url, subdir)。
+
+    支持：
+    - https://github.com/owner/repo(.git)
+    - https://github.com/owner/repo/tree/<branch>/<subdir>
+    - git@github.com:owner/repo(.git)
+    """
+    raw = _validate_git_url(url)
+    if raw.startswith("git@"):
+        return (raw if raw.endswith(".git") else f"{raw}.git", "")
+    p = urlparse(raw)
+    path_parts = [x for x in p.path.split("/") if x]
+    if len(path_parts) >= 2 and path_parts[2:3] == ["tree"]:
+        owner, repo = path_parts[0], path_parts[1]
+        subdir_parts = path_parts[4:]  # tree/<branch>/<subdir...>
+        subdir = "/".join(subdir_parts).strip("/")
+        if ".." in subdir:
+            raise HTTPException(status_code=400, detail="Invalid git tree path")
+        clone_url = f"{p.scheme}://{p.netloc}/{owner}/{repo}.git"
+        return clone_url, subdir
+    return (raw if raw.endswith(".git") else f"{raw}.git", "")
+
+
+def _refresh_skills_loader():
+    """刷新全局 SkillsLoader 缓存，确保新导入技能立即可见。"""
+    from app.skills.loader import get_skills_loader
+
+    loader = get_skills_loader()
+    loader.skills_dir = _get_skills_dir()
+    loader.load_all_skills()
+
+
+def _run_git(repo_dir: Path, args: List[str], timeout_sec: int = 120) -> None:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(repo_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            env={**os.environ},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Git command failed: {e}")
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout or "").strip()
+        raise HTTPException(status_code=400, detail=f"Git command failed: {msg}")
+
+
+def _import_skill_from_git(skill_dir: Path, git_url: str) -> None:
+    """将 skill 同步到 skill_dir。目录存在则 pull，不存在则 clone。"""
+    timeout_sec = int(os.getenv("SKILL_GIT_TIMEOUT", "120"))
+    if (skill_dir / ".git").is_dir():
+        _run_git(skill_dir, ["fetch", "--all"], timeout_sec=timeout_sec)
+        _run_git(skill_dir, ["pull", "--ff-only"], timeout_sec=timeout_sec)
+    elif skill_dir.exists():
+        raise HTTPException(status_code=400, detail="Skill directory exists but is not a git repository")
+    else:
+        parent = skill_dir.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        _run_git(parent, ["clone", git_url, skill_dir.name], timeout_sec=timeout_sec)
+
+
+def _import_skill_from_git_subdir(skill_dir: Path, git_url: str, subdir: str) -> None:
+    """从 git 仓库的子目录导入 skill 内容到 skill_dir。"""
+    timeout_sec = int(os.getenv("SKILL_GIT_TIMEOUT", "120"))
+    with tempfile.TemporaryDirectory(prefix="skill-import-") as tmp:
+        tmp_path = Path(tmp).resolve()
+        _run_git(tmp_path, ["clone", git_url, "repo"], timeout_sec=timeout_sec)
+        src_root = (tmp_path / "repo").resolve()
+        source = (src_root / subdir).resolve() if subdir else src_root
+        if not str(source).startswith(str(src_root)) or not source.is_dir():
+            raise HTTPException(status_code=400, detail=f"Skill subdir not found: {subdir}")
+        if not (source / "SKILL.md").is_file():
+            raise HTTPException(status_code=400, detail="SKILL.md not found in imported path")
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir)
+        shutil.copytree(source, skill_dir)
 
 def load_skills_config() -> List[Dict[str, Any]]:
     """加载 Skills 配置"""
@@ -842,9 +949,12 @@ def load_skills_config() -> List[Dict[str, Any]]:
                                 "name": frontmatter.get("name", skill_id),
                                 "description": frontmatter.get("description", ""),
                                 "enabled": frontmatter.get("enabled", True),
-                                "source": "local",
+                                "source": frontmatter.get("source", "local"),
                                 "path": str(skill_dir),
+                                "write_mode": frontmatter.get("write_mode", "readonly"),
                             }
+                            if frontmatter.get("url"):
+                                item["url"] = frontmatter.get("url")
                             if "mcp_server_ids" in frontmatter:
                                 item["mcp_server_ids"] = mcp_ids
                             skills.append(item)
@@ -899,6 +1009,12 @@ def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
         return [x for x in (s.get("mcp_server_ids") or []) if x in enabled_ids]
     return [x for x in list(_SKILL_MCP_SERVERS_FALLBACK.get(skill_id, [])) if x in enabled_ids]
 
+
+def get_write_mode_for_skill(skill_id: str) -> str:
+    """返回 skill 的写入模式。未配置时默认为 readonly。"""
+    _ = skill_id
+    return "workspace_all"
+
 @router.get("/settings/skills")
 async def get_skills():
     """获取 Skills 列表"""
@@ -923,30 +1039,57 @@ async def create_skill(skill: SkillCreate):
     """创建 Skill：在 skills 目录下创建 <id>/SKILL.md"""
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
+    source = (skill.source or "local").strip().lower()
+    if source not in {"local", "git"}:
+        raise HTTPException(status_code=400, detail="source must be local or git")
+    write_mode = "workspace_all"
     raw_id = _slugify(skill.name)
     skill_id = raw_id
-    idx = 0
-    while (base / skill_id).exists():
-        idx += 1
-        skill_id = f"{raw_id}-{idx}"
+    if source == "local":
+        idx = 0
+        while (base / skill_id).exists():
+            idx += 1
+            skill_id = f"{raw_id}-{idx}"
     skill_dir = base / skill_id
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    body = "\n## 说明\n\n（待补充）\n"
-    frontmatter = {
-        "name": skill.name,
-        "description": skill.description or "",
-        "enabled": skill.enabled,
-    }
-    content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
-    (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+    if source == "git":
+        git_url, git_subdir = _normalize_git_import_source(skill.url or "")
+        if git_subdir:
+            _import_skill_from_git_subdir(skill_dir, git_url, git_subdir)
+        else:
+            _import_skill_from_git(skill_dir, git_url)
+        fm, body = _read_skill_file(skill_dir)
+        fm["name"] = skill.name or fm.get("name", skill_id)
+        if skill.description is not None:
+            fm["description"] = skill.description
+        else:
+            fm["description"] = fm.get("description", "")
+        fm["enabled"] = skill.enabled
+        fm["source"] = "git"
+        fm["url"] = skill.url or git_url
+        fm["write_mode"] = write_mode
+        _write_skill_file(skill_dir, fm, body)
+    else:
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        body = "\n## 说明\n\n（待补充）\n"
+        frontmatter = {
+            "name": skill.name,
+            "description": skill.description or "",
+            "enabled": skill.enabled,
+            "source": "local",
+            "write_mode": "workspace_all",
+        }
+        content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
+        (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+    _refresh_skills_loader()
     new_skill = {
         "id": skill_id,
         "name": skill.name,
         "description": skill.description or "",
         "enabled": skill.enabled,
-        "source": "local",
+        "source": source,
         "path": str(skill_dir),
         "url": skill.url,
+        "write_mode": "workspace_all",
     }
     return {"status": "ok", "data": new_skill}
 
@@ -987,9 +1130,22 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
         fm["enabled"] = skill_update.enabled
     if skill_update.mcp_server_ids is not None:
         fm["mcp_server_ids"] = skill_update.mcp_server_ids
+    if skill_update.write_mode is not None:
+        fm["write_mode"] = "workspace_all"
+    if skill_update.source is not None:
+        src = (skill_update.source or "").strip().lower()
+        if src not in {"local", "git"}:
+            raise HTTPException(status_code=400, detail="source must be local or git")
+        fm["source"] = src
+    if skill_update.url is not None:
+        if fm.get("source", "local") == "git":
+            fm["url"] = _validate_git_url(skill_update.url)
+        else:
+            fm["url"] = skill_update.url
     if skill_update.body is not None:
         body = skill_update.body
     _write_skill_file(skill_dir, fm, body)
+    _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "updated": True}}
 
 @router.delete("/settings/skills/{skill_id}")
@@ -1000,6 +1156,7 @@ async def delete_skill(skill_id: str):
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
     shutil.rmtree(skill_dir)
+    _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "deleted": True}}
 
 @router.post("/settings/skills/{skill_id}/enable")
@@ -1012,6 +1169,7 @@ async def enable_skill(skill_id: str):
     fm, body = _read_skill_file(skill_dir)
     fm["enabled"] = True
     _write_skill_file(skill_dir, fm, body)
+    _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "enabled": True}}
 
 @router.post("/settings/skills/{skill_id}/disable")
@@ -1024,6 +1182,7 @@ async def disable_skill(skill_id: str):
     fm, body = _read_skill_file(skill_dir)
     fm["enabled"] = False
     _write_skill_file(skill_dir, fm, body)
+    _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "enabled": False}}
 
 
@@ -1050,6 +1209,9 @@ async def get_skill_content(skill_id: str):
             "name": fm.get("name", skill_id),
             "description": fm.get("description", ""),
             "enabled": fm.get("enabled", True),
+            "source": fm.get("source", "local"),
+            "url": fm.get("url"),
+            "write_mode": fm.get("write_mode", "readonly"),
             "body": body,
             "mcp_server_ids": mcp_ids,
         },

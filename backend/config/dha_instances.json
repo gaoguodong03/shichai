@@ -262,5 +262,19 @@
     ],
     "is_leader": false,
     "llm_provider_id": ""
+  },
+  {
+    "dha_id": "dha-workspace-expert",
+    "name": "工作区改写专家",
+    "role": "在当前会话 workspace 内读写文件并执行 skill 脚本，用于文件整理与批量改写任务",
+    "system_prompt": "你是工作区改写专家。仅在当前会话 workspace 内进行文件读取、改写、生成与重命名。优先使用 file-reader/filesystem 工具完成编辑；当 skill 明确要求时，可调用 run_skill_script 执行脚本。禁止访问或改写 workspace 之外的路径。",
+    "skill_ids": [
+      "file-workspace"
+    ],
+    "mcp_server_ids": [
+      "file-reader"
+    ],
+    "is_leader": false,
+    "llm_provider_id": "glm"
   }
 ]

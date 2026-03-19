@@ -55,7 +55,7 @@
                     : 'bg-purple-100 text-purple-700'
                 ]"
               >
-                {{ skill.source === 'local' ? '本地' : '远程' }}
+                {{ skill.source === 'local' ? '本地' : 'Git' }}
               </span>
             </div>
             <p v-if="skill.description" class="text-sm text-gray-600 mb-2">
@@ -132,7 +132,7 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="local">本地</option>
-                <option value="remote">远程 URL</option>
+                <option value="git">Git URL</option>
               </select>
             </div>
 
@@ -150,8 +150,8 @@
               />
             </div>
 
-            <!-- 远程 URL -->
-            <div v-if="formData.source === 'remote'">
+            <!-- Git URL -->
+            <div v-if="formData.source === 'git'">
               <label class="block text-sm font-medium text-gray-700 mb-1">
                 URL *
               </label>
@@ -162,6 +162,16 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="例如：https://example.com/skills/data-analysis"
               />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">写入模式</label>
+              <select
+                v-model="formData.write_mode"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="readonly">readonly（只读）</option>
+                <option value="workspace_all">workspace_all（可改会话工作区）</option>
+              </select>
             </div>
 
             <div>
@@ -206,9 +216,10 @@ interface Skill {
   name: string
   description?: string
   enabled: boolean
-  source: 'local' | 'remote'
+  source: 'local' | 'git'
   path?: string
   url?: string
+  write_mode?: 'readonly' | 'workspace_all'
 }
 
 const skills = ref<Skill[]>([])
@@ -219,9 +230,10 @@ const editingSkill = ref<Skill | null>(null)
 const formData = ref({
   name: '',
   description: '',
-  source: 'local' as 'local' | 'remote',
+  source: 'local' as 'local' | 'git',
   path: '',
-  url: ''
+  url: '',
+  write_mode: 'readonly' as 'readonly' | 'workspace_all',
 })
 
 const loadSkills = async () => {
@@ -246,6 +258,7 @@ const saveSkill = async () => {
       name: formData.value.name,
       description: formData.value.description,
       source: formData.value.source,
+      write_mode: formData.value.write_mode,
       ...(editingSkill.value?.id ? { id: editingSkill.value.id } : {}),
     }
     if (formData.value.source === 'local') payload.path = formData.value.path
@@ -270,7 +283,8 @@ const editSkill = (skill: Skill) => {
     description: skill.description || '',
     source: skill.source,
     path: skill.path || '',
-    url: skill.url || ''
+    url: skill.url || '',
+    write_mode: skill.write_mode || 'readonly',
   }
   showAddModal.value = true
 }
@@ -308,7 +322,8 @@ const closeModal = () => {
     description: '',
     source: 'local',
     path: '',
-    url: ''
+    url: '',
+    write_mode: 'readonly',
   }
 }
 

@@ -54,7 +54,7 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
     body = {
         "prompt": description,
         "n": 1,
-        "model": "dall-e-3",
+        "model": "gemini-3.1-flash-lite-preview",
         "size": pic_size,
     }
 

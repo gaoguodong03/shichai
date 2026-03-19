@@ -11,9 +11,10 @@ export async function getSkillsList(): Promise<
 export async function saveSkill(payload: {
   name: string
   description?: string
-  source: 'local' | 'remote'
+  source: 'local' | 'git'
   path?: string
   url?: string
+  write_mode?: 'readonly' | 'workspace_all'
   id?: string
 }): Promise<ApiResult> {
   const path = payload.id ? `/settings/skills/${payload.id}` : '/settings/skills'

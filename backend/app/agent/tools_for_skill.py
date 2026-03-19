@@ -1,8 +1,8 @@
 """按 DHA 组装工具列表的统一入口（统一会话，单聊已下线）。
 
 使用 build_tools_for_group_chat：按 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖过滤 →
-叠加只读 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> →
-过滤写文件 → wrap。
+叠加 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> →
+按 skill 写入策略过滤写文件 → wrap。
 """
 from typing import Any, Dict, List
 
@@ -20,14 +20,14 @@ def _is_write_tool(name: str) -> bool:
     return (name or "") == "file-reader_write_file"
 
 
-def _readonly_file_tools(all_tools: List) -> List:
-    """从 all_tools 中筛出只读的 file-reader 与 filesystem 工具。"""
+def _file_tools(all_tools: List, allow_write: bool) -> List:
+    """从 all_tools 中筛出 file-reader 与 filesystem 工具。allow_write=False 时仅保留只读工具。"""
     result = []
     for t in all_tools:
         n = getattr(t, "name", "")
-        if n.startswith("filesystem_") and not _is_write_tool(n):
+        if n.startswith("filesystem_") and (allow_write or not _is_write_tool(n)):
             result.append(t)
-        elif n.startswith("file-reader_") and n != "file-reader_write_file":
+        elif n.startswith("file-reader_") and (allow_write or n != "file-reader_write_file"):
             result.append(t)
     return result
 
@@ -50,6 +50,9 @@ async def build_tools_for_group_chat(
         for sid in skill_ids:
             server_ids.extend(get_mcp_servers_for_skill(sid))
         server_ids = list(dict.fromkeys(server_ids))
+    else:
+        skill_ids = dha.get("skill_ids") or []
+    allow_write = True
 
     # 需要时才连接/加载懒加载的 MCP server
     if server_ids:
@@ -61,15 +64,16 @@ async def build_tools_for_group_chat(
         tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in server_ids]
     else:
         tools = []
-    file_tools = _readonly_file_tools(all_tools)
+    file_tools = _file_tools(all_tools, allow_write=allow_write)
     tool_names = {getattr(t, "name", "") for t in tools}
     tools = tools + [t for t in file_tools if getattr(t, "name", "") not in tool_names] + [call_api]
     # 为 DHA 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
     for skill_id in (dha.get("skill_ids") or []):
-        run_tool = create_run_skill_script_tool(skill_id)
+        run_tool = create_run_skill_script_tool(skill_id, workspace_id, "workspace_all")
         run_tool.name = f"run_skill_script_{skill_id}"
         if run_tool.name not in tool_names:
             tools.append(run_tool)
             tool_names.add(run_tool.name)
-    tools = [t for t in tools if not _is_write_tool(getattr(t, "name", ""))]
+    if not allow_write:
+        tools = [t for t in tools if not _is_write_tool(getattr(t, "name", ""))]
     return wrap_filesystem_tools(tools, workspace_id)

@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col h-full bg-white overflow-y-auto">
     <header class="border-b border-gray-200 px-4 py-3">
-      <h1 class="text-lg font-semibold text-gray-800">添加 Skill</h1>
+      <h1 class="text-lg font-semibold text-gray-800">导入 Skill</h1>
     </header>
     <form @submit.prevent="submit" class="flex-1 overflow-y-auto p-4 space-y-4">
       <div>
@@ -13,6 +13,17 @@
           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="例如：我的技能"
         />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">导入链接（Git URL）*</label>
+        <input
+          v-model="form.url"
+          type="text"
+          required
+          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="https://github.com/owner/repo.git 或 https://github.com/owner/repo/tree/main/.claude"
+        />
+        <p class="mt-1 text-xs text-gray-500">支持仓库地址和 GitHub tree 子目录地址；导入目录内需包含 `SKILL.md`。</p>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
@@ -46,10 +57,19 @@ import { ref } from 'vue'
 const emit = defineEmits<{ (e: 'created', id: string): void }>()
 
 const saving = ref(false)
-const form = ref({ name: '', description: '', enabled: true })
+const form = ref({
+  name: '',
+  description: '',
+  url: '',
+  enabled: true,
+})
 
 async function submit() {
   if (!form.value.name.trim()) return
+  if (!form.value.url.trim()) {
+    alert('请填写 Git URL')
+    return
+  }
   saving.value = true
   try {
     const r = await fetch('/api/settings/skills', {
@@ -58,7 +78,8 @@ async function submit() {
       body: JSON.stringify({
         name: form.value.name.trim(),
         description: form.value.description?.trim() || '',
-        source: 'local',
+        source: 'git',
+        url: form.value.url.trim(),
         enabled: form.value.enabled,
       }),
     })

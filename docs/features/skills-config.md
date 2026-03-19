@@ -60,15 +60,40 @@ Skills 采用渐进式披露机制，优化上下文使用：
 - **渐进式加载**：按需加载技能内容，优化性能
 - **技能激活**：Agent 根据上下文自动激活相关技能
 - **技能组合**：多个技能可以组合使用
-- **本地/远程技能**：支持本地目录和远程 URL
+- **本地/Git 技能**：支持本地创建与 Git URL 导入（`source=git`）
 
 ## 实现要点
 
-- **技能存储**：管理技能目录路径或 URL
+- **技能存储**：管理技能目录路径与 Git 来源 URL（frontmatter `source/url`）
 - **技能加载器**：实现渐进式披露加载机制
 - **技能解析**：解析 SKILL.md 的 YAML frontmatter 和 Markdown 内容
 - **Agent 集成**：在 Agent 提示词中注入激活的技能指令
 - **资源管理**：按需加载 scripts、references、assets
+
+## 当前后端能力（与 API 对齐）
+
+- 创建技能 `POST /api/settings/skills`：
+  - 本地技能：`source=local`（默认）
+  - Git 导入：`source=git` + `url=<https://... | git@...>`
+  - 导入行为：目录不存在时 `git clone`，目录已存在且为 Git 仓库时 `fetch + pull --ff-only`
+- 技能元数据 frontmatter：
+  - `source: local | git`
+  - `url: <git repo url>`
+  - `write_mode: readonly | workspace_all`
+
+## 专家写入策略
+
+- 默认 `write_mode=readonly`：
+  - 仅暴露只读文件工具；
+  - 禁止 `run_skill_script_<skill_id>` 执行脚本。
+- 专家模式 `write_mode=workspace_all`：
+  - 允许会话文件工具写入；
+  - 允许脚本执行，脚本在当前会话工作区目录运行，并注入以下环境变量：
+    - `SKILL_WORKSPACE_ID`
+    - `SKILL_WORKSPACE_ROOT`
+    - `SKILL_SCRIPT_ROOT`
+
+建议将需要改文件的专家 skill 显式设置为 `workspace_all`，其他 skill 保持只读。
 
 ## 与 MCP 工具的区别
 

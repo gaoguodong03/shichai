@@ -109,5 +109,41 @@
     "speak_mode": "auto",
     "created_at": "2026-03-19T02:35:48.178282+00:00",
     "updated_at": "2026-03-19T08:18:02.676426+00:00"
+  },
+  "group-c5dccf97748c": {
+    "title": "生成自然风景图像",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T08:56:52.144997+00:00",
+    "updated_at": "2026-03-19T08:57:18.167802+00:00"
+  },
+  "group-02a31881ab86": {
+    "title": "生成博客文章及封面配图",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-195b8c3a",
+      "dha-440b26f8",
+      "dha-web-fetch"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T08:58:02.613587+00:00",
+    "updated_at": "2026-03-19T09:05:39.533151+00:00"
+  },
+  "group-46142b265deb": {
+    "title": "任务文件处理与图片生成",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-file-workspace",
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T09:06:28.544943+00:00",
+    "updated_at": "2026-03-19T09:10:12.946757+00:00"
   }
 }

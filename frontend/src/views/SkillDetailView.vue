@@ -9,10 +9,6 @@
         <input v-model="form.enabled" type="checkbox" id="skill-enabled" class="rounded border-gray-300" />
         <label for="skill-enabled" class="text-sm text-gray-700">启用</label>
       </div>
-      <div class="flex items-center gap-2 min-w-0 max-w-[280px]">
-        <span class="text-xs font-medium text-gray-500 whitespace-nowrap">路径</span>
-        <span class="text-xs text-gray-600 truncate" :title="skill.path">{{ skill.path }}</span>
-      </div>
       <div class="flex gap-2 ml-auto">
         <button
           v-if="skill"
@@ -191,13 +187,19 @@ const tabs = [
   { id: 'scripts', label: 'Scripts' },
 ]
 
-const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string; mcp_server_ids?: string[] } | null>(null)
-const skillContent = ref<{ raw: string; name: string; description: string; enabled: boolean; body: string; mcp_server_ids?: string[] }>({ raw: '', name: '', description: '', enabled: true, body: '', mcp_server_ids: [] })
+const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string; url?: string; write_mode?: 'readonly' | 'workspace_all'; mcp_server_ids?: string[] } | null>(null)
+const skillContent = ref<{ raw: string; name: string; description: string; enabled: boolean; source?: string; url?: string; write_mode?: 'readonly' | 'workspace_all'; body: string; mcp_server_ids?: string[] }>({ raw: '', name: '', description: '', enabled: true, source: 'local', url: '', write_mode: 'readonly', body: '', mcp_server_ids: [] })
 const loading = ref(false)
 const contentLoading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
-const form = ref({ name: '', description: '', enabled: true, body: '', mcp_server_ids: [] as string[] })
+const form = ref({
+  name: '',
+  description: '',
+  enabled: true,
+  body: '',
+  mcp_server_ids: [] as string[],
+})
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 
@@ -271,6 +273,9 @@ async function loadContent() {
         name: j.data.name ?? '',
         description: j.data.description ?? '',
         enabled: j.data.enabled ?? true,
+        source: j.data.source ?? 'local',
+        url: j.data.url ?? '',
+        write_mode: (j.data.write_mode ?? 'readonly') as 'readonly' | 'workspace_all',
         body: j.data.body ?? '',
         mcp_server_ids: j.data.mcp_server_ids ?? [],
       }
@@ -336,6 +341,7 @@ async function save() {
         name: form.value.name.trim(),
         description: form.value.description?.trim() ?? '',
         enabled: form.value.enabled,
+        write_mode: 'workspace_all',
         body: form.value.body ?? '',
         mcp_server_ids: form.value.mcp_server_ids ?? [],
       }),

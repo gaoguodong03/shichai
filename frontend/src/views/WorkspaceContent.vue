@@ -169,6 +169,24 @@
                 <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
+              <div v-if="activeStreamingMessage" class="group-chat-speaker-status-input">
+                <span class="group-chat-speaker-status-dot" aria-hidden="true" />
+                <span class="group-chat-speaker-status-text">
+                  正在运行：{{ activeStreamingSpeakerName }}{{ streamingPulse }}
+                </span>
+              </div>
+              <div
+                v-else-if="groupAutoConfirm && groupWaitingForUser"
+                class="group-chat-speaker-status-input group-chat-speaker-status-paused"
+              >
+                <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
+                <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
+                <span class="group-chat-speaker-status-sub">下一位：{{ effectiveNextSpeakerName }}</span>
+              </div>
+              <div v-else-if="groupStreaming" class="group-chat-speaker-status-input group-chat-speaker-status-ready">
+                <span class="group-chat-speaker-status-dot" aria-hidden="true" />
+                <span class="group-chat-speaker-status-text">{{ groupStreamingPhase || '正在运行' }}</span>
+              </div>
               <div class="group-chat-input-blocks">
                 <div v-if="attachedFiles.length" class="group-chat-file-tags">
                   <button
@@ -2397,6 +2415,14 @@ const streamingPulse = computed(() => {
   return ['', '.', '..', '...'][bucket] || ''
 })
 
+const effectiveNextSpeakerName = computed(() => {
+  const id = effectiveNextSpeaker.value
+  if (!id) return ''
+  if (id === 'host') return '主持人'
+  const map = groupDetail.value?.dha_map || {}
+  return map[id]?.name || id
+})
+
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
 function appendStreamingContent(dhaId: string, text: string) {
   const list = [...groupDisplayMessages.value]
@@ -3553,6 +3579,68 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-streaming-hint {
   margin: 0 0 0.5rem 0;
   font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.group-chat-speaker-status-input {
+  margin: 0 0 0.5rem 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  background: var(--color-card);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.group-chat-speaker-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  animation: groupChatSpeakerStatusPulse 1s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+.group-chat-speaker-status-dot-muted {
+  background: var(--color-border-light);
+  animation: none;
+}
+
+@keyframes groupChatSpeakerStatusPulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+}
+
+.group-chat-speaker-status-text {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-chat-speaker-status-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.group-chat-speaker-status-paused .group-chat-speaker-status-text {
+  color: var(--color-text-muted);
+}
+
+.group-chat-speaker-status-ready .group-chat-speaker-status-text {
   color: var(--color-text-muted);
 }
 

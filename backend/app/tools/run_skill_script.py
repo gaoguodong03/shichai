@@ -6,12 +6,19 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
+from app.api.files import AGENT_OUTPUTS_DIR, WORKSPACES_SUBDIR
+
 
 def _get_skills_dir() -> Path:
     return Path(os.getenv("SKILLS_DIR", "./skills")).resolve()
 
 
-def create_run_skill_script_tool(skill_id: str):
+def _get_workspace_root(workspace_id: str) -> Path:
+    root = Path(AGENT_OUTPUTS_DIR).resolve()
+    return (root / WORKSPACES_SUBDIR / workspace_id).resolve()
+
+
+def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
     创建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
@@ -24,6 +31,12 @@ def create_run_skill_script_tool(skill_id: str):
     @tool
     def run_skill_script(script_path: str, input_json: str = "") -> str:
         """执行当前技能 scripts 目录下的脚本。script_path 为相对 scripts 的路径（如 optimize-prompt.py）；input_json 为可选 JSON 字符串，会作为 stdin 传入脚本。仅支持 .py 与 .sh。"""
+        if write_mode != "workspace_all":
+            return "错误：当前 skill 为只读模式，禁止执行脚本。"
+        if not workspace_id:
+            return "错误：缺少 workspace_id，无法安全执行脚本。"
+        workspace_root = _get_workspace_root(workspace_id)
+        workspace_root.mkdir(parents=True, exist_ok=True)
         # #region agent log: run_skill_script entry
         try:
             import time as _t, json as _json, os as _os
@@ -85,12 +98,19 @@ def create_run_skill_script_tool(skill_id: str):
         try:
             proc = subprocess.run(
                 cmd,
-                cwd=str(script_root),
+                cwd=str(workspace_root),
                 input=input_json if input_json else None,
                 capture_output=True,
                 text=True,
                 timeout=timeout_sec,
-                env={**os.environ},
+                env={
+                    **os.environ,
+                    "SKILL_ID": skill_id,
+                    "SKILL_WRITE_MODE": write_mode,
+                    "SKILL_WORKSPACE_ID": workspace_id,
+                    "SKILL_WORKSPACE_ROOT": str(workspace_root),
+                    "SKILL_SCRIPT_ROOT": str(script_root),
+                },
             )
             out = (proc.stdout or "").strip()
             err = (proc.stderr or "").strip()
