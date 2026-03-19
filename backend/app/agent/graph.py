@@ -640,6 +640,21 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     messages = state["messages"]
     last_message = messages[-1]
     tool_results = []
+    max_tool_result_chars = 4000
+
+    def _safe_tool_result_for_prompt(result: object) -> str:
+        """限制工具结果进入模型上下文的长度，避免超长内容（如 base64 图片）撑爆 token。"""
+        text = str(result) if not isinstance(result, str) else result
+        stripped = text.strip()
+        if stripped.startswith("data:image/"):
+            preview = stripped[:120]
+            return (
+                f"[图片数据已生成，原始 data URL 过长，已省略；长度约 {len(stripped)} 字符]\n"
+                f"预览前缀: {preview}..."
+            )
+        if len(text) > max_tool_result_chars:
+            return text[:max_tool_result_chars].rstrip() + "\n...[工具结果已截断]"
+        return text
 
     def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
         """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
@@ -682,7 +697,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                         result = await asyncio.to_thread(tool.run, tool_input)
                     else:
                         result = f"工具 {tool_name} 无法执行"
-                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 的执行结果: {result}", tool_call_id=tool_call_id))
+                    result_for_prompt = _safe_tool_result_for_prompt(result)
+                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=tool_call_id))
                 except Exception as e:
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
             else:
@@ -720,7 +736,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     result = await tool.arun(json.dumps(arguments) if arguments else "{}")
                 else:
                     result = await asyncio.to_thread(tool.run, json.dumps(arguments) if arguments else "{}")
-                return {"messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result}", tool_call_id=str(tool_name or 'tool'))]}
+                result_for_prompt = _safe_tool_result_for_prompt(result)
+                return {"messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=str(tool_name or 'tool'))]}
             except Exception as e:
                 return {"messages": [ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=str(tool_name or 'tool'))]}
         if tool_name == "read_file":

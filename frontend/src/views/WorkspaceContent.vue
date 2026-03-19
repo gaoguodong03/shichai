@@ -790,6 +790,13 @@
                   class="group-chat-workspace-preview-textarea"
                   spellcheck="false"
                 />
+                <div v-else-if="groupWorkspacePreviewIsImage" class="group-chat-workspace-preview-image-wrap">
+                  <img
+                    :src="groupWorkspacePreviewImageUrl"
+                    :alt="groupWorkspacePreviewName || '图片预览'"
+                    class="group-chat-workspace-preview-image"
+                  />
+                </div>
                 <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
               </div>
               <div v-else class="group-chat-workspace-preview-placeholder">选择左侧文件以预览</div>
@@ -886,6 +893,7 @@ const groupWorkspaceError = ref('')
 const groupWorkspacePreviewPath = ref('')
 const groupWorkspacePreviewName = ref('')
 const groupWorkspacePreviewContent = ref('')
+const groupWorkspacePreviewImageUrl = ref('')
 const groupWorkspacePreviewLoading = ref(false)
 const groupWorkspacePreviewEditing = ref(false)
 const groupWorkspacePreviewEditContent = ref('')
@@ -2135,6 +2143,7 @@ async function renameGroupWorkspaceEntry(e: { name: string; path: string; is_dir
         groupWorkspacePreviewPath.value = ''
         groupWorkspacePreviewName.value = ''
         groupWorkspacePreviewContent.value = ''
+        groupWorkspacePreviewImageUrl.value = ''
       }
       await loadGroupWorkspace()
     } else {
@@ -2163,6 +2172,7 @@ async function deleteGroupWorkspaceEntry(e: { name: string; path: string; is_dir
         groupWorkspacePreviewPath.value = ''
         groupWorkspacePreviewName.value = ''
         groupWorkspacePreviewContent.value = ''
+        groupWorkspacePreviewImageUrl.value = ''
       }
       await loadGroupWorkspace()
     } else {
@@ -2174,12 +2184,18 @@ async function deleteGroupWorkspaceEntry(e: { name: string; path: string; is_dir
 }
 
 const TEXT_EXT = ['.md', '.txt', '.json', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
+const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
 function isTextFile(name: string) {
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
   return TEXT_EXT.includes(ext)
 }
+function isImageFile(name: string) {
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
+  return IMAGE_EXT.includes(ext)
+}
 
 const groupWorkspacePreviewIsMd = computed(() => /\.md$/i.test(groupWorkspacePreviewName.value))
+const groupWorkspacePreviewIsImage = computed(() => isImageFile(groupWorkspacePreviewName.value))
 
 function startWorkspacePreviewEdit() {
   groupWorkspacePreviewEditContent.value = groupWorkspacePreviewContent.value
@@ -2220,7 +2236,12 @@ async function previewWorkspaceFile(e: { name: string; path: string }) {
   groupWorkspacePreviewPath.value = e.path
   groupWorkspacePreviewName.value = e.name
   groupWorkspacePreviewContent.value = ''
+  groupWorkspacePreviewImageUrl.value = ''
   groupWorkspacePreviewEditing.value = false
+  if (isImageFile(e.name)) {
+    groupWorkspacePreviewImageUrl.value = groupWorkspaceDownloadUrl(e.path)
+    return
+  }
   if (!isTextFile(e.name)) {
     groupWorkspacePreviewContent.value = '[ 非文本文件，请点击「下载」查看 ]'
     return
@@ -4597,6 +4618,23 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-input-bg);
   border-radius: 6px;
   color: var(--color-text);
+}
+.group-chat-workspace-preview-image-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  background: var(--color-input-bg);
+  border-radius: 6px;
+}
+.group-chat-workspace-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
 }
 .group-chat-more-dropdown {
   min-width: 8rem;

@@ -202,13 +202,24 @@ async def get_group_archive(group_session_id: str):
     return {"status": "ok", "data": {"segments": segments, "dha_map": dha_map}}
 
 
-def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) -> str:
-    """将群聊消息转为供领导人/ DHA 使用的上下文字符串（不截断，完整保留）"""
+def _messages_to_context(
+    messages: List[Dict[str, Any]],
+    max_turns: int = 15,
+    max_chars: int = 12000,
+    max_chars_per_message: int = 1200,
+) -> str:
+    """将群聊消息转为供领导人/DHA 使用的上下文字符串（带长度保护）。
+
+    - 限制每条消息长度，避免单条工具结果把上下文撑爆
+    - 限制总上下文长度，超限时仅保留尾部（最近信息优先）
+    """
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
     lines = []
     for m in recent:
         role = m.get("role", "")
         content = (m.get("content") or "").strip()
+        if len(content) > max_chars_per_message:
+            content = content[:max_chars_per_message].rstrip() + "\n...[内容已截断]"
         dha_id = m.get("dha_id", "")
         if role == "user":
             lines.append(f"【用户】{content}")
@@ -217,7 +228,10 @@ def _messages_to_context(messages: List[Dict[str, Any]], max_turns: int = 15) ->
         else:
             name = dha_id or "助手"
             lines.append(f"【{name}】{content}")
-    return "\n\n".join(lines)
+    context = "\n\n".join(lines)
+    if len(context) > max_chars:
+        context = "...[较早历史已省略]\n\n" + context[-max_chars:]
+    return context
 
 
 def _normalize_discussion_goal(raw: str, max_len: int = 200) -> str:
@@ -311,6 +325,42 @@ def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
         "4. 若需要其他专家或用户接力，请明确说明「接下来可由谁做什么」。\n\n"
         "【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行。"
     )
+
+
+def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
+    """若工具结果中包含工作区图片下载链接，则自动补一段 Markdown 图片预览。"""
+    if not tool_raw_results:
+        return content
+    urls: List[str] = []
+    for raw in tool_raw_results:
+        if not raw:
+            continue
+        for u in re.findall(r"/api/workspaces/[^\s)]+/files/download\?path=[^\s)]+", raw):
+            urls.append(u)
+    if not urls:
+        return content
+    image_urls = []
+    for u in urls:
+        lu = u.lower()
+        if any(ext in lu for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg")):
+            image_urls.append(u)
+    if not image_urls:
+        return content
+    seen = set()
+    unique_urls = []
+    for u in image_urls:
+        if u in seen:
+            continue
+        seen.add(u)
+        unique_urls.append(u)
+    blocks = []
+    for i, u in enumerate(unique_urls, start=1):
+        blocks.append(f"![生成图片{i}]({u})\n\n[点击下载图片{i}]({u})")
+    extra = "\n\n".join(blocks)
+    if extra in (content or ""):
+        return content
+    base = (content or "").rstrip()
+    return f"{base}\n\n---\n\n{extra}" if base else extra
 
 
 def _get_llm_for_dha(dha: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
@@ -1302,8 +1352,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         f"【最近讨论】\n{context}\n\n"
                         "请紧扣讨论目标发言，不要偏离主题。"
                     )
-                # 将历史对话加载在提示词末尾，一并发给下一位专家，便于其掌握完整上下文
-                user_content = (user_content or "").strip() + "\n\n【历史对话（供参考）】\n" + context
+                # 避免重复拼接历史：如果 next_prompt/fallback 中已包含“最近讨论/历史对话”，则不再追加。
+                uc = (user_content or "").strip()
+                if ("【历史对话（供参考）】" not in uc) and ("【最近几轮讨论内容" not in uc) and ("【最近讨论】" not in uc):
+                    uc = uc + "\n\n【历史对话（供参考）】\n" + context
+                user_content = uc
                 initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
                 run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{next_speaker}:{uuid.uuid4().hex}"}}
 
@@ -1397,6 +1450,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         accumulated.append(f"(调用异常: {invoke_err})")
 
                 full_content = "".join(accumulated) if accumulated else "(无文本输出)"
+                full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
                 skill_id = (dha.get("skill_ids") or ["default"])[0] if dha else "default"
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
