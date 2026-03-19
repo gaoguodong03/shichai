@@ -1,27 +1,28 @@
-"""ChatAnywhere 图像生成 CLI 共享库。
+"""Jeniya Gemini 图像生成 CLI 共享库。
 
 供 run_skill_script 调用的脚本使用（如 app-icon-generator）。
-- 环境变量 CHATANYWHERE_IMAGE_API_KEY（Bearer sk-xxx 或仅 sk-xxx）
-- 可选 CHATANYWHERE_IMAGE_BASE_URL，默认 https://api.chatanywhere.tech（与 Apifox 正式环境一致）
-- POST {base}/v1/images/generations
-- body 必填: prompt, n, model, size（见 https://chatanywhere.apifox.cn/api-92222078）
+- 环境变量 JENIYA_API_KEY（兼容 CHATANYWHERE_IMAGE_API_KEY 作为回退）
+- 可选 JENIYA_IMAGE_BASE_URL，默认 http://jeniya.top
+- POST {base}/v1beta/models/gemini-3.1-flash-image-preview:generateContent
 """
 import os
 from pathlib import Path
 
 import httpx
 
-_DEFAULT_BASE = "https://api.chatanywhere.tech"
+_DEFAULT_BASE = "http://jeniya.top"
+_DEFAULT_MODEL = "gemini-3.1-flash-image-preview"
 
 
 def _api_url() -> str:
-    base = (os.environ.get("CHATANYWHERE_IMAGE_BASE_URL") or _DEFAULT_BASE).rstrip("/")
-    return f"{base}/v1/images/generations"
+    base = (os.environ.get("JENIYA_IMAGE_BASE_URL") or _DEFAULT_BASE).rstrip("/")
+    model = (os.environ.get("JENIYA_IMAGE_MODEL") or _DEFAULT_MODEL).strip()
+    return f"{base}/v1beta/models/{model}:generateContent"
 
 
 def get_api_key() -> str:
     """从环境变量读取 API Key；若未设置则尝试从 backend/.env 加载。"""
-    key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
+    key = os.environ.get("JENIYA_API_KEY", "").strip()
     if not key:
         try:
             from dotenv import load_dotenv
@@ -29,19 +30,23 @@ def get_api_key() -> str:
             _backend_dir = Path(__file__).resolve().parent.parent.parent
             _env_path = _backend_dir / ".env"
             load_dotenv(_env_path)
-            key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
+            key = os.environ.get("JENIYA_API_KEY", "").strip()
+            if not key:
+                key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
         except Exception:
             pass
     if not key:
+        key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
+    if not key:
         raise ValueError(
-            "未配置 CHATANYWHERE_IMAGE_API_KEY。请在 backend/.env 中设置，"
+            "未配置 JENIYA_API_KEY（或 CHATANYWHERE_IMAGE_API_KEY 回退值）。请在 backend/.env 中设置，"
             "格式可为 Bearer sk-xxx 或仅 sk-xxx。"
         )
     return key if key.startswith("Bearer ") else f"Bearer {key}"
 
 
 def generate_image(description: str, pic_size: str = "1024x1024") -> str:
-    """调用 ChatAnywhere 图像生成 API（POST），返回图片 URL 或错误信息字符串。"""
+    """调用 Jeniya Gemini 图像生成接口，返回 data URL 或错误信息字符串。"""
     try:
         api_key = get_api_key()
     except ValueError as e:
@@ -52,10 +57,21 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
         "Authorization": api_key,
     }
     body = {
-        "prompt": description,
-        "n": 1,
-        "model": "gemini-3.1-flash-lite-preview",
-        "size": pic_size,
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": (
+                            f"{description}\n\n"
+                            f"请生成尺寸约为 {pic_size} 的图片，输出图像内容。"
+                        )
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseModalities": ["IMAGE", "TEXT"],
+        },
     }
 
     try:
@@ -63,19 +79,32 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
             resp = client.post(_api_url(), json=body, headers=headers)
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
-            first = data["data"][0]
-            if isinstance(first, dict) and "url" in first:
-                return first["url"]
-            if isinstance(first, dict) and "b64_json" in first:
-                return f"[Base64 图片数据已返回，长度: {len(first['b64_json'])} 字符]"
+        if isinstance(data, dict):
+            candidates = data.get("candidates")
+            if isinstance(candidates, list):
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    content = candidate.get("content")
+                    if not isinstance(content, dict):
+                        continue
+                    parts = content.get("parts")
+                    if not isinstance(parts, list):
+                        continue
+                    for part in parts:
+                        if not isinstance(part, dict):
+                            continue
+                        inline = part.get("inlineData")
+                        if isinstance(inline, dict) and inline.get("data"):
+                            mime_type = inline.get("mimeType") or "image/png"
+                            return f"data:{mime_type};base64,{inline['data']}"
+                        text = part.get("text")
+                        if isinstance(text, str) and text.strip():
+                            return text.strip()
         return str(data)
     except httpx.HTTPStatusError as e:
         text_preview = (e.response.text or "")[:200]
-        hint = ""
-        if e.response.status_code == 500:
-            hint = "（图像接口 ChatAnywhere 服务端异常，与合并/会话类型无关。请检查 CHATANYWHERE_IMAGE_API_KEY、额度或稍后重试）"
-        return f"请求失败 HTTP {e.response.status_code}: {text_preview} {hint}"
+        return f"请求失败 HTTP {e.response.status_code}: {text_preview}"
     except (httpx.ConnectError, OSError) as e:
         err_msg = str(e)
         if "nodename" in err_msg or "not known" in err_msg or getattr(e, "errno", None) == 8:

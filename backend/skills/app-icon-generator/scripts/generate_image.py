@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""应用图标图片生成 CLI。供 run_skill_script 调用，使用 ChatAnywhere 图像 API（POST）。
+"""应用图标图片生成 CLI。供 run_skill_script 调用，使用 Jeniya Gemini 图像生成接口（POST）。
 
 stdin：JSON 字符串，如 {"description": "图标描述...", "pic_size": "1024x1024"}，pic_size 可选默认 1024x1024。
-stdout：图片 URL 或错误信息。环境变量 CHATANYWHERE_IMAGE_API_KEY（在 backend/.env 中配置，Bearer sk-xxx 或仅 sk-xxx）。
+stdout：图片 data URL 或错误信息。环境变量优先 JENIYA_API_KEY（兼容 CHATANYWHERE_IMAGE_API_KEY 回退）。
 """
 import json
 import sys

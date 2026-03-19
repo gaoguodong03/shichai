@@ -195,16 +195,24 @@
           <template v-else-if="resourceSubModule === 'skill'">
             <div class="flex items-center gap-2 mb-2 px-3">
               <button
-                @click="selectedId = '__new__'"
+                @click="createEmptySkill"
                 :class="[
                   'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  selectedId === '__new__'
-                    ? 'bg-nav-selected-bg text-nav-selected-text'
-                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
                 ]"
               >
                 <span class="text-base leading-none">＋</span>
                 <span>新建 Skill</span>
+              </button>
+              <button
+                @click="selectedId = '__new__'"
+                :class="[
+                  'w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center',
+                  selectedId === '__new__' ? 'ring-2 ring-nav-selected-bg' : ''
+                ]"
+                title="导入 Skill"
+              >
+                ⇪
               </button>
               <button
                 type="button"
@@ -668,6 +676,18 @@ async function fetchSkills() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
       skills.value = j.data.skills
+      // 资源中心 Skill：默认打开第一个，避免右侧空白。
+      // 同时：当当前选中项不在列表里（被删除/过滤）时，回退到第一个。
+      if (currentModule.value === 'resource' && resourceSubModule.value === 'skill') {
+        const list = skills.value || []
+        if (selectedId.value === '__new__') return
+        const ids = list.map((s) => s.id)
+        if (selectedId.value && !ids.includes(selectedId.value)) {
+          selectedId.value = list.length > 0 ? list[0].id : null
+        } else if (!selectedId.value && list.length > 0) {
+          selectedId.value = list[0].id
+        }
+      }
     }
   } finally {
     skillsLoading.value = false
@@ -837,6 +857,31 @@ async function fetchLLM() {
 function onSkillCreated(id: string) {
   selectedId.value = id
   fetchSkills()
+}
+
+async function createEmptySkill() {
+  try {
+    const r = await fetch('/api/settings/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: '新 Skill',
+        description: '',
+        source: 'local',
+        enabled: true,
+      }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok' && j.data?.id) {
+      selectedId.value = j.data.id
+      await fetchSkills()
+    } else {
+      alert(j.detail || '新建 Skill 失败')
+    }
+  } catch (e) {
+    console.error(e)
+    alert('新建 Skill 失败')
+  }
 }
 
 function onMCPCreated(id: string) {

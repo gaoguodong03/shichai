@@ -798,7 +798,7 @@ async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
 
 class SkillCreate(BaseModel):
     """创建 Skill 请求"""
-    name: str
+    name: Optional[str] = None
     description: Optional[str] = None
     source: str = "local"  # local or git
     path: Optional[str] = None
@@ -864,6 +864,29 @@ def _normalize_git_import_source(url: str) -> tuple[str, str]:
     return (raw if raw.endswith(".git") else f"{raw}.git", "")
 
 
+def _suggest_skill_id_from_git_url(url: str) -> str:
+    """根据 git 导入 URL 生成更可管理的默认 skill_id（目录名）。"""
+    clone_url, subdir = _normalize_git_import_source(url)
+    # git@github.com:owner/repo.git
+    if clone_url.startswith("git@"):
+        repo_part = clone_url.split(":", 1)[1] if ":" in clone_url else clone_url
+    else:
+        p = urlparse(clone_url)
+        repo_part = p.path.strip("/")
+    parts = [x for x in repo_part.split("/") if x]
+    repo_name = parts[-1] if parts else "skill"
+    if repo_name.endswith(".git"):
+        repo_name = repo_name[:-4]
+    # tree 子目录导入时，把最后一级目录拼到 id，避免同仓库不同子 skill 冲突
+    tail = ""
+    if subdir:
+        sub_parts = [x for x in subdir.split("/") if x]
+        if sub_parts:
+            tail = sub_parts[-1]
+    base = f"{repo_name}-{tail}" if tail else repo_name
+    return _slugify(base)
+
+
 def _refresh_skills_loader():
     """刷新全局 SkillsLoader 缓存，确保新导入技能立即可见。"""
     from app.skills.loader import get_skills_loader
@@ -871,6 +894,34 @@ def _refresh_skills_loader():
     loader = get_skills_loader()
     loader.skills_dir = _get_skills_dir()
     loader.load_all_skills()
+
+
+def _parse_frontmatter_lenient(frontmatter_text: str) -> Dict[str, Any]:
+    """解析 frontmatter：优先 YAML，失败时回退到宽容 key:value 解析。"""
+    try:
+        parsed = yaml.safe_load(frontmatter_text) or {}
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
+    except Exception:
+        result: Dict[str, Any] = {}
+        for raw in (frontmatter_text or "").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or ":" not in line:
+                continue
+            k, v = line.split(":", 1)
+            key = (k or "").strip()
+            if not key:
+                continue
+            val = (v or "").strip()
+            # 兼容最常见 frontmatter 值类型
+            if val.lower() == "true":
+                result[key] = True
+            elif val.lower() == "false":
+                result[key] = False
+            else:
+                result[key] = val.strip("'\"")
+        return result
 
 
 def _run_git(repo_dir: Path, args: List[str], timeout_sec: int = 120) -> None:
@@ -939,7 +990,7 @@ def load_skills_config() -> List[Dict[str, Any]]:
                     parts = content.split('---', 2)
                     if len(parts) >= 3:
                         try:
-                            frontmatter = yaml.safe_load(parts[1])
+                            frontmatter = _parse_frontmatter_lenient(parts[1])
                             skill_id = skill_dir.name
                             fm_mcp = frontmatter.get("mcp_server_ids")
                             mcp_ids = fm_mcp if isinstance(fm_mcp, list) else []
@@ -1043,9 +1094,15 @@ async def create_skill(skill: SkillCreate):
     if source not in {"local", "git"}:
         raise HTTPException(status_code=400, detail="source must be local or git")
     write_mode = "workspace_all"
-    raw_id = _slugify(skill.name)
+    # local：仍要求 name；git：允许仅 url（name/description 从 SKILL.md 自动提取）
+    if source == "local" and not (skill.name or "").strip():
+        raise HTTPException(status_code=400, detail="name is required when source=local")
+    if source == "git" and not (skill.name or "").strip():
+        raw_id = _suggest_skill_id_from_git_url(skill.url or "")
+    else:
+        raw_id = _slugify((skill.name or "skill").strip())
     skill_id = raw_id
-    if source == "local":
+    if source == "local" or source == "git":
         idx = 0
         while (base / skill_id).exists():
             idx += 1
@@ -1058,11 +1115,11 @@ async def create_skill(skill: SkillCreate):
         else:
             _import_skill_from_git(skill_dir, git_url)
         fm, body = _read_skill_file(skill_dir)
-        fm["name"] = skill.name or fm.get("name", skill_id)
-        if skill.description is not None:
-            fm["description"] = skill.description
-        else:
-            fm["description"] = fm.get("description", "")
+        # 自动提取元数据：仅当请求未显式提供时才覆盖
+        final_name = (skill.name or fm.get("name") or skill_dir.name or skill_id).strip()
+        final_desc = skill.description if skill.description is not None else (fm.get("description") or "")
+        fm["name"] = final_name
+        fm["description"] = final_desc
         fm["enabled"] = skill.enabled
         fm["source"] = "git"
         fm["url"] = skill.url or git_url
@@ -1072,7 +1129,7 @@ async def create_skill(skill: SkillCreate):
         skill_dir.mkdir(parents=True, exist_ok=True)
         body = "\n## 说明\n\n（待补充）\n"
         frontmatter = {
-            "name": skill.name,
+            "name": (skill.name or "").strip(),
             "description": skill.description or "",
             "enabled": skill.enabled,
             "source": "local",
@@ -1081,10 +1138,18 @@ async def create_skill(skill: SkillCreate):
         content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
     _refresh_skills_loader()
+    if source == "git":
+        # 以 SKILL.md 的最终内容回填返回字段
+        fm2, _body2 = _read_skill_file(skill_dir)
+        ret_name = (fm2.get("name") or skill_id).strip()
+        ret_desc = fm2.get("description") or ""
+    else:
+        ret_name = (skill.name or skill_id).strip()
+        ret_desc = skill.description or ""
     new_skill = {
         "id": skill_id,
-        "name": skill.name,
-        "description": skill.description or "",
+        "name": ret_name,
+        "description": ret_desc,
         "enabled": skill.enabled,
         "source": source,
         "path": str(skill_dir),
@@ -1104,7 +1169,7 @@ def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:
     parts = text.split("---", 2)
     if len(parts) < 3:
         return ({}, text)
-    fm = yaml.safe_load(parts[1]) or {}
+    fm = _parse_frontmatter_lenient(parts[1])
     return (fm, parts[2].lstrip("\n"))
 
 
@@ -1218,15 +1283,32 @@ async def get_skill_content(skill_id: str):
     }
 
 
-# ========== Skill 辅助目录（references / assets / scripts）==========
+# ========== Skill 辅助目录（references / assets / scripts / other）==========
 
-ALLOWED_PART_TYPES = ("references", "assets", "scripts")
+ALLOWED_PART_TYPES = ("references", "assets", "scripts", "other")
 
 
 def _list_skill_part_dir(skill_dir: Path, part_type: str) -> List[Dict[str, str]]:
     """列出 skill 下某子目录中的文件，返回 [{name, path}]，path 为相对该子目录的路径。"""
     if part_type not in ALLOWED_PART_TYPES:
         return []
+    # other: 列出 skill 根目录下除标准目录与 SKILL.md 外的文件（含子目录）
+    if part_type == "other":
+        items: List[Dict[str, str]] = []
+        exclude = {"references", "assets", "scripts", ".git"}
+        for fp in sorted(skill_dir.rglob("*")):
+            if fp.is_dir():
+                continue
+            try:
+                rel = fp.relative_to(skill_dir)
+            except ValueError:
+                continue
+            if rel.parts and rel.parts[0] in exclude:
+                continue
+            if str(rel).replace("\\", "/") == "SKILL.md":
+                continue
+            items.append({"name": str(rel).replace("\\", "/"), "path": str(rel).replace("\\", "/")})
+        return items
     dir_path = skill_dir / part_type
     if not dir_path.is_dir():
         return []
@@ -1255,6 +1337,7 @@ async def get_skill_parts(skill_id: str):
             "references": _list_skill_part_dir(skill_dir, "references"),
             "assets": _list_skill_part_dir(skill_dir, "assets"),
             "scripts": _list_skill_part_dir(skill_dir, "scripts"),
+            "other": _list_skill_part_dir(skill_dir, "other"),
         },
     }
 
@@ -1270,7 +1353,15 @@ async def get_skill_part_file(skill_id: str, part_type: str, file_path: str):
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    full_path = skill_dir / part_type / file_path
+    if part_type == "other":
+        full_path = (skill_dir / file_path).resolve()
+        base_dir = skill_dir.resolve()
+        if not str(full_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if full_path.name == "SKILL.md" or full_path.parts and "skills" in full_path.parts and full_path.name == ".git":
+            raise HTTPException(status_code=400, detail="Invalid file path")
+    else:
+        full_path = skill_dir / part_type / file_path
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     try:
@@ -1303,10 +1394,18 @@ async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCr
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    full_path = (skill_dir / part_type / path).resolve()
-    part_dir = (skill_dir / part_type).resolve()
-    if not str(full_path).startswith(str(part_dir)):
-        raise HTTPException(status_code=400, detail="Path outside part dir")
+    if part_type == "other":
+        full_path = (skill_dir / path).resolve()
+        base_dir = skill_dir.resolve()
+        if not str(full_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Path outside skill dir")
+        if str(full_path.relative_to(base_dir)).replace("\\", "/") == "SKILL.md":
+            raise HTTPException(status_code=400, detail="Cannot create SKILL.md in other")
+    else:
+        full_path = (skill_dir / part_type / path).resolve()
+        part_dir = (skill_dir / part_type).resolve()
+        if not str(full_path).startswith(str(part_dir)):
+            raise HTTPException(status_code=400, detail="Path outside part dir")
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(body.content or "", encoding="utf-8")
     return {"status": "ok", "data": {"path": path.replace("\\", "/")}}
@@ -1323,7 +1422,15 @@ async def update_skill_part_file(skill_id: str, part_type: str, file_path: str, 
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    full_path = skill_dir / part_type / file_path
+    if part_type == "other":
+        full_path = (skill_dir / file_path).resolve()
+        base_dir = skill_dir.resolve()
+        if not str(full_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if str(full_path.relative_to(base_dir)).replace("\\", "/") == "SKILL.md":
+            raise HTTPException(status_code=400, detail="Cannot edit SKILL.md via other")
+    else:
+        full_path = skill_dir / part_type / file_path
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     full_path.write_text(body.content, encoding="utf-8")
@@ -1341,7 +1448,15 @@ async def delete_skill_part_file(skill_id: str, part_type: str, file_path: str):
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    full_path = skill_dir / part_type / file_path
+    if part_type == "other":
+        full_path = (skill_dir / file_path).resolve()
+        base_dir = skill_dir.resolve()
+        if not str(full_path).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Invalid file path")
+        if str(full_path.relative_to(base_dir)).replace("\\", "/") == "SKILL.md":
+            raise HTTPException(status_code=400, detail="Cannot delete SKILL.md via other")
+    else:
+        full_path = skill_dir / part_type / file_path
     if not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     full_path.unlink()

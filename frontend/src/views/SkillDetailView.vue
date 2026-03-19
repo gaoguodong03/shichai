@@ -31,20 +31,22 @@
     <div v-if="loading" class="p-4 text-gray-500 flex-1">加载中...</div>
     <template v-else-if="skill">
       <!-- Tab 导航 -->
-      <div class="flex border-b border-gray-200 px-4 flex-shrink-0">
-        <button
-          v-for="t in tabs"
-          :key="t.id"
-          @click="activeTab = t.id"
-          :class="[
-            'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-            activeTab === t.id
-              ? 'border-blue-500 text-blue-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          ]"
-        >
-          {{ t.label }}
-        </button>
+      <div class="border-b border-gray-200 px-4 flex-shrink-0">
+        <div class="mx-auto w-full max-w-4xl flex">
+          <button
+            v-for="t in tabs"
+            :key="t.id"
+            @click="activeTab = t.id"
+            :class="[
+              'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+              activeTab === t.id
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            ]"
+          >
+            {{ t.label }}
+          </button>
+        </div>
       </div>
       <!-- SKILL.md：名称与描述为必选项，各占一个显示框；下方为正文 -->
       <div
@@ -53,55 +55,59 @@
       >
         <div v-if="contentLoading" class="text-sm text-gray-500">加载中...</div>
         <template v-else>
-          <div class="rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2">
-            <label class="block text-xs font-medium text-gray-500 mb-1">名称（必填）</label>
-            <input
-              v-model="form.name"
-              type="text"
-              required
-              placeholder="技能名称"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-            />
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2">
-            <label class="block text-xs font-medium text-gray-500 mb-1">描述（必填）</label>
-            <textarea
-              v-model="form.description"
-              rows="3"
-              placeholder="简短描述，用于技能选择"
-              class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white resize-y min-h-[4rem]"
-            />
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2">
-            <label class="block text-xs font-medium text-gray-500 mb-1">MCP 依赖（可选）</label>
-            <div class="flex flex-wrap gap-2">
-              <label
-                v-for="srv in mcpServers"
-                :key="srv.id"
-                class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
-                :class="form.mcp_server_ids.includes(srv.id)
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'"
-              >
-                <input
-                  type="checkbox"
-                  :value="srv.id"
-                  v-model="form.mcp_server_ids"
-                  class="rounded border-gray-300"
-                />
-                {{ srv.name || srv.id }}
-              </label>
+          <div class="mx-auto w-full max-w-4xl space-y-4">
+            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-gray-500 mb-1">名称（必填）</label>
+              <input
+                v-model="form.name"
+                type="text"
+                required
+                placeholder="技能名称"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
+              />
             </div>
-            <p v-if="mcpServers.length === 0" class="text-xs text-gray-400">暂无 MCP 服务器，请先在设置中配置。</p>
-          </div>
-          <div class="rounded-lg border border-gray-200 bg-gray-50/50">
-            <label class="block text-xs font-medium text-gray-500 mb-1 px-3 pt-2">正文（Markdown）</label>
-            <textarea
-              v-model="form.body"
-              rows="16"
-              class="w-full px-3 py-2 text-sm font-mono border-0 bg-transparent focus:ring-0 resize-y min-h-[12rem]"
-              placeholder="SKILL.md 正文内容"
-            />
+            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-gray-500 mb-1">描述（必填）</label>
+              <textarea
+                v-model="form.description"
+                rows="3"
+                placeholder="简短描述，用于技能选择"
+                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white resize-y min-h-[4rem]"
+              />
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-gray-500 mb-2">MCP 依赖（可选）</label>
+              <div class="flex flex-wrap gap-2">
+                <label
+                  v-for="srv in mcpServers"
+                  :key="srv.id"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
+                  :class="form.mcp_server_ids.includes(srv.id)
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'"
+                >
+                  <input
+                    type="checkbox"
+                    :value="srv.id"
+                    v-model="form.mcp_server_ids"
+                    class="rounded border-gray-300"
+                  />
+                  {{ srv.name || srv.id }}
+                </label>
+              </div>
+              <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-gray-400">暂无 MCP 服务器，请先在设置中配置。</p>
+            </div>
+            <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div class="px-4 pt-3 pb-2">
+                <label class="block text-xs font-medium text-gray-500">正文（Markdown）</label>
+              </div>
+              <textarea
+                v-model="form.body"
+                rows="18"
+                class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent focus:ring-0 resize-y min-h-[14rem]"
+                placeholder="SKILL.md 正文内容"
+              />
+            </div>
           </div>
         </template>
       </div>
@@ -139,7 +145,7 @@
         <main class="flex-1 min-w-0 overflow-hidden flex flex-col p-3">
           <div v-if="!selectedPartFile" class="text-sm text-gray-500 flex-1 flex items-center justify-center">在左侧选择文件以预览，或点击「新建文件」</div>
           <div v-else class="flex-1 flex flex-col min-h-0">
-            <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
+            <div class="mx-auto w-full max-w-4xl flex items-center justify-between gap-2 mb-2 flex-shrink-0">
               <span class="text-xs text-gray-600 truncate">{{ selectedPartFile.path }}</span>
               <div class="flex gap-2">
                 <button
@@ -161,7 +167,7 @@
             <textarea
               v-else
               v-model="partContent"
-              class="flex-1 min-h-0 w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg resize-none"
+              class="mx-auto flex-1 min-h-0 w-full max-w-4xl px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg resize-none bg-white"
               spellcheck="false"
             />
           </div>
@@ -175,7 +181,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 
-type PartType = 'references' | 'assets' | 'scripts'
+type PartType = 'references' | 'assets' | 'scripts' | 'other'
 
 const props = defineProps<{ skillId: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
@@ -185,6 +191,7 @@ const tabs = [
   { id: 'references', label: 'References' },
   { id: 'assets', label: 'Assets' },
   { id: 'scripts', label: 'Scripts' },
+  { id: 'other', label: 'Other' },
 ]
 
 const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string; url?: string; write_mode?: 'readonly' | 'workspace_all'; mcp_server_ids?: string[] } | null>(null)
@@ -203,10 +210,11 @@ const form = ref({
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 
-const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[] }>({
+const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[]; other: { name: string; path: string }[] }>({
   references: [],
   assets: [],
   scripts: [],
+  other: [],
 })
 const partsLoading = ref(false)
 const selectedPartFile = ref<{ type: PartType; path: string } | null>(null)
@@ -301,6 +309,7 @@ async function loadParts() {
         references: j.data.references || [],
         assets: j.data.assets || [],
         scripts: j.data.scripts || [],
+        other: j.data.other || [],
       }
     }
   } finally {
