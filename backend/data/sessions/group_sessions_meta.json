@@ -101,5 +101,17 @@
     "speak_mode": "auto",
     "created_at": "2026-03-19T12:03:34.824556+00:00",
     "updated_at": "2026-03-19T12:11:57.166985+00:00"
+  },
+  "group-357f6a326d26": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-paper-composer",
+      "dha-paper-strategist"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T12:54:12.667856+00:00",
+    "updated_at": "2026-03-19T12:54:13.932824+00:00"
   }
 }

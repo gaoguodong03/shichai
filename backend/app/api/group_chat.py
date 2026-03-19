@@ -23,6 +23,7 @@ from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
 from app.agent.leader_scheduler import leader_decide
+from app.agent.group_memory_store import append_turn_log, upsert_facts, build_dispatch_context
 from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.mcp.manager import get_mcp_manager
 from app.skills.loader import get_skills_loader
@@ -102,6 +103,23 @@ def _load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
 def _save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -> None:
     path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
     path.write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
+    """清理不在 meta 中的群聊历史文件，返回删除数量。"""
+    root = _ensure_sessions_dir()
+    valid_ids = set((meta or {}).keys())
+    deleted = 0
+    for p in root.glob(f"{GROUP_HISTORY_PREFIX}*.json"):
+        sid = p.stem.replace(GROUP_HISTORY_PREFIX, "")
+        if sid in valid_ids:
+            continue
+        try:
+            p.unlink()
+            deleted += 1
+        except OSError:
+            logger.warning("清理孤儿会话历史失败: %s", p, exc_info=True)
+    return deleted
 
 
 def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -327,6 +345,80 @@ def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
         "4. 若需要其他专家或用户接力，请明确说明「接下来可由谁做什么」。\n\n"
         "【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行。"
     )
+
+
+def _get_group_memory_settings(app_settings: Dict[str, Any]) -> Dict[str, Any]:
+    cfg = app_settings.get("group_memory") if isinstance(app_settings, dict) else {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    return {
+        "enabled": bool(cfg.get("enabled", True)),
+        "max_logs": int(cfg.get("max_logs", 20)),
+        "max_facts": int(cfg.get("max_facts", 60)),
+        "dispatch_top_k": int(cfg.get("dispatch_top_k", 3)),
+    }
+
+
+def _extract_facts_from_response(text: str, max_items: int = 4) -> List[str]:
+    s = (text or "").strip()
+    if not s:
+        return []
+    lines: List[str] = []
+    for line in s.splitlines():
+        t = line.strip()
+        if not t:
+            continue
+        if t.startswith(("-", "*", "1.", "2.", "3.", "4.", "5.")):
+            t = t.lstrip("-*0123456789. ").strip()
+        if len(t) < 6:
+            continue
+        lines.append(t[:220])
+        if len(lines) >= max_items:
+            break
+    if lines:
+        return lines
+    compact = s.replace("\n", " ")
+    chunks = [x.strip() for x in re.split(r"[。；;.!?！？]", compact) if x.strip()]
+    return [c[:220] for c in chunks[:max_items]]
+
+
+def _build_next_prompt_with_memory(
+    session_id: str,
+    target_dha_id: str,
+    discussion_goal: str,
+    context: str,
+    app_settings: Dict[str, Any],
+    decision_next_prompt: Optional[str] = None,
+) -> str:
+    mem = _get_group_memory_settings(app_settings)
+    if not mem["enabled"]:
+        return (decision_next_prompt or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+
+    dispatch = {"has_memory": False, "rendered": ""}
+    try:
+        dispatch = build_dispatch_context(
+            session_id=session_id,
+            target_dha_id=target_dha_id,
+            goal=discussion_goal,
+            k=mem["dispatch_top_k"],
+            max_facts=mem["max_facts"],
+        )
+    except Exception:
+        logger.warning("group memory read failed", exc_info=True)
+
+    if dispatch.get("has_memory"):
+        parts = [
+            f"【群聊讨论目标】\n{discussion_goal}",
+            "【任务要求】\n请先用 1-2 句复述当前你要完成的子任务，再输出可执行结果；若信息不足，先提出最小补充问题（最多 2 个）。",
+            str(dispatch.get("rendered") or "").strip(),
+        ]
+        extra = (decision_next_prompt or "").strip()
+        if extra:
+            parts.append(f"【主持人补充指令】\n{extra}")
+        parts.append("【输出要求】\n聚焦执行，不复读整段历史；若需要交接，请明确下一位建议角色及原因。")
+        return "\n\n".join([p for p in parts if p])
+
+    return (decision_next_prompt or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
 
 
 def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
@@ -784,6 +876,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
 async def list_group_sessions():
     """获取群聊会话列表"""
     meta = _load_group_meta()
+    _cleanup_orphan_group_histories(meta)
     sessions = []
     for gsid, gm in meta.items():
         sessions.append({
@@ -965,6 +1058,8 @@ async def delete_group_session(
     path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
     if path.exists():
         path.unlink()
+    # 顺手清理孤儿历史（避免旧残留持续堆积）
+    _cleanup_orphan_group_histories(meta)
     # 删除该会话对应的工作区目录（若存在）
     try:
         ws_root = get_workspace_root_path(group_session_id, user=current_user)
@@ -1104,7 +1199,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         for d in instances
                         if d.get("dha_id")
                     }
-                    invited_names = [id_to_name.get(x, x) for x in picked]
                     invited_lines = []
                     for x in picked:
                         n = id_to_name.get(x, x)
@@ -1194,7 +1288,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     context = _messages_to_context(messages)
                     next_dha = dha_map.get(suggested)
                     host_msg["next_dha_name"] = (next_dha.get("name") or suggested) if next_dha else suggested
-                    host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                    host_msg["next_prompt"] = _build_next_prompt_with_memory(
+                        session_id=group_session_id,
+                        target_dha_id=suggested,
+                        discussion_goal=discussion_goal,
+                        context=context,
+                        app_settings=app_settings,
+                        decision_next_prompt=(decision.get("next_prompt") or "").strip(),
+                    )
                 if decision.get("suggested_order"):
                     host_msg["suggested_order"] = decision["suggested_order"]
                 _save_group_history(group_session_id, messages)
@@ -1302,7 +1403,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     context = _messages_to_context(messages)
                     next_dha = dha_map.get(next_speaker)
                     host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                    host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                    host_msg["next_prompt"] = _build_next_prompt_with_memory(
+                        session_id=group_session_id,
+                        target_dha_id=next_speaker,
+                        discussion_goal=discussion_goal,
+                        context=context,
+                        app_settings=app_settings,
+                        decision_next_prompt=(decision.get("next_prompt") or "").strip(),
+                    )
                     if decision.get("suggested_order"):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
@@ -1479,6 +1587,35 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
                 _save_group_meta(meta)
+                # 专家回合自动落盘：失败不影响主对话链路
+                try:
+                    mem = _get_group_memory_settings(app_settings)
+                    if mem["enabled"]:
+                        input_summary = (user_content or "")[:800]
+                        response_summary = (full_content or "")[:1400]
+                        tool_summary = "\n".join((accumulated_raw_tool_results or [])[:2])[:1000]
+                        append_turn_log(
+                            session_id=group_session_id,
+                            max_logs=mem["max_logs"],
+                            turn_record={
+                                "dha_id": next_speaker,
+                                "timestamp": assistant_msg.get("timestamp"),
+                                "skill_id": skill_id,
+                                "discussion_goal": discussion_goal,
+                                "input_prompt_summary": input_summary,
+                                "response_summary": response_summary,
+                                "tool_result_summary": tool_summary,
+                            },
+                        )
+                        facts_delta = _extract_facts_from_response(full_content)
+                        if facts_delta:
+                            upsert_facts(
+                                session_id=group_session_id,
+                                facts_delta=facts_delta,
+                                max_facts=mem["max_facts"],
+                            )
+                except Exception:
+                    logger.warning("group memory write failed", exc_info=True)
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
 
                 last_speaker_dha_id = next_speaker
@@ -1536,7 +1673,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             context = _messages_to_context(messages)
                             next_dha = dha_map.get(next_speaker_manual)
                             host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker_manual) if next_dha else next_speaker_manual
-                            host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                            host_msg["next_prompt"] = _build_next_prompt_with_memory(
+                                session_id=group_session_id,
+                                target_dha_id=next_speaker_manual,
+                                discussion_goal=discussion_goal,
+                                context=context,
+                                app_settings=app_settings,
+                                decision_next_prompt=(decision.get("next_prompt") or "").strip(),
+                            )
                         _save_group_history(group_session_id, messages)
                         yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                     end_data = {"type": "end", "waiting_for_user": True, "suggested_next_speaker": next_speaker_manual}
@@ -1622,7 +1766,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         context = _messages_to_context(messages)
                         next_dha = dha_map.get(next_speaker)
                         host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                        host_msg["next_prompt"] = (decision.get("next_prompt") or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+                        host_msg["next_prompt"] = _build_next_prompt_with_memory(
+                            session_id=group_session_id,
+                            target_dha_id=next_speaker,
+                            discussion_goal=discussion_goal,
+                            context=context,
+                            app_settings=app_settings,
+                            decision_next_prompt=(decision.get("next_prompt") or "").strip(),
+                        )
                     if decision.get("suggested_order"):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
