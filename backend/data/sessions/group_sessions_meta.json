@@ -71,12 +71,61 @@
     "created_at": "2026-03-15T11:51:01.356044+00:00",
     "updated_at": "2026-03-15T12:09:36.443015+00:00"
   },
-  "group-5e630a54e9b9": {
-    "title": "DHA 协作 · 3/18 16:43",
-    "dha_ids": [],
+  "group-34e7f07d66fb": {
+    "title": "DHA 协作 · 3/18 17:42",
+    "dha_ids": [
+      "dha-df1f712a"
+    ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-18T08:43:27.875553+00:00",
-    "updated_at": "2026-03-18T08:43:27.887629+00:00"
+    "created_at": "2026-03-18T09:42:21.898531+00:00",
+    "updated_at": "2026-03-18T09:42:44.555793+00:00"
+  },
+  "group-a70d4283497a": {
+    "title": "DHA 协作 · 3/18 17:43",
+    "dha_ids": [
+      "dha-195b8c3a",
+      "dha-440b26f8",
+      "dha-b6dba178",
+      "dha-c1bf68ba"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-18T09:43:25.565673+00:00",
+    "updated_at": "2026-03-18T09:45:32.088795+00:00"
+  },
+  "group-ede4c1f1869f": {
+    "title": "DHA 协作 · 3/18 17:53",
+    "dha_ids": [
+      "dha-195b8c3a",
+      "dha-440b26f8",
+      "dha-web-fetch"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-18T09:53:19.316106+00:00",
+    "updated_at": "2026-03-18T09:54:52.054800+00:00"
+  },
+  "group-ba7ddca564fc": {
+    "title": "DHA 协作 · 3/18 18:02",
+    "dha_ids": [
+      "dha-195b8c3a",
+      "dha-440b26f8",
+      "dha-web-fetch"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-18T10:02:22.674274+00:00",
+    "updated_at": "2026-03-18T10:04:09.592605+00:00"
+  },
+  "group-41b06c7c548b": {
+    "title": "DHA 协作 · 3/19 09:49",
+    "dha_ids": [
+      "dha-c9b8ae32"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T01:49:36.358656+00:00",
+    "updated_at": "2026-03-19T01:50:21.937414+00:00"
   }
 }

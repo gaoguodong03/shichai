@@ -7,6 +7,7 @@
 from typing import Any, Dict, List
 
 from app.api.settings import get_mcp_servers_for_skill
+from app.mcp.manager import get_mcp_manager
 from app.tools.call_api import call_api
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
@@ -31,7 +32,7 @@ def _readonly_file_tools(all_tools: List) -> List:
     return result
 
 
-def build_tools_for_group_chat(
+async def build_tools_for_group_chat(
     all_tools: List,
     dha: Dict[str, Any],
     workspace_id: str,
@@ -49,6 +50,13 @@ def build_tools_for_group_chat(
         for sid in skill_ids:
             server_ids.extend(get_mcp_servers_for_skill(sid))
         server_ids = list(dict.fromkeys(server_ids))
+
+    # 需要时才连接/加载懒加载的 MCP server
+    if server_ids:
+        mgr = get_mcp_manager()
+        await mgr.ensure_servers_loaded(server_ids)
+        all_tools = mgr.get_tools()
+
     if server_ids:
         tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in server_ids]
     else:

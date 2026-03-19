@@ -353,6 +353,9 @@ async def get_mcp_servers():
             server_id = config.get("id", "")
             if not config.get("enabled", True):
                 continue
+            # lazy server：只在真正需要工具时连接，避免在状态页被提前拉起
+            if config.get("lazy", False):
+                continue
             if server_id in mcp_manager.sessions:
                 continue
             try:

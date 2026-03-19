@@ -9,25 +9,7 @@
       "base_url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}"
     },
     "metadata": {
-      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。需在 .env 中设置 LINKUP_API_KEY。"
-    }
-  },
-  {
-    "id": "volces-icon",
-    "name": "图片生成",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "mcp_servers/volces_icon.py"
-      ],
-      "env": {
-        "VOLCES_IMAGE_API_KEY": "${VOLCES_IMAGE_API_KEY}"
-      }
-    },
-    "metadata": {
-      "description": "根据文字描述生成图片。"
+      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。需在 .env 中设置 LINKUP_API_KEY。（默认禁用：启动时外部连接不稳定会拖慢/阻塞初始化；需要时可再启用）"
     }
   },
   {
@@ -40,63 +22,27 @@
       "base_url": "https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}"
     },
     "metadata": {
-      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 .env 中设置 EXA_API_KEY（从 https://dashboard.exa.ai/api-keys 获取）。"
-    }
-  },
-  {
-    "id": "fetch",
-    "name": "Fetch 网页抓取",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "-m",
-        "mcp_server_fetch"
-      ]
-    },
-    "metadata": {
-      "description": "MCP 官方 Fetch：抓取 URL 内容并转为 Markdown（工具名 fetch_fetch）。需先 pip install mcp-server-fetch。"
-    }
-  },
-  {
-    "id": "mem0",
-    "name": "Mem0 记忆 MCP",
-    "enabled": false,
-    "transport": {
-      "type": "stdio",
-      "command": "python",
-      "args": [
-        "-m",
-        "mem0_mcp_server"
-      ],
-      "env": {
-        "MEM0_API_KEY": "${MEM0_API_KEY}",
-        "MEM0_DEFAULT_USER_ID": "${MEM0_DEFAULT_USER_ID}"
-      }
-    },
-    "metadata": {
-      "description": "Mem0 长期记忆：添加/搜索/更新记忆。需在 https://app.mem0.ai 获取 API Key（格式 sk_mem0_...）并替换 env 中的 YOUR_MEM0_API_KEY 后启用。",
-      "version": "1.0.0"
+      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 .env 中设置 EXA_API_KEY。（默认禁用：启动时外部连接不稳定会拖慢/阻塞初始化；需要时可再启用）"
     }
   },
   {
     "id": "amap-maps",
     "name": "高德地图",
     "enabled": true,
+    "lazy": true,
     "transport": {
       "type": "stdio",
-      "command": "npx",
+      "command": "python",
       "args": [
+        "mcp_servers/stdio_json_filter.py",
+        "npx",
         "-y",
+        "--quiet",
         "@amap/amap-maps-mcp-server"
-      ],
-      "env": {
-        "AMAP_MAPS_API_KEY": "${AMAP_MAPS_API_KEY}"
-      }
+      ]
     },
     "metadata": {
-      "description": "高德地图 MCP：地理编码、逆地理编码、天气、距离计算、路线规划（步行/驾车/公交）等。需在 .env 中设置 AMAP_MAPS_API_KEY。"
+      "description": "高德地图 MCP：地理编码、逆地理编码、天气、距离计算、路线规划（步行/驾车/公交）等。需在 .env 中设置 AMAP_MAPS_API_KEY。（默认禁用：npx/stdout 易污染 JSON-RPC；需要时可再启用）"
     }
   },
   {
@@ -115,37 +61,30 @@
     }
   },
   {
-    "id": "zhipu-web-search",
-    "name": "智谱 Web 搜索",
-    "enabled": true,
-    "transport": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "cc-zhipu-web-search"
-      ],
-      "env": {
-        "BIGMODEL_API_KEY": "${ZHIPU_WEB_SEARCH_API_KEY}"
-      }
-    },
-    "metadata": {
-      "description": "通过本地 STDIO MCP Server 调用智谱 Web Search。"
-    }
-  },
-  {
     "id": "playwright-mcp",
     "name": "Playwright 浏览器控制",
     "enabled": true,
+    "lazy": true,
     "transport": {
       "type": "stdio",
-      "command": "npx",
+      "command": "python",
       "args": [
+        "mcp_servers/stdio_json_filter.py",
+        "npx",
         "-y",
+        "--quiet",
         "@playwright/mcp@latest"
-      ]
+      ],
+      "env": {
+        "NO_UPDATE_NOTIFIER": "1",
+        "NPM_CONFIG_UPDATE_NOTIFIER": "false",
+        "NPM_CONFIG_FUND": "false",
+        "NPM_CONFIG_AUDIT": "false",
+        "NPM_CONFIG_LOGLEVEL": "silent"
+      }
     },
     "metadata": {
-      "description": "Playwright MCP：通过 Playwright 控制本机浏览器，支持导航、点击、输入、截图等自动化操作。需要本机安装 Node.js 18+，首次使用时 npx 会自动拉取依赖。"
+      "description": "Playwright MCP：通过 Playwright 控制本机浏览器，支持导航、点击、输入、截图等自动化操作。需要本机安装 Node.js 18+，首次使用时 npx 会自动拉取依赖。（默认禁用：npx/stdout 易污染 JSON-RPC；需要时可再启用）"
     }
   }
 ]

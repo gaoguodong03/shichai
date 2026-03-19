@@ -1,14 +1,18 @@
-"""ReAct Agent 工作流"""
+"""ReAct Agent 工作流
+
+注意：当前环境为 langgraph==0.0.51 + Python 3.13，会在 pregel 执行时触发 KeyError '__start__'。
+为保证群聊/技能执行稳定，本模块改用不依赖 langgraph 的 SimpleAgent 执行循环。
+"""
 import asyncio
 import json
 import logging
 import os
 import time
 from typing import TypedDict, Annotated, Sequence, List
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langgraph.graph import StateGraph, END
 from app.agent.llm_client import QwenLLM
+from app.agent.simple_agent import SimpleAgent
 
 logger = logging.getLogger(__name__)
 
@@ -364,11 +368,11 @@ def create_react_agent(
                     logger.error(f"call_tool: {error_msg}")
                     tool_results.append(error_msg)
             
-            return {
-                "messages": [
-                    HumanMessage(content="\n".join(tool_results))
-                ]
-            }
+            tool_msgs: list[ToolMessage] = []
+            for i, tr in enumerate(tool_results):
+                tcid = (last_message.tool_calls[i].get("id") if i < len(last_message.tool_calls) else None) or f"tool-{i}"
+                tool_msgs.append(ToolMessage(content=tr, tool_call_id=str(tcid)))
+            return {"messages": tool_msgs}
         
         # 回退到文本解析（兼容旧格式）
         content = last_message.content
@@ -476,29 +480,16 @@ def create_react_agent(
                 ]
             }
     
-    # 创建图
-    workflow = StateGraph(AgentState)
-    
-    # 添加节点
-    workflow.add_node("agent", call_model)
-    workflow.add_node("tool", call_tool)
-    
-    # 设置入口
-    workflow.set_entry_point("agent")
-    
-    # 添加条件边
-    workflow.add_conditional_edges(
-        "agent",
-        should_continue,
-        {
-            "call_tool": "tool",
-            "end": END
-        }
+    async def _tool_runner(state: AgentState, tools_list: list[BaseTool]):
+        return await call_tool(state)
+
+    return SimpleAgent(
+        llm=llm,
+        tools=tools,
+        system_prompt=system_prompt,
+        tool_runner=_tool_runner,
+        timeout_s=float(_LLM_AGENT_TIMEOUT),
     )
-    
-    workflow.add_edge("tool", "agent")
-    
-    return workflow.compile()
 
 
 def create_skill_execution_agent(
@@ -632,13 +623,16 @@ def create_skill_execution_agent(
     async def call_tool(state: AgentState):
         return await _call_tool_impl(state, tools)
 
-    workflow = StateGraph(AgentState)
-    workflow.add_node("agent", call_model)
-    workflow.add_node("tool", call_tool)
-    workflow.set_entry_point("agent")
-    workflow.add_conditional_edges("agent", should_continue, {"call_tool": "tool", "end": END})
-    workflow.add_edge("tool", "agent")
-    return workflow.compile()
+    async def _tool_runner(state: AgentState, tools_list: list[BaseTool]):
+        return await _call_tool_impl(state, tools_list)
+
+    return SimpleAgent(
+        llm=llm,
+        tools=tools,
+        system_prompt=system_prompt,
+        tool_runner=_tool_runner,
+        timeout_s=float(_LLM_AGENT_TIMEOUT),
+    )
 
 
 async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
@@ -664,6 +658,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:
             tool_name = tool_call.get("name") or tool_call.get("id", "")
+            tool_call_id = str(tool_call.get("id") or tool_call.get("tool_call_id") or tool_name or "tool")
             arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
             tool = None
             for t in state["tools"]:
@@ -687,17 +682,18 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                         result = await asyncio.to_thread(tool.run, tool_input)
                     else:
                         result = f"工具 {tool_name} 无法执行"
-                    tool_results.append(f"工具 {tool_name} 的执行结果: {result}")
+                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 的执行结果: {result}", tool_call_id=tool_call_id))
                 except Exception as e:
-                    tool_results.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
             else:
                 if tool_name == "read_file":
-                    tool_results.append(
-                        "工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。"
-                    )
+                    tool_results.append(ToolMessage(
+                        content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。",
+                        tool_call_id=tool_call_id,
+                    ))
                 else:
-                    tool_results.append(f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}")
-        return {"messages": [HumanMessage(content="\n".join(tool_results))]}
+                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}", tool_call_id=tool_call_id))
+        return {"messages": tool_results}
 
     content = last_message.content
     try:
@@ -724,11 +720,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     result = await tool.arun(json.dumps(arguments) if arguments else "{}")
                 else:
                     result = await asyncio.to_thread(tool.run, json.dumps(arguments) if arguments else "{}")
-                return {"messages": [HumanMessage(content=f"工具 {tool_name} 的执行结果: {result}")]}
+                return {"messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result}", tool_call_id=str(tool_name or 'tool'))]}
             except Exception as e:
-                return {"messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")]}
+                return {"messages": [ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=str(tool_name or 'tool'))]}
         if tool_name == "read_file":
-            return {"messages": [HumanMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。")]}
-        return {"messages": [HumanMessage(content=f"工具 {tool_name} 不存在")]}
+            return {"messages": [ToolMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。", tool_call_id="read_file")]}
+        return {"messages": [ToolMessage(content=f"工具 {tool_name} 不存在", tool_call_id=str(tool_name or 'tool'))]}
     except Exception as e:
-        return {"messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")]}
+        return {"messages": [ToolMessage(content=f"工具调用解析错误: {str(e)}", tool_call_id="tool_call_parse_error")]}

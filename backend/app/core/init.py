@@ -16,23 +16,24 @@ async def ensure_mcp_and_skills_initialized() -> None:
     if _initialized:
         return
     logger.info("开始初始化 MCP Manager 和 Skills Loader")
+    # MCP 初始化失败不应阻塞整个后端启动：没有 MCP 时仍可使用基础对话与本地脚本能力。
     try:
         from app.mcp.manager import get_mcp_manager
         mgr = get_mcp_manager()
         await mgr.initialize_all()
         logger.info("MCP Manager 初始化完成，加载了 %s 个工具", len(mgr.tools))
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        logger.exception("Failed to initialize MCP managers: %s", e)
-        raise
+    except asyncio.CancelledError as e:
+        # MCP 初始化过程中被 anyio/asyncio 取消（常见于某些 stdio server 卡死/超时）。
+        # 这里直接降级，不再阻塞服务启动。
+        logger.exception("MCP Manager 初始化被取消（将降级运行，不影响服务启动）: %s", e)
+    except BaseException as e:
+        logger.exception("MCP Manager 初始化失败（将降级运行，不影响服务启动）: %s", e)
     try:
         from app.skills.loader import get_skills_loader
         loader = get_skills_loader()
         loader.load_all_skills()
         logger.info("Skills Loader 初始化完成，加载了 %s 个技能", len(loader.skills))
     except Exception as e:
-        logger.exception("Failed to load skills: %s", e)
-        raise
+        logger.exception("Skills Loader 初始化失败（将降级运行，不影响服务启动）: %s", e)
     _initialized = True
     logger.info("MCP 与 Skills 初始化完成")

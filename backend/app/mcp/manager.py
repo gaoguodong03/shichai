@@ -92,6 +92,7 @@ class MCPToolManager:
         try:
             transport = config.get("transport", {})
             transport_type = transport.get("type", "stdio")
+            session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
             if transport_type == "stdio":
                 command = transport.get("command", "python")
@@ -105,7 +106,8 @@ class MCPToolManager:
                 raw_env = transport.get("env")
                 env = None
                 if isinstance(raw_env, dict) and raw_env:
-                    env = {k: _subst_env(v) for k, v in raw_env.items()}
+                    # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
+                    env = {**os.environ, **{k: _subst_env(v) for k, v in raw_env.items()}}
                 params = StdioServerParameters(
                     command=command,
                     args=args,
@@ -131,10 +133,13 @@ class MCPToolManager:
                     session = await self.exit_stack.enter_async_context(
                         ClientSession(read, write)
                     )
-                    # 添加超时保护（30秒），asyncio 在文件顶部已导入
-                    await asyncio.wait_for(session.initialize(), timeout=30.0)
+                    # 添加超时保护（可配置），asyncio 在文件顶部已导入
+                    await asyncio.wait_for(session.initialize(), timeout=session_init_timeout)
                 except asyncio.TimeoutError:
-                    logger.error("MCP Session 初始化超时（30秒），可能的原因：")
+                    logger.error("MCP Session 初始化超时（%.1fs）", session_init_timeout)
+                    raise
+                except asyncio.CancelledError as e:
+                    logger.error("MCP Session 初始化被取消: %s", e, exc_info=True)
                     raise
                 except Exception as e:
                     logger.error(f"MCP Session 初始化失败: {e}", exc_info=True)
@@ -163,9 +168,9 @@ class MCPToolManager:
                     read_write_getid = await self.exit_stack.enter_async_context(streamable_transport)
                     read_stream, write_stream, _ = read_write_getid
                     session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
-                    await asyncio.wait_for(session.initialize(), timeout=30.0)
+                    await asyncio.wait_for(session.initialize(), timeout=session_init_timeout)
                 except asyncio.TimeoutError:
-                    logger.error(f"MCP Server {server_id} Streamable HTTP 初始化超时（30秒）")
+                    logger.error("MCP Server %s Streamable HTTP 初始化超时（%.1fs）", server_id, session_init_timeout)
                     raise
                 except Exception as e:
                     logger.error(f"MCP Server {server_id} Streamable HTTP 连接失败: {e}", exc_info=True)
@@ -257,16 +262,45 @@ class MCPToolManager:
         for config in self.server_configs:
             server_id = config.get("id", f"server_{len(self.sessions)}")
             if config.get("enabled", True):
+                # lazy server: 不在启动期建立连接，首次需要时再连接
+                if config.get("lazy", False):
+                    logger.info("MCP Server %s 标记为 lazy，跳过启动初始化", server_id)
+                    continue
                 try:
-                    success = await self.connect_server(server_id, config)
+                    # 单个 server 失败不应影响其它 server 与主服务启动
+                    tmo = float(config.get("metadata", {}).get("init_timeout_sec", 15.0))
+                    logger.info("初始化 MCP Server: %s (timeout=%.1fs)", server_id, tmo)
+                    success = await asyncio.wait_for(self.connect_server(server_id, config), timeout=tmo)
                     if not success:
-                        logger.error(f"MCP Server {server_id} 初始化失败")
-                except asyncio.CancelledError:
-                    raise  # 请求被取消时继续向上抛出
-                except Exception as e:
-                    logger.error(f"MCP Server {server_id} 初始化异常，跳过: {e}", exc_info=True)
+                        logger.error("MCP Server %s 初始化失败（已跳过）", server_id)
+                except asyncio.TimeoutError:
+                    logger.error("MCP Server %s 初始化超时（已跳过）", server_id, exc_info=True)
+                except asyncio.CancelledError as e:
+                    # 某些 stdio/http 初始化会触发 anyio cancel scope；这里降级处理，避免阻塞整个系统
+                    logger.error("MCP Server %s 初始化被取消（已跳过）: %s", server_id, e, exc_info=True)
+                except BaseException as e:
+                    logger.error("MCP Server %s 初始化异常（已跳过）: %s", server_id, e, exc_info=True)
         
         logger.info("加载 mcp 工具完成")
+
+    async def ensure_servers_loaded(self, server_ids: List[str]) -> None:
+        """确保给定 server_ids 的 MCP 工具已加载（lazy 服务器也会在首次需要时加载）。"""
+        if not server_ids:
+            return
+        for sid in server_ids:
+            if not sid:
+                continue
+            if sid in self.sessions:
+                # connect_server 成功后会同时 load tools
+                continue
+            cfg = next((c for c in self.server_configs if c.get("id") == sid), None)
+            if not cfg:
+                logger.warning("ensure_servers_loaded: 未找到 MCP server 配置: %s", sid)
+                continue
+            if not cfg.get("enabled", True):
+                logger.info("ensure_servers_loaded: MCP server %s 未启用（enabled=false），跳过", sid)
+                continue
+            await self.connect_server(sid, cfg)
     
     async def cleanup(self):
         """清理所有连接"""

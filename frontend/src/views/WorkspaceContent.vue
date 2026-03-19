@@ -299,7 +299,7 @@
               </div>
               <div class="group-chat-input-toolbar">
                 <div class="group-chat-toolbar-left">
-                  <div v-if="(groupDetail?.dha_ids?.length ?? 0) > 0" ref="nextSpeakerRef" class="group-chat-next-speaker-picker">
+                  <div v-if="orderedMemberIds.length > 0" ref="nextSpeakerRef" class="group-chat-next-speaker-picker">
                     <button
                       type="button"
                       class="group-chat-next-speaker-trigger"
@@ -324,11 +324,13 @@
                           @click="groupNextSpeakerOverride = opt.id; showNextSpeakerPicker = false"
                         >
                           <span
+                            v-if="opt.id !== 'host'"
                             class="group-chat-avatar group-chat-avatar-sm"
-                            :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? 0) }"
+                            :style="{ backgroundColor: dhaAvatarColor(dhaIndex(opt.id)) }"
                           >
                             {{ dhaAvatarChar(opt.id) }}
                           </span>
+                          <span v-else class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
                           <span class="group-chat-next-speaker-name-in-list">
                             {{ opt.name }}
                             <span v-if="opt.id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
@@ -1143,6 +1145,11 @@ async function confirmGroupNext(override: string) {
                     : ''
                   groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
+                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
@@ -1156,6 +1163,11 @@ async function confirmGroupNext(override: string) {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.auto_invited_dha_ids?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if (endData.suggested_add_dha_ids?.length)
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)
@@ -1569,6 +1581,11 @@ async function continueGroupStream() {
                     : ''
                   groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
+                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
@@ -1581,6 +1598,11 @@ async function continueGroupStream() {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.auto_invited_dha_ids?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if (endData.suggested_add_dha_ids?.length)
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)
@@ -2476,6 +2498,11 @@ async function sendGroupMessage() {
                     : ''
                   groupNextPrompt.value = (data.next_prompt as string || '').trim() + fileRefs
                 }
+                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
                 else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
               }
@@ -2489,6 +2516,11 @@ async function sendGroupMessage() {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                if (endData.auto_invited_dha_ids?.length) {
+                  groupSuggestedAddDhaIds.value = []
+                  emit('dha-added')
+                  loadGroupDetail()
+                }
                 if (endData.suggested_add_dha_ids?.length)
                   groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
                 else if (endData.suggested_add_dha_id)

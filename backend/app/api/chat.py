@@ -478,7 +478,7 @@ async def run_single_chat_full_content(
         "skill_ids": [selected_skill_id] if selected_skill_id else [],
         "mcp_server_ids": (get_mcp_servers_for_skill(selected_skill_id) or []) if selected_skill_id else [],
     }
-    tools = build_tools_for_group_chat(all_tools, _dha, session_id)
+    tools = await build_tools_for_group_chat(all_tools, _dha, session_id)
 
     skill_full_content = ""
     if selected_skill_id:
@@ -651,7 +651,7 @@ async def chat_stream(request: ChatRequest):
         "skill_ids": [selected_skill_id] if selected_skill_id else [],
         "mcp_server_ids": _mcp_ids,
     }
-    tools = build_tools_for_group_chat(all_tools, _dha, session_id)
+    tools = await build_tools_for_group_chat(all_tools, _dha, session_id)
     server_ids = get_mcp_servers_for_skill(selected_skill_id) or [] if selected_skill_id else []
     skill_tools_fallback = bool(
         server_ids
