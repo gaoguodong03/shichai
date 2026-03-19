@@ -1,9 +1,9 @@
-# DHA 一键运行：前后端一体镜像
+# 专家协作平台一键运行：前后端一体镜像
 # 使用：docker compose up -d
 # 访问：http://localhost:8000
 #
 # 默认挂载本地 backend/data、backend/skills、backend/config，与本地开发共用技能、MCP 配置、会话历史与产出。
-# 若不想用本地数据，可改回匿名卷：注释掉下面三行 volumes，改用 - dha_data:/app/data 与 - dha_config:/app/config
+# 若不想用本地数据，可改回匿名卷：注释掉下面三行 volumes，改用 - app_data:/app/data 与 - app_config:/app/config
 
 services:
   dha:

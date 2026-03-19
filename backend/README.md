@@ -1,6 +1,6 @@
 # 心像 EchoTwin Backend
 
-心像 EchoTwin 后端服务（原 DHA，Digital Human Agent）
+心像 EchoTwin 后端服务（专家协作平台，兼容历史 DHA 命名）
 
 ## 快速开始
 

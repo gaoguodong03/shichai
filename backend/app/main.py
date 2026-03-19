@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="心像 EchoTwin API",
-    description="EchoTwin - Personal AI Twin with MCP and Skills",
+    description="EchoTwin - Expert Collaboration Platform with MCP and Skills",
     version="0.1.0",
     lifespan=lifespan,
     dependencies=[Depends(user_context_dependency)],
@@ -55,8 +55,9 @@ app.include_router(sessions.router, prefix="/api")
 # Docker/生产：挂载前端静态并 SPA 回退
 _static_dir = os.getenv("STATIC_DIR")
 if _static_dir and Path(_static_dir).is_dir():
-    app.mount("/assets", StaticFiles(directory=Path(_static_dir) / "assets"), name="assets")
-    _index = Path(_static_dir) / "index.html"
+    _static_root = Path(_static_dir)
+    app.mount("/assets", StaticFiles(directory=_static_root / "assets"), name="assets")
+    _index = _static_root / "index.html"
     @app.get("/")
     async def index():
         return FileResponse(_index)
@@ -66,7 +67,7 @@ if _static_dir and Path(_static_dir).is_dir():
         if path.startswith("api"):
             from fastapi import HTTPException
             raise HTTPException(404)
-        f = Path(_static_dir) / path
+        f = _static_root / path
         if f.is_file():
             return FileResponse(f)
         return FileResponse(_index)

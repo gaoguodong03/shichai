@@ -35,7 +35,7 @@
             <button
               type="button"
               :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
-              @click="showGroupWorkspace = !showGroupWorkspace"
+              @click="toggleGroupWorkspaceOpen"
             >
               <svg class="group-chat-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               工作区
@@ -143,7 +143,7 @@
                             v-if="msg.message_id"
                             type="button"
                             class="group-chat-delete-msg-btn"
-                            title="从会话中彻底删除该条发言，避免污染下一轮 DHA 上下文"
+                            title="从会话中彻底删除该条发言，避免污染下一轮专家上下文"
                             @click="deleteGroupMessage(msg)"
                           >
                             删除该条发言
@@ -266,7 +266,7 @@
                   </div>
                   <div class="group-chat-input-block group-chat-input-block-at">
                     <label class="group-chat-input-block-label">
-                      下一 DHA 提示词
+                      下一专家提示词
                       <span v-if="groupAutoConfirm && groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
                     </label>
                     <textarea
@@ -444,7 +444,7 @@
                           type="button"
                           class="group-chat-toggle-pill"
                           :class="{ 'group-chat-toggle-pill-active': groupAutoConfirm }"
-                          :title="groupAutoConfirm ? '每轮 DHA 发言后暂停，由你点「确认并继续」再继续' : '自动连续执行直到任务完成'"
+                          :title="groupAutoConfirm ? '每轮专家发言后暂停，由你点「确认并继续」再继续' : '自动连续执行直到任务完成'"
                           @click="toggleGroupManualControl"
                         >
                           <svg
@@ -583,14 +583,14 @@
                           <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
                         </section>
                         <section class="group-chat-add-remove-section">
-                          <p class="group-chat-members-dropdown-title">可邀请的 DHA</p>
+                          <p class="group-chat-members-dropdown-title">可邀请的专家</p>
                           <ul v-if="invitableDhas.length" class="group-chat-members-list">
                             <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-member-skill-row">
                               <span class="group-chat-add-member-label">{{ d.name || d.dha_id }}</span>
                               <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.dha_id)">邀请</button>
                             </li>
                           </ul>
-                          <p v-else class="group-chat-add-member-empty">暂无可邀请的 DHA</p>
+                          <p v-else class="group-chat-add-member-empty">暂无可邀请的专家</p>
                         </section>
                       </div>
                     </div>
@@ -604,7 +604,7 @@
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
                   <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
-                    已自动暂停（已运行 32 轮）。如需继续，请检查并编辑「下一 DHA 提示词」，然后点击「确认并继续」。
+                    已自动暂停（已运行 32 轮）。如需继续，请检查并编辑「下一专家提示词」，然后点击「确认并继续」。
                   </span>
                   <button
                     v-if="groupStreaming"
@@ -850,7 +850,7 @@
         在左侧选择已有会话，或点击「新建会话」创建新会话（默认仅主持人，可在会话内邀请专家）。
       </p>
       <p class="workspace-empty-hint">
-        会话内可使用工作区、邀请 DHA 等能力。
+        会话内可使用工作区、邀请专家等能力。
       </p>
     </div>
   </div>
@@ -924,7 +924,44 @@ const isResizingWorkspace = ref(false)
 const isResizingWorkspaceInner = ref(false)
 const lastExpandedWorkspaceWidth = ref(672)
 
-const archivePanelOpen = ref(false)
+const USER_PREF_UPDATED_EVENT_NAME = 'dha-user-pref-updated'
+const WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_workspace_open_v1'
+const TOC_WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_toc_workspace_open_v1'
+
+function loadWorkspaceOpenDefault(): boolean {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_OPEN_STORAGE_KEY)
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+  } catch {
+    // ignore
+  }
+  return false
+}
+
+function persistBoolToLocalStorage(storageKey: string, value: boolean) {
+  try {
+    localStorage.setItem(storageKey, value ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
+function loadTocWorkspaceOpenDefault(): boolean {
+  try {
+    const raw = localStorage.getItem(TOC_WORKSPACE_OPEN_STORAGE_KEY)
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+  } catch {
+    // ignore
+  }
+  // 默认保持旧行为：不开启归档侧边目录
+  return false
+}
+
+const archivePanelOpen = ref(loadTocWorkspaceOpenDefault())
+// 让“工作区”按钮默认状态也受用户喜好影响
+showGroupWorkspace.value = loadWorkspaceOpenDefault()
 // TOC 当前高亮条目（key 与 archiveItems.item.key 一致）
 const tocActiveKey = ref<string>('')
 
@@ -965,6 +1002,22 @@ function scrollToMessage(messageId: string) {
 
 function onArchiveToggleClick() {
   archivePanelOpen.value = !archivePanelOpen.value
+  persistBoolToLocalStorage(TOC_WORKSPACE_OPEN_STORAGE_KEY, archivePanelOpen.value)
+  window.dispatchEvent(
+    new CustomEvent(USER_PREF_UPDATED_EVENT_NAME, {
+      detail: { key: TOC_WORKSPACE_OPEN_STORAGE_KEY, value: archivePanelOpen.value },
+    })
+  )
+}
+
+function toggleGroupWorkspaceOpen() {
+  showGroupWorkspace.value = !showGroupWorkspace.value
+  persistBoolToLocalStorage(WORKSPACE_OPEN_STORAGE_KEY, showGroupWorkspace.value)
+  window.dispatchEvent(
+    new CustomEvent(USER_PREF_UPDATED_EVENT_NAME, {
+      detail: { key: WORKSPACE_OPEN_STORAGE_KEY, value: showGroupWorkspace.value },
+    })
+  )
 }
 
 type TocSpyEntry = { key: string; el: HTMLElement }
@@ -1170,6 +1223,53 @@ function wrapToolCallPreBlocks(html: string) {
   return html
 }
 
+function rewriteDownloadImagesForAuth(html: string): string {
+  if (!html) return html
+  // 把需要鉴权的图片下载 URL 改成延迟 fetch+blob 的方式：
+  // - 将 img[src="/.../files/download?path=..."] 变为 img[data-dha-auth-src="..."] + src=""
+  // - 随后在 hydrateAuthImages() 里用 fetch 携带 Authorization header 拿 blob 再设置 src
+  return html.replace(
+    /(<img\b[^>]*?)\s+src="([^"]*\/files\/download\?path=[^"]+)"([^>]*?>)/g,
+    '$1 data-dha-auth-src="$2" src=""$3'
+  )
+}
+
+let authImageHydrateRaf = 0
+const authImageObjectUrls: string[] = []
+
+function scheduleHydrateAuthImages() {
+  if (authImageHydrateRaf) return
+  authImageHydrateRaf = window.requestAnimationFrame(async () => {
+    authImageHydrateRaf = 0
+    await hydrateAuthImages()
+  })
+}
+
+async function hydrateAuthImages() {
+  const container = groupMessagesRef.value
+  if (!container) return
+
+  const imgs = Array.from(container.querySelectorAll<HTMLImageElement>('img[data-dha-auth-src]'))
+  for (const img of imgs) {
+    if (img.dataset.dhaHydrated === '1') continue
+    const rawSrc = img.getAttribute('data-dha-auth-src')
+    if (!rawSrc) continue
+
+    img.dataset.dhaHydrated = '1'
+    try {
+      const r = await fetch(rawSrc)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const blob = await r.blob()
+      const objUrl = URL.createObjectURL(blob)
+      authImageObjectUrls.push(objUrl)
+      img.src = objUrl
+    } catch {
+      // 回退：尝试直接用原 src（如果资源本身允许浏览器直接加载，会显示；否则至少不会保持空白）
+      img.src = rawSrc
+    }
+  }
+}
+
 function renderMarkdown(text: string) {
   if (!text) return ''
   if (!mdRef.value) return escapeHtml(text)
@@ -1178,6 +1278,7 @@ function renderMarkdown(text: string) {
     let html = mdRef.value.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
     html = wrapToolCallPreBlocks(html)
+    html = rewriteDownloadImagesForAuth(html)
     return html
   } catch {
     return escapeHtml(text)
@@ -1254,12 +1355,20 @@ async function confirmGroupNext(override: string) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
+        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
+        buffer = buffer.replace(/\r/g, '')
         const parts = buffer.split('\n\n')
         buffer = parts.pop() || ''
-        for (const block of parts) {
+        for (const blockRaw of parts) {
+          const block = blockRaw.trim()
           if (!block.startsWith('event: ')) continue
-          const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
-          const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          const eventTypeLine = block.split('\n')[0] || ''
+          const eventType = eventTypeLine.replace('event: ', '').trim()
+          const dataLines = block
+            .split('\n')
+            .filter((l) => l.startsWith('data: '))
+            .map((l) => l.slice(6).trim())
+          const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
@@ -1281,13 +1390,13 @@ async function confirmGroupNext(override: string) {
                 if (data.next_prompt) {
                   groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
-                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                if (extractAutoInvitedIds(data).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
+                const suggestedIds = extractSuggestedAddIds(data)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
               }
             } catch (_) {}
           }
@@ -1299,15 +1408,13 @@ async function confirmGroupNext(override: string) {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.auto_invited_dha_ids?.length) {
+                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if (endData.suggested_add_dha_ids?.length)
-                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
-                else if (endData.suggested_add_dha_id)
-                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -1349,7 +1456,7 @@ async function inviteSingleMember(dhaId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_dha_ids: [dhaId] }),
+      body: JSON.stringify({ add_expert_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1373,7 +1480,7 @@ async function removeMember(dhaId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remove_dha_ids: [dhaId] }),
+      body: JSON.stringify({ remove_expert_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1432,8 +1539,20 @@ async function openInsertFileModal() {
   await loadInsertFileEntries()
 }
 
+function onUserPrefUpdated(ev: Event) {
+  const e = ev as CustomEvent<{ key?: string; value?: unknown }>
+  const key = e.detail?.key
+  if (key === WORKSPACE_OPEN_STORAGE_KEY) {
+    showGroupWorkspace.value = !!e.detail?.value
+  }
+  if (key === TOC_WORKSPACE_OPEN_STORAGE_KEY) {
+    archivePanelOpen.value = !!e.detail?.value
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', closeMembersDropdown)
+  window.addEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
   import('markdown-it').then((M) => {
     const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
     mdRef.value = new Md({ breaks: true })
@@ -1442,7 +1561,16 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
+  window.removeEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
   stopTocScrollSpy()
+  for (const u of authImageObjectUrls) {
+    try {
+      URL.revokeObjectURL(u)
+    } catch {
+      // ignore
+    }
+  }
+  authImageObjectUrls.length = 0
 })
 
 const groupMemberNames = computed(() => {
@@ -1563,7 +1691,7 @@ async function applyShortcutPreset(id: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_dha_ids: toInvite }),
+      body: JSON.stringify({ add_expert_ids: toInvite }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1668,6 +1796,28 @@ const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>
 const insertFileLoading = ref(false)
 const attachedFiles = ref<{ name: string; path: string }[]>([])
 
+function extractSuggestedAddIds(payload: Record<string, unknown> | null | undefined): string[] {
+  if (!payload) return []
+  const expertIds = payload.suggested_add_expert_ids as string[] | undefined
+  if (Array.isArray(expertIds) && expertIds.length) return expertIds
+  const dhaIds = payload.suggested_add_dha_ids as string[] | undefined
+  if (Array.isArray(dhaIds) && dhaIds.length) return dhaIds
+  const singleExpertId = payload.suggested_add_expert_id as string | undefined
+  if (typeof singleExpertId === 'string' && singleExpertId.trim()) return [singleExpertId.trim()]
+  const singleDhaId = payload.suggested_add_dha_id as string | undefined
+  if (typeof singleDhaId === 'string' && singleDhaId.trim()) return [singleDhaId.trim()]
+  return []
+}
+
+function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefined): string[] {
+  if (!payload) return []
+  const expertIds = payload.auto_invited_expert_ids as string[] | undefined
+  if (Array.isArray(expertIds) && expertIds.length) return expertIds
+  const dhaIds = payload.auto_invited_dha_ids as string[] | undefined
+  if (Array.isArray(dhaIds) && dhaIds.length) return dhaIds
+  return []
+}
+
 function removeAttachedFile(path: string) {
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
 }
@@ -1735,12 +1885,20 @@ async function continueGroupStream() {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
+        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
+        buffer = buffer.replace(/\r/g, '')
         const parts = buffer.split('\n\n')
         buffer = parts.pop() || ''
-        for (const block of parts) {
+        for (const blockRaw of parts) {
+          const block = blockRaw.trim()
           if (!block.startsWith('event: ')) continue
-          const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
-          const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          const eventTypeLine = block.split('\n')[0] || ''
+          const eventType = eventTypeLine.replace('event: ', '').trim()
+          const dataLines = block
+            .split('\n')
+            .filter((l) => l.startsWith('data: '))
+            .map((l) => l.slice(6).trim())
+          const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
@@ -1762,13 +1920,13 @@ async function continueGroupStream() {
                 if (data.next_prompt) {
                   groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
-                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                if (extractAutoInvitedIds(data).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
+                const suggestedIds = extractSuggestedAddIds(data)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
               }
             } catch (_) {}
           }
@@ -1779,15 +1937,13 @@ async function continueGroupStream() {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.auto_invited_dha_ids?.length) {
+                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if (endData.suggested_add_dha_ids?.length)
-                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
-                else if (endData.suggested_add_dha_id)
-                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -1846,7 +2002,7 @@ async function inviteSuggestedDha() {
     const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_dha_ids: ids }),
+      body: JSON.stringify({ add_expert_ids: ids }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -2057,12 +2213,17 @@ watch(
     const dhaIds = groupDetail.value?.dha_ids ?? []
     if (dhaIds.length === 0 && Array.isArray(messages) && messages.length) {
       const lastHost = [...messages].reverse().find((m: { role?: string }) => m.role === 'host')
-      const lastMsg = lastHost as { suggested_add_dha_ids?: string[]; suggested_add_dha_id?: string; content?: string } | undefined
+      const lastMsg = lastHost as {
+        suggested_add_dha_ids?: string[]
+        suggested_add_dha_id?: string
+        suggested_add_expert_ids?: string[]
+        suggested_add_expert_id?: string
+        content?: string
+      } | undefined
       if (lastMsg) {
-        if (lastMsg.suggested_add_dha_ids?.length) {
-          groupSuggestedAddDhaIds.value = lastMsg.suggested_add_dha_ids
-        } else if (lastMsg.suggested_add_dha_id) {
-          groupSuggestedAddDhaIds.value = [lastMsg.suggested_add_dha_id]
+        const suggestedIds = extractSuggestedAddIds(lastMsg as Record<string, unknown>)
+        if (suggestedIds.length) {
+          groupSuggestedAddDhaIds.value = suggestedIds
         } else if (lastMsg.content) {
           const validIds = new Set((props.dhaInstances || []).map((d) => d.dha_id))
           const parsed = parseDhaIdsFromHostContent(lastMsg.content).filter((id) => validIds.has(id))
@@ -2421,7 +2582,7 @@ async function deleteGroupMessage(msg: { message_id?: string; role?: string }) {
   const id = groupDetail.value?.id
   const messageId = msg?.message_id
   if (!id || !messageId) return
-  if (!window.confirm('确定从会话中彻底删除该条发言？删除后下一轮 DHA 将不再看到这条内容。')) return
+  if (!window.confirm('确定从会话中彻底删除该条发言？删除后下一轮专家将不再看到这条内容。')) return
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
       method: 'DELETE',
@@ -2554,6 +2715,8 @@ function appendStreamingContent(dhaId: string, text: string) {
     const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
     groupDisplayMessages.value = [...cleared, { role: 'assistant', dha_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
   }
+  // markdown v-html 渲染完成后，用 fetch+blob 显示受保护图片
+  nextTick(() => scheduleHydrateAuthImages())
 }
 
 /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
@@ -2566,6 +2729,7 @@ function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   } else {
     groupDisplayMessages.value = [...list, data as GroupMessage]
   }
+  nextTick(() => scheduleHydrateAuthImages())
 }
 
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
@@ -2646,12 +2810,20 @@ async function sendGroupMessage() {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
+        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
+        buffer = buffer.replace(/\r/g, '')
         const parts = buffer.split('\n\n')
         buffer = parts.pop() || ''
-        for (const block of parts) {
+        for (const blockRaw of parts) {
+          const block = blockRaw.trim()
           if (!block.startsWith('event: ')) continue
-          const dataStr = block.includes('\ndata: ') ? block.split('\ndata: ').slice(1).join('\ndata: ').trim() : ''
-          const eventType = block.slice(0, block.indexOf('\n')).replace('event: ', '').trim()
+          const eventTypeLine = block.split('\n')[0] || ''
+          const eventType = eventTypeLine.replace('event: ', '').trim()
+          const dataLines = block
+            .split('\n')
+            .filter((l) => l.startsWith('data: '))
+            .map((l) => l.slice(6).trim())
+          const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
               const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
@@ -2675,13 +2847,13 @@ async function sendGroupMessage() {
                 if (data.next_prompt) {
                   groupNextPrompt.value = (data.next_prompt as string || '').trim()
                 }
-                if ((data.auto_invited_dha_ids as string[] | undefined)?.length) {
+                if (extractAutoInvitedIds(data).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if ((data.suggested_add_dha_ids as string[] | undefined)?.length) groupSuggestedAddDhaIds.value = data.suggested_add_dha_ids as string[]
-                else if (data.suggested_add_dha_id) groupSuggestedAddDhaIds.value = [data.suggested_add_dha_id as string]
+                const suggestedIds = extractSuggestedAddIds(data)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
               }
             } catch (_) {}
           }
@@ -2693,15 +2865,13 @@ async function sendGroupMessage() {
                 groupWaitingForUser.value = groupAutoConfirm.value
                 if (endData.suggested_next_speaker != null)
                   groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
-                if (endData.auto_invited_dha_ids?.length) {
+                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                if (endData.suggested_add_dha_ids?.length)
-                  groupSuggestedAddDhaIds.value = endData.suggested_add_dha_ids
-                else if (endData.suggested_add_dha_id)
-                  groupSuggestedAddDhaIds.value = [endData.suggested_add_dha_id]
+                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
+                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -2722,6 +2892,7 @@ async function sendGroupMessage() {
                       waiting_for_user: endData.waiting_for_user,
                       suggested_next_speaker: endData.suggested_next_speaker,
                       suggested_add_dha_ids: endData.suggested_add_dha_ids,
+                      suggested_add_expert_ids: endData.suggested_add_expert_ids,
                       groupAutoConfirm: groupAutoConfirm.value,
                     },
                     timestamp: Date.now(),

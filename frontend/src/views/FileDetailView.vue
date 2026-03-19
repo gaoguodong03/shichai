@@ -516,7 +516,12 @@ onBeforeUnmount(() => {
 .file-detail-toc {
   position: sticky;
   top: 12px;
+  /* 固定宽度，避免不同文件标题长短导致 flex 收缩/重排 */
   width: 220px;
+  min-width: 220px;
+  max-width: 220px;
+  flex: 0 0 220px;
+  flex-shrink: 0;
   max-height: calc(100vh - 96px);
   overflow: auto;
   padding: 10px 10px;

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["dha"])
 
@@ -40,6 +40,7 @@ class DHACreate(BaseModel):
     is_leader: bool = False
     llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
     avatar_url: Optional[str] = None  # 头像（可选，前端可传 data URL 或远程地址）
+    expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
 
 
 class DHAUpdate(BaseModel):
@@ -52,6 +53,16 @@ class DHAUpdate(BaseModel):
     is_leader: Optional[bool] = None
     llm_provider_id: Optional[str] = None
     avatar_url: Optional[str] = None
+    expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
+
+
+def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
+    """在响应中附加 expert_* 兼容别名，不改变存储结构。"""
+    out = dict(instance or {})
+    did = out.get("dha_id")
+    if did is not None:
+        out["expert_id"] = did
+    return out
 
 
 def _ensure_config_dir() -> Path:
@@ -85,14 +96,14 @@ async def get_dha_instances():
     """获取 DHA 实例列表（按名称排序）"""
     instances = load_dha_instances()
     instances = sorted(instances, key=lambda d: (d.get("name") or "").strip())
-    return {"status": "ok", "data": {"instances": instances}}
+    return {"status": "ok", "data": {"instances": [_attach_expert_alias(x) for x in instances]}}
 
 
 @router.post("/dha/instances")
 async def create_dha_instance(body: DHACreate):
     """创建 DHA 实例"""
     instances = load_dha_instances()
-    dha_id = f"dha-{uuid.uuid4().hex[:8]}"
+    dha_id = (body.expert_id or "").strip() or f"dha-{uuid.uuid4().hex[:8]}"
     new_instance = {
         "dha_id": dha_id,
         "name": body.name,
@@ -106,7 +117,7 @@ async def create_dha_instance(body: DHACreate):
     }
     instances.append(new_instance)
     save_dha_instances(instances)
-    return {"status": "ok", "data": new_instance}
+    return {"status": "ok", "data": _attach_expert_alias(new_instance)}
 
 
 @router.put("/dha/instances/{dha_id}")
@@ -134,7 +145,7 @@ async def update_dha_instance(dha_id: str, body: DHAUpdate):
     if body.avatar_url is not None:
         inst["avatar_url"] = body.avatar_url or ""
     save_dha_instances(instances)
-    return {"status": "ok", "data": inst}
+    return {"status": "ok", "data": _attach_expert_alias(inst)}
 
 
 @router.delete("/dha/instances/{dha_id}")
@@ -146,4 +157,28 @@ async def delete_dha_instance(dha_id: str):
     if len(instances) == original:
         raise HTTPException(status_code=404, detail="DHA instance not found")
     save_dha_instances(instances)
-    return {"status": "ok", "data": {"dha_id": dha_id, "deleted": True}}
+    return {"status": "ok", "data": {"dha_id": dha_id, "expert_id": dha_id, "deleted": True}}
+
+
+@router.get("/experts")
+async def get_experts():
+    """专家列表别名接口（兼容到 /dha/instances）。"""
+    return await get_dha_instances()
+
+
+@router.post("/experts")
+async def create_expert(body: DHACreate):
+    """创建专家别名接口（兼容到 /dha/instances）。"""
+    return await create_dha_instance(body)
+
+
+@router.put("/experts/{expert_id}")
+async def update_expert(expert_id: str, body: DHAUpdate):
+    """更新专家别名接口（兼容到 /dha/instances/{dha_id}）。"""
+    return await update_dha_instance(expert_id, body)
+
+
+@router.delete("/experts/{expert_id}")
+async def delete_expert(expert_id: str):
+    """删除专家别名接口（兼容到 /dha/instances/{dha_id}）。"""
+    return await delete_dha_instance(expert_id)

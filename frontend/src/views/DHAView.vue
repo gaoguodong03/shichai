@@ -282,7 +282,7 @@ async function fetchSkills() {
 
 async function saveDha() {
   if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-    const r = await fetch(`/api/dha/instances/${encodeURIComponent(props.selectedDhaId)}`, {
+    const r = await fetch(`/api/experts/${encodeURIComponent(props.selectedDhaId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
@@ -294,14 +294,14 @@ async function saveDha() {
       alert(j.detail || '更新失败')
     }
   } else {
-    const r = await fetch('/api/dha/instances', {
+    const r = await fetch('/api/experts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
     })
     const j = await r.json()
-    if (j.status === 'ok' && j.data?.dha_id) {
-      emit('created', j.data.dha_id)
+    if (j.status === 'ok' && (j.data?.expert_id || j.data?.dha_id)) {
+      emit('created', (j.data.expert_id || j.data.dha_id) as string)
     } else {
       alert(j.detail || '创建失败')
     }
@@ -341,7 +341,7 @@ function onAvatarChange(e: Event) {
       avatarPreview.value = reader.result
       form.value.avatar_url = reader.result
       if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-        fetch(`/api/dha/instances/${encodeURIComponent(props.selectedDhaId)}`, {
+        fetch(`/api/experts/${encodeURIComponent(props.selectedDhaId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ avatar_url: form.value.avatar_url }),

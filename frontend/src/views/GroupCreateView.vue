@@ -7,14 +7,14 @@
         <input v-model="title" type="text" required class="w-full border border-gray-300 rounded px-3 py-2" placeholder="如：产品方案讨论（选 0 个 = 仅主持人）" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">参与的 DHA（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
+        <label class="block text-sm font-medium text-gray-700 mb-1">参与的专家（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
         <div class="flex flex-wrap gap-2">
           <label v-for="d in dhaInstances" :key="d.dha_id" class="inline-flex items-center gap-1">
             <input type="checkbox" :value="d.dha_id" v-model="selectedDhaIds" />
             <span class="text-sm">{{ d.name }}</span>
           </label>
         </div>
-        <p v-if="!dhaInstances.length" class="text-sm text-gray-500 mt-1">可选：在资源中心创建 DHA 后即可邀请到会话</p>
+        <p v-if="!dhaInstances.length" class="text-sm text-gray-500 mt-1">可选：在资源中心创建专家后即可邀请到会话</p>
       </div>
       <div class="flex gap-2">
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -49,7 +49,7 @@ async function create() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: title.value,
-      dha_ids: selectedDhaIds.value,
+      expert_ids: selectedDhaIds.value,
     }),
   })
   const j = await r.json()

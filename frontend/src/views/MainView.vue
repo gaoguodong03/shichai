@@ -133,7 +133,7 @@
         </template>
         <!-- 资源中心：子 Tab 专家 / Skill / MCP -->
         <template v-else-if="currentModule === 'resource'">
-          <!-- 专家 DHA -->
+          <!-- 专家 -->
           <template v-if="resourceSubModule === 'dha'">
             <div class="flex items-center gap-2 mb-2 px-3">
               <button
@@ -457,6 +457,7 @@
       <template v-if="currentModule === 'settings'">
         <AppSettingsView v-if="selectedId === 'app'" />
         <ThemeSettingsView v-else-if="selectedId === 'theme'" />
+        <UserPreferenceSettingsView v-else-if="selectedId === 'user'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择设置项</p>
         </div>
@@ -480,6 +481,7 @@ import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
 import ThemeSettingsView from './ThemeSettingsView.vue'
+import UserPreferenceSettingsView from './UserPreferenceSettingsView.vue'
 import LLMSettingsView from './LLMSettingsView.vue'
 import DHAView from './DHAView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
@@ -614,6 +616,7 @@ const filteredMcpServers = computed(() => {
 const settingsCategories = [
   { id: 'app', label: '主持人提示词' },
   { id: 'theme', label: '配色' },
+  { id: 'user', label: '用户喜好' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
@@ -676,9 +679,9 @@ function displaySessionTitle(s: { id: string; title: string; dha_ids?: string[];
   if (!raw || raw === '新对话') {
     const dhaCount = s.dha_ids?.length || 0
     if (dhaCount === 0) return '空白会话'
-    if (dhaCount === 1) return '单 DHA 协作会话'
-    if (dhaCount <= 3) return `${dhaCount} DHA 协作会话`
-    return `多 DHA 协作会话`
+    if (dhaCount === 1) return '单专家协作会话'
+    if (dhaCount <= 3) return `${dhaCount} 专家协作会话`
+    return `多专家协作会话`
   }
   return raw
 }
@@ -804,7 +807,7 @@ async function createNewSession() {
     const r = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '新对话', dha_ids: [] }),
+      body: JSON.stringify({ title: '新对话', expert_ids: [] }),
     })
     const j = await r.json()
     if (j.status === 'ok' && j.data?.id) {
@@ -857,7 +860,7 @@ async function renameGroupSession(id: string, currentTitle: string) {
 async function fetchDHA() {
   dhaInstancesLoading.value = true
   try {
-    const r = await fetch('/api/dha/instances')
+    const r = await fetch('/api/experts')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.instances) {
       dhaInstances.value = j.data.instances
@@ -875,8 +878,8 @@ function onDHACreated(dhaId: string) {
 }
 
 async function deleteDhaInstance(dhaId: string) {
-  if (!confirm('确定删除该 DHA？')) return
-  const r = await fetch(`/api/dha/instances/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
+  if (!confirm('确定删除该专家？')) return
+  const r = await fetch(`/api/experts/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     if (selectedId.value === dhaId) selectedId.value = null

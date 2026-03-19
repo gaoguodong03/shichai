@@ -1,6 +1,6 @@
 # 心像 EchoTwin 项目文档
 
-心像 EchoTwin（原 DHA，Digital Human Agent）项目文档中心，**面向文档开发**：以文档为单一信息源，开发时优先查阅与更新文档。
+心像 EchoTwin（专家协作平台，兼容历史 DHA 命名）项目文档中心，**面向文档开发**：以文档为单一信息源，开发时优先查阅与更新文档。
 
 ---
 
@@ -42,7 +42,8 @@
 | [开发设置](./development/setup.md) | 环境配置、安装、启动 |
 | [MCP 操作指南](./development/mcp-operation-guide.md) | 从 MCP.so 搜选、远程接入、本地编写 |
 | [部署](./development/deployment.md) | 生产环境部署 |
-| [多 DHA 群聊方案](./development/multi-dha-group-chat-plan.md) | 群聊多 DHA 架构与规划 |
+| [多专家群聊方案](./development/multi-dha-group-chat-plan.md) | 群聊多专家架构与规划（文档名暂保留兼容） |
+| [专家命名兼容迁移](./development/expert-compat-migration.md) | `dha_*` 到 `expert_*` 的兼容策略与收口步骤 |
 
 ### 四、规划与历史
 

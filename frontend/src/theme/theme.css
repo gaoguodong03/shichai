@@ -52,7 +52,7 @@
   /* 加载/占位 */
   --color-loading-dot: #8a8a8e;
   --color-placeholder: #8a8a8e;
-  /* DHA 消息框（按 hash 轮换，克制配色） */
+  /* 专家消息框（按 hash 轮换，克制配色） */
   --color-dha-box-0: #8e8e93;
   --color-dha-box-0-bg: #e5e5ea;
   --color-dha-box-1: #af52de;

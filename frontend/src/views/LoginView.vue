@@ -2,7 +2,7 @@
   <div class="min-h-screen flex items-center justify-center bg-page">
     <div class="w-full max-w-sm rounded-xl bg-card shadow-lg border border-border p-8">
       <h1 class="text-xl font-semibold text-primary text-center mb-6">
-        {{ isRegister ? '创建账户' : 'DHA 登录' }}
+        {{ isRegister ? '创建账户' : '专家平台登录' }}
       </h1>
       <form @submit.prevent="isRegister ? onRegister() : onSubmit()" class="space-y-4">
         <div>

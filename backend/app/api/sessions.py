@@ -24,6 +24,7 @@ router = APIRouter(tags=["sessions"])
 class SessionCreate(BaseModel):
     title: str = "新对话"
     dha_ids: List[str] = []  # 默认仅主持人
+    expert_ids: List[str] = []  # 兼容字段：expert_ids
 
 
 @router.get("/sessions")
@@ -36,6 +37,7 @@ async def list_sessions():
             "id": gsid,
             "title": gm.get("title", "新对话"),
             "dha_ids": gm.get("dha_ids", []),
+            "expert_ids": gm.get("dha_ids", []),
             "leader_dha_id": gm.get("leader_dha_id", ""),
             "speak_mode": gm.get("speak_mode", "auto"),
             "created_at": gm.get("created_at", ""),
@@ -48,9 +50,10 @@ async def list_sessions():
 @router.post("/sessions")
 async def create_session(body: SessionCreate):
     """创建会话（默认仅主持人，dha_ids 为空）"""
+    resolved_ids = body.expert_ids or body.dha_ids or []
     data = create_session_internal(
         title=body.title or "新对话",
-        dha_ids=body.dha_ids or [],
+        dha_ids=resolved_ids,
         speak_mode="auto",
     )
     return {"status": "ok", "data": data}

@@ -11,28 +11,6 @@
     "created_at": "2026-03-12T12:44:55.824061+00:00",
     "updated_at": "2026-03-12T12:46:42.260917+00:00"
   },
-  "group-d0fa081b948b": {
-    "title": "博客编辑",
-    "dha_ids": [
-      "dha-440b26f8",
-      "dha-195b8c3a"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T11:28:31.332968+00:00",
-    "updated_at": "2026-03-15T11:46:23.547675+00:00"
-  },
-  "group-df9ed69e52dc": {
-    "title": "内容核实和调研",
-    "dha_ids": [
-      "dha-c1bf68ba",
-      "dha-deepresearch-exp"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T11:46:48.170002+00:00",
-    "updated_at": "2026-03-15T11:50:36.580925+00:00"
-  },
   "group-757aa495cbbb": {
     "title": "对 OpenCode 的调研",
     "dha_ids": [
@@ -49,31 +27,6 @@
     "speak_mode": "auto",
     "created_at": "2026-03-15T11:51:01.356044+00:00",
     "updated_at": "2026-03-15T12:09:36.443015+00:00"
-  },
-  "group-8de2e1b31bab": {
-    "title": "DHA 协作 · 3/19 09:54",
-    "dha_ids": [
-      "dha-format-conv",
-      "dha-440b26f8",
-      "dha-195b8c3a",
-      "dha-deepresearch-exp",
-      "dha-web-fetch"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T01:54:17.612353+00:00",
-    "updated_at": "2026-03-19T01:57:33.215714+00:00"
-  },
-  "group-922fb71bc698": {
-    "title": "DHA 协作 · 3/19 10:15",
-    "dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T02:15:39.393173+00:00",
-    "updated_at": "2026-03-19T02:18:50.287039+00:00"
   },
   "group-e93558743ff9": {
     "title": "博客生成与图片创作",
@@ -113,5 +66,30 @@
     "speak_mode": "auto",
     "created_at": "2026-03-19T12:54:12.667856+00:00",
     "updated_at": "2026-03-19T13:22:28.568366+00:00"
+  },
+  "group-a3ed873dee2e": {
+    "title": "小米发布的Agent研究方向",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-seminar-ai-peer",
+      "dha-seminar-teacher-advisor"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T14:10:55.285190+00:00",
+    "updated_at": "2026-03-19T14:15:42.464981+00:00"
+  },
+  "group-dad1a2377ab2": {
+    "title": "博客生成和灵感来源",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-web-fetch",
+      "dha-440b26f8",
+      "dha-195b8c3a"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-19T14:27:07.359844+00:00",
+    "updated_at": "2026-03-19T14:34:02.045044+00:00"
   }
 }
