@@ -644,6 +644,14 @@ function toggleMiddleColumn() {
   }
 }
 
+/** 群聊里收起中间列后，切到资源中心/设置需自动展开，否则侧栏无容器 */
+function ensureMiddleColumnOpen() {
+  if (!middleColumnOpen.value) {
+    middleColumnOpen.value = true
+    middleColumnWidth.value = middleColumnPrevWidth.value || 240
+  }
+}
+
 function onMiddleResizeMouseDown(e: MouseEvent) {
   e.preventDefault()
   if (!middleColumnOpen.value) return
@@ -727,6 +735,9 @@ function formatDate(iso: string) {
 function onNavClick(item: { id: ModuleId }) {
   currentModule.value = item.id
   selectedId.value = null
+  if (item.id === 'resource' || item.id === 'settings') {
+    ensureMiddleColumnOpen()
+  }
   if (item.id === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
