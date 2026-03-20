@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 
 from app.core.user_context import get_current_user_context
 
@@ -283,6 +283,46 @@ async def get_session_presets():
         except Exception:
             presets = []
     return {"status": "ok", "data": {"presets": presets}}
+
+
+class SessionPresetItem(BaseModel):
+    id: str
+    name: str
+    dha_ids: List[str]
+    description: Optional[str] = ""
+    discussion_goal_example: Optional[str] = ""
+
+
+class SessionPresetsBody(BaseModel):
+    presets: List[SessionPresetItem]
+
+
+@router.put("/settings/session-presets")
+async def update_session_presets(body: SessionPresetsBody):
+    """保存会话快捷预设（用于前端快捷按钮）。"""
+    path = _get_session_presets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    normalized: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for item in body.presets:
+        pid = str(item.id or "").strip()
+        name = str(item.name or "").strip()
+        dha_ids = [str(x).strip() for x in (item.dha_ids or []) if str(x).strip()]
+        if not pid or not name or not dha_ids or pid in seen:
+            continue
+        seen.add(pid)
+        normalized.append(
+            {
+                "id": pid,
+                "name": name,
+                "dha_ids": dha_ids,
+                "expert_ids": dha_ids,  # 兼容历史字段
+                "description": str(item.description or ""),
+                "discussion_goal_example": str(item.discussion_goal_example or ""),
+            }
+        )
+    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"status": "ok", "data": {"presets": normalized}}
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""

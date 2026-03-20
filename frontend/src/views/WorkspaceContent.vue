@@ -1632,6 +1632,11 @@ async function loadShortcutPresets() {
     const normalized = normalizeShortcutPresets(parsed)
     if (normalized.length) {
       shortcutPresets.value = normalized
+      // 后端已有配置时，优先后端，避免本地旧缓存长期覆盖
+      const serverPresets = await loadServerShortcutPresets()
+      if (serverPresets.length) {
+        shortcutPresets.value = serverPresets
+      }
     } else {
       const serverPresets = await loadServerShortcutPresets()
       shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
@@ -1645,9 +1650,15 @@ async function loadShortcutPresets() {
   }
 }
 function saveShortcutPresets() {
+  const payload = shortcutPresets.value.map((p) => ({ id: p.id, name: p.name, dha_ids: p.dha_ids }))
   try {
-    localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(shortcutPresets.value))
+    localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(payload))
   } catch {}
+  fetch('/api/settings/session-presets', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presets: payload }),
+  }).catch(() => {})
 }
 function deleteShortcutPreset(id: string) {
   shortcutPresets.value = shortcutPresets.value.filter((p) => p.id !== id)
