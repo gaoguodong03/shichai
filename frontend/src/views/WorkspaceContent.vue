@@ -1609,21 +1609,38 @@ function defaultShortcutPresets(): ShortcutPreset[] {
     { id: 'blog', name: '博客', dha_ids: blog.length ? blog : [] },
   ].filter((p) => p.dha_ids.length > 0)
 }
-function loadShortcutPresets() {
+async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
+  try {
+    const r = await fetch('/api/settings/session-presets')
+    const j = await r.json().catch(() => ({}))
+    const list = (j as { data?: { presets?: unknown } })?.data?.presets
+    return normalizeShortcutPresets(list)
+  } catch {
+    return []
+  }
+}
+async function loadShortcutPresets() {
   try {
     const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
     if (!raw) {
-      shortcutPresets.value = defaultShortcutPresets()
+      const serverPresets = await loadServerShortcutPresets()
+      shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
       saveShortcutPresets()
       return
     }
     const parsed = JSON.parse(raw)
     const normalized = normalizeShortcutPresets(parsed)
-    shortcutPresets.value = normalized.length ? normalized : defaultShortcutPresets()
+    if (normalized.length) {
+      shortcutPresets.value = normalized
+    } else {
+      const serverPresets = await loadServerShortcutPresets()
+      shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
+    }
     // 读取时立即回写一次，修复历史脏数据，避免下次重开丢失
     saveShortcutPresets()
   } catch {
-    shortcutPresets.value = defaultShortcutPresets()
+    const serverPresets = await loadServerShortcutPresets()
+    shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
     saveShortcutPresets()
   }
 }

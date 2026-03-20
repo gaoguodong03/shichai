@@ -62,6 +62,15 @@ def _get_skills_dir() -> Path:
         return user_ctx.skills_dir.resolve()
     path = Path(SKILLS_DIR)
     return path if path.is_absolute() else path.resolve()
+
+
+def _get_session_presets_path() -> Path:
+    """根据当前用户返回 session_presets.json 路径。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        return (user_ctx.config_dir / "session_presets.json").resolve()
+    # 兼容旧结构：默认读取 backend/config/session_presets.json
+    return (Path(APP_SETTINGS_PATH).resolve().parent / "session_presets.json").resolve()
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
@@ -238,6 +247,42 @@ async def reset_host_prompts():
     """将主持人提示词恢复为内置默认值。"""
     save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS)})
     return {"status": "ok", "data": dict(_DEFAULT_HOST_PROMPTS)}
+
+
+@router.get("/settings/session-presets")
+async def get_session_presets():
+    """读取会话快捷预设（用于前端快捷按钮），兼容历史字段 expert_ids。"""
+    path = _get_session_presets_path()
+    presets: List[Dict[str, Any]] = []
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    pid = str(item.get("id") or "").strip()
+                    name = str(item.get("name") or "").strip()
+                    dha_ids = item.get("dha_ids")
+                    if not isinstance(dha_ids, list) or not dha_ids:
+                        dha_ids = item.get("expert_ids")
+                    if not isinstance(dha_ids, list):
+                        dha_ids = []
+                    normalized_ids = [str(x).strip() for x in dha_ids if str(x).strip()]
+                    if not pid or not name or not normalized_ids:
+                        continue
+                    presets.append(
+                        {
+                            "id": pid,
+                            "name": name,
+                            "dha_ids": normalized_ids,
+                            "description": str(item.get("description") or ""),
+                            "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
+                        }
+                    )
+        except Exception:
+            presets = []
+    return {"status": "ok", "data": {"presets": presets}}
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""
@@ -933,6 +978,11 @@ def _run_git(repo_dir: Path, args: List[str], timeout_sec: int = 120) -> None:
             text=True,
             timeout=timeout_sec,
             env={**os.environ},
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail="Git command failed: git is not installed in runtime environment. Please install git in your container/image.",
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Git command failed: {e}")

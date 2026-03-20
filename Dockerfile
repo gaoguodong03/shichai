@@ -15,8 +15,15 @@ RUN npx vite build
 FROM --platform=$TARGETPLATFORM python:3.12-slim
 WORKDIR /app
 
-# 只装 curl（健康检查用）；Node/npm 从 frontend-builder 复制，避免 apt 拉取大量 node-* 包导致网络超时/失败
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# 运行期工具：
+# - curl: 健康检查
+# - git: skill git 导入（clone/fetch/pull）
+# - bash: run_skill_script 执行 .sh/.bash
+# - ca-certificates: git https 证书链
+# - openssh-client: 支持 git+ssh 导入
+# Node/npm 从 frontend-builder 复制，避免 apt 拉取大量 node-* 包导致网络超时/失败
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl git bash ca-certificates openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # 从构建阶段复制 Node/npm/npx 及完整 lib（npx 依赖 ../lib/cli.js 等，须复制整份 /usr/local/lib）
