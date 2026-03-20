@@ -34,10 +34,10 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <!-- 顶部品牌区：所有模块统一 心像 EchoTwin -->
+      <!-- 顶部品牌区：所有模块统一 拾柴·GatherFlame -->
       <div class="px-3 pt-3 pb-3 flex-shrink-0">
         <div class="mb-2 flex justify-center">
-          <span class="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted text-center">XinXiang · EchoTwin</span>
+          <span class="text-[11px] font-semibold tracking-[0.18em] text-muted text-center">拾柴·GatherFlame</span>
         </div>
         <div v-if="currentModule === 'workspace'">
           <button

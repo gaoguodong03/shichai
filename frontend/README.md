@@ -1,6 +1,6 @@
-# 心像 EchoTwin Frontend
+# 拾柴·GatherFlame Frontend
 
-心像 EchoTwin 前端应用（专家协作平台，兼容历史 DHA 命名）
+拾柴·GatherFlame 前端应用（专家协作平台，兼容历史 DHA 命名）
 
 ## 快速开始
 

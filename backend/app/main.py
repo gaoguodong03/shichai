@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
     await get_mcp_manager().cleanup()
 
 app = FastAPI(
-    title="心像 EchoTwin API",
-    description="EchoTwin - Expert Collaboration Platform with MCP and Skills",
+    title="拾柴·GatherFlame API",
+    description="GatherFlame - Expert Collaboration Platform with MCP and Skills",
     version="0.1.0",
     lifespan=lifespan,
     dependencies=[Depends(user_context_dependency)],
@@ -74,7 +74,7 @@ if _static_dir and Path(_static_dir).is_dir():
 else:
     @app.get("/")
     async def root():
-        return {"message": "心像 EchoTwin API", "version": "0.1.0"}
+        return {"message": "拾柴·GatherFlame API", "version": "0.1.0"}
 
 @app.get("/health")
 async def health():

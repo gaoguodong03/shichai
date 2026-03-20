@@ -293,7 +293,35 @@ const loadServers = async () => {
     const { getMcpServers } = await import('@/api')
     const result = await getMcpServers()
     if (result.status === 'ok') {
-      servers.value = result.data?.servers || []
+      // 后端返回的 server 列表在类型上可能缺少 status/transport 等字段；
+      // 这里做一次归一化，保证 UI 与表单的类型安全。
+      const raw = (result.data?.servers || []) as any[]
+      servers.value = raw.map((s: any): MCPServer => {
+        const transportType = s?.transport?.type
+        const normalizedType: MCPServer['transport']['type'] =
+          transportType === 'sse' || transportType === 'http' || transportType === 'stdio' ? transportType : 'stdio'
+
+        return {
+          id: String(s?.id ?? ''),
+          name: String(s?.name ?? s?.id ?? ''),
+          enabled: s?.enabled ?? true,
+          tool_count: s?.tool_count,
+          status: s?.status === 'connected' ? 'connected' : 'disconnected',
+          transport: {
+            type: normalizedType,
+            command: s?.transport?.command,
+            args: Array.isArray(s?.transport?.args) ? [...s.transport.args] : undefined,
+            url: s?.transport?.url,
+            base_url: s?.transport?.base_url,
+            headers: s?.transport?.headers
+              ? (s.transport.headers as Record<string, string>)
+              : undefined,
+          },
+          metadata: s?.metadata
+            ? { description: s.metadata?.description, version: s.metadata?.version }
+            : undefined,
+        }
+      })
     }
   } catch (error) {
     console.error('Failed to load servers:', error)
@@ -323,8 +351,18 @@ const editServer = (server: MCPServer) => {
   editingServer.value = server
   formData.value = {
     name: server.name,
-    transport: { ...server.transport },
-    metadata: { ...server.metadata }
+    transport: {
+      type: server.transport?.type ?? 'stdio',
+      command: server.transport?.command ?? '',
+      args: Array.isArray(server.transport?.args) ? [...server.transport!.args!] : [],
+      url: server.transport?.url ?? '',
+      base_url: server.transport?.base_url ?? '',
+      headers: server.transport?.headers ?? ({} as Record<string, string>),
+    },
+    metadata: {
+      description: server.metadata?.description ?? '',
+      version: server.metadata?.version ?? '1.0.0',
+    },
   }
   showAddModal.value = true
 }

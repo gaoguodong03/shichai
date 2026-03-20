@@ -205,8 +205,8 @@
                 <!-- 品牌区 -->
                 <div class="mt-auto pt-4 border-t border-dashed border-gray-200 flex items-center justify-between">
                   <div class="flex flex-col">
-                    <span class="text-xs uppercase tracking-[0.18em] text-gray-400">
-                      XinXiang · EchoTwin
+                    <span class="text-xs tracking-[0.18em] text-gray-400">
+                      拾柴·GatherFlame
                     </span>
                     <span class="text-sm font-semibold text-gray-900 mt-0.5">
                       ID

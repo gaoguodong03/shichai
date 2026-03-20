@@ -818,7 +818,14 @@ function openSkillPicker() {
   import('@/api').then(({ getSkills }) => getSkills())
     .then((j) => {
       if (j.status === 'ok' && j.data?.skills) {
-        skillPickerList.value = j.data.skills.filter((s: { enabled?: boolean }) => s.enabled !== false)
+        const raw = j.data.skills as any[]
+        skillPickerList.value = raw
+          .filter((s) => s.enabled !== false)
+          .map((s) => ({
+            id: String(s.id ?? ''),
+            name: String(s.name ?? s.id ?? ''),
+            description: String(s.description ?? ''),
+          }))
       }
     })
     .finally(() => { skillPickerLoading.value = false })

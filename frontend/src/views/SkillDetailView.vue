@@ -186,7 +186,7 @@ type PartType = 'references' | 'assets' | 'scripts' | 'other'
 const props = defineProps<{ skillId: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
 
-const tabs = [
+const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'main', label: 'SKILL.md' },
   { id: 'references', label: 'References' },
   { id: 'assets', label: 'Assets' },
@@ -259,6 +259,7 @@ async function load() {
           name: s.name,
           description: s.description ?? '',
           enabled: s.enabled ?? true,
+          body: '',
           mcp_server_ids: s.mcp_server_ids ?? [],
         }
         await loadContent()

@@ -79,7 +79,7 @@ export function useEventSource(url: string, options: EventSourceOptions) {
         CONNECTING: 0,
         OPEN: 1,
         CLOSED: 2
-      } as EventSource
+      } as unknown as EventSource
       
       isConnected.value = true
     } catch (e) {

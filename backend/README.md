@@ -1,6 +1,6 @@
-# 心像 EchoTwin Backend
+# 拾柴·GatherFlame Backend
 
-心像 EchoTwin 后端服务（专家协作平台，兼容历史 DHA 命名）
+拾柴·GatherFlame 后端服务（专家协作平台，兼容历史 DHA 命名）
 
 ## 快速开始
 

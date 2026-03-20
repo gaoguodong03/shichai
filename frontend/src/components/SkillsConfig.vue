@@ -242,7 +242,18 @@ const loadSkills = async () => {
     const { getSkillsList } = await import('@/api')
     const result = await getSkillsList()
     if (result.status === 'ok') {
-      skills.value = result.data?.skills || []
+      // 后端返回在类型上可能缺少 enabled/source 等字段；做一次归一化以满足 Skill 类型。
+      const raw = (result.data?.skills || []) as any[]
+      skills.value = raw.map((s: any): Skill => ({
+        id: String(s?.id ?? ''),
+        name: String(s?.name ?? s?.id ?? ''),
+        description: s?.description,
+        enabled: s?.enabled ?? true,
+        source: s?.source === 'git' ? 'git' : 'local',
+        path: s?.path,
+        url: s?.url,
+        write_mode: s?.write_mode,
+      }))
     }
   } catch (error) {
     console.error('Failed to load skills:', error)

@@ -87,5 +87,16 @@
     "speak_mode": "auto",
     "created_at": "2026-03-20T01:47:29.950667+00:00",
     "updated_at": "2026-03-20T01:57:44.880162+00:00"
+  },
+  "group-4ac87fd2b3f8": {
+    "title": "科幻技术设计图片生成",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-20T14:17:38.181595+00:00",
+    "updated_at": "2026-03-20T14:18:00.012698+00:00"
   }
 }

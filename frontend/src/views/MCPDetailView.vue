@@ -152,7 +152,7 @@ const stdioArgs = computed({
 })
 
 function fillForm(s: Server) {
-  const t = s.transport || {}
+  const t = (s.transport ?? {}) as NonNullable<Server['transport']>
   const httpUrl = t.base_url || t.url || ''
   form.value = {
     name: s.name,

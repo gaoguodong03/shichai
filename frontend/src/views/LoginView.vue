@@ -1,6 +1,16 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-page">
     <div class="w-full max-w-sm rounded-xl bg-card shadow-lg border border-border p-8">
+      <!-- 着陆页（复用 /login）：品牌与卖点 -->
+      <div class="mb-4 text-center">
+        <div class="text-base font-semibold text-primary">拾柴·GatherFlame</div>
+        <div class="mt-1 text-xs text-muted">多数字人 ReAct Agent 工作台</div>
+        <div class="mt-4 text-left">
+          <div class="text-[11px] text-muted/90 leading-relaxed">Skill + MCP 两阶段编排，流程可固化</div>
+          <div class="mt-1 text-[11px] text-muted/90 leading-relaxed">SSE 流式输出，协作过程可追溯</div>
+          <div class="mt-1 text-[11px] text-muted/90 leading-relaxed">可私有化部署，数据不出域</div>
+        </div>
+      </div>
       <h1 class="text-xl font-semibold text-primary text-center mb-6">
         {{ isRegister ? '创建账户' : '专家平台登录' }}
       </h1>
