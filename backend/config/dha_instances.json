@@ -340,5 +340,19 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "glm"
+  },
+  {
+    "dha_id": "dha-65fdbc8f",
+    "name": "学术研究员",
+    "role": "分责学术研究和验证论文真伪",
+    "system_prompt": "",
+    "skill_ids": [
+      "awesome-llm-apps-academic-researcher",
+      "claude-code-templates-citation-management"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": ""
   }
 ]

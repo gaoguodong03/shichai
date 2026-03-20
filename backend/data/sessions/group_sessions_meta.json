@@ -11,23 +11,6 @@
     "created_at": "2026-03-12T12:44:55.824061+00:00",
     "updated_at": "2026-03-12T12:46:42.260917+00:00"
   },
-  "group-757aa495cbbb": {
-    "title": "对 OpenCode 的调研",
-    "dha_ids": [
-      "dha-file-workspace",
-      "dha-440b26f8",
-      "dha-195b8c3a",
-      "dha-web-fetch",
-      "dha-c1bf68ba",
-      "dha-seminar-guide",
-      "dha-deepresearch-exp",
-      "dha-thinking-ext"
-    ],
-    "leader_dha_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-15T11:51:01.356044+00:00",
-    "updated_at": "2026-03-15T12:09:36.443015+00:00"
-  },
   "group-e93558743ff9": {
     "title": "博客生成与图片创作",
     "title_auto_generated": true,
@@ -91,5 +74,18 @@
     "speak_mode": "auto",
     "created_at": "2026-03-19T14:27:07.359844+00:00",
     "updated_at": "2026-03-19T14:34:02.045044+00:00"
+  },
+  "group-386d211c7469": {
+    "title": "脑启发式智能体设计综述",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-paper-composer",
+      "dha-65fdbc8f",
+      "dha-paper-strategist"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-20T01:47:29.950667+00:00",
+    "updated_at": "2026-03-20T01:57:44.880162+00:00"
   }
 }

@@ -1,19 +1,8 @@
 ---
-description: 'Systematic strategic planning framework for philosophy and interdisciplinary
-  academic papers targeting preprint platforms (PhilArchive, arXiv, PhilSci-Archive).
-  Use when users want to: (1) plan a paper on a specific topic, (2) identify research
-  gaps and assess originality, (3) develop optimized paper outlines, (4) prepare for
-  preprint submission, or (5) understand platform requirements and writing standards.
-  Triggered by phrases like ''plan a paper on,'' ''help me design a paper about,''
-  ''identify research gaps in,'' ''is this idea original,'' or when users need structured
-  research planning. The skill guides through three phases: Platform Analysis (identifying
-  target venue and studying sample papers), Theoretical Framework (AI-driven literature
-  search and gap identification), and Outline Optimization (structured design with
-  reviewer-perspective self-assessment). Each phase includes quality evaluation standards
-  and validation checkpoints. Output: optimized detailed outline ready for systematic
-  writing (use with academic-paper-composer skill).'
+description: 面向预印本平台（PhilArchive、arXiv、PhilSci-Archive）的哲学及跨学科学术论文系统化战略规划框架。适用于用户希望：（1）规划一篇特定主题的论文，（2）识别研究空白并评估原创性，（3）开发优化的论文提纲，（4）准备预印本投稿，或（5）了解平台要求和写作标准。当用户使用诸如“计划一篇关于……的论文”、“帮我设计一篇……的论文”、“识别……领域的研究空白”、“这个想法是否具有原创性”等短语，或需要结构化的研究规划时触发。该技能引导用户经历三个阶段：平台分析（确定目标平台并研究样例论文）、理论框架（AI驱动的文献检索与空白识别）、提纲优化（从审稿人视角进行结构化设计与自我评估）。每个阶段均包含质量评估标准和验证检查点。输出：可用于系统化写作的优化详细提纲（配合学术论文撰写技能使用）。
 enabled: true
-name: academic-paper-strategist
+mcp_server_ids: []
+name: 学术论文策略师
 source: git
 url: https://github.com/lishix520/academic-paper-skills/tree/main/strategist
 write_mode: workspace_all

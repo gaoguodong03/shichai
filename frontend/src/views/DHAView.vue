@@ -67,12 +67,19 @@
 
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">启用的技能</label>
+              <input
+                v-if="skills.length"
+                v-model.trim="skillSearch"
+                type="text"
+                class="w-full mb-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
+                placeholder="搜索并添加 Skill（名称或 ID）"
+              />
               <div
                 v-if="skills.length"
                 class="flex flex-wrap gap-2 rounded-lg bg-slate-50 border border-slate-100 px-3 py-3"
               >
                 <button
-                  v-for="s in skills"
+                  v-for="s in filteredSkills"
                   :key="s.id"
                   type="button"
                   class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
@@ -84,6 +91,9 @@
                   {{ s.name }}
                 </button>
               </div>
+              <p v-if="skills.length && !filteredSkills.length" class="text-xs text-gray-400">
+                没有匹配的 Skill
+              </p>
               <p v-else class="text-xs text-gray-400">暂无可用技能，请先在设置中配置技能。</p>
             </div>
 
@@ -233,6 +243,7 @@ const emit = defineEmits<{
 }>()
 
 const skills = ref<{ id: string; name: string }[]>([])
+const skillSearch = ref('')
 const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
@@ -329,6 +340,16 @@ const displaySkillBadges = computed(() => {
     if (picked.length >= 15) break
   }
   return picked
+})
+
+const filteredSkills = computed(() => {
+  const q = skillSearch.value.trim().toLowerCase()
+  if (!q) return skills.value
+  return skills.value.filter((s) => {
+    const id = (s.id || '').toLowerCase()
+    const name = (s.name || '').toLowerCase()
+    return id.includes(q) || name.includes(q)
+  })
 })
 
 function onAvatarChange(e: Event) {

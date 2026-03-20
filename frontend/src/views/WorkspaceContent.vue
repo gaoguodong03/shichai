@@ -646,6 +646,14 @@
                   v-if="groupWorkspacePath"
                   type="button"
                   class="group-chat-workspace-back"
+                  @click="goGroupWorkspaceUp"
+                >
+                  上一级
+                </button>
+                <button
+                  v-if="groupWorkspacePath"
+                  type="button"
+                  class="group-chat-workspace-back"
                   @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = ''; loadGroupWorkspace()"
                 >
                   根目录
@@ -1620,11 +1628,17 @@ async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
   }
 }
 async function loadShortcutPresets() {
+  const serverPresets = await loadServerShortcutPresets()
+  if (serverPresets.length) {
+    // 后端有配置时以其为准，避免本地旧缓存把已删除项带回来
+    shortcutPresets.value = serverPresets
+    saveShortcutPresets()
+    return
+  }
   try {
     const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
     if (!raw) {
-      const serverPresets = await loadServerShortcutPresets()
-      shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
+      shortcutPresets.value = defaultShortcutPresets()
       saveShortcutPresets()
       return
     }
@@ -1632,20 +1646,13 @@ async function loadShortcutPresets() {
     const normalized = normalizeShortcutPresets(parsed)
     if (normalized.length) {
       shortcutPresets.value = normalized
-      // 后端已有配置时，优先后端，避免本地旧缓存长期覆盖
-      const serverPresets = await loadServerShortcutPresets()
-      if (serverPresets.length) {
-        shortcutPresets.value = serverPresets
-      }
     } else {
-      const serverPresets = await loadServerShortcutPresets()
-      shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
+      shortcutPresets.value = defaultShortcutPresets()
     }
     // 读取时立即回写一次，修复历史脏数据，避免下次重开丢失
     saveShortcutPresets()
   } catch {
-    const serverPresets = await loadServerShortcutPresets()
-    shortcutPresets.value = serverPresets.length ? serverPresets : defaultShortcutPresets()
+    shortcutPresets.value = defaultShortcutPresets()
     saveShortcutPresets()
   }
 }
@@ -2332,6 +2339,15 @@ async function loadGroupWorkspace() {
   } finally {
     groupWorkspaceLoading.value = false
   }
+}
+
+function goGroupWorkspaceUp() {
+  if (!groupWorkspacePath.value) return
+  const cur = groupWorkspacePath.value.replace(/\/+$/, '')
+  const parent = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''
+  groupWorkspacePreviewPath.value = ''
+  groupWorkspacePath.value = parent
+  loadGroupWorkspace()
 }
 
 function groupWorkspaceDownloadUrl(filePath: string) {

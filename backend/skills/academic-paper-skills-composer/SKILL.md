@@ -1,15 +1,9 @@
 ---
-description: 'Systematic writing framework for philosophy and interdisciplinary academic
-  papers from optimized outline to submission-ready manuscript. Use when users want
-  to: (1) write a paper from a detailed outline, (2) ensure quality control during
-  writing, (3) maintain consistency across chapters, (4) prepare a submission-ready
-  manuscript, or (5) systematically execute a planned paper. Triggered by phrases
-  like ''write the paper from this outline,'' ''compose the full manuscript,'' ''execute
-  the outline,'' or when users have completed strategic planning (academic-paper-strategist
-  skill) and are ready to write. Takes optimized outline as input; outputs complete
-  manuscript with iterative quality checks.'
+description: 系统化的论文写作框架，用于哲学及跨学科学术论文，从优化的提纲到可提交的文稿。适用于用户希望：(1) 从详细提纲撰写论文，(2) 在写作过程中确保质量控制，(3)
+  保持各章节的一致性，(4) 准备可提交的文稿，或 (5) 系统地执行计划中的论文。当用户使用诸如“根据此提纲撰写论文”、“撰写完整文稿”、“执行提纲”等短语，或已完成战略规划（学术论文策划技能）并准备撰写时触发。输入为优化的提纲，输出为完整的文稿并包含迭代的质量检查。
 enabled: true
-name: academic-paper-composer
+mcp_server_ids: []
+name: 学术论文生成器
 source: git
 url: https://github.com/lishix520/academic-paper-skills/tree/main/composer
 write_mode: workspace_all
