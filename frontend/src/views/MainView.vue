@@ -3,6 +3,9 @@
     <!-- 最左侧：导航（图标 + 名称） -->
     <nav class="w-28 flex-shrink-0 flex flex-col bg-sidebar py-3">
       <div class="px-2 space-y-0.5">
+        <div class="px-1 pb-1">
+          <span class="block text-[11px] font-semibold tracking-[0.12em] text-muted text-left">书童四九</span>
+        </div>
         <button
           type="button"
           @click="onNavClick('workspace')"
@@ -72,11 +75,14 @@
         </button>
       </div>
       <div class="flex-1 min-h-2" />
-      <div class="px-2 pb-3 pt-2 flex flex-col gap-1 bg-section-header">
+      <div class="px-2 pb-3 pt-2 flex flex-col gap-1 border-t border-sidebar-border/60">
         <button
           type="button"
           @click="logout"
-          class="w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium text-nav-text hover:bg-nav-hover-bg transition-colors"
+          :class="[
+            'w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            'text-nav-text hover:bg-nav-hover-bg'
+          ]"
         >
           登出
         </button>
@@ -88,32 +94,25 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <!-- 顶部品牌区：书童四九 -->
-      <div class="px-3 pt-3 pb-3 flex-shrink-0">
-        <div class="mb-2 flex justify-center">
-          <span class="text-[11px] font-semibold tracking-[0.18em] text-muted text-center">书童四九</span>
-        </div>
-        <div v-if="currentModule === 'workspace'">
-          <button
-            @click="createNewSession"
-            :class="[
-              'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-              creatingSession
-                ? 'opacity-70 pointer-events-none bg-nav-selected-bg text-nav-selected-text'
-                : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-            ]"
-          >
-            <span class="text-base leading-none">＋</span>
-            <span>新建会话</span>
-          </button>
-        </div>
-        <div v-else-if="currentModule === 'resource'">
-          <div class="mt-2 px-2 py-2 rounded-lg bg-section-header text-xs text-muted">
-            资源中心 · {{ currentResourceLabel }}
-          </div>
-        </div>
+      <!-- 顶部区 -->
+      <div v-if="currentModule === 'workspace'" class="px-3 pt-3 pb-3 flex-shrink-0">
+        <button
+          @click="createNewSession"
+          :class="[
+            'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+            creatingSession
+              ? 'opacity-70 pointer-events-none bg-nav-selected-bg text-nav-selected-text'
+              : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+          ]"
+        >
+          <span class="text-base leading-none">＋</span>
+          <span>新建会话</span>
+        </button>
       </div>
-      <div class="flex-1 overflow-y-auto">
+      <div
+        class="flex-1 overflow-y-auto"
+        :class="currentModule === 'resource' ? 'pt-3' : ''"
+      >
         <!-- 工作空间：统一会话列表 -->
         <template v-if="currentModule === 'workspace'">
           <div v-if="groupSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -616,11 +615,6 @@ const currentModule = ref<ModuleId>('workspace')
 const resourceSubModule = ref<ResourceSubModule>('scenario')
 const selectedId = ref<string | null>(null)
 const resourceMenuExpanded = ref(false)
-
-const currentResourceLabel = computed(() => {
-  const hit = resourceChildren.find((x) => x.id === resourceSubModule.value)
-  return hit?.label || ''
-})
 
 interface ScenarioPreset {
   id: string

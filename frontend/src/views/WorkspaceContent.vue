@@ -10,26 +10,103 @@
             >
               <button
                 type="button"
-                class="group-chat-header-btn"
+                class="group-chat-header-btn group-chat-header-btn-icononly"
+                title="会话列表"
                 :aria-label="props.middleColumnOpen === false ? '展开会话列表列' : '收起会话列表列'"
                 @click="emit('middle-column-toggle')"
               >
-                <span v-if="props.middleColumnOpen === false">▶</span>
-                <span v-else>◀</span>
-              </button>
-              <button
-                type="button"
-                class="group-chat-header-btn"
-                :class="[archivePanelOpen && 'group-chat-header-btn-active']"
-                @click="onArchiveToggleClick"
-              >
-                <span v-if="archivePanelOpen">▲</span>
-                <span v-else>▼</span>
+                <svg
+                  class="group-chat-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8 6h13M8 12h13M8 18h13" />
+                  <circle cx="4" cy="6" r="1.25" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="12" r="1.25" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="18" r="1.25" fill="currentColor" stroke="none" />
+                </svg>
               </button>
             </div>
           </div>
 
-          <h1 class="group-chat-title">群聊：{{ groupDetail.title || '未命名' }}</h1>
+          <div class="group-chat-title-wrap">
+            <h1 class="group-chat-title">{{ groupDetail.title || '未命名' }}</h1>
+            <div ref="sessionMetaPopoverRootRef" class="group-chat-title-actions-wrap">
+              <button
+                type="button"
+                class="group-chat-header-btn group-chat-header-btn-icononly"
+                :class="[sessionMetaPopoverOpen && 'group-chat-header-btn-active']"
+                title="会话标题与主题"
+                aria-haspopup="dialog"
+                :aria-expanded="sessionMetaPopoverOpen"
+                @click.stop="toggleSessionMetaPopover"
+              >
+                <svg
+                  class="group-chat-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
+              </button>
+              <div
+                v-if="sessionMetaPopoverOpen"
+                class="group-chat-session-meta-popover"
+                role="dialog"
+                aria-label="会话标题与主题"
+                @click.stop
+              >
+                <div class="group-chat-meta-section">
+                  <div class="group-chat-meta-label">会话标题</div>
+                  <div class="group-chat-meta-title-row">
+                    <input
+                      v-model="sessionTitleDraft"
+                      type="text"
+                      class="group-chat-meta-input"
+                      placeholder="输入标题"
+                      maxlength="120"
+                      @keydown.enter.prevent="saveSessionTitle"
+                    />
+                    <button
+                      type="button"
+                      class="group-chat-meta-save-btn"
+                      :disabled="titleSaving || !(sessionTitleDraft || '').trim()"
+                      @click="saveSessionTitle"
+                    >
+                      {{ titleSaving ? '保存中…' : '保存' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="group-chat-meta-section group-chat-meta-section-topics">
+                  <div class="group-chat-meta-label">主题（专家发言）</div>
+                  <div v-if="!archiveItems.length" class="group-chat-meta-empty">暂无专家发言</div>
+                  <div v-else class="group-chat-meta-topic-list">
+                    <button
+                      v-for="it in archiveItems"
+                      :key="it.key"
+                      type="button"
+                      class="group-chat-meta-topic-item"
+                      :class="[tocActiveKey === it.key && 'group-chat-meta-topic-item-active']"
+                      @click="jumpToSessionTopic(it.message_id)"
+                    >
+                      <span class="group-chat-meta-topic-name">{{ it.name }}</span>
+                      <div class="group-chat-meta-topic-snippet" v-html="renderSnippetMarkdown(it.snippet)" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div class="group-chat-header-right">
             <button
@@ -38,32 +115,14 @@
               @click="toggleGroupWorkspaceOpen"
             >
               <svg class="group-chat-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              工作区
+              文件
             </button>
           </div>
         </header>
         <div class="flex-1 min-h-0 flex overflow-visible">
           <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-visible">
             <div class="group-chat-main-row">
-              <aside v-if="archivePanelOpen" class="group-chat-archive-panel" aria-label="悬浮侧边目录">
-                <div class="group-chat-archive-panel-body">
-                  <div v-if="!archiveItems.length" class="group-chat-archive-empty">暂无专家发言</div>
-                  <button
-                    v-for="it in archiveItems"
-                    :key="it.key"
-                    type="button"
-                    class="group-chat-archive-item"
-                    @click="
-                      scrollToMessage(it.message_id)
-                    "
-                  >
-                    <span class="group-chat-archive-item-name">{{ it.name }}</span>
-                    <div class="group-chat-archive-item-snippet" v-html="renderSnippetMarkdown(it.snippet)" />
-                  </button>
-                </div>
-              </aside>
-
-              <div :class="['group-chat-main-right', archivePanelOpen ? 'group-chat-main-right-with-toc' : '']">
+              <div class="group-chat-main-right">
                 <div ref="groupMessagesRef" class="group-chat-messages">
                   <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
                     <div
@@ -129,9 +188,9 @@
                           <template v-else>
                             <p
                               class="group-chat-plain-text"
-                              :class="msg.role === 'user' && isShortSingleLine(normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')))"
+                              :class="msg.role === 'user' && isShortSingleLine(formatUserBubbleForDisplay(msg.content || ''))"
                             >
-                              {{ normalizeSingleLineForDisplay(stripDiscussionGoalForDisplay(msg.content || '')) }}
+                              {{ formatUserBubbleForDisplay(msg.content || '') }}
                             </p>
                           </template>
                         </div>
@@ -302,11 +361,14 @@
               </div>
               <div class="group-chat-input-toolbar">
                 <div class="group-chat-toolbar-left">
-                  <div v-if="orderedMemberIds.length > 0" ref="nextSpeakerRef" class="group-chat-next-speaker-picker">
+                  <div v-if="orderedMemberIds.length > 0" class="group-chat-next-speaker-picker">
                     <button
                       type="button"
                       class="group-chat-next-speaker-trigger"
-                      @click="showNextSpeakerPicker = !showNextSpeakerPicker"
+                      title="成员管理"
+                      aria-haspopup="dialog"
+                      :aria-expanded="showAddMemberModal"
+                      @click="showAddMemberModal = true; showMoreMenu = false"
                     >
                       <span v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'" class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }">
                         {{ dhaAvatarChar(effectiveNextSpeaker) }}
@@ -317,40 +379,6 @@
                       </span>
                       <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                     </button>
-                    <div v-if="showNextSpeakerPicker" class="group-chat-next-speaker-dropdown">
-                      <ul class="group-chat-members-list">
-                        <li
-                          v-for="opt in nextSpeakerOptions"
-                          :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-next-speaker"
-                          :class="{ 'group-chat-members-item-selected': effectiveNextSpeaker === opt.id }"
-                          @click="groupNextSpeakerOverride = opt.id; showNextSpeakerPicker = false"
-                        >
-                          <span
-                            v-if="opt.id !== 'host'"
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="{ backgroundColor: dhaAvatarColor(dhaIndex(opt.id)) }"
-                          >
-                            {{ dhaAvatarChar(opt.id) }}
-                          </span>
-                          <span v-else class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
-                          <span class="group-chat-next-speaker-name-in-list">
-                            {{ opt.name }}
-                            <span v-if="opt.id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
-                          </span>
-                          <button
-                            v-if="opt.id !== leaderDisplayId"
-                            type="button"
-                            class="group-chat-member-delete-icon"
-                            title="移出群聊"
-                            @click.stop="removeMember(opt.id)"
-                          >
-                            ×
-                          </button>
-                        </li>
-                      </ul>
-                      <button type="button" class="group-chat-more-row group-chat-more-row-btn group-chat-add-remove-in-picker" @click="showAddMemberModal = true; showNextSpeakerPicker = false">新增成员</button>
-                    </div>
                   </div>
                   <div ref="insertFileRef" class="group-chat-add-member-wrap">
                     <button
@@ -387,11 +415,11 @@
                   <div ref="shortcutEditorRef" class="group-chat-add-member-wrap">
                     <button
                       type="button"
-                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-plus"
-                      title="协作组合"
+                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-scenario"
+                      title="更多场景"
                       @click="showShortcutEditorModal = true"
                     >
-                      <span class="group-chat-plus">+</span>
+                      更多场景
                     </button>
                   </div>
                   <div ref="moreMenuRef" class="group-chat-add-member-wrap">
@@ -415,7 +443,6 @@
                       </svg>
                     </button>
                     <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
-                      <p class="group-chat-members-dropdown-title">更多选项</p>
                       <div class="group-chat-more-row group-chat-more-toggle-row">
                         <button
                           type="button"
@@ -462,29 +489,6 @@
                             <path d="M18 12h2" />
                           </svg>
                           <span>手动控制</span>
-                        </button>
-                      </div>
-                      <div class="group-chat-more-row group-chat-more-toggle-row">
-                        <button
-                          type="button"
-                          class="group-chat-toggle-pill group-chat-toggle-pill-full group-chat-add-member-toggle"
-                          @click="showAddMemberModal = true; showMoreMenu = false"
-                        >
-                          <svg
-                            class="group-chat-toggle-pill-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <circle cx="8" cy="8" r="3" />
-                            <circle cx="16" cy="8" r="3" />
-                            <path d="M4 20c0-2.2 1.8-4 4-4" />
-                            <path d="M16 16c2.2 0 4 1.8 4 4" />
-                          </svg>
-                          <span>成员管理</span>
                         </button>
                       </div>
                     </div>
@@ -574,7 +578,9 @@
                               </span>
                               <span v-else class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
                               <span class="group-chat-member-skill-name">
-                                {{ id === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[id]?.name || id) }}
+                                <span class="group-chat-member-skill-name-text">
+                                  {{ id === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[id]?.name || id) }}
+                                </span>
                                 <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
                               </span>
                               <button v-if="id !== leaderDisplayId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
@@ -967,7 +973,10 @@ function loadTocWorkspaceOpenDefault(): boolean {
   return false
 }
 
-const archivePanelOpen = ref(loadTocWorkspaceOpenDefault())
+const sessionMetaPopoverOpen = ref(loadTocWorkspaceOpenDefault())
+const sessionMetaPopoverRootRef = ref<HTMLElement | null>(null)
+const sessionTitleDraft = ref('')
+const titleSaving = ref(false)
 // 让“工作区”按钮默认状态也受用户喜好影响
 showGroupWorkspace.value = loadWorkspaceOpenDefault()
 // TOC 当前高亮条目（key 与 archiveItems.item.key 一致）
@@ -1008,14 +1017,72 @@ function scrollToMessage(messageId: string) {
   }
 }
 
-function onArchiveToggleClick() {
-  archivePanelOpen.value = !archivePanelOpen.value
-  persistBoolToLocalStorage(TOC_WORKSPACE_OPEN_STORAGE_KEY, archivePanelOpen.value)
+function toggleSessionMetaPopover() {
+  sessionMetaPopoverOpen.value = !sessionMetaPopoverOpen.value
+  if (sessionMetaPopoverOpen.value) {
+    sessionTitleDraft.value = groupDetail.value?.title || ''
+  }
+  persistBoolToLocalStorage(TOC_WORKSPACE_OPEN_STORAGE_KEY, sessionMetaPopoverOpen.value)
   window.dispatchEvent(
     new CustomEvent(USER_PREF_UPDATED_EVENT_NAME, {
-      detail: { key: TOC_WORKSPACE_OPEN_STORAGE_KEY, value: archivePanelOpen.value },
+      detail: { key: TOC_WORKSPACE_OPEN_STORAGE_KEY, value: sessionMetaPopoverOpen.value },
     })
   )
+}
+
+function onDocClickCloseSessionMeta(e: MouseEvent) {
+  const root = sessionMetaPopoverRootRef.value
+  if (root && !root.contains(e.target as Node)) {
+    sessionMetaPopoverOpen.value = false
+  }
+}
+
+let sessionMetaOutsideTimer: ReturnType<typeof setTimeout> | null = null
+function bindSessionMetaOutsideClick() {
+  unbindSessionMetaOutsideClick()
+  sessionMetaOutsideTimer = setTimeout(() => {
+    sessionMetaOutsideTimer = null
+    document.addEventListener('click', onDocClickCloseSessionMeta)
+  }, 0)
+}
+function unbindSessionMetaOutsideClick() {
+  if (sessionMetaOutsideTimer) {
+    clearTimeout(sessionMetaOutsideTimer)
+    sessionMetaOutsideTimer = null
+  }
+  document.removeEventListener('click', onDocClickCloseSessionMeta)
+}
+
+async function saveSessionTitle() {
+  const id = groupDetail.value?.id
+  if (!id) return
+  const t = (sessionTitleDraft.value || '').trim()
+  if (!t) return
+  titleSaving.value = true
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: t }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      if (groupDetail.value) groupDetail.value = { ...groupDetail.value, title: t }
+      emit('message-sent')
+    } else {
+      alert((j as { detail?: string }).detail || '保存标题失败')
+    }
+  } catch {
+    alert('保存标题失败，请检查网络')
+  } finally {
+    titleSaving.value = false
+  }
+}
+
+function jumpToSessionTopic(messageId: string) {
+  scrollToMessage(messageId)
+  sessionMetaPopoverOpen.value = false
+  unbindSessionMetaOutsideClick()
 }
 
 function toggleGroupWorkspaceOpen() {
@@ -1081,7 +1148,7 @@ function startTocScrollSpy() {
 }
 
 watch(
-  () => [archivePanelOpen.value, archiveItems.value.map((it) => it.key).join('|')],
+  () => [sessionMetaPopoverOpen.value, archiveItems.value.map((it) => it.key).join('|')],
   async ([open]) => {
     stopTocScrollSpy()
     tocActiveKey.value = ''
@@ -1090,6 +1157,21 @@ watch(
     rebuildTocSpyEntries()
     if (tocSpyEntries.length) tocActiveKey.value = tocSpyEntries[0].key
     startTocScrollSpy()
+  },
+)
+
+watch(sessionMetaPopoverOpen, (open) => {
+  if (open) {
+    bindSessionMetaOutsideClick()
+  } else {
+    unbindSessionMetaOutsideClick()
+  }
+})
+
+watch(
+  () => groupDetail.value?.title,
+  (t) => {
+    if (!sessionMetaPopoverOpen.value) sessionTitleDraft.value = t || ''
   },
 )
 
@@ -1307,11 +1389,9 @@ function closeMembersDropdown(e: MouseEvent) {
   const target = e.target as Node
   const el = e.target as HTMLElement
   const isOpeningAddMember = el?.closest?.('.group-chat-add-remove-in-picker')
-  const isOpeningAddMemberFromMore = el?.closest?.('.group-chat-add-member-toggle')
-  if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember && !isOpeningAddMemberFromMore) {
+  if (addMemberRef.value && !addMemberRef.value.contains(target) && !isOpeningAddMember) {
     showAddMember.value = false
   }
-  if (nextSpeakerRef.value && !nextSpeakerRef.value.contains(target)) showNextSpeakerPicker.value = false
   if (moreMenuRef.value && !moreMenuRef.value.contains(target)) showMoreMenu.value = false
   if (!el?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
 }
@@ -1554,7 +1634,7 @@ function onUserPrefUpdated(ev: Event) {
     showGroupWorkspace.value = !!e.detail?.value
   }
   if (key === TOC_WORKSPACE_OPEN_STORAGE_KEY) {
-    archivePanelOpen.value = !!e.detail?.value
+    sessionMetaPopoverOpen.value = !!e.detail?.value
   }
 }
 
@@ -1569,6 +1649,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
+  unbindSessionMetaOutsideClick()
   window.removeEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
   stopTocScrollSpy()
   for (const u of authImageObjectUrls) {
@@ -1856,8 +1937,6 @@ function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefin
 function removeAttachedFile(path: string) {
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
 }
-const showNextSpeakerPicker = ref(false)
-const nextSpeakerRef = ref<HTMLElement | null>(null)
 const addMemberRef = ref<HTMLElement | null>(null)
 
 const invitableDhas = computed(() => {
@@ -2054,14 +2133,6 @@ async function inviteSuggestedDha() {
   }
 }
 
-/** 下一发言人：仅 DHA 成员（无结束/用户选项） */
-const nextSpeakerOptions = computed(() => {
-  const d = groupDetail.value
-  const ids = orderedMemberIds.value
-  const map = d?.dha_map || {}
-  return ids.map((id) => ({ id, name: id === 'host' ? '主持人' : (map[id]?.name || id) }))
-})
-
 /** 当前选中的下一发言人（默认为主持人建议的或第一个 DHA） */
 const effectiveNextSpeaker = computed(() => {
   const override = groupNextSpeakerOverride.value
@@ -2211,12 +2282,11 @@ function stripDiscussionGoalForDisplay(content: string): string {
 }
 
 /** 压缩空行并把所有换行替换为空格，用于用户/主持人纯文本展示 */
-function normalizeSingleLineForDisplay(s: string): string {
-  if (!s) return ''
-  return s
-    .replace(/(\r\n|\n)([\s\r\n]*(\r\n|\n))+/g, '\n')
-    .replace(/[\r\n]+/g, ' ')
-    .trim()
+/** 用户气泡：保留 Shift+Enter 换行；仅做讨论目标剥离与轻微整理 */
+function formatUserBubbleForDisplay(content: string): string {
+  let s = stripDiscussionGoalForDisplay(content || '')
+  s = s.replace(/\n{3,}/g, '\n\n')
+  return s.trimEnd()
 }
 
 /** 从首条用户消息中取出纯讨论目标，去掉「【讨论目标】」前缀，避免预填后再次发送时重复 */
@@ -2225,11 +2295,11 @@ function normalizeDiscussionGoalFromContent(content: string | null | undefined):
   return stripped ? stripped : null
 }
 
-/** 判断是否是“短单行”文案，短文案强制不换行，长文案允许正常换行 */
+/** 判断是否是“短单行”文案（无换行），短句强制单行不换行 */
 function isShortSingleLine(text: string): string | null {
-  const len = (text || '').length
-  // 小于等于 12 个字符视为短句：例如“今天北京天气如何”
-  return len > 0 && len <= 12 ? 'group-chat-plain-text-nowrap' : null
+  const t = (text || '').trim()
+  if (!t || t.includes('\n')) return null
+  return t.length <= 12 ? 'group-chat-plain-text-nowrap' : null
 }
 
 /** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_dha_ids 时仍能显示邀请条） */
@@ -3074,6 +3144,8 @@ async function loadGroupDetail() {
 watch(
   () => props.selectedGroupSessionId,
   (id) => {
+    sessionMetaPopoverOpen.value = false
+    unbindSessionMetaOutsideClick()
     if (id) {
       groupError.value = null
       groupWaitingForUser.value = false
@@ -3170,6 +3242,153 @@ defineExpose({ refresh: loadGroupDetail })
   /* 右侧操作按钮贴到最右侧，避免靠近标题区域 */
   justify-self: end;
 }
+
+/* 标题 + 右侧图标按钮同一行（图标在标题右侧，非换行） */
+.group-chat-title-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+.group-chat-title-wrap .group-chat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.group-chat-title-actions-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.group-chat-session-meta-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 60;
+  width: min(360px, calc(100vw - 2rem));
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.75rem 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+.group-chat-meta-section {
+  padding: 0 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.group-chat-meta-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.group-chat-meta-section-topics {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.group-chat-meta-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+.group-chat-meta-title-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.group-chat-meta-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-input-border);
+  background: var(--color-input-bg);
+  color: var(--color-text);
+}
+.group-chat-meta-save-btn {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.375rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-subtle-text);
+  cursor: pointer;
+}
+.group-chat-meta-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.group-chat-meta-empty {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  padding: 0.25rem 0;
+}
+.group-chat-meta-topic-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.group-chat-meta-topic-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.group-chat-meta-topic-item:hover {
+  background: var(--color-list-hover);
+}
+.group-chat-meta-topic-item-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+.group-chat-meta-topic-name {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.group-chat-meta-topic-snippet {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 0.125rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 兼容：若别处仍单独使用 .group-chat-title */
 .group-chat-title {
   margin: 0;
   font-size: 0.9375rem;
@@ -3181,7 +3400,6 @@ defineExpose({ refresh: loadGroupDetail })
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
-  justify-self: center;
 }
 
 .group-chat-main-row {
@@ -3227,6 +3445,10 @@ defineExpose({ refresh: loadGroupDetail })
   color: var(--color-accent-subtle-text);
   background: var(--color-accent-subtle);
   border-color: var(--color-accent);
+}
+.group-chat-header-btn-icononly {
+  padding: 0.375rem 0.5rem;
+  justify-content: center;
 }
 
 /* 归档侧栏（悬浮侧边目录） */
@@ -3651,7 +3873,8 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.9rem;
   line-height: 1.4;
   text-align: left;
-  white-space: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .group-chat-plain-text-nowrap {
   white-space: nowrap;
@@ -3995,16 +4218,6 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.75rem;
   color: var(--color-text-muted);
 }
-.group-chat-toolbar-btn-plus {
-  width: 40px;
-  height: 34px;
-  padding: 0;
-}
-.group-chat-plus {
-  font-size: 1.05rem;
-  line-height: 1;
-  font-weight: 500;
-}
 .group-chat-shortcut-editor-dropdown {
   width: 360px;
 }
@@ -4045,10 +4258,13 @@ defineExpose({ refresh: loadGroupDetail })
   gap: 0.5rem;
 }
 .group-chat-member-badge {
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.35rem;
+  flex-shrink: 0;
+  margin-left: 0;
+  padding: 0.1rem 0.45rem;
   border-radius: 999px;
   font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: nowrap;
   border: 1px solid var(--color-accent);
   color: var(--color-accent-subtle-text);
   background: var(--color-accent-subtle);
@@ -4436,7 +4652,8 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-toolbar-btn {
   padding: 0.375rem 0.625rem;
   font-size: 0.8125rem;
-  color: var(--color-text-muted);
+  font-weight: 500;
+  color: var(--color-text);
   background: var(--color-list-hover);
   border: 1px solid var(--color-border);
   border-radius: 16px;
@@ -4445,6 +4662,7 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-toolbar-btn:hover {
   color: var(--color-text);
   background: var(--color-border-light);
+  border-color: var(--color-border-light);
 }
 .group-chat-add-member-wrap,
 .group-chat-current-members-wrap {
@@ -4489,6 +4707,12 @@ defineExpose({ refresh: loadGroupDetail })
   flex: 1;
   min-width: 0;
   font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.group-chat-member-skill-name-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4574,8 +4798,9 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 999px;
   border: 2px solid var(--color-border);
   background: var(--color-list-hover);
-  color: var(--color-text-muted);
+  color: var(--color-text);
   font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -4978,11 +5203,21 @@ defineExpose({ refresh: loadGroupDetail })
   height: 34px;
   padding: 0 0.625rem;
 }
+.group-chat-toolbar-btn-icon.group-chat-toolbar-btn-scenario {
+  width: auto;
+  min-width: auto;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .group-chat-toolbar-icon {
   width: 0.9rem;
   height: 0.9rem;
   margin-right: 0.25rem;
   flex-shrink: 0;
+  color: currentColor;
+  opacity: 0.92;
 }
 
 /* 右侧分区继承主题（避免被父级覆盖） */
