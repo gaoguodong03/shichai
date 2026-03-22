@@ -1,20 +1,74 @@
 <template>
   <div class="flex flex-1 min-h-0 min-w-0 bg-page">
     <!-- 最左侧：导航（图标 + 名称） -->
-    <nav class="w-16 flex-shrink-0 flex flex-col bg-sidebar py-3">
+    <nav class="w-28 flex-shrink-0 flex flex-col bg-sidebar py-3">
       <div class="px-2 space-y-0.5">
         <button
-          v-for="item in navItems"
-          :key="item.id"
-          @click="onNavClick(item)"
+          type="button"
+          @click="onNavClick('workspace')"
           :class="[
-            'w-full flex items-center justify-center px-2 py-2.5 rounded-lg text-center text-sm font-medium transition-colors',
-            currentModule === item.id
+            'w-full flex items-center justify-between px-2 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            currentModule === 'workspace'
               ? 'bg-nav-selected-bg text-nav-selected-text'
               : 'text-nav-text hover:bg-nav-hover-bg'
           ]"
         >
-          <span>{{ item.label }}</span>
+          <span class="truncate">工作空间</span>
+        </button>
+        <button
+          type="button"
+          @click="onNavClick('resource')"
+          :class="[
+            'w-full flex items-center justify-between px-2 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            currentModule === 'resource'
+              ? 'bg-nav-selected-bg text-nav-selected-text'
+              : 'text-nav-text hover:bg-nav-hover-bg'
+          ]"
+        >
+          <span class="truncate">资源中心</span>
+          <span class="inline-flex items-center justify-center w-4 h-4 rounded-md bg-list-hover">
+            <svg
+              class="w-3 h-3 transition-transform duration-200"
+              :class="resourceMenuExpanded ? 'rotate-180' : ''"
+              viewBox="0 0 20 20"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </button>
+        <div
+          v-if="resourceMenuExpanded"
+          class="pl-4 pr-1 py-1 space-y-0.5"
+        >
+          <button
+            v-for="child in resourceChildren"
+            :key="child.id"
+            type="button"
+            @click="onResourceChildClick(child.id)"
+            :class="[
+              'w-full text-left px-2 py-1.5 rounded-md text-xs transition-colors',
+              currentModule === 'resource' && resourceSubModule === child.id
+                ? 'bg-nav-selected-bg text-nav-selected-text'
+                : 'text-nav-text hover:bg-nav-hover-bg'
+            ]"
+          >
+            {{ child.label }}
+          </button>
+        </div>
+        <button
+          type="button"
+          @click="onNavClick('settings')"
+          :class="[
+            'w-full flex items-center justify-between px-2 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            currentModule === 'settings'
+              ? 'bg-nav-selected-bg text-nav-selected-text'
+              : 'text-nav-text hover:bg-nav-hover-bg'
+          ]"
+        >
+          <span class="truncate">设置</span>
         </button>
       </div>
       <div class="flex-1 min-h-2" />
@@ -54,20 +108,8 @@
           </button>
         </div>
         <div v-else-if="currentModule === 'resource'">
-          <div class="mt-2 flex rounded-lg overflow-hidden bg-sidebar">
-            <button
-              v-for="tab in resourceTabs"
-              :key="tab.id"
-              @click="resourceSubModule = tab.id"
-              :class="[
-                'flex-1 px-2 py-2 text-xs font-medium transition-colors text-center',
-                resourceSubModule === tab.id
-                  ? 'bg-nav-selected-bg text-nav-selected-text'
-                  : 'text-nav-text hover:bg-nav-hover-bg'
-              ]"
-            >
-              {{ tab.label }}
-            </button>
+          <div class="mt-2 px-2 py-2 rounded-lg bg-section-header text-xs text-muted">
+            资源中心 · {{ currentResourceLabel }}
           </div>
         </div>
       </div>
@@ -133,8 +175,34 @@
         </template>
         <!-- 资源中心：子 Tab 专家 / Skill / MCP -->
         <template v-else-if="currentModule === 'resource'">
+          <!-- 场景 -->
+          <template v-if="resourceSubModule === 'scenario'">
+            <div class="px-3 mb-2 space-y-2">
+              <input
+                v-model="scenarioSearch"
+                type="text"
+                placeholder="搜索场景（名称/ID）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+            </div>
+            <div v-if="scenarioLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <div v-else-if="!filteredScenarioPresets.length" class="px-3 py-4 text-sm text-muted">暂无场景</div>
+            <button
+              v-else
+              v-for="s in filteredScenarioPresets"
+              :key="s.id"
+              @click="selectedId = s.id"
+              :class="[
+                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              ]"
+            >
+              <div class="truncate font-medium">{{ s.name }}</div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ s.dha_ids.length }} 位专家</div>
+            </button>
+          </template>
           <!-- 专家 -->
-          <template v-if="resourceSubModule === 'dha'">
+          <template v-else-if="resourceSubModule === 'dha'">
             <div class="flex items-center gap-2 mb-2 px-3">
               <button
                 @click="selectedId = '__new__'"
@@ -409,6 +477,35 @@
       </div>
       <!-- 资源中心：智能体 / 技能 / 工具 -->
       <template v-if="currentModule === 'resource'">
+        <template v-if="resourceSubModule === 'scenario'">
+          <div class="h-full overflow-y-auto p-6">
+            <div v-if="selectedScenarioPreset" class="max-w-3xl space-y-4">
+              <div class="rounded-xl border border-input-border bg-panel p-4">
+                <h3 class="text-lg font-semibold text-primary">{{ selectedScenarioPreset.name }}</h3>
+                <p class="mt-2 text-sm text-muted">{{ selectedScenarioPreset.description || '暂无描述' }}</p>
+              </div>
+              <div class="rounded-xl border border-input-border bg-panel p-4">
+                <div class="text-sm font-medium text-primary mb-2">专家组合</div>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    v-for="id in selectedScenarioPreset.dha_ids"
+                    :key="id"
+                    class="px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
+                  >
+                    {{ dhaDisplayName(id) }}
+                  </span>
+                </div>
+              </div>
+              <div class="rounded-xl border border-input-border bg-panel p-4">
+                <div class="text-sm font-medium text-primary mb-2">讨论目标示例</div>
+                <p class="text-sm text-muted whitespace-pre-wrap">{{ selectedScenarioPreset.discussion_goal_example || '暂无' }}</p>
+              </div>
+            </div>
+            <div v-else class="flex h-full items-center justify-center text-muted text-sm">
+              请从左侧选择场景
+            </div>
+          </div>
+        </template>
         <template v-if="resourceSubModule === 'dha'">
           <DHAView
             :selected-dha-id="selectedId"
@@ -504,25 +601,47 @@ function logout() {
 }
 
 type ModuleId = 'workspace' | 'resource' | 'settings'
-type ResourceSubModule = 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
+type ResourceSubModule = 'scenario' | 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
 
-const navItems: { id: ModuleId; label: string }[] = [
-  { id: 'workspace', label: '工作空间' },
-  { id: 'resource', label: '资源中心' },
-  { id: 'settings', label: '设置' },
-]
-
-const resourceTabs: { id: ResourceSubModule; label: string }[] = [
+const resourceChildren: { id: ResourceSubModule; label: string }[] = [
+  { id: 'scenario', label: '场景' },
   { id: 'dha', label: '专家' },
-  { id: 'skill', label: 'Skill' },
-  { id: 'mcp', label: 'MCP' },
-  { id: 'llm', label: 'LLM' },
+  { id: 'skill', label: '技能' },
+  { id: 'mcp', label: '工具' },
+  { id: 'llm', label: '大模型' },
   { id: 'files', label: '文件' },
 ]
 
 const currentModule = ref<ModuleId>('workspace')
-const resourceSubModule = ref<ResourceSubModule>('dha')
+const resourceSubModule = ref<ResourceSubModule>('scenario')
 const selectedId = ref<string | null>(null)
+const resourceMenuExpanded = ref(false)
+
+const currentResourceLabel = computed(() => {
+  const hit = resourceChildren.find((x) => x.id === resourceSubModule.value)
+  return hit?.label || ''
+})
+
+interface ScenarioPreset {
+  id: string
+  name: string
+  dha_ids: string[]
+  description?: string
+  discussion_goal_example?: string
+}
+const scenarioPresets = ref<ScenarioPreset[]>([])
+const scenarioLoading = ref(false)
+const scenarioSearch = ref('')
+const filteredScenarioPresets = computed(() => {
+  const q = (scenarioSearch.value || '').trim().toLowerCase()
+  const list = scenarioPresets.value || []
+  if (!q) return list
+  return list.filter((s) => `${s.id} ${s.name}`.toLowerCase().includes(q))
+})
+const selectedScenarioPreset = computed(() => {
+  if (!selectedId.value) return null
+  return scenarioPresets.value.find((x) => x.id === selectedId.value) || null
+})
 
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
@@ -732,22 +851,68 @@ function formatDate(iso: string) {
   }
 }
 
-function onNavClick(item: { id: ModuleId }) {
-  currentModule.value = item.id
+function onNavClick(moduleId: ModuleId) {
+  if (moduleId === 'resource' && currentModule.value === 'resource') {
+    resourceMenuExpanded.value = !resourceMenuExpanded.value
+    return
+  }
+  currentModule.value = moduleId
+  if (moduleId === 'resource') {
+    resourceMenuExpanded.value = true
+  } else {
+    resourceMenuExpanded.value = false
+  }
   selectedId.value = null
-  if (item.id === 'resource' || item.id === 'settings') {
+  if (moduleId === 'resource' || moduleId === 'settings') {
     ensureMiddleColumnOpen()
   }
-  if (item.id === 'workspace') {
+  if (moduleId === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
   }
-  if (item.id === 'resource') {
+  if (moduleId === 'resource') {
+    fetchScenarioPresets()
     fetchDHA()
     fetchSkills()
     fetchMCP()
     fetchLLM()
     fetchFileSessions()
+  }
+}
+
+function onResourceChildClick(id: ResourceSubModule) {
+  currentModule.value = 'resource'
+  resourceMenuExpanded.value = true
+  resourceSubModule.value = id
+}
+
+function dhaDisplayName(dhaId: string): string {
+  const hit = (dhaInstances.value || []).find((d) => d.dha_id === dhaId)
+  return hit?.name || dhaId
+}
+
+async function fetchScenarioPresets() {
+  scenarioLoading.value = true
+  try {
+    const r = await fetch('/api/settings/session-presets')
+    const j = await r.json()
+    if (j?.status === 'ok' && j?.data?.presets) {
+      scenarioPresets.value = j.data.presets
+    } else {
+      scenarioPresets.value = []
+    }
+    if (resourceSubModule.value === 'scenario') {
+      const ids = scenarioPresets.value.map((s) => s.id)
+      if (selectedId.value && !ids.includes(selectedId.value)) {
+        selectedId.value = ids[0] || null
+      } else if (!selectedId.value) {
+        selectedId.value = ids[0] || null
+      }
+    }
+  } catch {
+    scenarioPresets.value = []
+  } finally {
+    scenarioLoading.value = false
   }
 }
 
@@ -1023,6 +1188,7 @@ function onMCPCreated(id: string) {
 watch(currentModule, (mod) => {
   if (mod !== 'resource') selectedId.value = null
   if (mod === 'resource') {
+    if (resourceSubModule.value === 'scenario') fetchScenarioPresets()
     if (resourceSubModule.value === 'skill') fetchSkills()
     if (resourceSubModule.value === 'mcp') fetchMCP()
     if (resourceSubModule.value === 'dha') fetchDHA()
@@ -1045,6 +1211,8 @@ watch(resourceSubModule, (sub) => {
   dhaSearch.value = ''
   skillSearch.value = ''
   mcpSearch.value = ''
+  scenarioSearch.value = ''
+  if (sub === 'scenario') fetchScenarioPresets()
   if (sub === 'dha') fetchDHA()
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()
