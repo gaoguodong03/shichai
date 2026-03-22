@@ -1,0 +1,24 @@
+{
+  "extract_main_content.py": {
+    "description": "从网页 HTML 源码中提取正文文本，适用于后续摘要/分析。",
+    "timeout_sec": 45,
+    "input_schema": {
+      "type": "object",
+      "required": ["html"],
+      "properties": {
+        "html": {
+          "type": "string",
+          "description": "网页 HTML 源码。"
+        },
+        "url": {
+          "type": "string",
+          "description": "来源 URL（可选）。"
+        },
+        "max_chars": {
+          "type": "integer",
+          "description": "正文最大字符数，默认 8000。"
+        }
+      }
+    }
+  }
+}

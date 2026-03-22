@@ -3,7 +3,7 @@
     <div
       class="w-full max-w-5xl overflow-hidden rounded-xl border border-border bg-card shadow-lg flex flex-col md:flex-row min-h-[min(560px,90vh)]"
     >
-      <!-- 左栏：拾柴主题插画 -->
+      <!-- 左栏：书童四九主题插画 -->
       <div
         class="relative flex min-h-[200px] shrink-0 flex-col items-center justify-center bg-accent-subtle md:min-h-0 md:w-[46%] md:rounded-l-xl md:rounded-r-none rounded-t-xl md:rounded-t-none p-8 md:p-10"
       >
@@ -12,7 +12,7 @@
         />
         <img
           :src="loginHeroUrl"
-          alt="拾柴 GatherFlame"
+          alt="书童四九"
           class="relative z-[1] w-full max-w-[min(100%,380px)] select-none drop-shadow-sm"
           width="480"
           height="360"
@@ -39,7 +39,7 @@
                 />
               </svg>
             </div>
-            <h1 class="text-xl font-semibold text-primary tracking-tight">拾柴·GatherFlame</h1>
+            <h1 class="text-xl font-semibold text-primary tracking-tight">书童四九</h1>
             <p class="mt-1 text-xs text-muted tracking-[0.12em]">多数字人 ReAct Agent 工作台</p>
             <p class="mt-5 text-base font-semibold text-primary">
               {{ isRegister ? '创建账户' : '登录' }}

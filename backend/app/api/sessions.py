@@ -1,10 +1,13 @@
-"""统一会话 API：与群聊共用存储，所有会话均为「带主持人的会话」。见 docs/architecture/unified-conversation-model.md"""
-from fastapi import APIRouter, HTTPException
+"""统一会话 API：与群聊共用存储，所有会话均为「带主持人的会话」。详见仓库 README / docs/书童四九.md。"""
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
+from app.core.security import user_context_dependency
+
 from app.api.group_chat import (
     _load_group_meta,
+    _build_session_payload,
     create_session_internal,
     export_session_to_markdown,
     get_group_session,
@@ -18,11 +21,12 @@ from app.api.group_chat import (
     GroupPromptPreviewRequest,
 )
 
-router = APIRouter(tags=["sessions"])
+router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
 
 
 class SessionCreate(BaseModel):
     title: str = "新对话"
+    agent_ids: List[str] = []
     dha_ids: List[str] = []  # 默认仅主持人
     expert_ids: List[str] = []  # 兼容字段：expert_ids
 
@@ -33,27 +37,19 @@ async def list_sessions():
     meta = _load_group_meta()
     sessions = []
     for gsid, gm in meta.items():
-        sessions.append({
-            "id": gsid,
-            "title": gm.get("title", "新对话"),
-            "dha_ids": gm.get("dha_ids", []),
-            "expert_ids": gm.get("dha_ids", []),
-            "leader_dha_id": gm.get("leader_dha_id", ""),
-            "speak_mode": gm.get("speak_mode", "auto"),
-            "created_at": gm.get("created_at", ""),
-            "updated_at": gm.get("updated_at", ""),
-        })
+        sessions.append(_build_session_payload(gsid, gm))
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
 
 
 @router.post("/sessions")
 async def create_session(body: SessionCreate):
-    """创建会话（默认仅主持人，dha_ids 为空）"""
-    resolved_ids = body.expert_ids or body.dha_ids or []
+    """创建会话（默认仅主持人，agent_ids 为空）"""
     data = create_session_internal(
         title=body.title or "新对话",
-        dha_ids=resolved_ids,
+        agent_ids=body.agent_ids,
+        dha_ids=body.dha_ids,
+        expert_ids=body.expert_ids,
         speak_mode="auto",
     )
     return {"status": "ok", "data": data}

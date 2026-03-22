@@ -1,12 +1,10 @@
 """HTTP 层用户解析与 FastAPI 依赖。
 
-当前版本采用简单的 Header 方案：
-- 前端在每个请求上添加 `X-User-Name: <username>`；
-- 若缺失，则回退到默认用户 `free4inno`（兼容现有单用户逻辑）；
-- 只负责「身份标识」，不做严格安全认证（密码校验仍由 /auth/login 完成）。
+默认：**必须**携带有效 `Authorization: Bearer <token>`（由 /api/auth/login|register 签发），
+否则返回 401，避免未登录请求落到共享默认用户。
 
-这样可以在不大改前端的情况下，实现方案 A 的会话与资源命名空间隔离。
-后续若要引入 JWT，只需在此处替换解析逻辑，其他模块继续通过 user_context 取路径即可。
+本地调试可设置环境变量 `ALLOW_ANONYMOUS_API=1`：无 token 时回退 `X-User-Name` 或 `free4inno`
+（不安全，勿用于生产）。
 """
 
 from __future__ import annotations
@@ -53,6 +51,10 @@ def _get_auth_secret() -> bytes:
     return secret.encode("utf-8")
 
 
+def _allow_anonymous_api() -> bool:
+    return os.getenv("ALLOW_ANONYMOUS_API", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def create_access_token(username: str, expires_minutes: int = 60 * 24) -> str:
     """创建一个简单的 HMAC-SHA256 JWT 兼容 token，不依赖外部库。"""
     header = {"alg": "HS256", "typ": "JWT"}
@@ -95,25 +97,25 @@ async def user_context_dependency(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
     x_user_name: Optional[str] = Header(default=None, alias="X-User-Name"),
 ):
-    """全局依赖：为每个请求设置当前用户名与 UserContext。
-
-    优先从 Authorization: Bearer <token> 中解析用户名；
-    若未提供 token，则仅在开发/兼容场景下使用 X-User-Name 或回退到 free4inno。
-    """
+    """为受保护路由设置当前用户名与 UserContext：默认仅接受有效 Bearer token。"""
     username: Optional[str] = None
 
-    # 1. 优先使用 Bearer token（推荐）
     if authorization:
         parts = authorization.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             token = parts[1]
+            if not token.strip():
+                raise HTTPException(status_code=401, detail="访问令牌不能为空")
             username = decode_access_token(token)
         else:
             raise HTTPException(status_code=401, detail="Authorization 头格式错误，应为 Bearer <token>")
-
-    # 2. 无 token 时，退回到 header / 默认用户（便于本地调试与兼容老前端）
-    if not username:
+    elif _allow_anonymous_api():
         username = (x_user_name or "").strip() or "free4inno"
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="需要登录：请提供 Authorization: Bearer <token>（本地调试可设 ALLOW_ANONYMOUS_API=1）",
+        )
 
     token_ctx = set_current_username(username)
     try:

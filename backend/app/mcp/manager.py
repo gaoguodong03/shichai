@@ -1,14 +1,15 @@
 """
 MCP Server 管理器：规范、轻量的调用方式。
 
-- 生命周期：在 FastAPI lifespan 中 initialize_all / cleanup，保证与 anyio 同任务，避免跨任务 exit 报错。
-- 调用方式：Tool.func 为异步函数，直接 session.call_tool；不在外层包 sync（asyncio.run/run_until_complete 会拖慢且易出错），由 graph/agent 侧 await。
-- 参数：LLM 可能传 __arg1 等；normalize_mcp_kwargs_for_call（含 tool_arg_normalizers）在调用前统一映射到 MCP schema 参数名。
+- 多用户：每个用户名对应独立的 MCPToolManager 实例与连接，配置来自 data/users/{user}/config/mcp_servers.json。
+- 生命周期：进程退出时在 lifespan 内 cleanup_all_mcp_runtimes；单用户配置变更时可 dispose 该用户实例。
+- 调用方式：Tool.func 为异步函数，直接 session.call_tool；由 graph/agent 侧 await。
 """
 import os
 import re
 import logging
 import asyncio
+import threading
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
 
@@ -32,7 +33,8 @@ try:
 except ImportError:
     pass
 
-_mcp_manager_singleton: Optional["MCPToolManager"] = None
+_mcp_user_lock = threading.Lock()
+_mcp_by_user: Dict[str, "MCPToolManager"] = {}
 
 
 def normalize_mcp_kwargs_for_call(
@@ -53,12 +55,73 @@ def _subst_env(val: str) -> str:
     return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), str(val))
 
 
+def _user_mcp_config_path(username: str) -> str:
+    from app.core.user_context import get_user_context_for
+
+    uname = (username or "").strip()
+    if not uname:
+        raise ValueError("username required for MCP config path")
+    return str((get_user_context_for(uname).config_dir / "mcp_servers.json").resolve())
+
+
+def get_mcp_manager_for_user(username: str) -> "MCPToolManager":
+    """按用户名返回独立的 MCP 管理器（尚未加载配置时 server_configs 可能为空）。"""
+    uname = (username or "").strip()
+    if not uname:
+        raise ValueError("username required for MCP runtime")
+    with _mcp_user_lock:
+        mgr = _mcp_by_user.get(uname)
+        if mgr is None:
+            mgr = MCPToolManager()
+            _mcp_by_user[uname] = mgr
+        return mgr
+
+
+async def ensure_user_mcp_bootstrapped(username: str) -> "MCPToolManager":
+    """加载该用户 mcp_servers.json，并对非 lazy 的 Server 建立连接（幂等）。"""
+    mgr = get_mcp_manager_for_user(username)
+    if getattr(mgr, "_mcp_boot_done", False):
+        return mgr
+    async with mgr._bootstrap_lock:
+        if getattr(mgr, "_mcp_boot_done", False):
+            return mgr
+        path = _user_mcp_config_path(username)
+        await mgr.initialize_all(config_path=path)
+        setattr(mgr, "_mcp_boot_done", True)
+        return mgr
+
+
+async def dispose_mcp_runtime_for_user(username: str) -> None:
+    """关闭并移除某用户的 MCP 运行时（配置更新后调用）。"""
+    uname = (username or "").strip()
+    if not uname:
+        return
+    with _mcp_user_lock:
+        mgr = _mcp_by_user.pop(uname, None)
+    if mgr is not None:
+        try:
+            await mgr.cleanup()
+        except Exception:
+            logger.exception("dispose_mcp_runtime_for_user: cleanup failed for %s", uname)
+
+
+async def cleanup_all_mcp_runtimes() -> None:
+    """关闭所有用户的 MCP 连接（进程退出时）。"""
+    with _mcp_user_lock:
+        items = list(_mcp_by_user.items())
+        _mcp_by_user.clear()
+    for uname, mgr in items:
+        try:
+            await mgr.cleanup()
+        except Exception:
+            logger.exception("cleanup_all_mcp_runtimes: failed for %s", uname)
+
+
 def get_mcp_manager() -> "MCPToolManager":
-    """获取全局 MCP 管理器单例（chat、settings 共用，保证状态一致）"""
-    global _mcp_manager_singleton
-    if _mcp_manager_singleton is None:
-        _mcp_manager_singleton = MCPToolManager()
-    return _mcp_manager_singleton
+    """兼容旧调用：返回当前登录用户的 MCP 管理器（不自动 bootstrap，请用 ensure_user_mcp_bootstrapped）。"""
+    from app.core.security import get_current_user
+
+    return get_mcp_manager_for_user(get_current_user().username)
 
 
 class MCPToolManager:
@@ -69,6 +132,7 @@ class MCPToolManager:
         self.tools: Dict[str, Tool] = {}
         self.server_configs: List[Dict[str, Any]] = []
         self.exit_stack = AsyncExitStack()  # 用于管理异步上下文管理器
+        self._bootstrap_lock = asyncio.Lock()
     
     async def load_config(self, config_path: str = None):
         """加载 MCP Server 配置"""
@@ -255,10 +319,10 @@ class MCPToolManager:
         """获取所有工具"""
         return list(self.tools.values())
     
-    async def initialize_all(self):
-        """初始化所有配置的 MCP Server"""
-        await self.load_config()
-        
+    async def initialize_all(self, config_path: Optional[str] = None):
+        """加载配置并初始化所有非 lazy 的 MCP Server。config_path 默认使用环境变量 MCP_CONFIG_PATH。"""
+        await self.load_config(config_path)
+
         for config in self.server_configs:
             server_id = config.get("id", f"server_{len(self.sessions)}")
             if config.get("enabled", True):
@@ -308,9 +372,20 @@ class MCPToolManager:
         # 使用 exit_stack 自动清理所有异步上下文管理器
         try:
             await self.exit_stack.aclose()
+        except RuntimeError as e:
+            # 某些第三方 MCP 客户端在不同 task 做 __aexit__ 会抛 anyio cancel-scope 错误。
+            # 进程关停场景下允许降级为警告并继续清理内存引用，避免重复报错阻塞退出。
+            if "cancel scope in a different task" in str(e):
+                logger.warning("MCP 清理降级：%s", e)
+            else:
+                logger.error("清理 exit_stack 时出错: %s", e, exc_info=True)
         except Exception as e:
-            logger.error(f"清理 exit_stack 时出错: {e}", exc_info=True)
-        
+            logger.error("清理 exit_stack 时出错: %s", e, exc_info=True)
+
         self.sessions.clear()
         self.tools.clear()
+        self.server_configs = []
+        setattr(self, "_mcp_boot_done", False)
+        self.exit_stack = AsyncExitStack()
+        self._bootstrap_lock = asyncio.Lock()
         logger.info("MCP 连接清理完成")

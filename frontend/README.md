@@ -1,48 +1,31 @@
-# 拾柴·GatherFlame Frontend
+# 书童四九 · 前端
 
-拾柴·GatherFlame 前端应用（专家协作平台，兼容历史 DHA 命名）
+Vue 3 + TypeScript + Vite，与后端 `/api` 通信；登录后使用 `localStorage` 中的 token，通过全局 `fetch` 包装发送 `Authorization: Bearer`。
 
 ## 快速开始
 
-### 1. 安装依赖
-
 ```bash
 npm install
-# 或
-pnpm install
-```
-
-### 2. 运行开发服务器
-
-```bash
 npm run dev
 ```
 
-应用将在 `http://localhost:5173` 启动
+默认开发地址：`http://localhost:5173`（API 由 Vite 代理到后端，见 `vite.config.ts`）。
 
-### 3. 构建生产版本
+## 构建
 
 ```bash
 npm run build
 ```
 
-## 项目结构
+## 项目结构（节选）
 
 ```
 frontend/
 ├── src/
-│   ├── views/           # 页面视图
-│   ├── components/      # Vue 组件
-│   ├── composables/      # Composables
-│   ├── router/           # 路由配置
-│   └── App.vue          # 根组件
+│   ├── views/
+│   ├── components/
+│   ├── router/
+│   └── main.ts          # 全局 fetch 附带 Bearer
 ├── package.json
 └── vite.config.ts
 ```
-
-## 功能
-
-- ✅ Vue 3 + TypeScript
-- ✅ 聊天界面
-- ✅ SSE 流式接收
-- ✅ 响应式设计

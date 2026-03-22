@@ -7,12 +7,21 @@ from typing import Any, Callable, Dict, List, Optional
 
 from langchain.tools import Tool
 
-from app.api.files import AGENT_OUTPUTS_DIR, WORKSPACES_SUBDIR
+from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 
-# MCP server 通常以 backend 为 cwd 启动，需传相对 backend 的路径才能解析到正确文件
-_REL_PREFIX = os.path.relpath(Path(AGENT_OUTPUTS_DIR).resolve(), Path.cwd()) if Path(AGENT_OUTPUTS_DIR).exists() else "data/agent-outputs"
-if _REL_PREFIX.startswith(".."):
-    _REL_PREFIX = "data/agent-outputs"  # 兜底
+
+def _agent_outputs_rel_prefix() -> str:
+    """当前用户 agent 输出根目录相对于 backend 目录的路径（供 MCP 传 path 用）。"""
+    root = get_agent_outputs_root().resolve()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    backend_root = Path(__file__).resolve().parents[2]
+    rel = os.path.relpath(root, backend_root)
+    if rel.startswith(".."):
+        raise RuntimeError(f"agent_outputs 目录必须位于 backend 目录下，当前为: {root}")
+    return rel.replace("\\", "/")
 
 
 def _path_arg_keys() -> List[str]:
@@ -42,9 +51,10 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
     else:
         path = raw
 
+    rel_prefix = _agent_outputs_rel_prefix()
     path = path.lstrip("/")
     if not path:
-        return f"{_REL_PREFIX}/{WORKSPACES_SUBDIR}/{session_id}"
+        return f"{rel_prefix}/{WORKSPACES_SUBDIR}/{session_id}"
     # 已是 workspaces/{session_id}/ 形式
     prefix_ws = f"{WORKSPACES_SUBDIR}/{session_id}"
     if path.startswith(prefix_ws + "/") or path == prefix_ws:
@@ -53,8 +63,8 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
         # 仅文件名或子路径，补全为当前会话 workspace
         path = f"{prefix_ws}/{path}" if path else prefix_ws
     # 供 MCP 解析：相对 backend 的路径
-    if not path.startswith(_REL_PREFIX):
-        path = f"{_REL_PREFIX}/{path}"
+    if not path.startswith(rel_prefix):
+        path = f"{rel_prefix}/{path}"
     return path
 
 

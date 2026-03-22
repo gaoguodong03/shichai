@@ -1,75 +1,71 @@
-# 拾柴·GatherFlame Backend
+# 书童四九 · 后端
 
-拾柴·GatherFlame 后端服务（专家协作平台，兼容历史 DHA 命名）
+FastAPI 服务：统一会话流、Agent 配置、每用户 MCP / Skills、工作区文件 API。
+
+## 环境变量（节选）
+
+| 变量 | 说明 |
+|------|------|
+| `SHUTONG_USER_DATA_ROOT` | 用户数据根目录，默认 `backend/data/users`；每个用户独占 `data/users/{username}/`（会话、工作区、配置、技能副本）。旧名 `SHICHAI_USER_DATA_ROOT` 已废弃。 |
+| `AUTH_SECRET` | JWT 签名密钥，生产环境务必修改。 |
+| `ALLOW_ANONYMOUS_API` | 设为 `1` 时允许无 Bearer 访问（仅本地调试，**禁止**用于生产）。 |
+| `QWEN_API_KEY` 等 | 各 LLM 提供商的 API Key，见应用内「设置」。 |
 
 ## 快速开始
 
-### 1. 安装依赖
-
 ```bash
-# 创建虚拟环境
 python -m venv venv
-source venv/bin/activate 
-
-# 安装依赖（包括 MCP SDK）
+# Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-```
-
-### 2. 配置环境变量
-
-```bash
-# 创建 .env 文件
-cat > .env << 'EOF'
-# Qwen API 配置
-QWEN_API_KEY=sk-364125e5aa404a04bd3d3d01918ffde2
-QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-
-# 应用配置
-DEBUG=true
-CORS_ORIGINS=http://localhost:5173
-
-# MCP 配置
-MCP_CONFIG_PATH=./config/mcp_servers.json
-
-# Skills 配置
-SKILLS_DIR=./skills
-EOF
-
-# 或手动创建 .env 文件，复制上面的内容
-```
-
-### 3. 运行服务
-
-```bash
+# 可选：复制并编辑 .env
 python -m app.main
-# 或
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-服务将在 `http://localhost:8000` 启动
+API 文档：`http://localhost:8000/docs`
 
-API 文档: `http://localhost:8000/docs`
-
-## 项目结构
+## 项目结构（节选）
 
 ```
 backend/
 ├── app/
-│   ├── main.py          # FastAPI 应用入口
-│   ├── api/             # API 路由
-│   ├── agent/           # Agent 核心逻辑
-│   ├── mcp/             # MCP 集成
-│   └── skills/          # Skills 管理
-├── config/              # 配置文件
-├── skills/               # Skills 目录
-└── requirements.txt     # Python 依赖
+│   ├── main.py
+│   ├── api/             # 路由（sessions、group_chat、settings、files、auth…）
+│   ├── agent/           # Agent / 工具组装
+│   ├── mcp/             # 每用户 MCP 运行时
+│   └── skills/          # SkillsLoader（按用户目录缓存）
+├── config/              # 仓库内默认配置示例
+└── requirements.txt
 ```
 
-## 功能
+## 功能概览
 
-- ✅ Qwen LLM 集成
-- ✅ MCP 工具支持
-- ✅ Skills 加载
-- ✅ ReAct Agent 工作流（使用 LangGraph 实现完整的 ReAct 循环）
-- ✅ SSE 流式输出
+- 多用户隔离（磁盘路径 + `Authorization: Bearer`）
+- MCP 与 Skills 按用户目录加载；技能脚本在用户工作区内执行
+- ReAct / Agent 流式输出（SSE）
+
+## Skill 脚本执行（run_skill_script）
+
+- 脚本目录：`data/users/{username}/skills/{skill_id}/scripts/`
+- 支持后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`
+- Python 脚本使用当前解释器（如 `conda activate sc` 后的 `python`）执行
+- 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
+- 内置调试命令：
+  - `script_path="__list__"`：列出可执行脚本
+  - `script_path="__manifest__"`：查看 `scripts/manifest.json`
+  - `script_path="__describe__:<script>"`：查看单脚本元信息
+
+## 多用户上线建议（默认体验补丁）
+
+- 架构原则：所有用户共用一套 `run_skill_script` 执行器，按用户上下文访问各自 `skills/` 与 `workspace/`。
+- 默认模板补丁：对 `backend/skills/*` 提供开箱可用的基础脚本（如 `url-fetch/scripts/extract_main_content.py`），避免新用户首次使用时“脚本不可用”。
+- 全局兼容补丁：在工具组装层维护历史 MCP id 别名映射（如 `fetch -> linkup`），防止旧 skill 配置导致运行失败。
+- 补丁边界：这类补丁属于默认体验增强，不改变“单执行器 + 多用户隔离”的架构方向。
+
+## 接口与命名迁移（2026-03）
+
+- 会话主入口：`/api/sessions/*`
+- 兼容别名：`/api/group-sessions/*`（已标记 deprecated，后续移除）
+- Agent 主入口：`/api/agents/*`
+- 兼容别名：`/api/dha/instances/*`、`/api/experts/*`
+- 字段主命名：`agent_ids`、`leader_agent_id`
+- 兼容字段：`dha_ids`、`expert_ids`、`leader_dha_id`

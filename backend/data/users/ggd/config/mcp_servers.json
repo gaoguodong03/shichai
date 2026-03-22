@@ -1,0 +1,90 @@
+[
+  {
+    "id": "linkup",
+    "name": "Linkup抓取网页",
+    "enabled": true,
+    "transport": {
+      "type": "http",
+      "url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}",
+      "base_url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}"
+    },
+    "metadata": {
+      "description": "Linkup 远程 MCP：linkup-search 搜索、linkup-fetch 抓取网页。需在 .env 中设置 LINKUP_API_KEY。（默认禁用：启动时外部连接不稳定会拖慢/阻塞初始化；需要时可再启用）"
+    }
+  },
+  {
+    "id": "exa",
+    "name": "Exa 搜索",
+    "enabled": true,
+    "transport": {
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}",
+      "base_url": "https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}"
+    },
+    "metadata": {
+      "description": "Exa 远程 MCP：web_search_exa 搜索、get_code_context_exa 代码检索等。需在 .env 中设置 EXA_API_KEY。（默认禁用：启动时外部连接不稳定会拖慢/阻塞初始化；需要时可再启用）"
+    }
+  },
+  {
+    "id": "amap-maps",
+    "name": "高德地图",
+    "enabled": true,
+    "lazy": true,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "mcp_servers/stdio_json_filter.py",
+        "npx",
+        "-y",
+        "--quiet",
+        "@amap/amap-maps-mcp-server"
+      ]
+    },
+    "metadata": {
+      "description": "高德地图 MCP：地理编码、逆地理编码、天气、距离计算、路线规划（步行/驾车/公交）等。需在 .env 中设置 AMAP_MAPS_API_KEY。（默认禁用：npx/stdout 易污染 JSON-RPC；需要时可再启用）"
+    }
+  },
+  {
+    "id": "file-reader",
+    "name": "文件读取与写入",
+    "enabled": true,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "mcp_servers/file_reader_mcp.py"
+      ]
+    },
+    "metadata": {
+      "description": "统一文件 MCP（已合并原 Filesystem 能力）：read_file、write_file、read_pdf、read_docx、read_xlsx、list_allowed_directories、list_directory。工作区 path 按会话限定在 workspaces/{会话ID}/ 下。仅需 Python，无需 Node.js。"
+    }
+  },
+  {
+    "id": "playwright-mcp",
+    "name": "Playwright 浏览器控制",
+    "enabled": true,
+    "lazy": true,
+    "transport": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "mcp_servers/stdio_json_filter.py",
+        "npx",
+        "-y",
+        "--quiet",
+        "@playwright/mcp@latest"
+      ],
+      "env": {
+        "NO_UPDATE_NOTIFIER": "1",
+        "NPM_CONFIG_UPDATE_NOTIFIER": "false",
+        "NPM_CONFIG_FUND": "false",
+        "NPM_CONFIG_AUDIT": "false",
+        "NPM_CONFIG_LOGLEVEL": "silent"
+      }
+    },
+    "metadata": {
+      "description": "Playwright MCP：通过 Playwright 控制本机浏览器，支持导航、点击、输入、截图等自动化操作。需要本机安装 Node.js 18+，首次使用时 npx 会自动拉取依赖。（默认禁用：npx/stdout 易污染 JSON-RPC；需要时可再启用）"
+    }
+  }
+]

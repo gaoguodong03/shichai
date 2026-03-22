@@ -4,23 +4,29 @@ import tempfile
 
 import pytest
 
-# 测试前设置环境变量，使 files 模块使用临时目录
+# 测试前将 SHUTONG_USER_DATA_ROOT 指向临时目录，避免写入仓库 data/users
 @pytest.fixture(scope="module")
-def temp_agent_outputs():
+def temp_user_data_root():
     with tempfile.TemporaryDirectory() as d:
-        old = os.environ.get("AGENT_OUTPUTS_DIR")
-        os.environ["AGENT_OUTPUTS_DIR"] = d
+        old = os.environ.get("SHUTONG_USER_DATA_ROOT")
+        old_anon = os.environ.get("ALLOW_ANONYMOUS_API")
+        os.environ["SHUTONG_USER_DATA_ROOT"] = d
+        os.environ["ALLOW_ANONYMOUS_API"] = "1"
         try:
             yield d
         finally:
             if old is not None:
-                os.environ["AGENT_OUTPUTS_DIR"] = old
+                os.environ["SHUTONG_USER_DATA_ROOT"] = old
             else:
-                os.environ.pop("AGENT_OUTPUTS_DIR", None)
+                os.environ.pop("SHUTONG_USER_DATA_ROOT", None)
+            if old_anon is not None:
+                os.environ["ALLOW_ANONYMOUS_API"] = old_anon
+            else:
+                os.environ.pop("ALLOW_ANONYMOUS_API", None)
 
 
 @pytest.fixture
-def client(temp_agent_outputs):
+def client(temp_user_data_root):
     from fastapi.testclient import TestClient
     from app.main import app
     return TestClient(app)
@@ -98,7 +104,7 @@ def test_workspace_path_traversal_blocked(client):
     assert r.status_code in (400, 404)
 
 
-def test_write_workspace_file_tool(temp_agent_outputs):
+def test_write_workspace_file_tool(temp_user_data_root):
     """write_workspace_file 写入当前 workspace"""
     from app.api.files import get_workspace_root
     from app.tools.write_workspace_file import create_write_workspace_file_tool

@@ -1,46 +1,46 @@
-"""Skills 加载器"""
+"""Skills 加载器（按用户目录缓存，避免多租户下全局单例竞态）"""
 import os
+import threading
 import yaml
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from typing import TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Tuple
 
-if TYPE_CHECKING:
-    pass
 
 class Skill:
     """Skill 类"""
+
     def __init__(self, name: str, description: str, content: str, metadata: Dict[str, Any] = None, skill_id: str = None):
         self.name = name
         self.description = description
         self.content = content
         self.metadata = metadata or {}
         self.skill_id = skill_id or name  # 目录名，用于筛选
-    
+
     def get_instruction(self) -> str:
         """获取技能指令"""
         return self.content
 
+
 class SkillsLoader:
     """Skills 加载器"""
-    
+
     def __init__(self, skills_dir: str = None):
         self.skills_dir = Path(skills_dir or os.getenv("SKILLS_DIR", "./skills"))
         self.skills: Dict[str, Skill] = {}
-    
+
     def load_skill(self, skill_path: Path) -> Optional[Skill]:
         """加载单个 Skill"""
         skill_file = skill_path / "SKILL.md"
         if not skill_file.exists():
             return None
-        
+
         try:
-            with open(skill_file, 'r', encoding='utf-8') as f:
+            with open(skill_file, "r", encoding="utf-8") as f:
                 content = f.read()
-            
+
             # 解析 YAML frontmatter
-            if content.startswith('---'):
-                parts = content.split('---', 2)
+            if content.startswith("---"):
+                parts = content.split("---", 2)
                 if len(parts) >= 3:
                     frontmatter = yaml.safe_load(parts[1])
                     body = parts[2].strip()
@@ -50,30 +50,30 @@ class SkillsLoader:
             else:
                 frontmatter = {}
                 body = content
-            
-            name = frontmatter.get('name', skill_path.name)
-            description = frontmatter.get('description', '')
+
+            name = frontmatter.get("name", skill_path.name)
+            description = frontmatter.get("description", "")
             metadata = frontmatter
             skill_id = skill_path.name  # 目录名
             return Skill(name, description, body, metadata, skill_id)
         except Exception as e:
             print(f"Failed to load skill from {skill_path}: {e}")
             return None
-    
+
     def load_all_skills(self) -> Dict[str, Skill]:
         """加载所有 Skills"""
         if not self.skills_dir.exists():
             return {}
-        
+
         self.skills = {}
         for skill_dir in self.skills_dir.iterdir():
             if skill_dir.is_dir():
                 skill = self.load_skill(skill_dir)
                 if skill:
                     self.skills[skill.skill_id] = skill  # 用 skill_id（目录名）作为 key
-        
+
         return self.skills
-    
+
     def get_active_skills_instructions(self) -> str:
         """获取所有启用（enabled）技能的指令"""
         instructions = []
@@ -123,18 +123,22 @@ class SkillsLoader:
                 continue
             # 从 description 提取关键词（按 /、。（） 等分割）
             desc_clean = str(desc).split("。")[0].split("（")[0].split("(")[0]
-            keywords = [k.strip() for k in desc_clean.replace("、", "/").replace("，", "/").split("/") if k.strip() and len(k.strip()) >= 2]
+            keywords = [
+                k.strip()
+                for k in desc_clean.replace("、", "/").replace("，", "/").split("/")
+                if k.strip() and len(k.strip()) >= 2
+            ]
             if any(kw in t for kw in keywords):
                 return skill.name
         return None
-    
+
     def get_skills_metadata(self) -> List[Dict[str, Any]]:
         """获取所有技能的元数据"""
         return [
             {
                 "name": skill.name,
                 "description": skill.description,
-                "metadata": skill.metadata
+                "metadata": skill.metadata,
             }
             for skill in self.skills.values()
         ]
@@ -169,11 +173,70 @@ class SkillsLoader:
         return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"
 
 
+def _skills_tree_mtime(skills_dir: Path) -> float:
+    """用于缓存失效：目录及下一层各 skill 的 SKILL.md 的最新 mtime。"""
+    if not skills_dir.exists():
+        return 0.0
+    try:
+        mt = skills_dir.stat().st_mtime
+    except OSError:
+        return 0.0
+    try:
+        for child in skills_dir.iterdir():
+            if not child.is_dir():
+                continue
+            sf = child / "SKILL.md"
+            if sf.is_file():
+                try:
+                    mt = max(mt, sf.stat().st_mtime)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return mt
+
+
+_cache_lock = threading.Lock()
+_user_skill_cache: Dict[str, Tuple[float, SkillsLoader]] = {}
+
+
+def get_skills_loader_for_user(username: str, skills_dir: Path) -> SkillsLoader:
+    """返回指定用户技能目录对应的 SkillsLoader（带 mtime 缓存）。"""
+    key = (username or "").strip()
+    if not key:
+        key = "_anonymous"
+    sd = skills_dir.resolve()
+    mtime = _skills_tree_mtime(sd)
+    with _cache_lock:
+        hit = _user_skill_cache.get(key)
+        if hit is not None and hit[0] == mtime:
+            return hit[1]
+        loader = SkillsLoader(str(sd))
+        loader.load_all_skills()
+        _user_skill_cache[key] = (mtime, loader)
+        return loader
+
+
+def invalidate_skills_cache_for_user(username: str) -> None:
+    """技能文件变更后使该用户的缓存失效。"""
+    key = (username or "").strip()
+    if not key:
+        return
+    with _cache_lock:
+        _user_skill_cache.pop(key, None)
+
+
+def invalidate_all_skills_cache() -> None:
+    with _cache_lock:
+        _user_skill_cache.clear()
+
+
+# 仅用于无用户上下文场景（例如旧测试）；业务路径请用 get_skills_loader_for_user。
 _skills_loader: Optional[SkillsLoader] = None
 
 
 def get_skills_loader() -> SkillsLoader:
-    """返回全局单例 SkillsLoader，供 chat、group_chat、settings 等共用。"""
+    """进程级默认 SkillsLoader（./skills 或 SKILLS_DIR），勿在多用户请求路径依赖此单例。"""
     global _skills_loader
     if _skills_loader is None:
         _skills_loader = SkillsLoader()

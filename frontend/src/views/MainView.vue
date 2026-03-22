@@ -34,10 +34,10 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <!-- 顶部品牌区：所有模块统一 拾柴·GatherFlame -->
+      <!-- 顶部品牌区：书童四九 -->
       <div class="px-3 pt-3 pb-3 flex-shrink-0">
         <div class="mb-2 flex justify-center">
-          <span class="text-[11px] font-semibold tracking-[0.18em] text-muted text-center">拾柴·GatherFlame</span>
+          <span class="text-[11px] font-semibold tracking-[0.18em] text-muted text-center">书童四九</span>
         </div>
         <div v-if="currentModule === 'workspace'">
           <button
@@ -871,7 +871,7 @@ async function renameGroupSession(id: string, currentTitle: string) {
 async function fetchDHA() {
   dhaInstancesLoading.value = true
   try {
-    const r = await fetch('/api/experts')
+    const r = await fetch('/api/agents')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.instances) {
       dhaInstances.value = j.data.instances
@@ -890,7 +890,7 @@ function onDHACreated(dhaId: string) {
 
 async function deleteDhaInstance(dhaId: string) {
   if (!confirm('确定删除该专家？')) return
-  const r = await fetch(`/api/experts/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
+  const r = await fetch(`/api/agents/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     if (selectedId.value === dhaId) selectedId.value = null

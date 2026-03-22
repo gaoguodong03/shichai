@@ -17,9 +17,8 @@ def env_and_client(monkeypatch, tmp_path):
 
     monkeypatch.setattr(_users_store, "_USERS_FILE", tmp_path / "users.json")
 
-    # 3) 工作区输出目录放在临时目录，验证多用户物理隔离
-    agent_outputs_dir = tmp_path / "agent-outputs"
-    monkeypatch.setenv("AGENT_OUTPUTS_DIR", str(agent_outputs_dir))
+    # 3) 用户数据根放在临时目录，验证多用户物理隔离
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
 
     # 重要：在 env 生效后再导入 app，避免模块初始化时读取旧 env
     from app.main import app

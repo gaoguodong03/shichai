@@ -1,16 +1,32 @@
-"""按 DHA 组装工具列表的统一入口（统一会话，单聊已下线）。
+"""按 DHA 组装工具列表的统一入口（统一会话）。
 
-使用 build_tools_for_group_chat：按 DHA 的 mcp_server_ids 或 skill 的 MCP 依赖过滤 →
-叠加 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> →
-按 skill 写入策略过滤写文件 → wrap。
+build_tools_for_group_chat：从当前用户的 MCP 运行时取工具，按 mcp_server_ids / skill MCP 依赖过滤 →
+叠加 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> → wrap。
 """
 from typing import Any, Dict, List
 
 from app.api.settings import get_mcp_servers_for_skill
-from app.mcp.manager import get_mcp_manager
+from app.core.security import get_current_user
+from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.tools.call_api import call_api
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
+
+
+def _resolve_server_ids_with_aliases(server_ids: List[str], available_ids: set[str]) -> List[str]:
+    """将历史 server id 映射到当前可用 id（如 fetch -> linkup）。"""
+    alias = {
+        "fetch": "linkup",
+    }
+    out: List[str] = []
+    for sid in server_ids:
+        if sid in available_ids:
+            out.append(sid)
+            continue
+        mapped = alias.get(sid)
+        if mapped and mapped in available_ids:
+            out.append(mapped)
+    return list(dict.fromkeys(out))
 
 
 def _is_write_tool(name: str) -> bool:
@@ -33,7 +49,6 @@ def _file_tools(all_tools: List, allow_write: bool) -> List:
 
 
 async def build_tools_for_group_chat(
-    all_tools: List,
     dha: Dict[str, Any],
     workspace_id: str,
 ) -> List:
@@ -54,9 +69,17 @@ async def build_tools_for_group_chat(
         skill_ids = dha.get("skill_ids") or []
     allow_write = True
 
-    # 需要时才连接/加载懒加载的 MCP server
+    mgr = await ensure_user_mcp_bootstrapped(get_current_user().username)
+    all_tools = mgr.get_tools()
+
+    # 需要时才连接懒加载的 MCP server
     if server_ids:
-        mgr = get_mcp_manager()
+        available_server_ids = {
+            str(c.get("id")).strip()
+            for c in (getattr(mgr, "server_configs", []) or [])
+            if str(c.get("id", "")).strip()
+        }
+        server_ids = _resolve_server_ids_with_aliases(server_ids, available_server_ids)
         await mgr.ensure_servers_loaded(server_ids)
         all_tools = mgr.get_tools()
 

@@ -2,7 +2,7 @@
 """文件读取与写入 MCP Server（本地 stdio，统一替代 Filesystem MCP）
 
 提供 read_file、write_file、read_pdf、read_docx、read_xlsx、list_allowed_directories、list_directory。
-路径均相对 AGENT_OUTPUTS_DIR；在 DHA 中按会话使用时，后端会将 path 重写为 workspaces/{session_id}/ 下，实现工作区隔离。
+路径相对 backend/data（如 data/users/<user>/agent-outputs/workspaces/...）。环境变量 FILE_READER_DATA_ROOT 可覆盖。
 无需 Node.js，仅需 Python 与 pypdf/python-docx/openpyxl。
 """
 import os
@@ -10,24 +10,20 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-# 与 backend/app/api/files 一致
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
-DEFAULT_ROOT = BACKEND_DIR / "data" / "agent-outputs"
-ROOT = Path(os.getenv("AGENT_OUTPUTS_DIR", str(DEFAULT_ROOT))).resolve()
+DEFAULT_ROOT = BACKEND_DIR / "data"
+ROOT = Path(os.getenv("FILE_READER_DATA_ROOT", str(DEFAULT_ROOT))).resolve()
 
 
 def _resolve_path(relative_path: str) -> Path:
-    """将相对路径解析为绝对路径，且必须落在 ROOT 内。接受相对 ROOT 的路径，或带 data/agent-outputs/ 前缀的路径（与 session wrapper 一致）。"""
+    """将相对路径解析为绝对路径，且必须落在 ROOT（默认 backend/data）内。"""
     raw = (relative_path or "").strip().strip("/").replace("..", "")
     if not raw:
         return None
-    # 后端 wrapper 可能传入 data/agent-outputs/workspaces/{session_id}/xxx，去掉与 ROOT 同名的前缀
-    prefix = "data/agent-outputs/"
-    if raw.startswith(prefix):
-        raw = raw[len(prefix) :].lstrip("/")
-    normalized = raw
-    full = (ROOT / normalized).resolve()
+    if raw.startswith("data/"):
+        raw = raw[len("data/") :].lstrip("/")
+    full = (ROOT / raw).resolve()
     if not str(full).startswith(str(ROOT)):
         return None
     return full
@@ -65,13 +61,13 @@ def write_file(path: str, content: str) -> str:
 
 @mcp.tool()
 def list_allowed_directories() -> str:
-    """返回当前允许读写的根目录（AGENT_OUTPUTS_DIR）。Agent 可在此目录及其子目录下使用 read_file、write_file 等。"""
+    """返回当前允许读写的根目录（默认 backend/data）。Agent 可在此目录及其子目录下使用 read_file、write_file 等。"""
     return f"Allowed directories:\n{ROOT}"
 
 
 @mcp.tool()
 def list_directory(path: str = "") -> str:
-    """列出目录下的文件与子目录名。path 为空或 '.' 表示根目录（data/agent-outputs）；可为 workspaces/某会话ID 等相对路径。"""
+    """列出目录下的文件与子目录名。path 为空或 '.' 表示 data 根下目录；可为 users/<用户>/agent-outputs/workspaces/某会话ID 等相对路径。"""
     p = _resolve_path(path or ".")
     if not p:
         return "错误：无效路径或路径超出允许范围。"

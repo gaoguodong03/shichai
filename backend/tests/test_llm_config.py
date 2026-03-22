@@ -9,7 +9,7 @@ os.environ.setdefault("JENIYA_API_KEY", "test-jeniya-key")
 
 def test_get_llm_from_config_qwen():
     """使用 qwen provider 创建 LLM"""
-    os.environ["QWEN_API_KEY"] = "test-key"  # 隔离：避免被 test_chat_memory 等先设置的 setdefault 覆盖
+    os.environ["QWEN_API_KEY"] = "test-key"  # 隔离：避免被其他测试先设置的 setdefault 覆盖
     from app.agent.llm_client import get_llm_from_config
 
     llm = get_llm_from_config("qwen", {

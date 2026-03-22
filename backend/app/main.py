@@ -1,11 +1,10 @@
 """FastAPI 应用入口"""
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.api import settings, files, auth, dha, group_chat, sessions
-from app.core.security import user_context_dependency
-from app.mcp.manager import get_mcp_manager
+from app.mcp.manager import cleanup_all_mcp_runtimes
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -24,14 +23,13 @@ async def lifespan(app: FastAPI):
     await ensure_mcp_and_skills_initialized()
     yield
     # 关闭时：在同一任务中清理 MCP 连接，避免 RuntimeError: exit cancel scope in a different task
-    await get_mcp_manager().cleanup()
+    await cleanup_all_mcp_runtimes()
 
 app = FastAPI(
-    title="拾柴·GatherFlame API",
-    description="GatherFlame - Expert Collaboration Platform with MCP and Skills",
+    title="书童四九 API",
+    description="书童四九 — 多用户隔离的 Agent 对话与工具平台（MCP / Skills）",
     version="0.1.0",
     lifespan=lifespan,
-    dependencies=[Depends(user_context_dependency)],
 )
 
 # CORS 配置
@@ -74,7 +72,7 @@ if _static_dir and Path(_static_dir).is_dir():
 else:
     @app.get("/")
     async def root():
-        return {"message": "拾柴·GatherFlame API", "version": "0.1.0"}
+        return {"message": "书童四九 API", "version": "0.1.0"}
 
 @app.get("/health")
 async def health():

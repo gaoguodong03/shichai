@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage  # type: ignore
@@ -30,24 +30,24 @@ from app.agent.group_memory_store import (
     append_expert_message_file,
 )
 from app.agent.tools_for_skill import build_tools_for_group_chat
-from app.mcp.manager import get_mcp_manager
-from app.skills.loader import get_skills_loader
+from app.skills.loader import get_skills_loader_for_user
 from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.user_context import get_current_user_context
-from app.core.security import CurrentUser, user_context_dependency
+from app.core.security import user_context_dependency, get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["group_chat"])
+router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_dependency)])
 
-SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./data/sessions")
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
 
 # 已废弃：不再使用 dha-chat，新建会话 0 个 DHA 时由主持人先与用户交流并推荐 DHA 加入
 CHAT_DHA_ID = "dha-chat"
 
-skills_loader = get_skills_loader()
+def _request_skills_loader():
+    u = get_current_user()
+    return get_skills_loader_for_user(u.username, u.ctx.skills_dir)
 
 
 async def _ensure_initialized():
@@ -70,12 +70,44 @@ def _safe_format_template(tpl: str, **kwargs) -> str:
 def _ensure_sessions_dir() -> Path:
     """根据当前用户返回群聊会话目录，实现多用户隔离。"""
     user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        root = user_ctx.sessions_dir.resolve()
-    else:
-        root = Path(SESSIONS_DIR).resolve()
+    if user_ctx is None:
+        raise RuntimeError("缺少用户上下文，无法解析会话目录。")
+    root = user_ctx.sessions_dir.resolve()
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _normalize_agent_ids(
+    legacy_dha_ids: Optional[List[str]] = None,
+    agent_ids: Optional[List[str]] = None,
+    expert_ids: Optional[List[str]] = None,
+) -> List[str]:
+    """统一兼容字段优先级：expert_ids > agent_ids > dha_ids。"""
+    return list(expert_ids or agent_ids or legacy_dha_ids or [])
+
+
+def _build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
+    """统一会话输出结构：新字段优先，兼容旧字段。"""
+    ids = list(meta_item.get("dha_ids", []))
+    leader_id = meta_item.get("leader_dha_id", "")
+    return {
+        "id": session_id,
+        "title": meta_item.get("title", "新对话"),
+        "agent_ids": ids,
+        "dha_ids": ids,
+        "expert_ids": ids,
+        "leader_agent_id": leader_id,
+        "leader_dha_id": leader_id,
+        "speak_mode": meta_item.get("speak_mode", "auto"),
+        "created_at": meta_item.get("created_at", ""),
+        "updated_at": meta_item.get("updated_at", ""),
+    }
+
+
+def _set_group_alias_deprecated_header(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "2026-06-30"
+    response.headers["Link"] = '</api/sessions>; rel="successor-version"'
 
 
 def _load_group_meta() -> Dict[str, Dict[str, Any]]:
@@ -472,13 +504,14 @@ def _get_llm_for_dha(dha: Optional[Dict[str, Any]], app_settings: Dict[str, Any]
 
 def _get_dha_skill_content(dha: Dict[str, Any]) -> str:
     """获取 DHA 的技能内容（按 skill_ids 取第一个或 default）"""
+    sl = _request_skills_loader()
     skill_ids = dha.get("skill_ids") or []
     if skill_ids:
         for sid in skill_ids:
-            content = skills_loader.get_skill_full_content(sid)
+            content = sl.get_skill_full_content(sid)
             if content:
                 return content
-    return skills_loader.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
+    return sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
@@ -620,7 +653,7 @@ async def _host_decide_by_dha(
     由主持人 DHA 执行主持技能，返回 {task_done, next_speaker, reason, announcement}。
     失败时返回 None，调用方应回退到 leader_decide。
     """
-    skill_content = skills_loader.get_skill_full_content("group-host")
+    skill_content = _request_skills_loader().get_skill_full_content("group-host")
     if not skill_content:
         return None
     name = host_dha.get("name") or host_dha.get("dha_id", "主持人")
@@ -698,7 +731,7 @@ async def _host_only_respond_and_recommend(
     当前群聊 0 个成员时：主持人回复用户并推荐一位或多位专家加入。
     返回 (主持人回复正文, suggested_add_dha_ids 或 None)。
     """
-    skill_content = skills_loader.get_skill_full_content("group-host")
+    skill_content = _request_skills_loader().get_skill_full_content("group-host")
     if not skill_content:
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的专家加入。"
     app_settings = load_app_settings()
@@ -785,6 +818,7 @@ async def _host_only_respond_and_recommend(
 
 class GroupSessionCreate(BaseModel):
     title: str = "新群聊"
+    agent_ids: List[str] = Field(default_factory=list)
     dha_ids: List[str] = []  # 可为空，表示单聊；之后通过邀请追加 DHA 变为群聊
     expert_ids: List[str] = Field(default_factory=list)  # 兼容字段：expert_ids
     leader_dha_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
@@ -794,6 +828,8 @@ class GroupSessionCreate(BaseModel):
 class GroupSessionUpdate(BaseModel):
     title: Optional[str] = None
     speak_mode: Optional[str] = None
+    add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
+    remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
     add_dha_ids: Optional[List[str]] = None  # 向已有群聊追加 DHA
     remove_dha_ids: Optional[List[str]] = None  # 从群聊中移除 DHA
     add_expert_ids: Optional[List[str]] = None  # 兼容字段：add_expert_ids
@@ -810,6 +846,7 @@ class GroupChatRequest(BaseModel):
 class GroupPromptPreviewRequest(BaseModel):
     """前端在 manual 模式下预览（并可编辑）某个 DHA 下一轮发言时将收到的提示词内容。"""
 
+    agent_id: Optional[str] = None
     dha_id: Optional[str] = None
     expert_id: Optional[str] = None
 
@@ -819,6 +856,7 @@ class GroupPromptPreviewRequest(BaseModel):
 
 def create_session_internal(
     title: str = "新对话",
+    agent_ids: Optional[List[str]] = None,
     dha_ids: Optional[List[str]] = None,
     expert_ids: Optional[List[str]] = None,
     speak_mode: str = "auto",
@@ -826,7 +864,11 @@ def create_session_internal(
     """创建一条会话（主持人必在，dha_ids 可为空）。返回 meta 条目（含 id）。"""
     instances = load_dha_instances()
     valid_ids = {d.get("dha_id") for d in instances}
-    resolved_ids = list(expert_ids or dha_ids or [])
+    resolved_ids = _normalize_agent_ids(
+        legacy_dha_ids=dha_ids,
+        agent_ids=agent_ids,
+        expert_ids=expert_ids,
+    )
     for did in resolved_ids:
         if did not in valid_ids:
             raise HTTPException(status_code=400, detail=f"专家 {did} 不存在")
@@ -835,7 +877,7 @@ def create_session_internal(
     meta = _load_group_meta()
     raw_title = (title or "").strip()
     placeholder_titles = {"新对话", "新群聊", ""}
-    title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("DHA 协作 ·")
+    title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("多Agent协作 ·")
     meta[gsid] = {
         "title": title or "新对话",
         "title_auto_generated": title_auto_generated,
@@ -848,9 +890,7 @@ def create_session_internal(
     _save_group_meta(meta)
     _save_group_history(gsid, [])
     # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
-    out = {"id": gsid, **meta[gsid]}
-    out["expert_ids"] = list(out.get("dha_ids", []))
-    return out
+    return _build_session_payload(gsid, meta[gsid])
 
 
 def export_session_to_markdown(session_id: str, filename: Optional[str] = None) -> tuple:
@@ -890,22 +930,14 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
 
 
 @router.get("/group-sessions")
-async def list_group_sessions():
-    """获取群聊会话列表"""
+async def list_group_sessions(response: Response):
+    """兼容别名：获取群聊会话列表（推荐迁移到 /sessions）。"""
+    _set_group_alias_deprecated_header(response)
     meta = _load_group_meta()
     _cleanup_orphan_group_histories(meta)
     sessions = []
     for gsid, gm in meta.items():
-        sessions.append({
-            "id": gsid,
-            "title": gm.get("title", "新群聊"),
-            "dha_ids": gm.get("dha_ids", []),
-            "expert_ids": gm.get("dha_ids", []),
-            "leader_dha_id": gm.get("leader_dha_id", ""),
-            "speak_mode": gm.get("speak_mode", "auto"),
-            "created_at": gm.get("created_at", ""),
-            "updated_at": gm.get("updated_at", ""),
-        })
+        sessions.append(_build_session_payload(gsid, gm))
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
 
@@ -922,7 +954,7 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
         raise HTTPException(status_code=404, detail="Group session not found")
     m = meta[group_session_id]
     dha_ids = m.get("dha_ids", [])
-    target_dha_id = (body.dha_id or body.expert_id or "").strip()
+    target_dha_id = (body.agent_id or body.expert_id or body.dha_id or "").strip()
     if target_dha_id not in dha_ids:
         raise HTTPException(status_code=400, detail="专家不在该群聊中")
 
@@ -949,9 +981,14 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
 
 @router.post("/group-sessions")
-async def create_group_session(body: GroupSessionCreate):
+async def create_group_session(body: GroupSessionCreate, response: Response):
     """创建群聊会话。dha_ids 为空时表示「主持人为先」：用户先与主持人交流。"""
-    resolved_ids = body.expert_ids or body.dha_ids or []
+    _set_group_alias_deprecated_header(response)
+    resolved_ids = _normalize_agent_ids(
+        legacy_dha_ids=body.dha_ids,
+        agent_ids=body.agent_ids,
+        expert_ids=body.expert_ids,
+    )
     if body.leader_dha_id and resolved_ids and body.leader_dha_id not in resolved_ids:
         raise HTTPException(status_code=400, detail="leader_dha_id 必须在专家列表中")
     data = create_session_internal(
@@ -964,7 +1001,7 @@ async def create_group_session(body: GroupSessionCreate):
 
 @router.get("/group-sessions/{group_session_id}")
 async def get_group_session(group_session_id: str):
-    """获取群聊详情与消息"""
+    """获取群聊详情与消息。"""
     meta = _load_group_meta()
     # #region agent log
     _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-1338a6.log"
@@ -998,14 +1035,7 @@ async def get_group_session(group_session_id: str):
     return {
         "status": "ok",
         "data": {
-            "id": group_session_id,
-            "title": m.get("title", "新群聊"),
-            "dha_ids": m.get("dha_ids", []),
-            "expert_ids": m.get("dha_ids", []),
-            "leader_dha_id": m.get("leader_dha_id", ""),
-            "speak_mode": m.get("speak_mode", "auto"),
-            "created_at": m.get("created_at", ""),
-            "updated_at": m.get("updated_at", ""),
+            **_build_session_payload(group_session_id, m),
             "messages": messages,
             "dha_map": dha_map,
             "expert_map": dha_map,
@@ -1039,15 +1069,23 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         next_title = body.title.strip()
         meta[group_session_id]["title"] = next_title
         # 兼容历史前端自动模板标题：仍视为“自动生成”，允许后续被主题标题覆盖
-        if next_title.startswith("DHA 协作 ·") or next_title in {"新对话", "新群聊", ""}:
+        if next_title.startswith("多Agent协作 ·") or next_title in {"新对话", "新群聊", ""}:
             meta[group_session_id]["title_auto_generated"] = True
         else:
             # 用户主动修改标题后，停止自动主题覆盖
             meta[group_session_id]["title_auto_generated"] = False
     if body.speak_mode is not None and body.speak_mode.strip().lower() in ("auto", "manual"):
         meta[group_session_id]["speak_mode"] = body.speak_mode.strip().lower()
-    add_ids = body.add_expert_ids if body.add_expert_ids is not None else body.add_dha_ids
-    remove_ids = body.remove_expert_ids if body.remove_expert_ids is not None else body.remove_dha_ids
+    add_ids = (
+        body.add_expert_ids
+        if body.add_expert_ids is not None
+        else (body.add_agent_ids if body.add_agent_ids is not None else body.add_dha_ids)
+    )
+    remove_ids = (
+        body.remove_expert_ids
+        if body.remove_expert_ids is not None
+        else (body.remove_agent_ids if body.remove_agent_ids is not None else body.remove_dha_ids)
+    )
     if add_ids or remove_ids:
         instances = load_dha_instances()
         valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
@@ -1064,17 +1102,13 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         meta[group_session_id]["dha_ids"] = list(current)
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)
-    out = dict(meta[group_session_id])
-    out["expert_ids"] = list(out.get("dha_ids", []))
-    return {"status": "ok", "data": out}
+    return {"status": "ok", "data": _build_session_payload(group_session_id, meta[group_session_id])}
 
 
 @router.delete("/group-sessions/{group_session_id}")
-async def delete_group_session(
-    group_session_id: str,
-    current_user: CurrentUser = Depends(user_context_dependency),
-):
+async def delete_group_session(group_session_id: str):
     """删除群聊会话：同时删除 meta、群聊历史文件与该会话的工作区目录。"""
+    current_user = get_current_user()
     meta = _load_group_meta()
     if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")
@@ -1145,7 +1179,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
         current_title = (meta[group_session_id].get("title") or "").strip()
         placeholder_titles = ("新对话", "新群聊", "")
-        is_template_title = current_title.startswith("DHA 协作 ·")
+        is_template_title = current_title.startswith("多Agent协作 ·")
         title_auto_generated = meta[group_session_id].get("title_auto_generated")
         if title_auto_generated is None:
             # 兼容历史：若标题较短或仍是占位符，则视为“自动生成的标题”，允许覆盖更新
@@ -1464,7 +1498,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = "user"
                     break
 
-                tools = await build_tools_for_group_chat(get_mcp_manager().get_tools(), dha, group_session_id)
+                tools = await build_tools_for_group_chat(dha, group_session_id)
                 skill_content = _get_dha_skill_content(dha)
                 role = dha.get("role") or ""
                 dha_system = (dha.get("system_prompt") or "").strip()

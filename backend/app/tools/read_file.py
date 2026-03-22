@@ -5,7 +5,7 @@ from typing import Optional
 
 from langchain.tools import Tool
 
-from app.api.files import AGENT_OUTPUTS_DIR, WORKSPACES_SUBDIR
+from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 
 
 def _normalize_path(path_or_input) -> str:
@@ -26,10 +26,10 @@ def _normalize_path(path_or_input) -> str:
 
 
 def _read_file_content(path: Optional[str] = None, session_id: Optional[str] = None, **kwargs) -> str:
-    """读取文件。path 为相对 AGENT_OUTPUTS_DIR 的路径，或 workspace 内相对路径。
+    """读取文件。path 为相对当前用户 agent 输出根的路径，或 workspace 内相对路径。
     当 session_id 给定时，仅允许读取 workspaces/{session_id}/ 下的文件。"""
     path = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))
-    root = Path(AGENT_OUTPUTS_DIR).resolve()
+    root = get_agent_outputs_root().resolve()
     root.mkdir(parents=True, exist_ok=True)
     normalized = (path or "").strip("/").replace("..", "")
     if not normalized:

@@ -2,32 +2,24 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-router = APIRouter(tags=["dha"])
-
-DHA_INSTANCES_PATH = os.getenv("DHA_INSTANCES_PATH", "./config/dha_instances.json")
-
+from app.core.security import user_context_dependency
 from app.core.user_context import get_current_user_context
 
+router = APIRouter(tags=["dha"], dependencies=[Depends(user_context_dependency)])
 
 def _get_dha_instances_path() -> Path:
-    """根据当前用户返回 DHA 配置文件路径，实现多用户隔离。
-
-    - 用户级：data/users/{username}/config/dha_instances.json
-    - 无上下文：回退到全局 DHA_INSTANCES_PATH
-    """
+    """根据当前用户返回 Agent 配置文件路径，实现多用户隔离。"""
     user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        return (user_ctx.config_dir / "dha_instances.json").resolve()
-    path = Path(DHA_INSTANCES_PATH)
-    return path if path.is_absolute() else path.resolve()
+    if user_ctx is None:
+        raise RuntimeError("缺少用户上下文，无法解析 Agent 配置路径。")
+    return (user_ctx.config_dir / "dha_instances.json").resolve()
 
 
 class DHACreate(BaseModel):
@@ -40,6 +32,7 @@ class DHACreate(BaseModel):
     is_leader: bool = False
     llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
     avatar_url: Optional[str] = None  # 头像（可选，前端可传 data URL 或远程地址）
+    agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
     expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
 
 
@@ -53,14 +46,16 @@ class DHAUpdate(BaseModel):
     is_leader: Optional[bool] = None
     llm_provider_id: Optional[str] = None
     avatar_url: Optional[str] = None
+    agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
     expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
 
 
 def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
-    """在响应中附加 expert_* 兼容别名，不改变存储结构。"""
+    """在响应中附加 agent/expert 兼容别名，不改变存储结构。"""
     out = dict(instance or {})
     did = out.get("dha_id")
     if did is not None:
+        out["agent_id"] = did
         out["expert_id"] = did
     return out
 
@@ -103,7 +98,7 @@ async def get_dha_instances():
 async def create_dha_instance(body: DHACreate):
     """创建 DHA 实例"""
     instances = load_dha_instances()
-    dha_id = (body.expert_id or "").strip() or f"dha-{uuid.uuid4().hex[:8]}"
+    dha_id = (body.agent_id or body.expert_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
     new_instance = {
         "dha_id": dha_id,
         "name": body.name,
@@ -157,7 +152,31 @@ async def delete_dha_instance(dha_id: str):
     if len(instances) == original:
         raise HTTPException(status_code=404, detail="DHA instance not found")
     save_dha_instances(instances)
-    return {"status": "ok", "data": {"dha_id": dha_id, "expert_id": dha_id, "deleted": True}}
+    return {"status": "ok", "data": {"dha_id": dha_id, "agent_id": dha_id, "expert_id": dha_id, "deleted": True}}
+
+
+@router.get("/agents")
+async def get_agents():
+    """获取 Agent 列表（主入口）。"""
+    return await get_dha_instances()
+
+
+@router.post("/agents")
+async def create_agent(body: DHACreate):
+    """创建 Agent（主入口）。"""
+    return await create_dha_instance(body)
+
+
+@router.put("/agents/{agent_id}")
+async def update_agent(agent_id: str, body: DHAUpdate):
+    """更新 Agent（主入口）。"""
+    return await update_dha_instance(agent_id, body)
+
+
+@router.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    """删除 Agent（主入口）。"""
+    return await delete_dha_instance(agent_id)
 
 
 @router.get("/experts")

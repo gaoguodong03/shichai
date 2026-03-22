@@ -1,17 +1,14 @@
 """用户上下文与多租户路径管理。
 
-方案 A：单进程多用户隔离。
-- 通过 HTTP 头部 `X-User-Name` 指定当前用户；
-- 使用 ContextVar 在一次请求内保存当前用户名；
-- 各模块在需要读写磁盘时，通过当前用户名派生出自己的根目录，形成「命名空间隔离」。
+单进程多用户：每个用户独占 `data/users/{username}/`（会话、工作区、配置、技能副本）。
+测试可通过环境变量 `SHUTONG_USER_DATA_ROOT` 指向临时目录，避免污染仓库数据。
 
-后续如果要演进到方案 B（每个用户一个进程），可以改为：
-- 由进程启动参数/环境变量提供当前用户名；
-- 同一套路径派生逻辑仍然可复用。
+请求内通过 ContextVar 保存当前用户名；读写磁盘时统一从 UserContext 取路径。
 """
 
 from __future__ import annotations
 
+import os
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,15 +18,25 @@ from typing import Dict, Optional
 _current_username: ContextVar[Optional[str]] = ContextVar("current_username", default=None)
 
 
+def _backend_dir() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def users_data_root() -> Path:
+    """用户数据根目录，默认 backend/data/users；测试可设 SHUTONG_USER_DATA_ROOT。"""
+    default = str(_backend_dir() / "data" / "users")
+    return Path(os.getenv("SHUTONG_USER_DATA_ROOT", default)).resolve()
+
+
 @dataclass
 class UserContext:
     """当前用户的资源根路径定义。
 
-    base_dir:           data/users/{username}
+    base_dir:           SHUTONG_USER_DATA_ROOT/{username}
     sessions_dir:       会话与群聊存储
     agent_outputs_dir:  工作区与导出文件
-    config_dir:         通用配置目录（app_settings、dha_instances 等）
-    skills_dir:         用户私有技能目录（可与全局 skills 叠加使用）
+    config_dir:         通用配置（app_settings、dha_instances 等）
+    skills_dir:         用户技能目录
     """
 
     username: str
@@ -69,33 +76,15 @@ def _build_user_context(username: str) -> UserContext:
     if username in _user_ctx_cache:
         return _user_ctx_cache[username]
 
-    # 以项目根目录为基准：backend/app/../.. -> 项目根
-    backend_dir = Path(__file__).resolve().parents[2]
-
-    # 兼容旧版单用户部署：
-    # 对于 free4inno 用户，直接复用原来的全局目录结构，
-    # 确保原有会话 / 工作区 / 配置 / skills 自动“映射”为该用户的数据。
-    if username == "free4inno":
-        data_root = backend_dir / "data"
-        ctx = UserContext(
-            username=username,
-            base_dir=data_root,
-            sessions_dir=data_root / "sessions",
-            agent_outputs_dir=data_root / "agent-outputs",
-            config_dir=backend_dir / "config",
-            skills_dir=backend_dir / "skills",
-        )
-    else:
-        # 新用户使用 data/users/{username} 目录树
-        data_root = backend_dir / "data" / "users" / username
-        ctx = UserContext(
-            username=username,
-            base_dir=data_root,
-            sessions_dir=data_root / "sessions",
-            agent_outputs_dir=data_root / "agent-outputs",
-            config_dir=data_root / "config",
-            skills_dir=data_root / "skills",
-        )
+    data_root = users_data_root() / username
+    ctx = UserContext(
+        username=username,
+        base_dir=data_root,
+        sessions_dir=data_root / "sessions",
+        agent_outputs_dir=data_root / "agent-outputs",
+        config_dir=data_root / "config",
+        skills_dir=data_root / "skills",
+    )
 
     # 尽量提前创建基础目录，但失败也不影响后续按需 mkdir
     try:

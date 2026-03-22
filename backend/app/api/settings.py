@@ -13,64 +13,60 @@ import yaml
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Set
 
-from app.core.user_context import get_current_user_context
+from app.core.user_context import get_current_user_context, get_current_username
+from app.core.security import user_context_dependency
+from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped
 
-router = APIRouter(tags=["settings"])
+router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
-# 使用 mcp.manager 的全局单例，与 chat 共用
-def get_mcp_manager():
-    """获取 MCP Manager 实例（与 chat 共用同一实例）"""
-    from app.mcp.manager import get_mcp_manager as _get_mcp
-    return _get_mcp()
 
-# 配置文件路径（当没有用户上下文时使用）
-MCP_CONFIG_PATH = os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
-SKILLS_DIR = os.getenv("SKILLS_DIR", "./skills")
-APP_SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "./config/app_settings.json")
+async def _mcp_runtime_for_request():
+    """当前登录用户的 MCP 运行时（已加载该用户 mcp_servers.json）。"""
+    un = get_current_username()
+    if not un:
+        raise HTTPException(status_code=401, detail="未登录")
+    return await ensure_user_mcp_bootstrapped(un)
+
+
+async def _invalidate_mcp_runtime_after_config_change():
+    """磁盘上的 mcp_servers.json 变更后丢弃内存中的连接，下次再懒加载。"""
+    un = get_current_username()
+    if un:
+        await dispose_mcp_runtime_for_user(un)
+
+def _require_user_ctx():
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        raise RuntimeError("缺少用户上下文，无法读取用户级设置目录。")
+    return user_ctx
 
 
 def _get_app_settings_path() -> Path:
     """根据当前用户返回 app_settings.json 路径，实现设置级隔离。"""
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        return (user_ctx.config_dir / "app_settings.json").resolve()
-    path = Path(APP_SETTINGS_PATH)
-    return path if path.is_absolute() else path.resolve()
+    user_ctx = _require_user_ctx()
+    return (user_ctx.config_dir / "app_settings.json").resolve()
 
 
 def _get_mcp_config_path() -> Path:
     """根据当前用户返回 mcp_servers.json 路径。"""
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        return (user_ctx.config_dir / "mcp_servers.json").resolve()
-    path = Path(MCP_CONFIG_PATH)
-    return path if path.is_absolute() else path.resolve()
+    user_ctx = _require_user_ctx()
+    return (user_ctx.config_dir / "mcp_servers.json").resolve()
 
 
 def _get_skills_dir() -> Path:
-    """根据当前用户返回 skills 目录。
-
-    当前设计为：优先使用用户私有 skills 目录（data/users/{username}/skills），
-    若无上下文则回退到全局 SKILLS_DIR。
-    """
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        return user_ctx.skills_dir.resolve()
-    path = Path(SKILLS_DIR)
-    return path if path.is_absolute() else path.resolve()
+    """根据当前用户返回 skills 目录。"""
+    user_ctx = _require_user_ctx()
+    return user_ctx.skills_dir.resolve()
 
 
 def _get_session_presets_path() -> Path:
     """根据当前用户返回 session_presets.json 路径。"""
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is not None:
-        return (user_ctx.config_dir / "session_presets.json").resolve()
-    # 兼容旧结构：默认读取 backend/config/session_presets.json
-    return (Path(APP_SETTINGS_PATH).resolve().parent / "session_presets.json").resolve()
+    user_ctx = _require_user_ctx()
+    return (user_ctx.config_dir / "session_presets.json").resolve()
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
@@ -431,11 +427,10 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
 async def get_mcp_servers():
     """获取 MCP Server 列表"""
     servers = load_mcp_config()
-    mcp_manager = get_mcp_manager()
-    
-    # 确保 MCP Manager 已加载配置和初始化
+    mcp_manager = await _mcp_runtime_for_request()
+
+    # 确保已连接非 lazy 且尚未连接的 server
     try:
-        await mcp_manager.load_config()
         # 对每个已启用且尚未连接的 server 尝试连接（包括 HTTP 远程 server）
         for config in mcp_manager.server_configs:
             server_id = config.get("id", "")
@@ -520,7 +515,8 @@ async def create_mcp_server(server: MCPServerCreate):
     
     servers.append(new_server)
     save_mcp_config(servers)
-    
+    await _invalidate_mcp_runtime_after_config_change()
+
     return {
         "status": "ok",
         "data": new_server
@@ -553,7 +549,8 @@ async def update_mcp_server(server_id: str, server_update: MCPServerUpdate):
         server["metadata"] = server_update.metadata
     
     save_mcp_config(servers)
-    
+    await _invalidate_mcp_runtime_after_config_change()
+
     return {
         "status": "ok",
         "data": server
@@ -572,7 +569,8 @@ async def delete_mcp_server(server_id: str):
         raise HTTPException(status_code=404, detail="MCP Server not found")
     
     save_mcp_config(servers)
-    
+    await _invalidate_mcp_runtime_after_config_change()
+
     return {
         "status": "ok",
         "data": {
@@ -590,6 +588,7 @@ async def enable_mcp_server(server_id: str):
         if server.get("id") == server_id:
             server["enabled"] = True
             save_mcp_config(servers)
+            await _invalidate_mcp_runtime_after_config_change()
             return {
                 "status": "ok",
                 "data": server
@@ -606,6 +605,7 @@ async def disable_mcp_server(server_id: str):
         if server.get("id") == server_id:
             server["enabled"] = False
             save_mcp_config(servers)
+            await _invalidate_mcp_runtime_after_config_change()
             return {
                 "status": "ok",
                 "data": server
@@ -623,14 +623,12 @@ async def test_mcp_server(server_id: str):
     if server is None:
         raise HTTPException(status_code=404, detail="MCP Server not found")
 
-    mcp_manager = get_mcp_manager()
+    mcp_manager = await _mcp_runtime_for_request()
 
     import time
 
     start = time.perf_counter()
     try:
-        # 确保已加载配置
-        await mcp_manager.load_config()
         # 如果当前没有 session，则尝试连接
         if server_id not in mcp_manager.sessions:
             ok = await mcp_manager.connect_server(server_id, server)
@@ -695,8 +693,7 @@ async def test_mcp_server(server_id: str):
 @router.get("/settings/mcp/{server_id}/tools")
 async def get_mcp_server_tools(server_id: str):
     """获取 MCP Server 工具列表（含 input_schema），用于前端动态渲染参数表单"""
-    mcp_manager = get_mcp_manager()
-    await mcp_manager.load_config()
+    mcp_manager = await _mcp_runtime_for_request()
 
     # 找到对应 server 配置
     config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
@@ -752,8 +749,7 @@ class MCPToolCallBody(BaseModel):
 @router.post("/settings/mcp/{server_id}/tools/{tool_name}/call")
 async def call_mcp_tool(server_id: str, tool_name: str, body: MCPToolCallBody):
     """调用指定 MCP Server 上的某个工具，用于前端测试面板"""
-    mcp_manager = get_mcp_manager()
-    await mcp_manager.load_config()
+    mcp_manager = await _mcp_runtime_for_request()
 
     config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
     if not config:
@@ -815,8 +811,7 @@ async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
     沙箱调用：在指定 MCP Server 上选择第一个可用工具进行一次调用。
     前端只需提供 arguments，不需要关心工具名。
     """
-    mcp_manager = get_mcp_manager()
-    await mcp_manager.load_config()
+    mcp_manager = await _mcp_runtime_for_request()
 
     config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
     if not config:
@@ -973,12 +968,13 @@ def _suggest_skill_id_from_git_url(url: str) -> str:
 
 
 def _refresh_skills_loader():
-    """刷新全局 SkillsLoader 缓存，确保新导入技能立即可见。"""
-    from app.skills.loader import get_skills_loader
+    """使当前用户的技能缓存失效，下次请求重新从磁盘加载。"""
+    from app.core.user_context import get_current_username
+    from app.skills.loader import invalidate_skills_cache_for_user
 
-    loader = get_skills_loader()
-    loader.skills_dir = _get_skills_dir()
-    loader.load_all_skills()
+    uname = get_current_username()
+    if uname:
+        invalidate_skills_cache_for_user(uname)
 
 
 def _parse_frontmatter_lenient(frontmatter_text: str) -> Dict[str, Any]:

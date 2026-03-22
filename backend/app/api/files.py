@@ -11,28 +11,25 @@ from app.core.security import CurrentUser, user_context_dependency
 
 router = APIRouter(tags=["files"])
 
-# Agent 产出文件根目录（仅在此目录内列出/下载，防止路径穿越）
-# 多用户场景下，真正的根目录来自 UserContext.agent_outputs_dir
-AGENT_OUTPUTS_DIR = os.getenv("AGENT_OUTPUTS_DIR", "./data/agent-outputs")
+# 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{username}/agent-outputs
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 
 
 def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:
-    """返回当前用户的 agent 输出根目录。
-
-    若设置了全局 AGENT_OUTPUTS_DIR，则在其下再按用户分目录；否则落到 user.ctx.agent_outputs_dir。
-    这样可以兼容旧数据（全局单用户），也支持新用户隔离。
-    """
-    global_root = Path(AGENT_OUTPUTS_DIR).resolve()
+    """返回当前用户的 agent 输出根目录（与群聊/设置使用的用户目录一致）。"""
+    root = user.ctx.agent_outputs_dir.resolve()
     try:
-        global_root.mkdir(parents=True, exist_ok=True)
+        root.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
-    # 对于默认用户 free4inno，为了兼容旧数据，直接使用全局根目录；
-    # 其他用户则在其下再加一层用户名目录，实现物理隔离。
-    if user.username == "free4inno":
-        return global_root
-    return (global_root / user.username).resolve()
+    return root
+
+
+def get_agent_outputs_root() -> Path:
+    """当前请求用户的 agent 输出根目录（与 REST 工作区、多用户分目录规则一致）。"""
+    from app.core.security import get_current_user
+
+    return _get_agent_outputs_root_for_user(get_current_user())
 
 
 def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
@@ -40,7 +37,7 @@ def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) 
     返回指定 workspace 的根目录路径（不保证已创建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
     """
     if user is None:
-        # 兼容老调用（如 chat._export_session_to_md），按当前请求上下文用户推导
+        # 按当前请求上下文用户推导（Agent 工具与 files API 共用）
         from app.core.security import get_current_user as _get_user
 
         user = _get_user()
