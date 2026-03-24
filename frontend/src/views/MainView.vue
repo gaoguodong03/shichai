@@ -3,8 +3,17 @@
     <!-- 最左侧：导航（图标 + 名称） -->
     <nav class="w-28 flex-shrink-0 flex flex-col bg-sidebar py-3">
       <div class="px-2 space-y-0.5">
-        <div class="px-1 pb-1">
-          <span class="block text-[11px] font-semibold tracking-[0.12em] text-muted text-left">书童四九</span>
+        <div class="px-1 pb-2">
+          <div class="flex items-center justify-center py-1">
+            <img
+              :src="logoUrl"
+              alt="书童四九 logo"
+              class="h-16 w-16 rounded-full object-cover"
+              width="64"
+              height="64"
+              decoding="async"
+            />
+          </div>
         </div>
         <button
           type="button"
@@ -177,6 +186,16 @@
           <!-- 场景 -->
           <template v-if="resourceSubModule === 'scenario'">
             <div class="px-3 mb-2 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
+                  @click="createScenarioPreset"
+                >
+                  <span class="text-base leading-none">＋</span>
+                  <span>新建场景</span>
+                </button>
+              </div>
               <input
                 v-model="scenarioSearch"
                 type="text"
@@ -186,19 +205,29 @@
             </div>
             <div v-if="scenarioLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <div v-else-if="!filteredScenarioPresets.length" class="px-3 py-4 text-sm text-muted">暂无场景</div>
-            <button
+            <div
               v-else
               v-for="s in filteredScenarioPresets"
               :key="s.id"
-              @click="selectedId = s.id"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
                 selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
               ]"
+              @click="selectedId = s.id"
             >
-              <div class="truncate font-medium">{{ s.name }}</div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ s.dha_ids.length }} 位专家</div>
-            </button>
+              <div class="flex-1 min-w-0 text-left">
+                <div class="truncate font-medium">{{ s.name }}</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ s.dha_ids.length }} 位专家</div>
+              </div>
+              <button
+                type="button"
+                class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
+                title="删除场景"
+                @click.stop="deleteScenarioPreset(s.id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <!-- 专家 -->
           <template v-else-if="resourceSubModule === 'dha'">
@@ -221,7 +250,19 @@
                 title="搜索专家"
                 @click="toggleSearch('dha')"
               >
-                🔍
+                <svg
+                  class="main-sidebar-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
               </button>
             </div>
             <div v-if="showDhaSearch" class="px-3 mb-2">
@@ -287,7 +328,19 @@
                 title="搜索 Skill"
                 @click="toggleSearch('skill')"
               >
-                🔍
+                <svg
+                  class="main-sidebar-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
               </button>
             </div>
             <div v-if="showSkillSearch" class="px-3 mb-2">
@@ -334,7 +387,19 @@
                 title="搜索 MCP"
                 @click="toggleSearch('mcp')"
               >
-                🔍
+                <svg
+                  class="main-sidebar-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.5-3.5" />
+                </svg>
               </button>
             </div>
             <div v-if="showMcpSearch" class="px-3 mb-2">
@@ -480,24 +545,93 @@
           <div class="h-full overflow-y-auto p-6">
             <div v-if="selectedScenarioPreset" class="max-w-3xl space-y-4">
               <div class="rounded-xl border border-input-border bg-panel p-4">
-                <h3 class="text-lg font-semibold text-primary">{{ selectedScenarioPreset.name }}</h3>
-                <p class="mt-2 text-sm text-muted">{{ selectedScenarioPreset.description || '暂无描述' }}</p>
-              </div>
-              <div class="rounded-xl border border-input-border bg-panel p-4">
-                <div class="text-sm font-medium text-primary mb-2">专家组合</div>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    v-for="id in selectedScenarioPreset.dha_ids"
-                    :key="id"
-                    class="px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
-                  >
-                    {{ dhaDisplayName(id) }}
-                  </span>
+                <h3 class="text-lg font-semibold text-primary">场景配置</h3>
+                <div class="mt-3 space-y-3">
+                  <div>
+                    <div class="text-xs text-muted mb-1">场景名称</div>
+                    <input
+                      v-model="scenarioDraft.name"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                      placeholder="请输入场景名称"
+                    />
+                  </div>
+                  <div>
+                    <div class="text-xs text-muted mb-1">描述</div>
+                    <textarea
+                      v-model="scenarioDraft.description"
+                      rows="3"
+                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
+                      placeholder="请输入场景描述"
+                    />
+                  </div>
                 </div>
               </div>
               <div class="rounded-xl border border-input-border bg-panel p-4">
-                <div class="text-sm font-medium text-primary mb-2">讨论目标示例</div>
-                <p class="text-sm text-muted whitespace-pre-wrap">{{ selectedScenarioPreset.discussion_goal_example || '暂无' }}</p>
+                <div class="text-sm font-medium text-primary mb-2">专家组合（可增删）</div>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    v-for="id in scenarioDraft.dha_ids"
+                    :key="id"
+                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
+                  >
+                    {{ dhaDisplayName(id) }}
+                    <button
+                      type="button"
+                      class="ml-1 text-accent-subtle-text/80 hover:text-danger"
+                      @click="removeScenarioExpert(id)"
+                    >×</button>
+                  </span>
+                  <span v-if="!scenarioDraft.dha_ids.length" class="text-xs text-muted">暂无专家</span>
+                </div>
+                <div class="mt-3">
+                  <div class="text-xs text-muted mb-1">添加专家</div>
+                  <input
+                    v-model="scenarioExpertSearch"
+                    type="text"
+                    placeholder="搜索专家（名称/ID/角色）"
+                    class="w-full px-3 py-2 mb-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                  />
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="d in filteredScenarioAddableExperts"
+                      :key="d.dha_id"
+                      type="button"
+                      class="px-2 py-1 rounded-md text-xs border border-input-border bg-card text-primary hover:bg-list-hover"
+                      @click="addScenarioExpert(d.dha_id)"
+                    >
+                      + {{ d.name || d.dha_id }}
+                    </button>
+                    <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
+                    <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-accent text-text-inverse text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                  :disabled="scenarioSaving"
+                  @click="saveScenarioPreset"
+                >
+                  {{ scenarioSaving ? '保存中...' : '保存修改' }}
+                </button>
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-card border border-border text-primary text-sm font-medium hover:bg-list-hover"
+                  :disabled="scenarioSaving"
+                  @click="resetScenarioDraft"
+                >
+                  还原
+                </button>
+                <button
+                  type="button"
+                  class="px-4 py-2 rounded-lg bg-danger-subtle text-danger text-sm font-medium hover:opacity-90"
+                  :disabled="scenarioSaving"
+                  @click="deleteScenarioPreset(selectedScenarioPreset.id)"
+                >
+                  删除场景
+                </button>
               </div>
             </div>
             <div v-else class="flex h-full items-center justify-center text-muted text-sm">
@@ -583,6 +717,7 @@ import DHAView from './DHAView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
 import WorkspaceFilesView from './WorkspaceFilesView.vue'
 import { useTheme } from '@/composables/useTheme'
+import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
 
 const router = useRouter()
@@ -606,7 +741,7 @@ const resourceChildren: { id: ResourceSubModule; label: string }[] = [
   { id: 'scenario', label: '场景' },
   { id: 'dha', label: '专家' },
   { id: 'skill', label: '技能' },
-  { id: 'mcp', label: '工具' },
+  { id: 'mcp', label: 'MCP' },
   { id: 'llm', label: '大模型' },
   { id: 'files', label: '文件' },
 ]
@@ -623,9 +758,23 @@ interface ScenarioPreset {
   description?: string
   discussion_goal_example?: string
 }
+type ScenarioDraft = {
+  id: string
+  name: string
+  dha_ids: string[]
+  description: string
+}
 const scenarioPresets = ref<ScenarioPreset[]>([])
 const scenarioLoading = ref(false)
+const scenarioSaving = ref(false)
 const scenarioSearch = ref('')
+const scenarioExpertSearch = ref('')
+const scenarioDraft = ref<ScenarioDraft>({
+  id: '',
+  name: '',
+  dha_ids: [],
+  description: '',
+})
 const filteredScenarioPresets = computed(() => {
   const q = (scenarioSearch.value || '').trim().toLowerCase()
   const list = scenarioPresets.value || []
@@ -635,6 +784,19 @@ const filteredScenarioPresets = computed(() => {
 const selectedScenarioPreset = computed(() => {
   if (!selectedId.value) return null
   return scenarioPresets.value.find((x) => x.id === selectedId.value) || null
+})
+const scenarioAddableExperts = computed(() => {
+  const selected = new Set(scenarioDraft.value.dha_ids || [])
+  return (dhaInstances.value || []).filter((d) => !selected.has(d.dha_id))
+})
+const filteredScenarioAddableExperts = computed(() => {
+  const q = (scenarioExpertSearch.value || '').trim().toLowerCase()
+  const list = scenarioAddableExperts.value || []
+  if (!q) return list
+  return list.filter((d) => {
+    const hay = `${d.dha_id || ''} ${d.name || ''} ${d.role || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
 })
 
 const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
@@ -727,7 +889,7 @@ const filteredMcpServers = computed(() => {
   })
 })
 const settingsCategories = [
-  { id: 'app', label: '主持人提示词' },
+  { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
   { id: 'user', label: '用户喜好' },
 ]
@@ -885,6 +1047,134 @@ function dhaDisplayName(dhaId: string): string {
   return hit?.name || dhaId
 }
 
+function syncScenarioDraftFromSelected() {
+  const s = selectedScenarioPreset.value
+  if (!s) {
+    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '' }
+    return
+  }
+  scenarioDraft.value = {
+    id: s.id,
+    name: s.name || '',
+    dha_ids: [...(s.dha_ids || [])],
+    description: s.description || '',
+  }
+}
+
+function createScenarioPreset() {
+  const ts = Date.now().toString(36)
+  const id = `scenario-${ts}`
+  const baseName = '新场景'
+  let name = baseName
+  let idx = 1
+  const existingNames = new Set((scenarioPresets.value || []).map((x) => (x.name || '').trim()))
+  while (existingNames.has(name)) {
+    idx += 1
+    name = `${baseName}${idx}`
+  }
+  const next: ScenarioPreset = {
+    id,
+    name,
+    dha_ids: [],
+    description: '',
+    discussion_goal_example: '',
+  }
+  scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
+  selectedId.value = id
+  syncScenarioDraftFromSelected()
+}
+
+function removeScenarioExpert(dhaId: string) {
+  scenarioDraft.value.dha_ids = (scenarioDraft.value.dha_ids || []).filter((x) => x !== dhaId)
+}
+
+function addScenarioExpert(dhaId: string) {
+  if (!dhaId) return
+  if ((scenarioDraft.value.dha_ids || []).includes(dhaId)) return
+  scenarioDraft.value.dha_ids = [...(scenarioDraft.value.dha_ids || []), dhaId]
+}
+
+function resetScenarioDraft() {
+  syncScenarioDraftFromSelected()
+}
+
+async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
+  const payload = {
+    presets: nextPresets.map((p) => ({
+      id: p.id,
+      name: (p.name || '').trim(),
+      dha_ids: [...(p.dha_ids || [])],
+      description: p.description || '',
+      discussion_goal_example: p.discussion_goal_example || '',
+    })),
+  }
+  const r = await fetch('/api/settings/session-presets', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (j?.status !== 'ok') {
+    throw new Error((j as { detail?: string }).detail || '保存场景失败')
+  }
+}
+
+async function saveScenarioPreset() {
+  const cur = selectedScenarioPreset.value
+  if (!cur) return
+  const name = (scenarioDraft.value.name || '').trim()
+  const dhaIds = [...(scenarioDraft.value.dha_ids || [])]
+  if (!name) {
+    window.alert('场景名称不能为空')
+    return
+  }
+  if (!dhaIds.length) {
+    window.alert('请至少选择 1 位专家')
+    return
+  }
+  scenarioSaving.value = true
+  try {
+    const next = (scenarioPresets.value || []).map((p) =>
+      p.id === cur.id
+        ? {
+            ...p,
+            name,
+            description: scenarioDraft.value.description || '',
+            dha_ids: dhaIds,
+          }
+        : p,
+    )
+    await persistScenarioPresets(next)
+    scenarioPresets.value = next
+    syncScenarioDraftFromSelected()
+  } catch (e) {
+    window.alert((e as Error).message || '保存场景失败')
+  } finally {
+    scenarioSaving.value = false
+  }
+}
+
+async function deleteScenarioPreset(id: string) {
+  if (!id) return
+  const target = (scenarioPresets.value || []).find((x) => x.id === id)
+  const label = target?.name || id
+  if (!window.confirm(`确定删除场景「${label}」吗？`)) return
+  scenarioSaving.value = true
+  try {
+    const next = (scenarioPresets.value || []).filter((p) => p.id !== id)
+    await persistScenarioPresets(next)
+    scenarioPresets.value = next
+    if (selectedId.value === id) {
+      selectedId.value = next[0]?.id || null
+    }
+    syncScenarioDraftFromSelected()
+  } catch (e) {
+    window.alert((e as Error).message || '删除场景失败')
+  } finally {
+    scenarioSaving.value = false
+  }
+}
+
 async function fetchScenarioPresets() {
   scenarioLoading.value = true
   try {
@@ -902,9 +1192,11 @@ async function fetchScenarioPresets() {
       } else if (!selectedId.value) {
         selectedId.value = ids[0] || null
       }
+      syncScenarioDraftFromSelected()
     }
   } catch {
     scenarioPresets.value = []
+    syncScenarioDraftFromSelected()
   } finally {
     scenarioLoading.value = false
   }
@@ -1212,6 +1504,11 @@ watch(resourceSubModule, (sub) => {
   if (sub === 'mcp') fetchMCP()
   if (sub === 'llm') fetchLLM()
   if (sub === 'files') fetchFileSessions()
+})
+
+watch(selectedScenarioPreset, () => {
+  if (resourceSubModule.value !== 'scenario') return
+  syncScenarioDraftFromSelected()
 })
 
 // 初始加载：切到对应模块时再请求数据

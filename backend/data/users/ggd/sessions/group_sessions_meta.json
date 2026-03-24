@@ -151,13 +151,21 @@
     "created_at": "2026-03-22T12:54:46.957863+00:00",
     "updated_at": "2026-03-22T13:12:00.366458+00:00"
   },
-  "group-ee916b965b74": {
-    "title": "新对话",
+  "group-c166d3584e0c": {
+    "title": "博客内容创作与封面设计",
     "title_auto_generated": true,
-    "dha_ids": [],
+    "dha_ids": [
+      "dha-paper-composer",
+      "dha-web-fetch",
+      "dha-9f6a2b8d",
+      "dha-paper-strategist",
+      "dha-65fdbc8f",
+      "dha-195b8c3a",
+      "dha-440b26f8"
+    ],
     "leader_dha_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-22T13:11:12.579172+00:00",
-    "updated_at": "2026-03-22T13:11:12.579172+00:00"
+    "created_at": "2026-03-24T07:41:08.808081+00:00",
+    "updated_at": "2026-03-24T07:45:25.745245+00:00"
   }
 }

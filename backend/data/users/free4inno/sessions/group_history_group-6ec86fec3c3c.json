@@ -1,0 +1,104 @@
+[
+  {
+    "message_id": "msg-8a6a58d0",
+    "role": "user",
+    "content": "验证论文真实性： \n《Generative Agents: Interactive Simulacra of Human Behavior》 作者：Park, J.S., et al. (Stanford & Google) 平台：Nature (2024) | DOI: 10.1038/s41586-024-07382-0",
+    "timestamp": "2026-03-24T03:10:10.918057+00:00"
+  },
+  {
+    "message_id": "msg-4a82cea3",
+    "role": "host",
+    "content": "为验证该论文的真实性，我建议邀请以下专家：\n\n1. **内容核实专家**：负责对论文信息进行事实核查与可信度评估，明确其真实性。\n2. **学术研究员**：专注于学术研究和验证论文真伪，可进一步确认论文的学术来源和背景。\n\n这两位专家的能力高度相关，可以全面审核论文信息。",
+    "timestamp": "2026-03-24T03:10:16.817923+00:00",
+    "suggested_add_dha_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ],
+    "suggested_add_expert_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ]
+  },
+  {
+    "message_id": "msg-7748ebbb",
+    "role": "host",
+    "content": "我建议邀请以下专家参与验证该论文的真实性：\n\n1. **内容核实专家**：专注于对论文信息进行事实核查与可信度评估，直接验证其真实性。\n2. **学术研究员**：擅长学术领域的验证工作，可进一步确认论文的来源和背景。\n\n这两位专家将能够全面核查论文信息并提供准确结论。",
+    "timestamp": "2026-03-24T03:10:20.902655+00:00",
+    "suggested_add_dha_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ],
+    "suggested_add_expert_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ]
+  },
+  {
+    "message_id": "msg-71323d41",
+    "role": "host",
+    "content": "为验证论文真实性，我建议邀请以下专家：\n\n1. **内容核实专家**（dha-c1bf68ba）：专长于对文章和新闻进行事实核查与可信度评估，可直接验证论文的真实性。\n2. **学术研究员**（dha-65fdbc8f）：擅长学术研究和论文真伪验证，能够进一步确认论文的学术背景、来源以及关键信息。\n\n这两位专家的能力高度相关，将确保对论文进行全面核查。",
+    "timestamp": "2026-03-24T03:10:25.419654+00:00",
+    "suggested_add_dha_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ],
+    "suggested_add_expert_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ]
+  },
+  {
+    "message_id": "msg-e038ad19",
+    "role": "host",
+    "content": "为验证该论文的真实性，我建议邀请以下专家：\n\n1. **内容核实专家**（dha-c1bf68ba）：专长于事实核查与可信度评估，可验证论文的真实性并提供相关证据。\n2. **学术研究员**（dha-65fdbc8f）：擅长分析学术文献，能够核实论文的来源、作者背景以及关键信息。\n\n这两位专家将能够高效且全面地核查论文的真实性并提供详细的结论。",
+    "timestamp": "2026-03-24T03:10:29.575726+00:00",
+    "suggested_add_dha_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ],
+    "suggested_add_expert_ids": [
+      "dha-c1bf68ba",
+      "dha-65fdbc8f"
+    ]
+  },
+  {
+    "message_id": "msg-8356db73",
+    "role": "host",
+    "content": "已邀请“内容核实专家”加入会话",
+    "timestamp": "2026-03-24T03:13:42.471360+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-c1bf68ba"
+    ]
+  },
+  {
+    "message_id": "msg-8b190a1d",
+    "role": "host",
+    "content": "已邀请“学术研究员”加入会话",
+    "timestamp": "2026-03-24T03:13:42.471360+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-65fdbc8f"
+    ]
+  },
+  {
+    "message_id": "msg-3d627e82",
+    "role": "host",
+    "content": "已邀请“人工智能学伴”加入会话",
+    "timestamp": "2026-03-24T06:45:06.810051+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-seminar-ai-peer"
+    ]
+  },
+  {
+    "message_id": "msg-c7ccb8c5",
+    "role": "host",
+    "content": "已邀请“研讨教师总结”加入会话",
+    "timestamp": "2026-03-24T06:45:11.148688+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-seminar-teacher-review"
+    ]
+  }
+]

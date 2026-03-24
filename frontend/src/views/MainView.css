@@ -7,3 +7,11 @@
   background-color: var(--color-sidebar-border);
 }
 
+.main-sidebar-svg-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: currentColor;
+  opacity: 0.9;
+}
+

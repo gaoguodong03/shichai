@@ -116,12 +116,13 @@ _DEFAULT_LLM_PROVIDERS = {
 }
 
 _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
+    "host_display_name": "四九",
     # 方案 A：只保留两个字段，避免“首轮/非首轮、0/1 成员”等碎片化配置
     "host_master_prompt": (
         "你是群聊的主持人（调度器），你的职责只有三件事：\n"
         "1) 决定下一位发言人（next_speaker）；\n"
         "2) 为下一位专家生成本轮 next_prompt（必须自包含，能直接执行）；\n"
-        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_dha_ids（系统会自动邀请并继续跑）。\n\n"
+        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_dha_ids（由用户确认后再邀请）。\n\n"
         "【输入中你将看到】\n"
         "- 当前群聊参与者列表（含 dha_id/角色/技能）\n"
         "- 讨论目标与最近讨论内容\n"
@@ -134,15 +135,15 @@ _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
         "- next_speaker 若为某 dha_id：必须输出 next_prompt。\n"
         "- next_prompt 必须「自包含」：与根本任务相关的关键细节都要写清楚，不能依赖“前面某轮写过”。\n"
         "- 当你判断当前成员无法完成任务/明显不适合/连续两轮无进展/缺少专长或工具时：\n"
-        "  - 在 JSON 输出 suggested_add_dha_ids（按优先级排序，不设上限：只要可能有帮助都列出来）。\n"
-        '  - 并把 next_speaker 设为 "user"（系统会自动邀请这些成员加入并继续调度执行）。\n'
+        "  - 在 JSON 输出 suggested_add_dha_ids（按优先级排序，优先推荐 1~3 位最相关专家）。\n"
+        '  - 并把 next_speaker 设为 "user"（等待用户确认是否邀请）。\n'
     ),
     "host_zero_member_policy": (
-        "当前群聊 0 成员。你的目标是先组队：从可选专家列表中推荐尽可能合适的专家加入讨论（不设上限，按优先级排序）。\n"
+        "当前群聊 0 成员。你的目标是先组队：从可选专家列表中推荐最合适的 1~3 位专家加入讨论（按优先级排序）。\n"
         "输出要求：\n"
         "- 先用 1～4 句回复用户：说明你将邀请哪些专家以及理由。\n"
-        "- 最后一段输出 JSON：必须包含 suggested_add_dha_ids（从可选专家列表选，不设上限）。\n"
-        "系统会自动邀请并继续调度执行。"
+        "- 最后一段输出 JSON：必须包含 suggested_add_dha_ids（从可选专家列表选，优先 1~3 位）。\n"
+        "推荐后先等待用户确认，不要假设系统会自动邀请。"
     ),
 }
 
@@ -152,6 +153,8 @@ def _normalize_host_prompts(hp: Dict[str, Any]) -> Dict[str, str]:
     base = dict(_DEFAULT_HOST_PROMPTS)
     if not isinstance(hp, dict):
         return base
+    if isinstance(hp.get("host_display_name"), str) and hp.get("host_display_name").strip():
+        base["host_display_name"] = hp["host_display_name"].strip()
     # 新字段优先
     if isinstance(hp.get("host_master_prompt"), str) and hp.get("host_master_prompt").strip():
         base["host_master_prompt"] = hp["host_master_prompt"]
@@ -207,6 +210,7 @@ def load_app_settings() -> Dict[str, Any]:
 class HostPromptsBody(BaseModel):
     """主持人提示词（群聊调度用）"""
 
+    host_display_name: Optional[str] = None
     host_master_prompt: Optional[str] = None
     host_zero_member_policy: Optional[str] = None
 
@@ -225,7 +229,7 @@ async def update_host_prompts(body: HostPromptsBody):
     current = load_app_settings()
     hp = current.get("host_prompts") if isinstance(current.get("host_prompts"), dict) else {}
     merged = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
-    for k in ("host_master_prompt", "host_zero_member_policy"):
+    for k in ("host_display_name", "host_master_prompt", "host_zero_member_policy"):
         if k in incoming:
             merged[k] = incoming[k] or ""
     save_app_settings({"host_prompts": merged})

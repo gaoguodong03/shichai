@@ -24,23 +24,16 @@
       <div class="flex flex-1 flex-col justify-center px-8 py-10 md:px-12 md:py-12">
         <div class="mx-auto w-full max-w-sm">
           <div class="mb-8 flex flex-col items-center text-center">
-            <div
-              class="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-accent-subtle shadow-sm ring-1 ring-border-light"
-              aria-hidden="true"
-            >
-              <svg class="h-8 w-8" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M16 4c-2 4-1 8 2 11-1-4 1-8 4-10-1 5 2 9 6 11-2-4-1-9 2-12 4 5 5 12 2 18-3 6-9 10-16 10-4 0-7-2-9-5 5 1 10-2 12-6-4 2-9 1-12-2 3-3 8-4 12-2-3-4-2-9 2-12 2 2 5 3 8 3 2 0 4-1 5-2z"
-                  fill="var(--color-accent)"
-                />
-                <path
-                  d="M8 26h16v2H8v-2zm2-4h4v3h-4v-3zm8 0h4v3h-4v-3z"
-                  fill="var(--color-dha-box-3)"
-                />
-              </svg>
+            <div class="mb-4 flex items-center justify-center">
+              <img
+                :src="logoUrl"
+                alt="书童四九 logo"
+                class="h-11 w-11 rounded-full object-cover"
+                width="44"
+                height="44"
+                decoding="async"
+              />
             </div>
-            <h1 class="text-xl font-semibold text-primary tracking-tight">书童四九</h1>
-            <p class="mt-1 text-xs text-muted tracking-[0.12em]">多数字人 ReAct Agent 工作台</p>
             <p class="mt-5 text-base font-semibold text-primary">
               {{ isRegister ? '创建账户' : '登录' }}
             </p>
@@ -109,6 +102,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import loginHeroUrl from '@/assets/login-hero.svg'
+import logoUrl from '@/assets/49logo.png'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'

@@ -126,10 +126,15 @@
                 <div ref="groupMessagesRef" class="group-chat-messages">
                   <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
                     <div
-                      :class="['group-chat-msg-row', msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other']"
+                      :class="[
+                        'group-chat-msg-row',
+                        isMemberJoinedMessage(msg)
+                          ? 'group-chat-msg-row-system'
+                          : (msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other')
+                      ]"
                       :data-message-id="msg.message_id || `idx-${i}`"
                     >
-                      <template v-if="msg.role !== 'user'">
+                      <template v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)">
                         <span
                           v-if="msg.role !== 'host'"
                           class="group-chat-avatar"
@@ -144,8 +149,9 @@
                       <div
                         :class="[
                           'group-chat-bubble',
+                          isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
                           msg.role === 'user' && 'group-chat-bubble-user',
-                          msg.role === 'host' && 'group-chat-bubble-host',
+                          msg.role === 'host' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-host',
                           msg.role !== 'user' && msg.role !== 'host' && 'group-chat-bubble-dha'
                         ]"
                       >
@@ -181,7 +187,10 @@
                           <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
                         </div>
                         <div class="group-chat-bubble-body">
-                          <template v-if="msg.role !== 'user'">
+                          <template v-if="isMemberJoinedMessage(msg)">
+                            <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
+                          </template>
+                          <template v-else-if="msg.role !== 'user'">
                             <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
                           </template>
                           <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
@@ -224,7 +233,7 @@
                 <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
               <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
-                <span class="group-chat-suggested-invite-text">主持人建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
+                <span class="group-chat-suggested-invite-text">{{ hostDisplayName }} 建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
                 <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
@@ -282,7 +291,20 @@
                         @mousedown.prevent
                         @click="selectMention(opt)"
                       >
-                        <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                        <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                          </svg>
+                        </span>
+                        <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14" />
+                            <path d="M13 7l6 5-6 5" />
+                          </svg>
+                        </span>
                         <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                         <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
@@ -315,7 +337,20 @@
                           @mousedown.prevent
                           @click="selectMention(opt)"
                         >
-                          <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                          <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                              <line x1="12" y1="19" x2="12" y2="23"/>
+                              <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                          </span>
+                          <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M5 12h14" />
+                              <path d="M13 7l6 5-6 5" />
+                            </svg>
+                          </span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
@@ -349,7 +384,20 @@
                           @mousedown.prevent
                           @click="selectMention(opt)"
                         >
-                          <span v-if="opt.type === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                          <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                              <line x1="12" y1="19" x2="12" y2="23"/>
+                              <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                          </span>
+                          <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M5 12h14" />
+                              <path d="M13 7l6 5-6 5" />
+                            </svg>
+                          </span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
@@ -373,11 +421,17 @@
                       <span v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'" class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }">
                         {{ dhaAvatarChar(effectiveNextSpeaker) }}
                       </span>
-                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
-                      <span class="group-chat-next-speaker-name">
-                        {{ effectiveNextSpeaker === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
+                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-at-host-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                          <line x1="12" y1="19" x2="12" y2="23"/>
+                          <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
                       </span>
-                      <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                      <span class="group-chat-next-speaker-name">
+                        {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
+                      </span>
                     </button>
                   </div>
                   <div ref="insertFileRef" class="group-chat-add-member-wrap">
@@ -559,7 +613,7 @@
 
                   <!-- 居中弹窗：成员（专家） -->
                   <div v-if="showAddMemberModal" class="group-chat-modal-overlay" @click.self="showAddMemberModal = false">
-                    <div class="group-chat-modal">
+                    <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
                         <span class="group-chat-modal-title">成员管理</span>
                         <button type="button" class="group-chat-modal-close" @click="showAddMemberModal = false">×</button>
@@ -576,10 +630,17 @@
                               >
                                 {{ dhaAvatarChar(id) }}
                               </span>
-                              <span v-else class="group-chat-at-host-icon" aria-hidden="true">🎤</span>
+                              <span v-else class="group-chat-at-host-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                  <line x1="12" y1="19" x2="12" y2="23"/>
+                                  <line x1="8" y1="23" x2="16" y2="23"/>
+                                </svg>
+                              </span>
                               <span class="group-chat-member-skill-name">
                                 <span class="group-chat-member-skill-name-text">
-                                  {{ id === 'host' ? '主持人' : ((groupDetail?.dha_map || {})[id]?.name || id) }}
+                                  {{ id === 'host' ? hostDisplayName : ((groupDetail?.dha_map || {})[id]?.name || id) }}
                                 </span>
                                 <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
                               </span>
@@ -878,6 +939,8 @@ interface MsgExt {
   tool_raw_results?: string[]
   next_prompt?: string
   suggested_order?: string[]
+  event_type?: string
+  joined_dha_ids?: string[]
 }
 
 const props = defineProps<{
@@ -905,6 +968,8 @@ type GroupDetail = {
 }
 
 const groupDetail = ref<GroupDetail | null>(null)
+const DEFAULT_HOST_DISPLAY_NAME = '四九'
+const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
 const groupLoading = ref(false)
 const groupError = ref<string | null>(null)
 const groupDisplayMessages = ref<GroupMessage[]>([])
@@ -939,6 +1004,7 @@ const isResizingWorkspaceInner = ref(false)
 const lastExpandedWorkspaceWidth = ref(672)
 
 const USER_PREF_UPDATED_EVENT_NAME = 'dha-user-pref-updated'
+const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
 const WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_workspace_open_v1'
 const TOC_WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_toc_workspace_open_v1'
 
@@ -1483,8 +1549,12 @@ async function confirmGroupNext(override: string) {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(data)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(data)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
               }
             } catch (_) {}
           }
@@ -1501,8 +1571,12 @@ async function confirmGroupNext(override: string) {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -1532,6 +1606,7 @@ async function confirmGroupNext(override: string) {
   } catch (e) {
     console.error('确认下一发言人失败', e)
   } finally {
+    clearStreamingPlaceholders()
     groupStreaming.value = false
     groupStreamingPhase.value = ''
   }
@@ -1638,19 +1713,26 @@ function onUserPrefUpdated(ev: Event) {
   }
 }
 
+function onHostDisplayNameUpdated() {
+  loadHostDisplayName()
+}
+
 onMounted(() => {
   document.addEventListener('click', closeMembersDropdown)
   window.addEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
+  window.addEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
   import('markdown-it').then((M) => {
     const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
     mdRef.value = new Md({ breaks: true })
   }).catch(() => {})
   loadShortcutPresets()
+  loadHostDisplayName()
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
   unbindSessionMetaOutsideClick()
   window.removeEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
+  window.removeEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
   stopTocScrollSpy()
   for (const u of authImageObjectUrls) {
     try {
@@ -1973,6 +2055,17 @@ const suggestedAddDhaName = computed(() => {
   return names.join('、')
 })
 
+async function loadHostDisplayName() {
+  try {
+    const r = await fetch('/api/settings/host-prompts')
+    const j = await r.json().catch(() => ({}))
+    const next = String((j as { data?: { host_display_name?: string } })?.data?.host_display_name || '').trim()
+    hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
+  } catch {
+    hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME
+  }
+}
+
 /** 邀请后自动继续执行任务（不要求用户再点发送） */
 async function continueGroupStream() {
   const detail = groupDetail.value
@@ -2039,8 +2132,12 @@ async function continueGroupStream() {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(data)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(data)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
               }
             } catch (_) {}
           }
@@ -2056,8 +2153,12 @@ async function continueGroupStream() {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -2081,6 +2182,7 @@ async function continueGroupStream() {
   } catch (e) {
     console.error('继续任务失败', e)
   } finally {
+    clearStreamingPlaceholders()
     groupStreaming.value = false
     groupStreamingPhase.value = ''
   }
@@ -2154,7 +2256,7 @@ const goalTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const atMentionOptions = computed(() => {
-  const host = { type: 'host' as const, id: 'host', label: '主持人' }
+  const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME }
   const next = { type: 'role' as const, id: 'next', label: '下一位' }
   const d = groupDetail.value
   const ids = d?.dha_ids || []
@@ -2199,7 +2301,7 @@ function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
 function selectMention(opt: { type: 'host' | 'dha' | 'role'; id: string; label: string }) {
   const insertText =
     opt.type === 'host'
-      ? '@主持人 '
+      ? `@${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME} `
       : opt.type === 'role'
         ? '@下一位 '
         : `@${opt.label} `
@@ -2307,6 +2409,24 @@ function parseDhaIdsFromHostContent(content: string | null | undefined): string[
   if (!content) return []
   const matches = content.match(/dha-[a-zA-Z0-9\-]+/gi) || []
   return [...new Set(matches)]
+}
+
+function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
+  if (!payload) return []
+  const direct = extractSuggestedAddIds(payload)
+  const inGroup = new Set(groupDetail.value?.dha_ids || [])
+  const validIds = new Set((props.dhaInstances || []).map((d) => d.dha_id))
+  const normalize = (ids: string[]) => {
+    const uniq = [...new Set((ids || []).filter((id) => validIds.has(id) && !inGroup.has(id)))]
+    return uniq.slice(0, 3)
+  }
+  if (direct.length) return normalize(direct)
+
+  const role = String(payload.role || '')
+  const content = String(payload.content || '')
+  if (!content || (role !== 'host' && role !== 'assistant')) return []
+  if (!/(建议邀请|邀请以下|推荐.*加入|补充.*专家|加入讨论)/.test(content)) return []
+  return normalize(parseDhaIdsFromHostContent(content))
 }
 
 watch(
@@ -2782,6 +2902,11 @@ function scrollGroupToBottom() {
 
 type GroupMessage = GroupDetail['messages'][number] & { _streaming?: boolean }
 
+function isMemberJoinedMessage(msg: GroupMessage): boolean {
+  const ext = msg as GroupMessage & MsgExt
+  return msg.role === 'host' && ext.event_type === 'member_joined'
+}
+
 /** 当前处于流式占位状态的“正在输出”的专家（最后一条 _streaming 置为 true 的 assistant） */
 const activeStreamingMessage = computed<GroupMessage | null>(() => {
   const list = groupDisplayMessages.value || []
@@ -2797,7 +2922,7 @@ const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.dha_id
 const activeStreamingSpeakerName = computed(() => {
   const id = activeStreamingDhaId.value
   if (!id) return ''
-  if (id === 'host') return '主持人'
+  if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
   const map = groupDetail.value?.dha_map || {}
   return map[id]?.name || id
 })
@@ -2812,7 +2937,7 @@ const streamingPulse = computed(() => {
 const effectiveNextSpeakerName = computed(() => {
   const id = effectiveNextSpeaker.value
   if (!id) return ''
-  if (id === 'host') return '主持人'
+  if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
   const map = groupDetail.value?.dha_map || {}
   return map[id]?.name || id
 })
@@ -2846,11 +2971,29 @@ function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   nextTick(() => scheduleHydrateAuthImages())
 }
 
+function clearStreamingPlaceholders() {
+  const list = groupDisplayMessages.value || []
+  if (!list.length) return
+  let changed = false
+  const next = list.map((m) => {
+    if ((m as GroupMessage)._streaming) {
+      changed = true
+      return { ...(m as GroupMessage), _streaming: false } as GroupMessage
+    }
+    return m
+  })
+  if (changed) groupDisplayMessages.value = next
+}
+
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
-  // 发送时统一把换行压成空格，避免同一条被拆成“逻辑两行”
+  // 保留用户通过 Shift+Enter 输入的换行，只做轻度规范化
   const rawGoal = groupDiscussionGoal.value || ''
-  const goal = rawGoal.replace(/[\r\n]+/g, ' ').trim()
+  const goal = rawGoal
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
   const prompt = (groupNextPrompt.value || '').trim()
   if (!goal && !prompt) return ''
   const parts: string[] = []
@@ -2966,8 +3109,12 @@ async function sendGroupMessage() {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(data)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(data)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
               }
             } catch (_) {}
           }
@@ -2984,8 +3131,12 @@ async function sendGroupMessage() {
                   emit('dha-added')
                   loadGroupDetail()
                 }
-                const suggestedIds = extractSuggestedAddIds(endData as Record<string, unknown>)
-                if (suggestedIds.length) groupSuggestedAddDhaIds.value = suggestedIds
+                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
+                if (suggestedIds.length) {
+                  groupSuggestedAddDhaIds.value = suggestedIds
+                  clearStreamingPlaceholders()
+                  groupStreamingPhase.value = '等待你确认邀请…'
+                }
                 if (endData.next_prompt) {
                   groupNextPrompt.value = (endData.next_prompt || '').trim()
                 }
@@ -3033,6 +3184,7 @@ async function sendGroupMessage() {
   } catch (e) {
     console.error('群聊发送失败', e)
   } finally {
+    clearStreamingPlaceholders()
     groupStreaming.value = false
     groupStreamingPhase.value = ''
     groupNextSpeakerOverride.value = ''
@@ -3049,7 +3201,7 @@ function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_n
   const rest = s.slice(m[0].length)
   if (!token) return { override_next_speaker: '', cleaned_goal: raw }
 
-  if (token === '主持人') {
+  if (token === '主持人' || token === (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME)) {
     const leader = (detail.leader_dha_id || '').trim()
     return { override_next_speaker: leader || '', cleaned_goal: rest }
   }
@@ -3073,6 +3225,7 @@ function stopGroupStream() {
       // ignore
     }
   }
+  clearStreamingPlaceholders()
   groupStreaming.value = false
   groupStreamingPhase.value = '已停止'
 }
@@ -3808,6 +3961,10 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-msg-row-other {
   align-self: flex-start;
 }
+.group-chat-msg-row-system {
+  align-self: center;
+  max-width: 100%;
+}
 .group-chat-bubble {
   /* 允许根据内容自然拉伸，不再强行限制 90% 导致换行 */
   max-width: 100%;
@@ -3836,6 +3993,22 @@ defineExpose({ refresh: loadGroupDetail })
   font-style: italic;
   text-align: center;
   border-bottom-left-radius: 4px;
+}
+.group-chat-bubble-system {
+  background: var(--color-list-hover);
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin-bottom: 8px;
+  box-shadow: none;
+}
+.group-chat-system-text {
+  margin: 0;
+  white-space: pre-wrap;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .group-chat-msg-row-user .group-chat-bubble {
   margin-left: auto;
@@ -4456,8 +4629,36 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 6px;
 }
 .group-chat-at-host-icon {
-  font-size: 1rem;
-  line-height: 1;
+  width: 1rem;
+  height: 1rem;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  opacity: 0.9;
+}
+.group-chat-at-host-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.group-chat-at-special-icon {
+  border: 1px solid var(--color-border-light);
+}
+.group-chat-at-special-icon svg {
+  width: 0.78rem;
+  height: 0.78rem;
+  display: block;
+}
+.group-chat-at-host-avatar {
+  background: var(--color-dha-box-0);
+  color: #fff;
+  border-color: transparent;
+}
+.group-chat-at-next-avatar {
+  background: var(--color-list-hover);
+  color: var(--color-text-muted);
 }
 .group-chat-input-block-label {
   display: block;
