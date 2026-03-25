@@ -193,13 +193,34 @@
                   @click="createScenarioPreset"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>新建场景</span>
+                  <span>创建场景</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索场景"
+                  @click="toggleSearch('scenario')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
                 </button>
               </div>
               <input
+                v-if="showScenarioSearch"
                 v-model="scenarioSearch"
                 type="text"
-                placeholder="搜索场景（名称/ID）"
+                placeholder="搜索场景（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
@@ -222,7 +243,7 @@
               <button
                 type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
-                title="删除场景"
+                title="删除"
                 @click.stop="deleteScenarioPreset(s.id)"
               >
                 ×
@@ -242,7 +263,7 @@
                 ]"
               >
                 <span class="text-base leading-none">＋</span>
-                <span>新建专家</span>
+                <span>创建专家</span>
               </button>
               <button
                 type="button"
@@ -269,7 +290,7 @@
               <input
                 v-model="dhaSearch"
                 type="text"
-                placeholder="搜索专家（名称/ID/角色）"
+                placeholder="搜索专家（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
@@ -310,7 +331,7 @@
                 ]"
               >
                 <span class="text-base leading-none">＋</span>
-                <span>新建 Skill</span>
+                <span>创建技能</span>
               </button>
               <button
                 @click="selectedId = '__new__'"
@@ -325,7 +346,7 @@
               <button
                 type="button"
                 class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                title="搜索 Skill"
+                title="搜索技能"
                 @click="toggleSearch('skill')"
               >
                 <svg
@@ -347,7 +368,7 @@
               <input
                 v-model="skillSearch"
                 type="text"
-                placeholder="搜索 Skill（名称/ID）"
+                placeholder="搜索技能（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
@@ -379,12 +400,12 @@
                 ]"
               >
                 <span class="text-base leading-none">＋</span>
-                <span>新建 MCP</span>
+                <span>创建工具</span>
               </button>
               <button
                 type="button"
                 class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                title="搜索 MCP"
+                title="搜索工具"
                 @click="toggleSearch('mcp')"
               >
                 <svg
@@ -406,7 +427,7 @@
               <input
                 v-model="mcpSearch"
                 type="text"
-                placeholder="搜索 MCP（名称/ID）"
+                placeholder="搜索工具（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
@@ -545,10 +566,10 @@
           <div class="h-full overflow-y-auto p-6">
             <div v-if="selectedScenarioPreset" class="max-w-3xl space-y-4">
               <div class="rounded-xl border border-input-border bg-panel p-4">
-                <h3 class="text-lg font-semibold text-primary">场景配置</h3>
+                <h3 class="text-lg font-semibold text-primary">{{ isCreatingScenario ? '创建场景' : '配置场景' }}</h3>
                 <div class="mt-3 space-y-3">
                   <div>
-                    <div class="text-xs text-muted mb-1">场景名称</div>
+                    <div class="text-xs text-muted mb-1">名称</div>
                     <input
                       v-model="scenarioDraft.name"
                       type="text"
@@ -565,19 +586,10 @@
                       placeholder="请输入场景描述"
                     />
                   </div>
-                  <div>
-                    <div class="text-xs text-muted mb-1">讨论目标示例</div>
-                    <textarea
-                      v-model="scenarioDraft.discussion_goal_example"
-                      rows="4"
-                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
-                      placeholder="应用场景后可直接发送的示例提示词"
-                    />
-                  </div>
                 </div>
               </div>
               <div class="rounded-xl border border-input-border bg-panel p-4">
-                <div class="text-sm font-medium text-primary mb-2">专家组合（可增删）</div>
+                <div class="text-sm font-medium text-primary mb-2">专家</div>
                 <div class="flex flex-wrap gap-2">
                   <span
                     v-for="id in scenarioDraft.dha_ids"
@@ -598,7 +610,7 @@
                   <input
                     v-model="scenarioExpertSearch"
                     type="text"
-                    placeholder="搜索专家（名称/ID/角色）"
+                    placeholder="搜索专家（名称/描述）"
                     class="w-full px-3 py-2 mb-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                   />
                   <div class="flex flex-wrap gap-2">
@@ -616,22 +628,14 @@
                   </div>
                 </div>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center justify-end gap-2">
                 <button
                   type="button"
                   class="px-4 py-2 rounded-lg bg-accent text-text-inverse text-sm font-medium hover:opacity-90 disabled:opacity-50"
                   :disabled="scenarioSaving"
                   @click="saveScenarioPreset"
                 >
-                  {{ scenarioSaving ? '保存中...' : '保存修改' }}
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-card border border-border text-primary text-sm font-medium hover:bg-list-hover"
-                  :disabled="scenarioSaving"
-                  @click="resetScenarioDraft"
-                >
-                  还原
+                  {{ scenarioSaving ? '保存中...' : '保存' }}
                 </button>
                 <button
                   type="button"
@@ -639,7 +643,7 @@
                   :disabled="scenarioSaving"
                   @click="deleteScenarioPreset(selectedScenarioPreset.id)"
                 >
-                  删除场景
+                  删除
                 </button>
               </div>
             </div>
@@ -768,18 +772,17 @@ interface ScenarioPreset {
   name: string
   dha_ids: string[]
   description?: string
-  discussion_goal_example?: string
 }
 type ScenarioDraft = {
   id: string
   name: string
   dha_ids: string[]
   description: string
-  discussion_goal_example: string
 }
 const scenarioPresets = ref<ScenarioPreset[]>([])
 const scenarioLoading = ref(false)
 const scenarioSaving = ref(false)
+const creatingScenarioId = ref<string | null>(null)
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
 const scenarioDraft = ref<ScenarioDraft>({
@@ -787,13 +790,13 @@ const scenarioDraft = ref<ScenarioDraft>({
   name: '',
   dha_ids: [],
   description: '',
-  discussion_goal_example: '',
 })
+const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
 const filteredScenarioPresets = computed(() => {
   const q = (scenarioSearch.value || '').trim().toLowerCase()
   const list = scenarioPresets.value || []
   if (!q) return list
-  return list.filter((s) => `${s.id} ${s.name}`.toLowerCase().includes(q))
+  return list.filter((s) => `${s.name || ''} ${s.description || ''}`.toLowerCase().includes(q))
 })
 const selectedScenarioPreset = computed(() => {
   if (!selectedId.value) return null
@@ -808,14 +811,14 @@ const filteredScenarioAddableExperts = computed(() => {
   const list = scenarioAddableExperts.value || []
   if (!q) return list
   return list.filter((d) => {
-    const hay = `${d.dha_id || ''} ${d.name || ''} ${d.role || ''}`.toLowerCase()
+    const hay = `${d.name || ''} ${d.role || ''}`.toLowerCase()
     return hay.includes(q)
   })
 })
 
-const skills = ref<{ id: string; name: string; enabled: boolean }[]>([])
+const skills = ref<{ id: string; name: string; description?: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
-const mcpServers = ref<{ id: string; name: string; status: string; tool_count: number }[]>([])
+const mcpServers = ref<{ id: string; name: string; description?: string; metadata?: Record<string, any>; status: string; tool_count: number }[]>([])
 const mcpLoading = ref(false)
 const llmDefault = ref<string>('qwen')
 const llmProviders = ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>({})
@@ -847,6 +850,7 @@ const visibleFileSessions = computed(() => {
 })
 
 // 资源中心列表搜索（专家 / Skill / MCP）
+const showScenarioSearch = ref(false)
 const showDhaSearch = ref(false)
 const showSkillSearch = ref(false)
 const showMcpSearch = ref(false)
@@ -854,7 +858,11 @@ const dhaSearch = ref('')
 const skillSearch = ref('')
 const mcpSearch = ref('')
 
-function toggleSearch(kind: 'dha' | 'skill' | 'mcp') {
+function toggleSearch(kind: 'scenario' | 'dha' | 'skill' | 'mcp') {
+  if (kind === 'scenario') {
+    showScenarioSearch.value = !showScenarioSearch.value
+    if (!showScenarioSearch.value) scenarioSearch.value = ''
+  }
   if (kind === 'dha') {
     showDhaSearch.value = !showDhaSearch.value
     if (!showDhaSearch.value) dhaSearch.value = ''
@@ -878,7 +886,7 @@ const filteredDhaInstances = computed(() => {
   const list = dhaInstances.value || []
   if (!q) return list
   return list.filter((d) => {
-    const hay = `${d.dha_id || ''} ${d.name || ''} ${d.role || ''}`.toLowerCase()
+    const hay = `${d.name || ''} ${d.role || ''}`.toLowerCase()
     return hay.includes(q)
   })
 })
@@ -888,17 +896,24 @@ const filteredSkills = computed(() => {
   const list = skills.value || []
   if (!q) return list
   return list.filter((s) => {
-    const hay = `${s.id || ''} ${s.name || ''}`.toLowerCase()
+    const hay = `${s.name || ''} ${s.description || ''}`.toLowerCase()
     return hay.includes(q)
   })
 })
+
+function mcpServerDescription(server: { description?: string; metadata?: Record<string, any> }) {
+  const fromMetadata = server?.metadata && typeof server.metadata.description === 'string'
+    ? server.metadata.description
+    : ''
+  return server.description || fromMetadata || ''
+}
 
 const filteredMcpServers = computed(() => {
   const q = _q(mcpSearch.value)
   const list = mcpServers.value || []
   if (!q) return list
   return list.filter((s) => {
-    const hay = `${s.id || ''} ${s.name || ''}`.toLowerCase()
+    const hay = `${s.name || ''} ${mcpServerDescription(s)}`.toLowerCase()
     return hay.includes(q)
   })
 })
@@ -1065,7 +1080,7 @@ function dhaDisplayName(dhaId: string): string {
 function syncScenarioDraftFromSelected() {
   const s = selectedScenarioPreset.value
   if (!s) {
-    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '', discussion_goal_example: '' }
+    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '' }
     return
   }
   scenarioDraft.value = {
@@ -1073,30 +1088,21 @@ function syncScenarioDraftFromSelected() {
     name: s.name || '',
     dha_ids: [...(s.dha_ids || [])],
     description: s.description || '',
-    discussion_goal_example: s.discussion_goal_example || '',
   }
 }
 
 function createScenarioPreset() {
   const ts = Date.now().toString(36)
   const id = `scenario-${ts}`
-  const baseName = '新场景'
-  let name = baseName
-  let idx = 1
-  const existingNames = new Set((scenarioPresets.value || []).map((x) => (x.name || '').trim()))
-  while (existingNames.has(name)) {
-    idx += 1
-    name = `${baseName}${idx}`
-  }
   const next: ScenarioPreset = {
     id,
-    name,
+    name: '',
     dha_ids: [],
     description: '',
-    discussion_goal_example: '',
   }
   scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
   selectedId.value = id
+  creatingScenarioId.value = id
   syncScenarioDraftFromSelected()
 }
 
@@ -1110,10 +1116,6 @@ function addScenarioExpert(dhaId: string) {
   scenarioDraft.value.dha_ids = [...(scenarioDraft.value.dha_ids || []), dhaId]
 }
 
-function resetScenarioDraft() {
-  syncScenarioDraftFromSelected()
-}
-
 async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
   const payload = {
     presets: nextPresets.map((p) => ({
@@ -1121,7 +1123,6 @@ async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
       name: (p.name || '').trim(),
       dha_ids: [...(p.dha_ids || [])],
       description: p.description || '',
-      discussion_goal_example: p.discussion_goal_example || '',
     })),
   }
   const r = await fetch('/api/settings/session-presets', {
@@ -1156,13 +1157,13 @@ async function saveScenarioPreset() {
             ...p,
             name,
             description: scenarioDraft.value.description || '',
-            discussion_goal_example: scenarioDraft.value.discussion_goal_example || '',
             dha_ids: dhaIds,
           }
         : p,
     )
     await persistScenarioPresets(next)
     scenarioPresets.value = next
+    if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
     syncScenarioDraftFromSelected()
   } catch (e) {
     window.alert((e as Error).message || '保存场景失败')
@@ -1181,6 +1182,7 @@ async function deleteScenarioPreset(id: string) {
     const next = (scenarioPresets.value || []).filter((p) => p.id !== id)
     await persistScenarioPresets(next)
     scenarioPresets.value = next
+    if (creatingScenarioId.value === id) creatingScenarioId.value = null
     if (selectedId.value === id) {
       selectedId.value = next[0]?.id || null
     }
@@ -1208,6 +1210,9 @@ async function fetchScenarioPresets() {
         selectedId.value = ids[0] || null
       } else if (!selectedId.value) {
         selectedId.value = ids[0] || null
+      }
+      if (!selectedId.value || selectedId.value !== creatingScenarioId.value) {
+        creatingScenarioId.value = null
       }
       syncScenarioDraftFromSelected()
     }

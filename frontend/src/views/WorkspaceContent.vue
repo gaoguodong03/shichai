@@ -571,8 +571,13 @@
                         <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
                       </div>
                       <div class="group-chat-modal-body">
-                        <ul v-if="shortcutPresets.length" class="group-chat-members-list">
-                          <li v-for="p in shortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
+                        <input
+                          v-model="shortcutPresetSearch"
+                          class="group-chat-shortcut-name-input"
+                          placeholder="搜索场景（名称/专家）"
+                        />
+                        <ul v-if="filteredShortcutPresets.length" class="group-chat-members-list">
+                          <li v-for="p in filteredShortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
                             <button
                               type="button"
                               class="group-chat-shortcut-pill"
@@ -584,7 +589,7 @@
                             </button>
                           </li>
                         </ul>
-                        <p v-else class="group-chat-add-member-empty">暂无场景</p>
+                        <p v-else class="group-chat-add-member-empty">{{ shortcutPresets.length ? '未找到匹配场景' : '暂无场景' }}</p>
                       </div>
                     </div>
                   </div>
@@ -1992,6 +1997,7 @@ function onShowNextPromptFieldChangeByClick() {
 const showShortcutEditor = ref(false)
 const showShortcutEditorModal = ref(false)
 const shortcutEditorRef = ref<HTMLElement | null>(null)
+const shortcutPresetSearch = ref('')
 const editingShortcutId = ref('')
 const newShortcutName = ref('')
 const newShortcutDhaIds = ref<string[]>([])
@@ -2072,6 +2078,17 @@ function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
     .filter(Boolean)
   return names.join('、')
 }
+
+const filteredShortcutPresets = computed(() => {
+  const q = (shortcutPresetSearch.value || '').trim().toLowerCase()
+  const list = shortcutPresets.value || []
+  if (!q) return list
+  return list.filter((p) => {
+    const name = (p.name || '').toLowerCase()
+    const experts = shortcutPresetExpertNamesText(p).toLowerCase()
+    return name.includes(q) || experts.includes(q)
+  })
+})
 
 async function loadHostDisplayName() {
   try {

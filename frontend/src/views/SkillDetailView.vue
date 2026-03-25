@@ -1,33 +1,5 @@
 <template>
   <div class="flex flex-col h-full bg-white overflow-hidden">
-    <!-- 启用、路径、保存、删除（名称与描述在 SKILL.md 内容区第一、二行展示） -->
-    <div
-      v-if="skill && !loading"
-      class="flex flex-wrap items-center gap-4 px-4 py-3 border-b border-gray-200 bg-gray-50/80 flex-shrink-0"
-    >
-      <div class="flex items-center gap-2">
-        <input v-model="form.enabled" type="checkbox" id="skill-enabled" class="rounded border-gray-300" />
-        <label for="skill-enabled" class="text-sm text-gray-700">启用</label>
-      </div>
-      <div class="flex gap-2 ml-auto">
-        <button
-          v-if="skill"
-          @click="save"
-          :disabled="saving"
-          class="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
-        >
-          {{ saving ? '保存中...' : '保存' }}
-        </button>
-        <button
-          v-if="skill"
-          @click="deleteSkill"
-          :disabled="deleting"
-          class="px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
-        >
-          删除
-        </button>
-      </div>
-    </div>
     <div v-if="loading" class="p-4 text-gray-500 flex-1">加载中...</div>
     <template v-else-if="skill">
       <!-- Tab 导航 -->
@@ -172,6 +144,22 @@
             />
           </div>
         </main>
+      </div>
+      <div class="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50/80 flex-shrink-0">
+        <button
+          @click="save"
+          :disabled="saving || deleting"
+          class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
+          {{ saving ? '保存中...' : '保存' }}
+        </button>
+        <button
+          @click="deleteSkill"
+          :disabled="deleting || saving"
+          class="px-4 py-2 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+        >
+          {{ deleting ? '删除中...' : '删除' }}
+        </button>
       </div>
     </template>
     <div v-else class="p-4 text-gray-500 flex-1">未找到该技能</div>

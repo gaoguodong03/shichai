@@ -10,11 +10,8 @@
       <div class="max-w-5xl w-full mx-auto">
         <div class="mb-4">
           <h2 class="text-2xl font-semibold text-gray-900 mb-1">
-            {{ selectedDhaId === '__new__' ? '新建专家' : '编辑专家' }}
+            {{ selectedDhaId === '__new__' ? '创建专家' : '配置专家' }}
           </h2>
-          <p class="text-sm text-gray-500">
-            为你的专家配置名称、角色和技能组合，右侧工牌将实时预览数字人形象。
-          </p>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)] gap-6 items-start">
@@ -46,7 +43,7 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">角色描述</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
               <input
                 v-model="form.role"
                 type="text"
@@ -66,13 +63,13 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">启用的技能</label>
+              <label class="block text-sm font-medium text-gray-700 mb-2">技能</label>
               <input
                 v-if="skills.length"
                 v-model.trim="skillSearch"
                 type="text"
                 class="w-full mb-2 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                placeholder="搜索并添加 Skill（名称或 ID）"
+                placeholder="搜索技能（名称/描述）"
               />
               <div
                 v-if="skills.length"
@@ -99,7 +96,7 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
-            <div class="flex gap-2 pt-2">
+            <div class="flex justify-end gap-2 pt-2">
               <button
                 type="submit"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-colors"
@@ -108,10 +105,10 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
-                @click="$emit('cancel')"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
+                @click="deleteDha"
               >
-                取消
+                删除
               </button>
             </div>
           </form>
@@ -175,7 +172,7 @@
                       {{ form.name || '未命名专家' }}
                     </p>
                     <p class="text-sm text-gray-600 leading-snug whitespace-pre-line break-words">
-                      {{ form.role || '尚未填写角色描述' }}
+                      {{ form.role || '尚未填写描述' }}
                     </p>
                   </div>
                 </div>
@@ -242,7 +239,7 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const skills = ref<{ id: string; name: string }[]>([])
+const skills = ref<{ id: string; name: string; description?: string }[]>([])
 const skillSearch = ref('')
 const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
@@ -346,11 +343,28 @@ const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()
   if (!q) return skills.value
   return skills.value.filter((s) => {
-    const id = (s.id || '').toLowerCase()
     const name = (s.name || '').toLowerCase()
-    return id.includes(q) || name.includes(q)
+    const description = (s.description || '').toLowerCase()
+    return name.includes(q) || description.includes(q)
   })
 })
+
+async function deleteDha() {
+  if (!props.selectedDhaId) return
+  if (props.selectedDhaId === '__new__') {
+    emit('cancel')
+    return
+  }
+  if (!window.confirm('确定删除该专家？')) return
+  const r = await fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, { method: 'DELETE' })
+  const j = await r.json()
+  if (j.status === 'ok') {
+    emit('updated')
+    emit('cancel')
+  } else {
+    alert(j.detail || '删除失败')
+  }
+}
 
 function onAvatarChange(e: Event) {
   const input = e.target as HTMLInputElement
