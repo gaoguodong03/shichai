@@ -1750,7 +1750,13 @@ const groupMemberNames = computed(() => {
   return d.dha_ids.map((id) => d.dha_map![id]?.name || id).join('、')
 })
 
-type ShortcutPreset = { id: string; name: string; dha_ids: string[] }
+type ShortcutPreset = {
+  id: string
+  name: string
+  dha_ids: string[]
+  description?: string
+  discussion_goal_example?: string
+}
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
 function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
@@ -1766,7 +1772,13 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
       : []
     if (!id || !name || !dhaIds.length || seen.has(id)) continue
     seen.add(id)
-    out.push({ id, name, dha_ids: dhaIds })
+    out.push({
+      id,
+      name,
+      dha_ids: dhaIds,
+      description: String(raw?.description || '').trim(),
+      discussion_goal_example: String(raw?.discussion_goal_example || '').trim(),
+    })
   }
   return out
 }
@@ -1820,7 +1832,13 @@ async function loadShortcutPresets() {
   }
 }
 function saveShortcutPresets() {
-  const payload = shortcutPresets.value.map((p) => ({ id: p.id, name: p.name, dha_ids: p.dha_ids }))
+  const payload = shortcutPresets.value.map((p) => ({
+    id: p.id,
+    name: p.name,
+    dha_ids: p.dha_ids,
+    description: p.description || '',
+    discussion_goal_example: p.discussion_goal_example || '',
+  }))
   try {
     localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(payload))
   } catch {}
@@ -1850,10 +1868,15 @@ function createShortcutPreset() {
   const ids = Array.from(new Set(newShortcutDhaIds.value)).filter(Boolean)
   if (!name || !ids.length) return
   if (editingShortcutId.value) {
-    shortcutPresets.value = shortcutPresets.value.map((p) => (p.id === editingShortcutId.value ? { ...p, name, dha_ids: ids } : p))
+    shortcutPresets.value = shortcutPresets.value.map((p) =>
+      p.id === editingShortcutId.value ? { ...p, name, dha_ids: ids } : p,
+    )
   } else {
     const id = `sc-${Date.now()}`
-    shortcutPresets.value = [{ id, name, dha_ids: ids }, ...shortcutPresets.value]
+    shortcutPresets.value = [
+      { id, name, dha_ids: ids, description: '', discussion_goal_example: '' },
+      ...shortcutPresets.value,
+    ]
   }
   editingShortcutId.value = ''
   newShortcutName.value = ''
@@ -1878,9 +1901,16 @@ async function applyShortcutPreset(id: string) {
   if (!detail) return
   const p = shortcutPresets.value.find((x) => x.id === id)
   if (!p) return
+  const tryFillDiscussionGoal = () => {
+    const goal = (p.discussion_goal_example || '').trim()
+    if (!goal) return
+    if ((groupDiscussionGoal.value || '').trim()) return
+    groupDiscussionGoal.value = goal
+  }
   const inGroup = new Set(detail.dha_ids || [])
   const toInvite = p.dha_ids.filter((x) => x && !inGroup.has(x))
   if (!toInvite.length) {
+    tryFillDiscussionGoal()
     showShortcutEditor.value = false
     showShortcutEditorModal.value = false
     return
@@ -1895,6 +1925,7 @@ async function applyShortcutPreset(id: string) {
     if ((j as { status?: string }).status === 'ok') {
       // 显式保存快捷按钮配置，避免用户误以为“加入后未保存”
       saveShortcutPresets()
+      tryFillDiscussionGoal()
       showShortcutEditor.value = false
       showShortcutEditorModal.value = false
       emit('dha-added')

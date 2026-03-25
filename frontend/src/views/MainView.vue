@@ -565,6 +565,15 @@
                       placeholder="请输入场景描述"
                     />
                   </div>
+                  <div>
+                    <div class="text-xs text-muted mb-1">讨论目标示例</div>
+                    <textarea
+                      v-model="scenarioDraft.discussion_goal_example"
+                      rows="4"
+                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
+                      placeholder="应用场景后可直接发送的示例提示词"
+                    />
+                  </div>
                 </div>
               </div>
               <div class="rounded-xl border border-input-border bg-panel p-4">
@@ -763,6 +772,7 @@ type ScenarioDraft = {
   name: string
   dha_ids: string[]
   description: string
+  discussion_goal_example: string
 }
 const scenarioPresets = ref<ScenarioPreset[]>([])
 const scenarioLoading = ref(false)
@@ -774,6 +784,7 @@ const scenarioDraft = ref<ScenarioDraft>({
   name: '',
   dha_ids: [],
   description: '',
+  discussion_goal_example: '',
 })
 const filteredScenarioPresets = computed(() => {
   const q = (scenarioSearch.value || '').trim().toLowerCase()
@@ -1050,7 +1061,7 @@ function dhaDisplayName(dhaId: string): string {
 function syncScenarioDraftFromSelected() {
   const s = selectedScenarioPreset.value
   if (!s) {
-    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '' }
+    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '', discussion_goal_example: '' }
     return
   }
   scenarioDraft.value = {
@@ -1058,6 +1069,7 @@ function syncScenarioDraftFromSelected() {
     name: s.name || '',
     dha_ids: [...(s.dha_ids || [])],
     description: s.description || '',
+    discussion_goal_example: s.discussion_goal_example || '',
   }
 }
 
@@ -1140,6 +1152,7 @@ async function saveScenarioPreset() {
             ...p,
             name,
             description: scenarioDraft.value.description || '',
+            discussion_goal_example: scenarioDraft.value.discussion_goal_example || '',
             dha_ids: dhaIds,
           }
         : p,

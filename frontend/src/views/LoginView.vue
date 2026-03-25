@@ -11,7 +11,7 @@
           class="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent-subtle/80 to-page/30 md:rounded-l-xl rounded-t-xl md:rounded-t-none"
         />
         <img
-          :src="loginHeroUrl"
+          :src="landingImageUrl"
           alt="书童四九"
           class="relative z-[1] w-full max-w-[min(100%,380px)] select-none drop-shadow-sm"
           width="480"
@@ -28,20 +28,20 @@
               <img
                 :src="logoUrl"
                 alt="书童四九 logo"
-                class="h-11 w-11 rounded-full object-cover"
-                width="44"
-                height="44"
+                class="h-16 w-16 rounded-full object-cover"
+                width="64"
+                height="64"
                 decoding="async"
               />
             </div>
             <p class="mt-5 text-base font-semibold text-primary">
-              {{ isRegister ? '创建账户' : '登录' }}
+              书童四九
             </p>
           </div>
 
-          <form @submit.prevent="isRegister ? onRegister() : onSubmit()" class="space-y-4">
+          <form @submit.prevent="onSubmit()" class="space-y-4">
             <div>
-              <label for="username" class="mb-1 block text-sm font-medium text-primary">用户名</label>
+              <label for="username" class="mb-1 block text-sm font-medium text-primary">账号</label>
               <input
                 id="username"
                 v-model="username"
@@ -49,7 +49,7 @@
                 required
                 autocomplete="username"
                 class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
-                placeholder="请输入用户名"
+                placeholder="请输入手机号或电子邮箱"
               />
             </div>
             <div>
@@ -60,7 +60,7 @@
                 type="password"
                 autocomplete="current-password"
                 class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
-                :placeholder="isRegister ? '请设置密码' : '请输入密码'"
+                placeholder="请输入密码"
               />
             </div>
             <div v-if="isRegister">
@@ -83,7 +83,7 @@
               {{ loading ? (isRegister ? '创建中…' : '验证中…') : (isRegister ? '创建账户' : '登录') }}
             </button>
           </form>
-          <p class="mt-6 text-center text-sm text-muted">
+          <p class="mt-6 text-center text-sm text-muted hidden">
             <button
               type="button"
               class="text-accent hover:opacity-80 hover:underline"
@@ -101,7 +101,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import loginHeroUrl from '@/assets/login-hero.svg'
+import landingImageUrl from '@/assets/landing.png'
 import logoUrl from '@/assets/49logo.png'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
@@ -133,7 +133,7 @@ async function onSubmit() {
   const name = username.value.trim()
   const pwd = password.value
   if (!name) {
-    error.value = '请输入用户名'
+    error.value = '请输入账号'
     return
   }
   loading.value = true
@@ -169,7 +169,7 @@ async function onRegister() {
   const pwd = password.value
   const confirm = passwordConfirm.value
   if (!name) {
-    error.value = '请输入用户名'
+    error.value = '请输入账号'
     return
   }
   if (!pwd) {
