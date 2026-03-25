@@ -34,7 +34,7 @@ function applyAccent(accent: AccentPreference) {
 function applyPreset(preset: ThemePreset) {
   const root = document.documentElement
   PRESET_CLASSES.forEach((c) => root.classList.remove(`theme-${c}`))
-  if (preset !== 'default') root.classList.add(`theme-${preset}`)
+  root.classList.add(`theme-${preset}`)
 }
 
 export function useTheme() {

@@ -88,5 +88,35 @@
     "joined_dha_ids": [
       "dha-paper-strategist"
     ]
+  },
+  {
+    "message_id": "msg-03945257",
+    "role": "host",
+    "content": "已邀请“人工智能学伴”加入会话",
+    "timestamp": "2026-03-25T14:28:29.204042+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-seminar-ai-peer"
+    ]
+  },
+  {
+    "message_id": "msg-bf64da84",
+    "role": "host",
+    "content": "已邀请“研讨教师”加入会话",
+    "timestamp": "2026-03-25T14:28:29.204042+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-seminar-teacher-advisor"
+    ]
+  },
+  {
+    "message_id": "msg-0d947513",
+    "role": "host",
+    "content": "已邀请“研讨教师总结”加入会话",
+    "timestamp": "2026-03-25T14:28:29.204042+00:00",
+    "event_type": "member_joined",
+    "joined_dha_ids": [
+      "dha-seminar-teacher-review"
+    ]
   }
 ]

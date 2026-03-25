@@ -739,6 +739,7 @@ const USER_STORAGE_KEY = 'dha_user'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
 function logout() {
+  if (!window.confirm('确定要登出吗？')) return
   localStorage.removeItem(LOGIN_STORAGE_KEY)
   localStorage.removeItem(USER_STORAGE_KEY)
   localStorage.removeItem(TOKEN_STORAGE_KEY)
@@ -752,8 +753,8 @@ const resourceChildren: { id: ResourceSubModule; label: string }[] = [
   { id: 'scenario', label: '场景' },
   { id: 'dha', label: '专家' },
   { id: 'skill', label: '技能' },
-  { id: 'mcp', label: 'MCP' },
-  { id: 'llm', label: '大模型' },
+  { id: 'mcp', label: '工具' },
+  { id: 'llm', label: '模型' },
   { id: 'files', label: '文件' },
 ]
 

@@ -88,7 +88,7 @@
                   </div>
                 </div>
                 <div class="group-chat-meta-section group-chat-meta-section-topics">
-                  <div class="group-chat-meta-label">主题（专家发言）</div>
+                  <div class="group-chat-meta-label">专家发言</div>
                   <div v-if="!archiveItems.length" class="group-chat-meta-empty">暂无专家发言</div>
                   <div v-else class="group-chat-meta-topic-list">
                     <button
@@ -421,13 +421,8 @@
                       <span v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'" class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }">
                         {{ dhaAvatarChar(effectiveNextSpeaker) }}
                       </span>
-                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-at-host-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                          <line x1="12" y1="19" x2="12" y2="23"/>
-                          <line x1="8" y1="23" x2="16" y2="23"/>
-                        </svg>
+                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host" aria-hidden="true">
+                        {{ (hostDisplayName || DEFAULT_HOST_DISPLAY_NAME || '主').trim().slice(0, 1) }}
                       </span>
                       <span class="group-chat-next-speaker-name">
                         {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
@@ -572,41 +567,24 @@
                   <div v-if="showShortcutEditorModal" class="group-chat-modal-overlay" @click.self="showShortcutEditorModal = false">
                     <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
-                        <span class="group-chat-modal-title">协作组合</span>
+                        <span class="group-chat-modal-title">场景</span>
                         <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
                       </div>
                       <div class="group-chat-modal-body">
                         <ul v-if="shortcutPresets.length" class="group-chat-members-list">
                           <li v-for="p in shortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
-                            <button type="button" class="group-chat-shortcut-pill" @click="applyShortcutPreset(p.id)">
-                              <span class="truncate">{{ p.name }}</span>
-                              <span class="group-chat-shortcut-meta">{{ p.dha_ids.length }} 位</span>
+                            <button
+                              type="button"
+                              class="group-chat-shortcut-pill"
+                              :title="`${p.name}：${shortcutPresetExpertNamesText(p)}`"
+                              @click="applyShortcutPreset(p.id)"
+                            >
+                              <span class="group-chat-shortcut-name">{{ p.name }}</span>
+                              <span class="group-chat-shortcut-experts">{{ shortcutPresetExpertNamesText(p) }}</span>
                             </button>
-                            <button type="button" class="group-chat-member-delete-icon" title="修改协作组合" @click.stop="startEditShortcutPreset(p)">✎</button>
-                            <button type="button" class="group-chat-member-delete-icon" title="删除协作组合" @click.stop="deleteShortcutPreset(p.id)">×</button>
                           </li>
                         </ul>
-                        <p v-else class="group-chat-add-member-empty">暂无协作组合</p>
-                        <div class="group-chat-shortcut-divider" />
-                        <p class="group-chat-members-dropdown-title">{{ editingShortcutId ? '修改协作组合' : '新建协作组合' }}</p>
-                        <input v-model="newShortcutName" class="group-chat-shortcut-name-input" placeholder="协作组合名称（如：调研组 / 写作组）" />
-                        <p class="group-chat-add-member-empty">邀请加入的专家</p>
-                        <input
-                          v-model="shortcutExpertSearch"
-                          class="group-chat-shortcut-name-input"
-                          placeholder="搜索专家（按名称或ID）"
-                        />
-                        <ul v-if="filteredShortcutExperts.length" class="group-chat-members-list">
-                          <li v-for="d in filteredShortcutExperts" :key="d.dha_id" class="group-chat-members-item group-chat-members-item-clickable group-chat-shortcut-checkbox-row" @click="toggleNewShortcutDha(d.dha_id)">
-                            <input type="checkbox" :checked="newShortcutDhaIds.includes(d.dha_id)" @change.prevent />
-                            <span class="truncate">{{ d.name || d.dha_id }}</span>
-                          </li>
-                        </ul>
-                        <p v-else class="group-chat-add-member-empty">未找到匹配专家</p>
-                        <div class="group-chat-shortcut-actions">
-                          <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="createShortcutPreset">{{ editingShortcutId ? '更新' : '保存' }}</button>
-                          <button v-if="editingShortcutId" type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="cancelEditShortcutPreset">取消修改</button>
-                        </div>
+                        <p v-else class="group-chat-add-member-empty">暂无场景</p>
                       </div>
                     </div>
                   </div>
@@ -630,13 +608,8 @@
                               >
                                 {{ dhaAvatarChar(id) }}
                               </span>
-                              <span v-else class="group-chat-at-host-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                                  <line x1="12" y1="19" x2="12" y2="23"/>
-                                  <line x1="8" y1="23" x2="16" y2="23"/>
-                                </svg>
+                              <span v-else class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host" aria-hidden="true">
+                                {{ (hostDisplayName || DEFAULT_HOST_DISPLAY_NAME || '主').trim().slice(0, 1) }}
                               </span>
                               <span class="group-chat-member-skill-name">
                                 <span class="group-chat-member-skill-name-text">
@@ -1901,15 +1874,21 @@ async function applyShortcutPreset(id: string) {
   if (!detail) return
   const p = shortcutPresets.value.find((x) => x.id === id)
   if (!p) return
+  const confirmed = window.confirm('切换场景将会移除原场景中的专家，并加入新场景的专家。请确认是否继续？')
+  if (!confirmed) return
   const tryFillDiscussionGoal = () => {
     const goal = (p.discussion_goal_example || '').trim()
     if (!goal) return
     if ((groupDiscussionGoal.value || '').trim()) return
     groupDiscussionGoal.value = goal
   }
-  const inGroup = new Set(detail.dha_ids || [])
-  const toInvite = p.dha_ids.filter((x) => x && !inGroup.has(x))
-  if (!toInvite.length) {
+  const currentExperts = Array.from(new Set((detail.dha_ids || []).filter((x) => !!x)))
+  const targetExperts = Array.from(new Set((p.dha_ids || []).filter((x) => !!x)))
+  const targetSet = new Set(targetExperts)
+  const currentSet = new Set(currentExperts)
+  const toRemove = currentExperts.filter((x) => !targetSet.has(x))
+  const toInvite = targetExperts.filter((x) => !currentSet.has(x))
+  if (!toRemove.length && !toInvite.length) {
     tryFillDiscussionGoal()
     showShortcutEditor.value = false
     showShortcutEditorModal.value = false
@@ -1919,7 +1898,7 @@ async function applyShortcutPreset(id: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_expert_ids: toInvite }),
+      body: JSON.stringify({ remove_expert_ids: toRemove, add_expert_ids: toInvite }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -2085,6 +2064,14 @@ const suggestedAddDhaName = computed(() => {
   const names = ids.map((id) => (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || id)
   return names.join('、')
 })
+
+function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
+  const map = groupDetail.value?.dha_map || {}
+  const names = (preset.dha_ids || [])
+    .map((id) => (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || map[id]?.name || id)
+    .filter(Boolean)
+  return names.join('、')
+}
 
 async function loadHostDisplayName() {
   try {
@@ -3488,6 +3475,7 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-top: 0.375rem;
 }
 .group-chat-meta-label {
   font-size: 0.6875rem;
@@ -4417,10 +4405,18 @@ defineExpose({ refresh: loadGroupDetail })
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
-.group-chat-shortcut-meta {
-  margin-left: auto;
+.group-chat-shortcut-name {
+  flex-shrink: 0;
+}
+.group-chat-shortcut-experts {
+  min-width: 0;
+  flex: 1;
   font-size: 0.75rem;
+  font-weight: 400;
   color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .group-chat-shortcut-editor-dropdown {
   width: 360px;
@@ -4452,6 +4448,7 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  text-align: left;
   background: transparent;
   border: none;
   color: inherit;
@@ -4658,21 +4655,6 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-at-item-selected {
   background: var(--color-list-hover);
   border-radius: 6px;
-}
-.group-chat-at-host-icon {
-  width: 1rem;
-  height: 1rem;
-  line-height: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: currentColor;
-  opacity: 0.9;
-}
-.group-chat-at-host-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
 }
 .group-chat-at-special-icon {
   border: 1px solid var(--color-border-light);
