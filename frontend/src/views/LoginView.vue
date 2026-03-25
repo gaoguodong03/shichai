@@ -5,23 +5,23 @@
     >
       <!-- 左栏：书童四九主题插画 -->
       <div
-        class="relative flex min-h-[200px] shrink-0 flex-col items-center justify-center bg-accent-subtle md:min-h-0 md:w-[46%] md:rounded-l-xl md:rounded-r-none rounded-t-xl md:rounded-t-none p-8 md:p-10"
+        class="relative flex min-h-[280px] shrink-0 flex-col items-center justify-center bg-accent-subtle md:min-h-0 md:w-[60%] md:rounded-l-xl md:rounded-r-none rounded-t-xl md:rounded-t-none p-8 md:p-10"
       >
         <div
-          class="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent-subtle/80 to-page/30 md:rounded-l-xl rounded-t-xl md:rounded-t-none"
+          class="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent-subtle/55 to-page/18 md:rounded-l-xl rounded-t-xl md:rounded-t-none"
         />
         <img
           :src="landingImageUrl"
           alt="书童四九"
-          class="relative z-[1] w-full max-w-[min(100%,380px)] select-none drop-shadow-sm"
-          width="480"
-          height="360"
+          class="relative z-[1] w-full max-w-[min(100%,500px)] select-none"
+          width="630"
+          height="490"
           decoding="async"
         />
       </div>
 
       <!-- 右栏：表单 -->
-      <div class="flex flex-1 flex-col justify-center px-8 py-10 md:px-12 md:py-12">
+      <div class="flex flex-col justify-center px-8 py-10 md:w-[40%] md:flex-none md:px-10 md:py-12">
         <div class="mx-auto w-full max-w-sm">
           <div class="mb-8 flex flex-col items-center text-center">
             <div class="mb-4 flex items-center justify-center">
@@ -37,6 +37,9 @@
             <h1 class="mt-5 text-xl font-semibold text-primary">
               书童四九
             </h1>
+            <p class="mt-1 text-sm text-muted">
+              你的AI专家助理
+            </p>
           </div>
 
           <form @submit.prevent="onSubmit()" class="space-y-4">
