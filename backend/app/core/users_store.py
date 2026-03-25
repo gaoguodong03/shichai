@@ -65,3 +65,26 @@ def ensure_user_profile(username: str, created_at: str = "") -> UserProfile:
     _save_all(users)
     return profile
 
+
+def rename_user_profile(old_username: str, new_username: str) -> UserProfile:
+    """重命名 users.json 中的用户键，保留 display_name/created_at。"""
+    old_name = (old_username or "").strip()
+    new_name = (new_username or "").strip()
+    if not old_name or not new_name:
+        raise ValueError("username is required")
+    users = _load_all()
+    if new_name in users:
+        raise ValueError("new username already exists")
+    old_profile = users.pop(old_name, None)
+    if old_profile is None:
+        profile = UserProfile(username=new_name, display_name=new_name, created_at="")
+    else:
+        profile = UserProfile(
+            username=new_name,
+            display_name=new_name,
+            created_at=old_profile.created_at,
+        )
+    users[new_name] = profile
+    _save_all(users)
+    return profile
+

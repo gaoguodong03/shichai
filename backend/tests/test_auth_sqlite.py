@@ -46,7 +46,7 @@ def _auth_login(client: TestClient, username: str, password: str):
 def test_sqlite_register_login_and_password_not_plaintext(env_and_client):
     client, db_path = env_and_client
 
-    username = "alice_sqlite"
+    username = "alice_sqlite@example.com"
     password = "pw-alice-123"
 
     _auth_register(client, username=username, password=password)
@@ -73,8 +73,8 @@ def test_multiuser_isolation_by_token_headers(env_and_client):
 
     ws_id = "ws-shared"
 
-    alice = "alice_user"
-    bob = "bob_user"
+    alice = "alice_user@example.com"
+    bob = "bob_user@example.com"
     pw_a = "pw-a"
     pw_b = "pw-b"
 
@@ -116,4 +116,81 @@ def test_multiuser_isolation_by_token_headers(env_and_client):
     entries_a = r.json()["data"]["entries"]
     names_a = sorted([e["name"] for e in entries_a])
     assert names_a == ["a.txt"]
+
+
+def test_change_account_and_password(env_and_client):
+    client, _ = env_and_client
+
+    old_username = "18812345678"
+    old_password = "old-pass-123"
+    new_username = "new-user@example.com"
+    new_password = "new-pass-456"
+
+    _auth_register(client, username=old_username, password=old_password)
+    login_data = _auth_login(client, username=old_username, password=old_password)
+    token = login_data["access_token"]
+
+    # 先写入一份用户数据，后续验证改账号后目录迁移生效
+    ws_id = "ws-account-change"
+    headers = {"Authorization": f"Bearer {token}"}
+    r = client.post(
+        f"/api/workspaces/{ws_id}/files",
+        headers=headers,
+        json={"filename": "keep.txt", "content": "before-rename"},
+    )
+    assert r.status_code == 200
+
+    # 修改账号
+    r = client.put(
+        "/api/auth/account",
+        headers=headers,
+        json={"new_username": new_username, "current_password": old_password},
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["status"] == "ok"
+    assert j["data"]["username"] == new_username
+    token2 = j["data"]["access_token"]
+    headers2 = {"Authorization": f"Bearer {token2}"}
+
+    # 旧账号应不可登录，新账号可登录
+    r = client.post("/api/auth/login", json={"username": old_username, "password": old_password})
+    assert r.status_code == 401
+    r = client.post("/api/auth/login", json={"username": new_username, "password": old_password})
+    assert r.status_code == 200
+
+    # 改账号后仍可访问之前工作区文件（说明用户目录已迁移）
+    r = client.get(f"/api/workspaces/{ws_id}/files", headers=headers2)
+    assert r.status_code == 200
+    entries = r.json()["data"]["entries"]
+    assert sorted([e["name"] for e in entries]) == ["keep.txt"]
+
+    # 修改密码
+    r = client.put(
+        "/api/auth/password",
+        headers=headers2,
+        json={"current_password": old_password, "new_password": new_password},
+    )
+    assert r.status_code == 200
+    j = r.json()
+    assert j["status"] == "ok"
+
+    # 旧密码失效，新密码可登录
+    r = client.post("/api/auth/login", json={"username": new_username, "password": old_password})
+    assert r.status_code == 401
+    r = client.post("/api/auth/login", json={"username": new_username, "password": new_password})
+    assert r.status_code == 200
+
+
+def test_reject_invalid_account_format(env_and_client):
+    client, _ = env_and_client
+    invalid_username = "invalid_username"
+
+    r = client.post("/api/auth/register", json={"username": invalid_username, "password": "pw-123456"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "账号格式不正确，请输入手机号或电子邮箱"
+
+    r = client.post("/api/auth/login", json={"username": invalid_username, "password": "pw-123456"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "账号格式不正确，请输入手机号或电子邮箱"
 

@@ -28,15 +28,15 @@
               <img
                 :src="logoUrl"
                 alt="书童四九 logo"
-                class="h-16 w-16 rounded-full object-cover"
-                width="64"
-                height="64"
+                class="h-20 w-20 rounded-full object-cover"
+                width="80"
+                height="80"
                 decoding="async"
               />
             </div>
-            <p class="mt-5 text-base font-semibold text-primary">
+            <h1 class="mt-5 text-xl font-semibold text-primary">
               书童四九
-            </p>
+            </h1>
           </div>
 
           <form @submit.prevent="onSubmit()" class="space-y-4">
@@ -115,6 +115,12 @@ const passwordConfirm = ref('')
 const error = ref('')
 const loading = ref(false)
 const isRegister = ref(false)
+const PHONE_REGEX = /^1[3-9]\d{9}$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function isValidAccount(value: string): boolean {
+  return PHONE_REGEX.test(value) || EMAIL_REGEX.test(value)
+}
 
 function toggleMode() {
   isRegister.value = !isRegister.value
@@ -134,6 +140,10 @@ async function onSubmit() {
   const pwd = password.value
   if (!name) {
     error.value = '请输入账号'
+    return
+  }
+  if (!isValidAccount(name)) {
+    error.value = '账号格式不正确，请输入手机号或电子邮箱'
     return
   }
   loading.value = true
@@ -170,6 +180,10 @@ async function onRegister() {
   const confirm = passwordConfirm.value
   if (!name) {
     error.value = '请输入账号'
+    return
+  }
+  if (!isValidAccount(name)) {
+    error.value = '账号格式不正确，请输入手机号或电子邮箱'
     return
   }
   if (!pwd) {

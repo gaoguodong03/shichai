@@ -697,6 +697,7 @@
         <AppSettingsView v-if="selectedId === 'app'" />
         <ThemeSettingsView v-else-if="selectedId === 'theme'" />
         <UserPreferenceSettingsView v-else-if="selectedId === 'user'" />
+        <AccountSecuritySettingsView v-else-if="selectedId === 'account-security'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择设置项</p>
         </div>
@@ -721,6 +722,7 @@ import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
 import ThemeSettingsView from './ThemeSettingsView.vue'
 import UserPreferenceSettingsView from './UserPreferenceSettingsView.vue'
+import AccountSecuritySettingsView from './AccountSecuritySettingsView.vue'
 import LLMSettingsView from './LLMSettingsView.vue'
 import DHAView from './DHAView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
@@ -903,6 +905,7 @@ const settingsCategories = [
   { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
   { id: 'user', label: '用户喜好' },
+  { id: 'account-security', label: '账号与安全' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)

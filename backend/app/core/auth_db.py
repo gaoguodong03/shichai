@@ -187,3 +187,41 @@ def user_exists(username: str) -> bool:
         cur = conn.execute("SELECT 1 FROM users WHERE username = ?", (username.strip(),))
         return cur.fetchone() is not None
 
+
+def update_password(*, username: str, new_password: str) -> None:
+    """更新用户密码（仅写入新 salt/hash，不做旧密码校验）。"""
+    init_auth_db()
+    target = (username or "").strip()
+    if not target:
+        raise ValueError("username is required")
+    salt_b64, pw_hash_hex = hash_password(new_password)
+    with _get_sqlite_conn(get_auth_db_path()) as conn:
+        cur = conn.execute("SELECT 1 FROM users WHERE username = ?", (target,))
+        if cur.fetchone() is None:
+            raise ValueError("username not found")
+        conn.execute(
+            "UPDATE users SET salt_b64 = ?, password_hash = ? WHERE username = ?",
+            (salt_b64, pw_hash_hex, target),
+        )
+        conn.commit()
+
+
+def rename_user(*, old_username: str, new_username: str) -> None:
+    """重命名账号（更改 users 主键 username）。"""
+    init_auth_db()
+    old_name = (old_username or "").strip()
+    new_name = (new_username or "").strip()
+    if not old_name or not new_name:
+        raise ValueError("username is required")
+    if old_name == new_name:
+        return
+    with _get_sqlite_conn(get_auth_db_path()) as conn:
+        cur_old = conn.execute("SELECT 1 FROM users WHERE username = ?", (old_name,))
+        if cur_old.fetchone() is None:
+            raise ValueError("old username not found")
+        cur_new = conn.execute("SELECT 1 FROM users WHERE username = ?", (new_name,))
+        if cur_new.fetchone() is not None:
+            raise ValueError("new username already exists")
+        conn.execute("UPDATE users SET username = ? WHERE username = ?", (new_name, old_name))
+        conn.commit()
+
