@@ -99,6 +99,51 @@ def _normalize_agent_ids(
     return list(expert_ids or agent_ids or legacy_dha_ids or [])
 
 
+def _name_key(name: Any) -> str:
+    return str(name or "").strip().lower()
+
+
+def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Build id->preferred-id mapping; prefer agent-* within same expert name."""
+    name_to_ids: Dict[str, List[str]] = {}
+    for d in instances or []:
+        did = str(d.get("dha_id") or "").strip()
+        if not did:
+            continue
+        key = _name_key(d.get("name") or did)
+        name_to_ids.setdefault(key, [])
+        if did not in name_to_ids[key]:
+            name_to_ids[key].append(did)
+    name_to_preferred: Dict[str, str] = {}
+    for key, ids in name_to_ids.items():
+        preferred = next((x for x in ids if x.startswith("agent-")), ids[0])
+        name_to_preferred[key] = preferred
+    id_to_preferred: Dict[str, str] = {}
+    for d in instances or []:
+        did = str(d.get("dha_id") or "").strip()
+        if not did:
+            continue
+        key = _name_key(d.get("name") or did)
+        id_to_preferred[did] = name_to_preferred.get(key, did)
+    return id_to_preferred
+
+
+def _normalize_to_preferred_agent_ids(
+    ids: List[str],
+    *,
+    id_to_preferred: Dict[str, str],
+) -> List[str]:
+    out: List[str] = []
+    for raw in ids or []:
+        sid = str(raw or "").strip()
+        if not sid:
+            continue
+        preferred = id_to_preferred.get(sid, sid)
+        if preferred not in out:
+            out.append(preferred)
+    return out
+
+
 def _build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
     """统一会话输出结构：新字段优先，兼容旧字段。"""
     ids = list(meta_item.get("dha_ids", []))
@@ -839,6 +884,23 @@ def _select_next_speaker_without_host(
     return None
 
 
+def _prioritize_suggested_add_ids(
+    suggested_ids: List[str],
+    *,
+    explicit_requested_dha_ids: List[str],
+    recruitable_ids: set[str],
+    max_n: int = 3,
+) -> List[str]:
+    priority = [x for x in (explicit_requested_dha_ids or []) if x in recruitable_ids]
+    merged: List[str] = []
+    for sid in priority + list(suggested_ids or []):
+        if sid in recruitable_ids and sid not in merged:
+            merged.append(sid)
+        if len(merged) >= max_n:
+            break
+    return merged
+
+
 def _heuristic_recommend_dhas(
     discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
 ) -> List[str]:
@@ -893,14 +955,22 @@ def _extract_explicit_requested_dha_ids(user_text: str, all_instances: List[Dict
     if not text:
         return []
     out: List[str] = []
+    writing_intent = any(k in text for k in ("写", "撰写", "报告", "文案", "创作", "改写", "润色", "文本"))
     for d in all_instances or []:
         did = (d.get("dha_id") or "").strip()
         if not did:
             continue
         name = str(d.get("name") or "").strip()
+        role = str(d.get("role") or "").strip()
+        skills = " ".join([str(x) for x in (d.get("skill_ids") or [])])
+        hay = f"{did} {name} {role} {skills}".lower()
         did_hit = did.lower() in text
         name_hit = bool(name) and (name.lower() in text)
-        if did_hit or name_hit:
+        intent_hit = (
+            writing_intent
+            and any(k in hay for k in ("文书", "写作", "文案", "编辑", "文本", "报告", "coauthor", "blog-write"))
+        )
+        if did_hit or name_hit or intent_hit:
             out.append(did)
     return list(dict.fromkeys(out))
 
@@ -1226,12 +1296,14 @@ def create_session_internal(
 ) -> Dict[str, Any]:
     """创建一条会话（主持人必在，dha_ids 可为空）。返回 meta 条目（含 id）。"""
     instances = load_dha_instances()
+    id_to_preferred = _build_preferred_agent_id_map(instances)
     valid_ids = {d.get("dha_id") for d in instances}
     resolved_ids = _normalize_agent_ids(
         legacy_dha_ids=dha_ids,
         agent_ids=agent_ids,
         expert_ids=expert_ids,
     )
+    resolved_ids = _normalize_to_preferred_agent_ids(resolved_ids, id_to_preferred=id_to_preferred)
     for did in resolved_ids:
         if did not in valid_ids:
             raise HTTPException(status_code=400, detail=f"专家 {did} 不存在")
@@ -1452,25 +1524,33 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     )
     if add_ids or remove_ids:
         instances = load_dha_instances()
+        id_to_preferred = _build_preferred_agent_id_map(instances)
         id_to_name = {
             d.get("dha_id"): (d.get("name") or d.get("dha_id"))
             for d in instances
             if d.get("dha_id")
         }
         valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
-        current = set(meta[group_session_id].get("dha_ids", []))
+        current = set(
+            _normalize_to_preferred_agent_ids(
+                list(meta[group_session_id].get("dha_ids", [])),
+                id_to_preferred=id_to_preferred,
+            )
+        )
+        add_ids_norm = _normalize_to_preferred_agent_ids(list(add_ids or []), id_to_preferred=id_to_preferred)
+        remove_ids_norm = _normalize_to_preferred_agent_ids(list(remove_ids or []), id_to_preferred=id_to_preferred)
         before_ids = set(current)
         newly_added_ids: List[str] = []
-        if add_ids:
-            for did in add_ids:
+        if add_ids_norm:
+            for did in add_ids_norm:
                 if did not in valid_ids:
                     raise HTTPException(status_code=400, detail=f"专家 {did} 不存在")
                 if did not in current:
                     newly_added_ids.append(did)
                 current.add(did)
             current.discard(CHAT_DHA_ID)
-        if remove_ids:
-            for did in remove_ids:
+        if remove_ids_norm:
+            for did in remove_ids_norm:
                 current.discard(did)
         meta[group_session_id]["dha_ids"] = list(current)
         # 仅在确实新增成员时，写入主持人提示消息（一次一条）
@@ -1548,10 +1628,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     dha_ids = m.get("dha_ids", [])
     leader_dha_id = m.get("leader_dha_id", "")
     instances = load_dha_instances()
+    id_to_preferred = _build_preferred_agent_id_map(instances)
+    preferred_instances = [d for d in instances if str(d.get("dha_id") or "").strip() and id_to_preferred.get(str(d.get("dha_id") or "").strip(), str(d.get("dha_id") or "").strip()) == str(d.get("dha_id") or "").strip()]
     dha_map = {d.get("dha_id"): d for d in instances}
-    dha_list = [d for d in instances if d.get("dha_id") in dha_ids]
+    dha_ids = _normalize_to_preferred_agent_ids(list(dha_ids or []), id_to_preferred=id_to_preferred)
+    dha_list = [d for d in preferred_instances if d.get("dha_id") in dha_ids]
     # 当前不在群内的专家，主持人可在「完成不了工作」时建议邀请
-    available_to_add = [d for d in instances if d.get("dha_id") and d.get("dha_id") not in dha_ids and d.get("dha_id") != CHAT_DHA_ID]
+    available_to_add = [
+        d for d in preferred_instances
+        if d.get("dha_id") and d.get("dha_id") not in dha_ids and d.get("dha_id") != CHAT_DHA_ID
+    ]
 
     messages = _load_group_history(group_session_id)
     app_settings = load_app_settings()
@@ -1561,7 +1647,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
     pending_owner_dha_id = (m.get("pending_owner_dha_id") or "").strip().lower()
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
-    explicit_requested_dha_ids = _extract_explicit_requested_dha_ids(request.message or "", instances) if (request.message and request.message.strip()) else []
+    explicit_requested_dha_ids = _extract_explicit_requested_dha_ids(request.message or "", preferred_instances) if (request.message and request.message.strip()) else []
+    explicit_requested_dha_ids = _normalize_to_preferred_agent_ids(explicit_requested_dha_ids, id_to_preferred=id_to_preferred)
     auto_resume_owner: Optional[str] = None
     host_takeover_requested = _user_requests_host_takeover(
         request.message or "",
@@ -1727,9 +1814,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             # 0 个 DHA：主持人为先，主持人回复用户并推荐若干 DHA 加入（不再使用 Chat）
             if len(dha_ids) == 0:
                 recent = _messages_to_context(messages)
-                all_instances = [d for d in instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
+                all_instances = [d for d in preferred_instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
                 picked: List[str] = []
-                valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
+                valid_ids = {d.get("dha_id") for d in all_instances if d.get("dha_id")}
                 if explicit_requested_dha_ids:
                     picked = list(dict.fromkeys([x for x in explicit_requested_dha_ids if x in valid_ids]))[:3]
                 else:
@@ -1879,6 +1966,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 if not suggested_add and isinstance(announcement, str):
                     suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                suggested_add = _prioritize_suggested_add_ids(
+                    suggested_add,
+                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    recruitable_ids=recruitable_ids,
+                    max_n=3,
+                )
                 if suggested in dha_ids and not suggested_add:
                     next_dha = dha_map.get(suggested)
                     next_name = (next_dha.get("name") or suggested) if next_dha else suggested
@@ -1958,6 +2051,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 if not suggested_add and isinstance(announcement, str):
                     suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                suggested_add = _prioritize_suggested_add_ids(
+                    suggested_add,
+                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    recruitable_ids=recruitable_ids,
+                    max_n=3,
+                )
                 # 由主持人/调度明确给出下一位发言人。
                 # 不再根据 task_done 强制让上一位 DHA 连续发言，
                 # 每一小轮都回到主持人决策，再由 decision["next_speaker"] 指定下一位。
@@ -2370,6 +2469,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                     if not suggested_add and isinstance(announcement, str):
                         suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                    suggested_add = _prioritize_suggested_add_ids(
+                        suggested_add,
+                        explicit_requested_dha_ids=explicit_requested_dha_ids,
+                        recruitable_ids=recruitable_ids,
+                        max_n=3,
+                    )
                     if suggested_add:
                         next_speaker_manual = "user"
                     if next_speaker_manual in dha_ids or next_speaker_manual in ("user", "end"):
@@ -2443,6 +2548,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 if not suggested_add and isinstance(announcement, str):
                     suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                suggested_add = _prioritize_suggested_add_ids(
+                    suggested_add,
+                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    recruitable_ids=recruitable_ids,
+                    max_n=3,
+                )
                 # 主持人建议新增成员时：仅给出推荐，等待用户确认邀请
                 if suggested_add:
                     next_speaker = "user"

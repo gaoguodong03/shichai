@@ -3353,8 +3353,8 @@ function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_n
   if (!token) return { override_next_speaker: '', cleaned_goal: raw }
 
   if (token === '主持人' || token === (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME)) {
-    const leader = (detail.leader_dha_id || '').trim()
-    return { override_next_speaker: leader || '', cleaned_goal: rest }
+    // @主持人 用于触发“主持人按需接管”，不做 override，也不从用户输入中移除该标记。
+    return { override_next_speaker: '', cleaned_goal: raw }
   }
   if (token === '下一位') {
     const next = effectiveNextSpeaker.value
