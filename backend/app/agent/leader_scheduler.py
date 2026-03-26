@@ -6,6 +6,13 @@ from typing import List, Dict, Any, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
+from app.agent.orchestrator_state import (
+    DecisionSource,
+    InterruptReason,
+    OrchestrationDecision,
+    OrchestrationPhase,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,23 +69,19 @@ def _build_leader_prompt(
 - 只有在确实无法由任何专家继续推进（必须等待用户提供全新目标或关键信息时），才使用 next_speaker="user"
 
 **输出格式（仅输出 JSON，不要其他文字）：**
-- 当 next_speaker 为某 dha_id 时，必须同时输出 **next_prompt**：给该下一位专家的**详细**提示词。
-- **【重要】每位专家只能看到你本轮给出的这一条 next_prompt**，看不到历史轮次中发给其他专家或该专家的过往提示词。因此 next_prompt 必须「自包含」：与根本任务相关的每一个关键细节（链接、用户原话/偏好、已有结论、文案要点、风格与格式要求等）都要在本条中写清楚，不能依赖「前面某轮已经写过」而省略。
-- 若你判断给定上下文仍不足以执行，请在 next_prompt 中安排下一位专家先做“最小补充动作”（例如先核对 1-2 个关键缺口），而不是泛泛要求重读历史。
-- 须包含：讨论目标 + 与「该专家职责/当前步骤」相关的最近讨论摘要；可适度摘录历史中的关键句子、链接、用户偏好等。若下一位专家负责配图/生成图片/封面：必须写出文案要点、风格要求及从历史中摘录的关键信息。
-- 当 next_speaker 为 "user" 或 "end" 时，next_prompt 可省略或为空。
+- 主持人只负责调度（决定 task_done / next_speaker / suggested_add_dha_ids），不负责给专家写补充指令。
 - 当建议邀请新成员时，输出 suggested_add_dha_ids（dha_id 数组）并 next_speaker="user"。
 
 格式示例：
-{{"task_done": true, "next_speaker": "dha_id或user或end", "reason": "简短理由", "next_prompt": "...", "suggested_add_dha_ids": ["dha_id1"]（可选，仅当需要邀请新成员时）}}
+{{"task_done": true, "next_speaker": "dha_id或user或end", "reason": "简短理由", "suggested_add_dha_ids": ["dha_id1"]（可选，仅当需要邀请新成员时）}}
 
 next_speaker 必须是当前参与者列表中的 dha_id 之一，或 "user" 或 "end"。"""
 
 
 def _single_dha_extra_instruction() -> str:
-    """仅一位专家时的额外说明：主持人可持续指定同一专家并补充 next_prompt，直到出结果再交还用户。"""
+    """仅一位专家时的额外说明：主持人可持续指定同一专家，直到出结果再交还用户。"""
     return """
-**【当前仅有一位专家】** 你可多次指定同一专家（next_speaker 仍为该 dha_id）。每次根据其上一轮回复在 next_prompt 中：提取或补充参数、细化本轮子任务、给出具体指引；直到该专家产出最终结果再设 task_done=true 且 next_speaker="user"。勿在未出结果时过早交还用户。"""
+**【当前仅有一位专家】** 你可多次指定同一专家（next_speaker 仍为该 dha_id）继续完成任务；直到该专家产出最终结果再设 task_done=true 且 next_speaker="user"。勿在未出结果时过早交还用户。"""
 
 
 def _build_leader_prompt_with_single_hint(
@@ -103,8 +106,8 @@ async def leader_decide(
     available_to_add: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    调用领导人 LLM 决定：task_done、next_speaker，并为下一发言人生成精简的 next_prompt。
-    返回 {"task_done", "next_speaker", "reason", "announcement", "next_prompt", "suggested_add_dha_ids"?(可选)}
+    调用领导人 LLM 决定：task_done、next_speaker。
+    返回 {"task_done", "next_speaker", "reason", "announcement", "suggested_add_dha_ids"?(可选)}
     """
     system_prompt = _build_leader_prompt_with_single_hint(
         dha_list, discussion_goal, recent_messages, available_to_add
@@ -137,10 +140,6 @@ async def leader_decide(
         task_done = data.get("task_done", True)
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
-        next_prompt = (data.get("next_prompt") or "").strip()
-        # 仅当 next_speaker 为某 dha_id 时，next_prompt 会传给该专家；为 user/end 时忽略
-        if next_speaker in ("user", "end"):
-            next_prompt = ""
         # 解析建议邀请的新成员（主持人完成不了工作时可建议新增）
         suggested_add_dha_ids = None
         raw_suggested = data.get("suggested_add_dha_ids")
@@ -169,11 +168,28 @@ async def leader_decide(
             "next_speaker": next_speaker,
             "reason": reason,
             "announcement": announcement or reason,
-            "next_prompt": next_prompt or None,
+            "next_prompt": None,
         }
         if suggested_add_dha_ids:
             out["suggested_add_dha_ids"] = suggested_add_dha_ids
-        return out
+        phase = OrchestrationPhase.AWAITING_USER if next_speaker == "user" else (
+            OrchestrationPhase.COMPLETED if next_speaker == "end" else OrchestrationPhase.EXECUTING
+        )
+        interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT if suggested_add_dha_ids else InterruptReason.NONE
+        decision = OrchestrationDecision(
+            task_done=bool(task_done),
+            next_speaker=next_speaker,
+            reason=reason,
+            announcement=announcement or reason,
+            next_prompt=None,
+            suggested_add_dha_ids=suggested_add_dha_ids or [],
+            phase=phase,
+            owner_dha_id=next_speaker if next_speaker not in ("user", "end") else None,
+            interrupt_reason=interrupt_reason,
+            decision_source=DecisionSource.LEGACY,
+            handoff_reason=reason or None,
+        )
+        return decision.to_dict()
     except Exception as e:
         logger.warning(f"领导人调度解析失败: {e}，回退为轮流")
         # 回退策略更加“激进”：优先继续由某个专家发言，而不是回到用户。
@@ -188,10 +204,16 @@ async def leader_decide(
                 if d.get("dha_id") == fallback:
                     announcement = f"下面由 {d.get('name') or fallback} 发言。"
                     break
-        return {
-            "task_done": True,
-            "next_speaker": fallback,
-            "reason": f"解析失败: {e}",
-            "announcement": announcement,
-            "next_prompt": None,
-        }
+        decision = OrchestrationDecision(
+            task_done=True,
+            next_speaker=fallback,
+            reason=f"解析失败: {e}",
+            announcement=announcement,
+            next_prompt=None,
+            phase=OrchestrationPhase.AWAITING_USER if fallback == "user" else OrchestrationPhase.EXECUTING,
+            owner_dha_id=fallback if fallback not in ("user", "end") else None,
+            interrupt_reason=InterruptReason.CONFLICT_DETECTED,
+            decision_source=DecisionSource.SYSTEM_GUARD,
+            handoff_reason="leader_parse_failed",
+        )
+        return decision.to_dict()

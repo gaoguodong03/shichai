@@ -112,5 +112,69 @@
     "speak_mode": "auto",
     "created_at": "2026-03-24T03:10:09.133339+00:00",
     "updated_at": "2026-03-24T06:45:11.149688+00:00"
+  },
+  "group-672a77ee56d0": {
+    "title": "北京高校软件工程教学改革",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "agent-d92e733e"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T12:26:58.719564+00:00",
+    "updated_at": "2026-03-26T12:39:13.797303+00:00",
+    "pending_owner_dha_id": "agent-d92e733e",
+    "pending_skill_id": "doc-coauthoring",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [
+      {
+        "key": "workflow_user_confirmation",
+        "label": "请确认是否按当前流程继续，或补充缺失信息",
+        "required": true
+      }
+    ],
+    "pending_handoff_reason": "报告尚未完成，需继续撰写完整内容并确保符合2000字要求。"
+  },
+  "group-0b2d0cfe66d2": {
+    "title": "大学生对计算机行业看法",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "agent-d92e733e"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T13:01:38.577197+00:00",
+    "updated_at": "2026-03-26T13:10:22.608403+00:00"
+  },
+  "group-f91b32f03033": {
+    "title": "大学生对计算机行业看法",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "agent-d92e733e"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T13:34:01.794367+00:00",
+    "updated_at": "2026-03-26T13:38:27.251113+00:00",
+    "pending_owner_dha_id": "agent-d92e733e",
+    "pending_skill_id": "doc-coauthoring",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [
+      {
+        "key": "workflow_user_confirmation",
+        "label": "请确认是否按当前流程继续，或补充缺失信息",
+        "required": true
+      }
+    ],
+    "pending_handoff_reason": ""
+  },
+  "group-5dfdd3919400": {
+    "title": "大学生对计算机行业的看法",
+    "title_auto_generated": true,
+    "dha_ids": [],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T13:39:01.194901+00:00",
+    "updated_at": "2026-03-26T13:39:16.211009+00:00"
   }
 }

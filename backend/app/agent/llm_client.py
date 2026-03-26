@@ -2,9 +2,6 @@
 import os
 from typing import Optional, Dict, Any
 
-from langchain_openai import ChatOpenAI
-
-
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "http://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
@@ -84,6 +81,10 @@ class QwenLLM:
 
     def get_client(self):
         """获取 LangChain ChatOpenAI 客户端"""
+        try:
+            from langchain_openai import ChatOpenAI
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"langchain_openai is required for LLM client: {e}") from e
         # 可通过 QWEN_REQUEST_TIMEOUT 调整（秒），默认 180
         request_timeout = _parse_int_env("QWEN_REQUEST_TIMEOUT", 180)
         # max_retries：默认 2。若每次调用都 Retrying，多为 DashScope 限流（429），可设 QWEN_MAX_RETRIES=0 先看真实错误

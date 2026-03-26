@@ -271,6 +271,7 @@
                 <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
                 <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
                 <span class="group-chat-speaker-status-sub">下一位：{{ effectiveNextSpeakerName }}</span>
+                <span v-if="orchestrationInterruptHint" class="group-chat-speaker-status-sub">{{ orchestrationInterruptHint }}</span>
               </div>
               <div v-else-if="groupStreaming" class="group-chat-speaker-status-input group-chat-speaker-status-ready">
                 <span class="group-chat-speaker-status-dot" aria-hidden="true" />
@@ -1475,11 +1476,12 @@ async function confirmGroupNext(override: string) {
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
-  const body: { override_next_speaker: string; custom_prompt?: string } = { override_next_speaker: override }
+  const body: { override_next_speaker: string; custom_prompt?: string; host_takeover_requested?: boolean } = { override_next_speaker: override }
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
   if (msg) body.custom_prompt = msg
+  if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
     method: 'POST',
@@ -1566,11 +1568,13 @@ async function confirmGroupNext(override: string) {
           if (eventType === 'end' && dataStr) {
             try {
               const endData = JSON.parse(dataStr)
+              applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
                 // 只有在「手动控制」开启时才让前端进入“等待用户确认”的 UI 状态。
                 groupWaitingForUser.value = groupAutoConfirm.value
-                if (endData.suggested_next_speaker != null)
-                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
+                  ? endData.suggested_next_speaker
+                  : null
                 if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
@@ -1593,9 +1597,9 @@ async function confirmGroupNext(override: string) {
                   window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
                 }
                 if (!groupAutoConfirm.value) {
-                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
-                  if (fallbackNext && fallbackNext !== 'user') {
-                    nextTick(() => confirmGroupNext(fallbackNext))
+                  const suggestedNext = endData.suggested_next_speaker
+                  if (suggestedNext && suggestedNext !== 'user') {
+                    nextTick(() => confirmGroupNext(suggestedNext))
                   }
                 }
               }
@@ -1992,6 +1996,10 @@ const suggestedInviteLoading = ref(false)
 const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
 const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
+const groupOrchestrationPhase = ref('')
+const groupInterruptReason = ref('')
+const groupResumeTargetDhaId = ref<string | null>(null)
+const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
 const groupNextSpeakerOverride = ref<string>('')
 const showAddMember = ref(false)
 const showAddMemberModal = ref(false)
@@ -2058,6 +2066,30 @@ function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefin
   if (Array.isArray(dhaIds) && dhaIds.length) return dhaIds
   return []
 }
+
+function applyOrchestrationEndMeta(endData: Record<string, unknown>) {
+  const phase = typeof endData.phase === 'string' ? endData.phase.trim() : ''
+  groupOrchestrationPhase.value = phase
+  const reason = typeof endData.interrupt_reason === 'string' ? endData.interrupt_reason.trim() : ''
+  groupInterruptReason.value = reason
+  const resumeDha = typeof endData.resume_target_dha_id === 'string' ? endData.resume_target_dha_id.trim() : ''
+  groupResumeTargetDhaId.value = resumeDha || null
+  const required = endData.required_user_fields
+  groupRequiredUserFields.value = Array.isArray(required) ? (required as Array<Record<string, unknown>>) : []
+}
+
+const orchestrationInterruptHint = computed(() => {
+  const reason = (groupInterruptReason.value || '').trim()
+  if (!reason) return ''
+  if (reason === 'need_user_input') return '需要你补充信息后继续'
+  if (reason === 'need_more_context') return '需要补充上下文后继续'
+  if (reason === 'need_recruit_expert') return '建议先邀请新专家后继续'
+  if (reason === 'tool_unavailable') return '工具不可用，建议确认后重试或换方案'
+  if (reason === 'timeout_or_budget_exceeded') return '已达轮次/预算限制，建议确认后继续'
+  if (reason === 'policy_or_security') return '触发安全/策略限制，需你确认'
+  if (reason === 'conflict_detected') return '决策冲突，已回落为等待确认'
+  return `中断原因：${reason}`
+})
 
 function removeAttachedFile(path: string) {
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
@@ -2208,10 +2240,12 @@ async function continueGroupStream() {
           if (eventType === 'end' && dataStr) {
             try {
               const endData = JSON.parse(dataStr)
+              applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
                 groupWaitingForUser.value = groupAutoConfirm.value
-                if (endData.suggested_next_speaker != null)
-                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
+                  ? endData.suggested_next_speaker
+                  : null
                 if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
@@ -2230,8 +2264,8 @@ async function continueGroupStream() {
                   attachedFiles.value = []
                 }
                 if (!groupAutoConfirm.value) {
-                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
-                  if (fallbackNext && fallbackNext !== 'user') nextTick(() => confirmGroupNext(fallbackNext))
+                  const suggestedNext = endData.suggested_next_speaker
+                  if (suggestedNext && suggestedNext !== 'user') nextTick(() => confirmGroupNext(suggestedNext))
                 }
               }
               if (endData.discussion_ended) {
@@ -2288,7 +2322,10 @@ async function inviteSuggestedDha() {
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
       groupSuggestedAddDhaIds.value = []
-      groupWaitingForUser.value = true
+      // 邀请动作本身不应把发送按钮切到“确认并继续”。
+      // 邀请后由用户直接继续输入并发送即可。
+      groupWaitingForUser.value = false
+      groupSuggestedNextSpeaker.value = null
       emit('dha-added')
       await loadGroupDetail()
     } else {
@@ -2314,7 +2351,9 @@ async function inviteOneSuggestedDha(dhaId: string) {
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
       groupSuggestedAddDhaIds.value = groupSuggestedAddDhaIds.value.filter((id) => id !== dhaId)
-      groupWaitingForUser.value = true
+      // 邀请单个建议专家后保持“发送”态，避免多一次空确认点击。
+      groupWaitingForUser.value = false
+      groupSuggestedNextSpeaker.value = null
       emit('dha-added')
       await loadGroupDetail()
     } else {
@@ -2328,11 +2367,27 @@ async function inviteOneSuggestedDha(dhaId: string) {
 }
 
 /** 当前选中的下一发言人（默认为主持人建议的或第一个 DHA） */
+const latestExpertSpeakerDhaId = computed(() => {
+  const ids = orderedMemberIds.value
+  const list = groupDisplayMessages.value || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i] as GroupMessage
+    if (m?.role === 'assistant' && m?.dha_id && (m as Record<string, unknown>).skill_id && ids.includes(m.dha_id)) {
+      return m.dha_id
+    }
+  }
+  return ''
+})
+
 const effectiveNextSpeaker = computed(() => {
   const override = groupNextSpeakerOverride.value
   const suggested = groupSuggestedNextSpeaker.value
+  const active = activeStreamingDhaId.value
+  const latestExpert = latestExpertSpeakerDhaId.value
   const ids = orderedMemberIds.value
   if (override && ids.includes(override)) return override
+  if (active && ids.includes(active)) return active
+  if (latestExpert && ids.includes(latestExpert)) return latestExpert
   if (suggested && ids.includes(suggested)) return suggested
   return ids[0] ?? ''
 })
@@ -3107,7 +3162,9 @@ async function buildMessageWithFiles(_detail: GroupDetail, base: string): Promis
 async function sendGroupMessage() {
   const detail = groupDetail.value
   if (!detail) return
-  const directive = parseAtSpeakerDirective((groupDiscussionGoal.value || '') as string, detail)
+  const rawInput = String(groupDiscussionGoal.value || '')
+  const directive = parseAtSpeakerDirective(rawInput, detail)
+  const hostTakeoverRequested = detectHostTakeoverIntent(rawInput)
   if (directive.override_next_speaker) groupNextSpeakerOverride.value = directive.override_next_speaker
   if (directive.cleaned_goal !== (groupDiscussionGoal.value || '')) groupDiscussionGoal.value = directive.cleaned_goal
   const base = builtMessage()
@@ -3141,7 +3198,7 @@ async function sendGroupMessage() {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const body: Record<string, unknown> = { message: msg }
+    const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
     if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
     const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
       method: 'POST',
@@ -3213,11 +3270,13 @@ async function sendGroupMessage() {
           if (eventType === 'end' && dataStr) {
             try {
               const endData = JSON.parse(dataStr)
+              applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
                 // 只有在「手动控制」开启时才展示“确认并继续”按钮。
                 groupWaitingForUser.value = groupAutoConfirm.value
-                if (endData.suggested_next_speaker != null)
-                  groupSuggestedNextSpeaker.value = endData.suggested_next_speaker
+                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
+                  ? endData.suggested_next_speaker
+                  : null
                 if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
                   groupSuggestedAddDhaIds.value = []
                   emit('dha-added')
@@ -3258,9 +3317,9 @@ async function sendGroupMessage() {
                 // #endregion agent log
                 // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA
                 if (!groupAutoConfirm.value) {
-                  const fallbackNext = endData.suggested_next_speaker || effectiveNextSpeaker.value
-                  if (fallbackNext && fallbackNext !== 'user') {
-                    nextTick(() => confirmGroupNext(fallbackNext))
+                  const suggestedNext = endData.suggested_next_speaker
+                  if (suggestedNext && suggestedNext !== 'user') {
+                    nextTick(() => confirmGroupNext(suggestedNext))
                   }
                 }
               }
@@ -3307,6 +3366,23 @@ function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_n
   const maybeId = token
   if ((detail.dha_ids || []).includes(maybeId)) return { override_next_speaker: maybeId, cleaned_goal: rest }
   return { override_next_speaker: '', cleaned_goal: raw }
+}
+
+function detectHostTakeoverIntent(raw: string): boolean {
+  const text = (raw || '').trim()
+  if (!text) return false
+  if (text.includes('@主持人') || text.includes('@四九')) return true
+  const hostName = (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME || '').trim()
+  const aliases = ['主持人', '四九']
+  if (hostName && !aliases.includes(hostName)) aliases.push(hostName)
+  const aliasPattern = aliases
+    .map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+  const summonPatterns = [
+    new RegExp(`(请|让|由|麻烦|需要)?\\s*(${aliasPattern})\\s*(来|接管|安排|协调|分配|调度|负责|处理|决策)`, 'i'),
+    new RegExp(`(请|让|由|麻烦|需要)\\s*(${aliasPattern})`, 'i'),
+  ]
+  return summonPatterns.some((re) => re.test(text))
 }
 
 function stopGroupStream() {

@@ -18,11 +18,23 @@ logger = logging.getLogger(__name__)
 try:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    from langchain.tools import Tool
 except ImportError as e:
+    ClientSession = Any  # type: ignore
+    StdioServerParameters = Any  # type: ignore
+    stdio_client = None  # type: ignore
     logger.error(f"MCP SDK not found: {e}")
     print("Please install MCP SDK: pip install mcp")
     print("Or from GitHub: pip install git+https://github.com/modelcontextprotocol/python-sdk.git")
+
+try:
+    from langchain.tools import Tool
+except Exception:
+    # Fallback for test/minimal environments where full langchain is unavailable.
+    class Tool:  # type: ignore
+        def __init__(self, name: str, description: str, func):
+            self.name = name
+            self.description = description
+            self.func = func
 
 # HTTP/Streamable HTTP 为可选依赖，仅在配置了远程 Server 时使用
 _streamable_http_available = False
@@ -159,6 +171,9 @@ class MCPToolManager:
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
             if transport_type == "stdio":
+                if stdio_client is None:
+                    logger.error("stdio transport unavailable: MCP SDK not installed")
+                    return False
                 command = transport.get("command", "python")
                 args = transport.get("args", [])
                 

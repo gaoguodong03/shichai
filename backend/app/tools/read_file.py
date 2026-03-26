@@ -3,7 +3,14 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from langchain.tools import Tool
+try:
+    from langchain.tools import Tool
+except Exception:
+    class Tool:  # type: ignore
+        def __init__(self, name: str, description: str, func):
+            self.name = name
+            self.description = description
+            self.func = func
 
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 

@@ -44,4 +44,4 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
         decision_next_prompt="补充要求",
     )
     assert "关键事实" in out
-    assert "主持人补充指令" in out
+    assert "主持人补充指令" not in out

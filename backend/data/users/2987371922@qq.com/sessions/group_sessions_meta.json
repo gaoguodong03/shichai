@@ -189,5 +189,14 @@
     "speak_mode": "auto",
     "created_at": "2026-03-26T07:34:26.153942+00:00",
     "updated_at": "2026-03-26T07:36:00.758231+00:00"
+  },
+  "group-6146445e0868": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "dha_ids": [],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T11:16:26.267789+00:00",
+    "updated_at": "2026-03-26T11:16:26.267789+00:00"
   }
 }
