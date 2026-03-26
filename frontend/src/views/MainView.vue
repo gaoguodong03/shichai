@@ -397,7 +397,7 @@
               :key="s.id"
               @click="selectedId = s.id"
               :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
+                'w-full text-left px-3 py-3.5 rounded-lg text-sm transition-colors',
                 selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
               ]"
             >

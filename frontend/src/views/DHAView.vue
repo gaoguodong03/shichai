@@ -91,7 +91,6 @@
               <p v-if="skills.length && !filteredSkills.length" class="text-xs text-gray-400">
                 没有匹配的 Skill
               </p>
-              <p v-else class="text-xs text-gray-400">暂无可用技能，请先在设置中配置技能。</p>
             </div>
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->

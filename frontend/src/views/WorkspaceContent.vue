@@ -473,23 +473,29 @@
                       <span>文件</span>
                     </button>
                   </div>
-                  <button
-                    v-for="p in toolbarShortcutPresets"
-                    :key="p.id"
-                    type="button"
-                    class="group-chat-toolbar-btn group-chat-toolbar-btn-chip"
-                    @click="applyShortcutPreset(p.id)"
-                  >
-                    {{ p.name }}
-                  </button>
                   <div ref="shortcutEditorRef" class="group-chat-add-member-wrap">
                     <button
                       type="button"
                       class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-scenario"
-                      title="更多场景"
+                      title="场景"
                       @click="showShortcutEditorModal = true"
                     >
-                      更多场景
+                      <svg
+                        class="group-chat-toolbar-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="4" y="4" width="7" height="7" rx="1.3" />
+                        <rect x="13" y="4" width="7" height="7" rx="1.3" />
+                        <rect x="4" y="13" width="7" height="7" rx="1.3" />
+                        <rect x="13" y="13" width="7" height="7" rx="1.3" />
+                      </svg>
+                      <span>场景</span>
                     </button>
                   </div>
                   <div ref="moreMenuRef" class="group-chat-add-member-wrap">
@@ -2024,7 +2030,6 @@ const editingShortcutId = ref('')
 const newShortcutName = ref('')
 const newShortcutDhaIds = ref<string[]>([])
 const shortcutExpertSearch = ref('')
-const toolbarShortcutPresets = computed(() => shortcutPresets.value)
 const showInsertFile = ref(false)
 const showInsertFileModal = ref(false)
 const insertFileRef = ref<HTMLElement | null>(null)
@@ -4538,20 +4543,6 @@ defineExpose({ refresh: loadGroupDetail })
   border: 1px solid var(--color-accent);
   color: var(--color-accent-subtle-text);
   background: var(--color-accent-subtle);
-}
-.group-chat-toolbar-btn-chip {
-  height: 34px;
-  padding: 0 0.6rem;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--color-border-light);
-  background: var(--color-card);
-  color: var(--color-text);
-  font-size: 0.8125rem;
-}
-.group-chat-toolbar-btn-chip:hover {
-  border-color: var(--color-accent);
 }
 .group-chat-modal-overlay {
   position: fixed;

@@ -145,7 +145,7 @@
           </div>
         </main>
       </div>
-      <div class="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50/80 flex-shrink-0">
+      <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
         <button
           @click="save"
           :disabled="saving || deleting"

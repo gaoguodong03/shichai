@@ -10,11 +10,11 @@
           修改账号
         </h2>
         <p class="text-xs text-muted">
-          修改成功后会自动刷新当前登录状态。
+          账号支持手机号或是电子邮箱。
         </p>
         <div class="rounded-xl border border-border bg-card p-4 space-y-3">
           <div>
-            <label for="new-account" class="mb-1 block text-sm font-medium text-primary">新账号</label>
+            <label for="new-account" class="mb-1 block text-sm font-medium text-primary">账号</label>
             <input
               id="new-account"
               v-model.trim="newAccount"
@@ -43,7 +43,7 @@
             class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             @click="onChangeAccount"
           >
-            {{ savingAccount ? '保存中...' : '保存账号' }}
+            {{ savingAccount ? '保存中...' : '保存' }}
           </button>
         </div>
       </section>
@@ -94,7 +94,7 @@
             class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             @click="onChangePassword"
           >
-            {{ savingPassword ? '保存中...' : '保存密码' }}
+            {{ savingPassword ? '保存中...' : '保存' }}
           </button>
         </div>
       </section>
