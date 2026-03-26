@@ -334,15 +334,33 @@
                 <span>创建技能</span>
               </button>
               <button
-                @click="selectedId = '__new__'"
-                :class="[
-                  'w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center',
-                  selectedId === '__new__' ? 'ring-2 ring-nav-selected-bg' : ''
-                ]"
-                title="导入 Skill"
+                type="button"
+                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                @click="triggerSkillZipImport"
+                title="导入技能"
               >
-                ⇪
+                <svg
+                  class="main-sidebar-svg-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 3h6v18h-6" />
+                  <path d="M4 12h11" />
+                  <path d="m11 8 4 4-4 4" />
+                </svg>
               </button>
+              <input
+                ref="skillZipInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onSkillZipSelected"
+              />
               <button
                 type="button"
                 class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
@@ -384,7 +402,6 @@
               ]"
             >
               <div class="truncate font-medium">{{ s.name || s.id }}</div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ s.enabled ? '已启用' : '已禁用' }}</div>
             </button>
           </template>
           <!-- MCP -->
@@ -606,7 +623,6 @@
                   <span v-if="!scenarioDraft.dha_ids.length" class="text-xs text-muted">暂无专家</span>
                 </div>
                 <div class="mt-3">
-                  <div class="text-xs text-muted mb-1">添加专家</div>
                   <input
                     v-model="scenarioExpertSearch"
                     type="text"
@@ -660,9 +676,6 @@
             @updated="fetchDHA"
             @cancel="selectedId = null"
           />
-        </template>
-        <template v-else-if="resourceSubModule === 'skill' && selectedId === '__new__'">
-          <SkillAddView @created="onSkillCreated" />
         </template>
         <template v-else-if="resourceSubModule === 'skill' && selectedId">
           <SkillDetailView :skill-id="selectedId" @updated="fetchSkills" @deleted="selectedId = null; fetchSkills()" />
@@ -720,7 +733,6 @@ import { ref, computed, watch, inject, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import SkillDetailView from './SkillDetailView.vue'
-import SkillAddView from './SkillAddView.vue'
 import MCPDetailView from './MCPDetailView.vue'
 import MCPAddView from './MCPAddView.vue'
 import AppSettingsView from './AppSettingsView.vue'
@@ -920,8 +932,7 @@ const filteredMcpServers = computed(() => {
 const settingsCategories = [
   { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
-  { id: 'user', label: '用户喜好' },
-  { id: 'account-security', label: '账号与安全' },
+  { id: 'account-security', label: '账号' },
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
@@ -930,6 +941,8 @@ const groupSessionsLoading = ref(false)
 const creatingSession = ref(false)
 const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
+const skillZipInputRef = ref<HTMLInputElement | null>(null)
+const skillZipImporting = ref(false)
 
 // 中间列宽度（可拖动调整）
 const middleColumnWidth = ref(240)
@@ -1348,6 +1361,17 @@ async function fetchDHA() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.instances) {
       dhaInstances.value = j.data.instances
+      // 资源中心 专家：默认选中第一个，且当当前选中项失效时自动回退
+      if (currentModule.value === 'resource' && resourceSubModule.value === 'dha') {
+        const list = dhaInstances.value || []
+        if (selectedId.value === '__new__') return
+        const ids = list.map((d) => d.dha_id)
+        if (selectedId.value && !ids.includes(selectedId.value)) {
+          selectedId.value = list.length > 0 ? list[0].dha_id : null
+        } else if (!selectedId.value && list.length > 0) {
+          selectedId.value = list[0].dha_id
+        }
+      }
     }
   } catch {
     dhaInstances.value = []
@@ -1380,6 +1404,17 @@ async function fetchMCP() {
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
       mcpServers.value = j.data.servers
+      // 资源中心 工具：默认选中第一个，且当当前选中项失效时自动回退
+      if (currentModule.value === 'resource' && resourceSubModule.value === 'mcp') {
+        const list = mcpServers.value || []
+        if (selectedId.value === '__new__') return
+        const ids = list.map((s) => s.id)
+        if (selectedId.value && !ids.includes(selectedId.value)) {
+          selectedId.value = list.length > 0 ? list[0].id : null
+        } else if (!selectedId.value && list.length > 0) {
+          selectedId.value = list[0].id
+        }
+      }
     }
   } finally {
     mcpLoading.value = false
@@ -1458,9 +1493,46 @@ async function fetchFileSessions() {
   }
 }
 
-function onSkillCreated(id: string) {
-  selectedId.value = id
-  fetchSkills()
+function triggerSkillZipImport() {
+  const ok = window.confirm('仅支持导入 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。确认后请选择 ZIP 文件。')
+  if (!ok) return
+  if (skillZipImporting.value) return
+  skillZipInputRef.value?.click()
+}
+
+async function onSkillZipSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+  if (!isZip) {
+    window.alert('仅支持导入 ZIP 文件')
+    return
+  }
+  if (skillZipImporting.value) return
+  skillZipImporting.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('enabled', 'true')
+    const r = await fetch('/api/settings/skills/import-zip', {
+      method: 'POST',
+      body: fd,
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok' && j?.data?.id) {
+      await fetchSkills()
+      selectedId.value = j.data.id
+    } else {
+      window.alert(j?.detail || '导入技能失败')
+    }
+  } catch (err) {
+    console.error(err)
+    window.alert('导入技能失败，请检查网络或 ZIP 格式')
+  } finally {
+    skillZipImporting.value = false
+  }
 }
 
 async function createEmptySkill() {

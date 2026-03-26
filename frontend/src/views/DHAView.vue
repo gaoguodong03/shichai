@@ -25,7 +25,7 @@
                   type="text"
                   required
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                  placeholder="如：技术专家"
+                  placeholder="请输入专家名称"
                 />
               </div>
               <div>
@@ -48,7 +48,7 @@
                 v-model="form.role"
                 type="text"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                placeholder="如：负责技术方案与实现细节"
+                placeholder="请输入专家描述"
               />
             </div>
 
@@ -58,7 +58,7 @@
                 v-model="form.system_prompt"
                 rows="3"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500/70 focus:border-blue-500/70"
-                placeholder="该专家的额外指令，例如决策偏好、输出格式等"
+                placeholder="请输入系统提示词（可选）"
               />
             </div>
 

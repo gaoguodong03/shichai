@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import re
@@ -10,10 +11,11 @@ import subprocess
 import tempfile
 import uuid
 import yaml
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Set
 
@@ -1247,6 +1249,113 @@ async def create_skill(skill: SkillCreate):
         "write_mode": "workspace_all",
     }
     return {"status": "ok", "data": new_skill}
+
+
+@router.post("/settings/skills/import-zip")
+async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(True)):
+    """通过 ZIP 导入 Skill。要求 ZIP 根目录包含 SKILL.md。"""
+    filename = (file.filename or "").strip()
+    if not filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="仅支持 ZIP 文件")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="无效的 ZIP 文件")
+
+    entries: List[tuple[str, List[str]]] = []
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        raw_name = (info.filename or "").replace("\\", "/").strip("/")
+        if not raw_name:
+            continue
+        parts = [p for p in raw_name.split("/") if p and p != "."]
+        if not parts or any(p == ".." for p in parts):
+            raise HTTPException(status_code=400, detail="ZIP 包含非法路径")
+        entries.append((raw_name, parts))
+    if not entries:
+        raise HTTPException(status_code=400, detail="ZIP 中没有可导入文件")
+
+    # 兼容“整个目录打包”场景：若所有文件都在同一顶层目录下，则自动剥离该层。
+    first_heads = {parts[0] for _, parts in entries}
+    strip_first = len(first_heads) == 1 and all(len(parts) >= 2 for _, parts in entries)
+
+    normalized: List[tuple[str, List[str]]] = []
+    for raw_name, parts in entries:
+        rel_parts = parts[1:] if strip_first else parts
+        if not rel_parts:
+            continue
+        normalized.append((raw_name, rel_parts))
+
+    if not any(len(parts) == 1 and parts[0].lower() == "skill.md" for _, parts in normalized):
+        raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
+
+    base = _get_skills_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    seed = _slugify(Path(filename).stem or "skill")
+    skill_id = seed
+    idx = 0
+    while (base / skill_id).exists():
+        idx += 1
+        skill_id = f"{seed}-{idx}"
+    skill_dir = base / skill_id
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="skill-zip-import-") as tmp:
+            src_dir = Path(tmp) / "skill"
+            src_dir.mkdir(parents=True, exist_ok=True)
+            for raw_name, rel_parts in normalized:
+                if len(rel_parts) == 1 and rel_parts[0].lower() == "skill.md":
+                    dst = src_dir / "SKILL.md"
+                else:
+                    dst = src_dir / Path(*rel_parts)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(raw_name, "r") as rf:
+                    dst.write_bytes(rf.read())
+
+            if not (src_dir / "SKILL.md").is_file():
+                raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
+
+            shutil.copytree(src_dir, skill_dir)
+
+        fm, body = _read_skill_file(skill_dir)
+        final_name = (str(fm.get("name") or "").strip() or skill_id)
+        final_desc = str(fm.get("description") or "")
+        fm["name"] = final_name
+        fm["description"] = final_desc
+        fm["enabled"] = bool(enabled)
+        fm["source"] = "local"
+        fm["write_mode"] = "workspace_all"
+        if "url" in fm:
+            fm.pop("url", None)
+        _write_skill_file(skill_dir, fm, body)
+        _refresh_skills_loader()
+
+        return {
+            "status": "ok",
+            "data": {
+                "id": skill_id,
+                "name": final_name,
+                "description": final_desc,
+                "enabled": bool(enabled),
+                "source": "local",
+                "path": str(skill_dir),
+                "write_mode": "workspace_all",
+            },
+        }
+    except HTTPException:
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir, ignore_errors=True)
+        raise
+    except Exception as e:
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"ZIP 导入失败：{e}")
 
 def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:
     """读取 SKILL.md，返回 (frontmatter_dict, body)"""

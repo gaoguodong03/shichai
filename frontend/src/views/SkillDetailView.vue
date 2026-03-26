@@ -48,7 +48,7 @@
               />
             </div>
             <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-gray-500 mb-2">MCP 依赖（可选）</label>
+              <label class="block text-xs font-medium text-gray-500 mb-2">工具依赖（可选）</label>
               <div class="flex flex-wrap gap-2">
                 <label
                   v-for="srv in mcpServers"
@@ -454,7 +454,25 @@ async function addPartFile() {
   }
 }
 
-watch(() => props.skillId, load, { immediate: true })
+watch(
+  () => props.skillId,
+  async () => {
+    // 切换 skill 时，先清空右侧文件预览，避免短暂显示上一个 skill 的内容
+    selectedPartFile.value = null
+    partContent.value = ''
+    await load()
+    if (activeTab.value === 'main') return
+    const tab = activeTab.value as PartType
+    await loadParts()
+    // 若用户在加载途中切换了 tab，则放弃本次自动选中，避免串栏
+    if (activeTab.value !== tab) return
+    const files = parts.value[tab] || []
+    if (files.length > 0) {
+      await selectPartFile(tab, files[0].path)
+    }
+  },
+  { immediate: true },
+)
 watch(activeTab, async (tab) => {
   if (tab === 'main') {
     selectedPartFile.value = null
