@@ -166,5 +166,28 @@
     "speak_mode": "auto",
     "created_at": "2026-03-24T07:41:08.808081+00:00",
     "updated_at": "2026-03-25T14:38:58.748687+00:00"
+  },
+  "group-b6d979e68c75": {
+    "title": "博客生成与内容创作",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-195b8c3a"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T07:25:08.296539+00:00",
+    "updated_at": "2026-03-26T07:32:01.908647+00:00"
+  },
+  "group-8abe3f7c7fcc": {
+    "title": "博客创作工具和灵感分享",
+    "title_auto_generated": true,
+    "dha_ids": [
+      "dha-web-fetch",
+      "dha-440b26f8"
+    ],
+    "leader_dha_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-26T07:34:26.153942+00:00",
+    "updated_at": "2026-03-26T07:36:00.758231+00:00"
   }
 }

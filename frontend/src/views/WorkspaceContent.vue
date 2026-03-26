@@ -232,9 +232,30 @@
                 </div>
                 <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
-              <div v-if="groupSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
-                <span class="group-chat-suggested-invite-text">{{ hostDisplayName }} 建议邀请 {{ suggestedAddDhaName }} 加入讨论</span>
-                <button type="button" class="group-chat-invite-suggested-btn" @click="inviteSuggestedDha">同意并邀请</button>
+              <div v-if="pendingSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
+                <span class="group-chat-suggested-invite-text">
+                  {{ hostDisplayName }} 建议邀请
+                  <template v-for="(id, idx) in pendingSuggestedAddDhaIds" :key="id">
+                    <button
+                      type="button"
+                      class="group-chat-invite-inline-btn"
+                      :disabled="suggestedInviteLoading"
+                      @click="inviteOneSuggestedDha(id)"
+                    >
+                      {{ suggestedDhaDisplayName(id) }}
+                    </button>
+                    <span v-if="idx < pendingSuggestedAddDhaIds.length - 1" class="group-chat-suggested-sep">、</span>
+                  </template>
+                  加入讨论
+                </span>
+                <button
+                  type="button"
+                  class="group-chat-invite-suggested-btn"
+                  :disabled="suggestedInviteLoading"
+                  @click="inviteSuggestedDha"
+                >
+                  全部邀请
+                </button>
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
               <div v-if="activeStreamingMessage" class="group-chat-speaker-status-input">
@@ -1961,6 +1982,7 @@ function dhaAvatarChar(dhaId?: string): string {
 const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
+const suggestedInviteLoading = ref(false)
 const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
 const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
@@ -2064,12 +2086,14 @@ const orderedMemberIds = computed(() => {
 })
 
 /** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
-const suggestedAddDhaName = computed(() => {
-  const ids = groupSuggestedAddDhaIds.value
-  if (!ids.length) return ''
-  const names = ids.map((id) => (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || id)
-  return names.join('、')
+const pendingSuggestedAddDhaIds = computed(() => {
+  const inGroup = new Set(groupDetail.value?.dha_ids || [])
+  return (groupSuggestedAddDhaIds.value || []).filter((id) => !!id && !inGroup.has(id))
 })
+
+function suggestedDhaDisplayName(id: string): string {
+  return (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || groupDetail.value?.dha_map?.[id]?.name || id
+}
 
 function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
   const map = groupDetail.value?.dha_map || {}
@@ -2246,9 +2270,10 @@ async function toggleGroupManualControl() {
 }
 
 async function inviteSuggestedDha() {
-  const ids = groupSuggestedAddDhaIds.value
+  const ids = pendingSuggestedAddDhaIds.value
   const groupId = groupDetail.value?.id
   if (!ids.length || !groupId) return
+  suggestedInviteLoading.value = true
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
@@ -2258,15 +2283,42 @@ async function inviteSuggestedDha() {
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
       groupSuggestedAddDhaIds.value = []
+      groupWaitingForUser.value = true
       emit('dha-added')
       await loadGroupDetail()
-      // 邀请成功后自动继续执行任务，无需用户再点发送
-      nextTick(() => continueGroupStream())
     } else {
       alert((j as { detail?: string }).detail || '邀请失败')
     }
   } catch {
     alert('邀请失败，请检查网络')
+  } finally {
+    suggestedInviteLoading.value = false
+  }
+}
+
+async function inviteOneSuggestedDha(dhaId: string) {
+  const groupId = groupDetail.value?.id
+  if (!groupId || !dhaId) return
+  suggestedInviteLoading.value = true
+  try {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ add_expert_ids: [dhaId] }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if ((j as { status?: string }).status === 'ok') {
+      groupSuggestedAddDhaIds.value = groupSuggestedAddDhaIds.value.filter((id) => id !== dhaId)
+      groupWaitingForUser.value = true
+      emit('dha-added')
+      await loadGroupDetail()
+    } else {
+      alert((j as { detail?: string }).detail || '邀请失败')
+    }
+  } catch {
+    alert('邀请失败，请检查网络')
+  } finally {
+    suggestedInviteLoading.value = false
   }
 }
 
@@ -4555,7 +4607,8 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-suggested-invite-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: nowrap;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
   padding: 0.5rem 0.75rem;
@@ -4565,8 +4618,33 @@ defineExpose({ refresh: loadGroupDetail })
   font-size: 0.8125rem;
 }
 .group-chat-suggested-invite-text {
-  flex: 1;
+  flex: 1 1 auto;
   color: var(--color-accent-subtle-text);
+  line-height: 1.6;
+}
+.group-chat-suggested-sep {
+  margin: 0 0.12rem;
+}
+.group-chat-invite-inline-btn {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0.15rem;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 999px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-card);
+  color: var(--color-accent-subtle-text);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.group-chat-invite-inline-btn:hover {
+  background: var(--color-list-hover);
+}
+.group-chat-invite-inline-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .group-chat-invite-suggested-btn {
   padding: 0.25rem 0.5rem;
@@ -4577,9 +4655,14 @@ defineExpose({ refresh: loadGroupDetail })
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .group-chat-invite-suggested-btn:hover {
   background: var(--color-accent-hover, var(--color-accent));
+}
+.group-chat-invite-suggested-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .group-chat-dismiss-suggested-btn {
   padding: 0.25rem 0.5rem;
