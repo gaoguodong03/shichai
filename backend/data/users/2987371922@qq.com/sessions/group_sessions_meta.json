@@ -222,5 +222,38 @@
     "speak_mode": "auto",
     "created_at": "2026-03-27T12:48:36.182746+00:00",
     "updated_at": "2026-03-27T12:49:55.077146+00:00"
+  },
+  "group-ef4797fd0eba": {
+    "title": "元芳接入Gemini相关内容",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-440b26f8",
+      "agent-web-fetch",
+      "agent-thinking-ext",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-27T13:15:28.358198+00:00",
+    "updated_at": "2026-03-27T14:10:38.189045+00:00"
+  },
+  "group-e2446ae9f705": {
+    "title": "元芳接入Gemini相关创作",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-440b26f8",
+      "agent-web-fetch",
+      "agent-thinking-ext",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-27T14:21:01.374184+00:00",
+    "updated_at": "2026-03-27T14:37:03.144773+00:00",
+    "pending_owner_agent_id": "agent-195b8c3a",
+    "pending_skill_id": "blog-write",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
   }
 }

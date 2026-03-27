@@ -16,7 +16,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage  # type: ignore
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
 from app.api.dha import load_dha_instances
 from app.api.settings import load_app_settings
@@ -2297,14 +2297,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             if isinstance(msg_obj, AIMessage):
                                 has_tool_calls = hasattr(msg_obj, "tool_calls") and msg_obj.tool_calls
                                 if has_tool_calls:
-                                    for tco in msg_obj.tool_calls:
-                                        tool_name = tco.get("name") or tco.get("id", "")
-                                        args = tco.get("args") or {}
-                                        payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
-                                        tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
-                                        block = f"\n```json\n{tc_json}\n```\n"
-                                        accumulated.append(block)
-                                        yield f"event: content\ndata: {json_module.dumps({'text': block, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                    # Keep tool call payloads in internal traces only.
+                                    # Do not stream them into user-facing message content.
+                                    pass
                                 content_str = str(msg_obj.content) if isinstance(msg_obj.content, str) else str(msg_obj.content or "")
                                 if content_str.strip() and content_str not in accumulated:
                                     accumulated.append(content_str)
@@ -2316,22 +2311,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 for item in tad:
                                     if item not in tool_attempt_debug:
                                         tool_attempt_debug.append(item)
+                            # Keep tool step messages internal; avoid leaking raw execution output in UI bubble.
                             tool_msgs = stream_item.get("tool_messages")
                             if isinstance(tool_msgs, list):
-                                for tm in tool_msgs:
-                                    content = None
-                                    if isinstance(tm, (HumanMessage, ToolMessage)):
-                                        content = tm.content
-                                    elif isinstance(tm, dict):
-                                        content = tm.get("content")
-                                    elif hasattr(tm, "content"):
-                                        content = getattr(tm, "content", None)
-                                    if content is None:
-                                        continue
-                                    txt = str(content) if not isinstance(content, str) else content
-                                    if txt.strip() and txt not in accumulated:
-                                        accumulated.append(txt)
-                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'agent_id': next_speaker, 'meta': {'source': 'tool_step'}}, ensure_ascii=False)}\n\n"
+                                pass
                             tro = stream_item.get("tool_raw_outputs")
                             if isinstance(tro, list):
                                 for raw_str in tro:
@@ -2352,8 +2335,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 full_content = "".join(accumulated) if accumulated else "(无文本输出)"
                 if (not accumulated) and accumulated_raw_tool_results:
-                    # 当模型未追加自然语言总结时，至少把工具原始输出摘要回显到最终内容中，避免前端“执行后无结果”。
-                    full_content = "\n\n".join(accumulated_raw_tool_results[:2]).strip() or "(无文本输出)"
+                    # Fallback must not expose raw tool JSON/stdout/stderr to user-visible content.
+                    full_content = "已完成工具执行。"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
                 tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
