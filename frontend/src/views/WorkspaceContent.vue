@@ -3191,7 +3191,6 @@ async function sendGroupMessage() {
   const directive = parseAtSpeakerDirective(rawInput, detail)
   const hostTakeoverRequested = detectHostTakeoverIntent(rawInput)
   if (directive.override_next_speaker) groupNextSpeakerOverride.value = directive.override_next_speaker
-  if (directive.cleaned_goal !== (groupDiscussionGoal.value || '')) groupDiscussionGoal.value = directive.cleaned_goal
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   if (!detail || groupStreaming.value || (!base && !hasFiles)) return
