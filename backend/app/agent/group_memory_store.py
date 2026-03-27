@@ -43,14 +43,14 @@ def append_turn_log(
     mem = _memory_root(session_id, workspace_root=workspace_root)
     logs_dir = mem / "logs"
     ts = (turn_record.get("timestamp") or datetime.now(timezone.utc).isoformat()).replace(":", "-")
-    dha_id = _safe_name(str(turn_record.get("dha_id") or "expert"))
-    filename = f"{ts}_{dha_id}.md"
+    agent_id = _safe_name(str(turn_record.get("agent_id") or "expert"))
+    filename = f"{ts}_{agent_id}.md"
     path = logs_dir / filename
 
     content = (
         f"# Turn Log\n\n"
         f"- session_id: {session_id}\n"
-        f"- dha_id: {turn_record.get('dha_id') or ''}\n"
+        f"- agent_id: {turn_record.get('agent_id') or ''}\n"
         f"- timestamp: {turn_record.get('timestamp') or ''}\n"
         f"- skill_id: {turn_record.get('skill_id') or ''}\n\n"
         f"- full_message_ref: {turn_record.get('full_message_ref') or ''}\n\n"
@@ -73,7 +73,7 @@ def append_turn_log(
 
 def append_expert_message_file(
     session_id: str,
-    dha_id: str,
+    agent_id: str,
     timestamp: Optional[str],
     content: str,
     skill_id: str = "",
@@ -84,12 +84,12 @@ def append_expert_message_file(
     mem = _memory_root(session_id, workspace_root=workspace_root)
     messages_dir = mem / "messages"
     ts = (timestamp or datetime.now(timezone.utc).isoformat()).replace(":", "-")
-    did = _safe_name(dha_id or "expert")
+    did = _safe_name(agent_id or "expert")
     p = messages_dir / f"{ts}_{did}.md"
     body = (
         f"# Expert Message\n\n"
         f"- session_id: {session_id}\n"
-        f"- dha_id: {dha_id or ''}\n"
+        f"- agent_id: {agent_id or ''}\n"
         f"- skill_id: {skill_id or ''}\n"
         f"- timestamp: {timestamp or ''}\n\n"
         f"## Content\n\n{content or ''}\n"
@@ -137,10 +137,10 @@ def _goal_terms(goal: str) -> List[str]:
     return [t.lower() for t in terms][:12]
 
 
-def _score_log(content: str, target_dha_id: str, terms: List[str]) -> int:
+def _score_log(content: str, target_agent_id: str, terms: List[str]) -> int:
     text = (content or "").lower()
     score = 0
-    if target_dha_id and target_dha_id.lower() in text:
+    if target_agent_id and target_agent_id.lower() in text:
         score += 3
     for t in terms:
         if t in text:
@@ -150,7 +150,7 @@ def _score_log(content: str, target_dha_id: str, terms: List[str]) -> int:
 
 def build_dispatch_context(
     session_id: str,
-    target_dha_id: str,
+    target_agent_id: str,
     goal: str,
     k: int = 3,
     max_facts: int = 60,
@@ -179,7 +179,7 @@ def build_dispatch_context(
             continue
         m = re.search(r"^- full_message_ref:\s*(.+?)\s*$", raw, flags=re.MULTILINE)
         full_ref = (m.group(1).strip() if m else "")
-        score = _score_log(raw, target_dha_id, terms)
+        score = _score_log(raw, target_agent_id, terms)
         logs.append(
             {
                 "name": p.name,

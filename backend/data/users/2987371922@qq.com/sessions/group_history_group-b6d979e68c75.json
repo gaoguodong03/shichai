@@ -10,15 +10,15 @@
     "role": "host",
     "content": "为了完成您的需求，我建议邀请以下专家加入讨论：\n\n1. **文字创作专家**：负责撰写博客的主体内容，确保语言流畅，并围绕指定灵感来源进行创作。\n2. **图片生成专家**：负责设计与生成博客的封面图片和文内配图，提升博客的视觉效果。\n3. **网页爬取专家**：帮助提取指定网址的内容作为参考，确保博客内容基于指定的灵感来源。\n\n以上三位专家能够协作完成高质量的博客内容创作与配图设计。",
     "timestamp": "2026-03-26T07:25:21.399692+00:00",
-    "suggested_add_dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+    "suggested_add_agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ],
     "suggested_add_expert_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ]
   },
   {
@@ -27,8 +27,8 @@
     "content": "已邀请“文字创作专家”加入会话",
     "timestamp": "2026-03-26T07:32:01.907646+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-195b8c3a"
+    "joined_agent_ids": [
+      "agent-195b8c3a"
     ]
   }
 ]

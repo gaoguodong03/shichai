@@ -229,7 +229,7 @@ import { ref, watch, onMounted, computed } from 'vue'
 
 const props = defineProps<{
   selectedDhaId: string | null
-  dhaInstances: { dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -261,7 +261,7 @@ watch(
       form.value = { name: '', role: '', system_prompt: '', skill_ids: [], is_leader: false, llm_provider_id: '', avatar_url: '' }
       avatarPreview.value = null
     } else if (props.selectedDhaId) {
-      const d = props.dhaInstances.find((x) => x.dha_id === props.selectedDhaId)
+      const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
       if (d) {
         form.value = {
           name: d.name,
@@ -307,8 +307,8 @@ async function saveDha() {
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
     })
     const j = await r.json()
-    if (j.status === 'ok' && (j.data?.agent_id || j.data?.expert_id || j.data?.dha_id)) {
-      emit('created', (j.data.agent_id || j.data.expert_id || j.data.dha_id) as string)
+    if (j.status === 'ok' && (j.data?.agent_id || j.data?.expert_id || j.data?.agent_id)) {
+      emit('created', (j.data.agent_id || j.data.expert_id || j.data.agent_id) as string)
     } else {
       alert(j.detail || '创建失败')
     }

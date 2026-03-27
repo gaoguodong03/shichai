@@ -20,7 +20,7 @@ class ToolRequest:
     task_id: str
     turn_id: str
     tool_call_id: str
-    dha_id: str
+    agent_id: str
     skill_id: str
     idempotency_key: Optional[str] = None
     timeout_ms: int = 30_000

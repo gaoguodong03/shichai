@@ -10,15 +10,15 @@
     "role": "host",
     "content": "为生成一篇带有配图和封面的博客，我建议邀请以下专家参与：  \n1. **文字创作专家**：负责撰写高质量的博客内容。  \n2. **图片生成专家**：用于生成文章封面和配图，以提升博客的视觉效果。  \n3. **网页爬取专家**：提取提供链接中的核心内容，确保灵感来源得到充分利用。  \n\n这三位专家的协作可以高效完成博客创作需求。",
     "timestamp": "2026-03-26T07:34:41.905377+00:00",
-    "suggested_add_dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+    "suggested_add_agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ],
     "suggested_add_expert_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ]
   },
   {
@@ -27,8 +27,8 @@
     "content": "已邀请“文字创作专家”加入会话",
     "timestamp": "2026-03-26T07:35:24.739862+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-195b8c3a"
+    "joined_agent_ids": [
+      "agent-195b8c3a"
     ]
   },
   {
@@ -37,8 +37,8 @@
     "content": "已邀请“图片生成专家”加入会话",
     "timestamp": "2026-03-26T07:35:31.142594+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-440b26f8"
+    "joined_agent_ids": [
+      "agent-440b26f8"
     ]
   },
   {
@@ -47,8 +47,8 @@
     "content": "已邀请“网页爬取专家”加入会话",
     "timestamp": "2026-03-26T07:36:00.757229+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-web-fetch"
+    "joined_agent_ids": [
+      "agent-web-fetch"
     ]
   }
 ]

@@ -10,15 +10,15 @@
     "role": "host",
     "content": "为了生成一篇带有配图和封面的博客，我将邀请以下专家：\n1. **文字创作专家**：负责从灵感来源提取关键内容并撰写博客主体。\n2. **图片生成专家**：为博客生成封面和配图。\n3. **网页爬取专家**：提取 URL 的内容，确保博客灵感来源的准确性。\n\n请稍等，我将安排这些专家参与讨论。\n\n**已自动邀请加入讨论的专家：**\n- 文字创作专家（dha-195b8c3a）\n- 图片生成专家（dha-440b26f8）\n- 网页爬取专家（dha-web-fetch）\n\n继续执行…",
     "timestamp": "2026-03-22T12:49:19.770872+00:00",
-    "auto_invited_dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+    "auto_invited_agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ],
     "auto_invited_expert_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ]
   },
   {
@@ -32,7 +32,7 @@
   {
     "message_id": "msg-3a42fb4a",
     "role": "assistant",
-    "dha_id": "dha-web-fetch",
+    "agent_id": "agent-web-fetch",
     "content": "抓取的内容为 HTML 源代码，需进一步解析以提取正文或要点。请稍等，我将处理并提取主要内容。解析正文需要进一步的工具或方法，但目前相关脚本不可用。建议检查是否有其他解析工具，或提供具体内容以帮助提取关键信息。",
     "timestamp": "2026-03-22T12:49:42.691287+00:00",
     "skill_id": "url-fetch"

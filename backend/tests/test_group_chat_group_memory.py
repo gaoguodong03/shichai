@@ -15,7 +15,7 @@ def test_next_prompt_fallback_when_memory_disabled():
     app_settings = {"group_memory": {"enabled": False}}
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
-        target_dha_id="dha-a",
+        target_agent_id="agent-a",
         discussion_goal="写周报",
         context="最近讨论内容",
         app_settings=app_settings,
@@ -37,7 +37,7 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     monkeypatch.setattr(gc, "build_dispatch_context", _fake_dispatch_context)
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
-        target_dha_id="dha-a",
+        target_agent_id="agent-a",
         discussion_goal="写周报",
         context="ignored",
         app_settings={"group_memory": {"enabled": True, "dispatch_top_k": 2, "max_facts": 20}},

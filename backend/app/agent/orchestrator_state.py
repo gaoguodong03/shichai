@@ -1,8 +1,4 @@
-"""Shared orchestration contracts for group chat scheduling.
-
-This module is intentionally lightweight and backward compatible so old
-group-chat flow can progressively adopt new fields without a hard cutover.
-"""
+"""Shared orchestration contracts for group chat scheduling."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -45,7 +41,7 @@ class OrchestrationContext:
     session_id: str
     phase: OrchestrationPhase = OrchestrationPhase.PLANNING
     active_task_id: Optional[str] = None
-    owner_dha_id: Optional[str] = None
+    owner_agent_id: Optional[str] = None
     interrupt_reason: InterruptReason = InterruptReason.NONE
     turn_id: str = ""
     token_version: int = 0
@@ -58,7 +54,7 @@ class OrchestrationContext:
             "session_id": self.session_id,
             "phase": self.phase.value,
             "active_task_id": self.active_task_id,
-            "owner_dha_id": self.owner_dha_id,
+            "owner_agent_id": self.owner_agent_id,
             "interrupt_reason": self.interrupt_reason.value,
             "turn_id": self.turn_id,
             "token_version": self.token_version,
@@ -77,9 +73,9 @@ class OrchestrationDecision:
     reason: str = ""
     announcement: str = ""
     next_prompt: Optional[str] = None
-    suggested_add_dha_ids: List[str] = field(default_factory=list)
+    suggested_add_agent_ids: List[str] = field(default_factory=list)
     phase: OrchestrationPhase = OrchestrationPhase.PLANNING
-    owner_dha_id: Optional[str] = None
+    owner_agent_id: Optional[str] = None
     interrupt_reason: InterruptReason = InterruptReason.NONE
     decision_source: DecisionSource = DecisionSource.LEGACY
     handoff_reason: Optional[str] = None
@@ -92,10 +88,10 @@ class OrchestrationDecision:
             "reason": self.reason or "",
             "announcement": self.announcement or self.reason or "",
             "next_prompt": self.next_prompt,
-            "suggested_add_dha_ids": list(self.suggested_add_dha_ids or []),
-            "suggested_add_expert_ids": list(self.suggested_add_dha_ids or []),
+            "suggested_add_agent_ids": list(self.suggested_add_agent_ids or []),
+            "suggested_add_expert_ids": list(self.suggested_add_agent_ids or []),
             "phase": self.phase.value,
-            "owner_dha_id": self.owner_dha_id,
+            "owner_agent_id": self.owner_agent_id,
             "interrupt_reason": self.interrupt_reason.value,
             "decision_source": self.decision_source.value,
             "handoff_reason": self.handoff_reason,
@@ -113,7 +109,7 @@ def build_end_payload(
     suggested_next_speaker: Optional[str] = None,
     phase: OrchestrationPhase = OrchestrationPhase.AWAITING_USER,
     interrupt_reason: InterruptReason = InterruptReason.NONE,
-    resume_target_dha_id: Optional[str] = None,
+    resume_target_agent_id: Optional[str] = None,
     required_user_fields: Optional[List[Dict[str, Any]]] = None,
     turn_id: str = "",
     token_version: int = 0,
@@ -127,7 +123,7 @@ def build_end_payload(
     normalized_discussion_ended = bool(discussion_ended)
     normalized_required = list(required_user_fields or [])
     normalized_suggested_next = (suggested_next_speaker or "").strip().lower() or None
-    normalized_resume_target = (resume_target_dha_id or "").strip().lower() or None
+    normalized_resume_target = (resume_target_agent_id or "").strip().lower() or None
 
     # Contract hardening: terminal end must be completed/non-waiting/no-interrupt.
     if normalized_discussion_ended:
@@ -157,7 +153,7 @@ def build_end_payload(
         "discussion_ended": normalized_discussion_ended,
         "phase": normalized_phase.value,
         "interrupt_reason": normalized_interrupt.value,
-        "resume_target_dha_id": normalized_resume_target,
+        "resume_target_agent_id": normalized_resume_target,
         "required_user_fields": normalized_required,
         "turn_id": turn_id or "",
         "token_version": int(token_version),

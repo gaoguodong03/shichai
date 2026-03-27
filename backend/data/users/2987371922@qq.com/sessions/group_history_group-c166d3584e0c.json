@@ -10,15 +10,15 @@
     "role": "host",
     "content": "为生成一篇带有配图和封面的博客，我将邀请以下专家：\n\n1. **文字创作专家**：负责博客内容的撰写，根据灵感来源展开创作。\n2. **图片生成专家**：制作封面和配图，以提升博客的视觉效果。\n3. **网页爬取专家**：抓取灵感来源的网页内容，确保准确理解和引用相关信息。\n\n这三位专家的协作能确保博客内容精准且配图精美。",
     "timestamp": "2026-03-24T07:41:26.066257+00:00",
-    "suggested_add_dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+    "suggested_add_agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ],
     "suggested_add_expert_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch"
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
     ]
   },
   {
@@ -27,8 +27,8 @@
     "content": "已邀请“文字创作专家”加入会话",
     "timestamp": "2026-03-24T07:44:35.004816+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-195b8c3a"
+    "joined_agent_ids": [
+      "agent-195b8c3a"
     ]
   },
   {
@@ -37,8 +37,8 @@
     "content": "已邀请“图片生成专家”加入会话",
     "timestamp": "2026-03-24T07:44:35.004816+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-440b26f8"
+    "joined_agent_ids": [
+      "agent-440b26f8"
     ]
   },
   {
@@ -47,8 +47,8 @@
     "content": "已邀请“网页爬取专家”加入会话",
     "timestamp": "2026-03-24T07:44:35.004816+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-web-fetch"
+    "joined_agent_ids": [
+      "agent-web-fetch"
     ]
   },
   {
@@ -65,8 +65,8 @@
     "content": "已邀请“学术研究员”加入会话",
     "timestamp": "2026-03-24T07:45:25.742732+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-65fdbc8f"
+    "joined_agent_ids": [
+      "agent-65fdbc8f"
     ]
   },
   {
@@ -75,8 +75,8 @@
     "content": "已邀请“论文写作执行专家”加入会话",
     "timestamp": "2026-03-24T07:45:25.742732+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-paper-composer"
+    "joined_agent_ids": [
+      "agent-paper-composer"
     ]
   },
   {
@@ -85,8 +85,8 @@
     "content": "已邀请“论文规划专家”加入会话",
     "timestamp": "2026-03-24T07:45:25.742732+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-paper-strategist"
+    "joined_agent_ids": [
+      "agent-paper-strategist"
     ]
   },
   {
@@ -95,8 +95,8 @@
     "content": "已邀请“人工智能学伴”加入会话",
     "timestamp": "2026-03-25T14:28:29.204042+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-seminar-ai-peer"
+    "joined_agent_ids": [
+      "agent-seminar-ai-peer"
     ]
   },
   {
@@ -105,8 +105,8 @@
     "content": "已邀请“研讨教师”加入会话",
     "timestamp": "2026-03-25T14:28:29.204042+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-seminar-teacher-advisor"
+    "joined_agent_ids": [
+      "agent-seminar-teacher-advisor"
     ]
   },
   {
@@ -115,8 +115,8 @@
     "content": "已邀请“研讨教师总结”加入会话",
     "timestamp": "2026-03-25T14:28:29.204042+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-seminar-teacher-review"
+    "joined_agent_ids": [
+      "agent-seminar-teacher-review"
     ]
   },
   {
@@ -125,8 +125,8 @@
     "content": "已邀请“内容引导与发散专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-seminar-guide"
+    "joined_agent_ids": [
+      "agent-seminar-guide"
     ]
   },
   {
@@ -135,8 +135,8 @@
     "content": "已邀请“内容核实专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-c1bf68ba"
+    "joined_agent_ids": [
+      "agent-c1bf68ba"
     ]
   },
   {
@@ -145,8 +145,8 @@
     "content": "已邀请“图片生成专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-440b26f8"
+    "joined_agent_ids": [
+      "agent-440b26f8"
     ]
   },
   {
@@ -155,8 +155,8 @@
     "content": "已邀请“思维延伸专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-thinking-ext"
+    "joined_agent_ids": [
+      "agent-thinking-ext"
     ]
   },
   {
@@ -165,8 +165,8 @@
     "content": "已邀请“文字创作专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-195b8c3a"
+    "joined_agent_ids": [
+      "agent-195b8c3a"
     ]
   },
   {
@@ -175,8 +175,8 @@
     "content": "已邀请“网页爬取专家”加入会话",
     "timestamp": "2026-03-25T14:38:58.747688+00:00",
     "event_type": "member_joined",
-    "joined_dha_ids": [
-      "dha-web-fetch"
+    "joined_agent_ids": [
+      "agent-web-fetch"
     ]
   }
 ]

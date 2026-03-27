@@ -20,7 +20,7 @@ def test_append_turn_log_with_rotation(tmp_path: Path):
             workspace_root=ws,
             max_logs=3,
             turn_record={
-                "dha_id": f"dha-{i}",
+                "agent_id": f"agent-{i}",
                 "timestamp": f"2026-01-01T00:00:0{i}+00:00",
                 "discussion_goal": "测试目标",
                 "input_prompt_summary": f"input-{i}",
@@ -59,7 +59,7 @@ def test_build_dispatch_context_prefers_related_logs(tmp_path: Path):
         session_id=session_id,
         workspace_root=ws,
         turn_record={
-            "dha_id": "dha-data",
+            "agent_id": "agent-data",
             "timestamp": "2026-01-01T00:00:01+00:00",
             "discussion_goal": "生成数据周报",
             "response_summary": "已完成图表草稿并给出统计摘要",
@@ -69,7 +69,7 @@ def test_build_dispatch_context_prefers_related_logs(tmp_path: Path):
         session_id=session_id,
         workspace_root=ws,
         turn_record={
-            "dha_id": "dha-design",
+            "agent_id": "agent-design",
             "timestamp": "2026-01-01T00:00:02+00:00",
             "discussion_goal": "生成封面图",
             "response_summary": "提供了封面风格建议",
@@ -79,14 +79,14 @@ def test_build_dispatch_context_prefers_related_logs(tmp_path: Path):
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
-        target_dha_id="dha-data",
+        target_agent_id="agent-data",
         goal="数据 周报",
         k=1,
     )
     assert ctx["has_memory"] is True
     assert "关键事实" in ctx["rendered"]
     assert len(ctx["logs"]) == 1
-    assert "dha-data" in ctx["logs"][0]["excerpt"]
+    assert "agent-data" in ctx["logs"][0]["excerpt"]
 
 
 def test_dispatch_context_contains_file_refs(tmp_path: Path):
@@ -96,7 +96,7 @@ def test_dispatch_context_contains_file_refs(tmp_path: Path):
     ref = append_expert_message_file(
         session_id=session_id,
         workspace_root=ws,
-        dha_id="dha-data",
+        agent_id="agent-data",
         timestamp="2026-01-01T00:00:03+00:00",
         content="这是完整发言内容",
         skill_id="skill-a",
@@ -105,7 +105,7 @@ def test_dispatch_context_contains_file_refs(tmp_path: Path):
         session_id=session_id,
         workspace_root=ws,
         turn_record={
-            "dha_id": "dha-data",
+            "agent_id": "agent-data",
             "timestamp": "2026-01-01T00:00:03+00:00",
             "discussion_goal": "生成数据周报",
             "response_summary": "请参考完整发言",
@@ -115,7 +115,7 @@ def test_dispatch_context_contains_file_refs(tmp_path: Path):
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
-        target_dha_id="dha-data",
+        target_agent_id="agent-data",
         goal="数据 周报",
         k=1,
     )

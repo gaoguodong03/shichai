@@ -13,14 +13,14 @@ def test_normalize_scheduler_decision_filters_suggested_add_by_recruitable_ids()
         {
             "next_speaker": "writer",
             "task_done": True,
-            "suggested_add_dha_ids": ["writer", "illustrator", "newcomer", "illustrator"],
+            "suggested_add_agent_ids": ["writer", "illustrator", "newcomer", "illustrator"],
         },
-        dha_ids=["host", "writer", "illustrator"],
+        agent_ids=["host", "writer", "illustrator"],
         recruitable_ids=["newcomer", "contact"],
-        last_speaker_dha_id="writer",
-        current_owner_dha_id="writer",
+        last_speaker_agent_id="writer",
+        current_owner_agent_id="writer",
     )
-    assert out["suggested_add_dha_ids"] == ["newcomer"]
+    assert out["suggested_add_agent_ids"] == ["newcomer"]
     assert out["next_speaker"] == "user"
     assert out["phase"] == OrchestrationPhase.RECRUITING.value
     assert out["interrupt_reason"] == InterruptReason.NEED_RECRUIT_EXPERT.value
@@ -34,7 +34,7 @@ def test_end_payload_hardens_terminal_semantics():
         phase=OrchestrationPhase.AWAITING_USER,
         interrupt_reason=InterruptReason.NEED_USER_INPUT,
         required_user_fields=[{"name": "topic", "required": True}],
-        resume_target_dha_id="Writer",
+        resume_target_agent_id="Writer",
     )
     assert payload["discussion_ended"] is True
     assert payload["waiting_for_user"] is False
@@ -42,7 +42,7 @@ def test_end_payload_hardens_terminal_semantics():
     assert payload["interrupt_reason"] == InterruptReason.NONE.value
     assert payload["suggested_next_speaker"] is None
     assert payload["required_user_fields"] == []
-    assert payload["resume_target_dha_id"] == "writer"
+    assert payload["resume_target_agent_id"] == "writer"
 
 
 def test_end_payload_sets_need_user_input_when_required_fields_present():

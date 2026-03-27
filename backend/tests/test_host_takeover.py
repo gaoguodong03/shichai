@@ -31,9 +31,9 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
 def test_select_next_speaker_without_host_prefers_last_speaker():
     gc = _get_group_chat_module()
     out = gc._select_next_speaker_without_host(
-        dha_ids=["a", "b", "c"],
-        last_speaker_dha_id="b",
-        explicit_requested_dha_ids=["a"],
+        agent_ids=["a", "b", "c"],
+        last_speaker_agent_id="b",
+        explicit_requested_agent_ids=["a"],
     )
     assert out == "b"
 
@@ -41,21 +41,21 @@ def test_select_next_speaker_without_host_prefers_last_speaker():
 def test_select_next_speaker_without_host_fallback_rules():
     gc = _get_group_chat_module()
     out_explicit = gc._select_next_speaker_without_host(
-        dha_ids=["a", "b", "c"],
-        last_speaker_dha_id=None,
-        explicit_requested_dha_ids=["x", "c"],
+        agent_ids=["a", "b", "c"],
+        last_speaker_agent_id=None,
+        explicit_requested_agent_ids=["x", "c"],
     )
     assert out_explicit == "c"
     out_single = gc._select_next_speaker_without_host(
-        dha_ids=["solo"],
-        last_speaker_dha_id=None,
-        explicit_requested_dha_ids=[],
+        agent_ids=["solo"],
+        last_speaker_agent_id=None,
+        explicit_requested_agent_ids=[],
     )
     assert out_single == "solo"
     out_none = gc._select_next_speaker_without_host(
-        dha_ids=["a", "b"],
-        last_speaker_dha_id=None,
-        explicit_requested_dha_ids=[],
+        agent_ids=["a", "b"],
+        last_speaker_agent_id=None,
+        explicit_requested_agent_ids=[],
     )
     assert out_none is None
 
@@ -63,38 +63,38 @@ def test_select_next_speaker_without_host_fallback_rules():
 def test_preferred_agent_id_map_prefers_agent_namespace():
     gc = _get_group_chat_module()
     instances = [
-        {"dha_id": "dha-seminar-guide", "name": "内容引导与发散专家"},
-        {"dha_id": "agent-123", "name": "内容引导与发散专家"},
-        {"dha_id": "agent-d92e733e", "name": "文书专员"},
+        {"agent_id": "agent-seminar-guide", "name": "内容引导与发散专家"},
+        {"agent_id": "agent-123", "name": "内容引导与发散专家"},
+        {"agent_id": "agent-d92e733e", "name": "文书专员"},
     ]
     id_map = gc._build_preferred_agent_id_map(instances)
-    assert id_map["dha-seminar-guide"] == "agent-123"
-    assert id_map["agent-123"] == "agent-123"
+    assert id_map["agent-seminar-guide"] == "agent-seminar-guide"
+    assert id_map["agent-123"] == "agent-seminar-guide"
     out = gc._normalize_to_preferred_agent_ids(
-        ["dha-seminar-guide", "agent-d92e733e"],
+        ["agent-seminar-guide", "agent-123", "agent-d92e733e"],
         id_to_preferred=id_map,
     )
-    assert out == ["agent-123", "agent-d92e733e"]
+    assert out == ["agent-seminar-guide", "agent-d92e733e"]
 
 
 def test_preferred_agent_id_map_generates_agent_id_for_dha_only():
     gc = _get_group_chat_module()
     instances = [
-        {"dha_id": "dha-web-fetch", "name": "网页爬取专家"},
+        {"agent_id": "agent-web-fetch", "name": "网页爬取专家"},
     ]
     id_map = gc._build_preferred_agent_id_map(instances)
-    assert id_map["dha-web-fetch"] == "agent-web-fetch"
+    assert id_map["agent-web-fetch"] == "agent-web-fetch"
     preferred_rows = gc._build_preferred_instances(instances, id_to_preferred=id_map)
-    assert preferred_rows[0]["dha_id"] == "agent-web-fetch"
+    assert preferred_rows[0]["agent_id"] == "agent-web-fetch"
 
 
-def test_extract_explicit_requested_dha_ids_matches_writing_intent():
+def test_extract_explicit_requested_agent_ids_matches_writing_intent():
     gc = _get_group_chat_module()
     instances = [
-        {"dha_id": "agent-d92e733e", "name": "文书专员", "role": "文本创作与报告撰写", "skill_ids": ["doc-coauthoring"]},
-        {"dha_id": "agent-other", "name": "网页爬取专家", "role": "网页抓取", "skill_ids": ["url-fetch"]},
+        {"agent_id": "agent-d92e733e", "name": "文书专员", "role": "文本创作与报告撰写", "skill_ids": ["doc-coauthoring"]},
+        {"agent_id": "agent-other", "name": "网页爬取专家", "role": "网页抓取", "skill_ids": ["url-fetch"]},
     ]
-    out = gc._extract_explicit_requested_dha_ids("请文本创作人员帮我写报告", instances)
+    out = gc._extract_explicit_requested_agent_ids("请文本创作人员帮我写报告", instances)
     assert "agent-d92e733e" in out
 
 
@@ -102,7 +102,7 @@ def test_prioritize_suggested_add_ids_prefers_user_requested_experts():
     gc = _get_group_chat_module()
     out = gc._prioritize_suggested_add_ids(
         ["agent-a", "agent-b"],
-        explicit_requested_dha_ids=["agent-x", "agent-a"],
+        explicit_requested_agent_ids=["agent-x", "agent-a"],
         recruitable_ids={"agent-a", "agent-b", "agent-x"},
         max_n=3,
     )

@@ -31,10 +31,10 @@ def _clean_ids(values: Any, valid: List[str]) -> List[str]:
 def normalize_scheduler_decision(
     raw: Optional[Dict[str, Any]],
     *,
-    dha_ids: List[str],
+    agent_ids: List[str],
     recruitable_ids: Optional[List[str]] = None,
-    last_speaker_dha_id: Optional[str],
-    current_owner_dha_id: Optional[str] = None,
+    last_speaker_agent_id: Optional[str],
+    current_owner_agent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Normalize host/leader decision to a stable orchestration payload.
 
@@ -51,7 +51,7 @@ def normalize_scheduler_decision(
     next_prompt = (data.get("next_prompt") or None)
 
     suggested = _clean_ids(
-        data.get("suggested_add_dha_ids") or data.get("suggested_add_expert_ids") or [],
+        data.get("suggested_add_agent_ids") or data.get("suggested_add_expert_ids") or [],
         recruitable_ids or [],
     )
     if suggested:
@@ -64,10 +64,10 @@ def normalize_scheduler_decision(
     if suggested:
         interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT
 
-    if not task_done and last_speaker_dha_id and last_speaker_dha_id in dha_ids:
-        next_speaker = last_speaker_dha_id
+    if not task_done and last_speaker_agent_id and last_speaker_agent_id in agent_ids:
+        next_speaker = last_speaker_agent_id
 
-    if next_speaker not in dha_ids and next_speaker not in ("user", "end"):
+    if next_speaker not in agent_ids and next_speaker not in ("user", "end"):
         next_speaker = "user"
         if interrupt_reason == InterruptReason.NONE:
             interrupt_reason = InterruptReason.CONFLICT_DETECTED
@@ -91,12 +91,12 @@ def normalize_scheduler_decision(
     if not isinstance(required_user_fields, list):
         required_user_fields = []
 
-    owner_dha_id = str(data.get("owner_dha_id") or "").strip() or None
-    if not owner_dha_id:
-        if next_speaker in dha_ids:
-            owner_dha_id = next_speaker
-        elif not task_done and current_owner_dha_id:
-            owner_dha_id = current_owner_dha_id
+    owner_agent_id = str(data.get("owner_agent_id") or "").strip() or None
+    if not owner_agent_id:
+        if next_speaker in agent_ids:
+            owner_agent_id = next_speaker
+        elif not task_done and current_owner_agent_id:
+            owner_agent_id = current_owner_agent_id
 
     decision = OrchestrationDecision(
         task_done=task_done,
@@ -104,9 +104,9 @@ def normalize_scheduler_decision(
         reason=reason,
         announcement=announcement,
         next_prompt=next_prompt,
-        suggested_add_dha_ids=suggested,
+        suggested_add_agent_ids=suggested,
         phase=phase,
-        owner_dha_id=owner_dha_id,
+        owner_agent_id=owner_agent_id,
         interrupt_reason=interrupt_reason,
         decision_source=source,
         handoff_reason=(data.get("handoff_reason") or reason or None),

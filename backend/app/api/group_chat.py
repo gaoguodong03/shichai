@@ -55,8 +55,8 @@ router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_depen
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
 
-# 已废弃：不再使用 dha-chat，新建会话 0 个 DHA 时由主持人先与用户交流并推荐 DHA 加入
-CHAT_DHA_ID = "dha-chat"
+# 已废弃：不再使用旧聊天占位专家；新建会话 0 个专家时由主持人先与用户交流并推荐专家加入
+CHAT_AGENT_ID = "agent-chat"
 
 def _request_skills_loader():
     u = get_current_user()
@@ -91,12 +91,12 @@ def _ensure_sessions_dir() -> Path:
 
 
 def _normalize_agent_ids(
-    legacy_dha_ids: Optional[List[str]] = None,
+    legacy_ids: Optional[List[str]] = None,
     agent_ids: Optional[List[str]] = None,
     expert_ids: Optional[List[str]] = None,
 ) -> List[str]:
-    """统一兼容字段优先级：expert_ids > agent_ids > dha_ids。"""
-    return list(expert_ids or agent_ids or legacy_dha_ids or [])
+    """统一兼容字段优先级：expert_ids > agent_ids > legacy_ids。"""
+    return list(expert_ids or agent_ids or legacy_ids or [])
 
 
 def _name_key(name: Any) -> str:
@@ -109,8 +109,6 @@ def _to_agent_style_id(raw_id: str) -> str:
         return sid
     if sid.startswith("agent-"):
         return sid
-    if sid.startswith("dha-"):
-        return f"agent-{sid[4:]}"
     return f"agent-{sid}"
 
 
@@ -118,7 +116,7 @@ def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, 
     """Build id->preferred-id mapping; prefer agent-* within same expert name."""
     name_to_ids: Dict[str, List[str]] = {}
     for d in instances or []:
-        did = str(d.get("dha_id") or "").strip()
+        did = str(d.get("agent_id") or "").strip()
         if not did:
             continue
         key = _name_key(d.get("name") or did)
@@ -131,7 +129,7 @@ def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, 
         name_to_preferred[key] = preferred
     id_to_preferred: Dict[str, str] = {}
     for d in instances or []:
-        did = str(d.get("dha_id") or "").strip()
+        did = str(d.get("agent_id") or "").strip()
         if not did:
             continue
         key = _name_key(d.get("name") or did)
@@ -147,12 +145,12 @@ def _build_preferred_instances(
     """Clone instances to canonical agent-* ids (one row per canonical id)."""
     preferred_to_row: Dict[str, Dict[str, Any]] = {}
     for d in instances or []:
-        did = str(d.get("dha_id") or "").strip()
+        did = str(d.get("agent_id") or "").strip()
         if not did:
             continue
         preferred = id_to_preferred.get(did, did)
         row = dict(d)
-        row["dha_id"] = preferred
+        row["agent_id"] = preferred
         # Keep one canonical row; prefer the row already using canonical id.
         if preferred not in preferred_to_row or did == preferred:
             preferred_to_row[preferred] = row
@@ -176,17 +174,15 @@ def _normalize_to_preferred_agent_ids(
 
 
 def _build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
-    """统一会话输出结构：新字段优先，兼容旧字段。"""
-    ids = list(meta_item.get("dha_ids", []))
-    leader_id = meta_item.get("leader_dha_id", "")
+    """统一会话输出结构。"""
+    ids = list(meta_item.get("agent_ids", []))
+    leader_id = meta_item.get("leader_agent_id", "")
     return {
         "id": session_id,
         "title": meta_item.get("title", "新对话"),
         "agent_ids": ids,
-        "dha_ids": ids,
         "expert_ids": ids,
         "leader_agent_id": leader_id,
-        "leader_dha_id": leader_id,
         "speak_mode": meta_item.get("speak_mode", "auto"),
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),
@@ -253,7 +249,7 @@ def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, An
 
     轮次定义（尽量符合用户直觉）：
     - 遇到 user 消息，开启新一轮；
-    - 在这一轮内收集后续 assistant（专家）发言（按 dha_id 分组，保留顺序）；
+    - 在这一轮内收集后续 assistant（专家）发言（按 agent_id 分组，保留顺序）；
     - role=host 的消息跳过（不归档）。
     """
     segments: List[Dict[str, Any]] = []
@@ -264,7 +260,7 @@ def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, An
         if current is None:
             current = {
                 "user": None,
-                "experts": {},  # dha_id -> {dha_id, messages:[{message_id, content, timestamp, skill_id?}]}
+                "experts": {},  # agent_id -> {agent_id, messages:[{message_id, content, timestamp, skill_id?}]}
             }
         return current
 
@@ -309,15 +305,15 @@ def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, An
             continue
         if role == "assistant":
             cur = _ensure_current()
-            dha_id = (m.get("dha_id") or "").strip()
-            if not dha_id:
+            agent_id = (m.get("agent_id") or "").strip()
+            if not agent_id:
                 continue
             experts = cur.get("experts")
             if not isinstance(experts, dict):
                 experts = {}
                 cur["experts"] = experts
-            if dha_id not in experts:
-                experts[dha_id] = {"dha_id": dha_id, "messages": []}
+            if agent_id not in experts:
+                experts[agent_id] = {"agent_id": agent_id, "messages": []}
             item = {
                 "message_id": m.get("message_id"),
                 "content": m.get("content") or "",
@@ -325,7 +321,7 @@ def _build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, An
             }
             if m.get("skill_id") is not None:
                 item["skill_id"] = m.get("skill_id")
-            experts[dha_id]["messages"].append(item)
+            experts[agent_id]["messages"].append(item)
             continue
         # 其他 role 忽略
 
@@ -342,10 +338,10 @@ async def get_group_archive(group_session_id: str):
         raise HTTPException(status_code=404, detail="Group session not found")
     messages = _load_group_history(group_session_id)
     segments = _build_archive_segments(messages)
-    # dha_map 用于前端展示名字
+    # agent_map 用于前端展示名字
     instances = load_dha_instances()
-    dha_map = {d.get("dha_id"): {"name": d.get("name") or d.get("dha_id"), "role": d.get("role") or ""} for d in instances if d.get("dha_id")}
-    return {"status": "ok", "data": {"segments": segments, "dha_map": dha_map, "expert_map": dha_map}}
+    agent_map = {d.get("agent_id"): {"name": d.get("name") or d.get("agent_id"), "role": d.get("role") or ""} for d in instances if d.get("agent_id")}
+    return {"status": "ok", "data": {"segments": segments, "agent_map": agent_map, "expert_map": agent_map}}
 
 
 def _messages_to_context(
@@ -366,13 +362,13 @@ def _messages_to_context(
         content = (m.get("content") or "").strip()
         if len(content) > max_chars_per_message:
             content = content[:max_chars_per_message].rstrip() + "\n...[内容已截断]"
-        dha_id = m.get("dha_id", "")
+        agent_id = m.get("agent_id", "")
         if role == "user":
             lines.append(f"【用户】{content}")
         elif role == "host":
             lines.append(f"【主持人】{content}")
         else:
-            name = dha_id or "助手"
+            name = agent_id or "助手"
             lines.append(f"【{name}】{content}")
     context = "\n\n".join(lines)
     if len(context) > max_chars:
@@ -510,7 +506,7 @@ def _extract_facts_from_response(text: str, max_items: int = 4) -> List[str]:
 
 def _build_next_prompt_with_memory(
     session_id: str,
-    target_dha_id: str,
+    target_agent_id: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
@@ -524,7 +520,7 @@ def _build_next_prompt_with_memory(
     try:
         dispatch = build_dispatch_context(
             session_id=session_id,
-            target_dha_id=target_dha_id,
+            target_agent_id=target_agent_id,
             goal=discussion_goal,
             k=mem["dispatch_top_k"],
             max_facts=mem["max_facts"],
@@ -562,7 +558,7 @@ def _ensure_structured_next_prompt(
     prompt: str,
     discussion_goal: str,
     context: str,
-    target_dha_id: str,
+    target_agent_id: str,
 ) -> str:
     """轻量校验 next_prompt 结构，不足时补齐关键段落，避免专家空转。"""
     p = (prompt or "").strip()
@@ -608,7 +604,7 @@ def _ensure_structured_next_prompt(
 
 def _build_checked_next_prompt(
     session_id: str,
-    target_dha_id: str,
+    target_agent_id: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
@@ -616,7 +612,7 @@ def _build_checked_next_prompt(
 ) -> str:
     raw = _build_next_prompt_with_memory(
         session_id=session_id,
-        target_dha_id=target_dha_id,
+        target_agent_id=target_agent_id,
         discussion_goal=discussion_goal,
         context=context,
         app_settings=app_settings,
@@ -626,7 +622,7 @@ def _build_checked_next_prompt(
         prompt=raw,
         discussion_goal=discussion_goal,
         context=context,
-        target_dha_id=target_dha_id,
+        target_agent_id=target_agent_id,
     )
 
 
@@ -748,10 +744,10 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
 
     期望 JSON 字段（可选）：
     - task_done: bool
-    - next_speaker: "user" 或某 dha_id
+    - next_speaker: "user" 或某 agent_id
     - reason / announcement: str
-    - suggested_add_dha_ids: [dha_id, ...] 或 suggested_add_dha_id: dha_id
-    - suggested_order: [dha_id, ...]
+    - suggested_add_agent_ids: [agent_id, ...] 或 suggested_add_agent_id: agent_id
+    - suggested_order: [agent_id, ...]
     """
     if not content or not content.strip():
         return None
@@ -785,25 +781,25 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
         # 主持人建议邀请的成员（可选）
-        suggested_add_dha_ids = None
+        suggested_add_agent_ids = None
         ids_raw = data.get("suggested_add_expert_ids")
         if not isinstance(ids_raw, list) or not ids_raw:
-            ids_raw = data.get("suggested_add_dha_ids")
+            ids_raw = data.get("suggested_add_agent_ids")
         if isinstance(ids_raw, list) and ids_raw:
             cleaned = [str(x).strip() for x in ids_raw if str(x).strip()]
             if cleaned:
-                suggested_add_dha_ids = list(dict.fromkeys(cleaned))
-        if not suggested_add_dha_ids:
-            sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_dha_id") or "").strip()
+                suggested_add_agent_ids = list(dict.fromkeys(cleaned))
+        if not suggested_add_agent_ids:
+            sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_agent_id") or "").strip()
             if sid:
-                suggested_add_dha_ids = [sid]
+                suggested_add_agent_ids = [sid]
         suggested_order = data.get("suggested_order")  # 首轮任务规划：建议的 DHA 运行顺序
         if isinstance(suggested_order, list):
             suggested_order = [str(x).strip().lower() for x in suggested_order if str(x).strip()]
         else:
             suggested_order = None
         phase = (data.get("phase") or "").strip().lower() or None
-        owner_dha_id = (data.get("owner_dha_id") or "").strip() or None
+        owner_agent_id = (data.get("owner_agent_id") or "").strip() or None
         interrupt_reason = (data.get("interrupt_reason") or "").strip().lower() or None
         decision_source = (data.get("decision_source") or "").strip().lower() or "legacy"
         handoff_reason = (data.get("handoff_reason") or "").strip() or None
@@ -819,10 +815,10 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
             "announcement": announcement or "请下一位发言。",
             "next_prompt": None,
             "suggested_order": suggested_order,
-            "suggested_add_dha_ids": suggested_add_dha_ids,
-            "suggested_add_expert_ids": suggested_add_dha_ids,
+            "suggested_add_agent_ids": suggested_add_agent_ids,
+            "suggested_add_expert_ids": suggested_add_agent_ids,
             "phase": phase,
-            "owner_dha_id": owner_dha_id,
+            "owner_agent_id": owner_agent_id,
             "interrupt_reason": interrupt_reason,
             "decision_source": decision_source,
             "handoff_reason": handoff_reason,
@@ -832,31 +828,31 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _extract_valid_dha_ids_from_text(text: str, valid_ids: set[str], max_n: int = 3) -> List[str]:
-    """从自由文本里兜底提取合法 dha_id。"""
+def _extract_valid_agent_ids_from_text(text: str, valid_ids: set[str], max_n: int = 3) -> List[str]:
+    """从自由文本里兜底提取合法 agent_id。"""
     if not text or not valid_ids:
         return []
-    found = re.findall(r"dha-[a-zA-Z0-9\-]+", str(text), flags=re.I)
+    found = re.findall(r"agent-[a-zA-Z0-9\-]+", str(text), flags=re.I)
     cleaned = [x for x in dict.fromkeys(found) if x in valid_ids]
     return cleaned[: max(0, int(max_n))]
 
 
-def _extract_valid_dha_ids_from_text_or_names(
+def _extract_valid_agent_ids_from_text_or_names(
     text: str,
     valid_ids: set[str],
     all_instances: List[Dict[str, Any]],
     max_n: int = 3,
 ) -> List[str]:
-    """从主持人自由文本中兜底提取合法专家 ID（支持 dha_id 或专家名字）。"""
+    """从主持人自由文本中兜底提取合法专家 ID（支持 agent_id 或专家名字）。"""
     if not text:
         return []
-    ids = _extract_valid_dha_ids_from_text(text, valid_ids, max_n=max_n)
+    ids = _extract_valid_agent_ids_from_text(text, valid_ids, max_n=max_n)
     if ids:
         return ids[: max(0, int(max_n))]
     name_hits: List[str] = []
     low = str(text).lower()
     for d in all_instances or []:
-        did = (d.get("dha_id") or "").strip()
+        did = (d.get("agent_id") or "").strip()
         if not did or did not in valid_ids:
             continue
         name = str(d.get("name") or "").strip()
@@ -900,29 +896,29 @@ def _user_requests_host_takeover(
 
 def _select_next_speaker_without_host(
     *,
-    dha_ids: List[str],
-    last_speaker_dha_id: Optional[str],
-    explicit_requested_dha_ids: List[str],
+    agent_ids: List[str],
+    last_speaker_agent_id: Optional[str],
+    explicit_requested_agent_ids: List[str],
 ) -> Optional[str]:
     """Fallback progression when host takeover is disabled."""
-    if last_speaker_dha_id and last_speaker_dha_id in dha_ids:
-        return last_speaker_dha_id
-    for did in explicit_requested_dha_ids or []:
-        if did in dha_ids:
+    if last_speaker_agent_id and last_speaker_agent_id in agent_ids:
+        return last_speaker_agent_id
+    for did in explicit_requested_agent_ids or []:
+        if did in agent_ids:
             return did
-    if len(dha_ids) == 1:
-        return dha_ids[0]
+    if len(agent_ids) == 1:
+        return agent_ids[0]
     return None
 
 
 def _prioritize_suggested_add_ids(
     suggested_ids: List[str],
     *,
-    explicit_requested_dha_ids: List[str],
+    explicit_requested_agent_ids: List[str],
     recruitable_ids: set[str],
     max_n: int = 3,
 ) -> List[str]:
-    priority = [x for x in (explicit_requested_dha_ids or []) if x in recruitable_ids]
+    priority = [x for x in (explicit_requested_agent_ids or []) if x in recruitable_ids]
     merged: List[str] = []
     for sid in priority + list(suggested_ids or []):
         if sid in recruitable_ids and sid not in merged:
@@ -935,14 +931,14 @@ def _prioritize_suggested_add_ids(
 def _heuristic_recommend_dhas(
     discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
 ) -> List[str]:
-    """0 成员时兜底推荐：用简单关键词匹配 name/role，返回 dha_id 列表（去重、保序）。
+    """0 成员时兜底推荐：用简单关键词匹配 name/role，返回 agent_id 列表（去重、保序）。
 
     max_n 为 None 时返回尽可能多的候选（按匹配度排序）。
     """
     goal = (discussion_goal or "").strip().lower()
     scored = []
     for d in all_instances or []:
-        did = (d.get("dha_id") or "").strip()
+        did = (d.get("agent_id") or "").strip()
         if not did:
             continue
         name = str(d.get("name") or "").lower()
@@ -970,7 +966,7 @@ def _heuristic_recommend_dhas(
     if not picked:
         # 仍然没有命中：选前 max_n 个
         for d in all_instances or []:
-            did = (d.get("dha_id") or "").strip()
+            did = (d.get("agent_id") or "").strip()
             if did and did not in picked:
                 picked.append(did)
             if max_n is not None and len(picked) >= max_n:
@@ -980,8 +976,8 @@ def _heuristic_recommend_dhas(
     return picked
 
 
-def _extract_explicit_requested_dha_ids(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
-    """从用户文本中提取明确点名的专家（按 dha_id/name 精确包含匹配）。"""
+def _extract_explicit_requested_agent_ids(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
+    """从用户文本中提取明确点名的专家（按 agent_id/name 精确包含匹配）。"""
     text = (user_text or "").strip().lower()
     if not text:
         return []
@@ -989,7 +985,7 @@ def _extract_explicit_requested_dha_ids(user_text: str, all_instances: List[Dict
     writing_intent = any(k in text for k in ("写", "撰写", "报告", "文案", "创作", "改写", "润色", "文本"))
     matched_debug: List[Dict[str, Any]] = []
     for d in all_instances or []:
-        did = (d.get("dha_id") or "").strip()
+        did = (d.get("agent_id") or "").strip()
         if not did:
             continue
         name = str(d.get("name") or "").strip()
@@ -1051,7 +1047,7 @@ async def _host_decide_by_dha(
     dha_list: List[Dict[str, Any]],
     discussion_goal: str,
     recent_messages: str,
-    last_speaker_dha_id: Optional[str],
+    last_speaker_agent_id: Optional[str],
     extra_system_prompt: str,
     available_to_add: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -1067,7 +1063,7 @@ async def _host_decide_by_dha(
     if not isinstance(host_prompts, dict):
         host_prompts = {}
     host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
-    name = host_dha.get("name") or host_dha.get("dha_id", host_display_name)
+    name = host_dha.get("name") or host_dha.get("agent_id", host_display_name)
     role = host_dha.get("role") or "群聊主持人"
     skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{skill_content}"
     host_system = (host_dha.get("system_prompt") or "").strip()
@@ -1077,15 +1073,15 @@ async def _host_decide_by_dha(
     dha_lines = []
     for d in dha_list:
         r = d.get("role") or "参与者"
-        n = d.get("name") or d.get("dha_id", "")
-        did = d.get("dha_id", "")
+        n = d.get("name") or d.get("agent_id", "")
+        did = d.get("agent_id", "")
         dha_lines.append(f"- {n} ({did}): {r}")
     dha_text = "\n".join(dha_lines)
 
-    # 可邀请的专家列表：主持人用它来输出 suggested_add_dha_ids
+    # 可邀请的专家列表：主持人用它来输出 suggested_add_agent_ids
     add_lines = []
     for d in (available_to_add or []):
-        did = (d.get("dha_id") or "").strip()
+        did = (d.get("agent_id") or "").strip()
         if not did:
             continue
         n = (d.get("name") or did) if isinstance(d.get("name") or did, str) else did
@@ -1099,17 +1095,17 @@ async def _host_decide_by_dha(
     host_master_prompt = str(host_prompts.get("host_master_prompt") or "")
 
     user_content = (
-        f"【当前群聊参与者（next_speaker 必须使用以下 dha_id 之一）】\n{dha_text}\n\n"
+        f"【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】\n{dha_text}\n\n"
         f"【讨论目标】\n{discussion_goal}\n\n"
         "【最近讨论内容（按时间顺序）】\n"
         f"{recent_messages}\n\n"
-        f"【可邀请专家列表（需要补人时，从此列表选择 suggested_add_dha_ids）】\n{available_text}\n\n"
+        f"【可邀请专家列表（需要补人时，从此列表选择 suggested_add_agent_ids）】\n{available_text}\n\n"
         "【建议策略】\n"
         "- 若建议补人，优先推荐 1~3 位最相关专家；\n"
         "- 推荐后请先交还给用户确认，不要假设会自动邀请。\n\n"
     )
-    if last_speaker_dha_id:
-        user_content += f"【刚发言的专家】{last_speaker_dha_id}\n\n"
+    if last_speaker_agent_id:
+        user_content += f"【刚发言的专家】{last_speaker_agent_id}\n\n"
     else:
         user_content += "【当前为首轮】尚无上一位专家发言。\n\n"
 
@@ -1139,7 +1135,7 @@ async def _host_only_respond_and_recommend(
 ) -> tuple[str, Optional[List[str]]]:
     """
     当前群聊 0 个成员时：主持人回复用户并推荐 1~3 位专家加入（等待用户确认）。
-    返回 (主持人回复正文, suggested_add_dha_ids 或 None)。
+    返回 (主持人回复正文, suggested_add_agent_ids 或 None)。
     """
     skill_content = _request_skills_loader().get_skill_full_content("group-host")
     if not skill_content:
@@ -1154,8 +1150,8 @@ async def _host_only_respond_and_recommend(
     system_content = (host_zero_member_policy + "\n\n" + host_intro + "\n\n" + str(skill_content or "")).strip()
     dha_lines = []
     for d in all_instances:
-        did = d.get("dha_id", "")
-        if did == CHAT_DHA_ID:
+        did = d.get("agent_id", "")
+        if did == CHAT_AGENT_ID:
             continue
         name = d.get("name") or did
         role = d.get("role") or "参与者"
@@ -1187,8 +1183,8 @@ async def _host_only_respond_and_recommend(
             return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
         text = content_str.strip()
         announcement = text
-        suggested_add_dha_ids: Optional[List[str]] = None
-        valid_ids = {d.get("dha_id") for d in all_instances if d.get("dha_id")}
+        suggested_add_agent_ids: Optional[List[str]] = None
+        valid_ids = {d.get("agent_id") for d in all_instances if d.get("agent_id")}
         for sep in ("\n{", "{"):
             if sep in text:
                 idx = text.find(sep) if sep == "{" else text.find(sep) + 1
@@ -1202,26 +1198,26 @@ async def _host_only_respond_and_recommend(
                     data = json.loads(json_str)
                     ids_raw = data.get("suggested_add_expert_ids")
                     if not isinstance(ids_raw, list) or not ids_raw:
-                        ids_raw = data.get("suggested_add_dha_ids")
+                        ids_raw = data.get("suggested_add_agent_ids")
                     if isinstance(ids_raw, list) and ids_raw:
                         # 过滤合法 id，去重并限制最多 3 位（优先最相关）
                         cleaned = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids]
                         if cleaned:
                             # 保持顺序去重
-                            suggested_add_dha_ids = list(dict.fromkeys(cleaned))[:3]
-                    if not suggested_add_dha_ids:
-                        sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_dha_id") or "").strip()
+                            suggested_add_agent_ids = list(dict.fromkeys(cleaned))[:3]
+                    if not suggested_add_agent_ids:
+                        sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_agent_id") or "").strip()
                         if sid and sid in valid_ids:
-                            suggested_add_dha_ids = [sid]
+                            suggested_add_agent_ids = [sid]
                 except Exception:
                     pass
                 break
-        # 若 JSON 未解析出推荐列表，从正文中提取 dha-xxx 作为备用（主持人常在正文中写专家 id，如 dha-url-to-blog、dha-2be73edd）
-        if not suggested_add_dha_ids and valid_ids:
-            dha_id_pattern = re.compile(r"dha-[a-zA-Z0-9\-]+", re.I)
-            found = list(dict.fromkeys(dha_id_pattern.findall(text)))
-            suggested_add_dha_ids = [x for x in found if x in valid_ids][:3]
-        return announcement or text, suggested_add_dha_ids
+        # 若 JSON 未解析出推荐列表，从正文中提取 agent-xxx 作为备用（主持人常在正文中写专家 id）
+        if not suggested_add_agent_ids and valid_ids:
+            agent_id_pattern = re.compile(r"agent-[a-zA-Z0-9\-]+", re.I)
+            found = list(dict.fromkeys(agent_id_pattern.findall(text)))
+            suggested_add_agent_ids = [x for x in found if x in valid_ids][:3]
+        return announcement or text, suggested_add_agent_ids
     except Exception as e:
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
         fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
@@ -1292,9 +1288,8 @@ class _ToolFailureHeuristicHook:
 class GroupSessionCreate(BaseModel):
     title: str = "新群聊"
     agent_ids: List[str] = Field(default_factory=list)
-    dha_ids: List[str] = []  # 可为空，表示单聊；之后通过邀请追加 DHA 变为群聊
     expert_ids: List[str] = Field(default_factory=list)  # 兼容字段：expert_ids
-    leader_dha_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
+    leader_agent_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
     speak_mode: Optional[str] = "auto"  # auto | manual
 
 
@@ -1303,25 +1298,22 @@ class GroupSessionUpdate(BaseModel):
     speak_mode: Optional[str] = None
     add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
     remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
-    add_dha_ids: Optional[List[str]] = None  # 向已有群聊追加 DHA
-    remove_dha_ids: Optional[List[str]] = None  # 从群聊中移除 DHA
     add_expert_ids: Optional[List[str]] = None  # 兼容字段：add_expert_ids
     remove_expert_ids: Optional[List[str]] = None  # 兼容字段：remove_expert_ids
 
 
 class GroupChatRequest(BaseModel):
     message: Optional[str] = None
-    override_next_speaker: Optional[str] = None  # dha_id | "user" | null
+    override_next_speaker: Optional[str] = None  # agent_id | "user" | null
     action: Optional[str] = None  # "continue" 继续下一轮
     custom_prompt: Optional[str] = None  # 手动模式下，可由前端传入自定义给下一发言人的提示词（覆盖默认生成）
     host_takeover_requested: Optional[bool] = None  # 仅在用户明确提到主持人时才允许主持人调度
 
 
 class GroupPromptPreviewRequest(BaseModel):
-    """前端在 manual 模式下预览（并可编辑）某个 DHA 下一轮发言时将收到的提示词内容。"""
+    """前端在 manual 模式下预览（并可编辑）某个专家下一轮发言时将收到的提示词内容。"""
 
     agent_id: Optional[str] = None
-    dha_id: Optional[str] = None
     expert_id: Optional[str] = None
 
 
@@ -1331,16 +1323,15 @@ class GroupPromptPreviewRequest(BaseModel):
 def create_session_internal(
     title: str = "新对话",
     agent_ids: Optional[List[str]] = None,
-    dha_ids: Optional[List[str]] = None,
     expert_ids: Optional[List[str]] = None,
     speak_mode: str = "auto",
 ) -> Dict[str, Any]:
-    """创建一条会话（主持人必在，dha_ids 可为空）。返回 meta 条目（含 id）。"""
+    """创建一条会话（主持人必在，agent_ids 可为空）。返回 meta 条目（含 id）。"""
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     valid_ids = set(id_to_preferred.values())
     resolved_ids = _normalize_agent_ids(
-        legacy_dha_ids=dha_ids,
+        legacy_ids=agent_ids,
         agent_ids=agent_ids,
         expert_ids=expert_ids,
     )
@@ -1357,8 +1348,8 @@ def create_session_internal(
     meta[gsid] = {
         "title": title or "新对话",
         "title_auto_generated": title_auto_generated,
-        "dha_ids": resolved_ids,
-        "leader_dha_id": "",
+        "agent_ids": resolved_ids,
+        "leader_agent_id": "",
         "speak_mode": (speak_mode or "auto").strip().lower(),
         "created_at": now,
         "updated_at": now,
@@ -1380,13 +1371,13 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
     for msg in messages:
         role = msg.get("role", "")
         content = (msg.get("content") or "").strip()
-        dha_id = msg.get("dha_id", "")
+        agent_id = msg.get("agent_id", "")
         if role == "user":
             lines.append("## 用户\n\n")
         elif role == "host":
             lines.append("## 主持人\n\n")
         else:
-            label = dha_id or "助手"
+            label = agent_id or "助手"
             lines.append(f"## {label}\n\n")
         lines.append(content)
         lines.append("\n\n")
@@ -1432,11 +1423,11 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
     session_meta = m
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
-    dha_ids = _normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred)
-    target_raw = (body.agent_id or body.expert_id or body.dha_id or "").strip()
-    target_dha_id = _normalize_to_preferred_agent_ids([target_raw], id_to_preferred=id_to_preferred)
-    target_dha_id = target_dha_id[0] if target_dha_id else ""
-    if target_dha_id not in dha_ids:
+    agent_ids = _normalize_to_preferred_agent_ids(list(m.get("agent_ids", [])), id_to_preferred=id_to_preferred)
+    target_raw = (body.agent_id or body.expert_id or body.agent_id or "").strip()
+    target_agent_id = _normalize_to_preferred_agent_ids([target_raw], id_to_preferred=id_to_preferred)
+    target_agent_id = target_agent_id[0] if target_agent_id else ""
+    if target_agent_id not in agent_ids:
         raise HTTPException(status_code=400, detail="专家不在该群聊中")
 
     messages = _load_group_history(group_session_id)
@@ -1463,18 +1454,18 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
 @router.post("/group-sessions")
 async def create_group_session(body: GroupSessionCreate, response: Response):
-    """创建群聊会话。dha_ids 为空时表示「主持人为先」：用户先与主持人交流。"""
+    """创建群聊会话。agent_ids 为空时表示「主持人为先」：用户先与主持人交流。"""
     _set_group_alias_deprecated_header(response)
     resolved_ids = _normalize_agent_ids(
-        legacy_dha_ids=body.dha_ids,
+        legacy_ids=body.agent_ids,
         agent_ids=body.agent_ids,
         expert_ids=body.expert_ids,
     )
-    if body.leader_dha_id and resolved_ids and body.leader_dha_id not in resolved_ids:
-        raise HTTPException(status_code=400, detail="leader_dha_id 必须在专家列表中")
+    if body.leader_agent_id and resolved_ids and body.leader_agent_id not in resolved_ids:
+        raise HTTPException(status_code=400, detail="leader_agent_id 必须在专家列表中")
     data = create_session_internal(
         title=body.title or "新群聊",
-        dha_ids=resolved_ids,
+        agent_ids=resolved_ids,
         speak_mode=body.speak_mode or "auto",
     )
     return {"status": "ok", "data": data}
@@ -1491,27 +1482,27 @@ async def get_group_session(group_session_id: str):
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
-    dha_map_raw = {d.get("dha_id"): d for d in preferred_instances if d.get("dha_id")}
-    # 兼容历史消息/会话中遗留的 dha-*，对外统一输出 agent-*。
+    agent_map_raw = {d.get("agent_id"): d for d in preferred_instances if d.get("agent_id")}
+    # 统一输出 agent-*。
     normalized_messages = []
     for msg in messages:
         row = dict(msg or {})
-        did = str(row.get("dha_id") or "").strip()
+        did = str(row.get("agent_id") or "").strip()
         if did:
-            row["dha_id"] = id_to_preferred.get(did, _to_agent_style_id(did))
+            row["agent_id"] = id_to_preferred.get(did, _to_agent_style_id(did))
         normalized_messages.append(row)
     messages = normalized_messages
-    dha_ids_in_group = set(_normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred))
-    m["dha_ids"] = list(dha_ids_in_group)
-    dha_ids_in_messages = {msg.get("dha_id") for msg in messages if msg.get("dha_id")}
-    relevant_ids = dha_ids_in_group | dha_ids_in_messages
-    dha_map = {
+    agent_ids_in_group = set(_normalize_to_preferred_agent_ids(list(m.get("agent_ids", [])), id_to_preferred=id_to_preferred))
+    m["agent_ids"] = list(agent_ids_in_group)
+    agent_ids_in_messages = {msg.get("agent_id") for msg in messages if msg.get("agent_id")}
+    relevant_ids = agent_ids_in_group | agent_ids_in_messages
+    agent_map = {
         k: {
             "name": v.get("name") or "",
             "role": v.get("role") or "",
             "is_leader": v.get("is_leader", False),
         }
-        for k, v in dha_map_raw.items()
+        for k, v in agent_map_raw.items()
         if k in relevant_ids
     }
     return {
@@ -1519,24 +1510,24 @@ async def get_group_session(group_session_id: str):
         "data": {
             **_build_session_payload(group_session_id, m),
             "messages": messages,
-            "dha_map": dha_map,
-            "expert_map": dha_map,
+            "agent_map": agent_map,
+            "expert_map": agent_map,
         },
     }
 
 
 @router.put("/group-sessions/{group_session_id}")
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、发言模式、追加 DHA 等。若会话不在 meta 中但请求为邀请（add_dha_ids），则自动创建该会话条目以避免 404。"""
+    """更新群聊：重命名、发言模式、追加 DHA 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
-        if body.add_dha_ids:
+        if body.add_agent_ids:
             now = datetime.now(timezone.utc).isoformat()
             meta[group_session_id] = {
                 "title": "新群聊",
                 "title_auto_generated": True,
-                "dha_ids": [],
-                "leader_dha_id": "",
+                "agent_ids": [],
+                "leader_agent_id": "",
                 "speak_mode": "auto",
                 "created_at": now,
                 "updated_at": now,
@@ -1561,26 +1552,26 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     add_ids = (
         body.add_expert_ids
         if body.add_expert_ids is not None
-        else (body.add_agent_ids if body.add_agent_ids is not None else body.add_dha_ids)
+        else body.add_agent_ids
     )
     remove_ids = (
         body.remove_expert_ids
         if body.remove_expert_ids is not None
-        else (body.remove_agent_ids if body.remove_agent_ids is not None else body.remove_dha_ids)
+        else body.remove_agent_ids
     )
     if add_ids or remove_ids:
         instances = load_dha_instances()
         id_to_preferred = _build_preferred_agent_id_map(instances)
         preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
         id_to_name = {
-            d.get("dha_id"): (d.get("name") or d.get("dha_id"))
+            d.get("agent_id"): (d.get("name") or d.get("agent_id"))
             for d in preferred_instances
-            if d.get("dha_id")
+            if d.get("agent_id")
         }
-        valid_ids = {d.get("dha_id") for d in preferred_instances if d.get("dha_id")}
+        valid_ids = {d.get("agent_id") for d in preferred_instances if d.get("agent_id")}
         current = set(
             _normalize_to_preferred_agent_ids(
-                list(meta[group_session_id].get("dha_ids", [])),
+                list(meta[group_session_id].get("agent_ids", [])),
                 id_to_preferred=id_to_preferred,
             )
         )
@@ -1595,11 +1586,11 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 if did not in current:
                     newly_added_ids.append(did)
                 current.add(did)
-            current.discard(CHAT_DHA_ID)
+            current.discard(CHAT_AGENT_ID)
         if remove_ids_norm:
             for did in remove_ids_norm:
                 current.discard(did)
-        meta[group_session_id]["dha_ids"] = list(current)
+        meta[group_session_id]["agent_ids"] = list(current)
         # 仅在确实新增成员时，写入主持人提示消息（一次一条）
         if newly_added_ids:
             unique_added = list(dict.fromkeys([x for x in newly_added_ids if x in current and x not in before_ids]))
@@ -1613,7 +1604,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "content": f"已邀请“{display_name}”加入会话",
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "event_type": "member_joined",
-                        "joined_dha_ids": [did],
+                        "joined_agent_ids": [did],
                     }
                     messages.append(join_msg)
                 _save_group_history(group_session_id, messages)
@@ -1675,17 +1666,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
-    dha_ids = _normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred)
-    m["dha_ids"] = list(dha_ids)
-    leader_dha_id = _normalize_to_preferred_agent_ids([m.get("leader_dha_id", "")], id_to_preferred=id_to_preferred)
-    leader_dha_id = leader_dha_id[0] if leader_dha_id else ""
-    dha_map = {d.get("dha_id"): d for d in preferred_instances}
-    dha_ids = _normalize_to_preferred_agent_ids(list(dha_ids or []), id_to_preferred=id_to_preferred)
-    dha_list = [d for d in preferred_instances if d.get("dha_id") in dha_ids]
+    agent_ids = _normalize_to_preferred_agent_ids(list(m.get("agent_ids", [])), id_to_preferred=id_to_preferred)
+    m["agent_ids"] = list(agent_ids)
+    leader_agent_id = _normalize_to_preferred_agent_ids([m.get("leader_agent_id", "")], id_to_preferred=id_to_preferred)
+    leader_agent_id = leader_agent_id[0] if leader_agent_id else ""
+    dha_map = {d.get("agent_id"): d for d in preferred_instances}
+    agent_ids = _normalize_to_preferred_agent_ids(list(agent_ids or []), id_to_preferred=id_to_preferred)
+    dha_list = [d for d in preferred_instances if d.get("agent_id") in agent_ids]
     # 当前不在群内的专家，主持人可在「完成不了工作」时建议邀请
     available_to_add = [
         d for d in preferred_instances
-        if d.get("dha_id") and d.get("dha_id") not in dha_ids and d.get("dha_id") != CHAT_DHA_ID
+        if d.get("agent_id") and d.get("agent_id") not in agent_ids and d.get("agent_id") != CHAT_AGENT_ID
     ]
 
     messages = _load_group_history(group_session_id)
@@ -1694,10 +1685,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     if not isinstance(host_prompts, dict):
         host_prompts = {}
     host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
-    pending_owner_dha_id = (m.get("pending_owner_dha_id") or "").strip().lower()
+    pending_owner_agent_id = (m.get("pending_owner_agent_id") or "").strip().lower()
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
-    explicit_requested_dha_ids = _extract_explicit_requested_dha_ids(request.message or "", preferred_instances) if (request.message and request.message.strip()) else []
-    explicit_requested_dha_ids = _normalize_to_preferred_agent_ids(explicit_requested_dha_ids, id_to_preferred=id_to_preferred)
+    explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(request.message or "", preferred_instances) if (request.message and request.message.strip()) else []
+    explicit_requested_agent_ids = _normalize_to_preferred_agent_ids(explicit_requested_agent_ids, id_to_preferred=id_to_preferred)
     auto_resume_owner: Optional[str] = None
     host_takeover_requested = _user_requests_host_takeover(
         request.message or "",
@@ -1707,8 +1698,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     # 用户消息
     if request.message and request.message.strip():
-        if pending_owner_dha_id and pending_owner_dha_id in dha_ids and request.override_next_speaker is None:
-            auto_resume_owner = pending_owner_dha_id
+        if pending_owner_agent_id and pending_owner_agent_id in agent_ids and request.override_next_speaker is None:
+            auto_resume_owner = pending_owner_agent_id
         first_user_message = not any(m.get("role") == "user" for m in messages)
         messages.append({
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
@@ -1744,10 +1735,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         _save_group_meta(meta)
 
     # 上一发言人（用于主持人/领导人判断 task_done；排除主持人本人，只计参与讨论的 DHA）
-    last_speaker_dha_id = None
+    last_speaker_agent_id = None
     for msg in reversed(messages):
-        if msg.get("role") == "assistant" and msg.get("dha_id") and msg.get("dha_id") != leader_dha_id:
-            last_speaker_dha_id = msg.get("dha_id")
+        if msg.get("role") == "assistant" and msg.get("agent_id") and msg.get("agent_id") != leader_agent_id:
+            last_speaker_agent_id = msg.get("agent_id")
             break
 
     # 讨论目标：取首条用户消息（去掉前端已加的「【讨论目标】」前缀，避免重复）
@@ -1767,7 +1758,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     import json as json_module
 
     async def event_gen():
-        nonlocal last_speaker_dha_id, dha_ids, dha_list, available_to_add, host_takeover_requested
+        nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
         meta_item: Dict[str, Any] = meta.get(group_session_id, {})
         host_takeover_open = bool(host_takeover_requested)
         custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
@@ -1775,10 +1766,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         orch_ctx = OrchestrationContext(
             session_id=group_session_id,
             phase=OrchestrationPhase.PLANNING,
-            owner_dha_id=last_speaker_dha_id,
+            owner_agent_id=last_speaker_agent_id,
             decision_source=DecisionSource.LEGACY,
         )
-        start_turn(orch_ctx, phase=OrchestrationPhase.PLANNING, owner_dha_id=last_speaker_dha_id, source=DecisionSource.LEGACY)
+        start_turn(orch_ctx, phase=OrchestrationPhase.PLANNING, owner_agent_id=last_speaker_agent_id, source=DecisionSource.LEGACY)
         soft_stop_state: Dict[str, Any] = {
             "prev_content": "",
             "prev_speaker": "",
@@ -1789,7 +1780,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         try:
             required_user_fields: List[Dict[str, Any]] = []
             latest_handoff_reason: Optional[str] = None
-            resume_target_dha_id: Optional[str] = last_speaker_dha_id
+            resume_target_agent_id: Optional[str] = last_speaker_agent_id
             current_skill_id_for_pending = pending_skill_id
             post_turn_hooks = HookPipeline([_ToolFailureHeuristicHook(), _NeedUserInputHeuristicHook()])
 
@@ -1800,7 +1791,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     logger.debug("audit append skipped", exc_info=True)
 
             def _apply_decision_to_ctx(decision: Dict[str, Any]) -> None:
-                nonlocal latest_handoff_reason, resume_target_dha_id
+                nonlocal latest_handoff_reason, resume_target_agent_id
                 phase_val = str(decision.get("phase") or OrchestrationPhase.PLANNING.value)
                 interrupt_val = str(decision.get("interrupt_reason") or InterruptReason.NONE.value)
                 source_val = str(decision.get("decision_source") or DecisionSource.LEGACY.value)
@@ -1813,9 +1804,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     reason=(decision.get("reason") or ""),
                     announcement=(decision.get("announcement") or ""),
                     next_prompt=decision.get("next_prompt"),
-                    suggested_add_dha_ids=(decision.get("suggested_add_dha_ids") or []),
+                    suggested_add_agent_ids=(decision.get("suggested_add_agent_ids") or []),
                     phase=phase,
-                    owner_dha_id=decision.get("owner_dha_id"),
+                    owner_agent_id=decision.get("owner_agent_id"),
                     interrupt_reason=interrupt,
                     decision_source=source,
                     handoff_reason=decision.get("handoff_reason"),
@@ -1824,31 +1815,31 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 apply_decision(orch_ctx, parsed)
                 required_user_fields[:] = list(parsed.required_user_fields or [])
                 latest_handoff_reason = parsed.handoff_reason
-                resume_target_dha_id = parsed.owner_dha_id
+                resume_target_agent_id = parsed.owner_agent_id
                 _audit("scheduler_decision", {"decision": decision, "ctx": orch_ctx.to_dict()})
 
             def _persist_pending_state(end_payload: Dict[str, Any]) -> None:
                 nonlocal current_skill_id_for_pending
                 waiting = bool(end_payload.get("waiting_for_user"))
                 interrupt = str(end_payload.get("interrupt_reason") or "")
-                resume = str(end_payload.get("resume_target_dha_id") or "").strip().lower()
+                resume = str(end_payload.get("resume_target_agent_id") or "").strip().lower()
                 required = end_payload.get("required_user_fields") or []
                 should_keep_pending = (
                     waiting
-                    and resume in dha_ids
+                    and resume in agent_ids
                     and (
                         interrupt in (InterruptReason.NEED_USER_INPUT.value, InterruptReason.NEED_MORE_CONTEXT.value)
                         or bool(required)
                     )
                 )
                 if should_keep_pending:
-                    meta_item["pending_owner_dha_id"] = resume
+                    meta_item["pending_owner_agent_id"] = resume
                     meta_item["pending_skill_id"] = current_skill_id_for_pending or ""
                     meta_item["pending_phase"] = str(end_payload.get("phase") or "")
                     meta_item["pending_required_user_fields"] = required if isinstance(required, list) else []
                     meta_item["pending_handoff_reason"] = str(end_payload.get("handoff_reason") or "")
                 else:
-                    meta_item.pop("pending_owner_dha_id", None)
+                    meta_item.pop("pending_owner_agent_id", None)
                     meta_item.pop("pending_skill_id", None)
                     meta_item.pop("pending_phase", None)
                     meta_item.pop("pending_required_user_fields", None)
@@ -1861,20 +1852,20 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             next_speaker = None
 
             # 0 个 DHA：主持人为先，主持人回复用户并推荐若干 DHA 加入（不再使用 Chat）
-            if len(dha_ids) == 0:
+            if len(agent_ids) == 0:
                 recent = _messages_to_context(messages)
-                all_instances = [d for d in preferred_instances if d.get("dha_id") and d.get("dha_id") != CHAT_DHA_ID]
+                all_instances = [d for d in preferred_instances if d.get("agent_id") and d.get("agent_id") != CHAT_AGENT_ID]
                 picked: List[str] = []
-                valid_ids = {d.get("dha_id") for d in all_instances if d.get("dha_id")}
-                if explicit_requested_dha_ids:
-                    picked = list(dict.fromkeys([x for x in explicit_requested_dha_ids if x in valid_ids]))[:3]
+                valid_ids = {d.get("agent_id") for d in all_instances if d.get("agent_id")}
+                if explicit_requested_agent_ids:
+                    picked = list(dict.fromkeys([x for x in explicit_requested_agent_ids if x in valid_ids]))[:3]
                 else:
                     if host_takeover_requested:
-                        host_content, suggested_add_dha_ids = await _host_only_respond_and_recommend(
+                        host_content, suggested_add_agent_ids = await _host_only_respond_and_recommend(
                             discussion_goal, recent, all_instances, extra_system_prompt
                         )
-                        suggested_add_dha_ids = suggested_add_dha_ids or []
-                        picked = list(dict.fromkeys([x for x in suggested_add_dha_ids if x in valid_ids]))[:3]
+                        suggested_add_agent_ids = suggested_add_agent_ids or []
+                        picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:3]
                         host_msg = {
                             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                             "role": "host",
@@ -1882,7 +1873,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
                         if picked:
-                            host_msg["suggested_add_dha_ids"] = picked
+                            host_msg["suggested_add_agent_ids"] = picked
                             host_msg["suggested_add_expert_ids"] = picked
                         messages.append(host_msg)
                         _save_group_history(group_session_id, messages)
@@ -1896,23 +1887,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     waiting_for_user=True,
                     phase=OrchestrationPhase.AWAITING_USER,
                     interrupt_reason=InterruptReason.NONE,
-                    resume_target_dha_id=resume_target_dha_id,
+                    resume_target_agent_id=resume_target_agent_id,
                     required_user_fields=required_user_fields,
                     turn_id=orch_ctx.turn_id,
                     token_version=orch_ctx.token_version,
                     handoff_reason=latest_handoff_reason,
                 )
                 if picked:
-                    end_payload["suggested_add_dha_ids"] = picked
+                    end_payload["suggested_add_agent_ids"] = picked
                     end_payload["suggested_add_expert_ids"] = picked
                 _persist_pending_state(end_payload)
                 yield f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n"
                 return
 
-            if auto_resume_owner and auto_resume_owner in dha_ids:
+            if auto_resume_owner and auto_resume_owner in agent_ids:
                 next_speaker = auto_resume_owner
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
-                orch_ctx.owner_dha_id = auto_resume_owner
+                orch_ctx.owner_agent_id = auto_resume_owner
                 _audit(
                     "auto_resume_pending_owner",
                     {
@@ -1929,7 +1920,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         waiting_for_user=True,
                         phase=orch_ctx.phase,
                         interrupt_reason=InterruptReason.NONE,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -1945,7 +1936,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         discussion_ended=True,
                         phase=orch_ctx.phase,
                         interrupt_reason=InterruptReason.NONE,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -1954,28 +1945,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     _persist_pending_state(payload)
                     yield f"event: end\ndata: {json_module.dumps(payload)}\n\n"
                     return
-                if next_speaker and next_speaker not in dha_ids:
+                if next_speaker and next_speaker not in agent_ids:
                     next_speaker = None
-                if next_speaker in dha_ids:
+                if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_dha_id = next_speaker
+                    orch_ctx.owner_agent_id = next_speaker
             elif not host_takeover_open:
                 next_speaker = _select_next_speaker_without_host(
-                    dha_ids=dha_ids,
-                    last_speaker_dha_id=last_speaker_dha_id,
-                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    agent_ids=agent_ids,
+                    last_speaker_agent_id=last_speaker_agent_id,
+                    explicit_requested_agent_ids=explicit_requested_agent_ids,
                 )
-                if next_speaker in dha_ids:
+                if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_dha_id = next_speaker
+                    orch_ctx.owner_agent_id = next_speaker
                 else:
                     orch_ctx.phase = OrchestrationPhase.AWAITING_USER
                     payload = build_end_payload(
                         waiting_for_user=True,
-                        suggested_next_speaker=last_speaker_dha_id if last_speaker_dha_id in dha_ids else None,
+                        suggested_next_speaker=last_speaker_agent_id if last_speaker_agent_id in agent_ids else None,
                         phase=orch_ctx.phase,
                         interrupt_reason=InterruptReason.NONE,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -1991,37 +1982,37 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # 仅在主持人没有给出明确下一位时，才等待用户选择。
                 recent = _messages_to_context(messages)
                 decision = None
-                host_dha = dha_map.get(leader_dha_id) if leader_dha_id in dha_ids else None
-                if leader_dha_id and host_dha:
+                host_dha = dha_map.get(leader_agent_id) if leader_agent_id in agent_ids else None
+                if leader_agent_id and host_dha:
                     llm_host = _get_llm_for_dha(host_dha, app_settings)
                     decision = await _host_decide_by_dha(
-                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt, available_to_add
+                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_agent_id, extra_system_prompt, available_to_add
                     )
                 if decision is None:
                     llm_default = _get_llm_for_dha(None, app_settings)
-                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id, available_to_add)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_agent_id, available_to_add)
                 decision = normalize_scheduler_decision(
                     decision,
-                    dha_ids=dha_ids,
-                    recruitable_ids=[str(d.get("dha_id") or "") for d in available_to_add if d.get("dha_id")],
-                    last_speaker_dha_id=last_speaker_dha_id,
-                    current_owner_dha_id=last_speaker_dha_id,
+                    agent_ids=agent_ids,
+                    recruitable_ids=[str(d.get("agent_id") or "") for d in available_to_add if d.get("agent_id")],
+                    last_speaker_agent_id=last_speaker_agent_id,
+                    current_owner_agent_id=last_speaker_agent_id,
                 )
                 _apply_decision_to_ctx(decision)
                 announcement = decision.get("announcement")
                 suggested = (decision.get("next_speaker") or "").strip().lower()
-                suggested_add = decision.get("suggested_add_expert_ids") or decision.get("suggested_add_dha_ids") or []
-                recruitable_ids = {d.get("dha_id") for d in available_to_add if d.get("dha_id")}
+                suggested_add = decision.get("suggested_add_expert_ids") or decision.get("suggested_add_agent_ids") or []
+                recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 if not suggested_add and isinstance(announcement, str):
-                    suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                    suggested_add = _extract_valid_agent_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
                 suggested_add = _prioritize_suggested_add_ids(
                     suggested_add,
-                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    explicit_requested_agent_ids=explicit_requested_agent_ids,
                     recruitable_ids=recruitable_ids,
                     max_n=3,
                 )
-                if suggested in dha_ids and not suggested_add:
+                if suggested in agent_ids and not suggested_add:
                     next_dha = dha_map.get(suggested)
                     next_name = (next_dha.get("name") or suggested) if next_dha else suggested
                     host_content = announcement or f"建议由 {next_name} 发言，请选择发言人并发送。"
@@ -2029,15 +2020,15 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_content = announcement or "请选择下一发言人并发送。"
                 host_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                    "role": "host" if not leader_dha_id else "assistant",
+                    "role": "host" if not leader_agent_id else "assistant",
                     "content": host_content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
-                if leader_dha_id:
-                    host_msg["dha_id"] = leader_dha_id
+                if leader_agent_id:
+                    host_msg["agent_id"] = leader_agent_id
                 messages.append(host_msg)
                 # 保存并把主持人建议发给前端
-                if suggested in dha_ids and not suggested_add:
+                if suggested in agent_ids and not suggested_add:
                     next_dha = dha_map.get(suggested)
                     host_msg["next_dha_name"] = (next_dha.get("name") or suggested) if next_dha else suggested
                 if decision.get("suggested_order"):
@@ -2046,28 +2037,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 # 如果主持人已经明确推荐了下一位 DHA，则直接把该 DHA 作为下一发言人继续往下走，
                 # 不再发 waiting_for_user，让前端自动看到该 DHA 的发言。
-                if suggested in dha_ids and not suggested_add:
+                if suggested in agent_ids and not suggested_add:
                     next_speaker = suggested
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_dha_id = suggested
+                    orch_ctx.owner_agent_id = suggested
                 else:
                     orch_ctx.phase = OrchestrationPhase.AWAITING_USER if not suggested_add else OrchestrationPhase.RECRUITING
                     # 否则等待用户选择；若建议补人，仅展示推荐列表，等待用户确认邀请
                     if suggested_add:
-                        host_msg["suggested_add_dha_ids"] = suggested_add
+                        host_msg["suggested_add_agent_ids"] = suggested_add
                         host_msg["suggested_add_expert_ids"] = suggested_add
                     end_data = build_end_payload(
                         waiting_for_user=True,
                         phase=orch_ctx.phase,
                         interrupt_reason=InterruptReason.NEED_RECRUIT_EXPERT if suggested_add else InterruptReason.NONE,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
                         handoff_reason=latest_handoff_reason,
                     )
                     if suggested_add:
-                        end_data["suggested_add_dha_ids"] = suggested_add
+                        end_data["suggested_add_agent_ids"] = suggested_add
                         end_data["suggested_add_expert_ids"] = suggested_add
                     _persist_pending_state(end_data)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
@@ -2077,32 +2068,32 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # auto：由主持人 DHA 或默认调度决定下一发言人
                 recent = _messages_to_context(messages)
                 decision = None
-                host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
-                if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                host_dha = dha_map.get(leader_agent_id) if leader_agent_id else None
+                if leader_agent_id and leader_agent_id in agent_ids and host_dha:
                     llm_host = _get_llm_for_dha(host_dha, app_settings)
                     decision = await _host_decide_by_dha(
-                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_dha_id, extra_system_prompt, available_to_add
+                        llm_host, host_dha, dha_list, discussion_goal, recent, last_speaker_agent_id, extra_system_prompt, available_to_add
                     )
                 if decision is None:
                     llm_default = _get_llm_for_dha(None, app_settings)
-                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_dha_id, available_to_add)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, recent, last_speaker_agent_id, available_to_add)
                 decision = normalize_scheduler_decision(
                     decision,
-                    dha_ids=dha_ids,
-                    recruitable_ids=[str(d.get("dha_id") or "") for d in available_to_add if d.get("dha_id")],
-                    last_speaker_dha_id=last_speaker_dha_id,
-                    current_owner_dha_id=last_speaker_dha_id,
+                    agent_ids=agent_ids,
+                    recruitable_ids=[str(d.get("agent_id") or "") for d in available_to_add if d.get("agent_id")],
+                    last_speaker_agent_id=last_speaker_agent_id,
+                    current_owner_agent_id=last_speaker_agent_id,
                 )
                 _apply_decision_to_ctx(decision)
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
-                suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_dha_ids") or [])
-                recruitable_ids = {d.get("dha_id") for d in available_to_add if d.get("dha_id")}
+                suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_agent_ids") or [])
+                recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 if not suggested_add and isinstance(announcement, str):
-                    suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                    suggested_add = _extract_valid_agent_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
                 suggested_add = _prioritize_suggested_add_ids(
                     suggested_add,
-                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    explicit_requested_agent_ids=explicit_requested_agent_ids,
                     recruitable_ids=recruitable_ids,
                     max_n=3,
                 )
@@ -2117,21 +2108,21 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     orch_ctx.phase = OrchestrationPhase.RECRUITING
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_dha_id else "assistant",
+                        "role": "host" if not leader_agent_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "suggested_add_dha_ids": suggested_add,
+                        "suggested_add_agent_ids": suggested_add,
                         "suggested_add_expert_ids": suggested_add,
                     }
-                    if leader_dha_id:
-                        host_msg["dha_id"] = leader_dha_id
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 # 主持人发言（单人会话时也由主持人先点名，再让该 DHA 发言）
-                if next_speaker in dha_ids:
+                if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_dha_id = next_speaker
+                    orch_ctx.owner_agent_id = next_speaker
                     host_content = announcement if announcement else None
                     if not host_content:
                         next_dha = dha_map.get(next_speaker)
@@ -2139,12 +2130,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_content = f"下面由 {next_name} 发言。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_dha_id else "assistant",
+                        "role": "host" if not leader_agent_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
-                    if leader_dha_id:
-                        host_msg["dha_id"] = leader_dha_id
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
                     next_dha = dha_map.get(next_speaker)
                     host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
@@ -2155,7 +2146,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     # 这里不再发送 waiting_for_user 的 end 事件，而是直接在同一条流中继续执行
                     # 下方 while next_speaker 循环会立刻进入对应 DHA 的发言，实现“主持人点名后自动发言”。
 
-            while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in dha_ids:
+            while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_ids:
                 # 在自动或手动模式下，单次流中专家发言超过一定轮次（默认 32）时强制停下来，让用户确认是否继续，
                 # 避免在服务器上长时间无限循环。
                 if dha_turns >= 32:
@@ -2165,7 +2156,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_next_speaker=next_speaker,
                         phase=OrchestrationPhase.AWAITING_USER,
                         interrupt_reason=InterruptReason.TIMEOUT_OR_BUDGET_EXCEEDED,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -2179,10 +2170,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 start_turn(
                     orch_ctx,
                     phase=OrchestrationPhase.EXECUTING,
-                    owner_dha_id=next_speaker,
+                    owner_agent_id=next_speaker,
                     source=DecisionSource.EXPERT,
                 )
-                resume_target_dha_id = next_speaker
+                resume_target_agent_id = next_speaker
                 _audit("turn_started", {"speaker": next_speaker, "turn_index": dha_turns, "ctx": orch_ctx.to_dict()})
                 dha = dha_map.get(next_speaker)
                 if not dha:
@@ -2234,7 +2225,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
                                     if txt:
                                         accumulated.append(txt)
-                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
                             continue
                         event = stream_item if not isinstance(stream_item, tuple) else stream_item[1]
                         if isinstance(event, dict) and "tool" in event:
@@ -2280,11 +2271,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                         tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
                                         block = f"\n```json\n{tc_json}\n```\n"
                                         accumulated.append(block)
-                                        yield f"event: content\ndata: {json_module.dumps({'text': block, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                        yield f"event: content\ndata: {json_module.dumps({'text': block, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
                                 content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
                                 if content_str.strip() and content_str not in accumulated:
                                     accumulated.append(content_str)
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'dha_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
                 except Exception as stream_err:
                     logger.warning("群聊 agent astream 失败，回退到 ainvoke: %s", stream_err)
                     try:
@@ -2326,7 +2317,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                     "role": "assistant",
-                    "dha_id": next_speaker,
+                    "agent_id": next_speaker,
                     "content": full_content,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "skill_id": skill_id,
@@ -2346,7 +2337,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     if mem["enabled"]:
                         full_message_ref = append_expert_message_file(
                             session_id=group_session_id,
-                            dha_id=next_speaker,
+                            agent_id=next_speaker,
                             timestamp=assistant_msg.get("timestamp"),
                             content=full_content,
                             skill_id=skill_id,
@@ -2358,7 +2349,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             session_id=group_session_id,
                             max_logs=mem["max_logs"],
                             turn_record={
-                                "dha_id": next_speaker,
+                                "agent_id": next_speaker,
                                 "timestamp": assistant_msg.get("timestamp"),
                                 "skill_id": skill_id,
                                 "full_message_ref": full_message_ref,
@@ -2388,7 +2379,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_next_speaker="user",
                         phase=OrchestrationPhase.AWAITING_USER,
                         interrupt_reason=InterruptReason.NEED_USER_INPUT,
-                        resume_target_dha_id=next_speaker,
+                        resume_target_agent_id=next_speaker,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -2400,7 +2391,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 hook_output = await post_turn_hooks.run(
                     {
                         "session_id": group_session_id,
-                        "dha_id": next_speaker,
+                        "agent_id": next_speaker,
                         "skill_id": skill_id,
                         "full_content": full_content,
                         "tool_raw_results": accumulated_raw_tool_results,
@@ -2424,7 +2415,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_next_speaker="user",
                         phase=OrchestrationPhase.AWAITING_USER,
                         interrupt_reason=hook_output.interrupt_reason,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -2457,7 +2448,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_next_speaker="user",
                         phase=OrchestrationPhase.AWAITING_USER,
                         interrupt_reason=InterruptReason.NEED_USER_INPUT,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
@@ -2468,7 +2459,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
 
-                last_speaker_dha_id = next_speaker
+                last_speaker_agent_id = next_speaker
                 if not host_takeover_open:
                     if speak_mode != "auto":
                         orch_ctx.phase = OrchestrationPhase.AWAITING_USER
@@ -2477,7 +2468,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             suggested_next_speaker=next_speaker,
                             phase=OrchestrationPhase.AWAITING_USER,
                             interrupt_reason=InterruptReason.NONE,
-                            resume_target_dha_id=resume_target_dha_id,
+                            resume_target_agent_id=resume_target_agent_id,
                             required_user_fields=required_user_fields,
                             turn_id=orch_ctx.turn_id,
                             token_version=orch_ctx.token_version,
@@ -2493,42 +2484,42 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_takeover_open = False
                     host_msg = {}
                     decision = None
-                    host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
-                    if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                    host_dha = dha_map.get(leader_agent_id) if leader_agent_id else None
+                    if leader_agent_id and leader_agent_id in agent_ids and host_dha:
                         llm_host = _get_llm_for_dha(host_dha, app_settings)
                         decision = await _host_decide_by_dha(
                             llm_host, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
-                            last_speaker_dha_id, extra_system_prompt, available_to_add
+                            last_speaker_agent_id, extra_system_prompt, available_to_add
                         )
                     if decision is None:
                         llm_default = _get_llm_for_dha(None, app_settings)
-                        decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id, available_to_add)
+                        decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_agent_id, available_to_add)
                     decision = normalize_scheduler_decision(
                         decision,
-                        dha_ids=dha_ids,
-                        recruitable_ids=[str(d.get("dha_id") or "") for d in available_to_add if d.get("dha_id")],
-                        last_speaker_dha_id=last_speaker_dha_id,
-                        current_owner_dha_id=last_speaker_dha_id,
+                        agent_ids=agent_ids,
+                        recruitable_ids=[str(d.get("agent_id") or "") for d in available_to_add if d.get("agent_id")],
+                        last_speaker_agent_id=last_speaker_agent_id,
+                        current_owner_agent_id=last_speaker_agent_id,
                     )
                     _apply_decision_to_ctx(decision)
                     next_speaker_manual = decision.get("next_speaker", "user")
-                    suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_dha_ids") or [])
-                    recruitable_ids = {d.get("dha_id") for d in available_to_add if d.get("dha_id")}
+                    suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_agent_ids") or [])
+                    recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
                     suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                     announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                     if not suggested_add and isinstance(announcement, str):
-                        suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                        suggested_add = _extract_valid_agent_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
                     suggested_add = _prioritize_suggested_add_ids(
                         suggested_add,
-                        explicit_requested_dha_ids=explicit_requested_dha_ids,
+                        explicit_requested_agent_ids=explicit_requested_agent_ids,
                         recruitable_ids=recruitable_ids,
                         max_n=3,
                     )
                     if suggested_add:
                         next_speaker_manual = "user"
-                    if next_speaker_manual in dha_ids or next_speaker_manual in ("user", "end"):
+                    if next_speaker_manual in agent_ids or next_speaker_manual in ("user", "end"):
                         host_content = announcement
-                        if not host_content and next_speaker_manual in dha_ids:
+                        if not host_content and next_speaker_manual in agent_ids:
                             next_dha = dha_map.get(next_speaker_manual)
                             host_content = f"下面由 {next_dha.get('name') or next_speaker_manual} 发言。" if next_dha else f"下面由 {next_speaker_manual} 发言。"
                         if not host_content:
@@ -2537,17 +2528,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             host_content = "当前成员无法完成该工作，建议先邀请更匹配的专家。"
                         host_msg = {
                             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                            "role": "host" if not leader_dha_id else "assistant",
+                            "role": "host" if not leader_agent_id else "assistant",
                             "content": host_content,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         }
-                        if leader_dha_id:
-                            host_msg["dha_id"] = leader_dha_id
+                        if leader_agent_id:
+                            host_msg["agent_id"] = leader_agent_id
                         if suggested_add:
-                            host_msg["suggested_add_dha_ids"] = suggested_add
+                            host_msg["suggested_add_agent_ids"] = suggested_add
                             host_msg["suggested_add_expert_ids"] = suggested_add
                         messages.append(host_msg)
-                        if next_speaker_manual in dha_ids:
+                        if next_speaker_manual in agent_ids:
                             next_dha = dha_map.get(next_speaker_manual)
                             host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker_manual) if next_dha else next_speaker_manual
                         _save_group_history(group_session_id, messages)
@@ -2557,14 +2548,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_next_speaker=next_speaker_manual,
                         phase=OrchestrationPhase.AWAITING_USER,
                         interrupt_reason=InterruptReason.NONE,
-                        resume_target_dha_id=resume_target_dha_id,
+                        resume_target_agent_id=resume_target_agent_id,
                         required_user_fields=required_user_fields,
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
                         handoff_reason=latest_handoff_reason,
                     )
                     if suggested_add:
-                        end_data["suggested_add_dha_ids"] = suggested_add
+                        end_data["suggested_add_agent_ids"] = suggested_add
                         end_data["suggested_add_expert_ids"] = suggested_add
                     _persist_pending_state(end_data)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
@@ -2572,34 +2563,34 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # auto 且多 DHA：主持人决定下一发言人
                 host_takeover_open = False
                 decision = None
-                host_dha = dha_map.get(leader_dha_id) if leader_dha_id else None
-                if leader_dha_id and leader_dha_id in dha_ids and host_dha:
+                host_dha = dha_map.get(leader_agent_id) if leader_agent_id else None
+                if leader_agent_id and leader_agent_id in agent_ids and host_dha:
                     llm_host = _get_llm_for_dha(host_dha, app_settings)
                     decision = await _host_decide_by_dha(
                         llm_host, host_dha, dha_list, discussion_goal, _messages_to_context(messages),
-                        last_speaker_dha_id, extra_system_prompt, available_to_add
+                        last_speaker_agent_id, extra_system_prompt, available_to_add
                     )
                 if decision is None:
                     llm_default = _get_llm_for_dha(None, app_settings)
-                    decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_dha_id, available_to_add)
+                    decision = await leader_decide(llm_default, dha_list, discussion_goal, _messages_to_context(messages), last_speaker_agent_id, available_to_add)
                 decision = normalize_scheduler_decision(
                     decision,
-                    dha_ids=dha_ids,
-                    recruitable_ids=[str(d.get("dha_id") or "") for d in available_to_add if d.get("dha_id")],
-                    last_speaker_dha_id=last_speaker_dha_id,
-                    current_owner_dha_id=last_speaker_dha_id,
+                    agent_ids=agent_ids,
+                    recruitable_ids=[str(d.get("agent_id") or "") for d in available_to_add if d.get("agent_id")],
+                    last_speaker_agent_id=last_speaker_agent_id,
+                    current_owner_agent_id=last_speaker_agent_id,
                 )
                 _apply_decision_to_ctx(decision)
                 next_speaker = decision.get("next_speaker", "user")
-                suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_dha_ids") or [])
-                recruitable_ids = {d.get("dha_id") for d in available_to_add if d.get("dha_id")}
+                suggested_add = (decision.get("suggested_add_expert_ids") or decision.get("suggested_add_agent_ids") or [])
+                recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 if not suggested_add and isinstance(announcement, str):
-                    suggested_add = _extract_valid_dha_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
+                    suggested_add = _extract_valid_agent_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
                 suggested_add = _prioritize_suggested_add_ids(
                     suggested_add,
-                    explicit_requested_dha_ids=explicit_requested_dha_ids,
+                    explicit_requested_agent_ids=explicit_requested_agent_ids,
                     recruitable_ids=recruitable_ids,
                     max_n=3,
                 )
@@ -2609,21 +2600,21 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_content = "当前成员无法完成该工作，建议先邀请更匹配的专家。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_dha_id else "assistant",
+                        "role": "host" if not leader_agent_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "suggested_add_dha_ids": suggested_add,
+                        "suggested_add_agent_ids": suggested_add,
                         "suggested_add_expert_ids": suggested_add,
                     }
-                    if leader_dha_id:
-                        host_msg["dha_id"] = leader_dha_id
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                # 主持人发言：leader_dha_id 为空时用 role=host（固定逻辑）
-                if next_speaker in dha_ids or (next_speaker in ("user", "end") and not suggested_add):
+                # 主持人发言：leader_agent_id 为空时用 role=host（固定逻辑）
+                if next_speaker in agent_ids or (next_speaker in ("user", "end") and not suggested_add):
                     host_content = announcement
-                    if not host_content and next_speaker in dha_ids:
+                    if not host_content and next_speaker in agent_ids:
                         next_dha = dha_map.get(next_speaker)
                         next_name = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
                         host_content = f"下面由 {next_name} 发言。"
@@ -2631,14 +2622,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_content = "请用户补充或继续提问。" if next_speaker == "user" else "讨论结束。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_dha_id else "assistant",
+                        "role": "host" if not leader_agent_id else "assistant",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
-                    if leader_dha_id:
-                        host_msg["dha_id"] = leader_dha_id
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
-                    if next_speaker in dha_ids:
+                    if next_speaker in agent_ids:
                         next_dha = dha_map.get(next_speaker)
                         host_msg["next_dha_name"] = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
                     if decision.get("suggested_order"):
@@ -2654,7 +2645,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     discussion_ended=True,
                     phase=orch_ctx.phase,
                     interrupt_reason=InterruptReason.NONE,
-                    resume_target_dha_id=resume_target_dha_id,
+                    resume_target_agent_id=resume_target_agent_id,
                     required_user_fields=required_user_fields,
                     turn_id=orch_ctx.turn_id,
                     token_version=orch_ctx.token_version,
@@ -2670,7 +2661,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     suggested_next_speaker=next_speaker,
                     phase=orch_ctx.phase,
                     interrupt_reason=orch_ctx.interrupt_reason if orch_ctx.interrupt_reason != InterruptReason.NONE else InterruptReason.NONE,
-                    resume_target_dha_id=resume_target_dha_id,
+                    resume_target_agent_id=resume_target_agent_id,
                     required_user_fields=required_user_fields,
                     turn_id=orch_ctx.turn_id,
                     token_version=orch_ctx.token_version,

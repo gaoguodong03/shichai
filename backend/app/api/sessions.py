@@ -27,7 +27,6 @@ router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_depende
 class SessionCreate(BaseModel):
     title: str = "新对话"
     agent_ids: List[str] = []
-    dha_ids: List[str] = []  # 默认仅主持人
     expert_ids: List[str] = []  # 兼容字段：expert_ids
 
 
@@ -48,7 +47,6 @@ async def create_session(body: SessionCreate):
     data = create_session_internal(
         title=body.title or "新对话",
         agent_ids=body.agent_ids,
-        dha_ids=body.dha_ids,
         expert_ids=body.expert_ids,
         speak_mode="auto",
     )

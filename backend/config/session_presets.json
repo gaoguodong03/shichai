@@ -2,15 +2,15 @@
   {
     "id": "sc-1773971186900",
     "name": "学术论文",
-    "dha_ids": [
-      "dha-65fdbc8f",
-      "dha-paper-composer",
-      "dha-paper-strategist"
+    "agent_ids": [
+      "agent-65fdbc8f",
+      "agent-paper-composer",
+      "agent-paper-strategist"
     ],
     "expert_ids": [
-      "dha-65fdbc8f",
-      "dha-paper-composer",
-      "dha-paper-strategist"
+      "agent-65fdbc8f",
+      "agent-paper-composer",
+      "agent-paper-strategist"
     ],
     "description": "",
     "discussion_goal_example": ""
@@ -18,21 +18,21 @@
   {
     "id": "sc-1773971161963",
     "name": "博客创作",
-    "dha_ids": [
-      "dha-seminar-guide",
-      "dha-c1bf68ba",
-      "dha-440b26f8",
-      "dha-thinking-ext",
-      "dha-195b8c3a",
-      "dha-web-fetch"
+    "agent_ids": [
+      "agent-seminar-guide",
+      "agent-c1bf68ba",
+      "agent-440b26f8",
+      "agent-thinking-ext",
+      "agent-195b8c3a",
+      "agent-web-fetch"
     ],
     "expert_ids": [
-      "dha-seminar-guide",
-      "dha-c1bf68ba",
-      "dha-440b26f8",
-      "dha-thinking-ext",
-      "dha-195b8c3a",
-      "dha-web-fetch"
+      "agent-seminar-guide",
+      "agent-c1bf68ba",
+      "agent-440b26f8",
+      "agent-thinking-ext",
+      "agent-195b8c3a",
+      "agent-web-fetch"
     ],
     "description": "",
     "discussion_goal_example": ""
@@ -40,15 +40,15 @@
   {
     "id": "sc-1773971101446",
     "name": "办学研讨",
-    "dha_ids": [
-      "dha-seminar-ai-peer",
-      "dha-seminar-teacher-advisor",
-      "dha-seminar-teacher-review"
+    "agent_ids": [
+      "agent-seminar-ai-peer",
+      "agent-seminar-teacher-advisor",
+      "agent-seminar-teacher-review"
     ],
     "expert_ids": [
-      "dha-seminar-ai-peer",
-      "dha-seminar-teacher-advisor",
-      "dha-seminar-teacher-review"
+      "agent-seminar-ai-peer",
+      "agent-seminar-teacher-advisor",
+      "agent-seminar-teacher-review"
     ],
     "description": "",
     "discussion_goal_example": ""

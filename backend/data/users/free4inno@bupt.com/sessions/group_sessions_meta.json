@@ -1,12 +1,12 @@
 {
   "group-a71ad0c519f5": {
     "title": "组会 Agent 讨论",
-    "dha_ids": [
-      "dha-66bafc4e",
-      "dha-ae100f7a",
-      "dha-9f6a2b8d"
+    "agent_ids": [
+      "agent-66bafc4e",
+      "agent-ae100f7a",
+      "agent-9f6a2b8d"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-12T12:44:55.824061+00:00",
     "updated_at": "2026-03-12T12:46:42.260917+00:00"
@@ -14,13 +14,13 @@
   "group-e93558743ff9": {
     "title": "博客生成与图片创作",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-195b8c3a",
-      "dha-440b26f8",
-      "dha-web-fetch",
-      "dha-format-conv"
+    "agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch",
+      "agent-format-conv"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-19T02:35:48.178282+00:00",
     "updated_at": "2026-03-19T12:22:21.261688+00:00"
@@ -28,12 +28,12 @@
   "group-ef1dc4819f55": {
     "title": "Skill运行原理及触发逻辑",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-seminar-teacher-advisor",
-      "dha-seminar-ta-qa",
-      "dha-seminar-ai-peer"
+    "agent_ids": [
+      "agent-seminar-teacher-advisor",
+      "agent-seminar-ta-qa",
+      "agent-seminar-ai-peer"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-19T12:03:34.824556+00:00",
     "updated_at": "2026-03-19T12:11:57.166985+00:00"
@@ -41,11 +41,11 @@
   "group-357f6a326d26": {
     "title": "智能体相关技能研究",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-paper-composer",
-      "dha-paper-strategist"
+    "agent_ids": [
+      "agent-paper-composer",
+      "agent-paper-strategist"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-19T12:54:12.667856+00:00",
     "updated_at": "2026-03-19T13:22:28.568366+00:00"
@@ -53,11 +53,11 @@
   "group-a3ed873dee2e": {
     "title": "小米发布的Agent研究方向",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-seminar-ai-peer",
-      "dha-seminar-teacher-advisor"
+    "agent_ids": [
+      "agent-seminar-ai-peer",
+      "agent-seminar-teacher-advisor"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-19T14:10:55.285190+00:00",
     "updated_at": "2026-03-19T14:15:42.464981+00:00"
@@ -65,12 +65,12 @@
   "group-dad1a2377ab2": {
     "title": "博客生成和灵感来源",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-web-fetch",
-      "dha-440b26f8",
-      "dha-195b8c3a"
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-19T14:27:07.359844+00:00",
     "updated_at": "2026-03-19T14:34:02.045044+00:00"
@@ -78,12 +78,12 @@
   "group-386d211c7469": {
     "title": "脑启发式智能体设计综述",
     "title_auto_generated": true,
-    "dha_ids": [
-      "dha-paper-composer",
-      "dha-65fdbc8f",
-      "dha-paper-strategist"
+    "agent_ids": [
+      "agent-paper-composer",
+      "agent-65fdbc8f",
+      "agent-paper-strategist"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-20T01:47:29.950667+00:00",
     "updated_at": "2026-03-20T01:57:44.880162+00:00"
@@ -91,14 +91,14 @@
   "group-672a77ee56d0": {
     "title": "北京高校软件工程教学改革",
     "title_auto_generated": true,
-    "dha_ids": [
+    "agent_ids": [
       "agent-d92e733e"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-26T12:26:58.719564+00:00",
     "updated_at": "2026-03-26T12:39:13.797303+00:00",
-    "pending_owner_dha_id": "agent-d92e733e",
+    "pending_owner_agent_id": "agent-d92e733e",
     "pending_skill_id": "doc-coauthoring",
     "pending_phase": "awaiting_user",
     "pending_required_user_fields": [
@@ -113,10 +113,10 @@
   "group-0b2d0cfe66d2": {
     "title": "大学生对计算机行业看法",
     "title_auto_generated": true,
-    "dha_ids": [
+    "agent_ids": [
       "agent-d92e733e"
     ],
-    "leader_dha_id": "",
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-26T13:01:38.577197+00:00",
     "updated_at": "2026-03-26T13:10:22.608403+00:00"
@@ -124,19 +124,19 @@
   "group-daa25d9533eb": {
     "title": "文书专家报告撰写",
     "title_auto_generated": true,
-    "dha_ids": [],
-    "leader_dha_id": "",
+    "agent_ids": [],
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-27T01:36:42.778559+00:00",
     "updated_at": "2026-03-27T01:36:47.389232+00:00"
   },
   "group-5c26b48407e9": {
-    "title": "如何撰写专业报告",
+    "title": "文书专家角色功能",
     "title_auto_generated": true,
-    "dha_ids": [],
-    "leader_dha_id": "",
+    "agent_ids": [],
+    "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-27T01:39:15.405535+00:00",
-    "updated_at": "2026-03-27T01:39:19.618822+00:00"
+    "updated_at": "2026-03-27T02:08:40.772145+00:00"
   }
 }

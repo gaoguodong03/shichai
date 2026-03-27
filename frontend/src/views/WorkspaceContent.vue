@@ -138,9 +138,9 @@
                         <span
                           v-if="msg.role !== 'host'"
                           class="group-chat-avatar"
-                          :style="{ backgroundColor: dhaAvatarColor(dhaIndex(msg.dha_id)) }"
+                          :style="{ backgroundColor: dhaAvatarColor(dhaIndex(msg.agent_id)) }"
                         >
-                          {{ dhaAvatarChar(msg.dha_id) }}
+                          {{ dhaAvatarChar(msg.agent_id) }}
                         </span>
                         <div v-else class="group-chat-avatar group-chat-avatar-host" aria-hidden="true">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
@@ -156,7 +156,7 @@
                         ]"
                       >
                         <div v-if="msg.role !== 'user' && msg.role !== 'host'" class="group-chat-bubble-meta">
-                          <span class="group-chat-bubble-name">{{ (groupDetail.dha_map || {})[msg.dha_id || '']?.name }}</span>
+                          <span class="group-chat-bubble-name">{{ (groupDetail.agent_map || {})[msg.agent_id || '']?.name }}</span>
                       <span
                         v-if="(msg as GroupMessage)._streaming"
                         class="group-chat-bubble-streaming-indicator"
@@ -327,7 +327,7 @@
                             <path d="M13 7l6 5-6 5" />
                           </svg>
                         </span>
-                        <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                        <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                         <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
                     </ul>
@@ -373,7 +373,7 @@
                               <path d="M13 7l6 5-6 5" />
                             </svg>
                           </span>
-                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
@@ -420,7 +420,7 @@
                               <path d="M13 7l6 5-6 5" />
                             </svg>
                           </span>
-                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.dha_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
@@ -447,7 +447,7 @@
                         {{ (hostDisplayName || DEFAULT_HOST_DISPLAY_NAME || '主').trim().slice(0, 1) }}
                       </span>
                       <span class="group-chat-next-speaker-name">
-                        {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.dha_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
+                        {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.agent_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
                       </span>
                     </button>
                   </div>
@@ -646,7 +646,7 @@
                               </span>
                               <span class="group-chat-member-skill-name">
                                 <span class="group-chat-member-skill-name-text">
-                                  {{ id === 'host' ? hostDisplayName : ((groupDetail?.dha_map || {})[id]?.name || id) }}
+                                  {{ id === 'host' ? hostDisplayName : ((groupDetail?.agent_map || {})[id]?.name || id) }}
                                 </span>
                                 <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
                               </span>
@@ -658,9 +658,9 @@
                         <section class="group-chat-add-remove-section">
                           <p class="group-chat-members-dropdown-title">可邀请的专家</p>
                           <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                            <li v-for="d in invitableDhas" :key="d.dha_id" class="group-chat-members-item group-chat-member-skill-row">
-                              <span class="group-chat-add-member-label">{{ d.name || d.dha_id }}</span>
-                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.dha_id)">邀请</button>
+                            <li v-for="d in invitableDhas" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
+                              <span class="group-chat-add-member-label">{{ d.name || d.agent_id }}</span>
+                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_id)">邀请</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无可邀请的专家</p>
@@ -946,12 +946,12 @@ interface MsgExt {
   next_prompt?: string
   suggested_order?: string[]
   event_type?: string
-  joined_dha_ids?: string[]
+  joined_agent_ids?: string[]
 }
 
 const props = defineProps<{
   selectedGroupSessionId: string | null
-  dhaInstances: { dha_id: string; name: string; role?: string; skill_ids?: string[] }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; skill_ids?: string[] }[]
   middleColumnOpen?: boolean
 }>()
 
@@ -966,10 +966,10 @@ const emit = defineEmits<{
 type GroupDetail = {
   id: string
   title: string
-  messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
-  dha_map: Record<string, { name?: string; role?: string }>
-  dha_ids: string[]
-  leader_dha_id?: string
+  messages: { message_id?: string; role: string; agent_id?: string; content: string }[]
+  agent_map: Record<string, { name?: string; role?: string }>
+  agent_ids: string[]
+  leader_agent_id?: string
   speak_mode?: string
 }
 
@@ -1065,16 +1065,16 @@ function toSnippet(content: string, limit = 20) {
 
 const archiveItems = computed(() => {
   const d = groupDetail.value
-  const map = d?.dha_map || {}
+  const map = d?.agent_map || {}
   return (groupDisplayMessages.value || [])
     .map((m, idx) => ({ m, idx }))
-    .filter(({ m }) => m.role === 'assistant' && !!m.dha_id) // 只要专家，不要主持人/用户
+    .filter(({ m }) => m.role === 'assistant' && !!m.agent_id) // 只要专家，不要主持人/用户
     .map(({ m, idx }) => {
-      const did = (m.dha_id || '').trim()
+      const did = (m.agent_id || '').trim()
       const name = (map[did]?.name || did || '专家').trim()
       return {
         key: (m.message_id || `idx-${idx}`) + '-' + did,
-        dha_id: did,
+        agent_id: did,
         name,
         message_id: (m.message_id || `idx-${idx}`) as string,
         snippet: toSnippet(String(m.content || ''), 50),
@@ -1517,9 +1517,9 @@ async function confirmGroupNext(override: string) {
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
-              if (data?.text != null && data?.dha_id) {
-                appendStreamingContent(data.dha_id, data.text)
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              if (data?.text != null && data?.agent_id) {
+                appendStreamingContent(data.agent_id, data.text)
               }
             } catch (_) {}
           }
@@ -1613,7 +1613,7 @@ async function inviteSingleMember(dhaId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_expert_ids: [dhaId] }),
+      body: JSON.stringify({ add_agent_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1629,7 +1629,7 @@ async function inviteSingleMember(dhaId: string) {
 
 async function removeMember(dhaId: string) {
   const id = groupDetail.value?.id
-  const leader = (groupDetail.value?.leader_dha_id || '').trim()
+  const leader = (groupDetail.value?.leader_agent_id || '').trim()
   if (dhaId === 'host') return
   if (leader && dhaId === leader) return
   if (!id || !window.confirm('确定将该成员移出群聊？')) return
@@ -1637,7 +1637,7 @@ async function removeMember(dhaId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remove_expert_ids: [dhaId] }),
+      body: JSON.stringify({ remove_agent_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1740,14 +1740,14 @@ onUnmounted(() => {
 
 const groupMemberNames = computed(() => {
   const d = groupDetail.value
-  if (!d?.dha_ids?.length || !d.dha_map) return ''
-  return d.dha_ids.map((id) => d.dha_map![id]?.name || id).join('、')
+  if (!d?.agent_ids?.length || !d.agent_map) return ''
+  return d.agent_ids.map((id) => d.agent_map![id]?.name || id).join('、')
 })
 
 type ShortcutPreset = {
   id: string
   name: string
-  dha_ids: string[]
+  agent_ids: string[]
   description?: string
   discussion_goal_example?: string
 }
@@ -1761,15 +1761,15 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
     const raw = item as Partial<ShortcutPreset>
     const id = String(raw?.id || '').trim()
     const name = String(raw?.name || '').trim()
-    const dhaIds = Array.isArray(raw?.dha_ids)
-      ? Array.from(new Set(raw.dha_ids.map((x) => String(x || '').trim()).filter(Boolean)))
+    const dhaIds = Array.isArray(raw?.agent_ids)
+      ? Array.from(new Set(raw.agent_ids.map((x) => String(x || '').trim()).filter(Boolean)))
       : []
     if (!id || !name || !dhaIds.length || seen.has(id)) continue
     seen.add(id)
     out.push({
       id,
       name,
-      dha_ids: dhaIds,
+      agent_ids: dhaIds,
       description: String(raw?.description || '').trim(),
       discussion_goal_example: String(raw?.discussion_goal_example || '').trim(),
     })
@@ -1778,13 +1778,13 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
 }
 function defaultShortcutPresets(): ShortcutPreset[] {
   const all = props.dhaInstances || []
-  const byNameIncludes = (q: string) => all.filter((d) => (d.name || d.dha_id).includes(q)).map((d) => d.dha_id)
+  const byNameIncludes = (q: string) => all.filter((d) => (d.name || d.agent_id).includes(q)).map((d) => d.agent_id)
   const research = Array.from(new Set([...byNameIncludes('调研'), ...byNameIncludes('内容核实')])).filter(Boolean)
   const blog = Array.from(new Set([...byNameIncludes('爬取'), ...byNameIncludes('博客'), ...byNameIncludes('图片')])).filter(Boolean)
   return [
-    { id: 'research', name: '调研', dha_ids: research.length ? research : [] },
-    { id: 'blog', name: '博客', dha_ids: blog.length ? blog : [] },
-  ].filter((p) => p.dha_ids.length > 0)
+    { id: 'research', name: '调研', agent_ids: research.length ? research : [] },
+    { id: 'blog', name: '博客', agent_ids: blog.length ? blog : [] },
+  ].filter((p) => p.agent_ids.length > 0)
 }
 async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
   try {
@@ -1829,7 +1829,7 @@ function saveShortcutPresets() {
   const payload = shortcutPresets.value.map((p) => ({
     id: p.id,
     name: p.name,
-    dha_ids: p.dha_ids,
+    agent_ids: p.agent_ids,
     description: p.description || '',
     discussion_goal_example: p.discussion_goal_example || '',
   }))
@@ -1863,12 +1863,12 @@ function createShortcutPreset() {
   if (!name || !ids.length) return
   if (editingShortcutId.value) {
     shortcutPresets.value = shortcutPresets.value.map((p) =>
-      p.id === editingShortcutId.value ? { ...p, name, dha_ids: ids } : p,
+      p.id === editingShortcutId.value ? { ...p, name, agent_ids: ids } : p,
     )
   } else {
     const id = `sc-${Date.now()}`
     shortcutPresets.value = [
-      { id, name, dha_ids: ids, description: '', discussion_goal_example: '' },
+      { id, name, agent_ids: ids, description: '', discussion_goal_example: '' },
       ...shortcutPresets.value,
     ]
   }
@@ -1881,7 +1881,7 @@ function createShortcutPreset() {
 function startEditShortcutPreset(preset: ShortcutPreset) {
   editingShortcutId.value = preset.id
   newShortcutName.value = preset.name
-  newShortcutDhaIds.value = [...preset.dha_ids]
+  newShortcutDhaIds.value = [...preset.agent_ids]
   shortcutExpertSearch.value = ''
 }
 function cancelEditShortcutPreset() {
@@ -1903,8 +1903,8 @@ async function applyShortcutPreset(id: string) {
     if ((groupDiscussionGoal.value || '').trim()) return
     groupDiscussionGoal.value = goal
   }
-  const currentExperts = Array.from(new Set((detail.dha_ids || []).filter((x) => !!x)))
-  const targetExperts = Array.from(new Set((p.dha_ids || []).filter((x) => !!x)))
+  const currentExperts = Array.from(new Set((detail.agent_ids || []).filter((x) => !!x)))
+  const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x)))
   const targetSet = new Set(targetExperts)
   const currentSet = new Set(currentExperts)
   const toRemove = currentExperts.filter((x) => !targetSet.has(x))
@@ -1919,7 +1919,7 @@ async function applyShortcutPreset(id: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remove_expert_ids: toRemove, add_expert_ids: toInvite }),
+      body: JSON.stringify({ remove_agent_ids: toRemove, add_agent_ids: toInvite }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -1960,7 +1960,7 @@ const DHA_AVATAR_COLORS = [
 ]
 
 function dhaIndex(dhaId?: string): number {
-  const ids = groupDetail.value?.dha_ids || []
+  const ids = groupDetail.value?.agent_ids || []
   const i = ids.indexOf(dhaId || '')
   return i >= 0 ? i % DHA_AVATAR_COLORS.length : 0
 }
@@ -1970,7 +1970,7 @@ function dhaAvatarColor(index: number): string {
 }
 
 function dhaAvatarChar(dhaId?: string): string {
-  const name = groupDetail.value?.dha_map?.[dhaId || '']?.name || dhaId || '?'
+  const name = groupDetail.value?.agent_map?.[dhaId || '']?.name || dhaId || '?'
   return name.slice(0, 1).toUpperCase()
 }
 
@@ -2019,51 +2019,34 @@ function toAgentStyleId(raw: string | null | undefined): string {
   const sid = String(raw || '').trim()
   if (!sid) return ''
   if (sid.startsWith('agent-')) return sid
-  if (sid.startsWith('dha-')) return `agent-${sid.slice(4)}`
   return `agent-${sid}`
-}
-
-function toDhaStyleId(raw: string | null | undefined): string {
-  const sid = String(raw || '').trim()
-  if (!sid) return ''
-  if (sid.startsWith('dha-')) return sid
-  if (sid.startsWith('agent-')) return `dha-${sid.slice(6)}`
-  return `dha-${sid}`
 }
 
 function buildExpertAliasMap(): Map<string, string> {
   const out = new Map<string, string>()
   for (const d of (props.dhaInstances || [])) {
-    const id = String(d.dha_id || '').trim()
+    const id = String(d.agent_id || '').trim()
     if (!id) continue
     out.set(id, id)
     const agentId = toAgentStyleId(id)
-    const dhaId = toDhaStyleId(id)
     if (agentId) out.set(agentId, id)
-    if (dhaId) out.set(dhaId, id)
   }
   return out
 }
 
 function extractSuggestedAddIds(payload: Record<string, unknown> | null | undefined): string[] {
   if (!payload) return []
-  const expertIds = payload.suggested_add_expert_ids as string[] | undefined
-  if (Array.isArray(expertIds) && expertIds.length) return expertIds
-  const dhaIds = payload.suggested_add_dha_ids as string[] | undefined
-  if (Array.isArray(dhaIds) && dhaIds.length) return dhaIds
-  const singleExpertId = payload.suggested_add_expert_id as string | undefined
-  if (typeof singleExpertId === 'string' && singleExpertId.trim()) return [singleExpertId.trim()]
-  const singleDhaId = payload.suggested_add_dha_id as string | undefined
-  if (typeof singleDhaId === 'string' && singleDhaId.trim()) return [singleDhaId.trim()]
+  const agentIds = payload.suggested_add_agent_ids as string[] | undefined
+  if (Array.isArray(agentIds) && agentIds.length) return agentIds
+  const singleAgentId = payload.suggested_add_agent_id as string | undefined
+  if (typeof singleAgentId === 'string' && singleAgentId.trim()) return [singleAgentId.trim()]
   return []
 }
 
 function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefined): string[] {
   if (!payload) return []
-  const expertIds = payload.auto_invited_expert_ids as string[] | undefined
-  if (Array.isArray(expertIds) && expertIds.length) return expertIds
-  const dhaIds = payload.auto_invited_dha_ids as string[] | undefined
-  if (Array.isArray(dhaIds) && dhaIds.length) return dhaIds
+  const agentIds = payload.auto_invited_agent_ids as string[] | undefined
+  if (Array.isArray(agentIds) && agentIds.length) return agentIds
   return []
 }
 
@@ -2072,7 +2055,7 @@ function applyOrchestrationEndMeta(endData: Record<string, unknown>) {
   groupOrchestrationPhase.value = phase
   const reason = typeof endData.interrupt_reason === 'string' ? endData.interrupt_reason.trim() : ''
   groupInterruptReason.value = reason
-  const resumeDha = typeof endData.resume_target_dha_id === 'string' ? endData.resume_target_dha_id.trim() : ''
+  const resumeDha = typeof endData.resume_target_agent_id === 'string' ? endData.resume_target_agent_id.trim() : ''
   groupResumeTargetDhaId.value = resumeDha || null
   const required = endData.required_user_fields
   groupRequiredUserFields.value = Array.isArray(required) ? (required as Array<Record<string, unknown>>) : []
@@ -2097,8 +2080,8 @@ function removeAttachedFile(path: string) {
 const addMemberRef = ref<HTMLElement | null>(null)
 
 const invitableDhas = computed(() => {
-  const inGroup = new Set(groupDetail.value?.dha_ids || [])
-  return (props.dhaInstances || []).filter((d) => !inGroup.has(d.dha_id))
+  const inGroup = new Set(groupDetail.value?.agent_ids || [])
+  return (props.dhaInstances || []).filter((d) => !inGroup.has(d.agent_id))
 })
 
 const filteredShortcutExperts = computed(() => {
@@ -2107,16 +2090,16 @@ const filteredShortcutExperts = computed(() => {
   if (!q) return all
   return all.filter((d) => {
     const name = (d.name || '').toLowerCase()
-    const id = (d.dha_id || '').toLowerCase()
+    const id = (d.agent_id || '').toLowerCase()
     return name.includes(q) || id.includes(q)
   })
 })
 
-const leaderDhaId = computed(() => (groupDetail.value?.leader_dha_id || '').trim())
-// 后端如果没显式返回 leader_dha_id，也要让 UI 有“主持人”这个常驻成员。
+const leaderDhaId = computed(() => (groupDetail.value?.leader_agent_id || '').trim())
+// 后端如果没显式返回 leader_agent_id，也要让 UI 有“主持人”这个常驻成员。
 const leaderDisplayId = computed(() => leaderDhaId.value || 'host')
 const orderedMemberIds = computed(() => {
-  const ids = [...(groupDetail.value?.dha_ids || [])]
+  const ids = [...(groupDetail.value?.agent_ids || [])]
   const leader = leaderDisplayId.value
   const rest = ids.filter((x) => x !== leader)
   return [leader, ...rest]
@@ -2125,7 +2108,7 @@ const orderedMemberIds = computed(() => {
 /** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
 const pendingSuggestedAddDhaIds = computed(() => {
   const aliasMap = buildExpertAliasMap()
-  const inGroup = new Set((groupDetail.value?.dha_ids || []).map((id) => toAgentStyleId(id)))
+  const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
   const normalized = (groupSuggestedAddDhaIds.value || [])
     .map((id) => aliasMap.get(String(id || '').trim()) || '')
     .filter(Boolean)
@@ -2135,16 +2118,16 @@ const pendingSuggestedAddDhaIds = computed(() => {
 function suggestedDhaDisplayName(id: string): string {
   const aliasMap = buildExpertAliasMap()
   const canonicalId = aliasMap.get(String(id || '').trim()) || id
-  return (props.dhaInstances || []).find((x) => x.dha_id === canonicalId)?.name
-    || groupDetail.value?.dha_map?.[canonicalId]?.name
-    || groupDetail.value?.dha_map?.[id]?.name
+  return (props.dhaInstances || []).find((x) => x.agent_id === canonicalId)?.name
+    || groupDetail.value?.agent_map?.[canonicalId]?.name
+    || groupDetail.value?.agent_map?.[id]?.name
     || canonicalId
 }
 
 function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
-  const map = groupDetail.value?.dha_map || {}
-  const names = (preset.dha_ids || [])
-    .map((id) => (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || map[id]?.name || id)
+  const map = groupDetail.value?.agent_map || {}
+  const names = (preset.agent_ids || [])
+    .map((id) => (props.dhaInstances || []).find((x) => x.agent_id === id)?.name || map[id]?.name || id)
     .filter(Boolean)
   return names.join('、')
 }
@@ -2213,9 +2196,9 @@ async function continueGroupStream() {
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
-              if (data?.text != null && data?.dha_id) {
-                appendStreamingContent(data.dha_id, data.text)
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              if (data?.text != null && data?.agent_id) {
+                appendStreamingContent(data.agent_id, data.text)
               }
             } catch (_) {}
           }
@@ -2326,7 +2309,7 @@ async function inviteSuggestedDha() {
     const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_expert_ids: ids }),
+      body: JSON.stringify({ add_agent_ids: ids }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -2355,7 +2338,7 @@ async function inviteOneSuggestedDha(dhaId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ add_expert_ids: [dhaId] }),
+      body: JSON.stringify({ add_agent_ids: [dhaId] }),
     })
     const j = await r.json().catch(() => ({}))
     if ((j as { status?: string }).status === 'ok') {
@@ -2381,8 +2364,8 @@ const latestExpertSpeakerDhaId = computed(() => {
   const list = groupDisplayMessages.value || []
   for (let i = list.length - 1; i >= 0; i--) {
     const m = list[i] as GroupMessage
-    if (m?.role === 'assistant' && m?.dha_id && (m as Record<string, unknown>).skill_id && ids.includes(m.dha_id)) {
-      return m.dha_id
+    if (m?.role === 'assistant' && m?.agent_id && (m as Record<string, unknown>).skill_id && ids.includes(m.agent_id)) {
+      return m.agent_id
     }
   }
   return ''
@@ -2415,8 +2398,8 @@ const atMentionOptions = computed(() => {
   const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME }
   const next = { type: 'role' as const, id: 'next', label: '下一位' }
   const d = groupDetail.value
-  const ids = d?.dha_ids || []
-  const map = d?.dha_map || {}
+  const ids = d?.agent_ids || []
+  const map = d?.agent_map || {}
   const experts = ids.map((id) => ({ type: 'dha' as const, id, label: map[id]?.name || id }))
   const list = [host, next, ...experts]
   const q = (atFilter.value || '').trim().toLowerCase()
@@ -2560,10 +2543,10 @@ function isShortSingleLine(text: string): string | null {
   return t.length <= 12 ? 'group-chat-plain-text-nowrap' : null
 }
 
-/** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_dha_ids 时仍能显示邀请条） */
-function parseDhaIdsFromHostContent(content: string | null | undefined): string[] {
+/** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_agent_ids 时仍能显示邀请条） */
+function parseAgentIdsFromHostContent(content: string | null | undefined): string[] {
   if (!content) return []
-  const matches = content.match(/(?:dha|agent)-[a-zA-Z0-9\-]+/gi) || []
+  const matches = content.match(/agent-[a-zA-Z0-9\-]+/gi) || []
   return [...new Set(matches)]
 }
 
@@ -2571,7 +2554,7 @@ function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null 
   if (!payload) return []
   const direct = extractSuggestedAddIds(payload)
   const aliasMap = buildExpertAliasMap()
-  const inGroup = new Set((groupDetail.value?.dha_ids || []).map((id) => toAgentStyleId(id)))
+  const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
   const normalize = (ids: string[]) => {
     const uniq = [...new Set((ids || [])
       .map((id) => aliasMap.get(String(id || '').trim()) || '')
@@ -2584,7 +2567,7 @@ function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null 
   const content = String(payload.content || '')
   if (!content || (role !== 'host' && role !== 'assistant')) return []
   if (!/(建议邀请|邀请以下|推荐.*加入|补充.*专家|加入讨论)/.test(content)) return []
-  return normalize(parseDhaIdsFromHostContent(content))
+  return normalize(parseAgentIdsFromHostContent(content))
 }
 
 watch(
@@ -2592,15 +2575,13 @@ watch(
   (messages) => {
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
     // 不再从历史首条用户消息回填输入框，避免发送后又被自动填充回来
-    // 0 成员时：若最后一条主持人消息没有 suggested_add_dha_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
-    const dhaIds = groupDetail.value?.dha_ids ?? []
+    // 0 成员时：若最后一条主持人消息没有 suggested_add_agent_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
+    const dhaIds = groupDetail.value?.agent_ids ?? []
     if (dhaIds.length === 0 && Array.isArray(messages) && messages.length) {
       const lastHost = [...messages].reverse().find((m: { role?: string }) => m.role === 'host')
       const lastMsg = lastHost as {
-        suggested_add_dha_ids?: string[]
-        suggested_add_dha_id?: string
-        suggested_add_expert_ids?: string[]
-        suggested_add_expert_id?: string
+        suggested_add_agent_ids?: string[]
+        suggested_add_agent_id?: string
         content?: string
       } | undefined
       if (lastMsg) {
@@ -2609,7 +2590,7 @@ watch(
           groupSuggestedAddDhaIds.value = resolveSuggestedIdsFromPayload(lastMsg as Record<string, unknown>)
         } else if (lastMsg.content) {
           const aliasMap = buildExpertAliasMap()
-          const parsed = parseDhaIdsFromHostContent(lastMsg.content)
+          const parsed = parseAgentIdsFromHostContent(lastMsg.content)
             .map((id) => aliasMap.get(id) || '')
             .filter(Boolean)
           if (parsed.length) groupSuggestedAddDhaIds.value = parsed
@@ -2941,13 +2922,13 @@ async function insertFileContent(e: { name: string; path: string }) {
   showInsertFile.value = false
 }
 
-function defaultDhaFilename(msg: MsgExt & { dha_id?: string }): string {
-  const name = (groupDetail.value?.dha_map || {})[msg.dha_id || '']?.name || 'dha'
+function defaultDhaFilename(msg: MsgExt & { agent_id?: string }): string {
+  const name = (groupDetail.value?.agent_map || {})[msg.agent_id || '']?.name || 'dha'
   const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').slice(0, 12)
   return `dha-${name}-${ts}.md`
 }
 
-async function saveDhaMessageToFile(msg: MsgExt & { content?: string; dha_id?: string }) {
+async function saveDhaMessageToFile(msg: MsgExt & { content?: string; agent_id?: string }) {
   const id = groupDetail.value?.id
   const content = (msg.content || '').trim()
   if (!id || !content) return
@@ -3077,13 +3058,13 @@ const activeStreamingMessage = computed<GroupMessage | null>(() => {
   return null
 })
 
-const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.dha_id || '')
+const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.agent_id || '')
 
 const activeStreamingSpeakerName = computed(() => {
   const id = activeStreamingDhaId.value
   if (!id) return ''
   if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
-  const map = groupDetail.value?.dha_map || {}
+  const map = groupDetail.value?.agent_map || {}
   return map[id]?.name || id
 })
 
@@ -3098,7 +3079,7 @@ const effectiveNextSpeakerName = computed(() => {
   const id = effectiveNextSpeaker.value
   if (!id) return ''
   if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
-  const map = groupDetail.value?.dha_map || {}
+  const map = groupDetail.value?.agent_map || {}
   return map[id]?.name || id
 })
 
@@ -3106,13 +3087,13 @@ const effectiveNextSpeakerName = computed(() => {
 function appendStreamingContent(dhaId: string, text: string) {
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
-  if (last?.role === 'assistant' && last?.dha_id === dhaId && (last as { _streaming?: boolean })._streaming) {
+  if (last?.role === 'assistant' && last?.agent_id === dhaId && (last as { _streaming?: boolean })._streaming) {
     const next: GroupDetail['messages'] = [...list.slice(0, -1), { ...last, content: (last.content || '') + text } as GroupMessage]
     groupDisplayMessages.value = next
   } else {
     // 确保同一时间只有一个“正在输出”的占位消息（只影响 UI 指示）
     const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-    groupDisplayMessages.value = [...cleared, { role: 'assistant', dha_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
+    groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
   }
   // markdown v-html 渲染完成后，用 fetch+blob 显示受保护图片
   nextTick(() => scheduleHydrateAuthImages())
@@ -3122,7 +3103,7 @@ function appendStreamingContent(dhaId: string, text: string) {
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
-  if (data.role === 'assistant' && last?.role === 'assistant' && last?.dha_id === data.dha_id && (last as { _streaming?: boolean })._streaming) {
+  if (data.role === 'assistant' && last?.role === 'assistant' && last?.agent_id === data.agent_id && (last as { _streaming?: boolean })._streaming) {
     const { _streaming: _, ...rest } = data
     groupDisplayMessages.value = [...list.slice(0, -1), rest as GroupMessage]
   } else {
@@ -3230,9 +3211,9 @@ async function sendGroupMessage() {
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; dha_id?: string }
-              if (data?.text != null && data?.dha_id) {
-                appendStreamingContent(data.dha_id, data.text)
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              if (data?.text != null && data?.agent_id) {
+                appendStreamingContent(data.agent_id, data.text)
                 // 开始输出内容：视为进入自检（生成最终回复）
               }
             } catch (_) {}
@@ -3337,11 +3318,11 @@ function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_n
     const next = effectiveNextSpeaker.value
     return { override_next_speaker: next || '', cleaned_goal: rest }
   }
-  const map = detail.dha_map || {}
+  const map = detail.agent_map || {}
   const hit = Object.entries(map).find(([, v]) => (v?.name || '').trim() === token)
   if (hit) return { override_next_speaker: hit[0], cleaned_goal: rest }
   const maybeId = token
-  if ((detail.dha_ids || []).includes(maybeId)) return { override_next_speaker: maybeId, cleaned_goal: rest }
+  if ((detail.agent_ids || []).includes(maybeId)) return { override_next_speaker: maybeId, cleaned_goal: rest }
   return { override_next_speaker: '', cleaned_goal: raw }
 }
 
@@ -3375,19 +3356,19 @@ function stopGroupStream() {
   groupStreamingPhase.value = '已停止'
 }
 
-/** 标准化为 GroupDetail，保证 messages/dha_map/dha_ids 必为数组/对象 */
+/** 标准化为 GroupDetail，保证 messages/agent_map/agent_ids 必为数组/对象 */
 function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string): GroupDetail {
   const id = String(raw.id ?? fallbackId)
   const messages = Array.isArray(raw.messages) ? raw.messages as GroupDetail['messages'] : []
-  const dha_map = (raw.dha_map && typeof raw.dha_map === 'object') ? (raw.dha_map as GroupDetail['dha_map']) : {}
-  const dha_ids = Array.isArray(raw.dha_ids) ? (raw.dha_ids as string[]) : []
+  const agent_map = (raw.agent_map && typeof raw.agent_map === 'object') ? (raw.agent_map as GroupDetail['agent_map']) : {}
+  const agent_ids = Array.isArray(raw.agent_ids) ? (raw.agent_ids as string[]) : []
   return {
     id,
     title: String(raw.title ?? '群聊'),
     messages,
-    dha_map,
-    dha_ids,
-    leader_dha_id: String(raw.leader_dha_id ?? ''),
+    agent_map,
+    agent_ids,
+    leader_agent_id: String(raw.leader_agent_id ?? ''),
     speak_mode: String((raw.speak_mode ?? raw.speak_node) ?? 'auto'),
   }
 }
@@ -3395,11 +3376,11 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
 function parseGroupResponse(id: string, body: unknown): GroupDetail | null {
   if (body == null) return null
   if (Array.isArray(body)) {
-    return normalizeGroupDetail({ id, title: '群聊', messages: body, dha_ids: [], dha_map: {} }, id)
+    return normalizeGroupDetail({ id, title: '群聊', messages: body, agent_ids: [], agent_map: {} }, id)
   }
   if (typeof body !== 'object') return null
   const o = body as Record<string, unknown>
-  // 后端标准返回：{ status: "ok", data: { id, title, messages, dha_map, dha_ids, ... } }
+  // 后端标准返回：{ status: "ok", data: { id, title, messages, agent_map, agent_ids, ... } }
   if (o.status === 'ok' && o.data != null && typeof o.data === 'object') {
     return normalizeGroupDetail(o.data as Record<string, unknown>, id)
   }

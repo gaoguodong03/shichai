@@ -17,7 +17,7 @@ def start_turn(
     ctx: OrchestrationContext,
     *,
     phase: Optional[OrchestrationPhase] = None,
-    owner_dha_id: Optional[str] = None,
+    owner_agent_id: Optional[str] = None,
     source: DecisionSource = DecisionSource.LEGACY,
 ) -> OrchestrationContext:
     """Mutate context for a new turn, bumping token version."""
@@ -25,8 +25,8 @@ def start_turn(
     ctx.turn_id = f"turn-{uuid.uuid4().hex[:10]}"
     if phase is not None:
         ctx.phase = phase
-    if owner_dha_id is not None:
-        ctx.owner_dha_id = owner_dha_id
+    if owner_agent_id is not None:
+        ctx.owner_agent_id = owner_agent_id
     ctx.interrupt_reason = InterruptReason.NONE
     ctx.decision_source = source
     return ctx
@@ -35,7 +35,7 @@ def start_turn(
 def apply_decision(ctx: OrchestrationContext, decision: OrchestrationDecision) -> OrchestrationContext:
     """Apply a unified decision onto orchestration context."""
     ctx.phase = decision.phase
-    ctx.owner_dha_id = decision.owner_dha_id or ctx.owner_dha_id
+    ctx.owner_agent_id = decision.owner_agent_id or ctx.owner_agent_id
     ctx.interrupt_reason = decision.interrupt_reason
     ctx.decision_source = decision.decision_source
     return ctx

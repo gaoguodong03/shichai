@@ -9,8 +9,8 @@
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">参与的专家（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
         <div class="flex flex-wrap gap-2">
-          <label v-for="d in dhaInstances" :key="d.dha_id" class="inline-flex items-center gap-1">
-            <input type="checkbox" :value="d.dha_id" v-model="selectedDhaIds" />
+          <label v-for="d in dhaInstances" :key="d.agent_id" class="inline-flex items-center gap-1">
+            <input type="checkbox" :value="d.agent_id" v-model="selectedDhaIds" />
             <span class="text-sm">{{ d.name }}</span>
           </label>
         </div>
@@ -32,7 +32,7 @@
 import { ref } from 'vue'
 
 const props = defineProps<{
-  dhaInstances: { dha_id: string; name: string }[]
+  dhaInstances: { agent_id: string; name: string }[]
 }>()
 
 const emit = defineEmits<{
@@ -49,7 +49,7 @@ async function create() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: title.value,
-      expert_ids: selectedDhaIds.value,
+      agent_ids: selectedDhaIds.value,
     }),
   })
   const j = await r.json()

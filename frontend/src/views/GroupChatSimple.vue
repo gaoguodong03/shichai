@@ -11,7 +11,7 @@
                 : 'bg-card border border-border'
             ]"
           >
-            <span v-if="msg.role !== 'user' && dhaName(msg.dha_id)" class="font-medium text-muted block mb-1">{{ dhaName(msg.dha_id) }}</span>
+            <span v-if="msg.role !== 'user' && agentName(msg.agent_id)" class="font-medium text-muted block mb-1">{{ agentName(msg.agent_id) }}</span>
             {{ msg.content || '' }}
           </div>
         </div>
@@ -46,13 +46,13 @@ import { ref, watch, nextTick } from 'vue'
 const props = defineProps<{
   groupSessionId: string
   title: string
-  messages: { message_id?: string; role: string; dha_id?: string; content: string }[]
-  dhaMap?: Record<string, { name?: string }>
+  messages: { message_id?: string; role: string; agent_id?: string; content: string }[]
+  agentMap?: Record<string, { name?: string }>
 }>()
 
 const emit = defineEmits<{ (e: 'message-sent'): void }>()
 
-const displayedMessages = ref<{ message_id?: string; role: string; dha_id?: string; content: string }[]>([])
+const displayedMessages = ref<{ message_id?: string; role: string; agent_id?: string; content: string }[]>([])
 const inputText = ref('')
 const isStreaming = ref(false)
 const messagesContainerRef = ref<HTMLElement | null>(null)
@@ -65,9 +65,9 @@ watch(
   { immediate: true }
 )
 
-function dhaName(dhaId?: string) {
-  if (!dhaId || !props.dhaMap) return ''
-  return props.dhaMap[dhaId]?.name ?? ''
+function agentName(agentId?: string) {
+  if (!agentId || !props.agentMap) return ''
+  return props.agentMap[agentId]?.name ?? ''
 }
 
 function scrollToBottom() {

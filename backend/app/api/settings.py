@@ -124,27 +124,27 @@ _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
         "你是群聊的主持人（调度器），你的职责只有三件事：\n"
         "1) 决定下一位发言人（next_speaker）；\n"
         "2) 为下一位专家生成本轮 next_prompt（必须自包含，能直接执行）；\n"
-        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_dha_ids（由用户确认后再邀请）。\n\n"
+        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_agent_ids（由用户确认后再邀请）。\n\n"
         "【输入中你将看到】\n"
-        "- 当前群聊参与者列表（含 dha_id/角色/技能）\n"
+        "- 当前群聊参与者列表（含 agent_id/角色/技能）\n"
         "- 讨论目标与最近讨论内容\n"
-        "- 可邀请专家列表（当需要补人时，从此列表选 suggested_add_dha_ids）\n\n"
+        "- 可邀请专家列表（当需要补人时，从此列表选 suggested_add_agent_ids）\n\n"
         "【输出规则（必须遵守）】\n"
         "- 你必须输出一段简短主持词（1～4 句，说明下一步安排/为何补人）。\n"
         "- 然后在最后输出且仅输出一段 JSON（可放在 ```json 代码块中或直接输出 JSON）。\n"
         "- JSON 字段：\n"
-        '  {"task_done": bool, "next_speaker": "user|dha_id", "announcement": str, "reason": str, "next_prompt": str, "suggested_add_dha_ids": [dha_id,...]}\n'
-        "- next_speaker 若为某 dha_id：必须输出 next_prompt。\n"
+        '  {"task_done": bool, "next_speaker": "user|agent_id", "announcement": str, "reason": str, "next_prompt": str, "suggested_add_agent_ids": [agent_id,...]}\n'
+        "- next_speaker 若为某 agent_id：必须输出 next_prompt。\n"
         "- next_prompt 必须「自包含」：与根本任务相关的关键细节都要写清楚，不能依赖“前面某轮写过”。\n"
         "- 当你判断当前成员无法完成任务/明显不适合/连续两轮无进展/缺少专长或工具时：\n"
-        "  - 在 JSON 输出 suggested_add_dha_ids（按优先级排序，优先推荐 1~3 位最相关专家）。\n"
+        "  - 在 JSON 输出 suggested_add_agent_ids（按优先级排序，优先推荐 1~3 位最相关专家）。\n"
         '  - 并把 next_speaker 设为 "user"（等待用户确认是否邀请）。\n'
     ),
     "host_zero_member_policy": (
         "当前群聊 0 成员。你的目标是先组队：从可选专家列表中推荐最合适的 1~3 位专家加入讨论（按优先级排序）。\n"
         "输出要求：\n"
         "- 先用 1～4 句回复用户：说明你将邀请哪些专家以及理由。\n"
-        "- 最后一段输出 JSON：必须包含 suggested_add_dha_ids（从可选专家列表选，优先 1~3 位）。\n"
+        "- 最后一段输出 JSON：必须包含 suggested_add_agent_ids（从可选专家列表选，优先 1~3 位）。\n"
         "推荐后先等待用户确认，不要假设系统会自动邀请。"
     ),
 }
@@ -265,19 +265,19 @@ async def get_session_presets():
                         continue
                     pid = str(item.get("id") or "").strip()
                     name = str(item.get("name") or "").strip()
-                    dha_ids = item.get("dha_ids")
-                    if not isinstance(dha_ids, list) or not dha_ids:
-                        dha_ids = item.get("expert_ids")
-                    if not isinstance(dha_ids, list):
-                        dha_ids = []
-                    normalized_ids = [str(x).strip() for x in dha_ids if str(x).strip()]
+                    agent_ids = item.get("agent_ids")
+                    if not isinstance(agent_ids, list) or not agent_ids:
+                        agent_ids = item.get("expert_ids")
+                    if not isinstance(agent_ids, list):
+                        agent_ids = []
+                    normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
                     if not pid or not name or not normalized_ids:
                         continue
                     presets.append(
                         {
                             "id": pid,
                             "name": name,
-                            "dha_ids": normalized_ids,
+                            "agent_ids": normalized_ids,
                             "description": str(item.get("description") or ""),
                             "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
                         }
@@ -290,7 +290,7 @@ async def get_session_presets():
 class SessionPresetItem(BaseModel):
     id: str
     name: str
-    dha_ids: List[str]
+    agent_ids: List[str]
     description: Optional[str] = ""
     discussion_goal_example: Optional[str] = ""
 
@@ -309,16 +309,16 @@ async def update_session_presets(body: SessionPresetsBody):
     for item in body.presets:
         pid = str(item.id or "").strip()
         name = str(item.name or "").strip()
-        dha_ids = [str(x).strip() for x in (item.dha_ids or []) if str(x).strip()]
-        if not pid or not name or not dha_ids or pid in seen:
+        agent_ids = [str(x).strip() for x in (item.agent_ids or []) if str(x).strip()]
+        if not pid or not name or not agent_ids or pid in seen:
             continue
         seen.add(pid)
         normalized.append(
             {
                 "id": pid,
                 "name": name,
-                "dha_ids": dha_ids,
-                "expert_ids": dha_ids,  # 兼容历史字段
+                "agent_ids": agent_ids,
+                "expert_ids": agent_ids,  # 兼容字段
                 "description": str(item.description or ""),
                 "discussion_goal_example": str(item.discussion_goal_example or ""),
             }

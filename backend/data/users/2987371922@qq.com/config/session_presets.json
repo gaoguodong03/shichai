@@ -2,11 +2,11 @@
   {
     "id": "research",
     "name": "调研",
-    "dha_ids": [
-      "dha-c1bf68ba"
+    "agent_ids": [
+      "agent-c1bf68ba"
     ],
     "expert_ids": [
-      "dha-c1bf68ba"
+      "agent-c1bf68ba"
     ],
     "description": "",
     "discussion_goal_example": ""
@@ -14,13 +14,13 @@
   {
     "id": "blog",
     "name": "博客",
-    "dha_ids": [
-      "dha-web-fetch",
-      "dha-440b26f8"
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8"
     ],
     "expert_ids": [
-      "dha-web-fetch",
-      "dha-440b26f8"
+      "agent-web-fetch",
+      "agent-440b26f8"
     ],
     "description": "",
     "discussion_goal_example": ""

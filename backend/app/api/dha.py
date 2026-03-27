@@ -1,4 +1,4 @@
-"""DHA 实例 API - 多 DHA 群聊的智能体配置"""
+"""Agent 实例 API - 多专家群聊的智能体配置"""
 from __future__ import annotations
 
 import json
@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from app.core.security import user_context_dependency
 from app.core.user_context import get_current_user_context
 
-router = APIRouter(tags=["dha"], dependencies=[Depends(user_context_dependency)])
+router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
 def _get_dha_instances_path() -> Path:
     """根据当前用户返回 Agent 配置文件路径，实现多用户隔离。"""
@@ -51,11 +51,10 @@ class DHAUpdate(BaseModel):
 
 
 def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
-    """在响应中附加 agent/expert 兼容别名，不改变存储结构。"""
+    """在响应中附加 expert 别名。"""
     out = dict(instance or {})
-    did = out.get("dha_id")
+    did = out.get("agent_id")
     if did is not None:
-        out["agent_id"] = did
         out["expert_id"] = did
     return out
 
@@ -98,9 +97,9 @@ async def get_dha_instances():
 async def create_dha_instance(body: DHACreate):
     """创建 DHA 实例"""
     instances = load_dha_instances()
-    dha_id = (body.agent_id or body.expert_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
+    agent_id = (body.agent_id or body.expert_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
     new_instance = {
-        "dha_id": dha_id,
+        "agent_id": agent_id,
         "name": body.name,
         "role": body.role or "",
         "system_prompt": body.system_prompt or "",
@@ -115,11 +114,11 @@ async def create_dha_instance(body: DHACreate):
     return {"status": "ok", "data": _attach_expert_alias(new_instance)}
 
 
-@router.put("/dha/instances/{dha_id}")
-async def update_dha_instance(dha_id: str, body: DHAUpdate):
+@router.put("/dha/instances/{agent_id}")
+async def update_dha_instance(agent_id: str, body: DHAUpdate):
     """更新 DHA 实例"""
     instances = load_dha_instances()
-    idx = next((i for i, d in enumerate(instances) if d.get("dha_id") == dha_id), None)
+    idx = next((i for i, d in enumerate(instances) if d.get("agent_id") == agent_id), None)
     if idx is None:
         raise HTTPException(status_code=404, detail="DHA instance not found")
     inst = instances[idx]
@@ -143,16 +142,16 @@ async def update_dha_instance(dha_id: str, body: DHAUpdate):
     return {"status": "ok", "data": _attach_expert_alias(inst)}
 
 
-@router.delete("/dha/instances/{dha_id}")
-async def delete_dha_instance(dha_id: str):
+@router.delete("/dha/instances/{agent_id}")
+async def delete_dha_instance(agent_id: str):
     """删除 DHA 实例"""
     instances = load_dha_instances()
     original = len(instances)
-    instances = [d for d in instances if d.get("dha_id") != dha_id]
+    instances = [d for d in instances if d.get("agent_id") != agent_id]
     if len(instances) == original:
         raise HTTPException(status_code=404, detail="DHA instance not found")
     save_dha_instances(instances)
-    return {"status": "ok", "data": {"dha_id": dha_id, "agent_id": dha_id, "expert_id": dha_id, "deleted": True}}
+    return {"status": "ok", "data": {"agent_id": agent_id, "expert_id": agent_id, "deleted": True}}
 
 
 @router.get("/agents")
@@ -193,11 +192,11 @@ async def create_expert(body: DHACreate):
 
 @router.put("/experts/{expert_id}")
 async def update_expert(expert_id: str, body: DHAUpdate):
-    """更新专家别名接口（兼容到 /dha/instances/{dha_id}）。"""
+    """更新专家别名接口（兼容到 /dha/instances/{agent_id}）。"""
     return await update_dha_instance(expert_id, body)
 
 
 @router.delete("/experts/{expert_id}")
 async def delete_expert(expert_id: str):
-    """删除专家别名接口（兼容到 /dha/instances/{dha_id}）。"""
+    """删除专家别名接口（兼容到 /dha/instances/{agent_id}）。"""
     return await delete_dha_instance(expert_id)

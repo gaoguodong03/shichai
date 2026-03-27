@@ -139,10 +139,10 @@
             <div class="flex-1 min-w-0 text-left">
               <div class="truncate font-medium">{{ displaySessionTitle(s) }}</div>
               <div class="mt-0.5 flex items-center gap-1">
-                <template v-if="(s.dha_ids?.length || 0) > 0">
+                <template v-if="(s.agent_ids?.length || 0) > 0">
                   <div class="flex -space-x-1">
                     <span
-                      v-for="id in (s.dha_ids || []).slice(0, 3)"
+                      v-for="id in (s.agent_ids || []).slice(0, 3)"
                       :key="id"
                       class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-semibold text-text-inverse shrink-0 ring-1 ring-sidebar"
                       :style="{ backgroundColor: dhaAvatarColorForId(id) }"
@@ -151,7 +151,7 @@
                     </span>
                   </div>
                   <span class="truncate text-xs text-muted">
-                    {{ (s.dha_ids?.length || 0) }} 位专家 · {{ formatDate(s.updated_at) }}
+                    {{ (s.agent_ids?.length || 0) }} 位专家 · {{ formatDate(s.updated_at) }}
                   </span>
                 </template>
                 <template v-else>
@@ -238,7 +238,7 @@
             >
               <div class="flex-1 min-w-0 text-left">
                 <div class="truncate font-medium">{{ s.name }}</div>
-                <div class="truncate text-xs text-muted mt-0.5">{{ s.dha_ids.length }} 位专家</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ s.agent_ids.length }} 位专家</div>
               </div>
               <button
                 type="button"
@@ -299,22 +299,22 @@
             <div
               v-else
               v-for="d in filteredDhaInstances"
-              :key="d.dha_id"
+              :key="d.agent_id"
               :class="[
                 'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-                selectedId === d.dha_id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                selectedId === d.agent_id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
               ]"
-              @click="selectedId = d.dha_id"
+              @click="selectedId = d.agent_id"
             >
               <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">{{ d.name || d.dha_id }}</div>
+              <div class="truncate font-medium">{{ d.name || d.agent_id }}</div>
                 <div class="truncate text-xs text-muted mt-0.5">{{ d.role || '（无角色）' }}</div>
               </div>
               <button
                 type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
                 title="删除专家"
-                @click.stop="deleteDhaInstance(d.dha_id)"
+                @click.stop="deleteDhaInstance(d.agent_id)"
               >
                 ×
               </button>
@@ -609,7 +609,7 @@
                 <div class="text-sm font-medium text-primary mb-2">专家</div>
                 <div class="flex flex-wrap gap-2">
                   <span
-                    v-for="id in scenarioDraft.dha_ids"
+                    v-for="id in scenarioDraft.agent_ids"
                     :key="id"
                     class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
                   >
@@ -620,7 +620,7 @@
                       @click="removeScenarioExpert(id)"
                     >×</button>
                   </span>
-                  <span v-if="!scenarioDraft.dha_ids.length" class="text-xs text-muted">暂无专家</span>
+                  <span v-if="!scenarioDraft.agent_ids.length" class="text-xs text-muted">暂无专家</span>
                 </div>
                 <div class="mt-3">
                   <input
@@ -632,12 +632,12 @@
                   <div class="flex flex-wrap gap-2">
                     <button
                       v-for="d in filteredScenarioAddableExperts"
-                      :key="d.dha_id"
+                      :key="d.agent_id"
                       type="button"
                       class="px-2 py-1 rounded-md text-xs border border-input-border bg-card text-primary hover:bg-list-hover"
-                      @click="addScenarioExpert(d.dha_id)"
+                      @click="addScenarioExpert(d.agent_id)"
                     >
-                      + {{ d.name || d.dha_id }}
+                      + {{ d.name || d.agent_id }}
                     </button>
                     <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
                     <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
@@ -782,13 +782,13 @@ const resourceMenuExpanded = ref(false)
 interface ScenarioPreset {
   id: string
   name: string
-  dha_ids: string[]
+  agent_ids: string[]
   description?: string
 }
 type ScenarioDraft = {
   id: string
   name: string
-  dha_ids: string[]
+  agent_ids: string[]
   description: string
 }
 const scenarioPresets = ref<ScenarioPreset[]>([])
@@ -800,7 +800,7 @@ const scenarioExpertSearch = ref('')
 const scenarioDraft = ref<ScenarioDraft>({
   id: '',
   name: '',
-  dha_ids: [],
+  agent_ids: [],
   description: '',
 })
 const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
@@ -815,8 +815,8 @@ const selectedScenarioPreset = computed(() => {
   return scenarioPresets.value.find((x) => x.id === selectedId.value) || null
 })
 const scenarioAddableExperts = computed(() => {
-  const selected = new Set(scenarioDraft.value.dha_ids || [])
-  return (dhaInstances.value || []).filter((d) => !selected.has(d.dha_id))
+  const selected = new Set(scenarioDraft.value.agent_ids || [])
+  return (dhaInstances.value || []).filter((d) => !selected.has(d.agent_id))
 })
 const filteredScenarioAddableExperts = computed(() => {
   const q = (scenarioExpertSearch.value || '').trim().toLowerCase()
@@ -936,10 +936,10 @@ const settingsCategories = [
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
-const groupSessions = ref<{ id: string; title: string; updated_at: string; dha_ids?: string[]; speak_mode?: string }[]>([])
+const groupSessions = ref<{ id: string; title: string; updated_at: string; agent_ids?: string[]; speak_mode?: string }[]>([])
 const groupSessionsLoading = ref(false)
 const creatingSession = ref(false)
-const dhaInstances = ref<{ dha_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
+const dhaInstances = ref<{ agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean }[]>([])
 const dhaInstancesLoading = ref(false)
 const skillZipInputRef = ref<HTMLInputElement | null>(null)
 const skillZipImporting = ref(false)
@@ -1000,10 +1000,10 @@ onUnmounted(() => {
 })
 
 /** 会话列表展示用标题：为空或默认值时用更友好的「AI 命名」 */
-function displaySessionTitle(s: { id: string; title: string; dha_ids?: string[]; updated_at: string }): string {
+function displaySessionTitle(s: { id: string; title: string; agent_ids?: string[]; updated_at: string }): string {
   const raw = (s.title || '').trim()
   if (!raw || raw === '新对话') {
-    const dhaCount = s.dha_ids?.length || 0
+    const dhaCount = s.agent_ids?.length || 0
     if (dhaCount === 0) return '空白会话'
     if (dhaCount === 1) return '单专家协作会话'
     if (dhaCount <= 3) return `${dhaCount} 专家协作会话`
@@ -1027,14 +1027,14 @@ function dhaAvatarColorForId(dhaId: string): string {
   const list = dhaInstances.value || []
   const idx = Math.max(
     0,
-    list.findIndex((d) => d.dha_id === dhaId),
+    list.findIndex((d) => d.agent_id === dhaId),
   )
   return DHA_AVATAR_COLORS[idx % DHA_AVATAR_COLORS.length]
 }
 
 function dhaAvatarCharForId(dhaId: string): string {
   const list = dhaInstances.value || []
-  const found = list.find((d) => d.dha_id === dhaId)
+  const found = list.find((d) => d.agent_id === dhaId)
   const name = (found?.name || dhaId || '?').trim()
   return name ? name.slice(0, 1).toUpperCase() : '?'
 }
@@ -1086,20 +1086,20 @@ function onResourceChildClick(id: ResourceSubModule) {
 }
 
 function dhaDisplayName(dhaId: string): string {
-  const hit = (dhaInstances.value || []).find((d) => d.dha_id === dhaId)
+  const hit = (dhaInstances.value || []).find((d) => d.agent_id === dhaId)
   return hit?.name || dhaId
 }
 
 function syncScenarioDraftFromSelected() {
   const s = selectedScenarioPreset.value
   if (!s) {
-    scenarioDraft.value = { id: '', name: '', dha_ids: [], description: '' }
+    scenarioDraft.value = { id: '', name: '', agent_ids: [], description: '' }
     return
   }
   scenarioDraft.value = {
     id: s.id,
     name: s.name || '',
-    dha_ids: [...(s.dha_ids || [])],
+    agent_ids: [...(s.agent_ids || [])],
     description: s.description || '',
   }
 }
@@ -1110,7 +1110,7 @@ function createScenarioPreset() {
   const next: ScenarioPreset = {
     id,
     name: '',
-    dha_ids: [],
+    agent_ids: [],
     description: '',
   }
   scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
@@ -1120,13 +1120,13 @@ function createScenarioPreset() {
 }
 
 function removeScenarioExpert(dhaId: string) {
-  scenarioDraft.value.dha_ids = (scenarioDraft.value.dha_ids || []).filter((x) => x !== dhaId)
+  scenarioDraft.value.agent_ids = (scenarioDraft.value.agent_ids || []).filter((x) => x !== dhaId)
 }
 
 function addScenarioExpert(dhaId: string) {
   if (!dhaId) return
-  if ((scenarioDraft.value.dha_ids || []).includes(dhaId)) return
-  scenarioDraft.value.dha_ids = [...(scenarioDraft.value.dha_ids || []), dhaId]
+  if ((scenarioDraft.value.agent_ids || []).includes(dhaId)) return
+  scenarioDraft.value.agent_ids = [...(scenarioDraft.value.agent_ids || []), dhaId]
 }
 
 async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
@@ -1134,7 +1134,7 @@ async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
     presets: nextPresets.map((p) => ({
       id: p.id,
       name: (p.name || '').trim(),
-      dha_ids: [...(p.dha_ids || [])],
+      agent_ids: [...(p.agent_ids || [])],
       description: p.description || '',
     })),
   }
@@ -1153,7 +1153,7 @@ async function saveScenarioPreset() {
   const cur = selectedScenarioPreset.value
   if (!cur) return
   const name = (scenarioDraft.value.name || '').trim()
-  const dhaIds = [...(scenarioDraft.value.dha_ids || [])]
+  const dhaIds = [...(scenarioDraft.value.agent_ids || [])]
   if (!name) {
     window.alert('场景名称不能为空')
     return
@@ -1170,7 +1170,7 @@ async function saveScenarioPreset() {
             ...p,
             name,
             description: scenarioDraft.value.description || '',
-            dha_ids: dhaIds,
+            agent_ids: dhaIds,
           }
         : p,
     )
@@ -1304,7 +1304,7 @@ async function createNewSession() {
     const r = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '新对话', expert_ids: [] }),
+      body: JSON.stringify({ title: '新对话', agent_ids: [] }),
     })
     const j = await r.json()
     if (j.status === 'ok' && j.data?.id) {
@@ -1365,11 +1365,11 @@ async function fetchDHA() {
       if (currentModule.value === 'resource' && resourceSubModule.value === 'dha') {
         const list = dhaInstances.value || []
         if (selectedId.value === '__new__') return
-        const ids = list.map((d) => d.dha_id)
+        const ids = list.map((d) => d.agent_id)
         if (selectedId.value && !ids.includes(selectedId.value)) {
-          selectedId.value = list.length > 0 ? list[0].dha_id : null
+          selectedId.value = list.length > 0 ? list[0].agent_id : null
         } else if (!selectedId.value && list.length > 0) {
-          selectedId.value = list[0].dha_id
+          selectedId.value = list[0].agent_id
         }
       }
     }
