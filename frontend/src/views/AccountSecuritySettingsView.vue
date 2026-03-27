@@ -1,10 +1,7 @@
 <template>
   <div class="flex flex-col h-full bg-page overflow-y-auto">
-    <header class="bg-card px-4 py-3 flex-shrink-0">
-      <h1 class="text-lg font-semibold text-primary">账号与安全</h1>
-    </header>
-
-    <div class="flex-1 overflow-y-auto p-4 space-y-6">
+    <div class="flex-1 overflow-y-auto p-4 themed-scrollbar">
+      <div class="max-w-5xl w-full mx-auto space-y-6">
       <section class="space-y-4">
         <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">
           修改账号
@@ -37,14 +34,16 @@
           </div>
           <p v-if="accountError" class="text-sm text-danger">{{ accountError }}</p>
           <p v-if="accountSuccess" class="text-sm text-accent">{{ accountSuccess }}</p>
-          <button
-            type="button"
-            :disabled="savingAccount"
-            class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            @click="onChangeAccount"
-          >
-            {{ savingAccount ? '保存中...' : '保存' }}
-          </button>
+          <div class="flex justify-end">
+            <button
+              type="button"
+              :disabled="savingAccount"
+              class="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              @click="onChangeAccount"
+            >
+              {{ savingAccount ? '保存中...' : '保存' }}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -88,16 +87,19 @@
           </div>
           <p v-if="passwordError" class="text-sm text-danger">{{ passwordError }}</p>
           <p v-if="passwordSuccess" class="text-sm text-accent">{{ passwordSuccess }}</p>
-          <button
-            type="button"
-            :disabled="savingPassword"
-            class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            @click="onChangePassword"
-          >
-            {{ savingPassword ? '保存中...' : '保存' }}
-          </button>
+          <div class="flex justify-end">
+            <button
+              type="button"
+              :disabled="savingPassword"
+              class="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              @click="onChangePassword"
+            >
+              {{ savingPassword ? '保存中...' : '保存' }}
+            </button>
+          </div>
         </div>
       </section>
+      </div>
     </div>
   </div>
 </template>

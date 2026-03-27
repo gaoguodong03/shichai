@@ -473,3 +473,26 @@ main.workspace-main .text-muted {
   --tw-ring-color: var(--color-input-focus-ring) !important;
   border-color: var(--color-input-focus-ring) !important;
 }
+
+/* 统一滚动条主题（用于深浅色一致） */
+.themed-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.themed-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.themed-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+  background-clip: content-box;
+}

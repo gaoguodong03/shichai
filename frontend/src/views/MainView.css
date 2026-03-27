@@ -15,3 +15,27 @@
   opacity: 0.9;
 }
 
+/* 中间列滚动条在浅/深色模式下统一走主题变量 */
+.middle-column-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-sidebar);
+}
+
+.middle-column-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.middle-column-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-sidebar);
+}
+
+.middle-column-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid var(--color-sidebar);
+}
+
+.middle-column-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+

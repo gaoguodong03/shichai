@@ -44,10 +44,10 @@
 
             <div>
               <label class="block text-sm font-medium text-primary mb-1">描述</label>
-              <input
+              <textarea
                 v-model="form.role"
-                type="text"
-                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                rows="2"
+                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 placeholder="请输入专家描述"
               />
             </div>
@@ -57,7 +57,7 @@
               <textarea
                 v-model="form.system_prompt"
                 rows="3"
-                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 placeholder="请输入系统提示词（可选）"
               />
             </div>
@@ -95,7 +95,7 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
-            <div class="flex justify-end gap-2 pt-2">
+            <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
               <button
                 type="submit"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover shadow-sm transition-colors"

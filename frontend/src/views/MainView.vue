@@ -119,7 +119,7 @@
         </button>
       </div>
       <div
-        class="flex-1 overflow-y-auto"
+        class="flex-1 overflow-y-auto middle-column-scrollbar"
         :class="currentModule === 'resource' ? 'pt-3' : ''"
       >
         <!-- 工作空间：统一会话列表 -->
@@ -164,14 +164,6 @@
             <div class="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 type="button"
-                class="p-1.5 rounded text-muted hover:text-accent hover:bg-accent-subtle"
-                title="重命名"
-                @click.stop="renameGroupSession(s.id, s.title || '新对话')"
-              >
-                R
-              </button>
-              <button
-                type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle"
                 title="删除"
                 @click.stop="deleteGroupSession(s.id)"
@@ -189,7 +181,7 @@
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="createScenarioPreset"
                 >
                   <span class="text-base leading-none">＋</span>
@@ -252,39 +244,41 @@
           </template>
           <!-- 专家 -->
           <template v-else-if="resourceSubModule === 'dha'">
-            <div class="flex items-center gap-2 mb-2 px-3">
-              <button
-                @click="selectedId = '__new__'"
-                :class="[
-                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  selectedId === '__new__'
-                    ? 'bg-nav-selected-bg text-nav-selected-text'
-                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                ]"
-              >
-                <span class="text-base leading-none">＋</span>
-                <span>创建专家</span>
-              </button>
-              <button
-                type="button"
-                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                title="搜索专家"
-                @click="toggleSearch('dha')"
-              >
-                <svg
-                  class="main-sidebar-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
+            <div class="mb-2 px-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  @click="selectedId = '__new__'"
+                  :class="[
+                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                    selectedId === '__new__'
+                      ? 'bg-nav-selected-bg text-nav-selected-text'
+                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  ]"
                 >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                </svg>
-              </button>
+                  <span class="text-base leading-none">＋</span>
+                  <span>创建专家</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索专家"
+                  @click="toggleSearch('dha')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-if="showDhaSearch" class="px-3 mb-2">
               <input
@@ -322,65 +316,67 @@
           </template>
           <!-- Skill -->
           <template v-else-if="resourceSubModule === 'skill'">
-            <div class="flex items-center gap-2 mb-2 px-3">
-              <button
-                @click="createEmptySkill"
-                :class="[
-                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                ]"
-              >
-                <span class="text-base leading-none">＋</span>
-                <span>创建技能</span>
-              </button>
-              <button
-                type="button"
-                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                @click="triggerSkillZipImport"
-                title="导入技能"
-              >
-                <svg
-                  class="main-sidebar-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
+            <div class="mb-2 px-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  @click="createEmptySkill"
+                  :class="[
+                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                    'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  ]"
                 >
-                  <path d="M14 3h6v18h-6" />
-                  <path d="M4 12h11" />
-                  <path d="m11 8 4 4-4 4" />
-                </svg>
-              </button>
-              <input
-                ref="skillZipInputRef"
-                type="file"
-                accept=".zip,application/zip"
-                class="hidden"
-                @change="onSkillZipSelected"
-              />
-              <button
-                type="button"
-                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                title="搜索技能"
-                @click="toggleSearch('skill')"
-              >
-                <svg
-                  class="main-sidebar-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
+                  <span class="text-base leading-none">＋</span>
+                  <span>创建技能</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  @click="triggerSkillZipImport"
+                  title="导入技能"
                 >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                </svg>
-              </button>
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
+                  </svg>
+                </button>
+                <input
+                  ref="skillZipInputRef"
+                  type="file"
+                  accept=".zip,application/zip"
+                  class="hidden"
+                  @change="onSkillZipSelected"
+                />
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索技能"
+                  @click="toggleSearch('skill')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-if="showSkillSearch" class="px-3 mb-2">
               <input
@@ -406,39 +402,41 @@
           </template>
           <!-- MCP -->
           <template v-else-if="resourceSubModule === 'mcp'">
-            <div class="flex items-center gap-2 mb-2 px-3">
-              <button
-                @click="selectedId = '__new__'"
-                :class="[
-                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  selectedId === '__new__'
-                    ? 'bg-nav-selected-bg text-nav-selected-text'
-                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                ]"
-              >
-                <span class="text-base leading-none">＋</span>
-                <span>创建工具</span>
-              </button>
-              <button
-                type="button"
-                class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                title="搜索工具"
-                @click="toggleSearch('mcp')"
-              >
-                <svg
-                  class="main-sidebar-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
+            <div class="mb-2 px-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  @click="selectedId = '__new__'"
+                  :class="[
+                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                    selectedId === '__new__'
+                      ? 'bg-nav-selected-bg text-nav-selected-text'
+                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  ]"
                 >
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                </svg>
-              </button>
+                  <span class="text-base leading-none">＋</span>
+                  <span>创建工具</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索工具"
+                  @click="toggleSearch('mcp')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-if="showMcpSearch" class="px-3 mb-2">
               <input
@@ -465,18 +463,18 @@
           </template>
           <!-- LLM -->
           <template v-else-if="resourceSubModule === 'llm'">
-            <div class="flex items-center gap-2 mb-2 px-3">
+            <div class="mb-2 px-3 flex items-center gap-2">
               <button
                 @click="selectedId = '__new__'"
                 :class="[
-                  'flex-1 px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                  'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
                   selectedId === '__new__'
                     ? 'bg-nav-selected-bg text-nav-selected-text'
                     : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
                 ]"
               >
                 <span class="text-base leading-none">＋</span>
-                <span>新建 LLM</span>
+                <span>创建模型</span>
               </button>
             </div>
             <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -509,7 +507,7 @@
               <input
                 v-model="fileSessionSearch"
                 type="text"
-                placeholder="搜索会话（标题/ID）"
+                placeholder="搜索会话（标题）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
               <select
@@ -518,8 +516,6 @@
               >
                 <option value="updated_desc">按更新时间（新→旧）</option>
                 <option value="updated_asc">按更新时间（旧→新）</option>
-                <option value="file_count_desc">按文件数（多→少）</option>
-                <option value="file_count_asc">按文件数（少→多）</option>
               </select>
             </div>
             <div v-if="fileSessionsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -580,88 +576,90 @@
       <!-- 资源中心：智能体 / 技能 / 工具 -->
       <template v-if="currentModule === 'resource'">
         <template v-if="resourceSubModule === 'scenario'">
-          <div class="h-full overflow-y-auto p-6">
-            <div v-if="selectedScenarioPreset" class="max-w-3xl space-y-4">
-              <div class="rounded-xl border border-input-border bg-panel p-4">
-                <h3 class="text-lg font-semibold text-primary">{{ isCreatingScenario ? '创建场景' : '配置场景' }}</h3>
-                <div class="mt-3 space-y-3">
-                  <div>
-                    <div class="text-xs text-muted mb-1">名称</div>
-                    <input
-                      v-model="scenarioDraft.name"
-                      type="text"
-                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-                      placeholder="请输入场景名称"
-                    />
-                  </div>
-                  <div>
-                    <div class="text-xs text-muted mb-1">描述</div>
-                    <textarea
-                      v-model="scenarioDraft.description"
-                      rows="3"
-                      class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
-                      placeholder="请输入场景描述"
-                    />
-                  </div>
-                </div>
+          <div class="h-full overflow-y-auto p-4">
+            <div v-if="selectedScenarioPreset" class="max-w-5xl w-full mx-auto">
+              <div class="mb-4">
+                <h2 class="text-2xl font-semibold text-primary mb-1">
+                  {{ isCreatingScenario ? '创建场景' : '配置场景' }}
+                </h2>
               </div>
-              <div class="rounded-xl border border-input-border bg-panel p-4">
-                <div class="text-sm font-medium text-primary mb-2">专家</div>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    v-for="id in scenarioDraft.agent_ids"
-                    :key="id"
-                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
-                  >
-                    {{ dhaDisplayName(id) }}
-                    <button
-                      type="button"
-                      class="ml-1 text-accent-subtle-text/80 hover:text-danger"
-                      @click="removeScenarioExpert(id)"
-                    >×</button>
-                  </span>
-                  <span v-if="!scenarioDraft.agent_ids.length" class="text-xs text-muted">暂无专家</span>
-                </div>
-                <div class="mt-3">
+              <form class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
+                <div>
+                  <label class="block text-sm font-medium text-primary mb-1">名称</label>
                   <input
-                    v-model="scenarioExpertSearch"
+                    v-model="scenarioDraft.name"
                     type="text"
-                    placeholder="搜索专家（名称/描述）"
-                    class="w-full px-3 py-2 mb-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    placeholder="请输入场景名称"
                   />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-primary mb-1">描述</label>
+                  <textarea
+                    v-model="scenarioDraft.description"
+                    rows="3"
+                    class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
+                    placeholder="请输入场景描述"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-primary mb-2">专家</label>
                   <div class="flex flex-wrap gap-2">
-                    <button
-                      v-for="d in filteredScenarioAddableExperts"
-                      :key="d.agent_id"
-                      type="button"
-                      class="px-2 py-1 rounded-md text-xs border border-input-border bg-card text-primary hover:bg-list-hover"
-                      @click="addScenarioExpert(d.agent_id)"
+                    <span
+                      v-for="id in scenarioDraft.agent_ids"
+                      :key="id"
+                      class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
                     >
-                      + {{ d.name || d.agent_id }}
-                    </button>
-                    <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
-                    <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
+                      {{ dhaDisplayName(id) }}
+                      <button
+                        type="button"
+                        class="ml-1 text-accent-subtle-text/80 hover:text-danger"
+                        @click="removeScenarioExpert(id)"
+                      >×</button>
+                    </span>
+                    <span v-if="!scenarioDraft.agent_ids.length" class="text-xs text-muted">暂无专家</span>
+                  </div>
+                  <div class="mt-3">
+                    <input
+                      v-model="scenarioExpertSearch"
+                      type="text"
+                      placeholder="搜索专家（名称/描述）"
+                      class="w-full px-3 py-2 mb-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    />
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        v-for="d in filteredScenarioAddableExperts"
+                        :key="d.agent_id"
+                        type="button"
+                        class="px-2 py-1 rounded-md text-xs border border-input-border bg-card text-primary hover:bg-list-hover"
+                        @click="addScenarioExpert(d.agent_id)"
+                      >
+                        + {{ d.name || d.agent_id }}
+                      </button>
+                      <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
+                      <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div class="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-accent text-text-inverse text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                  :disabled="scenarioSaving"
-                  @click="saveScenarioPreset"
-                >
-                  {{ scenarioSaving ? '保存中...' : '保存' }}
-                </button>
-                <button
-                  type="button"
-                  class="px-4 py-2 rounded-lg bg-danger-subtle text-danger text-sm font-medium hover:opacity-90"
-                  :disabled="scenarioSaving"
-                  @click="deleteScenarioPreset(selectedScenarioPreset.id)"
-                >
-                  删除
-                </button>
-              </div>
+                <div class="flex items-center justify-end gap-2 px-4 py-3 flex-shrink-0">
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+                    :disabled="scenarioSaving"
+                    @click="saveScenarioPreset"
+                  >
+                    {{ scenarioSaving ? '保存中...' : '保存' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
+                    :disabled="scenarioSaving"
+                    @click="deleteScenarioPreset(selectedScenarioPreset.id)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </form>
             </div>
             <div v-else class="flex h-full items-center justify-center text-muted text-sm">
               请从左侧选择场景
@@ -839,24 +837,19 @@ const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
 const fileSessions = ref<{ id: string; title: string; updated_at: string; file_count: number }[]>([])
 const fileSessionsLoading = ref(false)
 const fileSessionSearch = ref('')
-const fileSessionSort = ref<'updated_desc' | 'updated_asc' | 'file_count_desc' | 'file_count_asc'>('updated_desc')
+const fileSessionSort = ref<'updated_desc' | 'updated_asc'>('updated_desc')
 const visibleFileSessions = computed(() => {
   const q = (fileSessionSearch.value || '').trim().toLowerCase()
   const list = (fileSessions.value || []).filter((s) => {
     if (!q) return true
     const title = (s.title || '').toLowerCase()
-    const id = (s.id || '').toLowerCase()
-    return title.includes(q) || id.includes(q)
+    return title.includes(q)
   })
   const arr = [...list]
   if (fileSessionSort.value === 'updated_desc') {
     arr.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
   } else if (fileSessionSort.value === 'updated_asc') {
     arr.sort((a, b) => (a.updated_at || '').localeCompare(b.updated_at || ''))
-  } else if (fileSessionSort.value === 'file_count_desc') {
-    arr.sort((a, b) => (b.file_count || 0) - (a.file_count || 0))
-  } else {
-    arr.sort((a, b) => (a.file_count || 0) - (b.file_count || 0))
   }
   return arr
 })

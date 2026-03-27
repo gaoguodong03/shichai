@@ -71,7 +71,7 @@
             class="flex-1 w-full p-3 text-sm font-sans border border-input-border bg-input-bg text-primary rounded resize-none focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             spellcheck="false"
           />
-          <div class="mt-2 flex gap-2">
+          <div class="mt-2 flex justify-end gap-2 px-4 py-3 flex-shrink-0">
             <button
               class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
               @click="saveContent"

@@ -1,20 +1,11 @@
 <template>
-  <div class="flex flex-col h-full bg-card text-primary overflow-y-auto">
-    <header class="border-b border-border px-4 py-3 flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-primary">MCP Server 详情</h1>
-      <div class="flex gap-2">
-        <button
-          v-if="server"
-          @click="deleteServer"
-          :disabled="deleting"
-          class="px-3 py-1.5 text-sm text-danger border border-danger/40 rounded-lg hover:bg-danger-subtle disabled:opacity-50"
-        >
-          删除
-        </button>
+  <div class="flex flex-col h-full p-4 overflow-y-auto themed-scrollbar">
+    <div class="max-w-5xl w-full mx-auto">
+      <div class="mb-4">
+        <h2 class="text-2xl font-semibold text-primary mb-1">配置工具</h2>
       </div>
-    </header>
-    <div v-if="loading" class="p-4 text-muted">加载中...</div>
-    <form v-else-if="server" @submit.prevent="save" class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div v-if="loading" class="p-4 text-muted">加载中...</div>
+      <form v-else-if="server" @submit.prevent="save" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
       <div>
         <label class="block text-sm font-medium text-primary mb-1">名称 *</label>
         <input
@@ -55,7 +46,7 @@
           <textarea
             v-model="stdioArgs"
             rows="3"
-            class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+            class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
           />
         </div>
       </template>
@@ -86,21 +77,30 @@
         <textarea
           v-model="form.metadata.description"
           rows="2"
-          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
         />
       </div>
       <p class="text-xs text-muted">ID: {{ server.id }} · 状态: {{ server.status }} · 工具数: {{ server.tool_count ?? 0 }}</p>
-      <div class="flex gap-3">
+      <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
         <button
           type="submit"
           :disabled="saving"
-          class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover disabled:opacity-50"
+          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
+        <button
+          type="button"
+          @click="deleteServer"
+          :disabled="deleting"
+          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
+        >
+          删除
+        </button>
       </div>
-    </form>
-    <div v-else class="p-4 text-muted">未找到该 Server</div>
+      </form>
+      <div v-else class="p-4 text-muted">未找到该 Server</div>
+    </div>
   </div>
 </template>
 

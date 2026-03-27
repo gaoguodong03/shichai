@@ -290,8 +290,8 @@
                     <span class="group-chat-file-tag-close">×</span>
                   </button>
                 </div>
-                <!-- 单框模式：仅讨论目标（未勾选「显示下一 DHA 提示词」且未开「手动控制」时） -->
-                <div v-if="!showNextPromptField && !groupAutoConfirm" class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
+                <!-- 单框模式：仅讨论目标（未勾选「提示词框」时） -->
+                <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
                   <textarea
                     ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
@@ -334,7 +334,7 @@
                     <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
                   </div>
                 </div>
-                <!-- 双框模式：勾选「显示下一 DHA 提示词」或开启「手动控制」时显示（手动控制下可编辑主持人给的提示词再点发送） -->
+                <!-- 双框模式：勾选「提示词框」时显示 -->
                 <template v-else>
                   <div class="group-chat-input-block group-chat-input-block-at">
                     <label class="group-chat-input-block-label">输入消息</label>
@@ -524,7 +524,7 @@
                         <button
                           type="button"
                           class="group-chat-toggle-pill"
-                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField || groupAutoConfirm }"
+                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField }"
                           @click="onShowNextPromptFieldChangeByClick"
                         >
                           <svg
@@ -4098,6 +4098,8 @@ defineExpose({ refresh: loadGroupDetail })
   flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
   padding: 1rem 0;
   display: flex;
   flex-direction: column;
@@ -4105,6 +4107,11 @@ defineExpose({ refresh: loadGroupDetail })
   width: 90%;
   max-width: 1400px;
   margin: 0 auto;
+}
+.group-chat-messages::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .group-chat-msg-row {
   display: flex;

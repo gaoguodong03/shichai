@@ -1,54 +1,39 @@
 <template>
-  <div class="flex flex-col h-full bg-page overflow-y-auto">
-    <header class="bg-card px-4 py-3 flex-shrink-0 flex items-center justify-between">
-      <h1 class="text-lg font-semibold text-primary">LLM 配置</h1>
-      <span v-if="defaultLlmLabel" class="text-xs text-muted">当前默认：{{ defaultLlmLabel }}</span>
-    </header>
-
-    <div class="flex-1 overflow-y-auto p-4">
+  <div class="flex flex-col h-full p-4 overflow-y-auto">
+    <div class="max-w-5xl w-full mx-auto">
+      <div class="mb-4 flex items-center justify-between gap-2">
+        <h2 class="text-2xl font-semibold text-primary mb-1">配置模型</h2>
+        <span v-if="defaultLlmLabel" class="text-xs text-muted">当前默认：{{ defaultLlmLabel }}</span>
+      </div>
       <div v-if="loading" class="text-sm text-muted py-6">加载中...</div>
 
       <div v-else-if="!effectiveProviderId" class="text-sm text-muted py-6">
         请在左侧选择一个模型，或点击「新建 LLM」。
       </div>
 
-      <div v-else class="max-w-2xl space-y-5">
-        <div class="rounded-xl border border-border bg-card p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="text-sm text-muted">Provider</div>
-              <div class="text-base font-semibold text-primary truncate">{{ isNew ? '新建 LLM' : effectiveProviderId }}</div>
+      <div v-else class="space-y-4">
+        <form
+          @submit.prevent="saveProvider"
+          class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <label class="block text-sm text-muted mb-1">提供商</label>
+              <input
+                v-model="edit.id"
+                type="text"
+                placeholder="例如：qwen、jeniya、gemini"
+                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
             </div>
-            <div class="flex items-center gap-2">
-              <button
-                v-if="!isNew && form.default_llm !== effectiveProviderId"
-                type="button"
-                class="px-3 py-1.5 text-sm bg-accent-subtle text-accent-subtle-text rounded-lg hover:opacity-90"
-                @click="setAsDefault"
-              >
-                设为默认
-              </button>
-              <button
-                v-if="!isNew"
-                type="button"
-                class="px-3 py-1.5 text-sm bg-danger-subtle text-danger rounded-lg hover:opacity-90"
-                @click="removeProvider"
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-xl border border-border bg-card p-4 space-y-4">
-          <div v-if="isNew">
-            <label class="block text-sm font-medium text-primary mb-1">标识（英文，如 gemini、my-openai）</label>
-            <input
-              v-model="edit.id"
-              type="text"
-              placeholder="gemini"
-              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            />
+            <button
+              v-if="!isNew && form.default_llm !== effectiveProviderId"
+              type="button"
+              class="px-3 py-1.5 text-sm bg-accent-subtle text-accent-subtle-text rounded-lg hover:opacity-90"
+              @click="setAsDefault"
+            >
+              设为默认
+            </button>
           </div>
 
           <div>
@@ -81,18 +66,36 @@
             />
           </div>
 
-          <div class="flex items-center gap-3 pt-1">
+          <div class="flex items-center justify-end gap-2 px-4 py-3 flex-shrink-0">
+            <span v-if="saved" class="text-sm text-accent mr-auto">已保存</span>
             <button
+              v-if="isNew"
               type="button"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
               @click="saveProvider"
               :disabled="saving"
-              class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90 disabled:opacity-50"
             >
-              {{ saving ? '保存中...' : (isNew ? '创建' : '保存') }}
+              {{ saving ? '创建中...' : '创建' }}
             </button>
-            <span v-if="saved" class="text-sm text-accent">已保存</span>
+            <button
+              v-else
+              type="submit"
+              :disabled="saving"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+            >
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
+            <button
+              v-if="!isNew"
+              type="button"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
+              @click="removeProvider"
+            >
+              删除
+            </button>
           </div>
-        </div>
+        </form>
+
       </div>
     </div>
   </div>
@@ -196,13 +199,13 @@ watch(
 async function saveProvider() {
   const pid = effectiveProviderId.value
   if (!pid) return
+  const nid = (edit.value.id || '').trim().toLowerCase().replace(/\s+/g, '-')
+  if (!nid) {
+    alert('请填写标识')
+    return
+  }
 
   if (pid === '__new__') {
-    const nid = (edit.value.id || '').trim().toLowerCase().replace(/\s+/g, '-')
-    if (!nid) {
-      alert('请填写标识')
-      return
-    }
     if (form.value.llm_providers[nid]) {
       alert('该标识已存在')
       return
@@ -220,16 +223,24 @@ async function saveProvider() {
   }
 
   if (!form.value.llm_providers[pid]) return
-  form.value.llm_providers = {
-    ...form.value.llm_providers,
-    [pid]: {
-      ...(form.value.llm_providers[pid] || {}),
+  if (nid !== pid && form.value.llm_providers[nid]) {
+    alert('该标识已存在')
+    return
+  }
+  const nextProviders = { ...form.value.llm_providers }
+  const baseMeta = nextProviders[pid] || {}
+  delete nextProviders[pid]
+  nextProviders[nid] = {
+    ...baseMeta,
       base_url: (edit.value.base_url || '').trim() || undefined,
       model: (edit.value.model || '').trim() || undefined,
       api_key_env: (edit.value.api_key_env || '').trim() || undefined,
-    },
   }
-  await saveAll()
+  form.value.llm_providers = nextProviders
+  if (form.value.default_llm === pid) {
+    form.value.default_llm = nid
+  }
+  await saveAll(nid)
 }
 
 async function setAsDefault() {

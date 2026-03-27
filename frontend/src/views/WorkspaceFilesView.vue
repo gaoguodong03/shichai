@@ -2,7 +2,7 @@
   <div class="flex flex-col h-full bg-page">
     <header class="px-4 py-3 border-b border-border bg-card flex items-center justify-between gap-3">
       <div class="min-w-0">
-        <h1 class="text-base font-semibold text-primary truncate">文件工作区</h1>
+        <h1 class="text-base font-semibold text-primary truncate">文件</h1>
         <p class="text-xs text-muted truncate">会话：{{ sessionTitle || sessionId || '未选择' }}</p>
       </div>
       <div class="flex items-center gap-2">
@@ -48,20 +48,36 @@
 
     <div v-else class="flex-1 min-h-0 flex">
       <aside class="w-72 border-r border-border bg-sidebar overflow-y-auto">
+        <div class="px-3 py-2 border-b border-border/40 sticky top-0 bg-sidebar z-10">
+          <div class="text-xs text-muted truncate">当前目录：{{ currentDir || '/' }}</div>
+          <div class="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              class="px-2 py-1 text-xs rounded border border-input-border text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="!currentDir"
+              @click="goUpDir"
+            >
+              上一级
+            </button>
+          </div>
+        </div>
         <div v-if="loading" class="px-3 py-4 text-sm text-muted">加载中...</div>
         <div v-else-if="error" class="px-3 py-4 text-sm text-danger">{{ error }}</div>
-        <div v-else-if="!allFiles.length" class="px-3 py-4 text-sm text-muted">该会话暂无文件</div>
+        <div v-else-if="!entries.length" class="px-3 py-4 text-sm text-muted">该目录为空</div>
         <button
           v-else
-          v-for="f in allFiles"
-          :key="f.path"
+          v-for="e in entries"
+          :key="e.path"
           type="button"
           class="w-full px-3 py-2.5 text-left text-sm transition-colors border-b border-border/40"
-          :class="selectedPath === f.path ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-primary'"
-          @click="selectedPath = f.path"
+          :class="selectedPath === e.path ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-primary'"
+          @click="onEntryClick(e)"
         >
-          <div class="truncate font-medium">{{ f.name }}</div>
-          <div class="truncate text-xs text-muted mt-0.5">{{ f.path }}</div>
+          <div class="truncate font-medium">
+            <span class="mr-1 text-muted">{{ e.is_dir ? '[DIR]' : '[FILE]' }}</span>
+            {{ e.name }}
+          </div>
+          <div class="truncate text-xs text-muted mt-0.5">{{ e.path }}</div>
         </button>
       </aside>
 
@@ -96,7 +112,7 @@
 import { ref, watch } from 'vue'
 import FileDetailView from './FileDetailView.vue'
 
-type FlatFile = { name: string; path: string }
+type Entry = { name: string; path: string; is_dir?: boolean }
 
 const props = defineProps<{
   sessionId: string | null
@@ -105,41 +121,36 @@ const props = defineProps<{
 
 const loading = ref(false)
 const error = ref('')
-const allFiles = ref<FlatFile[]>([])
+const entries = ref<Entry[]>([])
 const selectedPath = ref('')
+const currentDir = ref('')
 const uploadInputRef = ref<HTMLInputElement | null>(null)
 
-async function listDir(path: string): Promise<{ name: string; path: string; is_dir?: boolean }[]> {
+async function listDir(path: string): Promise<Entry[]> {
   const id = props.sessionId
   if (!id) return []
   const query = path ? `?path=${encodeURIComponent(path)}` : ''
   const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${query}`)
   const j = await r.json()
   if (j?.status !== 'ok') throw new Error(j?.detail || '加载失败')
-  return (j?.data?.entries || []) as { name: string; path: string; is_dir?: boolean }[]
+  return (j?.data?.entries || []) as Entry[]
 }
 
-async function loadAllFiles() {
+async function loadDir(path = '') {
   const id = props.sessionId
-  allFiles.value = []
+  entries.value = []
   selectedPath.value = ''
   if (!id) return
   loading.value = true
   error.value = ''
   try {
-    const queue: string[] = ['']
-    const files: FlatFile[] = []
-    while (queue.length > 0) {
-      const current = queue.shift() || ''
-      const entries = await listDir(current)
-      for (const e of entries) {
-        if (e.is_dir) queue.push(e.path)
-        else files.push({ name: e.name, path: e.path })
-      }
-    }
-    files.sort((a, b) => a.path.localeCompare(b.path))
-    allFiles.value = files
-    selectedPath.value = files[0]?.path || ''
+    const list = await listDir(path)
+    list.sort((a, b) => {
+      if (!!a.is_dir !== !!b.is_dir) return a.is_dir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    entries.value = list
+    currentDir.value = path
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
   } finally {
@@ -148,7 +159,22 @@ async function loadAllFiles() {
 }
 
 async function refreshAll() {
-  await loadAllFiles()
+  await loadDir(currentDir.value)
+}
+
+function goUpDir() {
+  const p = currentDir.value
+  if (!p) return
+  const parent = p.replace(/\/?[^/]+\/?$/, '').replace(/\/$/, '')
+  loadDir(parent)
+}
+
+function onEntryClick(e: Entry) {
+  if (e.is_dir) {
+    loadDir(e.path)
+    return
+  }
+  selectedPath.value = e.path
 }
 
 async function createFile() {
@@ -156,7 +182,8 @@ async function createFile() {
   if (!id) return
   const filename = window.prompt('新建文件名（如 note.md）', 'note.md')?.trim()
   if (!filename) return
-  const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files`, {
+  const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
+  const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, content: '' }),
@@ -166,7 +193,7 @@ async function createFile() {
     alert(j?.detail || '新建文件失败')
     return
   }
-  await loadAllFiles()
+  await loadDir(currentDir.value)
   if (j?.data?.path) selectedPath.value = j.data.path
 }
 
@@ -175,7 +202,8 @@ async function createFolder() {
   if (!id) return
   const dirname = window.prompt('新建文件夹名称', '新文件夹')?.trim()
   if (!dirname) return
-  const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/mkdir`, {
+  const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
+  const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/mkdir${query}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dirname }),
@@ -185,7 +213,7 @@ async function createFolder() {
     alert(j?.detail || '创建文件夹失败')
     return
   }
-  await loadAllFiles()
+  await loadDir(currentDir.value)
 }
 
 async function onUpload(ev: Event) {
@@ -195,7 +223,8 @@ async function onUpload(ev: Event) {
   const fd = new FormData()
   fd.append('file', input.files[0])
   try {
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload`, {
+    const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${query}`, {
       method: 'POST',
       body: fd,
     })
@@ -204,7 +233,7 @@ async function onUpload(ev: Event) {
       alert(j?.detail || '上传失败')
       return
     }
-    await loadAllFiles()
+    await loadDir(currentDir.value)
     if (j?.data?.path) selectedPath.value = j.data.path
   } finally {
     input.value = ''
@@ -224,15 +253,16 @@ async function deleteSelectedFile() {
     alert(j?.detail || '删除失败')
     return
   }
-  await loadAllFiles()
+  await loadDir(currentDir.value)
 }
 
 function onRenamed(newPath: string) {
   selectedPath.value = newPath
-  loadAllFiles()
+  loadDir(currentDir.value)
 }
 
 watch(() => props.sessionId, () => {
-  loadAllFiles()
+  currentDir.value = ''
+  loadDir('')
 }, { immediate: true })
 </script>

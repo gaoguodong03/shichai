@@ -1,9 +1,7 @@
 <template>
   <div class="flex flex-col h-full bg-page overflow-y-auto">
-    <header class="bg-card px-4 py-3 flex-shrink-0">
-      <h1 class="text-lg font-semibold text-primary">主持人设置</h1>
-    </header>
-    <div class="flex-1 overflow-y-auto p-4 space-y-6">
+    <div class="flex-1 overflow-y-auto p-4 themed-scrollbar">
+      <div class="max-w-5xl w-full mx-auto space-y-6">
       <div v-if="loading" class="text-sm text-muted">加载中...</div>
       <template v-else>
         <section class="space-y-4">
@@ -30,7 +28,7 @@
               <textarea
                 v-model="form.host_master_prompt"
                 rows="16"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
+                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm resize-y themed-scrollbar"
                 placeholder="主持人总提示词（host_master_prompt）"
               />
             </div>
@@ -43,13 +41,14 @@
               <textarea
                 v-model="form.host_zero_member_policy"
                 rows="10"
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
+                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm resize-y themed-scrollbar"
                 placeholder="0 成员组队策略（host_zero_member_policy）"
               />
             </div>
           </div>
         </section>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center justify-end gap-3">
+          <span v-if="saved" class="text-sm text-accent mr-auto">已保存</span>
           <button
             @click="save"
             :disabled="saving"
@@ -65,9 +64,9 @@
           >
             恢复默认
           </button>
-          <span v-if="saved" class="text-sm text-accent">已保存</span>
         </div>
       </template>
+      </div>
     </div>
   </div>
 </template>

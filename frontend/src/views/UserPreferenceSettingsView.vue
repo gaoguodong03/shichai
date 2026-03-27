@@ -1,9 +1,7 @@
 <template>
   <div class="flex flex-col h-full bg-page overflow-y-auto">
-    <header class="bg-card px-4 py-3 flex-shrink-0">
-      <h1 class="text-lg font-semibold text-primary">用户喜好</h1>
-    </header>
-    <div class="flex-1 overflow-y-auto p-4 space-y-6">
+    <div class="flex-1 overflow-y-auto p-4 themed-scrollbar">
+      <div class="max-w-5xl w-full mx-auto space-y-6">
       <section class="space-y-4">
         <h2 class="text-base font-medium text-primary py-1 bg-list-hover rounded-t px-2 -mx-2 mt-0">
           工作区
@@ -39,6 +37,7 @@
           影响“归档侧边目录”（工作区右侧悬浮目录）在打开会话时的默认状态。
         </p>
       </section>
+      </div>
     </div>
   </div>
 </template>
