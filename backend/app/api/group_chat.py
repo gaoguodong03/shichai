@@ -103,6 +103,17 @@ def _name_key(name: Any) -> str:
     return str(name or "").strip().lower()
 
 
+def _to_agent_style_id(raw_id: str) -> str:
+    sid = str(raw_id or "").strip()
+    if not sid:
+        return sid
+    if sid.startswith("agent-"):
+        return sid
+    if sid.startswith("dha-"):
+        return f"agent-{sid[4:]}"
+    return f"agent-{sid}"
+
+
 def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, str]:
     """Build id->preferred-id mapping; prefer agent-* within same expert name."""
     name_to_ids: Dict[str, List[str]] = {}
@@ -116,7 +127,7 @@ def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, 
             name_to_ids[key].append(did)
     name_to_preferred: Dict[str, str] = {}
     for key, ids in name_to_ids.items():
-        preferred = next((x for x in ids if x.startswith("agent-")), ids[0])
+        preferred = next((x for x in ids if x.startswith("agent-")), _to_agent_style_id(ids[0]))
         name_to_preferred[key] = preferred
     id_to_preferred: Dict[str, str] = {}
     for d in instances or []:
@@ -126,6 +137,26 @@ def _build_preferred_agent_id_map(instances: List[Dict[str, Any]]) -> Dict[str, 
         key = _name_key(d.get("name") or did)
         id_to_preferred[did] = name_to_preferred.get(key, did)
     return id_to_preferred
+
+
+def _build_preferred_instances(
+    instances: List[Dict[str, Any]],
+    *,
+    id_to_preferred: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """Clone instances to canonical agent-* ids (one row per canonical id)."""
+    preferred_to_row: Dict[str, Dict[str, Any]] = {}
+    for d in instances or []:
+        did = str(d.get("dha_id") or "").strip()
+        if not did:
+            continue
+        preferred = id_to_preferred.get(did, did)
+        row = dict(d)
+        row["dha_id"] = preferred
+        # Keep one canonical row; prefer the row already using canonical id.
+        if preferred not in preferred_to_row or did == preferred:
+            preferred_to_row[preferred] = row
+    return list(preferred_to_row.values())
 
 
 def _normalize_to_preferred_agent_ids(
@@ -956,6 +987,7 @@ def _extract_explicit_requested_dha_ids(user_text: str, all_instances: List[Dict
         return []
     out: List[str] = []
     writing_intent = any(k in text for k in ("写", "撰写", "报告", "文案", "创作", "改写", "润色", "文本"))
+    matched_debug: List[Dict[str, Any]] = []
     for d in all_instances or []:
         did = (d.get("dha_id") or "").strip()
         if not did:
@@ -972,6 +1004,15 @@ def _extract_explicit_requested_dha_ids(user_text: str, all_instances: List[Dict
         )
         if did_hit or name_hit or intent_hit:
             out.append(did)
+            matched_debug.append(
+                {
+                    "did": did,
+                    "name": name,
+                    "did_hit": did_hit,
+                    "name_hit": name_hit,
+                    "intent_hit": intent_hit,
+                }
+            )
     return list(dict.fromkeys(out))
 
 
@@ -1297,7 +1338,7 @@ def create_session_internal(
     """创建一条会话（主持人必在，dha_ids 可为空）。返回 meta 条目（含 id）。"""
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
-    valid_ids = {d.get("dha_id") for d in instances}
+    valid_ids = set(id_to_preferred.values())
     resolved_ids = _normalize_agent_ids(
         legacy_dha_ids=dha_ids,
         agent_ids=agent_ids,
@@ -1389,8 +1430,12 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
         raise HTTPException(status_code=404, detail="Group session not found")
     m = meta[group_session_id]
     session_meta = m
-    dha_ids = m.get("dha_ids", [])
-    target_dha_id = (body.agent_id or body.expert_id or body.dha_id or "").strip()
+    instances = load_dha_instances()
+    id_to_preferred = _build_preferred_agent_id_map(instances)
+    dha_ids = _normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred)
+    target_raw = (body.agent_id or body.expert_id or body.dha_id or "").strip()
+    target_dha_id = _normalize_to_preferred_agent_ids([target_raw], id_to_preferred=id_to_preferred)
+    target_dha_id = target_dha_id[0] if target_dha_id else ""
     if target_dha_id not in dha_ids:
         raise HTTPException(status_code=400, detail="专家不在该群聊中")
 
@@ -1439,24 +1484,25 @@ async def create_group_session(body: GroupSessionCreate, response: Response):
 async def get_group_session(group_session_id: str):
     """获取群聊详情与消息。"""
     meta = _load_group_meta()
-    # #region agent log
-    _log_path = Path(__file__).resolve().parents[3] / ".cursor" / "debug-1338a6.log"
-    _found = group_session_id in meta
-    try:
-        _log_path.parent.mkdir(parents=True, exist_ok=True)
-        _log_path.open("a").write(
-            json.dumps({"sessionId": "1338a6", "location": "group_chat.get_group_session", "message": "get_group_session", "data": {"group_session_id": group_session_id, "found": _found}, "timestamp": int(time.time() * 1000), "hypothesisId": "H1"}) + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
-    if not _found:
+    if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")
     m = meta[group_session_id]
     messages = _load_group_history(group_session_id)
     instances = load_dha_instances()
-    dha_map_raw = {d.get("dha_id"): d for d in instances if d.get("dha_id")}
-    dha_ids_in_group = set(m.get("dha_ids", []))
+    id_to_preferred = _build_preferred_agent_id_map(instances)
+    preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
+    dha_map_raw = {d.get("dha_id"): d for d in preferred_instances if d.get("dha_id")}
+    # 兼容历史消息/会话中遗留的 dha-*，对外统一输出 agent-*。
+    normalized_messages = []
+    for msg in messages:
+        row = dict(msg or {})
+        did = str(row.get("dha_id") or "").strip()
+        if did:
+            row["dha_id"] = id_to_preferred.get(did, _to_agent_style_id(did))
+        normalized_messages.append(row)
+    messages = normalized_messages
+    dha_ids_in_group = set(_normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred))
+    m["dha_ids"] = list(dha_ids_in_group)
     dha_ids_in_messages = {msg.get("dha_id") for msg in messages if msg.get("dha_id")}
     relevant_ids = dha_ids_in_group | dha_ids_in_messages
     dha_map = {
@@ -1525,12 +1571,13 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     if add_ids or remove_ids:
         instances = load_dha_instances()
         id_to_preferred = _build_preferred_agent_id_map(instances)
+        preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
         id_to_name = {
             d.get("dha_id"): (d.get("name") or d.get("dha_id"))
-            for d in instances
+            for d in preferred_instances
             if d.get("dha_id")
         }
-        valid_ids = {d.get("dha_id") for d in instances if d.get("dha_id")}
+        valid_ids = {d.get("dha_id") for d in preferred_instances if d.get("dha_id")}
         current = set(
             _normalize_to_preferred_agent_ids(
                 list(meta[group_session_id].get("dha_ids", [])),
@@ -1625,12 +1672,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         raise HTTPException(status_code=404, detail="Group session not found")
     m = meta[group_session_id]
     session_meta = m
-    dha_ids = m.get("dha_ids", [])
-    leader_dha_id = m.get("leader_dha_id", "")
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
-    preferred_instances = [d for d in instances if str(d.get("dha_id") or "").strip() and id_to_preferred.get(str(d.get("dha_id") or "").strip(), str(d.get("dha_id") or "").strip()) == str(d.get("dha_id") or "").strip()]
-    dha_map = {d.get("dha_id"): d for d in instances}
+    preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
+    dha_ids = _normalize_to_preferred_agent_ids(list(m.get("dha_ids", [])), id_to_preferred=id_to_preferred)
+    m["dha_ids"] = list(dha_ids)
+    leader_dha_id = _normalize_to_preferred_agent_ids([m.get("leader_dha_id", "")], id_to_preferred=id_to_preferred)
+    leader_dha_id = leader_dha_id[0] if leader_dha_id else ""
+    dha_map = {d.get("dha_id"): d for d in preferred_instances}
     dha_ids = _normalize_to_preferred_agent_ids(list(dha_ids or []), id_to_preferred=id_to_preferred)
     dha_list = [d for d in preferred_instances if d.get("dha_id") in dha_ids]
     # 当前不在群内的专家，主持人可在「完成不了工作」时建议邀请

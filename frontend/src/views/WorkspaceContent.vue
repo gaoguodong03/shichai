@@ -1479,25 +1479,10 @@ async function confirmGroupNext(override: string) {
   const body: { override_next_speaker: string; custom_prompt?: string; host_takeover_requested?: boolean } = { override_next_speaker: override }
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
-  const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
-  if (msg) body.custom_prompt = msg
-  if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
-    body: JSON.stringify({
-      sessionId: '075e2b',
-      runId: 'pre-fix',
-      hypothesisId: 'H4',
-      location: 'WorkspaceContent.vue:confirmGroupNext',
-      message: 'confirmGroupNext called',
-      data: { override, groupAutoConfirm: groupAutoConfirm.value, hasFiles, msgLength: msg?.length || 0 },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion agent log
   try {
+    const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
+    if (msg) body.custom_prompt = msg
+    if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
     const abort = new AbortController()
     groupStreamAbort.value = abort
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stream`, {
@@ -2013,21 +1998,6 @@ function onShowNextPromptFieldChange(e: Event) {
 
 function onShowNextPromptFieldChangeByClick() {
   showNextPromptField.value = !showNextPromptField.value
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
-    body: JSON.stringify({
-      sessionId: '075e2b',
-      runId: 'pre-fix',
-      hypothesisId: 'H3',
-      location: 'WorkspaceContent.vue:onShowNextPromptFieldChangeByClick',
-      message: 'toggle next prompt field',
-      data: { showNextPromptField: showNextPromptField.value },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion agent log
   if (showNextPromptField.value) showMoreMenu.value = false
 }
 const showShortcutEditor = ref(false)
@@ -2044,6 +2014,36 @@ const insertFileRef = ref<HTMLElement | null>(null)
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
 const attachedFiles = ref<{ name: string; path: string }[]>([])
+
+function toAgentStyleId(raw: string | null | undefined): string {
+  const sid = String(raw || '').trim()
+  if (!sid) return ''
+  if (sid.startsWith('agent-')) return sid
+  if (sid.startsWith('dha-')) return `agent-${sid.slice(4)}`
+  return `agent-${sid}`
+}
+
+function toDhaStyleId(raw: string | null | undefined): string {
+  const sid = String(raw || '').trim()
+  if (!sid) return ''
+  if (sid.startsWith('dha-')) return sid
+  if (sid.startsWith('agent-')) return `dha-${sid.slice(6)}`
+  return `dha-${sid}`
+}
+
+function buildExpertAliasMap(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const d of (props.dhaInstances || [])) {
+    const id = String(d.dha_id || '').trim()
+    if (!id) continue
+    out.set(id, id)
+    const agentId = toAgentStyleId(id)
+    const dhaId = toDhaStyleId(id)
+    if (agentId) out.set(agentId, id)
+    if (dhaId) out.set(dhaId, id)
+  }
+  return out
+}
 
 function extractSuggestedAddIds(payload: Record<string, unknown> | null | undefined): string[] {
   if (!payload) return []
@@ -2124,12 +2124,21 @@ const orderedMemberIds = computed(() => {
 
 /** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
 const pendingSuggestedAddDhaIds = computed(() => {
-  const inGroup = new Set(groupDetail.value?.dha_ids || [])
-  return (groupSuggestedAddDhaIds.value || []).filter((id) => !!id && !inGroup.has(id))
+  const aliasMap = buildExpertAliasMap()
+  const inGroup = new Set((groupDetail.value?.dha_ids || []).map((id) => toAgentStyleId(id)))
+  const normalized = (groupSuggestedAddDhaIds.value || [])
+    .map((id) => aliasMap.get(String(id || '').trim()) || '')
+    .filter(Boolean)
+  return [...new Set(normalized)].filter((id) => !inGroup.has(toAgentStyleId(id)))
 })
 
 function suggestedDhaDisplayName(id: string): string {
-  return (props.dhaInstances || []).find((x) => x.dha_id === id)?.name || groupDetail.value?.dha_map?.[id]?.name || id
+  const aliasMap = buildExpertAliasMap()
+  const canonicalId = aliasMap.get(String(id || '').trim()) || id
+  return (props.dhaInstances || []).find((x) => x.dha_id === canonicalId)?.name
+    || groupDetail.value?.dha_map?.[canonicalId]?.name
+    || groupDetail.value?.dha_map?.[id]?.name
+    || canonicalId
 }
 
 function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
@@ -2554,17 +2563,19 @@ function isShortSingleLine(text: string): string | null {
 /** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_dha_ids 时仍能显示邀请条） */
 function parseDhaIdsFromHostContent(content: string | null | undefined): string[] {
   if (!content) return []
-  const matches = content.match(/dha-[a-zA-Z0-9\-]+/gi) || []
+  const matches = content.match(/(?:dha|agent)-[a-zA-Z0-9\-]+/gi) || []
   return [...new Set(matches)]
 }
 
 function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
   if (!payload) return []
   const direct = extractSuggestedAddIds(payload)
-  const inGroup = new Set(groupDetail.value?.dha_ids || [])
-  const validIds = new Set((props.dhaInstances || []).map((d) => d.dha_id))
+  const aliasMap = buildExpertAliasMap()
+  const inGroup = new Set((groupDetail.value?.dha_ids || []).map((id) => toAgentStyleId(id)))
   const normalize = (ids: string[]) => {
-    const uniq = [...new Set((ids || []).filter((id) => validIds.has(id) && !inGroup.has(id)))]
+    const uniq = [...new Set((ids || [])
+      .map((id) => aliasMap.get(String(id || '').trim()) || '')
+      .filter((id) => !!id && !inGroup.has(toAgentStyleId(id))))]
     return uniq.slice(0, 3)
   }
   if (direct.length) return normalize(direct)
@@ -2595,10 +2606,12 @@ watch(
       if (lastMsg) {
         const suggestedIds = extractSuggestedAddIds(lastMsg as Record<string, unknown>)
         if (suggestedIds.length) {
-          groupSuggestedAddDhaIds.value = suggestedIds
+          groupSuggestedAddDhaIds.value = resolveSuggestedIdsFromPayload(lastMsg as Record<string, unknown>)
         } else if (lastMsg.content) {
-          const validIds = new Set((props.dhaInstances || []).map((d) => d.dha_id))
-          const parsed = parseDhaIdsFromHostContent(lastMsg.content).filter((id) => validIds.has(id))
+          const aliasMap = buildExpertAliasMap()
+          const parsed = parseDhaIdsFromHostContent(lastMsg.content)
+            .map((id) => aliasMap.get(id) || '')
+            .filter(Boolean)
           if (parsed.length) groupSuggestedAddDhaIds.value = parsed
         }
       }
@@ -3175,27 +3188,12 @@ async function sendGroupMessage() {
   groupNextPrompt.value = ''
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
-  const msg = await buildMessageWithFiles(detail, base)
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
-    body: JSON.stringify({
-      sessionId: '075e2b',
-      runId: 'pre-fix',
-      hypothesisId: 'H1',
-      location: 'WorkspaceContent.vue:sendGroupMessage',
-      message: 'sendGroupMessage called',
-      data: { groupAutoConfirm: groupAutoConfirm.value, hasFiles, msgLength: msg.length },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion agent log
-  const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
-  groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
-  // 不再从首条用户消息回填讨论目标，避免重新把历史文本写回输入框
-  scrollGroupToBottom()
   try {
+    const msg = await buildMessageWithFiles(detail, base)
+    const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
+    groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
+    // 不再从首条用户消息回填讨论目标，避免重新把历史文本写回输入框
+    scrollGroupToBottom()
     const abort = new AbortController()
     groupStreamAbort.value = abort
     const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
@@ -3294,27 +3292,6 @@ async function sendGroupMessage() {
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
                 }
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/10b11ebd-23c6-4e5b-a2f0-1d39cf111d61', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '075e2b' },
-                  body: JSON.stringify({
-                    sessionId: '075e2b',
-                    runId: 'pre-fix',
-                    hypothesisId: 'H2',
-                    location: 'WorkspaceContent.vue:sendGroupMessage:end',
-                    message: 'end event received',
-                    data: {
-                      waiting_for_user: endData.waiting_for_user,
-                      suggested_next_speaker: endData.suggested_next_speaker,
-                      suggested_add_dha_ids: endData.suggested_add_dha_ids,
-                      suggested_add_expert_ids: endData.suggested_add_expert_ids,
-                      groupAutoConfirm: groupAutoConfirm.value,
-                    },
-                    timestamp: Date.now(),
-                  }),
-                }).catch(() => {})
-                // #endregion agent log
                 // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA
                 if (!groupAutoConfirm.value) {
                   const suggestedNext = endData.suggested_next_speaker

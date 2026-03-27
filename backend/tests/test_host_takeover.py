@@ -77,6 +77,17 @@ def test_preferred_agent_id_map_prefers_agent_namespace():
     assert out == ["agent-123", "agent-d92e733e"]
 
 
+def test_preferred_agent_id_map_generates_agent_id_for_dha_only():
+    gc = _get_group_chat_module()
+    instances = [
+        {"dha_id": "dha-web-fetch", "name": "网页爬取专家"},
+    ]
+    id_map = gc._build_preferred_agent_id_map(instances)
+    assert id_map["dha-web-fetch"] == "agent-web-fetch"
+    preferred_rows = gc._build_preferred_instances(instances, id_to_preferred=id_map)
+    assert preferred_rows[0]["dha_id"] == "agent-web-fetch"
+
+
 def test_extract_explicit_requested_dha_ids_matches_writing_intent():
     gc = _get_group_chat_module()
     instances = [
