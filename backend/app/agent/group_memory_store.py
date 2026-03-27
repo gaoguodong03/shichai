@@ -47,6 +47,51 @@ def append_turn_log(
     filename = f"{ts}_{agent_id}.md"
     path = logs_dir / filename
 
+    tool_calls = turn_record.get("tool_calls") or []
+    if not isinstance(tool_calls, list):
+        tool_calls = []
+    tool_calls_text = ""
+    if tool_calls:
+        lines: List[str] = []
+        for idx, item in enumerate(tool_calls[:8], start=1):
+            if isinstance(item, dict):
+                tname = str(item.get("tool") or item.get("name") or "").strip() or "unknown_tool"
+                args = _truncate(str(item.get("arguments") or item.get("args") or ""), 1200)
+                lines.append(f"{idx}. {tname}\n   args: {args}")
+            else:
+                lines.append(f"{idx}. {_truncate(str(item), 1200)}")
+        tool_calls_text = "\n".join(lines)
+
+    tool_raw_outputs = turn_record.get("tool_raw_outputs") or []
+    if not isinstance(tool_raw_outputs, list):
+        tool_raw_outputs = [str(tool_raw_outputs)]
+    tool_raw_text = ""
+    if tool_raw_outputs:
+        lines2: List[str] = []
+        for idx, item in enumerate(tool_raw_outputs[:8], start=1):
+            lines2.append(f"{idx}. {_truncate(str(item or ''), 4000)}")
+        tool_raw_text = "\n\n".join(lines2)
+
+    tool_attempt_debug = turn_record.get("tool_attempt_debug") or []
+    if not isinstance(tool_attempt_debug, list):
+        tool_attempt_debug = [tool_attempt_debug]
+    tool_attempt_text = ""
+    if tool_attempt_debug:
+        lines3: List[str] = []
+        for idx, item in enumerate(tool_attempt_debug[:8], start=1):
+            lines3.append(f"{idx}. {_truncate(str(item or ''), 2500)}")
+        tool_attempt_text = "\n\n".join(lines3)
+
+    sandbox_entry_trace = turn_record.get("sandbox_entry_trace") or []
+    if not isinstance(sandbox_entry_trace, list):
+        sandbox_entry_trace = [sandbox_entry_trace]
+    sandbox_trace_text = ""
+    if sandbox_entry_trace:
+        lines4: List[str] = []
+        for idx, item in enumerate(sandbox_entry_trace[:8], start=1):
+            lines4.append(f"{idx}. {_truncate(str(item or ''), 2500)}")
+        sandbox_trace_text = "\n\n".join(lines4)
+
     content = (
         f"# Turn Log\n\n"
         f"- session_id: {session_id}\n"
@@ -57,7 +102,11 @@ def append_turn_log(
         f"## Discussion Goal\n{turn_record.get('discussion_goal') or ''}\n\n"
         f"## Input Prompt Summary\n{turn_record.get('input_prompt_summary') or ''}\n\n"
         f"## Response Summary\n{turn_record.get('response_summary') or ''}\n\n"
-        f"## Tool Result Summary\n{turn_record.get('tool_result_summary') or ''}\n"
+        f"## Tool Result Summary\n{turn_record.get('tool_result_summary') or ''}\n\n"
+        f"## Tool Calls\n{tool_calls_text}\n\n"
+        f"## Tool Raw Outputs\n{tool_raw_text}\n"
+        f"\n## Tool Attempt Debug\n{tool_attempt_text}\n"
+        f"\n## Sandbox Entry Trace\n{sandbox_trace_text}\n"
     )
     path.write_text(content, encoding="utf-8")
 

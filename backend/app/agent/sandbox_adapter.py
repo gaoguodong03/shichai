@@ -1,7 +1,11 @@
 """Sandbox adapter abstraction with local runtime fallback."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass, field
+logger = logging.getLogger(__name__)
+
 from pathlib import Path
 from typing import Any, Dict, List, Protocol
 
@@ -52,11 +56,59 @@ class LocalRuntimeSandboxAdapter:
     async def create_session_sandbox(self, session_id: str, policy: SandboxPolicy) -> SandboxHandle:
         root = Path(policy.fs_root).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        return SandboxHandle(runtime="local_runtime", session_id=session_id, root=str(root))
+        return SandboxHandle(
+            runtime="local_runtime",
+            session_id=session_id,
+            root=str(root),
+            metadata={"policy": {"tool_allowlist": list(policy.tool_allowlist), "timeout_ms": int(policy.timeout_ms)}},
+        )
 
     async def run_tool_in_sandbox(self, handle: SandboxHandle, tool_request: Dict[str, Any]) -> Dict[str, Any]:
-        # Local runtime only returns passthrough metadata by design.
-        return {"status": "ok", "runtime": handle.runtime, "tool_request": tool_request}
+        policy = handle.metadata.get("policy") if isinstance(handle.metadata, dict) else None
+        req_name = str(tool_request.get("tool_name") or "").strip()
+        allowlist = list((policy or {}).get("tool_allowlist") or [])
+        allowlist_hit = bool(req_name and (not allowlist or req_name in allowlist))
+        if allowlist and req_name and req_name not in allowlist:
+            logger.warning(
+                "sandbox_tool_blocked runtime=%s session=%s tool=%s timeout_ms=%s allowlist_hit=%s",
+                handle.runtime,
+                handle.session_id,
+                req_name,
+                int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 30000),
+                allowlist_hit,
+            )
+            raise PermissionError(f"tool not allowed by sandbox policy: {req_name}")
+
+        timeout_ms = int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 30000)
+        logger.info(
+            "sandbox_tool_enter runtime=%s session=%s tool=%s timeout_ms=%s allowlist_hit=%s",
+            handle.runtime,
+            handle.session_id,
+            req_name or "unknown_tool",
+            timeout_ms,
+            allowlist_hit,
+        )
+        runner = tool_request.get("runner")
+        if not callable(runner):
+            raise ValueError("tool_request.runner callable is required")
+
+        result_or_coro = runner()
+        if asyncio.iscoroutine(result_or_coro):
+            result = await asyncio.wait_for(result_or_coro, timeout=max(0.1, timeout_ms / 1000.0))
+        else:
+            result = result_or_coro
+        sandbox_trace = {
+            "runtime": handle.runtime,
+            "session_id": handle.session_id,
+            "tool_name": req_name or "unknown_tool",
+            "timeout_ms": timeout_ms,
+            "allowlist_hit": allowlist_hit,
+        }
+        if isinstance(result, dict):
+            if "_sandbox_trace" not in result:
+                result["_sandbox_trace"] = sandbox_trace
+            return result
+        return {"result": result, "_sandbox_trace": sandbox_trace}
 
     async def read_file(self, handle: SandboxHandle, path: str) -> bytes:
         p = (Path(handle.root) / path).resolve()

@@ -180,7 +180,7 @@
                               <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
-                              <span class="group-chat-tool-popover-title">系统调用 · 原始返回值</span>
+                              <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
                               <pre class="group-chat-tool-popover-pre">{{ tryFormatJson(parseToolRawResult(raw).rawReturn) }}</pre>
                             </div>
                           </div>
@@ -1258,14 +1258,22 @@ function parseToolRawResult(raw: string): { toolName: string; rawReturn: string 
   const m = raw.match(/^工具\s+([^\s]+)\s+的执行结果:\s*/)
   if (m) return { toolName: m[1], rawReturn: raw.slice(m[0].length) || raw }
   try {
-    const parsed = JSON.parse((raw || '').trim()) as { action?: string; tool?: string }
+    const parsed = JSON.parse((raw || '').trim()) as {
+      action?: string
+      tool?: string
+      _sandbox_trace?: { tool_name?: string }
+    }
     if (parsed?.action === 'tool_call' && parsed?.tool) {
       return { toolName: String(parsed.tool), rawReturn: raw }
+    }
+    if (parsed?._sandbox_trace) {
+      const sandboxToolName = String(parsed._sandbox_trace.tool_name || '').trim()
+      return { toolName: sandboxToolName ? `sandbox: ${sandboxToolName}` : 'sandbox', rawReturn: raw }
     }
   } catch {
     // ignore
   }
-  return { toolName: 'tool', rawReturn: raw }
+  return { toolName: 'sandbox', rawReturn: raw }
 }
 
 function extractToolCallBlocks(content: string): string[] {
@@ -2893,6 +2901,34 @@ async function previewWorkspaceFile(e: { name: string; path: string }) {
   }
 }
 
+async function listWorkspaceTextEntries(workspaceId: string): Promise<Array<{ name: string; path: string; is_dir: boolean }>> {
+  const queue: string[] = ['']
+  const visited = new Set<string>()
+  const collected: Array<{ name: string; path: string; is_dir: boolean }> = []
+
+  while (queue.length) {
+    const current = queue.shift() || ''
+    if (visited.has(current)) continue
+    visited.add(current)
+    const qs = current ? `?path=${encodeURIComponent(current)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/files${qs}`)
+    const j = await r.json().catch(() => null)
+    const entries = (j?.status === 'ok' && Array.isArray(j?.data?.entries)) ? j.data.entries : []
+    for (const e of entries as { name: string; path: string; is_dir?: boolean }[]) {
+      if (e.is_dir) {
+        queue.push(e.path)
+        continue
+      }
+      if (isTextFile(e.name)) {
+        collected.push({ name: e.name, path: e.path, is_dir: !!e.is_dir })
+      }
+    }
+  }
+
+  collected.sort((a, b) => a.path.localeCompare(b.path))
+  return collected
+}
+
 async function loadInsertFileEntries() {
   const id = groupDetail.value?.id
   if (!id) {
@@ -2902,13 +2938,7 @@ async function loadInsertFileEntries() {
   insertFileLoading.value = true
   insertFileEntries.value = []
   try {
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files`)
-    const j = await r.json().catch(() => null)
-    if (j?.status === 'ok' && Array.isArray(j?.data?.entries)) {
-      insertFileEntries.value = (j.data.entries as { name: string; path: string; is_dir?: boolean }[])
-        .filter((e) => !e.is_dir && isTextFile(e.name))
-        .map((e) => ({ name: e.name, path: e.path, is_dir: !!e.is_dir }))
-    }
+    insertFileEntries.value = await listWorkspaceTextEntries(id)
   } finally {
     insertFileLoading.value = false
   }
@@ -2920,6 +2950,7 @@ async function insertFileContent(e: { name: string; path: string }) {
     attachedFiles.value.push({ name: e.name, path: e.path })
   }
   showInsertFile.value = false
+  showInsertFileModal.value = false
 }
 
 function defaultDhaFilename(msg: MsgExt & { agent_id?: string }): string {

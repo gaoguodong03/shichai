@@ -107,6 +107,29 @@ def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | 
             best = name
     return best
 
+
+async def _execute_tool_safely(tool: BaseTool, arguments: dict) -> object:
+    """统一执行工具，兼容 func=None 但 coroutine 可用的 StructuredTool。"""
+    func = getattr(tool, "func", None)
+    if callable(func):
+        raw = func(**arguments)
+        return await raw if asyncio.iscoroutine(raw) else raw
+
+    coroutine_fn = getattr(tool, "coroutine", None)
+    if callable(coroutine_fn):
+        raw = coroutine_fn(**arguments)
+        return await raw if asyncio.iscoroutine(raw) else raw
+
+    if hasattr(tool, "arun"):
+        tool_input = json.dumps(arguments) if arguments else "{}"
+        return await tool.arun(tool_input)
+
+    if hasattr(tool, "run"):
+        tool_input = json.dumps(arguments) if arguments else "{}"
+        return await asyncio.to_thread(tool.run, tool_input)
+
+    raise RuntimeError(f"工具 {getattr(tool, 'name', 'unknown')} 无法执行")
+
 class AgentState(TypedDict):
     """Agent 状态"""
     messages: Annotated[Sequence[BaseMessage], "对话消息列表"]
@@ -332,30 +355,8 @@ def create_react_agent(
                 if tool:
                     logger.info(f"call_tool: 开始执行工具: {tool_name}")
                     try:
-                        import asyncio
-                        
                         logger.info(f"call_tool: 参数: {arguments}")
-                        
-                        # 优先调用 tool.func：若返回值为 coroutine 则 await，避免 MCP/包装后 async 未被 await
-                        if hasattr(tool, 'func'):
-                            raw = tool.func(**arguments)
-                            if asyncio.iscoroutine(raw):
-                                logger.info(f"call_tool: 调用异步工具函数并 await")
-                                result = await raw
-                            else:
-                                logger.info(f"call_tool: 调用同步工具函数")
-                                result = raw
-                        elif hasattr(tool, 'arun'):
-                            tool_input = json.dumps(arguments) if arguments else "{}"
-                            logger.info(f"call_tool: 使用异步方法 arun，tool_input: {tool_input}")
-                            result = await tool.arun(tool_input)
-                        elif hasattr(tool, 'run'):
-                            logger.info(f"call_tool: 使用同步方法 run（在线程中执行）")
-                            tool_input = json.dumps(arguments) if arguments else "{}"
-                            result = await asyncio.to_thread(tool.run, tool_input)
-                        else:
-                            result = f"工具 {tool_name} 无法执行"
-                            logger.error(f"call_tool: 工具 {tool_name} 没有可用的执行方法")
+                        result = await _execute_tool_safely(tool, arguments)
                         
                         logger.info(f"call_tool: 工具执行结果: {result}")
                         tool_results.append(f"工具 {tool_name} 的执行结果: {result}")
@@ -420,28 +421,7 @@ def create_react_agent(
                 logger.info(f"call_tool: 开始执行工具: {tool_name}")
                 logger.info(f"call_tool: 参数: {arguments}")
                 try:
-                    import asyncio
-                    # 与结构化 tool_calls 分支一致：调用 func，若返回 coroutine 则 await
-                    if hasattr(tool, 'func'):
-                        raw = tool.func(**arguments)
-                        if asyncio.iscoroutine(raw):
-                            logger.info("call_tool: 调用异步工具函数并 await")
-                            result = await raw
-                        else:
-                            logger.info("call_tool: 调用同步工具函数")
-                            result = raw
-                    elif hasattr(tool, 'arun'):
-                        # arun 接受 tool_input（通常是字符串）；这里统一传 JSON 字符串，避免位置参数误传
-                        tool_input = json.dumps(arguments) if arguments else "{}"
-                        logger.info(f"call_tool: 使用异步方法 arun，tool_input: {tool_input}")
-                        result = await tool.arun(tool_input)
-                    elif hasattr(tool, 'run'):
-                        tool_input = json.dumps(arguments) if arguments else "{}"
-                        logger.info("call_tool: 使用同步方法 run（在线程中执行）")
-                        result = await asyncio.to_thread(tool.run, tool_input)
-                    else:
-                        result = f"工具 {tool_name} 无法执行"
-                        logger.error(f"call_tool: 工具 {tool_name} 没有可用的执行方法")
+                    result = await _execute_tool_safely(tool, arguments)
                 except Exception as e:
                     error_msg = f"工具 {tool_name} 执行错误: {str(e)}"
                     logger.error(f"call_tool: {error_msg}", exc_info=True)
@@ -640,6 +620,9 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     messages = state["messages"]
     last_message = messages[-1]
     tool_results = []
+    tool_attempt_debug: list[dict] = []
+    tool_calls_trace: list[dict] = []
+    tool_raw_outputs: list[str] = []
     max_tool_result_chars = 4000
 
     def _safe_tool_result_for_prompt(result: object) -> str:
@@ -670,9 +653,23 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             return normalize_mcp_kwargs_for_call(server_id, original_tool_name, args, input_schema=input_schema)
         return args
 
+    def _resolve_tool_name_for_skill_call(raw_name: str, tools_list: Sequence[BaseTool]) -> str:
+        requested = str(raw_name or "").strip()
+        valid_names = [getattr(t, "name", "") for t in tools_list if getattr(t, "name", "")]
+        if requested in valid_names:
+            return requested
+        # 别名兼容：群聊里常见模型按单聊习惯调用 run_skill_script
+        if requested == "run_skill_script":
+            candidates = [n for n in valid_names if n.startswith("run_skill_script_")]
+            if len(candidates) == 1:
+                return candidates[0]
+        resolved = _resolve_mangled_tool_name(requested, valid_names)
+        return resolved or requested
+
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         for tool_call in last_message.tool_calls:
-            tool_name = tool_call.get("name") or tool_call.get("id", "")
+            requested_tool_name = tool_call.get("name") or tool_call.get("id", "")
+            tool_name = _resolve_tool_name_for_skill_call(requested_tool_name, state["tools"])
             tool_call_id = str(tool_call.get("id") or tool_call.get("tool_call_id") or tool_name or "tool")
             arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
             tool = None
@@ -681,27 +678,29 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     tool = t
                     break
             if tool:
+                tool_attempt_debug.append({
+                    "requested_tool": requested_tool_name,
+                    "resolved_tool": tool_name,
+                    "matched": True,
+                    "available_tools": [t.name for t in state["tools"]][:30],
+                })
                 try:
                     t_tool = time.perf_counter()
-                    if hasattr(tool, "func"):
-                        raw = tool.func(**arguments)
-                        if asyncio.iscoroutine(raw):
-                            result = await raw
-                        else:
-                            result = raw
-                    elif hasattr(tool, "arun"):
-                        tool_input = json.dumps(arguments) if arguments else "{}"
-                        result = await tool.arun(tool_input)
-                    elif hasattr(tool, "run"):
-                        tool_input = json.dumps(arguments) if arguments else "{}"
-                        result = await asyncio.to_thread(tool.run, tool_input)
-                    else:
-                        result = f"工具 {tool_name} 无法执行"
+                    tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
+                    result = await _execute_tool_safely(tool, arguments)
                     result_for_prompt = _safe_tool_result_for_prompt(result)
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=tool_call_id))
+                    tool_raw_outputs.append(str(result))
                 except Exception as e:
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
+                    tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
             else:
+                tool_attempt_debug.append({
+                    "requested_tool": requested_tool_name,
+                    "resolved_tool": tool_name,
+                    "matched": False,
+                    "available_tools": [t.name for t in state["tools"]][:30],
+                })
                 if tool_name == "read_file":
                     tool_results.append(ToolMessage(
                         content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。",
@@ -709,7 +708,12 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     ))
                 else:
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}", tool_call_id=tool_call_id))
-        return {"messages": tool_results}
+        return {
+            "messages": tool_results,
+            "tool_attempt_debug": tool_attempt_debug,
+            "tool_calls": tool_calls_trace,
+            "tool_raw_outputs": tool_raw_outputs,
+        }
 
     content = last_message.content
     try:
@@ -720,7 +724,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         else:
             json_str = content
         tool_call = json.loads(json_str)
-        tool_name = tool_call.get("tool")
+        requested_tool_name = tool_call.get("tool")
+        tool_name = _resolve_tool_name_for_skill_call(requested_tool_name, state["tools"])
         arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
         tool = None
         for t in state["tools"]:
@@ -728,20 +733,54 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 tool = t
                 break
         if tool:
+            tool_attempt_debug.append({
+                "requested_tool": requested_tool_name,
+                "resolved_tool": tool_name,
+                "matched": True,
+                "available_tools": [t.name for t in state["tools"]][:30],
+            })
             try:
-                if hasattr(tool, "func"):
-                    raw = tool.func(**arguments)
-                    result = await raw if asyncio.iscoroutine(raw) else raw
-                elif hasattr(tool, "arun"):
-                    result = await tool.arun(json.dumps(arguments) if arguments else "{}")
-                else:
-                    result = await asyncio.to_thread(tool.run, json.dumps(arguments) if arguments else "{}")
+                tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
+                result = await _execute_tool_safely(tool, arguments)
                 result_for_prompt = _safe_tool_result_for_prompt(result)
-                return {"messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=str(tool_name or 'tool'))]}
+                tool_raw_outputs.append(str(result))
+                return {
+                    "messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=str(tool_name or 'tool'))],
+                    "tool_attempt_debug": tool_attempt_debug,
+                    "tool_calls": tool_calls_trace,
+                    "tool_raw_outputs": tool_raw_outputs,
+                }
             except Exception as e:
-                return {"messages": [ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=str(tool_name or 'tool'))]}
+                tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                return {
+                    "messages": [ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=str(tool_name or 'tool'))],
+                    "tool_attempt_debug": tool_attempt_debug,
+                    "tool_calls": tool_calls_trace,
+                    "tool_raw_outputs": tool_raw_outputs,
+                }
+        tool_attempt_debug.append({
+            "requested_tool": requested_tool_name,
+            "resolved_tool": tool_name,
+            "matched": False,
+            "available_tools": [t.name for t in state["tools"]][:30],
+        })
         if tool_name == "read_file":
-            return {"messages": [ToolMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。", tool_call_id="read_file")]}
-        return {"messages": [ToolMessage(content=f"工具 {tool_name} 不存在", tool_call_id=str(tool_name or 'tool'))]}
+            return {
+                "messages": [ToolMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。", tool_call_id="read_file")],
+                "tool_attempt_debug": tool_attempt_debug,
+                "tool_calls": tool_calls_trace,
+                "tool_raw_outputs": tool_raw_outputs,
+            }
+        return {
+            "messages": [ToolMessage(content=f"工具 {tool_name} 不存在", tool_call_id=str(tool_name or 'tool'))],
+            "tool_attempt_debug": tool_attempt_debug,
+            "tool_calls": tool_calls_trace,
+            "tool_raw_outputs": tool_raw_outputs,
+        }
     except Exception as e:
-        return {"messages": [ToolMessage(content=f"工具调用解析错误: {str(e)}", tool_call_id="tool_call_parse_error")]}
+        return {
+            "messages": [ToolMessage(content=f"工具调用解析错误: {str(e)}", tool_call_id="tool_call_parse_error")],
+            "tool_attempt_debug": tool_attempt_debug,
+            "tool_calls": tool_calls_trace,
+            "tool_raw_outputs": tool_raw_outputs,
+        }

@@ -190,13 +190,53 @@
     "created_at": "2026-03-26T07:34:26.153942+00:00",
     "updated_at": "2026-03-26T07:36:00.758231+00:00"
   },
-  "group-6146445e0868": {
-    "title": "新对话",
+  "group-917d255f9b35": {
+    "title": "生成蓝天白云图片",
     "title_auto_generated": true,
-    "agent_ids": [],
+    "agent_ids": [
+      "agent-440b26f8"
+    ],
     "leader_agent_id": "",
     "speak_mode": "auto",
-    "created_at": "2026-03-26T11:16:26.267789+00:00",
-    "updated_at": "2026-03-26T11:16:26.267789+00:00"
+    "created_at": "2026-03-27T07:35:40.176967+00:00",
+    "updated_at": "2026-03-27T07:36:11.042312+00:00"
+  },
+  "group-c29e5cb5fd7c": {
+    "title": "蓝天白云图片生成",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-27T07:40:20.449677+00:00",
+    "updated_at": "2026-03-27T07:41:56.261564+00:00",
+    "pending_owner_agent_id": "agent-440b26f8",
+    "pending_skill_id": "app-icon-generator",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": ""
+  },
+  "group-d6c7ae31c434": {
+    "title": "元芳接入Gemini技术",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-27T10:50:02.442057+00:00",
+    "updated_at": "2026-03-27T10:50:32.630016+00:00"
+  },
+  "group-3f2dea805aec": {
+    "title": "元芳接入Gemini功能解析",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-27T10:57:02.598013+00:00",
+    "updated_at": "2026-03-27T10:57:56.399780+00:00"
   }
 }

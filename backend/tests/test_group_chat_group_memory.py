@@ -45,3 +45,19 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     )
     assert "关键事实" in out
     assert "主持人补充指令" not in out
+
+
+def test_append_workspace_image_preview_markdown_keeps_non_image_content():
+    gc = _get_group_chat_module()
+    base = "工具执行成功。"
+    raw = ['{"ok": true, "stdout": "抓取到正文 markdown ..."}']
+    out = gc._append_workspace_image_preview_markdown(base, raw)
+    assert out == base
+
+
+def test_append_workspace_image_preview_markdown_appends_image_links():
+    gc = _get_group_chat_module()
+    base = "已生成图片。"
+    raw = ['下载链接：/api/workspaces/s1/files/download?path=generated_images/a.jpg']
+    out = gc._append_workspace_image_preview_markdown(base, raw)
+    assert "![生成图片1](/api/workspaces/s1/files/download?path=generated_images/a.jpg)" in out

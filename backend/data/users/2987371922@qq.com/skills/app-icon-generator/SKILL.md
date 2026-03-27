@@ -23,6 +23,8 @@ name: 图片生成
 ### run_skill_script（唯一推荐）
 
 - **工具名**：单聊为 `run_skill_script`；群聊为 `run_skill_script_app-icon-generator`。生成图标时只调用此工具，不要调用 list_allowed_directories、read_file 等文件/目录类 MCP 来「检查」配置。
+- **命名约定（重要）**：群聊中必须优先输出 `run_skill_script_app-icon-generator`。若误输出 `run_skill_script`，后端会做别名映射到 `run_skill_script_app-icon-generator` 作为兼容，但不建议依赖该兼容行为。
+- **调用链调试字段**：若执行异常，请检查回合日志中的 `Tool Attempt Debug`、`Tool Raw Outputs`、`Sandbox Entry Trace` 三段；它们分别表示工具名解析、工具原始返回、是否进入 sandbox。
 - **参数**：
   - `script_path`：`"generate_image.py"`
   - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`

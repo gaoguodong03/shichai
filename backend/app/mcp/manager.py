@@ -10,10 +10,17 @@ import re
 import logging
 import asyncio
 import threading
+import uuid
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
 
+from app.agent.sandbox_adapter import SandboxPolicy
+from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
+from app.api.files import get_agent_outputs_root
+from app.core.feature_flags import is_feature_enabled
+
 logger = logging.getLogger(__name__)
+_MCP_GATEWAY = UnifiedToolGateway()
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -60,6 +67,55 @@ def normalize_mcp_kwargs_for_call(
     """
     from app.mcp.tool_arg_normalizers import normalize_mcp_tool_kwargs
     return normalize_mcp_tool_kwargs(server_id, original_tool_name, kwargs, input_schema)
+
+
+async def execute_mcp_call(
+    *,
+    server_id: str,
+    tool_name: str,
+    kwargs: Dict[str, Any],
+    session: ClientSession,
+    timeout_sec: float = 60.0,
+) -> tuple[bool, Any, str]:
+    """Execute a single MCP tool call with optional unified gateway."""
+    if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
+        try:
+            result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+            return True, result, ""
+        except Exception as e:  # noqa: BLE001
+            return False, None, str(e)
+
+    outputs_root = str(get_agent_outputs_root().resolve())
+    async def _runner() -> Dict[str, Any]:
+        result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+        return {"mcp_result": result}
+
+    ctx = ToolExecutionContext(
+        session_id=f"mcp:{server_id}",
+        workspace_id=outputs_root,
+        agent_id="mcp-runtime",
+        skill_id="",
+        task_id=f"mcp:{server_id}",
+        turn_id=f"tool-call:{uuid.uuid4().hex}",
+        tool_call_id=f"{server_id}:{tool_name}:{uuid.uuid4().hex}",
+        timeout_ms=max(1000, int(timeout_sec * 1000)),
+        retry_count=1,
+        policy=SandboxPolicy(
+            fs_root=outputs_root,
+            timeout_ms=max(1000, int(timeout_sec * 1000)),
+            tool_allowlist=[f"{server_id}_{tool_name}", tool_name],
+        ),
+    )
+    gw = await _MCP_GATEWAY.execute(
+        tool_name=f"{server_id}_{tool_name}",
+        tool_kind="mcp",
+        payload={"kwargs": kwargs},
+        context=ctx,
+        runner=_runner,
+    )
+    if not gw.ok:
+        return False, None, gw.error or "gateway_execution_error"
+    return True, (gw.output or {}).get("mcp_result"), ""
 
 
 def _subst_env(val: str) -> str:
@@ -299,16 +355,19 @@ class MCPToolManager:
                     server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
                 )
                 logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
-                result = await asyncio.wait_for(
-                    session.call_tool(original_tool_name, call_kwargs), timeout=60.0
+                ok, result, err = await execute_mcp_call(
+                    server_id=server_id or "",
+                    tool_name=original_tool_name,
+                    kwargs=call_kwargs,
+                    session=session,
+                    timeout_sec=60.0,
                 )
+                if not ok:
+                    return f"Error: {err or 'MCP tool call failed'}"
                 if result.content:
                     block = result.content[0]
                     return block.text if hasattr(block, "text") else str(block)
                 return str(result)
-            except asyncio.TimeoutError:
-                logger.error("MCP 工具 %s 调用超时（60s）", original_tool_name)
-                return f"Error: MCP 工具 {original_tool_name} 调用超时（60s），请稍后重试。"
             except Exception as e:
                 logger.error("MCP 工具执行错误: %s", e, exc_info=True)
                 return f"Error: {e}"

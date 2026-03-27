@@ -21,7 +21,7 @@ from typing import List, Optional, Dict, Any, Set
 
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.security import user_context_dependency
-from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped
+from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
@@ -771,17 +771,19 @@ async def call_mcp_tool(server_id: str, tool_name: str, body: MCPToolCallBody):
     if not session:
         raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
 
-    try:
-        result = await session.call_tool(tool_name, body.arguments or {})
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        # 把错误直接返回给前端，便于调试
+    ok, result, err = await execute_mcp_call(
+        server_id=server_id,
+        tool_name=tool_name,
+        kwargs=body.arguments or {},
+        session=session,
+        timeout_sec=60.0,
+    )
+    if not ok:
         return {
             "status": "ok",
             "data": {
                 "ok": False,
-                "error": str(e),
+                "error": err,
                 "raw": None,
             },
         }
@@ -850,16 +852,19 @@ async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
         raise HTTPException(status_code=500, detail=f"First tool of MCP server {server_id} has no name")
 
     # 调用第一个工具
-    try:
-        result = await session.call_tool(tool_name, body.arguments or {})
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
+    ok, result, err = await execute_mcp_call(
+        server_id=server_id,
+        tool_name=tool_name,
+        kwargs=body.arguments or {},
+        session=session,
+        timeout_sec=60.0,
+    )
+    if not ok:
         return {
             "status": "ok",
             "data": {
                 "ok": False,
-                "error": str(e),
+                "error": err,
                 "raw": None,
             },
         }

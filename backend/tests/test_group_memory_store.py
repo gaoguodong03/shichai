@@ -34,6 +34,37 @@ def test_append_turn_log_with_rotation(tmp_path: Path):
     assert all("Turn Log" in p.read_text(encoding="utf-8") for p in logs)
 
 
+def test_append_turn_log_persists_tool_debug_sections(tmp_path: Path):
+    session_id = "group-test"
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+    append_turn_log(
+        session_id=session_id,
+        workspace_root=ws,
+        max_logs=3,
+        turn_record={
+            "agent_id": "agent-1",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "discussion_goal": "测试工具调试",
+            "input_prompt_summary": "input",
+            "response_summary": "output",
+            "tool_calls": [{"tool": "run_skill_script_app-icon-generator", "arguments": {"script_path": "generate_image.py"}}],
+            "tool_raw_outputs": ['{"ok": false, "code": "runtime_missing"}'],
+            "sandbox_entry_trace": [{"tool_name": "run_skill_script_app-icon-generator", "allowlist_hit": True}],
+        },
+    )
+    logs = sorted((ws / "memory" / "logs").glob("*.md"))
+    assert logs
+    content = logs[-1].read_text(encoding="utf-8")
+    assert "## Tool Calls" in content
+    assert "run_skill_script_app-icon-generator" in content
+    assert "## Tool Raw Outputs" in content
+    assert "runtime_missing" in content
+    assert "## Tool Attempt Debug" in content
+    assert "## Sandbox Entry Trace" in content
+    assert "allowlist_hit" in content
+
+
 def test_upsert_facts_dedup_and_cap(tmp_path: Path):
     session_id = "group-test"
     ws = tmp_path / "ws"

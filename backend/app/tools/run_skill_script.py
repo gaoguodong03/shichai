@@ -1,17 +1,24 @@
 """执行 Skill 目录下 scripts/ 中的脚本，作为一等步骤能力。"""
+import asyncio
 import os
 import subprocess
 import json
 import shutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
 
+from app.agent.sandbox_adapter import SandboxPolicy
+from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
+from app.core.feature_flags import is_feature_enabled
 
 _ALLOWED_SCRIPT_SUFFIX = {".py", ".sh", ".bash", ".ps1", ".cmd", ".bat"}
+_SCRIPT_GATEWAY = UnifiedToolGateway()
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _get_skills_dir() -> Path:
@@ -120,6 +127,87 @@ def _build_script_command(full: Path) -> list[str]:
     raise RuntimeError(f"不支持的脚本后缀: {suffix}")
 
 
+def _execute_script_subprocess(
+    *,
+    script_full_path: Path,
+    script_path: str,
+    skill_id: str,
+    workspace_id: str,
+    write_mode: str,
+    input_json: str,
+    script_root: Path,
+    timeout_sec: int,
+) -> dict[str, Any]:
+    workspace_root = _get_workspace_root(workspace_id)
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    try:
+        cmd = _build_script_command(script_full_path)
+    except RuntimeError as e:
+        return {"ok": False, "code": "runtime_missing", "message": str(e)}
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(workspace_root),
+            input=input_json if input_json else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            env={
+                **os.environ,
+                "SKILL_ID": skill_id,
+                "SKILL_WRITE_MODE": write_mode,
+                "SKILL_WORKSPACE_ID": workspace_id,
+                "SKILL_WORKSPACE_ROOT": str(workspace_root),
+                "SKILL_SCRIPT_ROOT": str(script_root),
+                # 确保用户目录中的 skill 脚本也能 import app.*
+                "PYTHONPATH": (
+                    str(_BACKEND_ROOT)
+                    + (
+                        os.pathsep + os.environ.get("PYTHONPATH", "")
+                        if os.environ.get("PYTHONPATH")
+                        else ""
+                    )
+                ),
+            },
+        )
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+
+        if proc.returncode != 0:
+            return {
+                "ok": False,
+                "code": "script_exit_nonzero",
+                "message": f"脚本退出码 {proc.returncode}",
+                "returncode": proc.returncode,
+                "stdout": out,
+                "stderr": err,
+                "script": script_path,
+            }
+        return {
+            "ok": True,
+            "code": "script_executed",
+            "script": script_path,
+            "returncode": proc.returncode,
+            "stdout": out,
+            "stderr": err,
+            "message": "脚本执行成功。",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "code": "script_timeout",
+            "message": f"脚本执行超时（{timeout_sec} 秒）。",
+            "script": script_path,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "script_execution_error",
+            "message": f"执行失败: {e}",
+            "script": script_path,
+        }
+
+
 def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
     创建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
@@ -131,7 +219,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         script_root.mkdir(parents=True, exist_ok=True)
 
     @tool
-    def run_skill_script(script_path: str, input_json: str = "") -> str:
+    async def run_skill_script(script_path: str, input_json: str = "") -> str:
         """执行当前技能 scripts 目录下的脚本。script_path 为相对 scripts 的路径（如 optimize-prompt.py）；input_json 为可选 JSON 字符串，会作为 stdin 传入脚本。支持 .py/.sh/.ps1/.cmd/.bat。"""
         if write_mode != "workspace_all":
             return _json_result(
@@ -225,63 +313,55 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             return _json_result(ok=False, code="manifest_validation_failed", message=schema_error, meta=script_meta)
 
         timeout_sec = int(script_meta.get("timeout_sec") or os.getenv("SKILL_SCRIPT_TIMEOUT", "60"))
-        try:
-            cmd = _build_script_command(full)
-        except RuntimeError as e:
-            return _json_result(ok=False, code="runtime_missing", message=str(e))
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(workspace_root),
-                input=input_json if input_json else None,
-                capture_output=True,
-                text=True,
-                timeout=timeout_sec,
-                env={
-                    **os.environ,
-                    "SKILL_ID": skill_id,
-                    "SKILL_WRITE_MODE": write_mode,
-                    "SKILL_WORKSPACE_ID": workspace_id,
-                    "SKILL_WORKSPACE_ROOT": str(workspace_root),
-                    "SKILL_SCRIPT_ROOT": str(script_root),
-                },
+        async def _runner() -> dict[str, Any]:
+            return await asyncio.to_thread(
+                _execute_script_subprocess,
+                script_full_path=full,
+                script_path=script_path,
+                skill_id=skill_id,
+                workspace_id=workspace_id,
+                write_mode=write_mode,
+                input_json=input_json,
+                script_root=script_root,
+                timeout_sec=timeout_sec,
             )
-            out = (proc.stdout or "").strip()
-            err = (proc.stderr or "").strip()
 
-            if proc.returncode != 0:
+        result_payload: dict[str, Any]
+        if is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
+            ctx = ToolExecutionContext(
+                session_id=workspace_id,
+                workspace_id=str(workspace_root),
+                agent_id=f"skill:{skill_id}",
+                skill_id=skill_id,
+                task_id=f"skill-script:{skill_id}",
+                turn_id=f"script:{uuid.uuid4().hex}",
+                tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
+                timeout_ms=max(1000, timeout_sec * 1000),
+                retry_count=0,
+                policy=SandboxPolicy(
+                    fs_root=str(workspace_root),
+                    timeout_ms=max(1000, timeout_sec * 1000),
+                    tool_allowlist=["run_skill_script", f"run_skill_script_{skill_id}"],
+                ),
+            )
+            gw = await _SCRIPT_GATEWAY.execute(
+                tool_name=f"run_skill_script_{skill_id}",
+                tool_kind="script",
+                payload={"script_path": script_path},
+                context=ctx,
+                runner=_runner,
+            )
+            if not gw.ok:
                 return _json_result(
                     ok=False,
-                    code="script_exit_nonzero",
-                    message=f"脚本退出码 {proc.returncode}",
-                    returncode=proc.returncode,
-                    stdout=out,
-                    stderr=err,
-                    script=script_path,
+                    code="gateway_execution_error",
+                    message=gw.error or "统一网关执行失败",
+                    gateway_interrupt_reason=getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason)),
                 )
-            return _json_result(
-                ok=True,
-                code="script_executed",
-                script=script_path,
-                returncode=proc.returncode,
-                stdout=out,
-                stderr=err,
-                message="脚本执行成功。",
-            )
-        except subprocess.TimeoutExpired:
-            return _json_result(
-                ok=False,
-                code="script_timeout",
-                message=f"脚本执行超时（{timeout_sec} 秒）。",
-                script=script_path,
-            )
-        except Exception as e:
-            return _json_result(
-                ok=False,
-                code="script_execution_error",
-                message=f"执行失败: {e}",
-                script=script_path,
-            )
+            result_payload = dict(gw.output or {})
+        else:
+            result_payload = await _runner()
+        return _json_result(**result_payload)
 
     run_skill_script.name = "run_skill_script"
     run_skill_script.description = (

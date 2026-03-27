@@ -7,9 +7,28 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from app.agent.orchestrator_state import InterruptReason
+from app.agent.sandbox_adapter import (
+    LocalRuntimeSandboxAdapter,
+    SandboxAdapter,
+    SandboxPolicy,
+)
 
 
 ToolExecutor = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
+
+
+@dataclass
+class ToolExecutionContext:
+    session_id: str
+    workspace_id: str
+    agent_id: str
+    skill_id: str = ""
+    task_id: str = ""
+    turn_id: str = ""
+    tool_call_id: str = ""
+    timeout_ms: int = 30_000
+    retry_count: int = 1
+    policy: Optional[SandboxPolicy] = None
 
 
 @dataclass
@@ -105,3 +124,59 @@ class ToolGateway:
 
         # logically unreachable
         return ToolResult(ok=False, error=last_err or "unknown error")
+
+
+class UnifiedToolGateway:
+    """Route side-effect calls into sandbox runtime then ToolGateway."""
+
+    def __init__(
+        self,
+        sandbox_adapter: Optional[SandboxAdapter] = None,
+        idempotency_store: Optional[InMemoryIdempotencyStore] = None,
+    ):
+        self._sandbox = sandbox_adapter or LocalRuntimeSandboxAdapter()
+        self._idem = idempotency_store or InMemoryIdempotencyStore()
+
+    async def execute(
+        self,
+        *,
+        tool_name: str,
+        tool_kind: str,
+        payload: Dict[str, Any],
+        context: ToolExecutionContext,
+        runner: Callable[[], Awaitable[Dict[str, Any]]],
+    ) -> ToolResult:
+        policy = context.policy or SandboxPolicy(
+            fs_root=context.workspace_id or context.session_id or ".",
+            timeout_ms=max(100, int(context.timeout_ms or 30_000)),
+            tool_allowlist=[tool_name],
+        )
+        handle = await self._sandbox.create_session_sandbox(context.session_id or "session", policy)
+
+        async def _sandboxed_executor(inner_payload: Dict[str, Any]) -> Dict[str, Any]:
+            req = {
+                "tool_name": tool_name,
+                "tool_kind": tool_kind,
+                "payload": inner_payload,
+                "timeout_ms": int(context.timeout_ms or policy.timeout_ms or 30_000),
+                "runner": runner,
+            }
+            return await self._sandbox.run_tool_in_sandbox(handle, req)
+
+        gateway = ToolGateway(executor=_sandboxed_executor, idempotency_store=self._idem)
+        req = ToolRequest(
+            tool_name=tool_name,
+            payload=payload,
+            session_id=context.session_id or "session",
+            task_id=context.task_id or "task",
+            turn_id=context.turn_id or "turn",
+            tool_call_id=context.tool_call_id or f"{tool_kind}:{tool_name}",
+            agent_id=context.agent_id or "agent",
+            skill_id=context.skill_id or "",
+            timeout_ms=int(context.timeout_ms or 30_000),
+            retry_count=int(context.retry_count if context.retry_count is not None else 1),
+        )
+        try:
+            return await gateway.execute(req)
+        finally:
+            await self._sandbox.dispose_sandbox(handle)

@@ -42,9 +42,11 @@ from app.agent.orchestrator_reducer import apply_decision, move_to_interrupt, st
 from app.agent.orchestrator_runtime import normalize_scheduler_decision
 from app.agent.orchestrator_audit import append_audit_event
 from app.agent.hook_pipeline import HookPipeline, HookPriority, HookResult
+from app.agent.file_ref_resolver import resolve_file_refs_in_text
 from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.skills.loader import get_skills_loader_for_user
 from app.core.init import ensure_mcp_and_skills_initialized
+from app.core.feature_flags import is_feature_enabled
 from app.core.user_context import get_current_user_context
 from app.core.security import user_context_dependency, get_current_user
 
@@ -717,6 +719,44 @@ def _append_workspace_image_preview_markdown(content: str, tool_raw_results: Lis
         return content
     base = (content or "").rstrip()
     return f"{base}\n\n---\n\n{extra}" if base else extra
+
+
+def _extract_tool_calls_from_accumulated(accumulated_chunks: List[str]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for chunk in accumulated_chunks or []:
+        s = str(chunk or "")
+        if "```json" not in s:
+            continue
+        try:
+            block = s.split("```json", 1)[1].split("```", 1)[0].strip()
+            obj = json.loads(block)
+            if isinstance(obj, dict) and str(obj.get("action") or "").strip().lower() == "tool_call":
+                out.append(
+                    {
+                        "tool": obj.get("tool"),
+                        "arguments": obj.get("arguments") if isinstance(obj.get("arguments"), dict) else obj.get("arguments"),
+                    }
+                )
+        except Exception:
+            continue
+    return out
+
+
+def _extract_sandbox_entry_trace(raw_outputs: List[str]) -> List[Dict[str, Any]]:
+    traces: List[Dict[str, Any]] = []
+    for item in raw_outputs or []:
+        s = str(item or "").strip()
+        if not s:
+            continue
+        try:
+            obj = json_module.loads(s)
+            if isinstance(obj, dict):
+                trace = obj.get("_sandbox_trace")
+                if isinstance(trace, dict):
+                    traces.append(trace)
+        except Exception:
+            continue
+    return traces
 
 
 def _get_llm_for_dha(dha: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
@@ -1687,24 +1727,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
     pending_owner_agent_id = (m.get("pending_owner_agent_id") or "").strip().lower()
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
-    explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(request.message or "", preferred_instances) if (request.message and request.message.strip()) else []
+    user_message = (request.message or "").strip()
+    custom_prompt = (request.custom_prompt or "").strip()
+    if is_feature_enabled("FILE_REF_SERVER_RESOLVE_ENABLED", default=True):
+        user_message = resolve_file_refs_in_text(user_message, group_session_id)
+        custom_prompt = resolve_file_refs_in_text(custom_prompt, group_session_id)
+
+    explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(user_message, preferred_instances) if user_message else []
     explicit_requested_agent_ids = _normalize_to_preferred_agent_ids(explicit_requested_agent_ids, id_to_preferred=id_to_preferred)
     auto_resume_owner: Optional[str] = None
     host_takeover_requested = _user_requests_host_takeover(
-        request.message or "",
+        user_message,
         explicit_flag=request.host_takeover_requested,
         host_display_name=host_display_name,
     )
 
     # 用户消息
-    if request.message and request.message.strip():
+    if user_message:
         if pending_owner_agent_id and pending_owner_agent_id in agent_ids and request.override_next_speaker is None:
             auto_resume_owner = pending_owner_agent_id
         first_user_message = not any(m.get("role") == "user" for m in messages)
         messages.append({
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
             "role": "user",
-            "content": request.message.strip(),
+            "content": user_message,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         _save_group_history(group_session_id, messages)
@@ -1728,7 +1774,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 meta[group_session_id]["title_auto_generated"] = True
             elif first_user_message and current_title in placeholder_titles:
                 # AI 失败时的回退：截取首条用户消息（较短，保证可用）
-                auto_title = _title_from_first_message(request.message.strip(), max_chars=10)
+                auto_title = _title_from_first_message(user_message, max_chars=10)
                 if auto_title:
                     meta[group_session_id]["title"] = auto_title
                     meta[group_session_id]["title_auto_generated"] = True
@@ -2193,8 +2239,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 llm_dha = _get_llm_for_dha(dha, app_settings)
                 agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
                 context = _messages_to_context(messages)
-                if not custom_prompt_used and request.custom_prompt:
-                    user_content = (request.custom_prompt or "").strip()
+                if not custom_prompt_used and custom_prompt:
+                    user_content = custom_prompt
                     custom_prompt_used = True
                 else:
                     # 主持人不再生成 next_prompt；仅使用目标 + 最近讨论作为默认输入。
@@ -2213,58 +2259,20 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 accumulated = []
                 accumulated_raw_tool_results: List[str] = []
+                tool_attempt_debug: List[Dict[str, Any]] = []
                 try:
                     async for stream_item in agent.astream(
                         initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"]
                     ):
-                        if isinstance(stream_item, tuple) and len(stream_item) == 2:
-                            mode, chunk = stream_item
-                            if mode == "messages":
-                                msg_chunk, meta_info = chunk if isinstance(chunk, tuple) and len(chunk) >= 2 else (chunk, {})
-                                if meta_info.get("langgraph_node") == "agent" and hasattr(msg_chunk, "content") and msg_chunk.content:
-                                    txt = msg_chunk.content if isinstance(msg_chunk.content, str) else str(msg_chunk.content or "")
-                                    if txt:
-                                        accumulated.append(txt)
-                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                        if not isinstance(stream_item, dict):
                             continue
-                        event = stream_item if not isinstance(stream_item, tuple) else stream_item[1]
-                        if isinstance(event, dict) and "tool" in event:
-                            tool_msgs = event["tool"]
-                            if isinstance(tool_msgs, dict) and "messages" in tool_msgs:
-                                tool_msgs = tool_msgs["messages"] or []
-                            if not isinstance(tool_msgs, list):
-                                tool_msgs = [tool_msgs]
-                            for tm in tool_msgs:
-                                content = None
-                                if isinstance(tm, dict) and "messages" in tm and isinstance(tm["messages"], list) and tm["messages"]:
-                                    tm = tm["messages"][0]
-                                if isinstance(tm, (HumanMessage, ToolMessage)):
-                                    content = tm.content
-                                elif isinstance(tm, dict) and tm.get("content"):
-                                    content = tm["content"]
-                                elif hasattr(tm, "content"):
-                                    content = getattr(tm, "content", None)
-                                if content is not None:
-                                    raw_str = str(content) if not isinstance(content, str) else content
-                                    if raw_str and raw_str not in accumulated_raw_tool_results:
-                                        accumulated_raw_tool_results.append(raw_str)
-                        if isinstance(event, dict) and "agent" in event:
-                            agent_out = event["agent"]
-                            aimsg = None
-                            if isinstance(agent_out, dict) and "messages" in agent_out:
-                                for m in reversed(agent_out["messages"]):
-                                    if isinstance(m, AIMessage):
-                                        aimsg = m
-                                        break
-                            elif isinstance(agent_out, list):
-                                for m in reversed(agent_out):
-                                    if isinstance(m, AIMessage):
-                                        aimsg = m
-                                        break
-                            if aimsg:
-                                has_tool_calls = hasattr(aimsg, "tool_calls") and aimsg.tool_calls
+                        ev_type = str(stream_item.get("type") or "").strip()
+                        if ev_type == "agent_step":
+                            msg_obj = stream_item.get("message")
+                            if isinstance(msg_obj, AIMessage):
+                                has_tool_calls = hasattr(msg_obj, "tool_calls") and msg_obj.tool_calls
                                 if has_tool_calls:
-                                    for tco in aimsg.tool_calls:
+                                    for tco in msg_obj.tool_calls:
                                         tool_name = tco.get("name") or tco.get("id", "")
                                         args = tco.get("args") or {}
                                         payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
@@ -2272,46 +2280,58 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                         block = f"\n```json\n{tc_json}\n```\n"
                                         accumulated.append(block)
                                         yield f"event: content\ndata: {json_module.dumps({'text': block, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
-                                content_str = str(aimsg.content) if isinstance(aimsg.content, str) else str(aimsg.content or "")
+                                content_str = str(msg_obj.content) if isinstance(msg_obj.content, str) else str(msg_obj.content or "")
                                 if content_str.strip() and content_str not in accumulated:
                                     accumulated.append(content_str)
                                     yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                            continue
+                        if ev_type == "tool_step":
+                            tad = stream_item.get("tool_attempt_debug")
+                            if isinstance(tad, list):
+                                for item in tad:
+                                    if item not in tool_attempt_debug:
+                                        tool_attempt_debug.append(item)
+                            tool_msgs = stream_item.get("tool_messages")
+                            if isinstance(tool_msgs, list):
+                                for tm in tool_msgs:
+                                    content = None
+                                    if isinstance(tm, (HumanMessage, ToolMessage)):
+                                        content = tm.content
+                                    elif isinstance(tm, dict):
+                                        content = tm.get("content")
+                                    elif hasattr(tm, "content"):
+                                        content = getattr(tm, "content", None)
+                                    if content is None:
+                                        continue
+                                    txt = str(content) if not isinstance(content, str) else content
+                                    if txt.strip() and txt not in accumulated:
+                                        accumulated.append(txt)
+                                        yield f"event: content\ndata: {json_module.dumps({'text': txt, 'agent_id': next_speaker, 'meta': {'source': 'tool_step'}}, ensure_ascii=False)}\n\n"
+                            tro = stream_item.get("tool_raw_outputs")
+                            if isinstance(tro, list):
+                                for raw_str in tro:
+                                    s = str(raw_str or "")
+                                    if s and s not in accumulated_raw_tool_results:
+                                        accumulated_raw_tool_results.append(s)
+                            continue
+                        if ev_type == "final_step":
+                            tad = stream_item.get("tool_attempt_debug")
+                            if isinstance(tad, list):
+                                for item in tad:
+                                    if item not in tool_attempt_debug:
+                                        tool_attempt_debug.append(item)
+                            continue
                 except Exception as stream_err:
-                    logger.warning("群聊 agent astream 失败，回退到 ainvoke: %s", stream_err)
-                    try:
-                        final_state = await agent.ainvoke(initial_state, config=run_cfg)
-                        out_msgs = final_state.get("messages", [])
-                        for m in out_msgs:
-                            if isinstance(m, AIMessage):
-                                if hasattr(m, "tool_calls") and m.tool_calls:
-                                    for tco in m.tool_calls:
-                                        tool_name = tco.get("name") or tco.get("id", "")
-                                        args = tco.get("args") or {}
-                                        payload = {"action": "tool_call", "tool": tool_name, "arguments": args}
-                                        tc_json = json_module.dumps(payload, ensure_ascii=False, indent=2)
-                                        accumulated.append(f"\n```json\n{tc_json}\n```\n")
-                                content_str = str(m.content) if isinstance(m.content, str) else str(m.content or "")
-                                if content_str.strip():
-                                    accumulated.append(content_str)
-                        if not accumulated_raw_tool_results:
-                            for msg in out_msgs:
-                                if isinstance(msg, (HumanMessage, ToolMessage)) and msg.content:
-                                    raw_str = str(msg.content) if isinstance(msg.content, str) else str(msg.content or "")
-                                    if raw_str and (
-                                        ("工具 " in raw_str and " 的执行结果:" in raw_str)
-                                        or "执行错误" in raw_str
-                                        or raw_str.strip().startswith("{")
-                                        or "Title:" in raw_str
-                                        or "URL:" in raw_str
-                                    ):
-                                        if raw_str not in accumulated_raw_tool_results:
-                                            accumulated_raw_tool_results.append(raw_str)
-                    except Exception as invoke_err:
-                        logger.exception("群聊 agent ainvoke 也失败: %s", invoke_err)
-                        accumulated.append(f"(调用异常: {invoke_err})")
+                    logger.exception("群聊 agent astream 失败（无回退）: %s", stream_err)
+                    tool_attempt_debug.append({"source": "stream_error", "matched": False, "error": str(stream_err)})
 
                 full_content = "".join(accumulated) if accumulated else "(无文本输出)"
+                if (not accumulated) and accumulated_raw_tool_results:
+                    # 当模型未追加自然语言总结时，至少把工具原始输出摘要回显到最终内容中，避免前端“执行后无结果”。
+                    full_content = "\n\n".join(accumulated_raw_tool_results[:2]).strip() or "(无文本输出)"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
+                tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
+                sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = (dha.get("skill_ids") or ["default"])[0] if dha else "default"
                 current_skill_id_for_pending = skill_id
                 assistant_msg = {
@@ -2327,6 +2347,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     assistant_msg["required_user_fields"] = inferred_required_fields
                 if accumulated_raw_tool_results:
                     assistant_msg["tool_raw_results"] = accumulated_raw_tool_results
+                assistant_msg["tool_debug"] = {
+                    "tool_calls": tool_calls_trace,
+                    "tool_attempt_debug": tool_attempt_debug,
+                    "raw_result_count": len(accumulated_raw_tool_results or []),
+                    "has_tool_call": bool(tool_calls_trace),
+                    "has_raw_result": bool(accumulated_raw_tool_results),
+                    "note": "no_tool_call_detected" if not tool_calls_trace else "",
+                }
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -2357,6 +2385,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 "input_prompt_summary": input_summary,
                                 "response_summary": response_summary,
                                 "tool_result_summary": tool_summary,
+                                "tool_calls": tool_calls_trace,
+                                "tool_raw_outputs": accumulated_raw_tool_results or (["[no tool raw outputs captured]"] if tool_calls_trace else ["[no tool calls detected]"]),
+                                "tool_attempt_debug": tool_attempt_debug,
+                                "sandbox_entry_trace": sandbox_entry_trace,
                             },
                         )
                         facts_delta = _extract_facts_from_response(full_content)
