@@ -1182,6 +1182,16 @@ def _slugify(name: str) -> str:
     return s or "skill"
 
 
+def _next_available_skill_id(base: Path, seed: str) -> str:
+    """基于 seed 生成不冲突的 skill 目录名。"""
+    skill_id = seed
+    idx = 0
+    while (base / skill_id).exists():
+        idx += 1
+        skill_id = f"{seed}-{idx}"
+    return skill_id
+
+
 @router.post("/settings/skills")
 async def create_skill(skill: SkillCreate):
     """创建 Skill：在 skills 目录下创建 <id>/SKILL.md"""
@@ -1198,12 +1208,7 @@ async def create_skill(skill: SkillCreate):
         raw_id = _suggest_skill_id_from_git_url(skill.url or "")
     else:
         raw_id = _slugify((skill.name or "skill").strip())
-    skill_id = raw_id
-    if source == "local" or source == "git":
-        idx = 0
-        while (base / skill_id).exists():
-            idx += 1
-            skill_id = f"{raw_id}-{idx}"
+    skill_id = _next_available_skill_id(base, raw_id)
     skill_dir = base / skill_id
     if source == "git":
         git_url, git_subdir = _normalize_git_import_source(skill.url or "")
@@ -1302,12 +1307,8 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
 
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
-    seed = _slugify(Path(filename).stem or "skill")
-    skill_id = seed
-    idx = 0
-    while (base / skill_id).exists():
-        idx += 1
-        skill_id = f"{seed}-{idx}"
+    fallback_seed = _slugify(Path(filename).stem or "skill")
+    skill_id = _next_available_skill_id(base, fallback_seed)
     skill_dir = base / skill_id
 
     try:
@@ -1329,6 +1330,15 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
             shutil.copytree(src_dir, skill_dir)
 
         fm, body = _read_skill_file(skill_dir)
+        # 目录名优先使用 SKILL.md frontmatter.name（若可用）
+        preferred_seed = _slugify(str(fm.get("name") or "").strip()) or fallback_seed
+        preferred_id = _next_available_skill_id(base, preferred_seed)
+        if preferred_id != skill_id:
+            target_dir = base / preferred_id
+            shutil.move(str(skill_dir), str(target_dir))
+            skill_id = preferred_id
+            skill_dir = target_dir
+            fm, body = _read_skill_file(skill_dir)
         final_name = (str(fm.get("name") or "").strip() or skill_id)
         final_desc = str(fm.get("description") or "")
         fm["name"] = final_name
@@ -1414,8 +1424,21 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
     if skill_update.body is not None:
         body = skill_update.body
     _write_skill_file(skill_dir, fm, body)
+    new_id = skill_id
+    # 若名字变更，自动将目录名对齐到 frontmatter.name（并做冲突避让）
+    current_name = str(fm.get("name") or "").strip()
+    if current_name:
+        desired_seed = _slugify(current_name)
+        if desired_seed and desired_seed != skill_id:
+            if (base / desired_seed).exists():
+                desired_seed = _next_available_skill_id(base, desired_seed)
+            target_dir = base / desired_seed
+            if target_dir != skill_dir:
+                shutil.move(str(skill_dir), str(target_dir))
+                skill_dir = target_dir
+                new_id = desired_seed
     _refresh_skills_loader()
-    return {"status": "ok", "data": {"id": skill_id, "updated": True}}
+    return {"status": "ok", "data": {"id": new_id, "updated": True, "renamed": new_id != skill_id, "old_id": skill_id}}
 
 @router.delete("/settings/skills/{skill_id}")
 async def delete_skill(skill_id: str):

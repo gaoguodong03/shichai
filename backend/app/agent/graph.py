@@ -13,6 +13,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.tools import BaseTool
 from app.agent.llm_client import QwenLLM
 from app.agent.simple_agent import SimpleAgent
+from app.agent.tools_for_skill import build_skill_script_tool_name
 
 logger = logging.getLogger(__name__)
 
@@ -658,6 +659,12 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         valid_names = [getattr(t, "name", "") for t in tools_list if getattr(t, "name", "")]
         if requested in valid_names:
             return requested
+        # 兼容非法字符 skill_id：run_skill_script_新-skill -> run_skill_script_<sanitized>
+        if requested.startswith("run_skill_script_"):
+            skill_suffix = requested[len("run_skill_script_") :]
+            normalized = build_skill_script_tool_name(skill_suffix)
+            if normalized in valid_names:
+                return normalized
         # 别名兼容：群聊里常见模型按单聊习惯调用 run_skill_script
         if requested == "run_skill_script":
             candidates = [n for n in valid_names if n.startswith("run_skill_script_")]

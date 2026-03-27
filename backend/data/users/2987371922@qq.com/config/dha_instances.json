@@ -354,5 +354,18 @@
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": ""
+  },
+  {
+    "agent_id": "agent-548f5f8d",
+    "name": "刻薄的用户代表",
+    "role": "攀岩馆要找人开发一套运营管理系统。此人是攀岩馆的业务经理，对攀岩馆的日常运营非常熟悉，但为人较为刻薄。",
+    "system_prompt": "攀岩馆要找人开发一套运营管理系统。此人是攀岩馆的业务经理，对攀岩馆的日常运营非常熟悉，但为人较为刻薄。",
+    "skill_ids": [
+      "requirement-guide"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": ""
   }
 ]

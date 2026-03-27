@@ -3,6 +3,8 @@
 build_tools_for_group_chat：从当前用户的 MCP 运行时取工具，按 mcp_server_ids / skill MCP 依赖过滤 →
 叠加 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> → wrap。
 """
+import hashlib
+import re
 from typing import Any, Dict, List
 
 from app.api.settings import get_mcp_servers_for_skill
@@ -11,6 +13,27 @@ from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.tools.call_api import call_api
 from app.tools.run_skill_script import create_run_skill_script_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
+
+_TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
+
+
+def build_skill_script_tool_name(skill_id: str) -> str:
+    """构造符合工具命名约束的 run_skill_script 工具名。
+
+    部分模型供应商要求 function.name 严格匹配 ^[a-zA-Z0-9_\\.-]+$。
+    对包含中文/空格等字符的 skill_id，需要做安全化，否则会在请求阶段被拒绝。
+    """
+    raw = str(skill_id or "").strip()
+    if not raw:
+        return "run_skill_script_default"
+    sanitized = _TOOL_NAME_INVALID_CHARS_RE.sub("_", raw).strip("_.-")
+    if not sanitized:
+        sanitized = "skill"
+    # 仅在发生字符变换时追加哈希，兼顾可读性与唯一性
+    if sanitized != raw:
+        suffix = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+        sanitized = f"{sanitized}_{suffix}"
+    return f"run_skill_script_{sanitized}"
 
 
 def _resolve_server_ids_with_aliases(server_ids: List[str], available_ids: set[str]) -> List[str]:
@@ -93,7 +116,7 @@ async def build_tools_for_group_chat(
     # 为 DHA 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
     for skill_id in (dha.get("skill_ids") or []):
         run_tool = create_run_skill_script_tool(skill_id, workspace_id, "workspace_all")
-        run_tool.name = f"run_skill_script_{skill_id}"
+        run_tool.name = build_skill_script_tool_name(skill_id)
         if run_tool.name not in tool_names:
             tools.append(run_tool)
             tool_names.add(run_tool.name)
