@@ -2,69 +2,69 @@
   <div class="max-w-4xl mx-auto">
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-2xl font-bold text-gray-800">模型选择</h2>
-        <p class="text-sm text-gray-500 mt-1">配置不同模型的 URL、型号与 API Key 环境变量，并设置默认模型</p>
+        <h2 class="text-2xl font-bold text-primary">模型选择</h2>
+        <p class="text-sm text-muted mt-1">配置不同模型的 URL、型号与 API Key 环境变量，并设置默认模型</p>
       </div>
       <button
         @click="openAdd"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover transition-colors"
       >
         + 添加模型
       </button>
     </div>
 
     <!-- 默认模型 -->
-    <section class="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-      <label class="block text-sm font-medium text-gray-700 mb-2">默认模型</label>
+    <section class="bg-card rounded-lg border border-border p-4 mb-6">
+      <label class="block text-sm font-medium text-primary mb-2">默认模型</label>
       <select
         v-model="form.default_llm"
-        class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        class="w-full max-w-xs px-3 py-2 border border-input-border bg-input-bg rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
       >
         <option v-for="id in providerIds" :key="id" :value="id">{{ id }}</option>
       </select>
-      <p class="mt-1 text-xs text-gray-500">对话与群聊将使用该模型（API Key 从对应环境变量读取）</p>
+      <p class="mt-1 text-xs text-muted">对话与群聊将使用该模型（API Key 从对应环境变量读取）</p>
     </section>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="text-center py-8 text-gray-500">加载中...</div>
+    <div v-if="loading" class="text-center py-8 text-muted">加载中...</div>
 
     <!-- 模型列表 -->
     <div v-else class="space-y-4">
       <div
         v-for="(meta, id) in form.llm_providers"
         :key="id"
-        class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+        class="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-shadow"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-2">
-              <h3 class="text-lg font-semibold text-gray-800">{{ id }}</h3>
+              <h3 class="text-lg font-semibold text-primary">{{ id }}</h3>
               <span
                 v-if="form.default_llm === id"
-                class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700"
+                class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
               >
                 默认
               </span>
             </div>
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
               <div>
-                <dt class="text-gray-500">URL</dt>
-                <dd class="text-gray-800 font-mono truncate" :title="meta.base_url">{{ meta.base_url || '—' }}</dd>
+                <dt class="text-muted">URL</dt>
+                <dd class="text-primary font-mono truncate" :title="meta.base_url">{{ meta.base_url || '—' }}</dd>
               </div>
               <div>
-                <dt class="text-gray-500">模型型号</dt>
-                <dd class="text-gray-800 font-mono">{{ meta.model || '—' }}</dd>
+                <dt class="text-muted">模型型号</dt>
+                <dd class="text-primary font-mono">{{ meta.model || '—' }}</dd>
               </div>
               <div>
-                <dt class="text-gray-500">API Key 环境变量</dt>
-                <dd class="text-gray-800 font-mono">{{ meta.api_key_env || '—' }}</dd>
+                <dt class="text-muted">API Key 环境变量</dt>
+                <dd class="text-primary font-mono">{{ meta.api_key_env || '—' }}</dd>
               </div>
             </dl>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
             <button
               @click="openEdit(id)"
-              class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              class="px-3 py-1.5 text-sm bg-list-hover text-primary rounded hover:opacity-90"
             >
               编辑
             </button>
@@ -82,61 +82,61 @@
     <!-- 添加/编辑弹层 -->
     <div
       v-if="showModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       @click.self="showModal = false"
     >
-      <div class="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ editingId == null ? '添加模型' : '编辑模型' }}</h3>
+      <div class="bg-card rounded-xl border border-border shadow-xl max-w-lg w-full mx-4 p-6">
+        <h3 class="text-lg font-semibold text-primary mb-4">{{ editingId == null ? '添加模型' : '编辑模型' }}</h3>
         <div class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">标识（英文，如 qwen、my-openai）</label>
+            <label class="block text-sm font-medium text-primary mb-1">标识（英文，如 qwen、my-openai）</label>
             <input
               v-model="modalForm.id"
               type="text"
               placeholder="qwen"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               :readonly="editingId != null"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">URL（API 基础地址）</label>
+            <label class="block text-sm font-medium text-primary mb-1">URL（API 基础地址）</label>
             <input
               v-model="modalForm.base_url"
               type="url"
               placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">模型型号</label>
+            <label class="block text-sm font-medium text-primary mb-1">模型型号</label>
             <input
               v-model="modalForm.model"
               type="text"
               placeholder="qwen3-max"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">API Key 环境变量名</label>
+            <label class="block text-sm font-medium text-primary mb-1">API Key 环境变量名</label>
             <input
               v-model="modalForm.api_key_env"
               type="text"
               placeholder="QWEN_API_KEY"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
-            <p class="mt-1 text-xs text-gray-500">在 .env 中配置该变量，不在此处填写密钥</p>
+            <p class="mt-1 text-xs text-muted">在 .env 中配置该变量，不在此处填写密钥</p>
           </div>
         </div>
         <div class="flex justify-end gap-2 mt-6">
           <button
             @click="showModal = false"
-            class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+            class="px-4 py-2 text-primary bg-list-hover rounded-lg hover:opacity-90"
           >
             取消
           </button>
           <button
             @click="submitModal"
-            class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
           >
             {{ editingId == null ? '添加' : '保存' }}
           </button>
@@ -149,7 +149,7 @@
       <button
         @click="save"
         :disabled="saving"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover disabled:opacity-50"
       >
         {{ saving ? '保存中...' : '保存到应用' }}
       </button>

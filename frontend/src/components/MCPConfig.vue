@@ -1,28 +1,28 @@
 <template>
-  <div class="max-w-4xl mx-auto">
+  <div class="max-w-4xl mx-auto text-primary">
     <!-- 标题和添加按钮 -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-2xl font-bold text-gray-800">MCP Server 配置</h2>
-        <p class="text-sm text-gray-500 mt-1">配置和管理 MCP Server，提供工具、资源和提示</p>
+        <h2 class="text-2xl font-bold text-primary">MCP Server 配置</h2>
+        <p class="text-sm text-muted mt-1">配置和管理 MCP Server，提供工具、资源和提示</p>
       </div>
       <button
         @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover transition-colors"
       >
         + 添加 Server
       </button>
     </div>
 
     <!-- Server 列表 -->
-    <div v-if="loading" class="text-center py-8 text-gray-500">
+    <div v-if="loading" class="text-center py-8 text-muted">
       加载中...
     </div>
-    <div v-else-if="servers.length === 0" class="text-center py-12 text-gray-500">
+    <div v-else-if="servers.length === 0" class="text-center py-12 text-muted">
       <p class="mb-4">还没有配置 MCP Server</p>
       <button
         @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
       >
         添加第一个 Server
       </button>
@@ -31,18 +31,18 @@
       <div
         v-for="server in servers"
         :key="server.id"
-        class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+        class="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-shadow"
       >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-2">
-              <h3 class="text-lg font-semibold text-gray-800">{{ server.name }}</h3>
+              <h3 class="text-lg font-semibold text-primary">{{ server.name }}</h3>
               <span
                 :class="[
                   'px-2 py-1 text-xs rounded-full',
                   server.enabled
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'bg-accent-subtle text-accent-subtle-text'
+                    : 'bg-list-hover text-muted'
                 ]"
               >
                 {{ server.enabled ? '已启用' : '已禁用' }}
@@ -58,10 +58,10 @@
                 {{ server.status === 'connected' ? '已连接' : '未连接' }}
               </span>
             </div>
-            <p v-if="server.metadata?.description" class="text-sm text-gray-600 mb-2">
+            <p v-if="server.metadata?.description" class="text-sm text-muted mb-2">
               {{ server.metadata.description }}
             </p>
-            <div class="flex items-center gap-4 text-sm text-gray-500">
+            <div class="flex items-center gap-4 text-sm text-muted">
               <span>工具数: {{ server.tool_count || 0 }}</span>
               <span>传输: {{ server.transport?.type || 'unknown' }}</span>
             </div>
@@ -72,7 +72,7 @@
               :class="[
                 'px-3 py-1 text-sm rounded',
                 server.enabled
-                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-list-hover text-primary hover:opacity-90'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
               ]"
             >
@@ -86,7 +86,7 @@
             </button>
             <button
               @click="editServer(server)"
-              class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              class="px-3 py-1 text-sm bg-list-hover text-primary rounded hover:opacity-90"
             >
               编辑
             </button>
@@ -104,10 +104,10 @@
     <!-- 添加/编辑 Modal -->
     <div
       v-if="showAddModal || editingServer"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="bg-card border border-border rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div class="p-6">
           <h3 class="text-xl font-semibold mb-4">
             {{ editingServer ? '编辑 MCP Server' : '添加 MCP Server' }}
@@ -115,27 +115,27 @@
           
           <form @submit.prevent="saveServer" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 名称 *
               </label>
               <input
                 v-model="formData.name"
                 type="text"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="例如：文件系统 MCP"
               />
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 传输类型 *
               </label>
               <select
                 v-model="formData.transport.type"
                 @change="onTransportTypeChange"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               >
                 <option value="stdio">stdio</option>
                 <option value="sse">SSE</option>
@@ -146,25 +146,25 @@
             <!-- stdio 配置 -->
             <template v-if="formData.transport.type === 'stdio'">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-primary mb-1">
                   命令 *
                 </label>
                 <input
                   v-model="formData.transport.command"
                   type="text"
                   required
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                   placeholder="例如：python"
                 />
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-primary mb-1">
                   参数（每行一个）
                 </label>
                 <textarea
                   v-model="stdioArgs"
                   rows="3"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                   placeholder="例如：&#10;-m&#10;mcp_server_fs"
                 />
               </div>
@@ -173,14 +173,14 @@
             <!-- SSE 配置 -->
             <template v-if="formData.transport.type === 'sse'">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-primary mb-1">
                   URL *
                 </label>
                 <input
                   v-model="formData.transport.url"
                   type="url"
                   required
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                   placeholder="例如：http://localhost:8000/sse"
                 />
               </div>
@@ -189,27 +189,27 @@
             <!-- HTTP 配置 -->
             <template v-if="formData.transport.type === 'http'">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-primary mb-1">
                   Base URL *
                 </label>
                 <input
                   v-model="formData.transport.base_url"
                   type="url"
                   required
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                   placeholder="例如：http://localhost:8000/mcp"
                 />
               </div>
             </template>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 描述
               </label>
               <textarea
                 v-model="formData.metadata.description"
                 rows="2"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="MCP Server 的功能描述"
               />
             </div>
@@ -218,7 +218,7 @@
               <button
                 type="button"
                 @click="closeModal"
-                class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                class="px-4 py-2 text-primary bg-list-hover rounded-lg hover:opacity-90"
               >
                 取消
               </button>

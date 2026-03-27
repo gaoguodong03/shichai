@@ -1,9 +1,9 @@
 <template>
-  <div class="flex flex-col h-full bg-white overflow-hidden">
-    <div v-if="loading" class="p-4 text-gray-500 flex-1">加载中...</div>
+  <div class="flex flex-col h-full bg-card text-primary overflow-hidden">
+    <div v-if="loading" class="p-4 text-muted flex-1">加载中...</div>
     <template v-else-if="skill">
       <!-- Tab 导航 -->
-      <div class="border-b border-gray-200 px-4 flex-shrink-0">
+      <div class="border-b border-border px-4 flex-shrink-0">
         <div class="mx-auto w-full max-w-4xl flex">
           <button
             v-for="t in tabs"
@@ -12,8 +12,8 @@
             :class="[
               'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
               activeTab === t.id
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-muted hover:text-primary'
             ]"
           >
             {{ t.label }}
@@ -25,53 +25,53 @@
         v-show="activeTab === 'main'"
         class="flex-1 overflow-auto p-4 space-y-4"
       >
-        <div v-if="contentLoading" class="text-sm text-gray-500">加载中...</div>
+        <div v-if="contentLoading" class="text-sm text-muted">加载中...</div>
         <template v-else>
           <div class="mx-auto w-full max-w-4xl space-y-4">
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-gray-500 mb-1">名称（必填）</label>
+            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-muted mb-1">名称（必填）</label>
               <input
                 v-model="form.name"
                 type="text"
                 required
                 placeholder="技能名称"
-                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
+                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-gray-500 mb-1">描述（必填）</label>
+            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-muted mb-1">描述（必填）</label>
               <textarea
                 v-model="form.description"
                 rows="3"
                 placeholder="简短描述，用于技能选择"
-                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white resize-y min-h-[4rem]"
+                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-gray-500 mb-2">工具依赖（可选）</label>
+            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+              <label class="block text-xs font-medium text-muted mb-2">工具依赖（可选）</label>
               <div class="flex flex-wrap gap-2">
                 <label
                   v-for="srv in mcpServers"
                   :key="srv.id"
                   class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
                   :class="form.mcp_server_ids.includes(srv.id)
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'"
+                    ? 'border-accent bg-accent-subtle text-accent-subtle-text'
+                    : 'border-border bg-card text-muted hover:border-input-border'"
                 >
                   <input
                     type="checkbox"
                     :value="srv.id"
                     v-model="form.mcp_server_ids"
-                    class="rounded border-gray-300"
+                    class="rounded border-input-border bg-input-bg"
                   />
                   {{ srv.name || srv.id }}
                 </label>
               </div>
-              <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-gray-400">暂无 MCP 服务器，请先在设置中配置。</p>
+              <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
             </div>
-            <div class="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
               <div class="px-4 pt-3 pb-2">
-                <label class="block text-xs font-medium text-gray-500">正文（Markdown）</label>
+                <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
               </div>
               <textarea
                 v-model="form.body"
@@ -88,17 +88,17 @@
         v-show="activeTab !== 'main'"
         class="flex-1 flex min-h-0"
       >
-        <aside class="w-48 flex-shrink-0 border-r border-gray-200 overflow-y-auto p-2">
+        <aside class="w-48 flex-shrink-0 border-r border-border overflow-y-auto p-2">
           <button
             v-if="!partsLoading"
             @click="addPartFile"
-            class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 mb-1"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-accent hover:bg-accent-subtle mb-1"
           >
             + 新建文件
           </button>
-          <div v-if="partsLoading" class="text-sm text-gray-500 py-2">加载中...</div>
+          <div v-if="partsLoading" class="text-sm text-muted py-2">加载中...</div>
           <template v-else>
-            <div v-if="currentPartFiles.length === 0" class="text-sm text-gray-500 py-2">暂无文件</div>
+            <div v-if="currentPartFiles.length === 0" class="text-sm text-muted py-2">暂无文件</div>
             <button
               v-for="f in currentPartFiles"
               :key="f.path"
@@ -106,8 +106,8 @@
               :class="[
                 'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
                 selectedPartFile?.type === activeTab && selectedPartFile?.path === f.path
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'hover:bg-gray-100 text-gray-700'
+                  ? 'bg-accent-subtle text-accent-subtle-text'
+                  : 'hover:bg-list-hover text-primary'
               ]"
             >
               {{ f.name }}
@@ -115,31 +115,31 @@
           </template>
         </aside>
         <main class="flex-1 min-w-0 overflow-hidden flex flex-col p-3">
-          <div v-if="!selectedPartFile" class="text-sm text-gray-500 flex-1 flex items-center justify-center">在左侧选择文件以预览，或点击「新建文件」</div>
+          <div v-if="!selectedPartFile" class="text-sm text-muted flex-1 flex items-center justify-center">在左侧选择文件以预览，或点击「新建文件」</div>
           <div v-else class="flex-1 flex flex-col min-h-0">
             <div class="mx-auto w-full max-w-4xl flex items-center justify-between gap-2 mb-2 flex-shrink-0">
-              <span class="text-xs text-gray-600 truncate">{{ selectedPartFile.path }}</span>
+              <span class="text-xs text-muted truncate">{{ selectedPartFile.path }}</span>
               <div class="flex gap-2">
                 <button
                   @click="savePartFile"
                   :disabled="partSaving"
-                  class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                  class="px-2 py-1 text-xs bg-accent text-text-inverse rounded hover:bg-accent-hover disabled:opacity-50"
                 >
                   {{ partSaving ? '保存中...' : '保存' }}
                 </button>
                 <button
                   @click="deletePartFile"
-                  class="px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50"
+                  class="px-2 py-1 text-xs text-danger border border-danger/40 rounded hover:bg-danger-subtle"
                 >
                   删除文件
                 </button>
               </div>
             </div>
-            <div v-if="partContentLoading" class="text-sm text-gray-500 flex-1">加载中...</div>
+            <div v-if="partContentLoading" class="text-sm text-muted flex-1">加载中...</div>
             <textarea
               v-else
               v-model="partContent"
-              class="mx-auto flex-1 min-h-0 w-full max-w-4xl px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg resize-none bg-white"
+              class="mx-auto flex-1 min-h-0 w-full max-w-4xl px-3 py-2 text-xs font-mono border border-input-border rounded-lg resize-none bg-input-bg text-primary"
               spellcheck="false"
             />
           </div>
@@ -149,20 +149,20 @@
         <button
           @click="save"
           :disabled="saving || deleting"
-          class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          class="px-4 py-2 rounded-lg bg-accent text-text-inverse text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
         <button
           @click="deleteSkill"
           :disabled="deleting || saving"
-          class="px-4 py-2 rounded-lg bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+          class="px-4 py-2 rounded-lg bg-danger-subtle text-danger text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
           {{ deleting ? '删除中...' : '删除' }}
         </button>
       </div>
     </template>
-    <div v-else class="p-4 text-gray-500 flex-1">未找到该技能</div>
+    <div v-else class="p-4 text-muted flex-1">未找到该技能</div>
   </div>
 </template>
 

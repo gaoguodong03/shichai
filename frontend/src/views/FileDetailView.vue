@@ -1,19 +1,19 @@
 <template>
-  <div class="flex flex-col h-full bg-white overflow-y-auto">
-    <header class="border-b border-gray-200 px-4 py-3 flex items-center justify-between gap-2">
+  <div class="flex flex-col h-full bg-card text-primary overflow-y-auto">
+    <header class="border-b border-border px-4 py-3 flex items-center justify-between gap-2">
       <!-- 可编辑文件名 -->
       <div class="flex-1 min-w-0 flex items-center gap-2">
         <input
           v-if="editingName"
           ref="nameInputRef"
           v-model="editFileName"
-          class="flex-1 px-2 py-1 text-lg font-semibold border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="flex-1 px-2 py-1 text-lg font-semibold border border-input-border bg-input-bg text-primary rounded focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
           @blur="saveName"
           @keydown.enter="saveName"
         />
         <h1
           v-else
-          class="text-lg font-semibold text-gray-800 truncate cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1"
+          class="text-lg font-semibold text-primary truncate cursor-pointer hover:bg-list-hover rounded px-1 -mx-1"
           :title="'点击编辑文件名'"
           @dblclick="startEditName"
         >
@@ -21,7 +21,7 @@
         </h1>
         <button
           v-if="!editingName && isEditableText"
-          class="px-2 py-1 text-xs text-gray-500 hover:text-blue-600"
+          class="px-2 py-1 text-xs text-muted hover:text-accent"
           @click="startEditName"
         >
           重命名
@@ -32,7 +32,7 @@
           :href="downloadUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+          class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
         >
           下载
         </a>
@@ -44,7 +44,7 @@
         v-if="isImage"
         :src="downloadUrl"
         :alt="path"
-        class="max-w-full h-auto rounded border border-gray-200"
+        class="max-w-full h-auto rounded border border-border"
       />
       <!-- PDF 预览 -->
       <div v-else-if="isPDF" class="flex-1 min-h-0">
@@ -52,13 +52,13 @@
       </div>
       <!-- DOCX 预览 -->
       <div v-else-if="isDocx" class="flex-1 min-h-0">
-        <div v-if="docxLoading" class="text-sm text-gray-500 py-8">加载中...</div>
+        <div v-if="docxLoading" class="text-sm text-muted py-8">加载中...</div>
         <div v-else-if="docxError" class="text-sm text-red-500 py-4">{{ docxError }}</div>
         <div v-show="!docxLoading && !docxError" ref="docxContainerRef" class="docx-preview overflow-auto" />
       </div>
       <!-- Excel 预览 -->
       <div v-else-if="isExcel" class="flex-1 min-h-0">
-        <div v-if="excelLoading" class="text-sm text-gray-500 py-8">加载中...</div>
+        <div v-if="excelLoading" class="text-sm text-muted py-8">加载中...</div>
         <div v-else-if="excelError" class="text-sm text-red-500 py-4">{{ excelError }}</div>
         <div v-show="!excelLoading && !excelError" class="excel-preview overflow-auto" v-html="excelHtml" />
       </div>
@@ -68,18 +68,18 @@
           <textarea
             ref="contentTextareaRef"
             v-model="editContent"
-            class="flex-1 w-full p-3 text-sm font-sans border border-gray-300 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+            class="flex-1 w-full p-3 text-sm font-sans border border-input-border bg-input-bg text-primary rounded resize-none focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             spellcheck="false"
           />
           <div class="mt-2 flex gap-2">
             <button
-              class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
               @click="saveContent"
             >
               保存
             </button>
             <button
-              class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
+              class="px-4 py-2 border border-input-border rounded-lg hover:bg-list-hover"
               @click="cancelEditContent"
             >
               取消
@@ -106,21 +106,21 @@
 
             <div
               ref="markdownContainerRef"
-              class="prose prose-sm max-w-none text-gray-800 file-detail-markdown"
+              class="prose prose-sm max-w-none text-primary file-detail-markdown"
               v-html="renderMarkdown(previewText ?? '')"
             />
           </div>
-          <pre v-else class="text-sm text-gray-800 whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
+          <pre v-else class="text-sm text-primary whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
           <div class="flex flex-wrap items-center gap-2 mt-1">
             <button
               v-if="isMarkdown"
-              class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+              class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
               @click="showMdSource = !showMdSource"
             >
               {{ showMdSource ? '显示渲染' : '显示源文件' }}
             </button>
             <button
-              class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-100"
+              class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
               @click="startEditContent"
             >
               编辑内容
@@ -128,7 +128,7 @@
           </div>
         </div>
       </template>
-      <div v-else class="text-sm text-gray-500">不支持预览或编辑，请下载查看</div>
+      <div v-else class="text-sm text-muted">不支持预览或编辑，请下载查看</div>
     </div>
   </div>
 </template>
@@ -341,7 +341,7 @@ async function loadExcel() {
     if (!firstSheetName) throw new Error('无工作表')
     const sheet = wb.Sheets[firstSheetName]
     const html = XLSX.utils.sheet_to_html(sheet, { id: 'excel-table', editable: false })
-    excelHtml.value = html || '<p class="text-gray-500">空表格</p>'
+    excelHtml.value = html || '<p class="text-muted">空表格</p>'
   } catch (e) {
     excelError.value = e instanceof Error ? e.message : '预览失败，请下载查看'
   } finally {
@@ -489,11 +489,11 @@ onBeforeUnmount(() => {
 }
 .excel-preview :deep(th),
 .excel-preview :deep(td) {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-light);
   padding: 0.25rem 0.5rem;
 }
 .excel-preview :deep(th) {
-  background: #f3f4f6;
+  background: var(--color-list-hover);
   font-weight: 600;
 }
 .file-detail-markdown :deep(h1) { font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem; margin-bottom: 0.5rem; }
@@ -502,9 +502,9 @@ onBeforeUnmount(() => {
 .file-detail-markdown :deep(p) { margin-bottom: 0.5rem; }
 .file-detail-markdown :deep(ul) { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 0.5rem; }
 .file-detail-markdown :deep(ol) { list-style-type: decimal; margin-left: 1.5rem; margin-bottom: 0.5rem; }
-.file-detail-markdown :deep(pre) { background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
-.file-detail-markdown :deep(code) { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
-.file-detail-markdown :deep(a) { color: #2563eb; text-decoration: underline; }
+.file-detail-markdown :deep(pre) { background: var(--color-list-hover); padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
+.file-detail-markdown :deep(code) { background: var(--color-list-hover); padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
+.file-detail-markdown :deep(a) { color: var(--color-accent); text-decoration: underline; }
 
 .file-detail-article-layout {
   display: flex;

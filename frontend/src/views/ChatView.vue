@@ -112,7 +112,7 @@
       <!-- 当前流式输出：单独一块展示，避免与占位助手消息重复；出现时滚动到视口中部便于查看 -->
       <div v-if="currentStreamingText" ref="streamingBlockRef" class="flex justify-start">
         <div class="max-w-3xl min-w-0 rounded-lg px-4 py-2 bg-card text-primary border border-border">
-          <div class="mb-2 text-xs text-purple-600 font-medium">
+          <div class="mb-2 text-xs text-skill font-medium">
             skill: {{ (currentMeta?.skills && currentMeta.skills[0]) ?? '无' }}
           </div>
           <div v-if="extractToolCalls(currentStreamingText).toolCalls.length">
@@ -122,11 +122,11 @@
               class="mb-2 rounded-r-md border-l-4 border-l-tool-call-border bg-tool-call-bg border border-tool-call-border px-3 py-2 text-xs text-primary font-mono"
             >
               <div class="flex items-center justify-between gap-2 mb-1">
-                <span class="text-blue-700 font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
+                <span class="text-tool-call-text font-sans font-medium">{{ getToolNameFromToolCall(tc) }}</span>
                 <button
                   v-if="currentToolRawResults[tcIndex] !== undefined"
                   type="button"
-                  class="shrink-0 text-blue-600 hover:text-blue-800 hover:underline"
+                  class="shrink-0 text-accent hover:opacity-80 hover:underline"
                   title="查看该次调用的原始输出"
                   @click="openRawModal(currentToolRawResults[tcIndex], getToolNameFromToolCall(tc) + ' 原始输出')"
                 >
@@ -243,7 +243,7 @@
           </div>
           <button class="text-sm text-muted hover:text-primary" title="关闭" @click="closeFilePicker">关闭</button>
         </div>
-        <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
+        <div class="px-4 py-2 border-b border-border flex items-center gap-2">
           <button
             class="px-2 py-1 text-sm border border-input-border rounded hover:bg-list-hover disabled:opacity-50"
             :disabled="!filePickerPath"
@@ -260,7 +260,7 @@
             刷新
           </button>
           <div v-if="filePickerLoading" class="text-xs text-muted">加载中...</div>
-          <div v-else-if="filePickerError" class="text-xs text-red-600 truncate">{{ filePickerError }}</div>
+          <div v-else-if="filePickerError" class="text-xs text-danger truncate">{{ filePickerError }}</div>
         </div>
         <div class="max-h-[60vh] overflow-auto">
           <div v-if="!filePickerEntries.length && !filePickerLoading" class="px-4 py-6 text-sm text-muted">
@@ -269,13 +269,13 @@
           <button
             v-for="e in filePickerEntries"
             :key="e.path"
-            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            class="w-full text-left px-4 py-2.5 hover:bg-list-hover flex items-center gap-2 border-b border-border"
             :title="e.is_dir ? `进入目录：${e.name}` : `插入文件：${e.name}`"
             @click="onPickEntry(e)"
           >
             <span class="flex-shrink-0 text-muted font-mono">{{ e.is_dir ? '▾' : '·' }}</span>
             <span class="truncate">{{ e.name }}</span>
-            <span v-if="!e.is_dir" class="ml-auto text-xs text-gray-400">插入</span>
+            <span v-if="!e.is_dir" class="ml-auto text-xs text-muted">插入</span>
           </button>
         </div>
       </div>
@@ -292,7 +292,7 @@
           <div class="text-sm font-semibold text-primary">选择本次对话使用的 Skill（可多选，空则全部）</div>
           <button class="text-sm text-muted hover:text-primary" title="关闭" @click="closeSkillPicker">关闭</button>
         </div>
-        <div class="px-4 py-2 border-b border-gray-100 flex justify-end">
+        <div class="px-4 py-2 border-b border-border flex justify-end">
           <button class="text-xs text-muted hover:text-primary" title="清除已选 Skill" @click="clearSkillSelection">清除选择</button>
         </div>
         <div class="max-h-[60vh] overflow-auto">
@@ -301,14 +301,14 @@
             v-else
             v-for="s in skillPickerList"
             :key="s.id"
-            class="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2 border-b border-gray-100"
+            class="w-full text-left px-4 py-2.5 hover:bg-list-hover flex items-center gap-2 border-b border-border"
             @click="toggleSkillSelection(s.id)"
           >
             <span class="flex-shrink-0 w-4 h-4 rounded border flex items-center justify-center" :class="selectedSkillIds.includes(s.id) ? 'bg-accent border-accent' : 'border-input-border'">
               <span v-if="selectedSkillIds.includes(s.id)" class="text-text-inverse text-xs">✓</span>
             </span>
             <span class="truncate font-medium">{{ s.name || s.id }}</span>
-            <span class="text-xs text-gray-400 truncate flex-1">{{ s.description || '' }}</span>
+            <span class="text-xs text-muted truncate flex-1">{{ s.description || '' }}</span>
           </button>
         </div>
       </div>
@@ -325,7 +325,7 @@
           <span class="text-sm font-semibold text-primary">{{ rawModalTitle }}</span>
           <button class="text-muted hover:text-primary p-1" title="关闭" @click="closeRawModal" aria-label="关闭">×</button>
         </div>
-        <pre class="flex-1 overflow-auto p-4 text-xs text-slate-700 whitespace-pre-wrap break-words font-mono bg-gray-50 m-0">{{ rawModalContent }}</pre>
+        <pre class="flex-1 overflow-auto p-4 text-xs text-primary whitespace-pre-wrap break-words font-mono bg-page m-0">{{ rawModalContent }}</pre>
       </div>
     </div>
 
@@ -1182,7 +1182,7 @@ const sendMessage = async () => {
   font-weight: 700;
   margin: 0 0 0.12em 0 !important;
   line-height: 1.3;
-  color: #1f2937;
+  color: var(--color-text);
 }
 .chat-markdown-wrap :deep(.chat-markdown h1:first-child) { margin-top: 0 !important; }
 .chat-markdown-wrap :deep(.chat-markdown h2) {
@@ -1190,22 +1190,22 @@ const sendMessage = async () => {
   font-weight: 600;
   margin: 0 0 0.12em 0 !important;
   padding-bottom: 0.125rem;
-  border-bottom: 1px solid #e5e7eb;
-  color: #374151;
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-text);
 }
 .chat-markdown-wrap :deep(.chat-markdown h2:first-child) { margin-top: 0 !important; }
 .chat-markdown-wrap :deep(.chat-markdown h3) {
   font-size: 1.125rem;
   font-weight: 600;
   margin: 0 0 0.12em 0 !important;
-  color: #4b5563;
+  color: var(--color-text);
 }
 .chat-markdown-wrap :deep(.chat-markdown h3:first-child) { margin-top: 0 !important; }
 .chat-markdown-wrap :deep(.chat-markdown h4, .chat-markdown h5, .chat-markdown h6) {
   font-size: 1rem;
   font-weight: 600;
   margin: 0 0 0.12em 0 !important;
-  color: #4b5563;
+  color: var(--color-text);
 }
 .chat-markdown-wrap :deep(.chat-markdown p) {
   margin: 0 0 0.12em 0 !important;
@@ -1230,8 +1230,8 @@ const sendMessage = async () => {
   padding: 0;
 }
 .chat-markdown-wrap :deep(.chat-markdown pre) {
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
+  background: var(--color-list-hover);
+  border: 1px solid var(--color-border-light);
   border-radius: 0.375rem;
   padding: 0.35rem 0.5rem;
   margin: 0.12em 0 !important;
@@ -1240,11 +1240,11 @@ const sendMessage = async () => {
   line-height: 1.35;
 }
 .chat-markdown-wrap :deep(.chat-markdown code) {
-  background: #f3f4f6;
+  background: var(--color-list-hover);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-light);
 }
 .chat-markdown-wrap :deep(.chat-markdown pre code) {
   background: none;
@@ -1253,18 +1253,18 @@ const sendMessage = async () => {
   font-size: inherit;
 }
 .chat-markdown-wrap :deep(.chat-markdown blockquote) {
-  border-left: 4px solid #d1d5db;
+  border-left: 4px solid var(--color-border);
   margin: 0.12em 0 !important;
   padding: 0.15rem 0 0.15rem 0.75rem;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 .chat-markdown-wrap :deep(.chat-markdown a) {
-  color: #2563eb;
+  color: var(--color-accent);
   text-decoration: underline;
 }
 .chat-markdown-wrap :deep(.chat-markdown hr) {
   border: none;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-light);
   margin: 0.2em 0 !important;
 }
 .chat-markdown-wrap :deep(.chat-markdown strong) {
@@ -1280,12 +1280,12 @@ const sendMessage = async () => {
 }
 .chat-markdown-wrap :deep(.chat-markdown th),
 .chat-markdown-wrap :deep(.chat-markdown td) {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-light);
   padding: 0.25rem 0.5rem;
   text-align: left;
 }
 .chat-markdown-wrap :deep(.chat-markdown th) {
-  background: #f3f4f6;
+  background: var(--color-list-hover);
   font-weight: 600;
 }
 </style>

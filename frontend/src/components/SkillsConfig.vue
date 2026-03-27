@@ -1,28 +1,28 @@
 <template>
-  <div class="max-w-4xl mx-auto">
+  <div class="max-w-4xl mx-auto text-primary">
     <!-- 标题和添加按钮 -->
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h2 class="text-2xl font-bold text-gray-800">Skills 配置</h2>
-        <p class="text-sm text-gray-500 mt-1">配置和管理 Skills，提供策略层指导</p>
+        <h2 class="text-2xl font-bold text-primary">Skills 配置</h2>
+        <p class="text-sm text-muted mt-1">配置和管理 Skills，提供策略层指导</p>
       </div>
       <button
         @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover transition-colors"
       >
         + 添加 Skill
       </button>
     </div>
 
     <!-- Skills 列表 -->
-    <div v-if="loading" class="text-center py-8 text-gray-500">
+    <div v-if="loading" class="text-center py-8 text-muted">
       加载中...
     </div>
-    <div v-else-if="skills.length === 0" class="text-center py-12 text-gray-500">
+    <div v-else-if="skills.length === 0" class="text-center py-12 text-muted">
       <p class="mb-4">还没有配置 Skill</p>
       <button
         @click="showAddModal = true"
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+        class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
       >
         添加第一个 Skill
       </button>
@@ -31,18 +31,18 @@
       <div
         v-for="skill in skills"
         :key="skill.id"
-        class="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+        class="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-shadow"
       >
         <div class="flex items-start justify-between">
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-2">
-              <h3 class="text-lg font-semibold text-gray-800">{{ skill.name }}</h3>
+              <h3 class="text-lg font-semibold text-primary">{{ skill.name }}</h3>
               <span
                 :class="[
                   'px-2 py-1 text-xs rounded-full',
                   skill.enabled
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-600'
+                    ? 'bg-accent-subtle text-accent-subtle-text'
+                    : 'bg-list-hover text-muted'
                 ]"
               >
                 {{ skill.enabled ? '已启用' : '已禁用' }}
@@ -58,10 +58,10 @@
                 {{ skill.source === 'local' ? '本地' : 'Git' }}
               </span>
             </div>
-            <p v-if="skill.description" class="text-sm text-gray-600 mb-2">
+            <p v-if="skill.description" class="text-sm text-muted mb-2">
               {{ skill.description }}
             </p>
-            <div class="text-sm text-gray-500">
+            <div class="text-sm text-muted">
               <span v-if="skill.source === 'local'">路径: {{ skill.path }}</span>
               <span v-else>URL: {{ skill.url }}</span>
             </div>
@@ -72,7 +72,7 @@
               :class="[
                 'px-3 py-1 text-sm rounded',
                 skill.enabled
-                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  ? 'bg-list-hover text-primary hover:opacity-90'
                   : 'bg-green-100 text-green-700 hover:bg-green-200'
               ]"
             >
@@ -80,7 +80,7 @@
             </button>
             <button
               @click="editSkill(skill)"
-              class="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+              class="px-3 py-1 text-sm bg-list-hover text-primary rounded hover:opacity-90"
             >
               编辑
             </button>
@@ -98,10 +98,10 @@
     <!-- 添加/编辑 Modal -->
     <div
       v-if="showAddModal || editingSkill"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="bg-card border border-border rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div class="p-6">
           <h3 class="text-xl font-semibold mb-4">
             {{ editingSkill ? '编辑 Skill' : '添加 Skill' }}
@@ -109,27 +109,27 @@
           
           <form @submit.prevent="saveSkill" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 名称 *
               </label>
               <input
                 v-model="formData.name"
                 type="text"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="例如：数据分析"
               />
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 来源 *
               </label>
               <select
                 v-model="formData.source"
                 @change="onSourceChange"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               >
                 <option value="local">本地</option>
                 <option value="git">Git URL</option>
@@ -138,36 +138,36 @@
 
             <!-- 本地路径 -->
             <div v-if="formData.source === 'local'">
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 路径 *
               </label>
               <input
                 v-model="formData.path"
                 type="text"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="例如：/path/to/skill 或 ./skills/example-skill"
               />
             </div>
 
             <!-- Git URL -->
             <div v-if="formData.source === 'git'">
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 URL *
               </label>
               <input
                 v-model="formData.url"
                 type="url"
                 required
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="例如：https://example.com/skills/data-analysis"
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">写入模式</label>
+              <label class="block text-sm font-medium text-primary mb-1">写入模式</label>
               <select
                 v-model="formData.write_mode"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               >
                 <option value="readonly">readonly（只读）</option>
                 <option value="workspace_all">workspace_all（可改会话工作区）</option>
@@ -175,13 +175,13 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-primary mb-1">
                 描述
               </label>
               <textarea
                 v-model="formData.description"
                 rows="3"
-                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 placeholder="Skill 的功能描述"
               />
             </div>
@@ -190,7 +190,7 @@
               <button
                 type="button"
                 @click="closeModal"
-                class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                class="px-4 py-2 text-primary bg-list-hover rounded-lg hover:opacity-90"
               >
                 取消
               </button>

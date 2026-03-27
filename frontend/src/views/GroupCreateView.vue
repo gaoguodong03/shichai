@@ -1,26 +1,26 @@
 <template>
   <div class="flex flex-col h-full p-4 overflow-y-auto">
-    <h2 class="text-lg font-semibold text-gray-800 mb-4">新建会话</h2>
+    <h2 class="text-lg font-semibold text-primary mb-4">新建会话</h2>
     <form @submit.prevent="create" class="space-y-4 max-w-xl">
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">会话标题</label>
-        <input v-model="title" type="text" required class="w-full border border-gray-300 rounded px-3 py-2" placeholder="如：产品方案讨论（选 0 个 = 仅主持人）" />
+        <label class="block text-sm font-medium text-primary mb-1">会话标题</label>
+        <input v-model="title" type="text" required class="w-full border border-input-border bg-input-bg text-primary rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="如：产品方案讨论（选 0 个 = 仅主持人）" />
       </div>
       <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">参与的专家（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
+        <label class="block text-sm font-medium text-primary mb-1">参与的专家（选 0 个 = 仅主持人，选 1 个及以上 = 邀请专家）</label>
         <div class="flex flex-wrap gap-2">
           <label v-for="d in dhaInstances" :key="d.agent_id" class="inline-flex items-center gap-1">
             <input type="checkbox" :value="d.agent_id" v-model="selectedDhaIds" />
             <span class="text-sm">{{ d.name }}</span>
           </label>
         </div>
-        <p v-if="!dhaInstances.length" class="text-sm text-gray-500 mt-1">可选：在资源中心创建专家后即可邀请到会话</p>
+        <p v-if="!dhaInstances.length" class="text-sm text-muted mt-1">可选：在资源中心创建专家后即可邀请到会话</p>
       </div>
       <div class="flex gap-2">
-        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+        <button type="submit" class="px-4 py-2 bg-accent text-text-inverse rounded hover:bg-accent-hover">
           创建
         </button>
-        <button type="button" class="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100" @click="$emit('cancel')">
+        <button type="button" class="px-4 py-2 border border-input-border rounded text-primary hover:bg-list-hover" @click="$emit('cancel')">
           取消
         </button>
       </div>

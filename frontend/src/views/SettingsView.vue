@@ -1,20 +1,20 @@
 <template>
-  <div class="flex flex-col h-screen bg-gray-50">
+  <div class="flex flex-col h-screen bg-page text-primary">
     <!-- 头部 -->
-    <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+    <header class="bg-card border-b border-border px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-4">
         <button
           @click="$router.push('/')"
-          class="text-gray-600 hover:text-gray-800"
+          class="text-muted hover:text-primary"
         >
           ← 返回
         </button>
-        <h1 class="text-xl font-semibold text-gray-800">设置</h1>
+        <h1 class="text-xl font-semibold text-primary">设置</h1>
       </div>
     </header>
 
     <!-- Tab 导航 -->
-    <div class="bg-white border-b border-gray-200 px-4">
+    <div class="bg-card border-b border-border px-4">
       <div class="flex gap-6">
         <button
           v-for="tab in tabs"
@@ -23,14 +23,14 @@
           :class="[
             'px-4 py-3 text-sm font-medium relative transition-colors',
             activeTab === tab.id
-              ? 'text-blue-600'
-              : 'text-gray-500 hover:text-gray-700'
+              ? 'text-accent'
+              : 'text-muted hover:text-primary'
           ]"
         >
           {{ tab.label }}
           <span
             v-if="activeTab === tab.id"
-            class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-blue-500 rounded-full"
+            class="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-accent rounded-full"
           ></span>
         </button>
       </div>

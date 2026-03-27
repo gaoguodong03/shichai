@@ -7,6 +7,10 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
+      },
       colors: {
         page: 'var(--color-page)',
         sidebar: 'var(--color-sidebar)',
@@ -14,6 +18,7 @@ export default {
         'section-header': 'var(--color-section-header)',
         'sidebar-border': 'var(--color-sidebar-border)',
         card: 'var(--color-card)',
+        panel: 'var(--color-panel)',
         primary: 'var(--color-text)',
         muted: 'var(--color-text-muted)',
         'text-inverse': 'var(--color-text-inverse)',
