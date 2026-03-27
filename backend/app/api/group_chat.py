@@ -685,6 +685,31 @@ def _evaluate_soft_stop(
     return None
 
 
+def _has_auto_continue_signal(content: str) -> bool:
+    """自动模式下判断专家是否明确表达“将继续执行下一步”。
+
+    仅当出现明显继续推进信号时，才让同一专家在同一条流里自动连跑下一轮；
+    否则默认交还用户，避免访谈类/问答类 skill 连续自说自话。
+    """
+    text = str(content or "").strip().lower()
+    if not text:
+        return False
+    cues = (
+        "继续执行",
+        "继续处理",
+        "接下来我会",
+        "下一步我将",
+        "我将继续",
+        "随后我会",
+        "下一步计划",
+        "next step",
+        "i will continue",
+        "i'll continue",
+        "continue with",
+    )
+    return any(c in text for c in cues)
+
+
 def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
     """若工具结果中包含工作区图片下载链接，则自动补一段 Markdown 图片预览。"""
     if not tool_raw_results:
@@ -2509,8 +2534,25 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         _persist_pending_state(end_data)
                         yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                         return
-                    # auto 且未触发主持人接管：保持当前专家连续执行。
-                    continue
+                    # auto 且未触发主持人接管：仅在输出包含“继续执行信号”时才连续执行；
+                    # 否则默认把控制权交还用户，避免专家连续自说自话。
+                    if _has_auto_continue_signal(full_content):
+                        continue
+                    orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+                    end_data = build_end_payload(
+                        waiting_for_user=True,
+                        suggested_next_speaker="user",
+                        phase=OrchestrationPhase.AWAITING_USER,
+                        interrupt_reason=InterruptReason.NONE,
+                        resume_target_agent_id=resume_target_agent_id,
+                        required_user_fields=required_user_fields,
+                        turn_id=orch_ctx.turn_id,
+                        token_version=orch_ctx.token_version,
+                        handoff_reason=latest_handoff_reason,
+                    )
+                    _persist_pending_state(end_data)
+                    yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
+                    return
                 # 主持人接管后：manual/auto 均允许主持人决定下一步
                 if speak_mode != "auto":
                     host_takeover_open = False
@@ -2618,6 +2660,15 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
                 suggested_add = list(dict.fromkeys([x for x in suggested_add if x in recruitable_ids]))[:3]
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
+                # 自动模式兜底：若主持人仍把同一专家继续点名，但该专家本轮输出不含“继续执行信号”，
+                # 则默认交还用户，避免访谈类 skill 连续自说自话。
+                if (
+                    next_speaker == last_speaker_agent_id
+                    and next_speaker in agent_ids
+                    and not suggested_add
+                    and not _has_auto_continue_signal(full_content)
+                ):
+                    next_speaker = "user"
                 if not suggested_add and isinstance(announcement, str):
                     suggested_add = _extract_valid_agent_ids_from_text_or_names(announcement, recruitable_ids, available_to_add, max_n=3)
                 suggested_add = _prioritize_suggested_add_ids(

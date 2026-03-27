@@ -61,3 +61,16 @@ def test_append_workspace_image_preview_markdown_appends_image_links():
     raw = ['下载链接：/api/workspaces/s1/files/download?path=generated_images/a.jpg']
     out = gc._append_workspace_image_preview_markdown(base, raw)
     assert "![生成图片1](/api/workspaces/s1/files/download?path=generated_images/a.jpg)" in out
+
+
+def test_has_auto_continue_signal_detects_continue_intent():
+    gc = _get_group_chat_module()
+    assert gc._has_auto_continue_signal("接下来我会继续执行下一步。") is True
+    assert gc._has_auto_continue_signal("I will continue with step 2.") is True
+
+
+def test_has_auto_continue_signal_defaults_to_handoff_user():
+    gc = _get_group_chat_module()
+    assert gc._has_auto_continue_signal("这是当前结论，请你确认是否继续。") is False
+    assert gc._has_auto_continue_signal("想接项目就别上来问这种空话。") is False
+    assert gc._has_auto_continue_signal("你先挑一块具体的，别泛泛而谈。") is False
