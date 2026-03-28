@@ -1119,6 +1119,7 @@ _SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
     "wechat-article-writer": ["linkup", "exa", "file-reader"],
     "amap-maps": ["amap-maps"],
     "app-icon-generator": [],
+    "webnovel-illustration": [],
     "cover-image": [],
     "article-illustrator": [],
     "blog-write": ["linkup", "exa", "file-reader"],

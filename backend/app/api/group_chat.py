@@ -11,7 +11,7 @@ import uuid
 import difflib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends, Response
 from fastapi.responses import StreamingResponse
@@ -802,6 +802,60 @@ def _get_dha_skill_content(dha: Dict[str, Any]) -> str:
             if content:
                 return content
     return sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
+
+
+def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:
+    """取最近一条用户消息全文，用于多 skill 路由。"""
+    for m in reversed(messages or []):
+        if m.get("role") == "user":
+            return str(m.get("content") or "").strip()
+    return ""
+
+
+def _resolve_dha_skill_id_and_content(
+    dha: Dict[str, Any],
+    discussion_goal: str,
+    messages: List[Dict[str, Any]],
+) -> tuple[str, str]:
+    """当 DHA 绑定多个 skill 时，由 SkillsLoader 按各 SKILL 的 name/description（及 skill_id）与上下文的匹配度选型；无信号时回退列表顺序。
+
+    气泡上的 skill 标签、落盘用的 skill_id 应与实际注入的 SKILL 一致；不在此文件维护场景关键词表。
+    """
+    sl = _request_skills_loader()
+    skill_ids = [str(x).strip() for x in (dha.get("skill_ids") or []) if str(x).strip()]
+    if not skill_ids:
+        c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
+        return "default", c
+
+    def _first_available_content(ids: List[str]) -> Optional[Tuple[str, str]]:
+        for sid in ids:
+            c = sl.get_skill_full_content(sid)
+            if c:
+                return sid, c
+        return None
+
+    if len(skill_ids) == 1:
+        sid = skill_ids[0]
+        got = _first_available_content([sid])
+        if got:
+            return got
+        c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
+        return "default", c
+
+    last_user = _last_user_message_text(messages)
+    combined = f"{discussion_goal or ''}\n{last_user}".strip()
+    picked = sl.pick_best_skill_id_for_message(combined, skill_ids)
+    if picked:
+        got = _first_available_content([picked])
+        if got:
+            return got
+
+    # 回退：列表顺序第一个有内容的 skill（与旧版 _get_dha_skill_content 一致）
+    got = _first_available_content(skill_ids)
+    if got:
+        return got
+    c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
+    return skill_ids[0], c
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
@@ -1656,14 +1710,27 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             for did in remove_ids_norm:
                 current.discard(did)
         meta[group_session_id]["agent_ids"] = list(current)
-        # 仅在确实新增成员时，写入主持人提示消息（一次一条）
-        if newly_added_ids:
-            unique_added = list(dict.fromkeys([x for x in newly_added_ids if x in current and x not in before_ids]))
-            if unique_added:
-                messages = _load_group_history(group_session_id)
-                for did in unique_added:
-                    display_name = id_to_name.get(did, did)
-                    join_msg = {
+        # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
+        unique_added = (
+            list(
+                dict.fromkeys(
+                    [x for x in newly_added_ids if x in current and x not in before_ids],
+                )
+            )
+            if newly_added_ids
+            else []
+        )
+        unique_removed = (
+            list(dict.fromkeys([x for x in remove_ids_norm if x in before_ids]))
+            if remove_ids_norm
+            else []
+        )
+        if unique_added or unique_removed:
+            messages = _load_group_history(group_session_id)
+            for did in unique_added:
+                display_name = id_to_name.get(did, did)
+                messages.append(
+                    {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host",
                         "content": f"已邀请“{display_name}”加入会话",
@@ -1671,8 +1738,20 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "event_type": "member_joined",
                         "joined_agent_ids": [did],
                     }
-                    messages.append(join_msg)
-                _save_group_history(group_session_id, messages)
+                )
+            for did in unique_removed:
+                display_name = id_to_name.get(did, did)
+                messages.append(
+                    {
+                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                        "role": "host",
+                        "content": f"已将“{display_name}”移出会话",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "member_left",
+                        "left_agent_ids": [did],
+                    }
+                )
+            _save_group_history(group_session_id, messages)
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)
     return {"status": "ok", "data": _build_session_payload(group_session_id, meta[group_session_id])}
@@ -2253,7 +2332,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     break
 
                 tools = await build_tools_for_group_chat(dha, group_session_id)
-                skill_content = _get_dha_skill_content(dha)
+                resolved_skill_id, skill_content = _resolve_dha_skill_id_and_content(
+                    dha, discussion_goal, messages
+                )
                 role = dha.get("role") or ""
                 dha_system = (dha.get("system_prompt") or "").strip()
                 if dha_system:
@@ -2285,6 +2366,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 accumulated = []
                 accumulated_raw_tool_results: List[str] = []
                 tool_attempt_debug: List[Dict[str, Any]] = []
+                # 模型一旦发出 tool_calls，后续会同步执行脚本/API（如生图），可能数十秒无 token；
+                # 在此之前推送一行提示，避免用户误以为「专家无响应」。
+                _tool_pending_hint = (
+                    "（正在执行工具：生图等外部接口可能较慢，请稍候 1～3 分钟。完成后会在此显示结果与图片链接。）\n\n"
+                )
                 try:
                     async for stream_item in agent.astream(
                         initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"]
@@ -2296,14 +2382,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             msg_obj = stream_item.get("message")
                             if isinstance(msg_obj, AIMessage):
                                 has_tool_calls = hasattr(msg_obj, "tool_calls") and msg_obj.tool_calls
-                                if has_tool_calls:
-                                    # Keep tool call payloads in internal traces only.
-                                    # Do not stream them into user-facing message content.
-                                    pass
                                 content_str = str(msg_obj.content) if isinstance(msg_obj.content, str) else str(msg_obj.content or "")
                                 if content_str.strip() and content_str not in accumulated:
                                     accumulated.append(content_str)
                                     yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'agent_id': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                if has_tool_calls:
+                                    # Keep tool call payloads in internal traces only.
+                                    # 脚本/API（如生图）可能数十秒无 token；在真正执行工具前再推一行提示。
+                                    if _tool_pending_hint not in accumulated:
+                                        accumulated.append(_tool_pending_hint)
+                                        yield f"event: content\ndata: {json_module.dumps({'text': _tool_pending_hint, 'agent_id': next_speaker, 'meta': {'phase': 'tool_pending'}}, ensure_ascii=False)}\n\n"
                             continue
                         if ev_type == "tool_step":
                             tad = stream_item.get("tool_attempt_debug")
@@ -2340,7 +2428,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
                 tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
-                skill_id = (dha.get("skill_ids") or ["default"])[0] if dha else "default"
+                skill_id = resolved_skill_id if dha else "default"
                 current_skill_id_for_pending = skill_id
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",

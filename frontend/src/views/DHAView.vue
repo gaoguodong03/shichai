@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-full p-4 overflow-y-auto">
+  <div class="flex flex-col h-full p-4 overflow-y-auto themed-scrollbar">
     <!-- 未选择时 -->
     <div v-if="!selectedDhaId" class="flex flex-col h-full items-center justify-center text-muted text-sm">
       <p>请在左侧选择或新建专家</p>

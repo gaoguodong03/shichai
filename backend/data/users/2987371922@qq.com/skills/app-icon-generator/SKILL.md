@@ -119,6 +119,10 @@ name: 图片生成
 
 以上场景均使用同一工具（run_skill_script 的 generate_image.py 或 volces-icon_generate_app_icon），仅 description 与 pic_size 不同。
 
+### 网文 / 小说 / 连载（请改用专用技能）
+
+若任务是**网络小说、章节插图、人物立绘、与剧情强绑定的封面**，应使用 **`webnovel-illustration`（网文配图）** 技能：先与用户共创「配图方案表」、每张图锚定正文，再生成；本技能仍负责图标、通用封面、技术文章配图、小红书信息图等。
+
 ---
 
 ## 选择 pic_size 的规则

@@ -132,6 +132,69 @@ class SkillsLoader:
                 return skill.name
         return None
 
+    @staticmethod
+    def _keywords_from_description_line(desc: str) -> List[str]:
+        """从 description 首句切出短语，供与用户文本做子串匹配（与 infer_skill_from_message 一致思路）。"""
+        if not (desc or "").strip():
+            return []
+        desc_clean = str(desc).split("。")[0].split("（")[0].split("(")[0]
+        return [
+            k.strip()
+            for k in desc_clean.replace("、", "/").replace("，", "/").split("/")
+            if k.strip() and len(k.strip()) >= 2
+        ]
+
+    def relevance_score_for_message(self, user_text: str, skill: Skill) -> float:
+        """通用相关度：skill_id / name / description 关键词与 user_text 的匹配强度，无场景硬编码。"""
+        t = (user_text or "").strip()
+        if not t:
+            return 0.0
+        tl = t.lower()
+        score = 0.0
+        sid = (skill.skill_id or "").strip()
+        # 用户显式写出目录名或常见变体
+        if sid:
+            if sid in t or sid in tl:
+                score += 12.0
+            for part in sid.replace("_", "-").split("-"):
+                pl = part.lower()
+                if len(pl) >= 3 and (pl in tl or part in t):
+                    score += 2.5
+        name = (skill.name or "").strip()
+        if len(name) >= 2 and name in t:
+            score += 5.0
+        for kw in self._keywords_from_description_line(skill.description or ""):
+            if kw in t:
+                score += min(float(len(kw)), 16.0) * 0.45
+        return score
+
+    def pick_best_skill_id_for_message(self, combined_text: str, candidate_ids: List[str]) -> Optional[str]:
+        """在 candidate_ids 中按各 SKILL 的元数据与 combined_text 的相关度选出最佳 skill_id。
+
+        不依赖 group_chat 内场景关键词表；新技能只需写好 name/description。无法区分时返回 None，由调用方按列表顺序回退。
+        """
+        ids = [str(x).strip() for x in candidate_ids if str(x).strip()]
+        if not ids:
+            return None
+        if len(ids) == 1:
+            return ids[0]
+        best_id: Optional[str] = None
+        best_score = -1.0
+        order = {sid: i for i, sid in enumerate(ids)}
+        for sid in ids:
+            skill = self.skills.get(sid)
+            if not skill or not skill.metadata.get("enabled", True):
+                continue
+            s = self.relevance_score_for_message(combined_text, skill)
+            if s > best_score:
+                best_score = s
+                best_id = sid
+            elif s == best_score and best_id is not None and order[sid] < order.get(best_id, 999):
+                best_id = sid
+        if best_id is None or best_score <= 0:
+            return None
+        return best_id
+
     def get_skills_metadata(self) -> List[Dict[str, Any]]:
         """获取所有技能的元数据"""
         return [

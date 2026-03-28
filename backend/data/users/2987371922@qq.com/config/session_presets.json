@@ -14,7 +14,7 @@
       "agent-thinking-ext",
       "agent-195b8c3a"
     ],
-    "description": "根据用户的意图进行网文写作。",
+    "description": "网文写作：资料爬取、文字创作与配图协作；配图与章节/人设对齐，并支持用户参与定稿。",
     "discussion_goal_example": ""
   }
 ]

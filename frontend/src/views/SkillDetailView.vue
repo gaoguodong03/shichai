@@ -23,7 +23,7 @@
       <!-- SKILL.md：名称与描述为必选项，各占一个显示框；下方为正文 -->
       <div
         v-show="activeTab === 'main'"
-        class="flex-1 overflow-auto p-4 space-y-4"
+        class="flex-1 overflow-auto themed-scrollbar p-4 space-y-4"
       >
         <div v-if="contentLoading" class="text-sm text-muted">加载中...</div>
         <template v-else>
@@ -44,7 +44,7 @@
                 v-model="form.description"
                 rows="3"
                 placeholder="简短描述，用于技能选择"
-                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
             <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
@@ -70,15 +70,44 @@
               <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
             </div>
             <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-              <div class="px-4 pt-3 pb-2">
+              <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
                 <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-xs rounded-md border border-input-border text-primary hover:bg-list-hover"
+                  @click="markdownPreviewMode = !markdownPreviewMode"
+                >
+                  {{ markdownPreviewMode ? '编辑源文件' : '预览渲染' }}
+                </button>
               </div>
+              <div
+                v-if="markdownPreviewMode"
+                class="skill-markdown-preview themed-scrollbar px-4 py-3 text-sm text-primary max-h-[24rem] overflow-auto"
+                v-html="renderMarkdown(form.body || '')"
+              />
               <textarea
+                v-else
                 v-model="form.body"
                 rows="18"
-                class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent focus:ring-0 resize-y min-h-[14rem]"
+                class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent themed-scrollbar focus:ring-0 resize-y min-h-[14rem]"
                 placeholder="SKILL.md 正文内容"
               />
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button
+                @click="save"
+                :disabled="saving || deleting"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              >
+                {{ saving ? '保存中...' : '保存' }}
+              </button>
+              <button
+                @click="deleteSkill"
+                :disabled="deleting || saving"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
+              >
+                {{ deleting ? '删除中...' : '删除' }}
+              </button>
             </div>
           </div>
         </template>
@@ -145,7 +174,7 @@
           </div>
         </main>
       </div>
-      <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
+      <div v-if="activeTab !== 'main'" class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
         <button
           @click="save"
           :disabled="saving || deleting"
@@ -168,6 +197,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import MarkdownIt from 'markdown-it'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
 
@@ -197,6 +227,7 @@ const form = ref({
 })
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
+const markdownPreviewMode = ref(true)
 
 const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[]; other: { name: string; path: string }[] }>({
   references: [],
@@ -214,6 +245,16 @@ const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
   return parts.value[activeTab.value] || []
 })
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
+function renderMarkdown(text: string): string {
+  if (!text) return '<p class="text-muted">（暂无正文）</p>'
+  try {
+    return md.render(text)
+  } catch {
+    return text
+  }
+}
 
 
 async function loadMcpServers() {
@@ -460,6 +501,7 @@ watch(
     // 切换 skill 时，先清空右侧文件预览，避免短暂显示上一个 skill 的内容
     selectedPartFile.value = null
     partContent.value = ''
+    markdownPreviewMode.value = true
     await load()
     if (activeTab.value === 'main') return
     const tab = activeTab.value as PartType
@@ -475,6 +517,7 @@ watch(
 )
 watch(activeTab, async (tab) => {
   if (tab === 'main') {
+    markdownPreviewMode.value = true
     selectedPartFile.value = null
     partContent.value = ''
     return
@@ -490,3 +533,27 @@ watch(activeTab, async (tab) => {
   }
 })
 </script>
+
+<style scoped>
+.skill-markdown-preview :deep(h1) { font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem; }
+.skill-markdown-preview :deep(h2) { font-size: 1.2rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
+.skill-markdown-preview :deep(h3) { font-size: 1.05rem; font-weight: 600; margin: 0.6rem 0 0.3rem; }
+.skill-markdown-preview :deep(p) { margin: 0 0 0.5rem; line-height: 1.6; }
+.skill-markdown-preview :deep(ul) { list-style: disc; margin: 0 0 0.5rem 1.25rem; }
+.skill-markdown-preview :deep(ol) { list-style: decimal; margin: 0 0 0.5rem 1.25rem; }
+.skill-markdown-preview :deep(pre) {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-list-hover);
+  border: 1px solid var(--color-border-light);
+  overflow: auto;
+}
+.skill-markdown-preview :deep(code) {
+  background: var(--color-list-hover);
+  border: 1px solid var(--color-border-light);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.3rem;
+}
+.skill-markdown-preview :deep(a) { color: var(--color-accent); text-decoration: underline; }
+</style>

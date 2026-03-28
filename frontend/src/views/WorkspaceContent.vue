@@ -727,7 +727,7 @@
                   v-if="groupWorkspacePath"
                   type="button"
                   class="group-chat-workspace-back"
-                  @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = ''; loadGroupWorkspace()"
+                  @click="groupWorkspaceGoRoot"
                 >
                   根目录
                 </button>
@@ -819,7 +819,7 @@
                       v-if="e.is_dir"
                       type="button"
                       class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
-                      @click="groupWorkspacePreviewPath = ''; groupWorkspacePath = groupWorkspacePath ? groupWorkspacePath + '/' + e.name : e.name; loadGroupWorkspace()"
+                      @click="groupWorkspaceEnterDir(e)"
                     >
                       <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                       <span class="truncate">{{ e.name }}</span>
@@ -887,10 +887,12 @@
                 />
                 <div v-else-if="groupWorkspacePreviewIsImage" class="group-chat-workspace-preview-image-wrap">
                   <img
+                    v-if="groupWorkspacePreviewImageUrl"
                     :src="groupWorkspacePreviewImageUrl"
                     :alt="groupWorkspacePreviewName || '图片预览'"
                     class="group-chat-workspace-preview-image"
                   />
+                  <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
                 </div>
                 <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
               </div>
@@ -947,6 +949,7 @@ interface MsgExt {
   suggested_order?: string[]
   event_type?: string
   joined_agent_ids?: string[]
+  left_agent_ids?: string[]
 }
 
 const props = defineProps<{
@@ -1001,6 +1004,41 @@ const groupWorkspaceWidth = ref(360)
 const groupWorkspaceListWidth = ref(192)
 // 工作区预览区默认收起，初始总宽度略窄，仅文件列表为主
 const groupWorkspacePreviewCollapsed = ref(true)
+/** 工作区图片预览用 blob: URL，切换/关闭时 revoke */
+let groupWorkspacePreviewObjectUrl: string | null = null
+
+function revokeGroupWorkspacePreviewBlob() {
+  if (groupWorkspacePreviewObjectUrl) {
+    try {
+      URL.revokeObjectURL(groupWorkspacePreviewObjectUrl)
+    } catch {
+      // ignore
+    }
+    groupWorkspacePreviewObjectUrl = null
+  }
+}
+
+function clearGroupWorkspacePreviewState() {
+  revokeGroupWorkspacePreviewBlob()
+  groupWorkspacePreviewPath.value = ''
+  groupWorkspacePreviewName.value = ''
+  groupWorkspacePreviewContent.value = ''
+  groupWorkspacePreviewImageUrl.value = ''
+  groupWorkspacePreviewEditing.value = false
+}
+
+function groupWorkspaceGoRoot() {
+  clearGroupWorkspacePreviewState()
+  groupWorkspacePath.value = ''
+  loadGroupWorkspace()
+}
+
+function groupWorkspaceEnterDir(e: { name: string; path: string; is_dir: boolean }) {
+  clearGroupWorkspacePreviewState()
+  groupWorkspacePath.value = groupWorkspacePath.value ? `${groupWorkspacePath.value}/${e.name}` : e.name
+  loadGroupWorkspace()
+}
+
 let workspaceResizeStartX = 0
 let workspaceResizeStartWidth = 360
 let workspaceInnerResizeStartX = 0
@@ -1010,6 +1048,8 @@ const isResizingWorkspaceInner = ref(false)
 const lastExpandedWorkspaceWidth = ref(672)
 
 const USER_PREF_UPDATED_EVENT_NAME = 'dha-user-pref-updated'
+/** 与 MainView persistScenarioPresets 成功时派发一致，用于刷新快捷场景列表（工作区组件可能未卸载） */
+const SESSION_PRESETS_UPDATED_EVENT_NAME = 'dha-session-presets-updated'
 const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
 const WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_workspace_open_v1'
 const TOC_WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_toc_workspace_open_v1'
@@ -1393,14 +1433,46 @@ function wrapToolCallPreBlocks(html: string) {
   return html
 }
 
+/** 修正模型在 Markdown 里输出的畸形下载 URL（末尾多引号、逗号、%22 等），避免 path 无法解析 */
+function sanitizeWorkspaceDownloadUrl(raw: string): string {
+  let s = (raw || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim()
+  if (!s.includes('files/download') || !s.includes('path=')) return s
+  try {
+    const u = s.startsWith('http') ? new URL(s) : new URL(s, window.location.origin)
+    let p = u.searchParams.get('path')
+    if (p == null || p === '') return s
+    p = p
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/,\s*$/g, '')
+      .replace(/%22[,;]*$/g, '')
+      .trim()
+    u.searchParams.set('path', p)
+    return u.pathname + u.search + u.hash
+  } catch {
+    return s
+  }
+}
+
+/** 对渲染后的 HTML 中所有工作区下载链接统一清洗（含 Markdown 未规范成标准 img 属性的情况） */
+function sanitizeDownloadUrlsInRenderedHtml(html: string): string {
+  if (!html || !html.includes('files/download')) return html
+  return html.replace(/\/api\/workspaces\/[^"'>\s]+\/files\/download\?[^"'>\s]+/gi, (m) =>
+    sanitizeWorkspaceDownloadUrl(m)
+  )
+}
+
 function rewriteDownloadImagesForAuth(html: string): string {
   if (!html) return html
   // 把需要鉴权的图片下载 URL 改成延迟 fetch+blob 的方式：
   // - 将 img[src="/.../files/download?path=..."] 变为 img[data-dha-auth-src="..."] + src=""
   // - 随后在 hydrateAuthImages() 里用 fetch 携带 Authorization header 拿 blob 再设置 src
   return html.replace(
-    /(<img\b[^>]*?)\s+src="([^"]*\/files\/download\?path=[^"]+)"([^>]*?>)/g,
-    '$1 data-dha-auth-src="$2" src=""$3'
+    /(<img\b[^>]*?)\s+src="([^"]*\/files\/download\?path=[^"]+)"([^>]*?>)/gi,
+    (_m, p1, src, p3) => {
+      const clean = sanitizeWorkspaceDownloadUrl(src)
+      const esc = clean.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      return `${p1} data-dha-auth-src="${esc}" src=""${p3}`
+    }
   )
 }
 
@@ -1422,7 +1494,7 @@ async function hydrateAuthImages() {
   const imgs = Array.from(container.querySelectorAll<HTMLImageElement>('img[data-dha-auth-src]'))
   for (const img of imgs) {
     if (img.dataset.dhaHydrated === '1') continue
-    const rawSrc = img.getAttribute('data-dha-auth-src')
+    const rawSrc = sanitizeWorkspaceDownloadUrl(img.getAttribute('data-dha-auth-src') || '')
     if (!rawSrc) continue
 
     img.dataset.dhaHydrated = '1'
@@ -1434,8 +1506,8 @@ async function hydrateAuthImages() {
       authImageObjectUrls.push(objUrl)
       img.src = objUrl
     } catch {
-      // 回退：尝试直接用原 src（如果资源本身允许浏览器直接加载，会显示；否则至少不会保持空白）
-      img.src = rawSrc
+      // 不要用裸 /api/... 作为 img.src：浏览器请求不带 Authorization，会 401
+      img.alt = `${img.alt || '图片'}（加载失败）`
     }
   }
 }
@@ -1447,6 +1519,7 @@ function renderMarkdown(text: string) {
     // 直接交给 markdown-it，避免单行被强制换行成多行
     let html = mdRef.value.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
+    html = sanitizeDownloadUrlsInRenderedHtml(html)
     html = wrapToolCallPreBlocks(html)
     html = rewriteDownloadImagesForAuth(html)
     return html
@@ -1715,6 +1788,10 @@ function onUserPrefUpdated(ev: Event) {
   }
 }
 
+function onSessionPresetsUpdated() {
+  loadShortcutPresets()
+}
+
 function onHostDisplayNameUpdated() {
   loadHostDisplayName()
 }
@@ -1722,6 +1799,7 @@ function onHostDisplayNameUpdated() {
 onMounted(() => {
   document.addEventListener('click', closeMembersDropdown)
   window.addEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
+  window.addEventListener(SESSION_PRESETS_UPDATED_EVENT_NAME, onSessionPresetsUpdated)
   window.addEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
   import('markdown-it').then((M) => {
     const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
@@ -1734,6 +1812,7 @@ onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
   unbindSessionMetaOutsideClick()
   window.removeEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
+  window.removeEventListener(SESSION_PRESETS_UPDATED_EVENT_NAME, onSessionPresetsUpdated)
   window.removeEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
   stopTocScrollSpy()
   for (const u of authImageObjectUrls) {
@@ -1744,6 +1823,7 @@ onUnmounted(() => {
     }
   }
   authImageObjectUrls.length = 0
+  revokeGroupWorkspacePreviewBlob()
 })
 
 const groupMemberNames = computed(() => {
@@ -2629,6 +2709,8 @@ watch(
     groupSuggestedNextSpeaker.value = null
     groupSuggestedAddDhaIds.value = []
     groupNextSpeakerOverride.value = ''
+    clearGroupWorkspacePreviewState()
+    groupWorkspacePath.value = ''
   }
 )
 
@@ -2637,7 +2719,7 @@ watch(
   ([show, id]) => {
     if (show && id) {
       groupWorkspacePath.value = ''
-      groupWorkspacePreviewPath.value = ''
+      clearGroupWorkspacePreviewState()
       loadGroupWorkspace()
     }
   }
@@ -2684,7 +2766,7 @@ function goGroupWorkspaceUp() {
   if (!groupWorkspacePath.value) return
   const cur = groupWorkspacePath.value.replace(/\/+$/, '')
   const parent = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''
-  groupWorkspacePreviewPath.value = ''
+  clearGroupWorkspacePreviewState()
   groupWorkspacePath.value = parent
   loadGroupWorkspace()
 }
@@ -2782,10 +2864,7 @@ async function renameGroupWorkspaceEntry(e: { name: string; path: string; is_dir
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok') {
       if (groupWorkspacePreviewPath.value === e.path) {
-        groupWorkspacePreviewPath.value = ''
-        groupWorkspacePreviewName.value = ''
-        groupWorkspacePreviewContent.value = ''
-        groupWorkspacePreviewImageUrl.value = ''
+        clearGroupWorkspacePreviewState()
       }
       await loadGroupWorkspace()
     } else {
@@ -2811,10 +2890,7 @@ async function deleteGroupWorkspaceEntry(e: { name: string; path: string; is_dir
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok') {
       if (groupWorkspacePreviewPath.value === e.path) {
-        groupWorkspacePreviewPath.value = ''
-        groupWorkspacePreviewName.value = ''
-        groupWorkspacePreviewContent.value = ''
-        groupWorkspacePreviewImageUrl.value = ''
+        clearGroupWorkspacePreviewState()
       }
       await loadGroupWorkspace()
     } else {
@@ -2875,13 +2951,28 @@ async function previewWorkspaceFile(e: { name: string; path: string }) {
     groupWorkspacePreviewCollapsed.value = false
     groupWorkspaceWidth.value = lastExpandedWorkspaceWidth.value || 672
   }
+  revokeGroupWorkspacePreviewBlob()
   groupWorkspacePreviewPath.value = e.path
   groupWorkspacePreviewName.value = e.name
   groupWorkspacePreviewContent.value = ''
   groupWorkspacePreviewImageUrl.value = ''
   groupWorkspacePreviewEditing.value = false
   if (isImageFile(e.name)) {
-    groupWorkspacePreviewImageUrl.value = groupWorkspaceDownloadUrl(e.path)
+    groupWorkspacePreviewLoading.value = true
+    try {
+      const url = groupWorkspaceDownloadUrl(e.path)
+      const r = await fetch(url)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const blob = await r.blob()
+      const objUrl = URL.createObjectURL(blob)
+      groupWorkspacePreviewObjectUrl = objUrl
+      groupWorkspacePreviewImageUrl.value = objUrl
+    } catch {
+      groupWorkspacePreviewContent.value = '[ 图片预览失败，请使用上方「下载」查看 ]'
+      groupWorkspacePreviewImageUrl.value = ''
+    } finally {
+      groupWorkspacePreviewLoading.value = false
+    }
     return
   }
   if (!isTextFile(e.name)) {
@@ -3074,9 +3165,11 @@ function scrollGroupToBottom() {
 
 type GroupMessage = GroupDetail['messages'][number] & { _streaming?: boolean }
 
+/** 成员加入/移出等一行系统提示（不占头像栏、居中灰条） */
 function isMemberJoinedMessage(msg: GroupMessage): boolean {
   const ext = msg as GroupMessage & MsgExt
-  return msg.role === 'host' && ext.event_type === 'member_joined'
+  const et = ext.event_type
+  return msg.role === 'host' && (et === 'member_joined' || et === 'member_left')
 }
 
 /** 当前处于流式占位状态的“正在输出”的专家（最后一条 _streaming 置为 true 的 assistant） */

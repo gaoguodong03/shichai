@@ -576,7 +576,7 @@
       <!-- 资源中心：智能体 / 技能 / 工具 -->
       <template v-if="currentModule === 'resource'">
         <template v-if="resourceSubModule === 'scenario'">
-          <div class="h-full overflow-y-auto p-4">
+          <div class="h-full overflow-y-auto themed-scrollbar p-4">
             <div v-if="selectedScenarioPreset" class="max-w-5xl w-full mx-auto">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-primary mb-1">
@@ -1140,6 +1140,8 @@ async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
   if (j?.status !== 'ok') {
     throw new Error((j as { detail?: string }).detail || '保存场景失败')
   }
+  // 工作区侧栏仍挂载（v-show），需通知其重新拉取场景预设，否则快捷场景列表与专家名陈旧
+  window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
 }
 
 async function saveScenarioPreset() {
