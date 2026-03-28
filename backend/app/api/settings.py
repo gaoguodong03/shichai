@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -13,9 +14,10 @@ import uuid
 import yaml
 import zipfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Set
 
@@ -1177,10 +1179,95 @@ async def get_skills():
     }
 
 def _slugify(name: str) -> str:
-    """生成可作目录名的 slug"""
-    s = re.sub(r"[^\w\s-]", "", name)
+    """生成可作目录名的 slug：仅允许 ASCII 字母数字与连字符，避免中文/特殊字符目录名导致脚本路径、沙箱、工具名异常。
+
+    展示名仍可在 SKILL.md frontmatter.name 中使用中文；目录名（skill_id）与之一一对应但为稳定 ASCII。
+    """
+    raw = (name or "").strip()
+    # 仅保留 ASCII 的「词」字符与空白、连字符（显式 ASCII，避免 \\w 匹配到中文）
+    s = re.sub(r"[^A-Za-z0-9_\s-]", "", raw, flags=re.ASCII)
     s = re.sub(r"[-\s]+", "-", s).strip("-").lower()
-    return s or "skill"
+    if s:
+        return s
+    # 纯中文/无可用拉丁字符：用哈希保证唯一、路径纯 ASCII
+    h = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+    return f"skill-{h}"
+
+
+def _replace_skill_id_in_user_configs(old_id: str, new_id: str) -> None:
+    """技能目录重命名后，同步当前用户 dha_instances.json 里各专家的 skill_ids，避免仍指向旧目录、触发空壳 scripts/。"""
+    if not old_id or not new_id or old_id == new_id:
+        return
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return
+    path = (user_ctx.config_dir / "dha_instances.json").resolve()
+    if not path.is_file():
+        return
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(raw, list):
+        return
+    changed = False
+    for inst in raw:
+        if not isinstance(inst, dict):
+            continue
+        sids = inst.get("skill_ids")
+        if not isinstance(sids, list):
+            continue
+        orig = [str(x).strip() for x in sids if str(x).strip()]
+        out: List[str] = []
+        seen: Set[str] = set()
+        for sid in orig:
+            sid = new_id if sid == old_id else sid
+            if sid not in seen:
+                seen.add(sid)
+                out.append(sid)
+        if out != orig:
+            inst["skill_ids"] = out
+            changed = True
+    if changed:
+        try:
+            path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+
+def _remove_skill_id_from_user_configs(skill_id: str) -> None:
+    """删除技能后，从当前用户 dha_instances.json 各专家的 skill_ids 中移除该 id。"""
+    sid = (skill_id or "").strip()
+    if not sid:
+        return
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return
+    path = (user_ctx.config_dir / "dha_instances.json").resolve()
+    if not path.is_file():
+        return
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(raw, list):
+        return
+    changed = False
+    for inst in raw:
+        if not isinstance(inst, dict):
+            continue
+        sids = inst.get("skill_ids")
+        if not isinstance(sids, list):
+            continue
+        out = [str(x).strip() for x in sids if str(x).strip() and str(x).strip() != sid]
+        if len(out) != len(sids):
+            inst["skill_ids"] = out
+            changed = True
+    if changed:
+        try:
+            path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
 
 
 def _next_available_skill_id(base: Path, seed: str) -> str:
@@ -1373,6 +1460,55 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
             shutil.rmtree(skill_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"ZIP 导入失败：{e}")
 
+def _content_disposition_attachment(filename: str) -> str:
+    """下载文件名：HTTP 头须为 latin-1；含中文等非 ASCII 时用 RFC 5987 的 filename*。"""
+    try:
+        filename.encode("latin-1")
+        safe = filename.replace("\\", "\\\\").replace('"', '\\"')
+        return f'attachment; filename="{safe}"'
+    except UnicodeEncodeError:
+        return (
+            'attachment; filename="skill-export.zip"; '
+            f"filename*=UTF-8''{quote(filename, safe='')}"
+        )
+
+
+def _build_skill_zip_bytes(skill_dir: Path) -> bytes:
+    """将技能目录打包为 ZIP（根目录含 SKILL.md，与 import-zip 约定一致）；跳过 .git。"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for fp in sorted(skill_dir.rglob("*")):
+            if fp.is_dir():
+                continue
+            try:
+                rel = fp.relative_to(skill_dir)
+            except ValueError:
+                continue
+            if ".git" in rel.parts:
+                continue
+            arcname = "/".join(rel.parts)
+            zf.write(fp, arcname)
+    return buf.getvalue()
+
+
+@router.get("/settings/skills/{skill_id}/export-zip")
+async def export_skill_zip(skill_id: str):
+    """导出当前技能目录为 ZIP，可用于备份或再次 import-zip 导入。"""
+    base = _get_skills_dir().resolve()
+    skill_dir = (base / skill_id).resolve()
+    if not skill_dir.is_dir() or skill_dir.parent != base:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    if not (skill_dir / "SKILL.md").is_file():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    raw = _build_skill_zip_bytes(skill_dir)
+    filename = f"{skill_id}.zip"
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition_attachment(filename)},
+    )
+
+
 def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:
     """读取 SKILL.md，返回 (frontmatter_dict, body)"""
     path = skill_dir / "SKILL.md"
@@ -1438,6 +1574,7 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
                 shutil.move(str(skill_dir), str(target_dir))
                 skill_dir = target_dir
                 new_id = desired_seed
+                _replace_skill_id_in_user_configs(skill_id, new_id)
     _refresh_skills_loader()
     return {"status": "ok", "data": {"id": new_id, "updated": True, "renamed": new_id != skill_id, "old_id": skill_id}}
 
@@ -1449,6 +1586,7 @@ async def delete_skill(skill_id: str):
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
     shutil.rmtree(skill_dir)
+    _remove_skill_id_from_user_configs(skill_id)
     _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "deleted": True}}
 

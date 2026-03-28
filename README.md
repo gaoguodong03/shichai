@@ -9,3 +9,5 @@
 - 前端：见 [frontend/README.md](frontend/README.md)
 - 后端：见 [backend/README.md](backend/README.md)
 - 架构与部署要点：见 [docs/书童四九.md](docs/书童四九.md)
+
+crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.03.28

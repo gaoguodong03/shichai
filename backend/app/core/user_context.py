@@ -117,3 +117,17 @@ def get_user_context_for(username: str) -> UserContext:
     """显式获取某个用户名对应的 UserContext，不依赖请求上下文。"""
     return _build_user_context(username)
 
+
+def ensure_empty_session_presets(username: str) -> None:
+    """新账号不预置会话快捷场景（与前端「场景配置」同源，写入空列表）。"""
+    name = (username or "").strip()
+    if not name:
+        return
+    ctx = get_user_context_for(name)
+    path = (ctx.config_dir / "session_presets.json").resolve()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[]", encoding="utf-8")
+    except Exception:
+        pass
+

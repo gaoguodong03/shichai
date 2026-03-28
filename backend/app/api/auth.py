@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
 from app.core.auth_db import create_user, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
-from app.core.user_context import users_data_root
+from app.core.user_context import ensure_empty_session_presets, users_data_root
 
 router = APIRouter(tags=["auth"])
 PHONE_REGEX = re.compile(r"^1[3-9]\d{9}$")
@@ -184,6 +184,7 @@ async def register(body: RegisterBody):
 
     created_at = datetime.now(timezone.utc).isoformat()
     profile = ensure_user_profile(name, created_at=created_at)
+    ensure_empty_session_presets(name)
 
     token = create_access_token(name)
     return {

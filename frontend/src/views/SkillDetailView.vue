@@ -4,19 +4,29 @@
     <template v-else-if="skill">
       <!-- Tab 导航 -->
       <div class="border-b border-border px-4 flex-shrink-0">
-        <div class="mx-auto w-full max-w-4xl flex">
+        <div class="mx-auto w-full max-w-4xl flex items-center justify-between gap-3">
+          <div class="flex flex-wrap min-w-0">
+            <button
+              v-for="t in tabs"
+              :key="t.id"
+              @click="activeTab = t.id"
+              :class="[
+                'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
+                activeTab === t.id
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-muted hover:text-primary'
+              ]"
+            >
+              {{ t.label }}
+            </button>
+          </div>
           <button
-            v-for="t in tabs"
-            :key="t.id"
-            @click="activeTab = t.id"
-            :class="[
-              'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-              activeTab === t.id
-                ? 'border-accent text-accent'
-                : 'border-transparent text-muted hover:text-primary'
-            ]"
+            type="button"
+            class="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="exporting"
+            @click="exportZip"
           >
-            {{ t.label }}
+            {{ exporting ? '导出中…' : '导出 ZIP' }}
           </button>
         </div>
       </div>
@@ -196,13 +206,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
 
 const props = defineProps<{ skillId: string }>()
-const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
+const emit = defineEmits<{ (e: 'updated', newSkillId?: string): void; (e: 'deleted'): void }>()
 
 const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'main', label: 'SKILL.md' },
@@ -240,6 +250,7 @@ const selectedPartFile = ref<{ type: PartType; path: string } | null>(null)
 const partContent = ref('')
 const partContentLoading = ref(false)
 const partSaving = ref(false)
+const exporting = ref(false)
 
 const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
@@ -270,6 +281,34 @@ async function loadMcpServers() {
     }
   } catch {
     mcpServers.value = []
+  }
+}
+
+async function exportZip() {
+  if (!props.skillId || !skill.value) return
+  exporting.value = true
+  try {
+    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/export-zip`)
+    if (!r.ok) {
+      let msg = '导出失败'
+      try {
+        const j = (await r.json()) as { detail?: string }
+        if (j.detail) msg = j.detail
+      } catch {
+        /* ignore */
+      }
+      alert(msg)
+      return
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${props.skillId}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -387,7 +426,12 @@ async function save() {
     })
     const j = await r.json()
     if (j.status === 'ok') {
-      emit('updated')
+      const newId =
+        j.data && typeof j.data === 'object' && typeof (j.data as { id?: string }).id === 'string'
+          ? (j.data as { id: string }).id
+          : undefined
+      emit('updated', newId)
+      await nextTick()
       await load()
     } else {
       alert(j.detail || '保存失败')

@@ -177,7 +177,7 @@
 
 /* 多套配色方案（在设置 → 配色 中切换） */
 .theme-warm {
-  --color-page: #faf8f5;
+  --color-page: rgb(250, 249, 245);
   --color-sidebar: #f5f0e8;
   --color-sidebar-list: #ebe4d9;
   --color-section-header: #fffefb;

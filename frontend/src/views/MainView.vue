@@ -676,7 +676,16 @@
           />
         </template>
         <template v-else-if="resourceSubModule === 'skill' && selectedId">
-          <SkillDetailView :skill-id="selectedId" @updated="fetchSkills" @deleted="selectedId = null; fetchSkills()" />
+          <SkillDetailView
+            :skill-id="selectedId"
+            @updated="
+              (newId?: string) => {
+                fetchSkills()
+                if (newId) selectedId = newId
+              }
+            "
+            @deleted="selectedId = null; fetchSkills()"
+          />
         </template>
         <template v-else-if="resourceSubModule === 'skill'">
           <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">

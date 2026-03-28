@@ -322,12 +322,6 @@
                             <line x1="8" y1="23" x2="16" y2="23"/>
                           </svg>
                         </span>
-                        <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M5 12h14" />
-                            <path d="M13 7l6 5-6 5" />
-                          </svg>
-                        </span>
                         <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
                         <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
@@ -366,12 +360,6 @@
                               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                               <line x1="12" y1="19" x2="12" y2="23"/>
                               <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
-                          </span>
-                          <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M5 12h14" />
-                              <path d="M13 7l6 5-6 5" />
                             </svg>
                           </span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
@@ -413,12 +401,6 @@
                               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                               <line x1="12" y1="19" x2="12" y2="23"/>
                               <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
-                          </span>
-                          <span v-else-if="opt.type === 'role'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-next-avatar" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M5 12h14" />
-                              <path d="M13 7l6 5-6 5" />
                             </svg>
                           </span>
                           <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
@@ -1899,14 +1881,8 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
   return out
 }
 function defaultShortcutPresets(): ShortcutPreset[] {
-  const all = props.dhaInstances || []
-  const byNameIncludes = (q: string) => all.filter((d) => (d.name || d.agent_id).includes(q)).map((d) => d.agent_id)
-  const research = Array.from(new Set([...byNameIncludes('调研'), ...byNameIncludes('内容核实')])).filter(Boolean)
-  const blog = Array.from(new Set([...byNameIncludes('爬取'), ...byNameIncludes('博客'), ...byNameIncludes('图片')])).filter(Boolean)
-  return [
-    { id: 'research', name: '调研', agent_ids: research.length ? research : [] },
-    { id: 'blog', name: '博客', agent_ids: blog.length ? blog : [] },
-  ].filter((p) => p.agent_ids.length > 0)
+  // 新账号不再根据专家名自动注入「调研/博客」等场景，避免首屏即写入服务端 session_presets
+  return []
 }
 async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
   try {
@@ -2519,12 +2495,11 @@ const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const atMentionOptions = computed(() => {
   const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME }
-  const next = { type: 'role' as const, id: 'next', label: '下一位' }
   const d = groupDetail.value
   const ids = d?.agent_ids || []
   const map = d?.agent_map || {}
   const experts = ids.map((id) => ({ type: 'dha' as const, id, label: map[id]?.name || id }))
-  const list = [host, next, ...experts]
+  const list = [host, ...experts]
   const q = (atFilter.value || '').trim().toLowerCase()
   if (!q) return list
   return list.filter((o) => (o.label || '').toLowerCase().includes(q) || (o.id || '').toLowerCase().includes(q))
@@ -2560,13 +2535,9 @@ function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
   openAtDropdown(source, value, lastAt, end)
 }
 
-function selectMention(opt: { type: 'host' | 'dha' | 'role'; id: string; label: string }) {
+function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string }) {
   const insertText =
-    opt.type === 'host'
-      ? `@${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME} `
-      : opt.type === 'role'
-        ? '@下一位 '
-        : `@${opt.label} `
+    opt.type === 'host' ? `@${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME} ` : `@${opt.label} `
   if (atSource.value === 'goal') {
     const raw = (groupDiscussionGoal.value ?? '') as string
     const before = raw.slice(0, atInsertStart.value)

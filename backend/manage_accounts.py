@@ -2,7 +2,6 @@
 """
 命令行管理账户：新增 / 删除（与 HTTP /api/auth 使用同一套 SQLite + users.json）。
 
-用法（在 backend 目录下）:
   python manage_accounts.py add --username 13800138000 --password 'your-password'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -26,7 +25,7 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 from app.core.auth_db import create_user, delete_user, user_exists  # noqa: E402
-from app.core.user_context import users_data_root  # noqa: E402
+from app.core.user_context import ensure_empty_session_presets, users_data_root  # noqa: E402
 from app.core.users_store import ensure_user_profile, remove_user_profile  # noqa: E402
 
 PHONE_REGEX = re.compile(r"^1[3-9]\d{9}$")
@@ -61,6 +60,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         return 1
     created_at = datetime.now(timezone.utc).isoformat()
     ensure_user_profile(name, created_at=created_at)
+    ensure_empty_session_presets(name)
     print(f"已创建账户: {name}")
     return 0
 

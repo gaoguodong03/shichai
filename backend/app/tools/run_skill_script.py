@@ -30,6 +30,18 @@ def _get_skills_dir() -> Path:
     return user_ctx.skills_dir.resolve()
 
 
+def skill_has_skill_md(skill_id: str) -> bool:
+    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 DHA 里陈旧 skill_id 指向空壳目录。"""
+    sid = (skill_id or "").strip()
+    if not sid:
+        return False
+    try:
+        home = (_get_skills_dir() / sid).resolve()
+        return (home / "SKILL.md").is_file()
+    except Exception:
+        return False
+
+
 def _get_workspace_root(workspace_id: str) -> Path:
     return get_workspace_root_path(workspace_id).resolve()
 
@@ -214,8 +226,10 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
     """
     skills_dir = _get_skills_dir()
-    script_root = (skills_dir / skill_id / "scripts").resolve()
-    if not script_root.exists():
+    skill_home = (skills_dir / skill_id).resolve()
+    script_root = (skill_home / "scripts").resolve()
+    # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 DHA）生成空壳目录
+    if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
     @tool
@@ -290,10 +304,19 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         script_path = script_path.strip().lstrip("/")
         full = (script_root / script_path).resolve()
         if not str(full).startswith(str(script_root)) or not full.is_file():
+            hint = ""
+            if not available_scripts:
+                hint = (
+                    f"当前绑定 skill_id={skill_id!r}，脚本目录为 {str(script_root)}。"
+                    "若专家配置里仍有已改名/已删除的旧 skill_id，请只保留实际存在的目录名，"
+                    f"脚本应放在该目录的 scripts/ 下。"
+                )
             return _json_result(
                 ok=False,
                 code="script_not_found",
-                message=f"脚本不存在或不在允许目录内: {script_path}",
+                message=f"脚本不存在或不在允许目录内: {script_path}" + (f" {hint}" if hint else ""),
+                skill_id=skill_id,
+                script_root=str(script_root),
                 available_scripts=available_scripts,
             )
         if full.suffix.lower() not in _ALLOWED_SCRIPT_SUFFIX:

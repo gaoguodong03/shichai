@@ -11,7 +11,7 @@ from app.api.settings import get_mcp_servers_for_skill
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.tools.call_api import call_api
-from app.tools.run_skill_script import create_run_skill_script_tool
+from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 
 _TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
@@ -115,8 +115,12 @@ async def build_tools_for_group_chat(
     tools = tools + [t for t in file_tools if getattr(t, "name", "") not in tool_names] + [call_api]
     # 为 DHA 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
     for skill_id in (dha.get("skill_ids") or []):
-        run_tool = create_run_skill_script_tool(skill_id, workspace_id, "workspace_all")
-        run_tool.name = build_skill_script_tool_name(skill_id)
+        sid = str(skill_id or "").strip()
+        if not sid or not skill_has_skill_md(sid):
+            # 跳过磁盘上不存在或仅有空壳的 skill_id（常见于改名后未同步专家配置）
+            continue
+        run_tool = create_run_skill_script_tool(sid, workspace_id, "workspace_all")
+        run_tool.name = build_skill_script_tool_name(sid)
         if run_tool.name not in tool_names:
             tools.append(run_tool)
             tool_names.add(run_tool.name)

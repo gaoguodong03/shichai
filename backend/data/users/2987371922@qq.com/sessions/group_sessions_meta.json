@@ -232,5 +232,31 @@
     "pending_phase": "awaiting_user",
     "pending_required_user_fields": [],
     "pending_handoff_reason": "expert_need_user_input"
+  },
+  "group-8398d6173961": {
+    "title": "爬取天池比赛数据",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-440b26f8",
+      "agent-195b8c3a",
+      "agent-web-fetch"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-28T10:55:32.172588+00:00",
+    "updated_at": "2026-03-28T10:55:48.089875+00:00"
+  },
+  "group-38675d7eaa55": {
+    "title": "爬取比赛信息的方法",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-28T12:09:18.825496+00:00",
+    "updated_at": "2026-03-28T12:09:41.810726+00:00"
   }
 }
