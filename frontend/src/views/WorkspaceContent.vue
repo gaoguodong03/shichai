@@ -284,6 +284,7 @@
                     :key="f.path"
                     type="button"
                     class="group-chat-file-tag"
+                    :title="f.path"
                     @click="removeAttachedFile(f.path)"
                   >
                     <span>【文件引用：{{ f.name }}】</span>
@@ -578,11 +579,29 @@
                         <button type="button" class="group-chat-modal-close" @click="showInsertFileModal = false">×</button>
                       </div>
                       <div class="group-chat-modal-body">
-                        <p class="group-chat-members-dropdown-title">选择工作区文件插入到提示词</p>
                         <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
+                        <div class="group-chat-insert-file-nav">
+                          <button
+                            v-if="insertFileBrowsePath"
+                            type="button"
+                            class="group-chat-insert-file-up"
+                            @click="insertFileGoUp"
+                          >
+                            上级
+                          </button>
+                          <span class="group-chat-insert-file-path truncate" :title="insertFileBrowsePath || '根目录'">{{
+                            insertFileBrowsePath || '根目录'
+                          }}</span>
+                        </div>
                         <ul v-if="insertFileEntries.length" class="group-chat-members-list">
-                          <li v-for="e in insertFileEntries" :key="e.path" class="group-chat-members-item group-chat-members-item-clickable" @click="insertFileContent(e)">
-                            <span class="truncate">{{ e.name }}</span>
+                          <li
+                            v-for="e in insertFileEntries"
+                            :key="e.path"
+                            class="group-chat-members-item"
+                            :class="e.is_dir ? 'group-chat-members-item-dir' : 'group-chat-members-item-clickable'"
+                            @click="e.is_dir ? insertFileEnterDir(e) : insertFileContent(e)"
+                          >
+                            <span class="truncate">{{ e.is_dir ? `${e.name}/` : e.name }}</span>
                           </li>
                         </ul>
                         <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
@@ -1773,8 +1792,23 @@ async function onInsertLocalFile(ev: Event) {
 }
 
 async function openInsertFileModal() {
+  insertFileBrowsePath.value = ''
   showInsertFileModal.value = true
   await loadInsertFileEntries()
+}
+
+function insertFileEnterDir(e: { name: string; path: string; is_dir: boolean }) {
+  if (!e.is_dir) return
+  insertFileBrowsePath.value = insertFileBrowsePath.value ? `${insertFileBrowsePath.value}/${e.name}` : e.name
+  loadInsertFileEntries()
+}
+
+function insertFileGoUp() {
+  if (!insertFileBrowsePath.value) return
+  const cur = insertFileBrowsePath.value.replace(/\/+$/, '')
+  const parent = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : ''
+  insertFileBrowsePath.value = parent
+  loadInsertFileEntries()
 }
 
 function onUserPrefUpdated(ev: Event) {
@@ -2099,6 +2133,7 @@ const shortcutExpertSearch = ref('')
 const showInsertFile = ref(false)
 const showInsertFileModal = ref(false)
 const insertFileRef = ref<HTMLElement | null>(null)
+const insertFileBrowsePath = ref('')
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
 const attachedFiles = ref<{ name: string; path: string }[]>([])
@@ -2992,34 +3027,6 @@ async function previewWorkspaceFile(e: { name: string; path: string }) {
   }
 }
 
-async function listWorkspaceTextEntries(workspaceId: string): Promise<Array<{ name: string; path: string; is_dir: boolean }>> {
-  const queue: string[] = ['']
-  const visited = new Set<string>()
-  const collected: Array<{ name: string; path: string; is_dir: boolean }> = []
-
-  while (queue.length) {
-    const current = queue.shift() || ''
-    if (visited.has(current)) continue
-    visited.add(current)
-    const qs = current ? `?path=${encodeURIComponent(current)}` : ''
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/files${qs}`)
-    const j = await r.json().catch(() => null)
-    const entries = (j?.status === 'ok' && Array.isArray(j?.data?.entries)) ? j.data.entries : []
-    for (const e of entries as { name: string; path: string; is_dir?: boolean }[]) {
-      if (e.is_dir) {
-        queue.push(e.path)
-        continue
-      }
-      if (isTextFile(e.name)) {
-        collected.push({ name: e.name, path: e.path, is_dir: !!e.is_dir })
-      }
-    }
-  }
-
-  collected.sort((a, b) => a.path.localeCompare(b.path))
-  return collected
-}
-
 async function loadInsertFileEntries() {
   const id = groupDetail.value?.id
   if (!id) {
@@ -3029,7 +3036,22 @@ async function loadInsertFileEntries() {
   insertFileLoading.value = true
   insertFileEntries.value = []
   try {
-    insertFileEntries.value = await listWorkspaceTextEntries(id)
+    const path = insertFileBrowsePath.value ? `?path=${encodeURIComponent(insertFileBrowsePath.value)}` : ''
+    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${path}`)
+    const j = await r.json().catch(() => null)
+    const raw = (j?.status === 'ok' && Array.isArray(j?.data?.entries)) ? j.data.entries : []
+    const mapped = (raw as { name: string; path: string; is_dir?: boolean }[])
+      .map((e) => ({
+        name: e.name,
+        path: e.path,
+        is_dir: !!e.is_dir,
+      }))
+      .filter((e) => e.is_dir || isTextFile(e.name))
+    mapped.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    insertFileEntries.value = mapped
   } finally {
     insertFileLoading.value = false
   }
@@ -4759,6 +4781,44 @@ defineExpose({ refresh: loadGroupDetail })
 .group-chat-modal-body {
   padding: 14px 16px 16px;
   overflow: auto;
+}
+.group-chat-insert-file-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.375rem;
+  min-height: 1.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.group-chat-insert-file-up {
+  flex-shrink: 0;
+  padding: 0.125rem 0.45rem;
+  font-size: 0.6875rem;
+  color: var(--color-accent);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.group-chat-insert-file-up:hover {
+  background: var(--color-list-hover);
+}
+.group-chat-insert-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.group-chat-members-item-dir {
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.group-chat-members-item-dir:hover {
+  color: var(--color-text);
+  background: var(--color-list-hover);
+  border-radius: 6px;
+  margin: 0 -0.25rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
 }
 .group-chat-suggested-invite-bar {
   display: flex;

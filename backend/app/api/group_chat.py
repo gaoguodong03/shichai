@@ -1833,7 +1833,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
     user_message = (request.message or "").strip()
     custom_prompt = (request.custom_prompt or "").strip()
-    if is_feature_enabled("FILE_REF_SERVER_RESOLVE_ENABLED", default=True):
+    # 默认不注入正文：历史里只保留【文件引用：显示名｜工作区内相对路径】，专家用 file-reader_read_file 按竖线后的路径读取（支持多级目录）。
+    # 需要服务端把文件内容拼进消息时再设置环境变量 FILE_REF_SERVER_RESOLVE_ENABLED=true。
+    if is_feature_enabled("FILE_REF_SERVER_RESOLVE_ENABLED", default=False):
         user_message = resolve_file_refs_in_text(user_message, group_session_id)
         custom_prompt = resolve_file_refs_in_text(custom_prompt, group_session_id)
 

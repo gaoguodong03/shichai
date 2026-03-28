@@ -85,9 +85,9 @@ def list_directory(path: str = "") -> str:
 
 @mcp.tool()
 def read_file(path: str) -> str:
-    """读取纯文本文件（txt、md、json、yaml 等）。path 为相对路径（如 report.txt 或 workspaces/{会话ID}/notes.md）。
+    """读取纯文本文件（txt、md、json、yaml 等）。path 为相对路径（如 report.txt 或带子目录的 output/pages/xxx/text.md）。
 
-    当用户消息中出现【文件引用：path】时，若文件是文本格式，使用此工具；若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
+    当用户消息中出现【文件引用：…】时：若为【文件引用：显示名｜路径】，以竖线后的路径为准；若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
     p = _resolve_path(path)
     if not p:
         return "错误：无效路径或路径超出允许范围。"

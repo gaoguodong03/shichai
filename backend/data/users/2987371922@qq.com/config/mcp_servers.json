@@ -48,7 +48,7 @@
   {
     "id": "file-reader",
     "name": "文件读取与写入",
-    "enabled": true,
+    "enabled": false,
     "transport": {
       "type": "stdio",
       "command": "python",
