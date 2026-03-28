@@ -9,6 +9,7 @@ import shutil
 import time
 import uuid
 import difflib
+from urllib.parse import parse_qs, unquote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -736,11 +737,29 @@ def _append_workspace_image_preview_markdown(content: str, tool_raw_results: Lis
             continue
         seen.add(u)
         unique_urls.append(u)
+    base_text = content or ""
+    # 模型正文里常会复述脚本的「下载链接」或自写「点击下载」；避免再叠一段相同 URL。
+    filtered: List[str] = []
+    for u in unique_urls:
+        if u in base_text:
+            continue
+        try:
+            q = parse_qs(urlparse(u).query)
+            paths = q.get("path") or []
+            if paths and unquote(paths[0]) in base_text:
+                continue
+        except Exception:
+            pass
+        filtered.append(u)
+    unique_urls = filtered
+    if not unique_urls:
+        return content
     blocks = []
     for i, u in enumerate(unique_urls, start=1):
-        blocks.append(f"![生成图片{i}]({u})\n\n[点击下载图片{i}]({u})")
+        # 仅追加 Markdown 图片行；下载文案由模型/脚本输出即可，避免与「点击下载图片」重复堆叠
+        blocks.append(f"![生成图片{i}]({u})")
     extra = "\n\n".join(blocks)
-    if extra in (content or ""):
+    if extra in base_text:
         return content
     base = (content or "").rstrip()
     return f"{base}\n\n---\n\n{extra}" if base else extra

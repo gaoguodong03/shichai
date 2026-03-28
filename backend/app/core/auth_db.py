@@ -206,6 +206,18 @@ def update_password(*, username: str, new_password: str) -> None:
         conn.commit()
 
 
+def delete_user(*, username: str) -> bool:
+    """从 SQLite 用户表删除账号。返回是否实际删除了行。"""
+    init_auth_db()
+    target = (username or "").strip()
+    if not target:
+        raise ValueError("username is required")
+    with _get_sqlite_conn(get_auth_db_path()) as conn:
+        cur = conn.execute("DELETE FROM users WHERE username = ?", (target,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
 def rename_user(*, old_username: str, new_username: str) -> None:
     """重命名账号（更改 users 主键 username）。"""
     init_auth_db()

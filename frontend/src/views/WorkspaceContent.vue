@@ -2697,6 +2697,8 @@ watch(
   () => groupDetail.value?.messages,
   (messages) => {
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
+    // 从历史/刷新加载后需重新水合受保护下载地址的图片（仅流式结束回调不够）
+    nextTick(() => scheduleHydrateAuthImages())
     // 不再从历史首条用户消息回填输入框，避免发送后又被自动填充回来
     // 0 成员时：若最后一条主持人消息没有 suggested_add_agent_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
     const dhaIds = groupDetail.value?.agent_ids ?? []

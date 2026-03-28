@@ -66,6 +66,19 @@ def ensure_user_profile(username: str, created_at: str = "") -> UserProfile:
     return profile
 
 
+def remove_user_profile(username: str) -> bool:
+    """从 users.json 移除用户档案。返回是否曾存在并已删除。"""
+    name = (username or "").strip()
+    if not name:
+        raise ValueError("username is required")
+    users = _load_all()
+    if name not in users:
+        return False
+    del users[name]
+    _save_all(users)
+    return True
+
+
 def rename_user_profile(old_username: str, new_username: str) -> UserProfile:
     """重命名 users.json 中的用户键，保留 display_name/created_at。"""
     old_name = (old_username or "").strip()
