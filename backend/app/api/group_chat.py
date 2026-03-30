@@ -51,6 +51,13 @@ from app.core.feature_flags import is_feature_enabled
 from app.core.user_context import get_current_user_context
 from app.core.security import user_context_dependency, get_current_user
 
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+except Exception:  # pragma: no cover
+    TfidfVectorizer = None
+    cosine_similarity = None
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_dependency)])
@@ -835,16 +842,18 @@ def _resolve_dha_skill_id_and_content(
     dha: Dict[str, Any],
     discussion_goal: str,
     messages: List[Dict[str, Any]],
-) -> tuple[str, str]:
+) -> tuple[str, str, Dict[str, Any]]:
     """当 DHA 绑定多个 skill 时，由 SkillsLoader 按各 SKILL 的 name/description（及 skill_id）与上下文的匹配度选型；无信号时回退列表顺序。
 
     气泡上的 skill 标签、落盘用的 skill_id 应与实际注入的 SKILL 一致；不在此文件维护场景关键词表。
     """
     sl = _request_skills_loader()
     skill_ids = [str(x).strip() for x in (dha.get("skill_ids") or []) if str(x).strip()]
+    debug_info: Dict[str, Any] = {"strategy": "unknown", "scores": [], "selected_skill_id": None}
     if not skill_ids:
         c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
-        return "default", c
+        debug_info.update({"strategy": "default_no_skill_ids", "selected_skill_id": "default"})
+        return "default", c, debug_info
 
     def _first_available_content(ids: List[str]) -> Optional[Tuple[str, str]]:
         for sid in ids:
@@ -857,24 +866,33 @@ def _resolve_dha_skill_id_and_content(
         sid = skill_ids[0]
         got = _first_available_content([sid])
         if got:
-            return got
+            debug_info.update({"strategy": "single_skill", "selected_skill_id": got[0]})
+            return got[0], got[1], debug_info
         c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
-        return "default", c
+        debug_info.update({"strategy": "single_skill_missing_content_fallback_default", "selected_skill_id": "default"})
+        return "default", c, debug_info
 
     last_user = _last_user_message_text(messages)
     combined = f"{discussion_goal or ''}\n{last_user}".strip()
-    picked = sl.pick_best_skill_id_for_message(combined, skill_ids)
+    route_debug = sl.pick_best_skill_with_debug(combined, skill_ids)
+    picked = (route_debug.get("selected_skill_id") or "").strip() or None
+    debug_info.update(route_debug)
     if picked:
         got = _first_available_content([picked])
         if got:
-            return got
+            debug_info["selected_skill_id"] = got[0]
+            return got[0], got[1], debug_info
 
     # 回退：列表顺序第一个有内容的 skill（与旧版 _get_dha_skill_content 一致）
     got = _first_available_content(skill_ids)
     if got:
-        return got
+        debug_info["strategy"] = f"{debug_info.get('strategy') or 'unknown'}_fallback_first_available"
+        debug_info["selected_skill_id"] = got[0]
+        return got[0], got[1], debug_info
     c = sl.get_skill_full_content("default") or "你是通用助手，直接回答用户问题。"
-    return skill_ids[0], c
+    debug_info["strategy"] = f"{debug_info.get('strategy') or 'unknown'}_fallback_default_content"
+    debug_info["selected_skill_id"] = skill_ids[0] if skill_ids else "default"
+    return (skill_ids[0] if skill_ids else "default"), c, debug_info
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
@@ -1047,6 +1065,93 @@ def _select_next_speaker_without_host(
     if len(agent_ids) == 1:
         return agent_ids[0]
     return None
+
+
+def _select_next_speaker_by_tfidf(
+    *,
+    query: str,
+    agent_ids: List[str],
+    all_instances: List[Dict[str, Any]],
+) -> Tuple[Optional[str], Dict[str, Any]]:
+    """本地 TF-IDF 专家路由：按用户输入从候选专家中选出下一发言人。"""
+    debug: Dict[str, Any] = {
+        "tfidf_available": bool(TfidfVectorizer is not None and cosine_similarity is not None),
+        "strategy": "none",
+        "selected_agent_id": None,
+        "scores": [],
+    }
+    if not debug["tfidf_available"]:
+        debug["strategy"] = "tfidf_unavailable"
+        return None, debug
+    text = (query or "").strip()
+    if not text:
+        debug["strategy"] = "empty_query"
+        return None, debug
+    candidates = [x for x in (agent_ids or []) if x]
+    if len(candidates) <= 1:
+        picked = candidates[0] if candidates else None
+        debug["strategy"] = "single_candidate" if picked else "no_candidate"
+        debug["selected_agent_id"] = picked
+        return picked, debug
+
+    id_to_inst = {str(d.get("agent_id") or "").strip(): d for d in (all_instances or []) if d.get("agent_id")}
+    docs: List[str] = []
+    doc_ids: List[str] = []
+    sl = _request_skills_loader()
+    for aid in candidates:
+        inst = id_to_inst.get(aid) or {}
+        name = str(inst.get("name") or "").strip()
+        desc = str(inst.get("description") or "").strip()
+        if not desc:
+            desc = str(inst.get("role") or "").strip()
+        sids = [str(x).strip() for x in (inst.get("skill_ids") or []) if str(x).strip()]
+        skill_texts: List[str] = []
+        for sid in sids[:5]:
+            sk = sl.skills.get(sid)
+            if sk:
+                skill_texts.append(f"{sk.name or ''} {sk.description or ''}".strip())
+            else:
+                skill_texts.append(sid)
+        doc_parts = []
+        if name:
+            doc_parts.append(f"名称: {name}")
+        if desc:
+            doc_parts.append(f"描述: {desc}")
+        if skill_texts:
+            doc_parts.append(f"技能: {' | '.join([x for x in skill_texts if x])}")
+        doc = "\n".join(doc_parts).strip()
+        if not doc:
+            continue
+        doc_ids.append(aid)
+        docs.append(doc)
+
+    if len(doc_ids) <= 1:
+        picked = doc_ids[0] if doc_ids else None
+        debug["strategy"] = "insufficient_docs"
+        debug["selected_agent_id"] = picked
+        return picked, debug
+
+    try:
+        vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), lowercase=True, sublinear_tf=True)
+        mat = vec.fit_transform(docs)
+        qv = vec.transform([text])
+        row = cosine_similarity(qv, mat)[0]
+        ranking = sorted(
+            [{"agent_id": doc_ids[i], "score": float(row[i])} for i in range(len(doc_ids))],
+            key=lambda x: x["score"],
+            reverse=True,
+        )
+        debug["scores"] = ranking[:5]
+        debug["strategy"] = "tfidf"
+        if not ranking or float(ranking[0]["score"]) <= 0:
+            debug["strategy"] = "tfidf_zero_score"
+            return None, debug
+        picked = str(ranking[0]["agent_id"])
+        debug["selected_agent_id"] = picked
+        return picked, debug
+    except Exception:
+        debug["strategy"] = "tfidf_error"
+        return None, debug
 
 
 def _prioritize_suggested_add_ids(
@@ -2122,11 +2227,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_id = next_speaker
             elif not host_takeover_open:
+                tfidf_pick: Optional[str] = None
+                # 主持人未接管时，优先用本地 TF-IDF 在当前成员中挑选最相关专家
+                # （若用户已显式点名专家，则仍以点名为先）
+                if (not explicit_requested_agent_ids) and len(agent_ids) > 1:
+                    tfidf_pick, tfidf_debug = _select_next_speaker_by_tfidf(
+                        query=(user_message or discussion_goal or ""),
+                        agent_ids=agent_ids,
+                        all_instances=preferred_instances,
+                    )
+                    _audit("local_expert_router", tfidf_debug)
                 next_speaker = _select_next_speaker_without_host(
                     agent_ids=agent_ids,
                     last_speaker_agent_id=last_speaker_agent_id,
                     explicit_requested_agent_ids=explicit_requested_agent_ids,
                 )
+                if tfidf_pick in agent_ids:
+                    next_speaker = tfidf_pick
                 if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_id = next_speaker
@@ -2353,7 +2470,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     break
 
                 tools = await build_tools_for_group_chat(dha, group_session_id)
-                resolved_skill_id, skill_content = _resolve_dha_skill_id_and_content(
+                resolved_skill_id, skill_content, skill_route_debug = _resolve_dha_skill_id_and_content(
                     dha, discussion_goal, messages
                 )
                 role = dha.get("role") or ""
@@ -2392,6 +2509,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _tool_pending_hint = (
                     "（正在执行工具：生图等外部接口可能较慢，请稍候 1～3 分钟。完成后会在此显示结果与图片链接。）\n\n"
                 )
+                _preparing_hint = (
+                    "（正在读取你插入的文件并组织回复，请稍候…）\n\n"
+                )
+                # 先推一条可见占位，避免“直到最终 message 才出现整条”的体感。
+                # 该占位不会写入最终 assistant_msg（由前端在 message 事件时替换）。
+                yield f"event: content\ndata: {json_module.dumps({'text': _preparing_hint, 'agent_id': next_speaker, 'meta': {'phase': 'preparing'}}, ensure_ascii=False)}\n\n"
                 try:
                     async for stream_item in agent.astream(
                         initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"]
@@ -2459,6 +2582,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "skill_id": skill_id,
                 }
+                if isinstance(skill_route_debug, dict):
+                    assistant_msg["skill_route_debug"] = skill_route_debug
                 inferred_required_fields = _infer_required_user_fields_for_skill(skill_content, full_content)
                 if inferred_required_fields:
                     assistant_msg["required_user_fields"] = inferred_required_fields
@@ -2506,6 +2631,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 "tool_raw_outputs": accumulated_raw_tool_results or (["[no tool raw outputs captured]"] if tool_calls_trace else ["[no tool calls detected]"]),
                                 "tool_attempt_debug": tool_attempt_debug,
                                 "sandbox_entry_trace": sandbox_entry_trace,
+                                "skill_route_debug": skill_route_debug if isinstance(skill_route_debug, dict) else {},
                             },
                         )
                         facts_delta = _extract_facts_from_response(full_content)

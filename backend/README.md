@@ -43,6 +43,15 @@ backend/
 - MCP 与 Skills 按用户目录加载；技能脚本在用户工作区内执行
 - ReAct / Agent 流式输出（SSE）
 
+## 本地 TF-IDF Skill 路由
+
+- 适用场景：一个专家绑定多个 `skill_ids` 时，后端按用户输入在本地快速选择最相关 skill。
+- 路由位置：`app/skills/loader.py` 的 `pick_best_skill_id_for_message(...)`。
+- 实现方式：`scikit-learn` 的 `TfidfVectorizer + cosine_similarity`，不依赖大模型推理。
+- 文档构成：`skill_id + name + description + SKILL.md 前几行正文`。
+- 低置信回退：当最高相似度低于阈值时返回 `None`，上层继续按既有顺序回退到默认行为。
+- 阈值配置：`SKILL_ROUTER_TFIDF_MIN_SCORE`（默认 `0.12`，范围 `0~1`）。
+
 ## Skill 脚本执行（run_skill_script）
 
 - 脚本目录：`data/users/{username}/skills/{skill_id}/scripts/`

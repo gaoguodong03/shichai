@@ -247,7 +247,7 @@
     "updated_at": "2026-03-28T10:55:48.089875+00:00"
   },
   "group-38675d7eaa55": {
-    "title": "爬取比赛信息的方法",
+    "title": "比赛信息网页爬取",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-web-fetch",
@@ -257,6 +257,11 @@
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-28T12:09:18.825496+00:00",
-    "updated_at": "2026-03-28T12:09:41.810726+00:00"
+    "updated_at": "2026-03-30T13:27:01.828963+00:00",
+    "pending_owner_agent_id": "agent-440b26f8",
+    "pending_skill_id": "app-icon-generator",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
   }
 }

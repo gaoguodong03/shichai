@@ -2587,11 +2587,6 @@ function onAtKeydown(source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
     atSelectedIndex.value = (atSelectedIndex.value - 1 + atMentionOptions.value.length) % atMentionOptions.value.length
     return
   }
-  if (e.key === 'Enter' && atMentionOptions.value[atSelectedIndex.value]) {
-    e.preventDefault()
-    selectMention(atMentionOptions.value[atSelectedIndex.value])
-    return
-  }
   if (e.key === 'Escape') {
     showAtDropdown.value = false
   }

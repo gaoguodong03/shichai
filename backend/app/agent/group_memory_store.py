@@ -92,6 +92,31 @@ def append_turn_log(
             lines4.append(f"{idx}. {_truncate(str(item or ''), 2500)}")
         sandbox_trace_text = "\n\n".join(lines4)
 
+    skill_route_debug = turn_record.get("skill_route_debug") or {}
+    skill_route_text = ""
+    if isinstance(skill_route_debug, dict) and skill_route_debug:
+        strategy = str(skill_route_debug.get("strategy") or "")
+        selected = str(skill_route_debug.get("selected_skill_id") or "")
+        min_score = skill_route_debug.get("min_score")
+        lines5: List[str] = []
+        if strategy:
+            lines5.append(f"- strategy: {strategy}")
+        if selected:
+            lines5.append(f"- selected_skill_id: {selected}")
+        if min_score is not None:
+            lines5.append(f"- min_score: {min_score}")
+        if "tfidf_available" in skill_route_debug:
+            lines5.append(f"- tfidf_available: {skill_route_debug.get('tfidf_available')}")
+        scores = skill_route_debug.get("scores") or []
+        if isinstance(scores, list) and scores:
+            lines5.append("- scores:")
+            for idx, row in enumerate(scores[:5], start=1):
+                if isinstance(row, dict):
+                    sid = str(row.get("skill_id") or "")
+                    sc = row.get("score")
+                    lines5.append(f"  {idx}. {sid}: {sc}")
+        skill_route_text = "\n".join(lines5)
+
     content = (
         f"# Turn Log\n\n"
         f"- session_id: {session_id}\n"
@@ -107,6 +132,7 @@ def append_turn_log(
         f"## Tool Raw Outputs\n{tool_raw_text}\n"
         f"\n## Tool Attempt Debug\n{tool_attempt_text}\n"
         f"\n## Sandbox Entry Trace\n{sandbox_trace_text}\n"
+        f"\n## Skill Route Debug\n{skill_route_text}\n"
     )
     path.write_text(content, encoding="utf-8")
 

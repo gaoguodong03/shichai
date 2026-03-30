@@ -58,7 +58,7 @@
     "updated_at": "2026-03-28T11:48:56.948838+00:00"
   },
   "group-86cb883eae2d": {
-    "title": "网页链接分享与访问",
+    "title": "网页爬取与链接分享",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-8d0d15ba",
@@ -68,6 +68,6 @@
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-30T01:08:59.110203+00:00",
-    "updated_at": "2026-03-30T01:10:21.999138+00:00"
+    "updated_at": "2026-03-30T13:28:12.418994+00:00"
   }
 }
