@@ -565,6 +565,7 @@
           ref="workspaceContentRef"
           :selected-group-session-id="selectedGroupSessionId"
           :dha-instances="dhaInstances"
+          :skills="skills"
           :middle-column-open="middleColumnOpen"
           @middle-column-open-request="middleColumnOpen = true"
           @middle-column-toggle="toggleMiddleColumn"
@@ -1070,6 +1071,7 @@ function onNavClick(moduleId: ModuleId) {
   if (moduleId === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
+    fetchSkills()
   }
   if (moduleId === 'resource') {
     fetchScenarioPresets()
@@ -1583,6 +1585,7 @@ watch(currentModule, (mod) => {
   if (mod === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
+    fetchSkills()
   }
 }, { immediate: true })
 

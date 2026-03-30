@@ -301,7 +301,7 @@
                     rows="3"
                     @input="onAtInput('goal', $event)"
                     @keydown="onAtKeydown('goal', $event)"
-                    @keydown.enter.exact.prevent="sendGroupMessage()"
+                    @keydown.enter.exact.prevent="onGroupInputEnter($event)"
                     @blur="closeAtDropdownOnBlur"
                   />
                   <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
@@ -341,7 +341,7 @@
                       rows="3"
                       @input="onAtInput('goal', $event)"
                       @keydown="onAtKeydown('goal', $event)"
-                      @keydown.enter.exact.prevent="sendGroupMessage()"
+                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
                       @blur="closeAtDropdownOnBlur"
                     />
                     <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
@@ -382,7 +382,7 @@
                       rows="3"
                       @input="onAtInput('nextPrompt', $event)"
                       @keydown="onAtKeydown('nextPrompt', $event)"
-                      @keydown.enter.exact.prevent="sendGroupMessage()"
+                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
                       @blur="closeAtDropdownOnBlur"
                     />
                     <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
@@ -840,6 +840,13 @@
                         v-if="!e.is_dir"
                         type="button"
                         class="group-chat-workspace-item-action"
+                        title="下载"
+                        @click.stop="downloadGroupWorkspaceFile(e)"
+                      >↓</button>
+                      <button
+                        v-if="!e.is_dir"
+                        type="button"
+                        class="group-chat-workspace-item-action"
                         title="重命名"
                         @click.stop="renameGroupWorkspaceEntry(e)"
                       >R</button>
@@ -867,7 +874,6 @@
                 <div class="group-chat-workspace-preview-header">
                   <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
                   <div class="group-chat-workspace-preview-actions">
-                    <a :href="groupWorkspaceDownloadUrl(groupWorkspacePreviewPath)" target="_blank" rel="noopener" class="group-chat-workspace-preview-download">下载</a>
                     <template v-if="groupWorkspacePreviewIsMd && !groupWorkspacePreviewLoading">
                       <template v-if="!groupWorkspacePreviewEditing">
                         <button type="button" class="group-chat-workspace-preview-edit-btn" @click="startWorkspacePreviewEdit">编辑</button>
@@ -956,6 +962,8 @@ interface MsgExt {
 const props = defineProps<{
   selectedGroupSessionId: string | null
   dhaInstances: { agent_id: string; name: string; role?: string; skill_ids?: string[] }[]
+  /** 用于气泡上 skill 标签：将内部 skill_id 解析为 SKILL 中的展示名 */
+  skills?: { id: string; name: string }[]
   middleColumnOpen?: boolean
 }>()
 
@@ -1291,6 +1299,9 @@ watch(
 function formatSkillId(skillId?: string) {
   if (!skillId) return ''
   if (skillId === 'default') return '默认'
+  const hit = (props.skills || []).find((s) => s.id === skillId)
+  const label = (hit?.name || '').trim()
+  if (label) return label
   return skillId
 }
 
@@ -2586,6 +2597,14 @@ function onAtKeydown(source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
   }
 }
 
+function onGroupInputEnter(_e: KeyboardEvent) {
+  if (showAtDropdown.value && atMentionOptions.value[atSelectedIndex.value]) {
+    selectMention(atMentionOptions.value[atSelectedIndex.value])
+    return
+  }
+  sendGroupMessage()
+}
+
 function closeAtDropdownOnBlur() {
   setTimeout(() => {
     showAtDropdown.value = false
@@ -2783,6 +2802,31 @@ function groupWorkspaceDownloadUrl(filePath: string) {
   const id = groupDetail.value?.id
   if (!id) return '#'
   return `/api/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`
+}
+
+async function downloadGroupWorkspaceFile(e: { name: string; path: string; is_dir?: boolean }) {
+  if (!e?.path || e.is_dir) return
+  const url = groupWorkspaceDownloadUrl(e.path)
+  if (!url || url === '#') return
+
+  try {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+
+    const blob = await r.blob()
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = e.name || e.path.split('/').pop() || 'download'
+    a.rel = 'noopener'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objUrl)
+  } catch {
+    alert('下载失败，请检查网络或登录状态')
+  }
 }
 
 async function createGroupWorkspaceDir() {

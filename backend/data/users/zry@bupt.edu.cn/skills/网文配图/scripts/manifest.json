@@ -1,0 +1,10 @@
+{
+  "generate_image.py": {
+    "description": "网文封面与章节插图生成，input_json 需含 description，可选 pic_size。",
+    "timeout_sec": 300,
+    "input_schema": {
+      "type": "object",
+      "required": ["description"]
+    }
+  }
+}

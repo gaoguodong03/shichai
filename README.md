@@ -9,5 +9,11 @@
 - 前端：见 [frontend/README.md](frontend/README.md)
 - 后端：见 [backend/README.md](backend/README.md)
 - 架构与部署要点：见 [docs/书童四九.md](docs/书童四九.md)
+- 程序如何启动、与专家对话时前后端如何协作（框架说明）：见 [docs/技术架构详解.md](docs/技术架构详解.md)
+- 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
+- 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 
-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.03.28
+crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.03.29
+  python manage_accounts.py add --username 13800138000 --password 'your-password'
+  python manage_accounts.py delete --username 13800138000 --yes
+  python manage_accounts.py delete --username 13800138000 --remove-data --yes
