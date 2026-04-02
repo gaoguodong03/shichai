@@ -8,11 +8,20 @@ import re
 from typing import Any, Dict, List
 
 from app.api.settings import get_mcp_servers_for_skill
+from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.tools.call_api import call_api
+from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
+from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
+from langchain_core.tools import StructuredTool
+
+try:
+    from langchain_core.pydantic_v1 import BaseModel, Field
+except ImportError:
+    from pydantic.v1 import BaseModel, Field  # type: ignore
 
 _TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 
@@ -71,6 +80,101 @@ def _file_tools(all_tools: List, allow_write: bool) -> List:
     return result
 
 
+def _url_tools(all_tools: List) -> List:
+    """从 all_tools 中筛出 URL 抓取/搜索类工具（默认给所有专家）。"""
+    result = []
+    for t in all_tools:
+        n = (getattr(t, "name", "") or "").lower()
+        if not n:
+            continue
+        if n.startswith("linkup_") or n.startswith("exa_"):
+            result.append(t)
+            continue
+        if any(k in n for k in ("fetch", "search", "crawl", "url", "web")):
+            result.append(t)
+    return result
+
+
+class EditWorkspaceFileInput(BaseModel):
+    path: str = Field(description="工作区内相对路径，例如 notes/report.md")
+    old_text: str = Field(description="要替换的旧文本")
+    new_text: str = Field(description="替换后的新文本")
+
+
+class DeleteWorkspaceFileInput(BaseModel):
+    path: str = Field(description="工作区内相对路径")
+
+
+class RenameWorkspaceFileInput(BaseModel):
+    path: str = Field(description="原文件相对路径")
+    new_name: str = Field(description="新文件名，仅名称不含路径")
+
+
+def _create_builtin_workspace_tools(workspace_id: str) -> List:
+    ws_root = get_workspace_root(workspace_id)
+
+    def _safe_path(path: str):
+        normalized = str(path or "").strip("/").replace("..", "")
+        target = (ws_root / normalized).resolve()
+        if not str(target).startswith(str(ws_root)):
+            raise ValueError("路径不在当前工作区")
+        return target
+
+    def _edit_workspace_file(path: str, old_text: str, new_text: str) -> str:
+        target = _safe_path(path)
+        if not target.exists() or target.is_dir():
+            return "错误：文件不存在或是目录。"
+        content = target.read_text(encoding="utf-8")
+        if old_text not in content:
+            return "错误：未找到要替换的文本。"
+        target.write_text(content.replace(old_text, new_text), encoding="utf-8")
+        return f"已编辑文件：{path}"
+
+    def _delete_workspace_file(path: str) -> str:
+        target = _safe_path(path)
+        if not target.exists():
+            return "错误：文件不存在。"
+        if target.is_dir():
+            return "错误：仅支持删除文件，不支持目录。"
+        target.unlink()
+        return f"已删除文件：{path}"
+
+    def _rename_workspace_file(path: str, new_name: str) -> str:
+        target = _safe_path(path)
+        if not target.exists() or target.is_dir():
+            return "错误：文件不存在或是目录。"
+        cleaned = str(new_name or "").strip().replace("/", "").replace("\\", "")
+        if not cleaned:
+            return "错误：new_name 不能为空。"
+        new_path = target.parent / cleaned
+        target.rename(new_path)
+        rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
+        return f"已重命名文件：{rel}"
+
+    return [
+        create_read_file_tool(session_id=workspace_id),
+        create_write_workspace_file_tool(workspace_id),
+        StructuredTool.from_function(
+            name="edit_workspace_file",
+            description="在当前工作区对文本文件做增量编辑（按 old_text 替换为 new_text）。",
+            func=_edit_workspace_file,
+            args_schema=EditWorkspaceFileInput,
+        ),
+        StructuredTool.from_function(
+            name="delete_workspace_file",
+            description="删除当前工作区内的文件。",
+            func=_delete_workspace_file,
+            args_schema=DeleteWorkspaceFileInput,
+        ),
+        StructuredTool.from_function(
+            name="rename_workspace_file",
+            description="重命名当前工作区内的文件（仅修改文件名）。",
+            func=_rename_workspace_file,
+            args_schema=RenameWorkspaceFileInput,
+        ),
+    ]
+
+
 async def build_tools_for_group_chat(
     dha: Dict[str, Any],
     workspace_id: str,
@@ -92,11 +196,17 @@ async def build_tools_for_group_chat(
         skill_ids = dha.get("skill_ids") or []
     allow_write = True
 
-    mgr = await ensure_user_mcp_bootstrapped(get_current_user().username)
-    all_tools = mgr.get_tools()
+    mgr = None
+    all_tools = []
+    try:
+        mgr = await ensure_user_mcp_bootstrapped(get_current_user().username)
+        all_tools = mgr.get_tools()
+    except Exception:
+        mgr = None
+        all_tools = []
 
     # 需要时才连接懒加载的 MCP server
-    if server_ids:
+    if server_ids and mgr is not None:
         available_server_ids = {
             str(c.get("id")).strip()
             for c in (getattr(mgr, "server_configs", []) or [])
@@ -111,8 +221,16 @@ async def build_tools_for_group_chat(
     else:
         tools = []
     file_tools = _file_tools(all_tools, allow_write=allow_write)
+    url_tools = _url_tools(all_tools)
     tool_names = {getattr(t, "name", "") for t in tools}
-    tools = tools + [t for t in file_tools if getattr(t, "name", "") not in tool_names] + [call_api]
+    builtin_workspace_tools = _create_builtin_workspace_tools(workspace_id)
+    tools = (
+        tools
+        + [t for t in file_tools if getattr(t, "name", "") not in tool_names]
+        + [t for t in url_tools if getattr(t, "name", "") not in tool_names]
+        + [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
+        + [call_api]
+    )
     # 为 DHA 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
     for skill_id in (dha.get("skill_ids") or []):
         sid = str(skill_id or "").strip()

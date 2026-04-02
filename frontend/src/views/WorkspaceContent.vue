@@ -258,6 +258,19 @@
                 </button>
                 <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
               </div>
+              <div v-if="autoSwitchHint" class="group-chat-suggested-invite-bar">
+                <span class="group-chat-suggested-invite-text">
+                  {{ autoSwitchHintText }}
+                </span>
+                <button
+                  type="button"
+                  class="group-chat-dismiss-suggested-btn"
+                  :disabled="autoSwitchIgnoreLoading"
+                  @click="ignoreAutoSwitchAndRedo"
+                >
+                  {{ autoSwitchIgnoreLoading ? '重做中…' : '忽略并重做' }}
+                </button>
+              </div>
               <div v-if="activeStreamingMessage" class="group-chat-speaker-status-input">
                 <span class="group-chat-speaker-status-dot" aria-hidden="true" />
                 <span class="group-chat-speaker-status-text">
@@ -951,6 +964,8 @@ import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 interface MsgExt {
   timestamp?: string
   skill_id?: string
+  expert_route_debug?: Record<string, unknown>
+  skill_route_debug?: Record<string, unknown>
   tool_raw_results?: string[]
   next_prompt?: string
   suggested_order?: string[]
@@ -961,7 +976,7 @@ interface MsgExt {
 
 const props = defineProps<{
   selectedGroupSessionId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; skill_ids?: string[] }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; skill_ids?: string[]; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }[]
   /** 用于气泡上 skill 标签：将内部 skill_id 解析为 SKILL 中的展示名 */
   skills?: { id: string; name: string }[]
   middleColumnOpen?: boolean
@@ -979,7 +994,7 @@ type GroupDetail = {
   id: string
   title: string
   messages: { message_id?: string; role: string; agent_id?: string; content: string }[]
-  agent_map: Record<string, { name?: string; role?: string }>
+  agent_map: Record<string, { name?: string; role?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
   agent_ids: string[]
   leader_agent_id?: string
   speak_mode?: string
@@ -1129,6 +1144,34 @@ const archiveItems = computed(() => {
         snippet: toSnippet(String(m.content || ''), 50),
       }
     })
+})
+
+const groupFileCapabilitySummary = computed(() => {
+  const detail = groupDetail.value
+  const out = { read: false, edit: false, write: false, delete: false, rename: false, url: false }
+  if (!detail?.agent_map) return out
+  for (const agentId of detail.agent_ids || []) {
+    const caps = detail.agent_map?.[agentId]?.file_capabilities || {}
+    out.read = out.read || !!caps.read
+    out.edit = out.edit || !!caps.edit
+    out.write = out.write || !!caps.write
+    out.delete = out.delete || !!caps.delete
+    out.rename = out.rename || !!caps.rename
+    out.url = out.url || !!detail.agent_map?.[agentId]?.url_capability
+  }
+  return out
+})
+
+const groupFileCapabilityItems = computed(() => {
+  const caps = groupFileCapabilitySummary.value
+  return [
+    { key: 'read', label: '读取', enabled: !!caps.read },
+    { key: 'edit', label: '编辑', enabled: !!caps.edit },
+    { key: 'write', label: '写入', enabled: !!caps.write },
+    { key: 'delete', label: '删除', enabled: !!caps.delete },
+    { key: 'rename', label: '重命名', enabled: !!caps.rename },
+    { key: 'url', label: 'URL数据', enabled: !!caps.url },
+  ]
 })
 
 function scrollToMessage(messageId: string) {
@@ -1561,15 +1604,28 @@ function closeMembersDropdown(e: MouseEvent) {
   if (!el?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
 }
 
-async function confirmGroupNext(override: string) {
+async function confirmGroupNext(
+  override: string,
+  extra?: { ignoreAutoExpertId?: string; ignoreAutoSkillId?: string },
+) {
   const detail = groupDetail.value
   const id = detail?.id
   if (!detail || !id || groupStreaming.value) return
+  autoSwitchHint.value = null
   groupStreaming.value = true
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
-  const body: { override_next_speaker: string; custom_prompt?: string; host_takeover_requested?: boolean } = { override_next_speaker: override }
+  const body: {
+    override_next_speaker?: string
+    custom_prompt?: string
+    host_takeover_requested?: boolean
+    ignore_auto_expert_id?: string
+    ignore_auto_skill_id?: string
+  } = {}
+  if (override && override !== '__auto__') body.override_next_speaker = override
+  if (extra?.ignoreAutoExpertId) body.ignore_auto_expert_id = extra.ignoreAutoExpertId
+  if (extra?.ignoreAutoSkillId) body.ignore_auto_skill_id = extra.ignoreAutoSkillId
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   try {
@@ -1641,6 +1697,12 @@ async function confirmGroupNext(override: string) {
                   groupStreamingPhase.value = '等待你确认邀请…'
                 }
               }
+            } catch (_) {}
+          }
+          if (eventType === 'route' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as Record<string, unknown>
+              updateAutoSwitchHint(data)
             } catch (_) {}
           }
           if (eventType === 'end' && dataStr) {
@@ -2087,6 +2149,17 @@ const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
 const suggestedInviteLoading = ref(false)
+const autoSwitchHint = ref<{ expertId?: string; expertName?: string; skillId?: string; skillName?: string } | null>(null)
+const autoSwitchIgnoreLoading = ref(false)
+const autoSwitchHintText = computed(() => {
+  const h = autoSwitchHint.value
+  if (!h) return ''
+  const parts: string[] = []
+  if (h.expertName) parts.push(`专家：${h.expertName}`)
+  if (h.skillName) parts.push(`技能：${h.skillName}`)
+  if (!parts.length) return ''
+  return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换${parts.join('，')}`
+})
 const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
 const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
@@ -2158,6 +2231,44 @@ function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefin
   const agentIds = payload.auto_invited_agent_ids as string[] | undefined
   if (Array.isArray(agentIds) && agentIds.length) return agentIds
   return []
+}
+
+function updateAutoSwitchHint(payload: Record<string, unknown>) {
+  if (!payload) return
+  const expertDebug = (payload.expert_route_debug || {}) as Record<string, unknown>
+  const skillDebug = (payload.skill_route_debug || {}) as Record<string, unknown>
+  const expertStrategy = String(expertDebug.strategy || '')
+  const skillStrategy = String(skillDebug.strategy || '')
+  const routedExpertId = String(payload.agent_id || '').trim()
+  const routedSkillId = String(payload.skill_id || '').trim()
+  const expertId = String(expertDebug.selected_agent_id || '').trim()
+  const skillId = String(skillDebug.selected_skill_id || '').trim()
+  const expertByTfidf = expertStrategy.startsWith('tfidf')
+  const skillByTfidf = skillStrategy.startsWith('tfidf')
+  if (!expertByTfidf && !skillByTfidf) {
+    autoSwitchHint.value = null
+    return
+  }
+  // 仅在“路由调试选择”和“实际路由结果”一致时展示，避免误报。
+  if (expertByTfidf && expertId && routedExpertId && expertId !== routedExpertId) {
+    autoSwitchHint.value = null
+    return
+  }
+  if (skillByTfidf && skillId && routedSkillId && skillId !== routedSkillId) {
+    autoSwitchHint.value = null
+    return
+  }
+  const map = groupDetail.value?.agent_map || {}
+  const finalExpertId = routedExpertId || expertId
+  const finalSkillId = routedSkillId || skillId
+  const expertName = finalExpertId ? (map[finalExpertId]?.name || finalExpertId) : ''
+  const skillName = finalSkillId ? formatSkillId(finalSkillId) : ''
+  autoSwitchHint.value = {
+    expertId: expertByTfidf ? finalExpertId : '',
+    expertName: expertByTfidf ? expertName : '',
+    skillId: skillByTfidf ? finalSkillId : '',
+    skillName: skillByTfidf ? skillName : '',
+  }
 }
 
 function applyOrchestrationEndMeta(endData: Record<string, unknown>) {
@@ -2465,6 +2576,23 @@ async function inviteOneSuggestedDha(dhaId: string) {
     alert('邀请失败，请检查网络')
   } finally {
     suggestedInviteLoading.value = false
+  }
+}
+
+async function ignoreAutoSwitchAndRedo() {
+  const hint = autoSwitchHint.value
+  if (!hint || groupStreaming.value) return
+  autoSwitchIgnoreLoading.value = true
+  try {
+    const expertId = (hint.expertId || '').trim()
+    const skillId = (hint.skillId || '').trim()
+    autoSwitchHint.value = null
+    await confirmGroupNext('__auto__', {
+      ignoreAutoExpertId: expertId || undefined,
+      ignoreAutoSkillId: skillId || undefined,
+    })
+  } finally {
+    autoSwitchIgnoreLoading.value = false
   }
 }
 
@@ -3321,6 +3449,7 @@ async function sendGroupMessage() {
   const base = builtMessage()
   const hasFiles = attachedFiles.value.length > 0
   if (!detail || groupStreaming.value || (!base && !hasFiles)) return
+  autoSwitchHint.value = null
   // 发送后输入框必须清空：前端不保留历史内容
   groupDiscussionGoal.value = ''
   groupNextPrompt.value = ''

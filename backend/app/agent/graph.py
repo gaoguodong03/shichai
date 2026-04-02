@@ -181,14 +181,22 @@ def create_react_agent(
 
 当你不需要使用工具时，直接回复用户的问题。
 
-## 文件引用
-当用户消息中出现【文件引用：…】时，**必须先读取该文件**再根据内容回答。
-- 标签可能为 **【文件引用：显示名｜工作区内相对路径】**：竖线「｜」后为真实路径（可含多级目录，如 `output/pages/xxx/text.md`）。调用 **file-reader_read_file** 时 **path 必须使用竖线后的完整相对路径**，不要只用显示名或只猜文件名。
-- 若仅有 **【文件引用：path】** 且无竖线，则 path 即为工作区内相对路径（如 `report.md` 或 `notes/report.txt`）。
-- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **file-reader_read_file**，path 填上述工作区内相对路径（必要时含子目录）；仅在无法表示为单段相对路径时才使用 `workspaces/<会话ID>/…` 形式。
-- **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 file-reader_read_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
-不要猜测文件内容。
+## 文件操作（当前会话工作区）
+
+你拥有以下与“当前会话工作区”相关的工具：
+- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。
+- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。
+- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。
+- delete_workspace_file: 删除工作区内文件。
+- rename_workspace_file: 重命名工作区内文件。
+
+**强制规则（优先级很高）：**
+- 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 notes/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。
+- 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
+- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
+- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
+
+若工具返回“文件不存在”，你可以根据工具返回的候选路径列表请用户确认，但**不要凭空猜测文件内容**。
 
 """
     
@@ -527,14 +535,22 @@ def create_skill_execution_agent(
 ## 多步任务规则
 若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。
 
-## 文件引用
-当用户消息中出现【文件引用：…】时，**必须先读取该文件**再根据内容回答。
-- 标签可能为 **【文件引用：显示名｜工作区内相对路径】**：竖线「｜」后为真实路径（可含多级目录，如 `output/pages/xxx/text.md`）。调用 **file-reader_read_file** 时 **path 必须使用竖线后的完整相对路径**，不要只用显示名或只猜文件名。
-- 若仅有 **【文件引用：path】** 且无竖线，则 path 即为工作区内相对路径（如 `report.md` 或 `notes/report.txt`）。
-- **注意：没有 read_file 工具。** 读取工作区文件**必须**使用 **file-reader_read_file**，path 填上述工作区内相对路径（必要时含子目录）；仅在无法表示为单段相对路径时才使用 `workspaces/<会话ID>/…` 形式。
-- **保存内容到工作区**：当前没有写文件工具。若用户要求将某内容保存到文件，请在本条回复中直接写出要保存的**完整内容**，并提示用户：选中本条回复后点击「保存为文件」按钮即可保存到工作区。
-- 其它二进制文件（如 PDF、DOCX、XLSX、图片等）：可尝试 file-reader_read_file；若内容为乱码或二进制，须告知用户无法直接解析并建议先转为文本。
-不要猜测文件内容。
+## 文件操作（当前会话工作区）
+
+你拥有以下与“当前会话工作区”相关的工具：
+- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。
+- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。
+- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。
+- delete_workspace_file: 删除工作区内文件。
+- rename_workspace_file: 重命名工作区内文件。
+
+**强制规则（优先级很高）：**
+- 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 notes/test.md`、`查看 output/pages/xxx/text.md`，或带 @某专家 的类似指令），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。
+- 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
+- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
+- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
+
+若工具返回“文件不存在”，你可以根据工具返回的候选路径列表请用户确认，但**不要凭空猜测文件内容**。
 """
 
     async def call_model(state: AgentState, config=None):
@@ -644,6 +660,35 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             return text[:max_tool_result_chars].rstrip() + "\n...[工具结果已截断]"
         return text
 
+    def _extract_path_from_last_user(messages: Sequence[BaseMessage]) -> str:
+        """从最近一条用户消息中尽力提取文件路径（用于 read_file 自动补全 path）。"""
+        import re
+
+        # 从后往前找到最近一条 HumanMessage
+        last_user = None
+        for m in reversed(messages):
+            from langchain_core.messages import HumanMessage as _HM
+
+            if isinstance(m, _HM):
+                last_user = m
+                break
+        if last_user is None:
+            return ""
+        content = str(getattr(last_user, "content", "") or "").strip()
+        if not content:
+            return ""
+        # 1) 反引号中的内容优先视为路径（如 `notes/test.md`）
+        code_matches = re.findall(r"`([^`]+)`", content)
+        for c in code_matches:
+            s = c.strip()
+            if "/" in s or s.endswith(".md") or "." in s:
+                return s
+        # 2) 简单匹配类似 notes/test.md 或 output/.../text.md
+        m = re.search(r"([A-Za-z0-9_\-./]+\.md)", content)
+        if m:
+            return m.group(1).strip()
+        return ""
+
     def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
         """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
         args = dict(arguments) if arguments else {}
@@ -656,6 +701,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             input_schema = _get_mcp_input_schema(tool_name, tools_list)
             from app.mcp.manager import normalize_mcp_kwargs_for_call
             return normalize_mcp_kwargs_for_call(server_id, original_tool_name, args, input_schema=input_schema)
+        # 非 MCP 工具（read_file 等）直接返回
         return args
 
     def _resolve_tool_name_for_skill_call(raw_name: str, tools_list: Sequence[BaseTool]) -> str:
@@ -689,6 +735,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     tool = t
                     break
             if tool:
+                # read_file 兜底：若未提供 path，则从最近一条用户消息中提取
+                if tool_name == "read_file" and not (arguments.get("path") or arguments.get("__arg1")):
+                    auto_path = _extract_path_from_last_user(messages)
+                    if auto_path:
+                        arguments["path"] = auto_path
                 tool_attempt_debug.append({
                     "requested_tool": requested_tool_name,
                     "resolved_tool": tool_name,
@@ -744,6 +795,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 tool = t
                 break
         if tool:
+            # read_file 兜底：若未提供 path，则从最近一条用户消息中提取
+            if tool_name == "read_file" and not (arguments.get("path") or arguments.get("__arg1")):
+                auto_path = _extract_path_from_last_user(messages)
+                if auto_path:
+                    arguments["path"] = auto_path
             tool_attempt_debug.append({
                 "requested_tool": requested_tool_name,
                 "resolved_tool": tool_name,

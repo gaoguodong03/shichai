@@ -247,7 +247,7 @@
     "updated_at": "2026-03-28T10:55:48.089875+00:00"
   },
   "group-38675d7eaa55": {
-    "title": "比赛信息网页爬取",
+    "title": "基于爬取数据的内容创作",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-web-fetch",
@@ -257,11 +257,41 @@
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-28T12:09:18.825496+00:00",
-    "updated_at": "2026-03-30T13:27:01.828963+00:00",
+    "updated_at": "2026-04-02T03:08:24.112582+00:00",
     "pending_owner_agent_id": "agent-440b26f8",
     "pending_skill_id": "app-icon-generator",
     "pending_phase": "awaiting_user",
     "pending_required_user_fields": [],
     "pending_handoff_reason": "expert_need_user_input"
+  },
+  "group-745523e25fc2": {
+    "title": "北邮相关推广内容生成",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-440b26f8",
+      "agent-web-fetch",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-03-30T14:52:26.092723+00:00",
+    "updated_at": "2026-03-30T15:03:19.270603+00:00",
+    "pending_owner_agent_id": "agent-195b8c3a",
+    "pending_skill_id": "news-summary",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
+  },
+  "group-9dc2b423c007": {
+    "title": "文件操作与管理",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-195b8c3a",
+      "agent-9f6a2b8d"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-02T03:14:47.678724+00:00",
+    "updated_at": "2026-04-02T04:31:56.943258+00:00"
   }
 }

@@ -93,6 +93,35 @@
               </p>
             </div>
 
+            <div>
+              <label class="block text-sm font-medium text-primary mb-2">工具能力</label>
+              <div class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
+                <span
+                  v-for="item in fileCapabilityItems"
+                  :key="item.key"
+                  class="px-3 py-1.5 rounded-full text-xs font-medium border"
+                  :class="item.enabled
+                    ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                    : 'bg-card text-muted border-border-light'"
+                >
+                  {{ item.label }} · {{ item.enabled ? '有' : '无' }}
+                </span>
+              </div>
+              <div class="mt-2">
+                <span
+                  class="px-3 py-1.5 rounded-full text-xs font-medium border"
+                  :class="canFetchUrlData
+                    ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                    : 'bg-card text-muted border-border-light'"
+                >
+                  URL数据获取 · {{ canFetchUrlData ? '有' : '无' }}
+                </span>
+              </div>
+              <p v-if="!canDirectSave" class="text-xs text-muted mt-2">
+                当前专家不可直接保存文件（缺少“文件写入”能力）
+              </p>
+            </div>
+
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
             <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
@@ -229,7 +258,7 @@ import { ref, watch, onMounted, computed } from 'vue'
 
 const props = defineProps<{
   selectedDhaId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
 }>()
 
 const emit = defineEmits<{
@@ -336,6 +365,43 @@ const displaySkillBadges = computed(() => {
     if (picked.length >= 15) break
   }
   return picked
+})
+
+const selectedFileCapabilities = computed(() => {
+  if (!props.selectedDhaId || props.selectedDhaId === '__new__') {
+    return { read: false, edit: false, write: false, delete: false, rename: false }
+  }
+  const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
+  const caps = d?.file_capabilities || {}
+  return {
+    read: !!caps.read,
+    edit: !!caps.edit,
+    write: !!caps.write,
+    delete: !!caps.delete,
+    rename: !!caps.rename,
+  }
+})
+
+const fileCapabilityItems = computed(() => {
+  const caps = selectedFileCapabilities.value
+  return [
+    { key: 'read', label: '文件读取', enabled: !!caps.read },
+    { key: 'edit', label: '文件编辑', enabled: !!caps.edit },
+    { key: 'write', label: '文件写入', enabled: !!caps.write },
+    { key: 'delete', label: '文件删除', enabled: !!caps.delete },
+    { key: 'rename', label: '文件重命名', enabled: !!caps.rename },
+  ]
+})
+
+const canFetchUrlData = computed(() => {
+  if (!props.selectedDhaId || props.selectedDhaId === '__new__') return false
+  const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
+  return !!d?.url_capability
+})
+
+const canDirectSave = computed(() => {
+  const caps = selectedFileCapabilities.value
+  return !!caps.write
 })
 
 const filteredSkills = computed(() => {

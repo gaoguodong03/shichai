@@ -14,6 +14,14 @@ from app.core.user_context import get_current_user_context
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
+_FILE_CAP_LABELS = {
+    "read": "文件读取",
+    "edit": "文件编辑",
+    "write": "文件写入",
+    "delete": "文件删除",
+    "rename": "文件重命名",
+}
+
 def _get_dha_instances_path() -> Path:
     """根据当前用户返回 Agent 配置文件路径，实现多用户隔离。"""
     user_ctx = get_current_user_context(default_fallback=False)
@@ -59,6 +67,34 @@ def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _empty_file_capabilities() -> Dict[str, bool]:
+    return {"read": False, "edit": False, "write": False, "delete": False, "rename": False}
+
+
+def _labels_from_file_capabilities(caps: Dict[str, bool]) -> List[str]:
+    return [label for key, label in _FILE_CAP_LABELS.items() if caps.get(key)]
+
+
+async def enrich_dha_instance(instance: Dict[str, Any], workspace_id: str = "__capability_probe__") -> Dict[str, Any]:
+    """导出函数：为 DHA 实例附加 expert 别名与内置能力（不触发 MCP 连接）。"""
+    out = _attach_expert_alias(instance)
+    _ = workspace_id
+    # 无 MCP 方案：默认使用内置工具能力，避免每次接口请求触发 MCP 初始化造成卡顿。
+    file_caps = {"read": True, "edit": True, "write": True, "delete": True, "rename": True}
+    url_cap = True
+    out["file_capabilities"] = file_caps
+    out["file_capability_labels"] = _labels_from_file_capabilities(file_caps)
+    out["url_capability"] = url_cap
+    return out
+
+
+async def enrich_dha_instances(instances: List[Dict[str, Any]], workspace_id: str = "__capability_probe__") -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for row in instances or []:
+        out.append(await enrich_dha_instance(row, workspace_id=workspace_id))
+    return out
+
+
 def _ensure_config_dir() -> Path:
     path = _get_dha_instances_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,9 +116,19 @@ def load_dha_instances() -> List[Dict[str, Any]]:
 
 def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
     """保存 DHA 实例配置"""
+    normalized: List[Dict[str, Any]] = []
+    for row in instances or []:
+        if not isinstance(row, dict):
+            continue
+        copied = dict(row)
+        copied.pop("expert_id", None)
+        copied.pop("file_capabilities", None)
+        copied.pop("file_capability_labels", None)
+        copied.pop("url_capability", None)
+        normalized.append(copied)
     path = _ensure_config_dir()
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(instances, f, ensure_ascii=False, indent=2)
+        json.dump(normalized, f, ensure_ascii=False, indent=2)
 
 
 @router.get("/dha/instances")
@@ -90,7 +136,7 @@ async def get_dha_instances():
     """获取 DHA 实例列表（按名称排序）"""
     instances = load_dha_instances()
     instances = sorted(instances, key=lambda d: (d.get("name") or "").strip())
-    return {"status": "ok", "data": {"instances": [_attach_expert_alias(x) for x in instances]}}
+    return {"status": "ok", "data": {"instances": await enrich_dha_instances(instances)}}
 
 
 @router.post("/dha/instances")
@@ -111,7 +157,7 @@ async def create_dha_instance(body: DHACreate):
     }
     instances.append(new_instance)
     save_dha_instances(instances)
-    return {"status": "ok", "data": _attach_expert_alias(new_instance)}
+    return {"status": "ok", "data": await enrich_dha_instance(new_instance)}
 
 
 @router.put("/dha/instances/{agent_id}")
@@ -139,7 +185,7 @@ async def update_dha_instance(agent_id: str, body: DHAUpdate):
     if body.avatar_url is not None:
         inst["avatar_url"] = body.avatar_url or ""
     save_dha_instances(instances)
-    return {"status": "ok", "data": _attach_expert_alias(inst)}
+    return {"status": "ok", "data": await enrich_dha_instance(inst)}
 
 
 @router.delete("/dha/instances/{agent_id}")

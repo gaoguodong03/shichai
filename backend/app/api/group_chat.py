@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
-from app.api.dha import load_dha_instances
+from app.api.dha import load_dha_instances, enrich_dha_instances
 from app.api.settings import load_app_settings
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
@@ -842,6 +842,7 @@ def _resolve_dha_skill_id_and_content(
     dha: Dict[str, Any],
     discussion_goal: str,
     messages: List[Dict[str, Any]],
+    ignored_skill_id: Optional[str] = None,
 ) -> tuple[str, str, Dict[str, Any]]:
     """当 DHA 绑定多个 skill 时，由 SkillsLoader 按各 SKILL 的 name/description（及 skill_id）与上下文的匹配度选型；无信号时回退列表顺序。
 
@@ -877,6 +878,26 @@ def _resolve_dha_skill_id_and_content(
     route_debug = sl.pick_best_skill_with_debug(combined, skill_ids)
     picked = (route_debug.get("selected_skill_id") or "").strip() or None
     debug_info.update(route_debug)
+    ignored_sid = (ignored_skill_id or "").strip()
+    if picked and ignored_sid and picked == ignored_sid:
+        # 用户点击“忽略自动切换”后，本轮应重做并避开上次命中的 skill。
+        ranked = route_debug.get("scores") or []
+        if isinstance(ranked, list):
+            alt = next(
+                (
+                    str(item.get("skill_id") or "").strip()
+                    for item in ranked
+                    if isinstance(item, dict)
+                    and str(item.get("skill_id") or "").strip()
+                    and str(item.get("skill_id") or "").strip() != ignored_sid
+                    and float(item.get("score") or 0.0) > 0.0
+                ),
+                "",
+            )
+            if alt:
+                picked = alt
+                debug_info["strategy"] = f"{debug_info.get('strategy') or 'unknown'}_ignore_override"
+                debug_info["selected_skill_id"] = alt
     if picked:
         got = _first_available_content([picked])
         if got:
@@ -884,7 +905,8 @@ def _resolve_dha_skill_id_and_content(
             return got[0], got[1], debug_info
 
     # 回退：列表顺序第一个有内容的 skill（与旧版 _get_dha_skill_content 一致）
-    got = _first_available_content(skill_ids)
+    fallback_ids = [sid for sid in skill_ids if not ignored_sid or sid != ignored_sid]
+    got = _first_available_content(fallback_ids)
     if got:
         debug_info["strategy"] = f"{debug_info.get('strategy') or 'unknown'}_fallback_first_available"
         debug_info["selected_skill_id"] = got[0]
@@ -1055,15 +1077,18 @@ def _select_next_speaker_without_host(
     agent_ids: List[str],
     last_speaker_agent_id: Optional[str],
     explicit_requested_agent_ids: List[str],
+    excluded_agent_ids: Optional[set[str]] = None,
 ) -> Optional[str]:
     """Fallback progression when host takeover is disabled."""
-    if last_speaker_agent_id and last_speaker_agent_id in agent_ids:
+    blocked = excluded_agent_ids or set()
+    if last_speaker_agent_id and last_speaker_agent_id in agent_ids and last_speaker_agent_id not in blocked:
         return last_speaker_agent_id
     for did in explicit_requested_agent_ids or []:
-        if did in agent_ids:
+        if did in agent_ids and did not in blocked:
             return did
-    if len(agent_ids) == 1:
-        return agent_ids[0]
+    available = [x for x in agent_ids if x not in blocked]
+    if len(available) == 1:
+        return available[0]
     return None
 
 
@@ -1131,6 +1156,18 @@ def _select_next_speaker_by_tfidf(
         debug["selected_agent_id"] = picked
         return picked, debug
 
+    # 统一专家 TF-IDF 阈值（可通过环境变量调整）：
+    # - EXPERT_ROUTER_TFIDF_MIN_SCORE：最低得分门槛，低于此值视为“看不太懂用户要啥”，不强行切专家
+    # - EXPERT_ROUTER_TFIDF_MIN_DELTA：TOP 与第二名的最小分差，差太小视为“信号不够强”，也不强行切专家
+    try:
+        min_score = float(os.getenv("EXPERT_ROUTER_TFIDF_MIN_SCORE", "0.05"))
+    except Exception:
+        min_score = 0.05
+    try:
+        min_delta = float(os.getenv("EXPERT_ROUTER_TFIDF_MIN_DELTA", "0.01"))
+    except Exception:
+        min_delta = 0.01
+
     try:
         vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), lowercase=True, sublinear_tf=True)
         mat = vec.fit_transform(docs)
@@ -1143,10 +1180,20 @@ def _select_next_speaker_by_tfidf(
         )
         debug["scores"] = ranking[:5]
         debug["strategy"] = "tfidf"
-        if not ranking or float(ranking[0]["score"]) <= 0:
+        if not ranking:
             debug["strategy"] = "tfidf_zero_score"
             return None, debug
-        picked = str(ranking[0]["agent_id"])
+        top = ranking[0]
+        top_score = float(top.get("score") or 0.0)
+        second_score = float(ranking[1].get("score") or 0.0) if len(ranking) > 1 else 0.0
+        if top_score <= 0:
+            debug["strategy"] = "tfidf_zero_score"
+            return None, debug
+        # 分数太低或与第二名差距太小：认为置信度不足，放弃 TF-IDF，让上层用其他策略/上一轮专家
+        if top_score < min_score or (len(ranking) > 1 and (top_score - second_score) < min_delta):
+            debug["strategy"] = "tfidf_low_confidence"
+            return None, debug
+        picked = str(top["agent_id"])
         debug["selected_agent_id"] = picked
         return picked, debug
     except Exception:
@@ -1551,6 +1598,8 @@ class GroupChatRequest(BaseModel):
     action: Optional[str] = None  # "continue" 继续下一轮
     custom_prompt: Optional[str] = None  # 手动模式下，可由前端传入自定义给下一发言人的提示词（覆盖默认生成）
     host_takeover_requested: Optional[bool] = None  # 仅在用户明确提到主持人时才允许主持人调度
+    ignore_auto_expert_id: Optional[str] = None  # 点击“忽略自动切换”后，重做时排除该专家
+    ignore_auto_skill_id: Optional[str] = None  # 点击“忽略自动切换”后，重做时排除该技能
 
 
 class GroupPromptPreviewRequest(BaseModel):
@@ -1725,6 +1774,7 @@ async def get_group_session(group_session_id: str):
     instances = load_dha_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
+    preferred_instances = await enrich_dha_instances(preferred_instances, workspace_id=group_session_id)
     agent_map_raw = {d.get("agent_id"): d for d in preferred_instances if d.get("agent_id")}
     # 统一输出 agent-*。
     normalized_messages = []
@@ -1744,6 +1794,9 @@ async def get_group_session(group_session_id: str):
             "name": v.get("name") or "",
             "role": v.get("role") or "",
             "is_leader": v.get("is_leader", False),
+            "file_capabilities": v.get("file_capabilities") or {},
+            "file_capability_labels": v.get("file_capability_labels") or [],
+            "url_capability": bool(v.get("url_capability")),
         }
         for k, v in agent_map_raw.items()
         if k in relevant_ids
@@ -1965,7 +2018,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(user_message, preferred_instances) if user_message else []
     explicit_requested_agent_ids = _normalize_to_preferred_agent_ids(explicit_requested_agent_ids, id_to_preferred=id_to_preferred)
-    auto_resume_owner: Optional[str] = None
+    ignored_auto_expert_id = (request.ignore_auto_expert_id or "").strip().lower()
+    ignored_auto_expert_id = id_to_preferred.get(ignored_auto_expert_id, _to_agent_style_id(ignored_auto_expert_id)) if ignored_auto_expert_id else ""
+    ignored_auto_skill_id = (request.ignore_auto_skill_id or "").strip()
+    ignored_expert_ids_set: set[str] = {ignored_auto_expert_id} if ignored_auto_expert_id else set()
     host_takeover_requested = _user_requests_host_takeover(
         user_message,
         explicit_flag=request.host_takeover_requested,
@@ -1974,8 +2030,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     # 用户消息
     if user_message:
-        if pending_owner_agent_id and pending_owner_agent_id in agent_ids and request.override_next_speaker is None:
-            auto_resume_owner = pending_owner_agent_id
         first_user_message = not any(m.get("role") == "user" for m in messages)
         messages.append({
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
@@ -2126,6 +2180,52 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
             next_speaker = None
+            expert_route_debug_for_turn: Dict[str, Any] = {}
+
+            # 预计算 TF-IDF：供「待恢复专家」与强意图切换时二选一，并在下方分支复用，避免重复计算。
+            pre_tfidf_pick: Optional[str] = None
+            pre_tfidf_debug: Dict[str, Any] = {}
+            if len(agent_ids) > 1 and (not explicit_requested_agent_ids):
+                pre_tfidf_pick, pre_tfidf_debug = _select_next_speaker_by_tfidf(
+                    query=(user_message or discussion_goal or ""),
+                    agent_ids=[x for x in agent_ids if x not in ignored_expert_ids_set],
+                    all_instances=preferred_instances,
+                )
+
+            auto_resume_owner: Optional[str] = None
+            if (
+                user_message
+                and pending_owner_agent_id
+                and pending_owner_agent_id in agent_ids
+                and request.override_next_speaker is None
+            ):
+                skip_resume_pending = False
+                strat = str((pre_tfidf_debug or {}).get("strategy") or "")
+                if strat == "tfidf" and pre_tfidf_pick and pre_tfidf_pick != pending_owner_agent_id:
+                    scores = (pre_tfidf_debug or {}).get("scores") or []
+                    top_score = float(scores[0]["score"]) if scores else 0.0
+                    pending_score = next(
+                        (float(x.get("score") or 0.0) for x in scores if str(x.get("agent_id")) == pending_owner_agent_id),
+                        0.0,
+                    )
+                    if top_score >= 0.06 and top_score >= pending_score + 0.02:
+                        skip_resume_pending = True
+                try:
+                    append_audit_event(
+                        group_session_id,
+                        "pending_resume_vs_tfidf",
+                        {
+                            "skip_resume": skip_resume_pending,
+                            "pending": pending_owner_agent_id,
+                            "tfidf_pick": pre_tfidf_pick,
+                            "strategy": strat,
+                        },
+                        turn_id=orch_ctx.turn_id,
+                    )
+                except Exception:
+                    logger.debug("audit pending_resume_vs_tfidf skipped", exc_info=True)
+                if not skip_resume_pending:
+                    auto_resume_owner = pending_owner_agent_id
 
             # 0 个 DHA：主持人为先，主持人回复用户并推荐若干 DHA 加入（不再使用 Chat）
             if len(agent_ids) == 0:
@@ -2231,16 +2331,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # 主持人未接管时，优先用本地 TF-IDF 在当前成员中挑选最相关专家
                 # （若用户已显式点名专家，则仍以点名为先）
                 if (not explicit_requested_agent_ids) and len(agent_ids) > 1:
-                    tfidf_pick, tfidf_debug = _select_next_speaker_by_tfidf(
-                        query=(user_message or discussion_goal or ""),
-                        agent_ids=agent_ids,
-                        all_instances=preferred_instances,
-                    )
-                    _audit("local_expert_router", tfidf_debug)
+                    tfidf_pick = pre_tfidf_pick
+                    expert_route_debug_for_turn = pre_tfidf_debug if isinstance(pre_tfidf_debug, dict) else {}
+                    _audit("local_expert_router", pre_tfidf_debug)
                 next_speaker = _select_next_speaker_without_host(
                     agent_ids=agent_ids,
                     last_speaker_agent_id=last_speaker_agent_id,
                     explicit_requested_agent_ids=explicit_requested_agent_ids,
+                    excluded_agent_ids=ignored_expert_ids_set,
                 )
                 if tfidf_pick in agent_ids:
                     next_speaker = tfidf_pick
@@ -2389,6 +2487,34 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # 不再根据 task_done 强制让上一位 DHA 连续发言，
                 # 每一小轮都回到主持人决策，再由 decision["next_speaker"] 指定下一位。
                 next_speaker = decision.get("next_speaker", "user")
+                # 主持人接管模式下，若用户新输入触发了明显更强的 TF-IDF 意图，
+                # 则优先切到该专家，避免“看起来点名了A，实际仍由B发言”。
+                if (
+                    user_message
+                    and (not explicit_requested_agent_ids)
+                    and pre_tfidf_pick in agent_ids
+                    and next_speaker in agent_ids
+                    and pre_tfidf_pick != next_speaker
+                ):
+                    scores = (pre_tfidf_debug or {}).get("scores") or []
+                    top_score = float(scores[0]["score"]) if scores else 0.0
+                    cur_score = next(
+                        (float(x.get("score") or 0.0) for x in scores if str(x.get("agent_id")) == str(next_speaker)),
+                        0.0,
+                    )
+                    if top_score >= 0.06 and top_score >= cur_score + 0.02:
+                        _audit(
+                            "host_takeover_override_by_tfidf",
+                            {
+                                "from_speaker": next_speaker,
+                                "to_speaker": pre_tfidf_pick,
+                                "top_score": top_score,
+                                "current_score": cur_score,
+                                "tfidf_debug": pre_tfidf_debug,
+                            },
+                        )
+                        next_speaker = pre_tfidf_pick
+                        expert_route_debug_for_turn = pre_tfidf_debug if isinstance(pre_tfidf_debug, dict) else {}
                 # 主持人建议新增成员时：仅给出推荐，等待用户确认邀请
                 if suggested_add:
                     host_content = "当前成员无法完成该工作，建议先邀请更匹配的专家。"
@@ -2411,11 +2537,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_id = next_speaker
-                    host_content = announcement if announcement else None
-                    if not host_content:
-                        next_dha = dha_map.get(next_speaker)
-                        next_name = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
-                        host_content = f"下面由 {next_name} 发言。"
+                    next_dha = dha_map.get(next_speaker)
+                    next_name = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
+                    host_content = f"下面由 {next_name} 发言。"
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host" if not leader_agent_id else "assistant",
@@ -2471,8 +2595,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 tools = await build_tools_for_group_chat(dha, group_session_id)
                 resolved_skill_id, skill_content, skill_route_debug = _resolve_dha_skill_id_and_content(
-                    dha, discussion_goal, messages
+                    dha, discussion_goal, messages, ignored_skill_id=ignored_auto_skill_id
                 )
+                route_event = {
+                    "type": "route",
+                    "agent_id": next_speaker,
+                    "skill_id": resolved_skill_id,
+                    "expert_route_debug": expert_route_debug_for_turn if isinstance(expert_route_debug_for_turn, dict) else {},
+                    "skill_route_debug": skill_route_debug if isinstance(skill_route_debug, dict) else {},
+                }
+                yield f"event: route\ndata: {json_module.dumps(route_event, ensure_ascii=False)}\n\n"
                 role = dha.get("role") or ""
                 dha_system = (dha.get("system_prompt") or "").strip()
                 if dha_system:
@@ -2584,6 +2716,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 }
                 if isinstance(skill_route_debug, dict):
                     assistant_msg["skill_route_debug"] = skill_route_debug
+                if isinstance(expert_route_debug_for_turn, dict) and expert_route_debug_for_turn:
+                    assistant_msg["expert_route_debug"] = expert_route_debug_for_turn
                 inferred_required_fields = _infer_required_user_fields_for_skill(skill_content, full_content)
                 if inferred_required_fields:
                     assistant_msg["required_user_fields"] = inferred_required_fields

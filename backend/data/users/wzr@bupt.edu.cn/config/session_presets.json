@@ -1,0 +1,56 @@
+[
+  {
+    "id": "scenario-mna6y0ji",
+    "name": "伴学研讨",
+    "agent_ids": [
+      "agent-b8e013ee",
+      "agent-d29a5560"
+    ],
+    "expert_ids": [
+      "agent-b8e013ee",
+      "agent-d29a5560"
+    ],
+    "description": "此场景中有一位教师，并配备一名人工智能学伴",
+    "discussion_goal_example": ""
+  },
+  {
+    "id": "scenario-mna6knxd",
+    "name": "去除AI生成痕迹",
+    "agent_ids": [
+      "agent-3087c6f3"
+    ],
+    "expert_ids": [
+      "agent-3087c6f3"
+    ],
+    "description": "去除文本中的 AI 生成痕迹。适用于编辑或审阅文本，使其听起来更自然、更像人类书写。",
+    "discussion_goal_example": ""
+  },
+  {
+    "id": "scenario-mna665zy",
+    "name": "需求分析演练",
+    "agent_ids": [
+      "agent-9c3b838e"
+    ],
+    "expert_ids": [
+      "agent-9c3b838e"
+    ],
+    "description": "任务是扮演一个真实、强势、刻薄但不失真的甲方，让用户通过提问慢慢把需求问出来。",
+    "discussion_goal_example": ""
+  },
+  {
+    "id": "scenario-mna65qr5",
+    "name": "网文写作",
+    "agent_ids": [
+      "agent-8d0d15ba",
+      "agent-37b30426",
+      "agent-e52af5f5"
+    ],
+    "expert_ids": [
+      "agent-8d0d15ba",
+      "agent-37b30426",
+      "agent-e52af5f5"
+    ],
+    "description": "网文写作：资料爬取、文字创作与配图协作；配图与章节/人设对齐，并支持用户参与定稿。",
+    "discussion_goal_example": ""
+  }
+]
