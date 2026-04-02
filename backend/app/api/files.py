@@ -366,12 +366,14 @@ async def rename_workspace_file(
     body: FileRenameBody,
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
-    """重命名 workspace 中文件（path 为 workspace 内原相对路径，body.new_name 为新文件名）"""
+    """重命名/移动 workspace 中文件（path 为原相对路径，body.new_name 可为新文件名或新相对路径）"""
     if not path or path.strip() == "":
         raise HTTPException(status_code=400, detail="path is required")
-    new_name = (body.new_name or "").strip().replace("..", "").replace("/", "")
+    new_name = (body.new_name or "").strip().replace("\\", "/")
     if not new_name:
         raise HTTPException(status_code=400, detail="new_name is required")
+    if ".." in new_name:
+        raise HTTPException(status_code=400, detail="Invalid new_name")
     try:
         target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
@@ -380,8 +382,16 @@ async def rename_workspace_file(
         raise HTTPException(status_code=404, detail="File not found")
     if target.is_dir():
         raise HTTPException(status_code=400, detail="Cannot rename a directory")
-    new_path = target.parent / new_name
-    target.rename(new_path)
     ws_root = get_workspace_root(workspace_id, user=current_user)
+    # 兼容：若仅传文件名，沿用“同目录重命名”；若包含 /，视为工作区内目标相对路径（可移动）。
+    if "/" in new_name:
+        candidate = new_name.strip("/")
+        new_path = (ws_root / candidate).resolve()
+    else:
+        new_path = (target.parent / new_name).resolve()
+    if not str(new_path).startswith(str(ws_root)):
+        raise HTTPException(status_code=400, detail="Invalid new_name")
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    target.rename(new_path)
     rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
     return {"status": "ok", "data": {"path": rel}}

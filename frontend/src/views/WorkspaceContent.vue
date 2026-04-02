@@ -266,9 +266,9 @@
                   type="button"
                   class="group-chat-dismiss-suggested-btn"
                   :disabled="autoSwitchIgnoreLoading"
-                  @click="ignoreAutoSwitchAndRedo"
+                  @click="ignoreAutoSwitchAndPause"
                 >
-                  {{ autoSwitchIgnoreLoading ? '重做中…' : '忽略并重做' }}
+                  {{ autoSwitchIgnoreLoading ? '暂停中…' : '忽略' }}
                 </button>
               </div>
               <div v-if="activeStreamingMessage" class="group-chat-speaker-status-input">
@@ -1627,6 +1627,11 @@ async function confirmGroupNext(
   if (extra?.ignoreAutoExpertId) body.ignore_auto_expert_id = extra.ignoreAutoExpertId
   if (extra?.ignoreAutoSkillId) body.ignore_auto_skill_id = extra.ignoreAutoSkillId
   const base = builtMessage()
+  lastSentDraft.value = {
+    goal: String(groupDiscussionGoal.value || ''),
+    nextPrompt: String(groupNextPrompt.value || ''),
+    files: [...(attachedFiles.value || [])],
+  }
   const hasFiles = attachedFiles.value.length > 0
   try {
     const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
@@ -2151,6 +2156,8 @@ const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请
 const suggestedInviteLoading = ref(false)
 const autoSwitchHint = ref<{ expertId?: string; expertName?: string; skillId?: string; skillName?: string } | null>(null)
 const autoSwitchIgnoreLoading = ref(false)
+const lastSentDraft = ref<{ goal: string; nextPrompt: string; files: { name: string; path: string }[] } | null>(null)
+const lastRoute = ref<{ expertId: string; skillId: string } | null>(null)
 const autoSwitchHintText = computed(() => {
   const h = autoSwitchHint.value
   if (!h) return ''
@@ -2237,37 +2244,43 @@ function updateAutoSwitchHint(payload: Record<string, unknown>) {
   if (!payload) return
   const expertDebug = (payload.expert_route_debug || {}) as Record<string, unknown>
   const skillDebug = (payload.skill_route_debug || {}) as Record<string, unknown>
-  const expertStrategy = String(expertDebug.strategy || '')
-  const skillStrategy = String(skillDebug.strategy || '')
   const routedExpertId = String(payload.agent_id || '').trim()
   const routedSkillId = String(payload.skill_id || '').trim()
-  const expertId = String(expertDebug.selected_agent_id || '').trim()
-  const skillId = String(skillDebug.selected_skill_id || '').trim()
-  const expertByTfidf = expertStrategy.startsWith('tfidf')
-  const skillByTfidf = skillStrategy.startsWith('tfidf')
-  if (!expertByTfidf && !skillByTfidf) {
+  if (!routedExpertId && !routedSkillId) return
+
+  // 基线：优先使用上一次 route；若没有（例如刷新页面后首条 route），则从已展示的最后一条 assistant 消息推断。
+  const prevFromMessages = (() => {
+    const list = groupDisplayMessages.value || []
+    for (let i = list.length - 1; i >= 0; i--) {
+      const m = list[i] as GroupMessage & { agent_id?: string; skill_id?: string }
+      if (m?.role === 'assistant' && m.agent_id && (m as Record<string, unknown>).skill_id) {
+        return { expertId: String(m.agent_id || ''), skillId: String((m as Record<string, unknown>).skill_id || '') }
+      }
+    }
+    return null
+  })()
+  const prev = lastRoute.value || prevFromMessages
+  const changedExpert = Boolean(routedExpertId && prev?.expertId && routedExpertId !== prev.expertId)
+  const changedSkill = Boolean(routedSkillId && prev?.skillId && routedSkillId !== prev.skillId)
+  // 若完全没有基线，则只记录不提示；否则只要发生切换就提示。
+  if (!prev) {
+    lastRoute.value = { expertId: routedExpertId, skillId: routedSkillId }
     autoSwitchHint.value = null
     return
   }
-  // 仅在“路由调试选择”和“实际路由结果”一致时展示，避免误报。
-  if (expertByTfidf && expertId && routedExpertId && expertId !== routedExpertId) {
-    autoSwitchHint.value = null
-    return
-  }
-  if (skillByTfidf && skillId && routedSkillId && skillId !== routedSkillId) {
-    autoSwitchHint.value = null
-    return
-  }
+  lastRoute.value = { expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
+  if (!changedExpert && !changedSkill) return
+
   const map = groupDetail.value?.agent_map || {}
-  const finalExpertId = routedExpertId || expertId
-  const finalSkillId = routedSkillId || skillId
+  const finalExpertId = routedExpertId
+  const finalSkillId = routedSkillId
   const expertName = finalExpertId ? (map[finalExpertId]?.name || finalExpertId) : ''
   const skillName = finalSkillId ? formatSkillId(finalSkillId) : ''
   autoSwitchHint.value = {
-    expertId: expertByTfidf ? finalExpertId : '',
-    expertName: expertByTfidf ? expertName : '',
-    skillId: skillByTfidf ? finalSkillId : '',
-    skillName: skillByTfidf ? skillName : '',
+    expertId: changedExpert ? finalExpertId : '',
+    expertName: changedExpert ? expertName : '',
+    skillId: changedSkill ? finalSkillId : '',
+    skillName: changedSkill ? skillName : '',
   }
 }
 
@@ -2596,6 +2609,35 @@ async function ignoreAutoSwitchAndRedo() {
   }
 }
 
+async function ignoreAutoSwitchAndPause() {
+  if (!autoSwitchHint.value) return
+  autoSwitchIgnoreLoading.value = true
+  try {
+    try {
+      groupStreamAbort.value?.abort()
+    } catch (_) {}
+    groupStreaming.value = false
+    groupStreamingPhase.value = '已暂停：请编辑后重新发送'
+    groupWaitingForUser.value = false
+    groupSuggestedNextSpeaker.value = null
+    clearStreamingPlaceholders()
+    autoSwitchHint.value = null
+    const d = lastSentDraft.value
+    if (d) {
+      groupDiscussionGoal.value = d.goal
+      groupNextPrompt.value = d.nextPrompt
+      attachedFiles.value = [...(d.files || [])]
+    }
+    nextTick(() => {
+      try {
+        goalTextareaRef.value?.focus()
+      } catch (_) {}
+    })
+  } finally {
+    autoSwitchIgnoreLoading.value = false
+  }
+}
+
 /** 当前选中的下一发言人（默认为主持人建议的或第一个 DHA） */
 const latestExpertSpeakerDhaId = computed(() => {
   const ids = orderedMemberIds.value
@@ -2748,14 +2790,37 @@ const canSend = computed(
 function stripDiscussionGoalForDisplay(content: string): string {
   const raw = (content ?? '').trim()
   if (!raw) return ''
+  const fileRefMatches = Array.from(raw.matchAll(/【文件引用：([^】]+)】/g))
   const prefix = '【讨论目标】'
   const withoutGoalPrefix = raw.startsWith(prefix)
     ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
     : raw
-  // 用户消息展示中，隐藏「给下一 DHA 的提示」整段，仅保留可直接阅读的信息（如讨论目标/文件引用）
-  return withoutGoalPrefix
+  // 用户消息展示中，隐藏系统注入片段，避免把文件标签/解析痕迹展示给用户。
+  const cleaned = withoutGoalPrefix
     .replace(/(?:^|\n{2,})【给下一 DHA 的提示】[\s\S]*?(?=\n{2,}【文件引用：|$)/g, '')
+    // 隐藏文件引用标签（如：【文件引用：test.md｜notes/test.md】）
+    .replace(/(?:^|\n)【文件引用：[^】]+】/g, '')
+    // 隐藏“文件内容已解析”提示行
+    .replace(/(?:^|\n)【文件内容已解析】/g, '')
+    // 隐藏展开痕迹（如：[文件: notes/test.md]）
+    .replace(/(?:^|\n)\[文件:\s*[^\]]+\]/g, '')
+    // 折叠多余空行
+    .replace(/\n{3,}/g, '\n\n')
     .replace(/^\s+|\s+$/g, '')
+  if (!cleaned && fileRefMatches.length) {
+    const refs = fileRefMatches
+      .map((m) => {
+        const payload = String(m[1] || '').trim()
+        if (!payload) return ''
+        const parts = payload.split('｜').map((x) => x.trim()).filter(Boolean)
+        // 优先显示真实路径（竖线后半段），其次退回原值
+        const path = parts.length >= 2 ? parts[1] : parts[0]
+        return path ? `【文件引用：${path}】` : ''
+      })
+      .filter(Boolean)
+    if (refs.length) return refs.join('\n')
+  }
+  return cleaned
 }
 
 /** 压缩空行并把所有换行替换为空格，用于用户/主持人纯文本展示 */
@@ -3450,6 +3515,11 @@ async function sendGroupMessage() {
   const hasFiles = attachedFiles.value.length > 0
   if (!detail || groupStreaming.value || (!base && !hasFiles)) return
   autoSwitchHint.value = null
+  lastSentDraft.value = {
+    goal: String(groupDiscussionGoal.value || ''),
+    nextPrompt: String(groupNextPrompt.value || ''),
+    files: [...(attachedFiles.value || [])],
+  }
   // 发送后输入框必须清空：前端不保留历史内容
   groupDiscussionGoal.value = ''
   groupNextPrompt.value = ''
@@ -3514,6 +3584,9 @@ async function sendGroupMessage() {
                   // 如果该条 assistant 携带工具结果/查找结果：认为是在“生成草稿/查找内容”
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+                  if (data.role === 'user' && (data as { message_id?: string }).message_id) {
+                    nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
+                  }
                 }
                 if (data.next_prompt) {
                   groupNextPrompt.value = (data.next_prompt as string || '').trim()
@@ -3530,6 +3603,12 @@ async function sendGroupMessage() {
                   groupStreamingPhase.value = '等待你确认邀请…'
                 }
               }
+            } catch (_) {}
+          }
+          if (eventType === 'route' && dataStr) {
+            try {
+              const data = JSON.parse(dataStr) as Record<string, unknown>
+              updateAutoSwitchHint(data)
             } catch (_) {}
           }
           if (eventType === 'end' && dataStr) {

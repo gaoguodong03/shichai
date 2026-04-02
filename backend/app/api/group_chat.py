@@ -702,20 +702,16 @@ def _has_auto_continue_signal(content: str) -> bool:
     text = str(content or "").strip().lower()
     if not text:
         return False
-    cues = (
+    # 继续信号必须足够“显式”，避免把常见写作措辞（如“我将继续…”）误判为需要自动连跑下一轮。
+    # 如需让专家在同一条流中自动连跑，请让其输出以下任一明确标记。
+    explicit_markers = (
+        "[[AUTO_CONTINUE]]",
+        "【自动继续】",
+        "AUTO_CONTINUE",
         "继续执行",
         "继续处理",
-        "接下来我会",
-        "下一步我将",
-        "我将继续",
-        "随后我会",
-        "下一步计划",
-        "next step",
-        "i will continue",
-        "i'll continue",
-        "continue with",
     )
-    return any(c in text for c in cues)
+    return any(c.lower() in text for c in explicit_markers)
 
 
 def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
@@ -1081,11 +1077,11 @@ def _select_next_speaker_without_host(
 ) -> Optional[str]:
     """Fallback progression when host takeover is disabled."""
     blocked = excluded_agent_ids or set()
-    if last_speaker_agent_id and last_speaker_agent_id in agent_ids and last_speaker_agent_id not in blocked:
-        return last_speaker_agent_id
     for did in explicit_requested_agent_ids or []:
         if did in agent_ids and did not in blocked:
             return did
+    if last_speaker_agent_id and last_speaker_agent_id in agent_ids and last_speaker_agent_id not in blocked:
+        return last_speaker_agent_id
     available = [x for x in agent_ids if x not in blocked]
     if len(available) == 1:
         return available[0]
@@ -1300,6 +1296,37 @@ def _extract_explicit_requested_agent_ids(user_text: str, all_instances: List[Di
                 }
             )
     return list(dict.fromkeys(out))
+
+
+def _extract_forced_at_mention_agent_id(user_text: str, all_instances: List[Dict[str, Any]]) -> Optional[str]:
+    """仅当用户消息开头使用 @专家 时，强制指定下一位专家。"""
+    text = (user_text or "").strip()
+    if not text.startswith("@"):
+        return None
+    m = re.match(r"^\s*@([^\s，。,；;：:！!？?\)\]】】]+)", text, flags=re.I)
+    if not m:
+        return None
+    mention = (m.group(1) or "").strip().lower()
+    if not mention:
+        return None
+    for d in all_instances or []:
+        did = str(d.get("agent_id") or "").strip()
+        name = str(d.get("name") or "").strip()
+        role = str(d.get("role") or "").strip()
+        if not did:
+            continue
+        candidates = {
+            did.lower(),
+            _to_agent_style_id(did).lower(),
+            did.replace("agent-", "").lower(),
+        }
+        if name:
+            candidates.add(name.lower())
+        if role:
+            candidates.add(role.lower())
+        if mention in candidates:
+            return did
+    return None
 
 
 def _skill_requires_confirmation_gate(skill_content: str) -> bool:
@@ -2018,6 +2045,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(user_message, preferred_instances) if user_message else []
     explicit_requested_agent_ids = _normalize_to_preferred_agent_ids(explicit_requested_agent_ids, id_to_preferred=id_to_preferred)
+    forced_at_mention_agent_id = _extract_forced_at_mention_agent_id(user_message, preferred_instances) if user_message else None
+    forced_at_mention_agent_id = (
+        id_to_preferred.get(forced_at_mention_agent_id, _to_agent_style_id(forced_at_mention_agent_id))
+        if forced_at_mention_agent_id
+        else None
+    )
     ignored_auto_expert_id = (request.ignore_auto_expert_id or "").strip().lower()
     ignored_auto_expert_id = id_to_preferred.get(ignored_auto_expert_id, _to_agent_style_id(ignored_auto_expert_id)) if ignored_auto_expert_id else ""
     ignored_auto_skill_id = (request.ignore_auto_skill_id or "").strip()
@@ -2185,7 +2218,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             # 预计算 TF-IDF：供「待恢复专家」与强意图切换时二选一，并在下方分支复用，避免重复计算。
             pre_tfidf_pick: Optional[str] = None
             pre_tfidf_debug: Dict[str, Any] = {}
-            if len(agent_ids) > 1 and (not explicit_requested_agent_ids):
+            if len(agent_ids) > 1:
                 pre_tfidf_pick, pre_tfidf_debug = _select_next_speaker_by_tfidf(
                     query=(user_message or discussion_goal or ""),
                     agent_ids=[x for x in agent_ids if x not in ignored_expert_ids_set],
@@ -2198,6 +2231,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 and pending_owner_agent_id
                 and pending_owner_agent_id in agent_ids
                 and request.override_next_speaker is None
+                and not forced_at_mention_agent_id
             ):
                 skip_resume_pending = False
                 strat = str((pre_tfidf_debug or {}).get("strategy") or "")
@@ -2276,7 +2310,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n"
                 return
 
-            if auto_resume_owner and auto_resume_owner in agent_ids:
+            if forced_at_mention_agent_id and forced_at_mention_agent_id in agent_ids:
+                next_speaker = forced_at_mention_agent_id
+                orch_ctx.phase = OrchestrationPhase.EXECUTING
+                orch_ctx.owner_agent_id = forced_at_mention_agent_id
+                _audit(
+                    "forced_at_mention_speaker",
+                    {
+                        "next_speaker": forced_at_mention_agent_id,
+                        "ctx": orch_ctx.to_dict(),
+                    },
+                )
+            elif auto_resume_owner and auto_resume_owner in agent_ids:
                 next_speaker = auto_resume_owner
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
                 orch_ctx.owner_agent_id = auto_resume_owner
@@ -2330,7 +2375,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 tfidf_pick: Optional[str] = None
                 # 主持人未接管时，优先用本地 TF-IDF 在当前成员中挑选最相关专家
                 # （若用户已显式点名专家，则仍以点名为先）
-                if (not explicit_requested_agent_ids) and len(agent_ids) > 1:
+                if len(agent_ids) > 1:
                     tfidf_pick = pre_tfidf_pick
                     expert_route_debug_for_turn = pre_tfidf_debug if isinstance(pre_tfidf_debug, dict) else {}
                     _audit("local_expert_router", pre_tfidf_debug)

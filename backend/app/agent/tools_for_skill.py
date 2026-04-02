@@ -107,7 +107,7 @@ class DeleteWorkspaceFileInput(BaseModel):
 
 class RenameWorkspaceFileInput(BaseModel):
     path: str = Field(description="原文件相对路径")
-    new_name: str = Field(description="新文件名，仅名称不含路径")
+    new_name: str = Field(description="新文件名或新相对路径（如 notes/key.md，可用于移动）")
 
 
 def _create_builtin_workspace_tools(workspace_id: str) -> List:
@@ -143,10 +143,19 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         target = _safe_path(path)
         if not target.exists() or target.is_dir():
             return "错误：文件不存在或是目录。"
-        cleaned = str(new_name or "").strip().replace("/", "").replace("\\", "")
+        cleaned = str(new_name or "").strip().replace("\\", "/")
         if not cleaned:
             return "错误：new_name 不能为空。"
-        new_path = target.parent / cleaned
+        if ".." in cleaned:
+            return "错误：new_name 非法。"
+        # 兼容：仅文件名=同目录重命名；含 / = 工作区内目标相对路径（可移动）。
+        if "/" in cleaned:
+            new_path = _safe_path(cleaned)
+        else:
+            new_path = (target.parent / cleaned).resolve()
+            if not str(new_path).startswith(str(ws_root)):
+                return "错误：目标路径不在当前工作区。"
+        new_path.parent.mkdir(parents=True, exist_ok=True)
         target.rename(new_path)
         rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
         return f"已重命名文件：{rel}"
@@ -168,7 +177,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         ),
         StructuredTool.from_function(
             name="rename_workspace_file",
-            description="重命名当前工作区内的文件（仅修改文件名）。",
+            description="重命名或移动当前工作区内的文件。new_name 可传新文件名，或传相对路径（如 notes/key.md）。",
             func=_rename_workspace_file,
             args_schema=RenameWorkspaceFileInput,
         ),

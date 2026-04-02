@@ -689,6 +689,35 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             return m.group(1).strip()
         return ""
 
+    def _extract_paths_from_last_user(messages: Sequence[BaseMessage]) -> list[str]:
+        """从最近一条用户消息中提取可能的文件路径列表（用于 rename 参数兜底）。"""
+        import re
+
+        last_user = None
+        for m in reversed(messages):
+            from langchain_core.messages import HumanMessage as _HM
+
+            if isinstance(m, _HM):
+                last_user = m
+                break
+        if last_user is None:
+            return []
+        content = str(getattr(last_user, "content", "") or "").strip()
+        if not content:
+            return []
+        paths: list[str] = []
+        # 1) 先提取反引号中的候选
+        for c in re.findall(r"`([^`]+)`", content):
+            s = c.strip()
+            if ("/" in s or "." in s) and s not in paths:
+                paths.append(s)
+        # 2) 再补充普通文本中的 xxx.yyy 样式
+        for m in re.findall(r"([A-Za-z0-9_\-./]+\.[A-Za-z0-9]+)", content):
+            s = m.strip()
+            if s not in paths:
+                paths.append(s)
+        return paths
+
     def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
         """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
         args = dict(arguments) if arguments else {}
@@ -740,6 +769,15 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     auto_path = _extract_path_from_last_user(messages)
                     if auto_path:
                         arguments["path"] = auto_path
+                # rename_workspace_file 兜底：若缺 path/new_name，则从最近用户消息中提取两个路径
+                if tool_name == "rename_workspace_file":
+                    has_src = bool(arguments.get("path"))
+                    has_dst = bool(arguments.get("new_name"))
+                    if not (has_src and has_dst):
+                        candidates = _extract_paths_from_last_user(messages)
+                        if len(candidates) >= 2:
+                            arguments.setdefault("path", candidates[0])
+                            arguments.setdefault("new_name", candidates[1])
                 tool_attempt_debug.append({
                     "requested_tool": requested_tool_name,
                     "resolved_tool": tool_name,
@@ -800,6 +838,14 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 auto_path = _extract_path_from_last_user(messages)
                 if auto_path:
                     arguments["path"] = auto_path
+            if tool_name == "rename_workspace_file":
+                has_src = bool(arguments.get("path"))
+                has_dst = bool(arguments.get("new_name"))
+                if not (has_src and has_dst):
+                    candidates = _extract_paths_from_last_user(messages)
+                    if len(candidates) >= 2:
+                        arguments.setdefault("path", candidates[0])
+                        arguments.setdefault("new_name", candidates[1])
             tool_attempt_debug.append({
                 "requested_tool": requested_tool_name,
                 "resolved_tool": tool_name,

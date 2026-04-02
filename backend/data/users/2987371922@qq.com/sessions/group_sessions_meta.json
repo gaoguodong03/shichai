@@ -283,7 +283,7 @@
     "pending_handoff_reason": "expert_need_user_input"
   },
   "group-9dc2b423c007": {
-    "title": "文件操作与管理",
+    "title": "文件路径和内容管理",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-195b8c3a",
@@ -292,6 +292,33 @@
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-04-02T03:14:47.678724+00:00",
-    "updated_at": "2026-04-02T04:31:56.943258+00:00"
+    "updated_at": "2026-04-02T08:24:20.824321+00:00"
+  },
+  "group-0cfa3ffd6d73": {
+    "title": "图片生成和文字创作",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-195b8c3a",
+      "agent-440b26f8",
+      "agent-web-fetch"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-02T08:26:58.566939+00:00",
+    "updated_at": "2026-04-02T08:59:12.539507+00:00",
+    "pending_owner_agent_id": "agent-440b26f8",
+    "pending_skill_id": "app-icon-generator",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
+  },
+  "group-d4c54a7a516b": {
+    "title": "文字创作技巧分享",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-02T08:43:00.451131+00:00",
+    "updated_at": "2026-04-02T08:43:14.550245+00:00"
   }
 }
