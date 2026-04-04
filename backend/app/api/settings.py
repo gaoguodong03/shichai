@@ -71,6 +71,84 @@ def _get_session_presets_path() -> Path:
     """根据当前用户返回 session_presets.json 路径。"""
     user_ctx = _require_user_ctx()
     return (user_ctx.config_dir / "session_presets.json").resolve()
+
+
+def _get_api_secrets_path() -> Path:
+    """当前用户 api_secrets.json（API Key 密钥库）。"""
+    user_ctx = _require_user_ctx()
+    return (user_ctx.config_dir / "api_secrets.json").resolve()
+
+
+def load_api_secrets_raw() -> Dict[str, Any]:
+    """加载密钥库原始 JSON（含 api_key 明文，仅服务端使用）。"""
+    path = _get_api_secrets_path()
+    default: Dict[str, Any] = {"items": {}}
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and isinstance(data.get("items"), dict):
+                    return {"items": dict(data["items"])}
+        except Exception:
+            pass
+    return default
+
+
+def save_api_secrets_raw(data: Dict[str, Any]) -> None:
+    path = _get_api_secrets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_api_secret_values_for_user(username: str) -> Dict[str, str]:
+    """指定用户密钥 id -> api_key（无 HTTP 上下文时使用，如 MCP 连接）。"""
+    from app.core.user_context import get_user_context_for
+
+    un = (username or "").strip()
+    if not un:
+        return {}
+    path = (get_user_context_for(un).config_dir / "api_secrets.json").resolve()
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, dict):
+            return {}
+        out: Dict[str, str] = {}
+        for sid, meta in items.items():
+            if isinstance(meta, dict):
+                v = (meta.get("api_key") or "").strip()
+                if v:
+                    out[str(sid)] = v
+        return out
+    except Exception:
+        return {}
+
+
+def load_api_secret_values() -> Dict[str, str]:
+    """当前请求用户密钥 id -> api_key，供 LLM 解析 api_key_ref。"""
+    from app.core.user_context import get_current_username
+
+    un = get_current_username()
+    if not un:
+        return {}
+    return load_api_secret_values_for_user(un)
+
+
+def _normalize_api_secret_id(raw: str) -> str:
+    """与常见环境变量名一致，允许大写字母，区分大小写。"""
+    s = (raw or "").strip().replace(" ", "-")
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$", s):
+        raise HTTPException(
+            status_code=400,
+            detail="密钥标识仅能使用字母、数字、连字符与下划线，长度 1～63，区分大小写",
+        )
+    return s
+
+
 # ========== 应用设置 API（LLM 选择、系统提示词） ==========
 
 class AppSettingsBody(BaseModel):
@@ -209,6 +287,22 @@ def load_app_settings() -> Dict[str, Any]:
         except Exception:
             pass
     return data
+
+
+def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
+    """GET/PUT 响应：不返回 llm_providers 中的 api_key 明文，仅保留 api_key_set。"""
+    safe = dict(data)
+    providers = safe.get("llm_providers") or {}
+    if isinstance(providers, dict):
+        safe_providers: Dict[str, Dict[str, Any]] = {}
+        for pid, meta in providers.items():
+            m = dict(meta or {}) if isinstance(meta, dict) else {}
+            api_key = (m.get("api_key") or "").strip()
+            m["api_key_set"] = bool(api_key)
+            m.pop("api_key", None)
+            safe_providers[pid] = m
+        safe["llm_providers"] = safe_providers
+    return safe
 
 
 class HostPromptsBody(BaseModel):
@@ -355,6 +449,10 @@ def save_app_settings(data: Dict[str, Any]):
                 if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
                     # 显式清空
                     base.pop("api_key", None)
+                if "api_key_ref" not in meta and "api_key_ref" in existing.get(pid, {}):
+                    base["api_key_ref"] = existing[pid].get("api_key_ref")
+                if isinstance(meta.get("api_key_ref"), str) and not (meta.get("api_key_ref") or "").strip():
+                    base.pop("api_key_ref", None)
             merged[pid] = base
         patch["llm_providers"] = merged
 
@@ -365,29 +463,113 @@ def save_app_settings(data: Dict[str, Any]):
 @router.get("/settings/app")
 async def get_app_settings():
     """获取应用设置（LLM 选择、系统提示词）"""
-    # 出于安全考虑：不把 api_key 明文返回给前端，只返回是否已设置
-    data = load_app_settings()
-    safe = dict(data)
-    providers = safe.get("llm_providers") or {}
-    if isinstance(providers, dict):
-        safe_providers: Dict[str, Dict[str, Any]] = {}
-        for pid, meta in providers.items():
-            m = dict(meta or {}) if isinstance(meta, dict) else {}
-            api_key = (m.get("api_key") or "").strip()
-            if api_key:
-                m["api_key_set"] = True
-            else:
-                m["api_key_set"] = False
-            m.pop("api_key", None)
-            safe_providers[pid] = m
-        safe["llm_providers"] = safe_providers
-    return {"status": "ok", "data": safe}
+    return {"status": "ok", "data": _sanitize_app_settings_for_client(load_app_settings())}
 
 @router.put("/settings/app")
 async def update_app_settings(body: AppSettingsBody):
     """更新应用设置"""
     save_app_settings(body.model_dump(exclude_none=True))
-    return {"status": "ok", "data": load_app_settings()}
+    return {"status": "ok", "data": _sanitize_app_settings_for_client(load_app_settings())}
+
+
+# ========== API 密钥库（供 LLM 提供方 api_key_ref 引用） ==========
+
+
+class ApiSecretCreate(BaseModel):
+    id: str
+    label: Optional[str] = None
+    api_key: str = ""
+
+
+class ApiSecretUpdate(BaseModel):
+    label: Optional[str] = None
+    api_key: Optional[str] = None  # 传入空字符串表示清除密钥内容
+
+
+@router.get("/settings/api-secrets")
+async def list_api_secrets():
+    """列出密钥条目（不含 api_key 明文）。"""
+    raw = load_api_secrets_raw()
+    items = raw.get("items") or {}
+    out: List[Dict[str, Any]] = []
+    if isinstance(items, dict):
+        for sid in sorted(items.keys()):
+            meta = items.get(sid)
+            if not isinstance(meta, dict):
+                continue
+            k = (meta.get("api_key") or "").strip()
+            out.append(
+                {
+                    "id": str(sid),
+                    "label": (meta.get("label") or "").strip() or str(sid),
+                    "key_set": bool(k),
+                }
+            )
+    return {"status": "ok", "data": {"items": out}}
+
+
+@router.post("/settings/api-secrets")
+async def create_api_secret(body: ApiSecretCreate):
+    raw = load_api_secrets_raw()
+    items = raw.setdefault("items", {})
+    if not isinstance(items, dict):
+        items = {}
+        raw["items"] = items
+    sid = _normalize_api_secret_id(body.id)
+    if sid in items:
+        raise HTTPException(status_code=409, detail="该密钥标识已存在")
+    key = (body.api_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="请填写 API Key")
+    label = (body.label or "").strip() or sid
+    items[sid] = {"label": label, "api_key": key}
+    save_api_secrets_raw(raw)
+    return {"status": "ok", "data": {"id": sid, "label": label, "key_set": True}}
+
+
+@router.put("/settings/api-secrets/{secret_id}")
+async def update_api_secret(secret_id: str, body: ApiSecretUpdate):
+    raw = load_api_secrets_raw()
+    items = raw.setdefault("items", {})
+    if not isinstance(items, dict):
+        raise HTTPException(status_code=500, detail="密钥库格式错误")
+    sid = _normalize_api_secret_id(secret_id)
+    if sid not in items:
+        raise HTTPException(status_code=404, detail="密钥不存在")
+    meta = dict(items[sid]) if isinstance(items[sid], dict) else {}
+    if body.label is not None:
+        meta["label"] = (body.label or "").strip() or sid
+    if body.api_key is not None:
+        nk = body.api_key.strip()
+        if nk:
+            meta["api_key"] = nk
+        else:
+            meta.pop("api_key", None)
+    items[sid] = meta
+    save_api_secrets_raw(raw)
+    k = (meta.get("api_key") or "").strip()
+    return {
+        "status": "ok",
+        "data": {
+            "id": sid,
+            "label": (meta.get("label") or "").strip() or sid,
+            "key_set": bool(k),
+        },
+    }
+
+
+@router.delete("/settings/api-secrets/{secret_id}")
+async def delete_api_secret(secret_id: str):
+    raw = load_api_secrets_raw()
+    items = raw.setdefault("items", {})
+    if not isinstance(items, dict):
+        raise HTTPException(status_code=404, detail="密钥不存在")
+    sid = _normalize_api_secret_id(secret_id)
+    if sid not in items:
+        raise HTTPException(status_code=404, detail="密钥不存在")
+    del items[sid]
+    save_api_secrets_raw(raw)
+    return {"status": "ok"}
 
 
 # ========== MCP 配置 API ==========

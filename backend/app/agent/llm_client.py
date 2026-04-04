@@ -23,17 +23,23 @@ _DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, str]] = {
 def get_llm_from_config(
     provider_id: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
+    api_secrets: Optional[Dict[str, str]] = None,
 ) -> "QwenLLM":
     """
     根据 provider_id 从配置创建 LLM 客户端。
-    api_key 优先从配置读取（可在线保存），否则从 api_key_env 指定的环境变量读取。
+    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
     """
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
     cfg = providers.get(provider_id) or providers.get("qwen")
     if not cfg:
         return QwenLLM()
 
-    api_key = (cfg.get("api_key") or "").strip() or None
+    api_key = None
+    ref = (cfg.get("api_key_ref") or "").strip()
+    if ref and api_secrets and ref in api_secrets:
+        api_key = api_secrets[ref]
+    if not api_key:
+        api_key = (cfg.get("api_key") or "").strip() or None
     if not api_key:
         api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
         api_key = os.getenv(api_key_env)

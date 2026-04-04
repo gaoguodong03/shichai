@@ -40,6 +40,26 @@ def test_get_llm_from_config_jeniya():
     assert llm.api_key == "test-jeniya-key"
 
 
+def test_get_llm_from_config_api_key_ref():
+    """api_key_ref 优先于环境变量与内联 api_key"""
+    from app.agent.llm_client import get_llm_from_config
+
+    llm = get_llm_from_config(
+        "jeniya",
+        {
+            "jeniya": {
+                "base_url": "http://jeniya.top/v1",
+                "model": "gpt-4o",
+                "api_key_env": "JENIYA_API_KEY",
+                "api_key": "inline-should-not-win",
+                "api_key_ref": "vault-a",
+            },
+        },
+        api_secrets={"vault-a": "from-vault"},
+    )
+    assert llm.api_key == "from-vault"
+
+
 def test_get_llm_from_config_unknown_fallback():
     """未知 provider 回退到 qwen"""
     from app.agent.llm_client import get_llm_from_config

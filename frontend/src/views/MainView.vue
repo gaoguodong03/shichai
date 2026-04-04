@@ -721,6 +721,7 @@
       <template v-if="currentModule === 'settings'">
         <AppSettingsView v-if="selectedId === 'app'" />
         <ThemeSettingsView v-else-if="selectedId === 'theme'" />
+        <ApiSecretsSettingsView v-else-if="selectedId === 'secrets'" />
         <UserPreferenceSettingsView v-else-if="selectedId === 'user'" />
         <AccountSecuritySettingsView v-else-if="selectedId === 'account-security'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
@@ -747,6 +748,7 @@ import AppSettingsView from './AppSettingsView.vue'
 import ThemeSettingsView from './ThemeSettingsView.vue'
 import UserPreferenceSettingsView from './UserPreferenceSettingsView.vue'
 import AccountSecuritySettingsView from './AccountSecuritySettingsView.vue'
+import ApiSecretsSettingsView from './ApiSecretsSettingsView.vue'
 import LLMSettingsView from './LLMSettingsView.vue'
 import DHAView from './DHAView.vue'
 import WorkspaceContent from './WorkspaceContent.vue'
@@ -935,6 +937,7 @@ const filteredMcpServers = computed(() => {
 const settingsCategories = [
   { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
+  { id: 'secrets', label: '密钥管理' },
   { id: 'account-security', label: '账号' },
 ]
 // Group

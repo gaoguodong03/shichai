@@ -118,9 +118,24 @@ async def execute_mcp_call(
     return True, (gw.output or {}).get("mcp_result"), ""
 
 
-def _subst_env(val: str) -> str:
-    """将字符串中的 ${VAR} 替换为环境变量"""
-    return re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1), ""), str(val))
+def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) -> str:
+    """${vault:标识} 显式引用密钥库；${VAR} 优先环境变量，未设置时再尝试同标识的密钥库条目（与 .env 中 EXA_API_KEY 等写法兼容）。"""
+    secrets = secrets or {}
+    s = str(val)
+
+    def repl_vault(m: re.Match) -> str:
+        return secrets.get(m.group(1), "")
+
+    def repl_env(m: re.Match) -> str:
+        name = m.group(1)
+        v = os.environ.get(name, "")
+        if v:
+            return v
+        return secrets.get(name, "")
+
+    s = re.sub(r"\$\{vault:([A-Za-z0-9_-]+)\}", repl_vault, s)
+    s = re.sub(r"\$\{(\w+)\}", repl_env, s)
+    return s
 
 
 def _user_mcp_config_path(username: str) -> str:
@@ -140,7 +155,7 @@ def get_mcp_manager_for_user(username: str) -> "MCPToolManager":
     with _mcp_user_lock:
         mgr = _mcp_by_user.get(uname)
         if mgr is None:
-            mgr = MCPToolManager()
+            mgr = MCPToolManager(username=uname)
             _mcp_by_user[uname] = mgr
         return mgr
 
@@ -195,7 +210,8 @@ def get_mcp_manager() -> "MCPToolManager":
 class MCPToolManager:
     """MCP 工具管理器"""
     
-    def __init__(self):
+    def __init__(self, username: Optional[str] = None):
+        self._username = (username or "").strip() or None
         self.sessions: Dict[str, ClientSession] = {}
         self.tools: Dict[str, Tool] = {}
         self.server_configs: List[Dict[str, Any]] = []
@@ -226,6 +242,15 @@ class MCPToolManager:
             transport_type = transport.get("type", "stdio")
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
+            secrets: Dict[str, str] = {}
+            if self._username:
+                try:
+                    from app.api.settings import load_api_secret_values_for_user
+
+                    secrets = load_api_secret_values_for_user(self._username)
+                except Exception:
+                    secrets = {}
+
             if transport_type == "stdio":
                 if stdio_client is None:
                     logger.error("stdio transport unavailable: MCP SDK not installed")
@@ -242,7 +267,7 @@ class MCPToolManager:
                 env = None
                 if isinstance(raw_env, dict) and raw_env:
                     # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
-                    env = {**os.environ, **{k: _subst_env(v) for k, v in raw_env.items()}}
+                    env = {**os.environ, **{k: _subst_mcp_placeholders(v, secrets) for k, v in raw_env.items()}}
                 params = StdioServerParameters(
                     command=command,
                     args=args,
@@ -287,13 +312,12 @@ class MCPToolManager:
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
                 # 远程 HTTP / Streamable HTTP：使用 MCP SDK 的 streamable_http_client
                 url = (transport.get("url") or transport.get("base_url") or "").strip()
-                url = _subst_env(url)  # 支持 ${VAR} 环境变量（如 Exa API Key）
+                url = _subst_mcp_placeholders(url, secrets)  # ${vault:...} 密钥库；${VAR} 环境变量
                 if not url:
                     logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
                     return False
                 raw_headers = dict(transport.get("headers") or {})
-                # 支持 ${VAR} 环境变量替换，便于安全配置 API Key（如 "Bearer ${SMITHERY_API_KEY}"）
-                headers = {k: _subst_env(str(v)) for k, v in raw_headers.items()}
+                headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
                 http_client = None
                 if headers:
                     http_client = httpx.AsyncClient(headers=headers, timeout=60.0)

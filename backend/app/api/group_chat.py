@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
 from app.api.dha import load_dha_instances, enrich_dha_instances
-from app.api.settings import load_app_settings
+from app.api.settings import load_app_settings, load_api_secret_values
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
@@ -805,7 +805,8 @@ def _get_llm_for_dha(dha: Optional[Dict[str, Any]], app_settings: Dict[str, Any]
     provider = (dha.get("llm_provider_id") or "").strip() if dha else ""
     if not provider:
         provider = app_settings.get("default_llm", "qwen")
-    return get_llm_from_config(provider, app_settings.get("llm_providers"))
+    secrets = load_api_secret_values()
+    return get_llm_from_config(provider, app_settings.get("llm_providers"), secrets)
 
 
 def _get_dha_skill_content(dha: Dict[str, Any]) -> str:
@@ -2031,7 +2032,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
         if title_auto_generated or current_title in placeholder_titles or is_template_title:
             llm_provider_id = app_settings.get("default_llm", "qwen")
-            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"))
+            secrets = load_api_secret_values()
+            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"), secrets)
             # 基于最近用户发言生成“当前主题”，避免讨论发散后标题仍停留在旧主题
             ai_title = await _ai_title_from_recent_user_messages(llm, messages, max_chars=18, max_user_messages=6)
             if ai_title:

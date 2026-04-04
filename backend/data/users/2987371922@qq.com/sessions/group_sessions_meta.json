@@ -323,7 +323,7 @@
     "updated_at": "2026-04-02T08:43:14.550245+00:00"
   },
   "group-f65045deabff": {
-    "title": "编程Agent与工程重塑",
+    "title": "编程Agent工程重塑方法",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-9f6a2b8d"
@@ -331,6 +331,56 @@
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-04-04T07:36:47.183393+00:00",
-    "updated_at": "2026-04-04T07:48:27.790874+00:00"
+    "updated_at": "2026-04-04T07:49:33.540760+00:00"
+  },
+  "group-5aca8e95b91e": {
+    "title": "编程Agent与工程重塑",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-9f6a2b8d"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-04T07:49:42.534217+00:00",
+    "updated_at": "2026-04-04T08:25:11.302282+00:00"
+  },
+  "group-9448ff15fe61": {
+    "title": "GPT及编程Agent相关讨论",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-04T09:18:42.219189+00:00",
+    "updated_at": "2026-04-04T09:34:04.273328+00:00"
+  },
+  "group-4e239dc75bde": {
+    "title": "编程Agent与工程设计重塑",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-04T09:34:53.209903+00:00",
+    "updated_at": "2026-04-04T09:35:26.472872+00:00"
+  },
+  "group-7e3d37aa9893": {
+    "title": "编程Agent的重塑与设计",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "",
+    "speak_mode": "auto",
+    "created_at": "2026-04-04T09:35:50.016897+00:00",
+    "updated_at": "2026-04-04T09:36:27.379306+00:00"
   }
 }

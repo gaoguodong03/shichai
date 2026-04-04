@@ -232,7 +232,16 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "delete": true,
+      "rename": true
+    },
+    "url_capability": true
   },
   {
     "agent_id": "agent-ae100f7a",

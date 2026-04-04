@@ -63,7 +63,9 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-primary mb-2">技能</label>
+              <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
+
+              <div class="text-xs font-medium text-muted mb-1.5">技能</div>
               <input
                 v-if="skills.length"
                 v-model.trim="skillSearch"
@@ -91,40 +93,34 @@
               <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
                 没有匹配的 Skill
               </p>
-            </div>
 
-            <div>
-              <label class="block text-sm font-medium text-primary mb-2">工具能力</label>
-              <p class="text-xs text-muted mb-2">与会话内可用工具一致：文件类为工作区内操作；URL 为通过 call_api 拉取公开 http(s) 内容（服务端 SSRF 防护）。</p>
-              <div class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
-                <button
-                  v-for="item in fileCapabilityItems"
-                  :key="item.key"
-                  type="button"
-                  class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  :class="item.enabled
-                    ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                    : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                  @click="toggleFileCapability(item.key)"
-                >
-                  {{ item.label }} · {{ item.enabled ? '开' : '关' }}
-                </button>
+              <div class="mt-4 pt-4 border-t border-border-light">
+                <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
+                <div class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
+                  <button
+                    v-for="item in fileCapabilityItems"
+                    :key="item.key"
+                    type="button"
+                    class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                    :class="item.enabled
+                      ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                      : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                    @click="toggleFileCapability(item.key)"
+                  >
+                    {{ item.label }}
+                  </button>
+                  <button
+                    type="button"
+                    class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                    :class="form.url_capability
+                      ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                      : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                    @click="toggleUrlCapability"
+                  >
+                    外部链接
+                  </button>
+                </div>
               </div>
-              <div class="mt-2">
-                <button
-                  type="button"
-                  class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  :class="form.url_capability
-                    ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                    : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                  @click="toggleUrlCapability"
-                >
-                  外部链接 / HTTP（call_api） · {{ form.url_capability ? '开' : '关' }}
-                </button>
-              </div>
-              <p v-if="!canDirectSave" class="text-xs text-muted mt-2">
-                当前专家不可直接保存文件（请打开「文件写入」）
-              </p>
             </div>
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
@@ -419,8 +415,6 @@ const fileCapabilityItems = computed(() => {
     { key: 'rename' as const, label: '文件重命名', enabled: !!caps.rename },
   ]
 })
-
-const canDirectSave = computed(() => !!form.value.file_capabilities.write)
 
 const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()
