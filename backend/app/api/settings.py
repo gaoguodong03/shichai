@@ -197,6 +197,42 @@ _DEFAULT_LLM_PROVIDERS = {
     },
 }
 
+def _default_router_tfidf_from_env() -> Dict[str, float]:
+    """专家/技能 TF-IDF 路由阈值：未写入 app_settings 时以环境变量为准（与 .env 一致）。"""
+
+    def _f(name: str, default: str) -> float:
+        try:
+            return float(str(os.getenv(name, default) or default).strip())
+        except Exception:
+            return float(default)
+
+    return {
+        "expert_min_score": max(0.0, min(1.0, _f("EXPERT_ROUTER_TFIDF_MIN_SCORE", "0.05"))),
+        "expert_min_delta": max(0.0, _f("EXPERT_ROUTER_TFIDF_MIN_DELTA", "0.01")),
+        "skill_min_score": max(0.0, min(1.0, _f("SKILL_ROUTER_TFIDF_MIN_SCORE", "0.12"))),
+        "skill_min_delta": max(0.0, _f("SKILL_ROUTER_TFIDF_MIN_DELTA", "0.01")),
+    }
+
+
+def normalize_router_tfidf(raw: Any) -> Dict[str, float]:
+    """合并用户配置与环境默认值；保存后热更新，无需重启进程。"""
+    base = _default_router_tfidf_from_env()
+    if not isinstance(raw, dict):
+        return base
+    for k in ("expert_min_score", "expert_min_delta", "skill_min_score", "skill_min_delta"):
+        if k not in raw or raw[k] is None:
+            continue
+        try:
+            v = float(raw[k])
+        except Exception:
+            continue
+        if k.endswith("_min_score"):
+            base[k] = max(0.0, min(1.0, v))
+        else:
+            base[k] = max(0.0, v)
+    return base
+
+
 _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
     "host_display_name": "四九",
     # 方案 A：只保留两个字段，避免“首轮/非首轮、0/1 成员”等碎片化配置
@@ -263,6 +299,7 @@ def load_app_settings() -> Dict[str, Any]:
         "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
         # 主持人提示词（群聊主持调度用），默认使用 group_chat.py 的历史硬编码内容
         "host_prompts": dict(_DEFAULT_HOST_PROMPTS),
+        "router_tfidf": _default_router_tfidf_from_env(),
     }
     if path.exists():
         try:
@@ -283,6 +320,7 @@ def load_app_settings() -> Dict[str, Any]:
                     if k not in providers:
                         providers[k] = v
                 data["llm_providers"] = providers
+                data["router_tfidf"] = normalize_router_tfidf(data.get("router_tfidf"))
                 return data
         except Exception:
             pass
@@ -305,20 +343,35 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
+class RouterTfidfPatch(BaseModel):
+    """TF-IDF 路由阈值（专家切换 / 多 skill 选型）"""
+
+    expert_min_score: Optional[float] = None
+    expert_min_delta: Optional[float] = None
+    skill_min_score: Optional[float] = None
+    skill_min_delta: Optional[float] = None
+
+
 class HostPromptsBody(BaseModel):
     """主持人提示词（群聊调度用）"""
 
     host_display_name: Optional[str] = None
     host_master_prompt: Optional[str] = None
     host_zero_member_policy: Optional[str] = None
+    router_tfidf: Optional[RouterTfidfPatch] = None
+
+
+def _host_prompts_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    hp = data.get("host_prompts") or {}
+    payload = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
+    payload["router_tfidf"] = normalize_router_tfidf(data.get("router_tfidf"))
+    return payload
 
 
 @router.get("/settings/host-prompts")
 async def get_host_prompts():
     data = load_app_settings()
-    hp = data.get("host_prompts") or {}
-    payload = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
-    return {"status": "ok", "data": payload}
+    return {"status": "ok", "data": _host_prompts_response_payload(data)}
 
 
 @router.put("/settings/host-prompts")
@@ -330,21 +383,39 @@ async def update_host_prompts(body: HostPromptsBody):
     for k in ("host_display_name", "host_master_prompt", "host_zero_member_policy"):
         if k in incoming:
             merged[k] = incoming[k] or ""
-    save_app_settings({"host_prompts": merged})
-    return {"status": "ok", "data": merged}
+    patch: Dict[str, Any] = {"host_prompts": merged}
+    rtf_in = incoming.get("router_tfidf")
+    if isinstance(rtf_in, dict) and rtf_in:
+        merged_rt = normalize_router_tfidf(current.get("router_tfidf"))
+        for k in ("expert_min_score", "expert_min_delta", "skill_min_score", "skill_min_delta"):
+            if k in rtf_in and rtf_in[k] is not None:
+                try:
+                    merged_rt[k] = float(rtf_in[k])
+                except Exception:
+                    raise HTTPException(status_code=400, detail=f"router_tfidf.{k} 必须为数字")
+        merged_rt["expert_min_score"] = max(0.0, min(1.0, merged_rt["expert_min_score"]))
+        merged_rt["skill_min_score"] = max(0.0, min(1.0, merged_rt["skill_min_score"]))
+        merged_rt["expert_min_delta"] = max(0.0, merged_rt["expert_min_delta"])
+        merged_rt["skill_min_delta"] = max(0.0, merged_rt["skill_min_delta"])
+        patch["router_tfidf"] = merged_rt
+    save_app_settings(patch)
+    return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
 
 
 @router.get("/settings/host-prompts/defaults")
 async def get_host_prompts_defaults():
     """返回内置默认主持人提示词（不读配置文件）。"""
-    return {"status": "ok", "data": dict(_DEFAULT_HOST_PROMPTS)}
+    return {
+        "status": "ok",
+        "data": {**dict(_DEFAULT_HOST_PROMPTS), "router_tfidf": _default_router_tfidf_from_env()},
+    }
 
 
 @router.post("/settings/host-prompts/reset")
 async def reset_host_prompts():
-    """将主持人提示词恢复为内置默认值。"""
-    save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS)})
-    return {"status": "ok", "data": dict(_DEFAULT_HOST_PROMPTS)}
+    """将主持人提示词与 TF-IDF 路由阈值恢复为内置默认值（阈值以当前环境变量为默认）。"""
+    save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS), "router_tfidf": _default_router_tfidf_from_env()})
+    return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
 
 
 @router.get("/settings/session-presets")

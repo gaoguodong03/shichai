@@ -187,6 +187,16 @@ class SkillsLoader:
         except Exception:
             return 0.12
 
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _tfidf_min_delta() -> float:
+        """TOP 与第二名的最小分差；过小则视为不确定（与专家路由 EXPERT_ROUTER_TFIDF_MIN_DELTA 语义一致）。"""
+        raw = os.getenv("SKILL_ROUTER_TFIDF_MIN_DELTA", "0.01").strip()
+        try:
+            return max(0.0, float(raw))
+        except Exception:
+            return 0.01
+
     def _build_skill_route_text(self, skill: Skill) -> str:
         """构造用于 TF-IDF 向量化的 skill 文本（仅名称 + 描述）。"""
         name = (skill.name or "").strip()
@@ -228,13 +238,25 @@ class SkillsLoader:
         self._tfidf_bundle_cache[key] = bundle
         return bundle
 
-    def pick_best_skill_with_debug(self, combined_text: str, candidate_ids: List[str]) -> Dict[str, Any]:
-        """返回路由决策详情，供日志/调试使用。"""
+    def pick_best_skill_with_debug(
+        self,
+        combined_text: str,
+        candidate_ids: List[str],
+        *,
+        min_score: Optional[float] = None,
+        min_delta: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """返回路由决策详情，供日志/调试使用。min_score/min_delta 可由 app_settings 注入，实现热更新。"""
+        ms = float(min_score) if min_score is not None else self._tfidf_min_score()
+        md = float(min_delta) if min_delta is not None else self._tfidf_min_delta()
+        ms = max(0.0, min(1.0, ms))
+        md = max(0.0, md)
         ids = [str(x).strip() for x in candidate_ids if str(x).strip()]
         debug: Dict[str, Any] = {
             "selected_skill_id": None,
             "strategy": "none",
-            "min_score": self._tfidf_min_score(),
+            "min_score": ms,
+            "min_delta": md,
             "tfidf_available": bool(TfidfVectorizer is not None and cosine_similarity is not None),
             "scores": [],
         }
@@ -266,11 +288,19 @@ class SkillsLoader:
                     )
                     debug["scores"] = ranking[:5]
                     best = ranking[0]
+                    top_score = float(best["score"])
+                    second_score = float(ranking[1]["score"]) if len(ranking) > 1 else 0.0
+                    min_s = float(debug["min_score"])
+                    min_d = float(debug["min_delta"])
                     debug["strategy"] = "tfidf"
-                    if float(best["score"]) >= float(debug["min_score"]):
+                    score_ok = top_score >= min_s
+                    delta_ok = len(ranking) <= 1 or (top_score - second_score) >= min_d
+                    if score_ok and delta_ok:
                         debug["selected_skill_id"] = best["skill_id"]
                         return debug
-                    debug["strategy"] = "tfidf_below_threshold"
+                    debug["strategy"] = (
+                        "tfidf_below_threshold" if not score_ok else "tfidf_low_confidence"
+                    )
             except Exception:
                 debug["strategy"] = "tfidf_error"
 

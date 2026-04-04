@@ -57,7 +57,7 @@ backend/
 - 实现方式：`scikit-learn` 的 `TfidfVectorizer + cosine_similarity`，不依赖大模型推理。
 - 文档构成：`skill_id + name + description + SKILL.md 前几行正文`。
 - 低置信回退：当最高相似度低于阈值时返回 `None`，上层继续按既有顺序回退到默认行为。
-- 阈值配置：`SKILL_ROUTER_TFIDF_MIN_SCORE`（默认 `0.12`，范围 `0~1`）。
+- 阈值配置：`SKILL_ROUTER_TFIDF_MIN_SCORE`（默认 `0.12`，范围 `0~1`）、`SKILL_ROUTER_TFIDF_MIN_DELTA`（TOP 与第二名最小分差，默认 `0.01`；与专家路由 `EXPERT_ROUTER_TFIDF_*` 语义一致）。
 
 ## Skill 脚本执行（run_skill_script）
 

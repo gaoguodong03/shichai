@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
 from app.api.dha import load_dha_instances, enrich_dha_instances
-from app.api.settings import load_app_settings, load_api_secret_values
+from app.api.settings import load_app_settings, load_api_secret_values, normalize_router_tfidf
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
@@ -834,6 +834,9 @@ def _resolve_dha_skill_id_and_content(
     discussion_goal: str,
     messages: List[Dict[str, Any]],
     ignored_skill_id: Optional[str] = None,
+    *,
+    skill_min_score: Optional[float] = None,
+    skill_min_delta: Optional[float] = None,
 ) -> tuple[str, str, Dict[str, Any]]:
     """当 DHA 绑定多个 skill 时，由 SkillsLoader 按各 SKILL 的 name/description（及 skill_id）与上下文的匹配度选型；无信号时回退列表顺序。
 
@@ -866,7 +869,12 @@ def _resolve_dha_skill_id_and_content(
 
     last_user = _last_user_message_text(messages)
     combined = f"{discussion_goal or ''}\n{last_user}".strip()
-    route_debug = sl.pick_best_skill_with_debug(combined, skill_ids)
+    route_debug = sl.pick_best_skill_with_debug(
+        combined,
+        skill_ids,
+        min_score=skill_min_score,
+        min_delta=skill_min_delta,
+    )
     picked = (route_debug.get("selected_skill_id") or "").strip() or None
     debug_info.update(route_debug)
     ignored_sid = (ignored_skill_id or "").strip()
@@ -1088,6 +1096,7 @@ def _select_next_speaker_by_tfidf(
     query: str,
     agent_ids: List[str],
     all_instances: List[Dict[str, Any]],
+    router_tfidf: Optional[Dict[str, float]] = None,
 ) -> Tuple[Optional[str], Dict[str, Any]]:
     """本地 TF-IDF 专家路由：按用户输入从候选专家中选出下一发言人。"""
     debug: Dict[str, Any] = {
@@ -1147,17 +1156,10 @@ def _select_next_speaker_by_tfidf(
         debug["selected_agent_id"] = picked
         return picked, debug
 
-    # 统一专家 TF-IDF 阈值（可通过环境变量调整）：
-    # - EXPERT_ROUTER_TFIDF_MIN_SCORE：最低得分门槛，低于此值视为“看不太懂用户要啥”，不强行切专家
-    # - EXPERT_ROUTER_TFIDF_MIN_DELTA：TOP 与第二名的最小分差，差太小视为“信号不够强”，也不强行切专家
-    try:
-        min_score = float(os.getenv("EXPERT_ROUTER_TFIDF_MIN_SCORE", "0.05"))
-    except Exception:
-        min_score = 0.05
-    try:
-        min_delta = float(os.getenv("EXPERT_ROUTER_TFIDF_MIN_DELTA", "0.01"))
-    except Exception:
-        min_delta = 0.01
+    # 专家 TF-IDF 阈值：优先用户 app_settings（主持人设置页），否则环境变量默认值
+    rt = router_tfidf if isinstance(router_tfidf, dict) else normalize_router_tfidf(None)
+    min_score = float(rt.get("expert_min_score", 0.05))
+    min_delta = float(rt.get("expert_min_delta", 0.01))
 
     try:
         vec = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), lowercase=True, sublinear_tf=True)
@@ -2173,6 +2175,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     query=(user_message or discussion_goal or ""),
                     agent_ids=[x for x in agent_ids if x not in ignored_expert_ids_set],
                     all_instances=preferred_instances,
+                    router_tfidf=normalize_router_tfidf(app_settings.get("router_tfidf")),
                 )
 
             auto_resume_owner: Optional[str] = None
@@ -2588,8 +2591,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = "user"
                     break
 
+                _rt_cfg = normalize_router_tfidf(app_settings.get("router_tfidf"))
                 resolved_skill_id, skill_content, skill_route_debug = _resolve_dha_skill_id_and_content(
-                    dha, discussion_goal, messages, ignored_skill_id=ignored_auto_skill_id
+                    dha,
+                    discussion_goal,
+                    messages,
+                    ignored_skill_id=ignored_auto_skill_id,
+                    skill_min_score=_rt_cfg.get("skill_min_score"),
+                    skill_min_delta=_rt_cfg.get("skill_min_delta"),
                 )
                 tools = await build_tools_for_group_chat(
                     dha, group_session_id, resolved_skill_id=resolved_skill_id
