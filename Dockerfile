@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # 构建目标平台（默认 linux/amd64；可覆盖：docker build --platform linux/arm64）
 ARG TARGETPLATFORM=linux/amd64
 ARG BUILDPLATFORM=linux/amd64
@@ -6,7 +7,8 @@ FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci 2>/dev/null || npm install
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci 2>/dev/null || npm install
 COPY frontend/ ./
 # 仅执行 vite build，避免 vue-tsc 与 TypeScript 版本不兼容导致构建失败；类型检查可在本地或 CI 做
 RUN npx vite build
@@ -38,8 +40,11 @@ RUN ln -sf /usr/local/lib/node_modules/npm/lib/cli.js /usr/local/lib/cli.js \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm-cli.js
 
 # 后端依赖与代码（保持 backend 目录结构，便于与本地一致）
+# 把 requirements 单独拎出来，避免改业务代码就重装全部依赖
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r backend/requirements.txt
 COPY backend/ ./backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
 
 # 前端构建产物
 COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
@@ -69,13 +74,17 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 RUN apt-get update \
     && npx -y playwright install-deps chromium \
     && rm -rf /var/lib/apt/lists/*
-RUN npx -y playwright install chromium
+RUN --mount=type=cache,target=/app/ms-playwright \
+    npx -y playwright install chromium
 
 # 预拉取 MCP 所需 npm 包，便于 1Panel/阿里云等环境首次连接无需外网（可选：若构建网络受限可注释掉本段）
 WORKDIR /app/backend
-RUN timeout 30 npx -y @modelcontextprotocol/server-filesystem ./data/agent-outputs 2>/dev/null || true
-RUN timeout 30 npx -y @amap/amap-maps-mcp-server 2>/dev/null || true
-RUN timeout 30 npx -y @playwright/mcp@latest 2>/dev/null || true
+RUN --mount=type=cache,target=/root/.npm \
+    timeout 30 npx -y @modelcontextprotocol/server-filesystem ./data/agent-outputs 2>/dev/null || true
+RUN --mount=type=cache,target=/root/.npm \
+    timeout 30 npx -y @amap/amap-maps-mcp-server 2>/dev/null || true
+RUN --mount=type=cache,target=/root/.npm \
+    timeout 30 npx -y @playwright/mcp@latest 2>/dev/null || true
 
 WORKDIR /app/backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

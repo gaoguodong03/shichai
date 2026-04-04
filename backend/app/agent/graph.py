@@ -18,6 +18,54 @@ from app.agent.tools_for_skill import build_skill_script_tool_name
 logger = logging.getLogger(__name__)
 
 
+def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
+    """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
+    names = {getattr(t, "name", "") for t in tools}
+    parts: List[str] = []
+    parts.append(
+        "## 多步任务规则\n"
+        "若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，"
+        "不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。\n\n"
+    )
+    file_lines: List[str] = []
+    if "read_file" in names:
+        file_lines.append("- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。")
+    if "write_workspace_file" in names:
+        file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。")
+    if "edit_workspace_file" in names:
+        file_lines.append("- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。")
+    if "delete_workspace_file" in names:
+        file_lines.append("- delete_workspace_file: 删除工作区内文件。")
+    if "rename_workspace_file" in names:
+        file_lines.append("- rename_workspace_file: 重命名工作区内文件。")
+    if file_lines:
+        parts.append("## 文件操作（当前会话工作区）\n\n你拥有以下与「当前会话工作区」相关的工具：\n")
+        parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
+        if "read_file" in names:
+            parts.append(
+                "- 当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，"
+                "你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。\n"
+            )
+        if "write_workspace_file" in names or "edit_workspace_file" in names:
+            parts.append(
+                "- 当用户让你「保存/写入/覆盖某个文件」时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，"
+                "而不是只说「请手动保存」。\n"
+            )
+        parts.append("- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。\n")
+        parts.append(
+            "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
+            "`agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。\n\n"
+            "若工具返回「文件不存在」，你可以根据工具返回的候选路径列表请用户确认，但**不要凭空猜测文件内容**。\n\n"
+        )
+    if "call_api" in names:
+        parts.append(
+            "## 外部 HTTP（call_api）\n\n"
+            "当需要获取**公开**网页或 HTTP API 的响应时，使用 `call_api`（GET/POST 等），url 须为 http(s)。"
+            " 服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
+        )
+    return "".join(parts)
+
+
 def _get_tool_call_arguments(tool_call: dict) -> dict:
     """从 tool_call 得到参数字典。支持 args / arguments，若为 JSON 字符串则解析。"""
     raw = tool_call.get("args") or tool_call.get("arguments")
@@ -532,26 +580,8 @@ def create_skill_execution_agent(
 
 当你不需要使用工具时，直接回复用户的问题。
 
-## 多步任务规则
-若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。
-
-## 文件操作（当前会话工作区）
-
-你拥有以下与“当前会话工作区”相关的工具：
-- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。
-- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。
-- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。
-- delete_workspace_file: 删除工作区内文件。
-- rename_workspace_file: 重命名工作区内文件。
-
-**强制规则（优先级很高）：**
-- 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 notes/test.md`、`查看 output/pages/xxx/text.md`，或带 @某专家 的类似指令），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。
-- 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
-- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
-- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
-
-若工具返回“文件不存在”，你可以根据工具返回的候选路径列表请用户确认，但**不要凭空猜测文件内容**。
 """
+    system_prompt += _skill_execution_extra_instructions(tools)
 
     async def call_model(state: AgentState, config=None):
         messages = list(state["messages"])

@@ -1,13 +1,16 @@
 """按 DHA 组装工具列表的统一入口（统一会话）。
 
-build_tools_for_group_chat：从当前用户的 MCP 运行时取工具，按 mcp_server_ids / skill MCP 依赖过滤 →
-叠加 file-reader/filesystem、call_api → 为每个 skill 注入 run_skill_script_<skill_id> → wrap。
+build_tools_for_group_chat：按「本轮解析出的 Skill」的 mcp_server_ids（及内置 fallback）决定可加载的 MCP；
+专家的 dha.mcp_server_ids 若配置则与上述列表取交集，作为实例级收紧；不再从全局运行时额外注入
+Linkup/Exa 等 URL 工具。内置工作区工具与 call_api 按专家 dha 的 file_capabilities / url_capability 注入；
+run_skill_script_<skill_id> → wrap。
 """
 import hashlib
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.api.settings import get_mcp_servers_for_skill
+from app.api.dha import merge_file_capabilities
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
@@ -66,33 +69,6 @@ def _is_write_tool(name: str) -> bool:
     if (name or "").startswith("filesystem_"):
         return "write" in (name or "") or "edit" in (name or "")
     return (name or "") == "file-reader_write_file"
-
-
-def _file_tools(all_tools: List, allow_write: bool) -> List:
-    """从 all_tools 中筛出 file-reader 与 filesystem 工具。allow_write=False 时仅保留只读工具。"""
-    result = []
-    for t in all_tools:
-        n = getattr(t, "name", "")
-        if n.startswith("filesystem_") and (allow_write or not _is_write_tool(n)):
-            result.append(t)
-        elif n.startswith("file-reader_") and (allow_write or n != "file-reader_write_file"):
-            result.append(t)
-    return result
-
-
-def _url_tools(all_tools: List) -> List:
-    """从 all_tools 中筛出 URL 抓取/搜索类工具（默认给所有专家）。"""
-    result = []
-    for t in all_tools:
-        n = (getattr(t, "name", "") or "").lower()
-        if not n:
-            continue
-        if n.startswith("linkup_") or n.startswith("exa_"):
-            result.append(t)
-            continue
-        if any(k in n for k in ("fetch", "search", "crawl", "url", "web")):
-            result.append(t)
-    return result
 
 
 class EditWorkspaceFileInput(BaseModel):
@@ -184,25 +160,43 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
     ]
 
 
+_FILE_CAP_TO_TOOL = (
+    ("read", "read_file"),
+    ("write", "write_workspace_file"),
+    ("edit", "edit_workspace_file"),
+    ("delete", "delete_workspace_file"),
+    ("rename", "rename_workspace_file"),
+)
+
+
+def _filter_builtin_workspace_tools(all_builtin: List, dha: Dict[str, Any]) -> List:
+    caps = merge_file_capabilities(dha.get("file_capabilities"))
+    allowed = {name for key, name in _FILE_CAP_TO_TOOL if caps.get(key)}
+    return [t for t in all_builtin if getattr(t, "name", "") in allowed]
+
+
 async def build_tools_for_group_chat(
     dha: Dict[str, Any],
     workspace_id: str,
+    resolved_skill_id: Optional[str] = None,
 ) -> List:
     """
-    按 DHA 配置组装群聊工具列表。
-    - dha["mcp_server_ids"] 有值：仅传这些 MCP 的工具。
-    - 为空：按 dha["skill_ids"] 的 MCP 依赖过滤；若技能无 MCP 依赖，仅传只读文件工具 + call_api。
-    - 若 DHA 有 skill_ids，为每个 skill 注入 run_skill_script（名称 run_skill_script_<skill_id>），
-      以便图标生成等技能在群聊中能直接执行 scripts/generate_image.py，避免误用 list_allowed_directories 等 MCP。
+    按「本轮生效的 Skill」组装群聊 MCP 工具。
+    - 仅允许 get_mcp_servers_for_skill(resolved_skill_id) 中的 MCP（含 SKILL  frontmatter 与 fallback）；
+    - 若 dha["mcp_server_ids"] 非空，与上式取交集，作为实例级收紧；
+    - 不再合并专家上全部 skill_ids 的 MCP，也不从全局运行时额外注入 Linkup/Exa。
+    - 内置工作区工具按 dha["file_capabilities"]；call_api 仅当 dha["url_capability"] 为真；
+    - 为 dha["skill_ids"] 中每个 skill 注入 run_skill_script_<skill_id>（磁盘上存在 SKILL 时）。
     """
-    server_ids = dha.get("mcp_server_ids") or []
-    if not server_ids:
-        skill_ids = dha.get("skill_ids") or []
-        for sid in skill_ids:
-            server_ids.extend(get_mcp_servers_for_skill(sid))
-        server_ids = list(dict.fromkeys(server_ids))
+    rid = str(resolved_skill_id or "").strip() or "default"
+    skill_servers = list(dict.fromkeys(get_mcp_servers_for_skill(rid)))
+    expert_ids = dha.get("mcp_server_ids") or []
+    if expert_ids:
+        es = {str(x).strip() for x in expert_ids if str(x).strip()}
+        server_ids = [x for x in skill_servers if x in es]
     else:
-        skill_ids = dha.get("skill_ids") or []
+        server_ids = skill_servers
+
     allow_write = True
 
     mgr = None
@@ -229,17 +223,15 @@ async def build_tools_for_group_chat(
         tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in server_ids]
     else:
         tools = []
-    file_tools = _file_tools(all_tools, allow_write=allow_write)
-    url_tools = _url_tools(all_tools)
     tool_names = {getattr(t, "name", "") for t in tools}
-    builtin_workspace_tools = _create_builtin_workspace_tools(workspace_id)
-    tools = (
-        tools
-        + [t for t in file_tools if getattr(t, "name", "") not in tool_names]
-        + [t for t in url_tools if getattr(t, "name", "") not in tool_names]
-        + [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
-        + [call_api]
+    builtin_workspace_tools = _filter_builtin_workspace_tools(
+        _create_builtin_workspace_tools(workspace_id), dha
     )
+    extras: List = [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
+    if bool(dha.get("url_capability", True)):
+        extras.append(call_api)
+    tools = tools + extras
+    tool_names = {getattr(t, "name", "") for t in tools}
     # 为 DHA 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
     for skill_id in (dha.get("skill_ids") or []):
         sid = str(skill_id or "").strip()

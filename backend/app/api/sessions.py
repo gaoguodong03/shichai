@@ -32,7 +32,7 @@ class SessionCreate(BaseModel):
 
 @router.get("/sessions")
 async def list_sessions():
-    """统一会话列表（与 group-sessions 共用存储，同一份列表）"""
+    """统一会话列表（群聊与会话共用存储）"""
     meta = _load_group_meta()
     sessions = []
     for gsid, gm in meta.items():
@@ -55,7 +55,7 @@ async def create_session(body: SessionCreate):
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str):
-    """获取会话详情与消息（与 GET /group-sessions/{id} 一致）"""
+    """获取会话详情与消息"""
     return await get_group_session(session_id)
 
 
@@ -79,7 +79,7 @@ async def delete_session_message(session_id: str, message_id: str):
 
 @router.post("/sessions/{session_id}/chat/stream")
 async def session_chat_stream(session_id: str, request: GroupChatRequest):
-    """会话流式对话（与 POST /group-sessions/{id}/chat/stream 一致）"""
+    """会话流式对话（SSE）"""
     return await group_chat_stream(session_id, request)
 
 
@@ -98,5 +98,5 @@ async def session_export(session_id: str):
 
 @router.post("/sessions/{session_id}/prompt-preview")
 async def session_prompt_preview(session_id: str, body: GroupPromptPreviewRequest):
-    """预览指定 DHA 作为下一发言人时的提示词（与 group-sessions 一致）"""
+    """预览指定 DHA 作为下一发言人时的提示词"""
     return await preview_next_speaker_prompt(session_id, body)

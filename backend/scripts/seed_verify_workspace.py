@@ -43,15 +43,13 @@ VERIFY_MD = """# 验证用说明（本地文件能力）
 
 
 def main():
-    print("1. 创建群聊会话…")
+    print("1. 创建会话…")
     try:
         r = httpx.post(
-            f"{API}/group-sessions",
+            f"{API}/sessions",
             json={
                 "title": "验证文件能力",
-                "dha_ids": [DHA_ID],
-                "leader_dha_id": "",
-                "speak_mode": "auto",
+                "agent_ids": [DHA_ID],
             },
             timeout=10.0,
         )

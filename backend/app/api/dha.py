@@ -40,6 +40,8 @@ class DHACreate(BaseModel):
     is_leader: bool = False
     llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
     avatar_url: Optional[str] = None  # 头像（可选，前端可传 data URL 或远程地址）
+    file_capabilities: Optional[Dict[str, bool]] = None  # read/edit/write/delete/rename
+    url_capability: Optional[bool] = None  # 是否可使用 call_api 访问外部 http(s) URL
     agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
     expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
 
@@ -54,6 +56,8 @@ class DHAUpdate(BaseModel):
     is_leader: Optional[bool] = None
     llm_provider_id: Optional[str] = None
     avatar_url: Optional[str] = None
+    file_capabilities: Optional[Dict[str, bool]] = None
+    url_capability: Optional[bool] = None
     agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
     expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
 
@@ -67,8 +71,27 @@ def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+_DEFAULT_FILE_CAPS: Dict[str, bool] = {
+    "read": True,
+    "edit": True,
+    "write": True,
+    "delete": True,
+    "rename": True,
+}
+
+
 def _empty_file_capabilities() -> Dict[str, bool]:
     return {"read": False, "edit": False, "write": False, "delete": False, "rename": False}
+
+
+def merge_file_capabilities(stored: Any) -> Dict[str, bool]:
+    """合并磁盘上的 file_capabilities 与默认值（缺省键视为 True，与旧配置兼容）。"""
+    out = dict(_DEFAULT_FILE_CAPS)
+    if isinstance(stored, dict):
+        for k in out:
+            if k in stored:
+                out[k] = bool(stored[k])
+    return out
 
 
 def _labels_from_file_capabilities(caps: Dict[str, bool]) -> List[str]:
@@ -79,12 +102,10 @@ async def enrich_dha_instance(instance: Dict[str, Any], workspace_id: str = "__c
     """导出函数：为 DHA 实例附加 expert 别名与内置能力（不触发 MCP 连接）。"""
     out = _attach_expert_alias(instance)
     _ = workspace_id
-    # 无 MCP 方案：默认使用内置工具能力，避免每次接口请求触发 MCP 初始化造成卡顿。
-    file_caps = {"read": True, "edit": True, "write": True, "delete": True, "rename": True}
-    url_cap = True
+    file_caps = merge_file_capabilities(instance.get("file_capabilities"))
     out["file_capabilities"] = file_caps
     out["file_capability_labels"] = _labels_from_file_capabilities(file_caps)
-    out["url_capability"] = url_cap
+    out["url_capability"] = bool(instance.get("url_capability", True))
     return out
 
 
@@ -122,9 +143,7 @@ def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
             continue
         copied = dict(row)
         copied.pop("expert_id", None)
-        copied.pop("file_capabilities", None)
-        copied.pop("file_capability_labels", None)
-        copied.pop("url_capability", None)
+        copied.pop("file_capability_labels", None)  # 派生字段，不落盘
         normalized.append(copied)
     path = _ensure_config_dir()
     with open(path, "w", encoding="utf-8") as f:
@@ -154,6 +173,8 @@ async def create_dha_instance(body: DHACreate):
         "is_leader": body.is_leader,
         "llm_provider_id": body.llm_provider_id or "",
         "avatar_url": body.avatar_url or "",
+        "file_capabilities": merge_file_capabilities(body.file_capabilities if body.file_capabilities is not None else {}),
+        "url_capability": True if body.url_capability is None else bool(body.url_capability),
     }
     instances.append(new_instance)
     save_dha_instances(instances)
@@ -184,6 +205,10 @@ async def update_dha_instance(agent_id: str, body: DHAUpdate):
         inst["llm_provider_id"] = body.llm_provider_id or ""
     if body.avatar_url is not None:
         inst["avatar_url"] = body.avatar_url or ""
+    if body.file_capabilities is not None:
+        inst["file_capabilities"] = merge_file_capabilities(body.file_capabilities)
+    if body.url_capability is not None:
+        inst["url_capability"] = bool(body.url_capability)
     save_dha_instances(instances)
     return {"status": "ok", "data": await enrich_dha_instance(inst)}
 

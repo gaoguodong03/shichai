@@ -10,6 +10,13 @@ FastAPI 服务：统一会话流、Agent 配置、每用户 MCP / Skills、工�
 | `AUTH_SECRET` | JWT 签名密钥，生产环境务必修改。 |
 | `ALLOW_ANONYMOUS_API` | 设为 `1` 时允许无 Bearer 访问（仅本地调试，**禁止**用于生产）。 |
 | `QWEN_API_KEY` 等 | 各 LLM 提供商的 API Key，见应用内「设置」。 |
+| `CALL_API_TIMEOUT` | `call_api` 请求超时秒数，默认 `30`。 |
+| `CALL_API_DISABLE_SSRF_GUARD` | 设为 `1` 时跳过 call_api 的主机 SSRF 检查（仅本地调试，**禁止**生产）。 |
+| `CALL_API_HTML_EXTRACT` | 设为 `0` 时不对 HTML 响应做 trafilatura 正文提取（仅用去标签纯文本/短片段）。默认开启。 |
+| `CALL_API_MAX_RESULT_CHARS` | 返回给模型的正文最大字符数，默认 `50000`。 |
+| `CALL_API_HTML_PLAINTEXT_MAX_CHARS` | trafilatura 未命中时，去标签纯文本回退的最大长度，默认 `6000`。 |
+| `CALL_API_MIN_PLAINTEXT_CHARS` | 纯文本回退至少多长才采用（避免壳页面无文案仍占篇幅），默认 `80`。 |
+| `CALL_API_MAX_HTML_RAW_SNIPPET_CHARS` | 连纯文本都过短时，附带的原始 HTML 调试片段上限（避免 UI 气泡撑满屏），默认 `900`。 |
 
 ## 快速开始
 
@@ -72,8 +79,7 @@ backend/
 
 ## 接口与命名迁移（2026-03）
 
-- 会话主入口：`/api/sessions/*`
-- 兼容别名：`/api/group-sessions/*`（已标记 deprecated，后续移除）
+- 会话主入口：`/api/sessions/*`（已不再提供 `/api/group-sessions/*` 别名）
 - Agent 主入口：`/api/agents/*`
 - 兼容别名：`/api/dha/instances/*`、`/api/experts/*`
 - 字段主命名：`agent_ids`、`leader_agent_id`

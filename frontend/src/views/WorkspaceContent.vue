@@ -4344,6 +4344,8 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-tool-popover-pre {
   margin: 0;
+  max-height: min(42vh, 20rem);
+  overflow: auto;
   font-size: 0.6875rem;
   line-height: 1.35;
   white-space: pre-wrap;

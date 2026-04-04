@@ -1,4 +1,4 @@
-"""写入当前会话工作区文件工具 - 供单聊/群聊共用"""
+"""写入当前会话工作区文件工具"""
 import json
 from langchain_core.tools import StructuredTool
 

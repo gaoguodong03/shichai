@@ -95,30 +95,35 @@
 
             <div>
               <label class="block text-sm font-medium text-primary mb-2">工具能力</label>
+              <p class="text-xs text-muted mb-2">与会话内可用工具一致：文件类为工作区内操作；URL 为通过 call_api 拉取公开 http(s) 内容（服务端 SSRF 防护）。</p>
               <div class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
-                <span
+                <button
                   v-for="item in fileCapabilityItems"
                   :key="item.key"
-                  class="px-3 py-1.5 rounded-full text-xs font-medium border"
+                  type="button"
+                  class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
                   :class="item.enabled
                     ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                    : 'bg-card text-muted border-border-light'"
+                    : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                  @click="toggleFileCapability(item.key)"
                 >
-                  {{ item.label }} · {{ item.enabled ? '有' : '无' }}
-                </span>
+                  {{ item.label }} · {{ item.enabled ? '开' : '关' }}
+                </button>
               </div>
               <div class="mt-2">
-                <span
-                  class="px-3 py-1.5 rounded-full text-xs font-medium border"
-                  :class="canFetchUrlData
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                  :class="form.url_capability
                     ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                    : 'bg-card text-muted border-border-light'"
+                    : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                  @click="toggleUrlCapability"
                 >
-                  URL数据获取 · {{ canFetchUrlData ? '有' : '无' }}
-                </span>
+                  外部链接 / HTTP（call_api） · {{ form.url_capability ? '开' : '关' }}
+                </button>
               </div>
               <p v-if="!canDirectSave" class="text-xs text-muted mt-2">
-                当前专家不可直接保存文件（缺少“文件写入”能力）
+                当前专家不可直接保存文件（请打开「文件写入」）
               </p>
             </div>
 
@@ -273,6 +278,14 @@ const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 
+const defaultFileCaps = () => ({
+  read: true,
+  edit: true,
+  write: true,
+  delete: true,
+  rename: true,
+})
+
 const form = ref({
   name: '',
   role: '',
@@ -281,17 +294,30 @@ const form = ref({
   is_leader: false,
   llm_provider_id: '',
   avatar_url: '',
+  file_capabilities: defaultFileCaps(),
+  url_capability: true,
 })
 
 watch(
   () => [props.selectedDhaId, props.dhaInstances],
   () => {
     if (props.selectedDhaId === '__new__') {
-      form.value = { name: '', role: '', system_prompt: '', skill_ids: [], is_leader: false, llm_provider_id: '', avatar_url: '' }
+      form.value = {
+        name: '',
+        role: '',
+        system_prompt: '',
+        skill_ids: [],
+        is_leader: false,
+        llm_provider_id: '',
+        avatar_url: '',
+        file_capabilities: defaultFileCaps(),
+        url_capability: true,
+      }
       avatarPreview.value = null
     } else if (props.selectedDhaId) {
       const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
       if (d) {
+        const fc = d.file_capabilities || {}
         form.value = {
           name: d.name,
           role: d.role || '',
@@ -300,6 +326,14 @@ watch(
           is_leader: d.is_leader || false,
           llm_provider_id: d.llm_provider_id || '',
           avatar_url: (d as any).avatar_url || '',
+          file_capabilities: {
+            read: fc.read !== false,
+            edit: fc.edit !== false,
+            write: fc.write !== false,
+            delete: fc.delete !== false,
+            rename: fc.rename !== false,
+          },
+          url_capability: d.url_capability !== false,
         }
         avatarPreview.value = form.value.avatar_url || null
       }
@@ -314,6 +348,14 @@ async function fetchSkills() {
   if (j.status === 'ok' && j.data?.skills) {
     skills.value = j.data.skills
   }
+}
+
+function toggleFileCapability(key: 'read' | 'edit' | 'write' | 'delete' | 'rename') {
+  form.value.file_capabilities[key] = !form.value.file_capabilities[key]
+}
+
+function toggleUrlCapability() {
+  form.value.url_capability = !form.value.url_capability
 }
 
 async function saveDha() {
@@ -367,42 +409,18 @@ const displaySkillBadges = computed(() => {
   return picked
 })
 
-const selectedFileCapabilities = computed(() => {
-  if (!props.selectedDhaId || props.selectedDhaId === '__new__') {
-    return { read: false, edit: false, write: false, delete: false, rename: false }
-  }
-  const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
-  const caps = d?.file_capabilities || {}
-  return {
-    read: !!caps.read,
-    edit: !!caps.edit,
-    write: !!caps.write,
-    delete: !!caps.delete,
-    rename: !!caps.rename,
-  }
-})
-
 const fileCapabilityItems = computed(() => {
-  const caps = selectedFileCapabilities.value
+  const caps = form.value.file_capabilities
   return [
-    { key: 'read', label: '文件读取', enabled: !!caps.read },
-    { key: 'edit', label: '文件编辑', enabled: !!caps.edit },
-    { key: 'write', label: '文件写入', enabled: !!caps.write },
-    { key: 'delete', label: '文件删除', enabled: !!caps.delete },
-    { key: 'rename', label: '文件重命名', enabled: !!caps.rename },
+    { key: 'read' as const, label: '文件读取', enabled: !!caps.read },
+    { key: 'edit' as const, label: '文件编辑', enabled: !!caps.edit },
+    { key: 'write' as const, label: '文件写入', enabled: !!caps.write },
+    { key: 'delete' as const, label: '文件删除', enabled: !!caps.delete },
+    { key: 'rename' as const, label: '文件重命名', enabled: !!caps.rename },
   ]
 })
 
-const canFetchUrlData = computed(() => {
-  if (!props.selectedDhaId || props.selectedDhaId === '__new__') return false
-  const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
-  return !!d?.url_capability
-})
-
-const canDirectSave = computed(() => {
-  const caps = selectedFileCapabilities.value
-  return !!caps.write
-})
+const canDirectSave = computed(() => !!form.value.file_capabilities.write)
 
 const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()

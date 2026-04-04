@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
-from fastapi import APIRouter, HTTPException, Depends, Response
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # type: ignore
 
 from app.api.dha import load_dha_instances, enrich_dha_instances
@@ -197,12 +197,6 @@ def _build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[s
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),
     }
-
-
-def _set_group_alias_deprecated_header(response: Response) -> None:
-    response.headers["Deprecation"] = "true"
-    response.headers["Sunset"] = "2026-06-30"
-    response.headers["Link"] = '</api/sessions>; rel="successor-version"'
 
 
 def _load_group_meta() -> Dict[str, Dict[str, Any]]:
@@ -1602,14 +1596,6 @@ class _ToolFailureHeuristicHook:
 # ========== Pydantic 模型 ==========
 
 
-class GroupSessionCreate(BaseModel):
-    title: str = "新群聊"
-    agent_ids: List[str] = Field(default_factory=list)
-    expert_ids: List[str] = Field(default_factory=list)  # 兼容字段：expert_ids
-    leader_agent_id: Optional[str] = ""  # 已废弃：主持人改为写死在代码流程中，不再由 DHA 担任
-    speak_mode: Optional[str] = "auto"  # auto | manual
-
-
 class GroupSessionUpdate(BaseModel):
     title: Optional[str] = None
     speak_mode: Optional[str] = None
@@ -1712,23 +1698,9 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
     return rel, f"/api/workspaces/{session_id}/files/download?path={rel}"
 
 
-# ========== API 路由 ==========
+# ========== 群聊实现（供 api/sessions 复用；对外仅 /api/sessions/*）==========
 
 
-@router.get("/group-sessions")
-async def list_group_sessions(response: Response):
-    """兼容别名：获取群聊会话列表（推荐迁移到 /sessions）。"""
-    _set_group_alias_deprecated_header(response)
-    meta = _load_group_meta()
-    _cleanup_orphan_group_histories(meta)
-    sessions = []
-    for gsid, gm in meta.items():
-        sessions.append(_build_session_payload(gsid, gm))
-    sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-    return {"status": "ok", "data": {"sessions": sessions}}
-
-
-@router.post("/group-sessions/{group_session_id}/prompt-preview")
 async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPreviewRequest):
     """
     预览指定 DHA 作为下一发言人时，将要收到的用户侧提示词（HumanMessage 内容）。
@@ -1771,26 +1743,6 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
     return {"status": "ok", "data": {"prompt": user_content}}
 
 
-@router.post("/group-sessions")
-async def create_group_session(body: GroupSessionCreate, response: Response):
-    """创建群聊会话。agent_ids 为空时表示「主持人为先」：用户先与主持人交流。"""
-    _set_group_alias_deprecated_header(response)
-    resolved_ids = _normalize_agent_ids(
-        legacy_ids=body.agent_ids,
-        agent_ids=body.agent_ids,
-        expert_ids=body.expert_ids,
-    )
-    if body.leader_agent_id and resolved_ids and body.leader_agent_id not in resolved_ids:
-        raise HTTPException(status_code=400, detail="leader_agent_id 必须在专家列表中")
-    data = create_session_internal(
-        title=body.title or "新群聊",
-        agent_ids=resolved_ids,
-        speak_mode=body.speak_mode or "auto",
-    )
-    return {"status": "ok", "data": data}
-
-
-@router.get("/group-sessions/{group_session_id}")
 async def get_group_session(group_session_id: str):
     """获取群聊详情与消息。"""
     meta = _load_group_meta()
@@ -1839,7 +1791,6 @@ async def get_group_session(group_session_id: str):
     }
 
 
-@router.put("/group-sessions/{group_session_id}")
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     """更新群聊：重命名、发言模式、追加 DHA 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
     meta = _load_group_meta()
@@ -1961,7 +1912,6 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     return {"status": "ok", "data": _build_session_payload(group_session_id, meta[group_session_id])}
 
 
-@router.delete("/group-sessions/{group_session_id}")
 async def delete_group_session(group_session_id: str):
     """删除群聊会话：同时删除 meta、群聊历史文件与该会话的工作区目录。"""
     current_user = get_current_user()
@@ -1986,7 +1936,6 @@ async def delete_group_session(group_session_id: str):
     return {"status": "ok", "data": {"id": group_session_id, "deleted": True}}
 
 
-@router.delete("/group-sessions/{group_session_id}/messages/{message_id}")
 async def delete_group_message(group_session_id: str, message_id: str):
     """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 DHA 的上下文。"""
     meta = _load_group_meta()
@@ -2001,7 +1950,6 @@ async def delete_group_message(group_session_id: str, message_id: str):
     return {"status": "ok", "data": {"message_id": message_id, "deleted": True}}
 
 
-@router.post("/group-sessions/{group_session_id}/chat/stream")
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     """群聊流式对话：用户消息或继续下一轮，支持 override_next_speaker"""
     await _ensure_initialized()
@@ -2638,9 +2586,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = "user"
                     break
 
-                tools = await build_tools_for_group_chat(dha, group_session_id)
                 resolved_skill_id, skill_content, skill_route_debug = _resolve_dha_skill_id_and_content(
                     dha, discussion_goal, messages, ignored_skill_id=ignored_auto_skill_id
+                )
+                tools = await build_tools_for_group_chat(
+                    dha, group_session_id, resolved_skill_id=resolved_skill_id
                 )
                 route_event = {
                     "type": "route",

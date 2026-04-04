@@ -11,7 +11,7 @@ DHA/
 ├── backend/                 # Python 后端
 │   ├── app/
 │   │   ├── main.py          # FastAPI 入口
-│   │   ├── api/             # 路由：chat、group_chat、settings、files、auth、dha
+│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha
 │   │   ├── agent/           # ReAct 工作流、工具组装、技能选择、LLM 客户端
 │   │   ├── core/            # 用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化
@@ -23,7 +23,7 @@ DHA/
 │   └── .env / .env.example
 ├── frontend/                 # Vue 3 前端
 │   ├── src/
-│   │   ├── views/           # 页面：MainView、ChatView、GroupChatView、WorkspaceContent、Settings、DHA、Skill/MCP 配置等
+│   │   ├── views/           # 页面：MainView、WorkspaceContent、DHAView、Skill/MCP/设置 等
 │   │   ├── components/     # MCPConfig、SkillsConfig、LLMConfig
 │   │   ├── composables/    # useEventSource、useTheme
 │   │   ├── router/
@@ -40,15 +40,14 @@ DHA/
 
 ### `backend/app/main.py`
 
-- FastAPI 应用入口；注册路由：`chat`、`settings`、`files`、`auth`、`dha`、`group_chat`（均挂载在 `/api` 下）。
-- 会话列表与导出由 **chat** 模块提供（如 `/api/sessions`、`/api/sessions/{id}/export`），无独立 `sessions` 模块。
+- FastAPI 应用入口；注册路由：`sessions`、`settings`、`files`、`auth`、`dha`、`group_chat`（均挂载在 `/api` 下）。
+- 会话列表与流式对话由 **`sessions`** 模块提供（如 `/api/sessions`、`/api/sessions/{id}/chat/stream`）；`group_chat` 内含实现函数与会话归档等辅助路由。
 
 ### `api/`
 
 | 文件 | 职责 |
 |------|------|
-| `chat.py` | 单聊（待下线）：`/chat/stream`、`/sessions` 等；合并后由 `sessions` + `group_chat` 替代。 |
-| `group_chat.py` | 带主持人的会话：`/group-sessions` CRUD、`/group-sessions/{id}/chat/stream`、主持人调度、`build_tools_for_group_chat`、流式 SSE、历史/meta 存储；并暴露 `create_session_internal`、`export_session_to_markdown` 供统一 API 复用。 |
+| `group_chat.py` | 会话核心实现：主持人调度、`group_chat_stream`、`build_tools_for_group_chat`、流式 SSE、历史/meta 存储；并暴露 `create_session_internal`、`export_session_to_markdown` 等供 `sessions` 复用；另含 `GET /sessions/{id}/archive`。 |
 | `sessions.py` | **统一会话 API**：`GET/POST /sessions`、`GET/PUT/DELETE /sessions/{id}`、`POST /sessions/{id}/chat/stream`、`POST /sessions/{id}/export`；与 group_chat 共用存储，新对话即「仅主持人」会话。 |
 | `settings.py` | MCP/Skills/App 配置：`/api/settings/mcp`、`/api/settings/skills`、`/api/settings/app` 等。 |
 | `files.py` | Agent 工作区文件：workspace 路径、上传/下载/列表/重命名/读取。 |
@@ -70,7 +69,7 @@ DHA/
 
 | 文件 | 职责 |
 |------|------|
-| `init.py` | **应用级初始化**：`ensure_mcp_and_skills_initialized()`，MCP + Skills 只执行一次，单聊与群聊共用；单聊入口再执行「从磁盘加载会话历史」。 |
+| `init.py` | **应用级初始化**：`ensure_mcp_and_skills_initialized()`，MCP + Skills 只执行一次，会话与群聊共用。 |
 | `user_context.py` | 当前用户上下文（依赖注入）。 |
 | `security.py` | 安全与认证依赖。 |
 | `users_store.py` | 用户存储。 |
@@ -80,13 +79,13 @@ DHA/
 | 文件 | 职责 |
 |------|------|
 | `manager.py` | MCP Server 连接与管理；`get_tools()`；`normalize_mcp_kwargs_for_call` 委托给 `tool_arg_normalizers`。 |
-| `tool_arg_normalizers.py` | MCP 工具参数归一化（按 server_id/tool_name 分发），供 manager、chat、graph 复用。 |
+| `tool_arg_normalizers.py` | MCP 工具参数归一化（按 server_id/tool_name 分发），供 manager、graph 等复用。 |
 
 ### `skills/`
 
 | 文件 | 职责 |
 |------|------|
-| `loader.py` | 扫描 skills 目录、读取 SKILL.md、解析 frontmatter；`get_skills_loader()` 单例供 chat/group_chat 共用；`get_skills_for_selection()`、`get_skill_full_content(skill_id)`。 |
+| `loader.py` | 扫描 skills 目录、读取 SKILL.md、解析 frontmatter；`get_skills_loader()` 单例供会话等模块共用；`get_skills_for_selection()`、`get_skill_full_content(skill_id)`。 |
 
 ### `tools/`
 
@@ -106,7 +105,7 @@ DHA/
 
 ### `frontend/src/`
 
-- **views/**：MainView、ChatView、GroupChatView、GroupChatLoader、GroupChatSimple、GroupCreateView、WorkspaceContent、DHAView、SkillDetailView、SkillAddView、MCPDetailView、MCPAddView、SettingsView、LLMSettingsView、AppSettingsView、LoginView、FileDetailView、ThemeSettingsView 等。
+- **views/**：MainView、WorkspaceContent、DHAView、SkillDetailView、MCPDetailView、MCPAddView、各 Settings 子视图、LoginView、WorkspaceFilesView、FileDetailView 等。
 - **components/**：MCPConfig、SkillsConfig、LLMConfig。
 - **api/**：统一 API 层。`base.ts` 提供 `apiBase`（默认 `/api`）、`apiUrl`、`apiFetch`；`chat.ts`（流式请求、导出、技能列表）、`settings.ts`（Skills/MCP CRUD）、`files.ts`（工作区文件列表、下载链接）。视图与组件通过 `@/api` 调用，便于代理与生产同源。
 - **composables/**：useEventSource（SSE）、useTheme。

@@ -42,7 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册路由（单聊 chat 已下线，统一使用 sessions + group_chat）
+# 注册路由（统一会话：sessions；group_chat 提供归档等辅助路由与实现复用）
 app.include_router(settings.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
