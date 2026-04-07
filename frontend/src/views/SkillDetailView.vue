@@ -1,204 +1,224 @@
 <template>
-  <div class="flex flex-col h-full bg-card text-primary overflow-hidden">
+  <div class="flex flex-col h-full bg-page text-primary overflow-hidden">
     <div v-if="loading" class="p-4 text-muted flex-1">加载中...</div>
     <template v-else-if="skill">
-      <!-- Tab 导航 -->
-      <div class="border-b border-border px-4 flex-shrink-0">
-        <div class="mx-auto w-full max-w-4xl flex items-center justify-between gap-3">
-          <div class="flex flex-wrap min-w-0">
-            <button
-              v-for="t in tabs"
-              :key="t.id"
-              @click="activeTab = t.id"
-              :class="[
-                'px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors',
-                activeTab === t.id
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-muted hover:text-primary'
-              ]"
-            >
-              {{ t.label }}
-            </button>
-          </div>
+      <header class="px-4 py-3 border-b border-border bg-card flex items-center justify-between gap-3 flex-shrink-0">
+        <div class="min-w-0">
+          <h1 class="text-base font-semibold text-primary truncate">技能</h1>
+          <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.id }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            v-if="activeTab !== 'main'"
+            type="button"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="partsLoading"
+            @click="addPartFile"
+          >
+            新建文件
+          </button>
           <button
             type="button"
-            class="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
             :disabled="exporting"
             @click="exportZip"
           >
             {{ exporting ? '导出中…' : '导出 ZIP' }}
           </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="saving || deleting"
+            @click="save"
+          >
+            {{ saving ? '保存中...' : '保存' }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="deleting || saving"
+            @click="deleteSkill"
+          >
+            {{ deleting ? '删除中...' : '删除' }}
+          </button>
         </div>
-      </div>
-      <!-- SKILL.md：名称与描述为必选项，各占一个显示框；下方为正文 -->
-      <div
-        v-show="activeTab === 'main'"
-        class="flex-1 overflow-auto themed-scrollbar p-4 space-y-4"
-      >
-        <div v-if="contentLoading" class="text-sm text-muted">加载中...</div>
-        <template v-else>
-          <div class="mx-auto w-full max-w-4xl space-y-4">
-            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-muted mb-1">名称（必填）</label>
-              <input
-                v-model="form.name"
-                type="text"
-                required
-                placeholder="技能名称"
-                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              />
+      </header>
+
+      <div class="flex-1 min-h-0 flex bg-page">
+        <aside class="w-64 flex-shrink-0 border-r border-border bg-sidebar overflow-y-auto">
+          <div class="px-3 py-2 border-b border-border/40 sticky top-0 bg-sidebar z-10">
+            <div class="text-xs text-muted">当前分区：{{ tabs.find((t) => t.id === activeTab)?.label || 'SKILL.md' }}</div>
+            <div v-if="activeTab !== 'main'" class="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                class="px-2 py-1 text-xs rounded border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+                :disabled="!partDirPath"
+                @click="goPartDirUp"
+              >
+                上一级
+              </button>
+              <span class="text-xs text-muted truncate">当前目录：{{ partDirPath || '/' }}</span>
             </div>
-            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-muted mb-1">描述（必填）</label>
-              <textarea
-                v-model="form.description"
-                rows="3"
-                placeholder="简短描述，用于技能选择"
-                class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              />
-            </div>
-            <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-              <label class="block text-xs font-medium text-muted mb-2">工具依赖（可选）</label>
-              <div class="flex flex-wrap gap-2">
-                <label
-                  v-for="srv in mcpServers"
-                  :key="srv.id"
-                  class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
-                  :class="form.mcp_server_ids.includes(srv.id)
-                    ? 'border-accent bg-accent-subtle text-accent-subtle-text'
-                    : 'border-border bg-card text-muted hover:border-input-border'"
-                >
-                  <input
-                    type="checkbox"
-                    :value="srv.id"
-                    v-model="form.mcp_server_ids"
-                    class="rounded border-input-border bg-input-bg"
-                  />
-                  {{ srv.name || srv.id }}
-                </label>
-              </div>
-              <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
-            </div>
-            <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-              <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
-                <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
+          </div>
+          <div class="p-2 space-y-1">
+            <template v-if="activeTab === 'main'">
+              <button
+                v-for="t in tabs"
+                :key="t.id"
+                type="button"
+                @click="activeTab = t.id"
+                :class="[
+                  'w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                  activeTab === t.id ? 'bg-accent-subtle text-accent-subtle-text' : 'text-primary hover:bg-list-hover'
+                ]"
+              >
+                {{ t.label }}
+              </button>
+            </template>
+            <template v-else>
+              <button
+                type="button"
+                class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary hover:bg-list-hover"
+                @click="activeTab = 'main'"
+              >
+                ← 返回分区
+              </button>
+              <div v-if="partsLoading" class="px-2 py-2 text-sm text-muted">加载中...</div>
+              <div v-else-if="!partFileBrowser.dirs.length && !partFileBrowser.files.length" class="px-2 py-2 text-sm text-muted">暂无文件</div>
+              <template v-else>
+                <div v-if="partFileBrowser.dirs.length" class="pt-2 px-1 py-1 text-[11px] font-semibold tracking-wide text-muted">DIR</div>
                 <button
+                  v-for="d in partFileBrowser.dirs"
+                  :key="`dir-${d.path}`"
                   type="button"
-                  class="px-2 py-1 text-xs rounded-md border border-input-border text-primary hover:bg-list-hover"
-                  @click="markdownPreviewMode = !markdownPreviewMode"
+                  class="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors text-primary hover:bg-list-hover"
+                  @click="enterPartDir(d.path)"
                 >
-                  {{ markdownPreviewMode ? '编辑源文件' : '预览渲染' }}
+                  [DIR] {{ d.name }}
                 </button>
+                <div v-if="partFileBrowser.files.length" class="pt-2 px-1 py-1 text-[11px] font-semibold tracking-wide text-muted">FILE</div>
+                <button
+                  v-for="f in partFileBrowser.files"
+                  :key="`file-${f.path}`"
+                  type="button"
+                  @click="selectPartFile(activeTab as PartType, f.path)"
+                  :class="[
+                    'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
+                    selectedPartFile?.type === activeTab && selectedPartFile?.path === f.path
+                      ? 'bg-accent-subtle text-accent-subtle-text'
+                      : 'hover:bg-list-hover text-primary'
+                  ]"
+                >
+                  [FILE] {{ f.name }}
+                </button>
+              </template>
+            </template>
+          </div>
+        </aside>
+
+        <main class="flex-1 min-w-0 overflow-auto themed-scrollbar p-4 bg-page">
+          <div v-if="activeTab === 'main'" class="mx-auto w-full max-w-4xl space-y-4">
+            <div v-if="contentLoading" class="text-sm text-muted">加载中...</div>
+            <template v-else>
+              <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+                <label class="block text-xs font-medium text-muted mb-1">名称（必填）</label>
+                <input
+                  v-model="form.name"
+                  type="text"
+                  required
+                  placeholder="技能名称"
+                  class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                />
               </div>
-              <div
-                v-if="markdownPreviewMode"
-                class="skill-markdown-preview themed-scrollbar px-4 py-3 text-sm text-primary max-h-[24rem] overflow-auto"
-                v-html="renderMarkdown(form.body || '')"
-              />
+              <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+                <label class="block text-xs font-medium text-muted mb-1">描述（必填）</label>
+                <textarea
+                  v-model="form.description"
+                  rows="3"
+                  placeholder="简短描述，用于技能选择"
+                  class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                />
+              </div>
+              <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+                <label class="block text-xs font-medium text-muted mb-2">工具依赖（可选）</label>
+                <div class="flex flex-wrap gap-2">
+                  <label
+                    v-for="srv in mcpServers"
+                    :key="srv.id"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
+                    :class="form.mcp_server_ids.includes(srv.id)
+                      ? 'border-accent bg-accent-subtle text-accent-subtle-text'
+                      : 'border-border bg-card text-muted hover:border-input-border'"
+                  >
+                    <input
+                      type="checkbox"
+                      :value="srv.id"
+                      v-model="form.mcp_server_ids"
+                      class="rounded border-input-border bg-input-bg"
+                    />
+                    {{ srv.name || srv.id }}
+                  </label>
+                </div>
+                <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
+              </div>
+              <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
+                  <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
+                  <button
+                    type="button"
+                    class="px-2 py-1 text-xs rounded-md border border-input-border text-primary hover:bg-list-hover"
+                    @click="markdownPreviewMode = !markdownPreviewMode"
+                  >
+                    {{ markdownPreviewMode ? '编辑源文件' : '预览渲染' }}
+                  </button>
+                </div>
+                <div
+                  v-if="markdownPreviewMode"
+                  class="skill-markdown-preview themed-scrollbar px-4 py-3 text-sm text-primary max-h-[24rem] overflow-auto"
+                  v-html="renderMarkdown(form.body || '')"
+                />
+                <textarea
+                  v-else
+                  v-model="form.body"
+                  rows="18"
+                  class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent themed-scrollbar focus:ring-0 resize-y min-h-[14rem]"
+                  placeholder="SKILL.md 正文内容"
+                />
+              </div>
+            </template>
+          </div>
+
+          <template v-else>
+            <div v-if="!selectedPartFile" class="h-full flex items-center justify-center text-sm text-muted">选择文件后可预览与编辑</div>
+            <div v-else class="mx-auto w-full max-w-4xl h-full flex flex-col min-h-0">
+              <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
+                <span class="text-xs text-muted truncate">{{ selectedPartFile.path }}</span>
+                <div class="flex gap-2">
+                  <button
+                    @click="savePartFile"
+                    :disabled="partSaving"
+                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+                  >
+                    {{ partSaving ? '保存中...' : '保存' }}
+                  </button>
+                  <button
+                    @click="deletePartFile"
+                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover"
+                  >
+                    删除文件
+                  </button>
+                </div>
+              </div>
+              <div v-if="partContentLoading" class="text-sm text-muted flex-1">加载中...</div>
               <textarea
                 v-else
-                v-model="form.body"
-                rows="18"
-                class="w-full px-4 py-3 text-sm font-mono border-0 bg-transparent themed-scrollbar focus:ring-0 resize-y min-h-[14rem]"
-                placeholder="SKILL.md 正文内容"
+                v-model="partContent"
+                class="flex-1 min-h-0 w-full px-3 py-2 text-xs font-mono border border-input-border rounded-lg resize-none bg-input-bg text-primary"
+                spellcheck="false"
               />
             </div>
-            <div class="flex items-center justify-start gap-2 pt-2">
-              <button
-                @click="save"
-                :disabled="saving || deleting"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-              >
-                {{ saving ? '保存中...' : '保存' }}
-              </button>
-              <button
-                @click="deleteSkill"
-                :disabled="deleting || saving"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
-              >
-                {{ deleting ? '删除中...' : '删除' }}
-              </button>
-            </div>
-          </div>
-        </template>
-      </div>
-      <!-- References / Assets / Scripts：左侧文件列表 + 右侧预览 -->
-      <div
-        v-show="activeTab !== 'main'"
-        class="flex-1 flex min-h-0"
-      >
-        <aside class="w-48 flex-shrink-0 border-r border-border overflow-y-auto p-2">
-          <button
-            v-if="!partsLoading"
-            @click="addPartFile"
-            class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-accent hover:bg-accent-subtle mb-1"
-          >
-            + 新建文件
-          </button>
-          <div v-if="partsLoading" class="text-sm text-muted py-2">加载中...</div>
-          <template v-else>
-            <div v-if="currentPartFiles.length === 0" class="text-sm text-muted py-2">暂无文件</div>
-            <button
-              v-for="f in currentPartFiles"
-              :key="f.path"
-              @click="selectPartFile(activeTab as PartType, f.path)"
-              :class="[
-                'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
-                selectedPartFile?.type === activeTab && selectedPartFile?.path === f.path
-                  ? 'bg-accent-subtle text-accent-subtle-text'
-                  : 'hover:bg-list-hover text-primary'
-              ]"
-            >
-              {{ f.name }}
-            </button>
           </template>
-        </aside>
-        <main class="flex-1 min-w-0 overflow-hidden flex flex-col p-3">
-          <div v-if="!selectedPartFile" class="text-sm text-muted flex-1 flex items-center justify-center">在左侧选择文件以预览，或点击「新建文件」</div>
-          <div v-else class="flex-1 flex flex-col min-h-0">
-            <div class="mx-auto w-full max-w-4xl flex items-center justify-between gap-2 mb-2 flex-shrink-0">
-              <span class="text-xs text-muted truncate">{{ selectedPartFile.path }}</span>
-              <div class="flex gap-2">
-                <button
-                  @click="savePartFile"
-                  :disabled="partSaving"
-                  class="px-2 py-1 text-xs bg-accent text-text-inverse rounded hover:bg-accent-hover disabled:opacity-50"
-                >
-                  {{ partSaving ? '保存中...' : '保存' }}
-                </button>
-                <button
-                  @click="deletePartFile"
-                  class="px-2 py-1 text-xs text-danger border border-danger/40 rounded hover:bg-danger-subtle"
-                >
-                  删除文件
-                </button>
-              </div>
-            </div>
-            <div v-if="partContentLoading" class="text-sm text-muted flex-1">加载中...</div>
-            <textarea
-              v-else
-              v-model="partContent"
-              class="mx-auto flex-1 min-h-0 w-full max-w-4xl px-3 py-2 text-xs font-mono border border-input-border rounded-lg resize-none bg-input-bg text-primary"
-              spellcheck="false"
-            />
-          </div>
         </main>
-      </div>
-      <div v-if="activeTab !== 'main'" class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
-        <button
-          @click="save"
-          :disabled="saving || deleting"
-          class="px-4 py-2 rounded-lg bg-accent text-text-inverse text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
-        >
-          {{ saving ? '保存中...' : '保存' }}
-        </button>
-        <button
-          @click="deleteSkill"
-          :disabled="deleting || saving"
-          class="px-4 py-2 rounded-lg bg-danger-subtle text-danger text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          {{ deleting ? '删除中...' : '删除' }}
-        </button>
       </div>
     </template>
     <div v-else class="p-4 text-muted flex-1">未找到该技能</div>
@@ -256,6 +276,52 @@ const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
   return parts.value[activeTab.value] || []
 })
+const partDirPath = ref('')
+
+function normalizePartPath(path: string) {
+  return String(path || '').replace(/^\/+|\/+$/g, '')
+}
+
+function dirnameOfPath(path: string) {
+  const p = normalizePartPath(path)
+  const idx = p.lastIndexOf('/')
+  return idx >= 0 ? p.slice(0, idx) : ''
+}
+
+const partFileBrowser = computed(() => {
+  const currentDir = normalizePartPath(partDirPath.value)
+  const dirsMap = new Map<string, { name: string; path: string }>()
+  const files: { name: string; path: string }[] = []
+  for (const item of currentPartFiles.value) {
+    const full = normalizePartPath(item.path)
+    if (!full) continue
+    const rel = currentDir ? (full.startsWith(`${currentDir}/`) ? full.slice(currentDir.length + 1) : '') : full
+    if (!rel) continue
+    const slash = rel.indexOf('/')
+    if (slash >= 0) {
+      const name = rel.slice(0, slash)
+      if (!dirsMap.has(name)) {
+        dirsMap.set(name, { name, path: currentDir ? `${currentDir}/${name}` : name })
+      }
+    } else {
+      files.push({ name: rel, path: full })
+    }
+  }
+  const dirs = Array.from(dirsMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  files.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  return { dirs, files }
+})
+
+function enterPartDir(path: string) {
+  partDirPath.value = normalizePartPath(path)
+}
+
+function goPartDirUp() {
+  const cur = normalizePartPath(partDirPath.value)
+  if (!cur) return
+  const idx = cur.lastIndexOf('/')
+  partDirPath.value = idx >= 0 ? cur.slice(0, idx) : ''
+}
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
 function renderMarkdown(text: string): string {
@@ -388,6 +454,7 @@ async function loadParts() {
 
 async function selectPartFile(type: PartType, path: string) {
   selectedPartFile.value = { type, path }
+  partDirPath.value = dirnameOfPath(path)
   partContentLoading.value = true
   partContent.value = ''
   try {
@@ -544,6 +611,7 @@ watch(
   async () => {
     // 切换 skill 时，先清空右侧文件预览，避免短暂显示上一个 skill 的内容
     selectedPartFile.value = null
+    partDirPath.value = ''
     partContent.value = ''
     markdownPreviewMode.value = true
     await load()
@@ -568,6 +636,7 @@ watch(activeTab, async (tab) => {
   }
   if (!skill.value) return
   selectedPartFile.value = null
+  partDirPath.value = ''
   partContent.value = ''
   await loadParts()
   if (activeTab.value !== tab) return
