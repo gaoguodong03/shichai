@@ -160,7 +160,7 @@
         />
       </div>
       <p class="text-xs text-muted">ID: {{ server.id }} · 状态: {{ server.status }} · 工具数: {{ server.tool_count ?? 0 }}</p>
-      <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
+      <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
         <button
           type="submit"
           :disabled="saving"

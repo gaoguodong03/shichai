@@ -34,11 +34,11 @@
           </div>
           <p v-if="accountError" class="text-sm text-danger">{{ accountError }}</p>
           <p v-if="accountSuccess" class="text-sm text-accent">{{ accountSuccess }}</p>
-          <div class="flex justify-end">
+          <div class="flex items-center justify-start pt-3">
             <button
               type="button"
               :disabled="savingAccount"
-              class="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               @click="onChangeAccount"
             >
               {{ savingAccount ? '保存中...' : '保存' }}
@@ -87,11 +87,11 @@
           </div>
           <p v-if="passwordError" class="text-sm text-danger">{{ passwordError }}</p>
           <p v-if="passwordSuccess" class="text-sm text-accent">{{ passwordSuccess }}</p>
-          <div class="flex justify-end">
+          <div class="flex items-center justify-start pt-3">
             <button
               type="button"
               :disabled="savingPassword"
-              class="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               @click="onChangePassword"
             >
               {{ savingPassword ? '保存中...' : '保存' }}

@@ -2167,6 +2167,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             next_speaker = None
             expert_route_debug_for_turn: Dict[str, Any] = {}
 
+            # 统一读取本轮 TF-IDF 阈值：用于专家主路由、pending 续跑打断、主持人覆盖三处判断。
+            _rt_cfg = normalize_router_tfidf(app_settings.get("router_tfidf"))
+            _expert_min_score = float(_rt_cfg.get("expert_min_score", 0.05))
+            _expert_min_delta = float(_rt_cfg.get("expert_min_delta", 0.01))
+
             # 预计算 TF-IDF：供「待恢复专家」与强意图切换时二选一，并在下方分支复用，避免重复计算。
             pre_tfidf_pick: Optional[str] = None
             pre_tfidf_debug: Dict[str, Any] = {}
@@ -2175,7 +2180,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     query=(user_message or discussion_goal or ""),
                     agent_ids=[x for x in agent_ids if x not in ignored_expert_ids_set],
                     all_instances=preferred_instances,
-                    router_tfidf=normalize_router_tfidf(app_settings.get("router_tfidf")),
+                    router_tfidf=_rt_cfg,
                 )
 
             auto_resume_owner: Optional[str] = None
@@ -2195,7 +2200,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         (float(x.get("score") or 0.0) for x in scores if str(x.get("agent_id")) == pending_owner_agent_id),
                         0.0,
                     )
-                    if top_score >= 0.06 and top_score >= pending_score + 0.02:
+                    if top_score >= _expert_min_score and top_score >= pending_score + _expert_min_delta:
                         skip_resume_pending = True
                 try:
                     append_audit_event(
@@ -2500,7 +2505,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         (float(x.get("score") or 0.0) for x in scores if str(x.get("agent_id")) == str(next_speaker)),
                         0.0,
                     )
-                    if top_score >= 0.06 and top_score >= cur_score + 0.02:
+                    if top_score >= _expert_min_score and top_score >= cur_score + _expert_min_delta:
                         _audit(
                             "host_takeover_override_by_tfidf",
                             {
@@ -2591,7 +2596,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = "user"
                     break
 
-                _rt_cfg = normalize_router_tfidf(app_settings.get("router_tfidf"))
                 resolved_skill_id, skill_content, skill_route_debug = _resolve_dha_skill_id_and_content(
                     dha,
                     discussion_goal,

@@ -140,9 +140,9 @@
 
 
 
-          <div class="flex items-center justify-end gap-2 px-4 py-3 flex-shrink-0">
+          <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
 
-            <span v-if="saved" class="text-sm text-accent mr-auto">已保存</span>
+            <span v-if="saved" class="text-sm text-accent">已保存</span>
 
             <button
 

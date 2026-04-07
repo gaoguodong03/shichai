@@ -642,7 +642,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="flex items-center justify-end gap-2 px-4 py-3 flex-shrink-0">
+                <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
                   <button
                     type="button"
                     class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
@@ -937,7 +937,7 @@ const filteredMcpServers = computed(() => {
 const settingsCategories = [
   { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
-  { id: 'secrets', label: '密钥管理' },
+  { id: 'secrets', label: '密钥' },
   { id: 'account-security', label: '账号' },
 ]
 // Group

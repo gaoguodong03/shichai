@@ -86,17 +86,17 @@
               placeholder="sk-..."
             />
           </div>
-          <div class="flex justify-end gap-2">
+          <div class="flex items-center justify-start gap-2 pt-3">
             <button
               type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-list-hover text-primary hover:opacity-90"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary hover:opacity-90"
               @click="selectedId = null"
             >
               取消
             </button>
             <button
               type="submit"
-              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
               :disabled="saving"
             >
               {{ saving ? '创建中...' : '创建' }}
@@ -137,20 +137,20 @@
             />
             <p v-if="currentKeySet" class="text-xs text-muted mt-1">当前已保存密钥。</p>
           </div>
-          <div class="flex justify-end gap-2 flex-wrap">
-            <button
-              type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-danger-subtle text-danger hover:opacity-90"
-              @click="removeSecret"
-            >
-              删除
-            </button>
+          <div class="flex items-center justify-start gap-2 flex-wrap pt-3">
             <button
               type="submit"
-              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
               :disabled="saving"
             >
               {{ saving ? '保存中...' : '保存' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
+              @click="removeSecret"
+            >
+              删除
             </button>
           </div>
         </form>

@@ -99,12 +99,12 @@
             </div>
           </div>
         </section>
-        <div class="flex items-center justify-end gap-3">
-          <span v-if="saved" class="text-sm text-accent mr-auto">已保存</span>
+        <div class="flex items-center justify-start gap-3 pt-3">
+          <span v-if="saved" class="text-sm text-accent">已保存</span>
           <button
             @click="save"
             :disabled="saving"
-            class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:opacity-90 disabled:opacity-50"
+            class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
           >
             {{ saving ? '保存中...' : '保存' }}
           </button>
@@ -112,7 +112,7 @@
             type="button"
             @click="resetToDefaults"
             :disabled="saving"
-            class="px-4 py-2 bg-card border border-border text-primary rounded-lg hover:bg-list-hover disabled:opacity-50"
+            class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-card border border-border text-primary hover:bg-list-hover disabled:opacity-50"
           >
             恢复默认
           </button>

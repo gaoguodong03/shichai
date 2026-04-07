@@ -103,7 +103,7 @@
                 placeholder="SKILL.md 正文内容"
               />
             </div>
-            <div class="flex justify-end gap-2 pt-2">
+            <div class="flex items-center justify-start gap-2 pt-2">
               <button
                 @click="save"
                 :disabled="saving || deleting"
@@ -184,7 +184,7 @@
           </div>
         </main>
       </div>
-      <div v-if="activeTab !== 'main'" class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
+      <div v-if="activeTab !== 'main'" class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
         <button
           @click="save"
           :disabled="saving || deleting"

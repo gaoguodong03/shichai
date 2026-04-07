@@ -168,7 +168,7 @@
                           <div
                             v-for="(raw, tri) in getToolRawResults(msg)"
                             :key="tri"
-                            class="group-chat-tool-tag-wrap"
+                            :class="['group-chat-tool-tag-wrap', tri > 0 && 'group-chat-tool-tag-wrap-break']"
                             :data-key="`${msg.message_id || i}-${tri}`"
                           >
                             <button
@@ -889,6 +889,13 @@
                   <div class="group-chat-workspace-preview-actions">
                     <template v-if="groupWorkspacePreviewIsMd && !groupWorkspacePreviewLoading">
                       <template v-if="!groupWorkspacePreviewEditing">
+                        <button
+                          type="button"
+                          class="group-chat-workspace-preview-edit-btn"
+                          @click="downloadGroupWorkspaceFile({ name: groupWorkspacePreviewName, path: groupWorkspacePreviewPath })"
+                        >
+                          下载
+                        </button>
                         <button type="button" class="group-chat-workspace-preview-edit-btn" @click="startWorkspacePreviewEdit">编辑</button>
                       </template>
                       <template v-else>
@@ -3999,6 +4006,24 @@ defineExpose({ refresh: loadGroupDetail })
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.group-chat-meta-topic-list::-webkit-scrollbar {
+  width: 8px;
+}
+.group-chat-meta-topic-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.group-chat-meta-topic-list::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.group-chat-meta-topic-list::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+  background-clip: content-box;
 }
 .group-chat-meta-topic-item {
   width: 100%;
@@ -4081,6 +4106,10 @@ defineExpose({ refresh: loadGroupDetail })
   border-radius: 8px;
   cursor: pointer;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.group-chat-header-btn:focus-visible {
+  outline: 2px solid var(--color-input-focus-ring);
+  outline-offset: 2px;
 }
 .group-chat-header-btn:hover {
   color: var(--color-text);
@@ -4297,6 +4326,11 @@ defineExpose({ refresh: loadGroupDetail })
   position: relative;
   display: inline-flex;
   margin-left: 0.25rem;
+}
+.group-chat-tool-tag-wrap-break {
+  flex-basis: 100%;
+  margin-left: 0;
+  margin-top: 0.125rem;
 }
 .group-chat-tool-tag {
   display: inline-flex;
@@ -5143,7 +5177,7 @@ defineExpose({ refresh: loadGroupDetail })
   opacity: 1;
 }
 .group-chat-input-block {
-  background: var(--color-page);
+  background: var(--color-input-bg);
   border: 1px solid var(--color-input-border);
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
@@ -5907,6 +5941,25 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-input-bg);
   border-radius: 6px;
   color: var(--color-text);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.group-chat-workspace-preview-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.group-chat-workspace-preview-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.group-chat-workspace-preview-content::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.group-chat-workspace-preview-content::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+  background-clip: content-box;
 }
 .group-chat-workspace-preview-image-wrap {
   flex: 1;
@@ -5988,9 +6041,27 @@ defineExpose({ refresh: loadGroupDetail })
   border-color: var(--color-border);
 }
 .group-chat-theme .group-chat-title { color: var(--color-text); }
-.group-chat-theme .group-chat-header-btn { color: var(--color-text-muted); border-color: var(--color-border); }
-.group-chat-theme .group-chat-header-btn:hover { color: var(--color-text); background: var(--color-list-hover); }
+.group-chat-theme .group-chat-header-btn {
+  color: var(--color-text-muted);
+  background: var(--color-card);
+  border-color: var(--color-border);
+}
+.group-chat-theme .group-chat-header-btn:hover {
+  color: var(--color-text);
+  background: var(--color-list-hover);
+  border-color: var(--color-border);
+}
 .group-chat-theme .group-chat-header-btn-active { color: var(--color-accent-subtle-text); background: var(--color-accent-subtle); border-color: var(--color-accent); }
+.dark .group-chat-theme .group-chat-header-btn {
+  color: var(--color-text-muted);
+  background: var(--color-card);
+  border-color: var(--color-border);
+}
+.dark .group-chat-theme .group-chat-header-btn:hover {
+  color: var(--color-text);
+  background: var(--color-list-hover);
+  border-color: var(--color-border);
+}
 .group-chat-theme .group-chat-goal-card { background: var(--color-card); border-color: var(--color-border-light); }
 .group-chat-theme .group-chat-bubble-dha { background: var(--color-card); border-color: var(--color-border-light); color: var(--color-text); }
 .group-chat-theme .group-chat-input-wrap { background: var(--color-page); border-color: var(--color-border-light); }

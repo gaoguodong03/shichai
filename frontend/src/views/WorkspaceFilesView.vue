@@ -8,7 +8,7 @@
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="px-3 py-1.5 text-sm rounded-lg border border-input-border text-primary hover:bg-list-hover"
+          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="refreshAll"
           :disabled="loading || !sessionId"
         >
@@ -16,7 +16,7 @@
         </button>
         <button
           type="button"
-          class="px-3 py-1.5 text-sm rounded-lg bg-accent text-text-inverse hover:opacity-90"
+          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="createFile"
           :disabled="loading || !sessionId"
         >
@@ -24,7 +24,7 @@
         </button>
         <button
           type="button"
-          class="px-3 py-1.5 text-sm rounded-lg border border-input-border text-primary hover:bg-list-hover"
+          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="createFolder"
           :disabled="loading || !sessionId"
         >
@@ -32,7 +32,7 @@
         </button>
         <button
           type="button"
-          class="px-3 py-1.5 text-sm rounded-lg bg-accent-subtle text-accent-subtle-text hover:opacity-90"
+          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="uploadInputRef?.click()"
           :disabled="loading || !sessionId"
         >

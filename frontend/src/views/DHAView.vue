@@ -16,7 +16,7 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)] gap-6 items-start">
           <!-- 左侧表单 -->
-          <form @submit.prevent="saveDha" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
+          <form @submit.prevent="saveDha" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-primary mb-1">名称</label>
@@ -75,7 +75,7 @@
               />
               <div
                 v-if="skills.length"
-                class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
+                class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
               >
                 <button
                   v-for="s in filteredSkills"
@@ -96,7 +96,7 @@
 
               <div class="mt-4 pt-4 border-t border-border-light">
                 <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
-                <div class="flex flex-wrap gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
+                <div class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
                   <button
                     v-for="item in fileCapabilityItems"
                     :key="item.key"
@@ -125,7 +125,7 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
-            <div class="flex justify-end gap-2 px-4 py-3 flex-shrink-0">
+            <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0">
               <button
                 type="submit"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover shadow-sm transition-colors"
