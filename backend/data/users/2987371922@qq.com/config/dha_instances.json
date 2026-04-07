@@ -50,7 +50,15 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "delete": true,
+      "rename": true
+    },
+    "url_capability": true
   },
   {
     "agent_id": "agent-c1bf68ba",
@@ -357,5 +365,26 @@
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": ""
+  },
+  {
+    "agent_id": "agent-ee83c54f",
+    "name": "rag",
+    "role": "",
+    "system_prompt": "",
+    "skill_ids": [
+      "rag-cli-1"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "delete": true,
+      "rename": true
+    },
+    "url_capability": true
   }
 ]

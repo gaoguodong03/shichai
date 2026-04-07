@@ -1,6 +1,7 @@
 """
 MCP Server 管理器：规范、轻量的调用方式。
 
+- stdio 类 MCP 的 Python 入口脚本位于同包下 `stdio/`（如 `stdio_json_filter.py`、`file_reader_mcp.py`），在 mcp_servers.json 的 args 中写相对 backend 的路径，例如 `app/mcp/stdio/file_reader_mcp.py`。
 - 多用户：每个用户名对应独立的 MCPToolManager 实例与连接，配置来自 data/users/{user}/config/mcp_servers.json。
 - 生命周期：进程退出时在 lifespan 内 cleanup_all_mcp_runtimes；单用户配置变更时可 dispose 该用户实例。
 - 调用方式：Tool.func 为异步函数，直接 session.call_tool；由 graph/agent 侧 await。

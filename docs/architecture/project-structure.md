@@ -32,7 +32,6 @@ DHA/
 │   └── .env.example
 ├── docs/                     # 文档（architecture、features、development、next-plan 等）
 ├── config/                   # 项目级配置（如 mcp_servers.json、models.json）
-├── backend/skills/          # 后端加载的 Skill 目录（SKILL.md + scripts/）
 └── README.md
 ```
 
@@ -85,7 +84,7 @@ DHA/
 
 | 文件 | 职责 |
 |------|------|
-| `loader.py` | 扫描 skills 目录、读取 SKILL.md、解析 frontmatter；`get_skills_loader()` 单例供会话等模块共用；`get_skills_for_selection()`、`get_skill_full_content(skill_id)`。 |
+| `loader.py` | 扫描用户 `skills_dir`、读取 SKILL.md；业务用 `get_skills_loader_for_user`；`get_skills_loader()` 仅兼容无用户上下文场景。 |
 
 ### `tools/`
 
@@ -99,7 +98,7 @@ DHA/
 | `write_workspace_file.py` | 写工作区文件（若被其他模块使用）。 |
 | `volces_image_cli_lib.py` | 火山图像等辅助。 |
 
-当前项目**未使用**独立 `models/`、`storage/`、`utils/` 目录；数据与持久化分散在 api/skills/core 及本地文件（如 `data/sessions`）。
+当前项目**未使用**独立 `models/`、`storage/`、`utils/` 目录；数据与持久化分散在 api/skills/core 及本地文件（如 `data/users/<用户>/sessions`）。
 
 ## 前端结构详解
 
@@ -116,7 +115,7 @@ DHA/
 
 - **后端**：`.env`、`requirements.txt`、`pyproject.toml`；会话/群聊等数据多在 `backend/data/` 下以 JSON 等形式存储。
 - **前端**：`package.json`、`vite.config.ts`、`tsconfig.json`、`.env.example`。
-- **项目级**：`config/mcp_servers.json`、`config/models.json`；Skills 目录为 `backend/skills/`（或配置指向的路径）。
+- **项目级**：`config/mcp_servers.json`、`config/models.json`；Skills 为每用户 `data/users/<用户名>/skills/`。
 
 ## 命名与组织原则
 

@@ -73,7 +73,7 @@ backend/
 ## 多用户上线建议（默认体验补丁）
 
 - 架构原则：所有用户共用一套 `run_skill_script` 执行器，按用户上下文访问各自 `skills/` 与 `workspace/`。
-- 默认模板补丁：对 `backend/skills/*` 提供开箱可用的基础脚本（如 `url-fetch/scripts/extract_main_content.py`），避免新用户首次使用时“脚本不可用”。
+- 技能目录为每用户 `data/users/{username}/skills/{skill_id}/`（资源中心创建或 ZIP 导入）。
 - 全局兼容补丁：在工具组装层维护历史 MCP id 别名映射（如 `fetch -> linkup`），防止旧 skill 配置导致运行失败。
 - 补丁边界：这类补丁属于默认体验增强，不改变“单执行器 + 多用户隔离”的架构方向。
 

@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # 构建目标平台（默认 linux/amd64；可覆盖：docker build --platform linux/arm64）
+# Node 阶段用 TARGETPLATFORM（与 python 阶段一致）；Windows 上 BUILDPLATFORM 常为 windows/amd64，官方 node 无此平台会 not found。
 ARG TARGETPLATFORM=linux/amd64
-ARG BUILDPLATFORM=linux/amd64
 # ========== 阶段 1：构建前端（用 Debian 版 Node，便于阶段 2 复用，避免 apt 拉取 node/npm 失败）==========
-FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-builder
+FROM --platform=$TARGETPLATFORM node:20-bookworm-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
@@ -50,13 +50,9 @@ COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./frontend_dist
 
 # 环境变量：静态目录供 main 挂载；工作目录与 Python 路径
-# 说明：
-# - skills、config、data 都已经随 backend 目录一起打包进镜像
-# - 这里直接指向 /app/backend 下的真实路径，这样即使没有挂载卷、也没有额外环境变量，
-#   在 K8s/free4inno 这类只能改少量配置的平台中也能开箱即用
+# 说明：config 随镜像打包；用户数据（含每用户 skills）通常挂载 /app/data
 ENV STATIC_DIR=/app/frontend_dist
 ENV PYTHONPATH=/app/backend
-ENV SKILLS_DIR=/app/backend/skills
 ENV MCP_CONFIG_PATH=/app/backend/config/mcp_servers.json
 ENV APP_SETTINGS_PATH=/app/backend/config/app_settings.json
 ENV SESSIONS_DIR=/app/backend/data/sessions
@@ -66,7 +62,7 @@ ENV AGENT_OUTPUTS_DIR=/app/backend/data/agent-outputs
 EXPOSE 8000
 
 # 数据与配置目录（运行时挂载 volume）
-RUN mkdir -p /app/data/sessions /app/data/agent-outputs /app/data/skills /app/config
+RUN mkdir -p /app/data/sessions /app/data/agent-outputs /app/config
 
 # ========== Playwright Chromium（供 Playwright MCP 在无头环境使用，镜像体积会增大）==========
 # 见 https://playwright.dev/docs/docker ；仅安装 Chromium 及其系统依赖

@@ -7,15 +7,190 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from app.agent.llm_client import QwenLLM
+from app.agent.read_path_utils import prefer_more_specific_path, strip_llm_junk_from_read_path
 from app.agent.simple_agent import SimpleAgent
 from app.agent.tools_for_skill import build_skill_script_tool_name
 
 logger = logging.getLogger(__name__)
+
+_EXT_RE = re.compile(
+    r"([\w./\u4e00-\u9fff\-]+?(?:\.(?:md|txt|json|yaml|yml|csv|html|htm|xml|py|ts|js|vue|css)))\b",
+    re.I,
+)
+
+def _clean_user_path_candidate(s: str) -> str:
+    return (s or "").strip().strip(" \t\r\n\"'""''「」『』")
+
+
+def _looks_like_workspace_rel_path(s: str) -> bool:
+    t = _clean_user_path_candidate(s)
+    if not t or ".." in t:
+        return False
+    if "/" in t or "\\" in t:
+        return True
+    return bool(_EXT_RE.fullmatch(t) or re.search(r"\.(md|txt|json|yaml|yml|csv)$", t, re.I))
+
+
+def _pick_best_workspace_path(candidates: list[str]) -> str:
+    """同一消息中多条路径时，对同名文件优先选带子目录的路径（note/test.md 优于根目录 test.md）。"""
+    cleaned: list[str] = []
+    for c in candidates:
+        t = _clean_user_path_candidate(c).replace("\\", "/")
+        if not t or ".." in t:
+            continue
+        if not _looks_like_workspace_rel_path(t):
+            continue
+        cleaned.append(t)
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    from collections import defaultdict
+
+    by_base: dict[str, list[str]] = defaultdict(list)
+    for c in cleaned:
+        by_base[c.split("/")[-1].lower()].append(c)
+    winners: list[str] = []
+    for group in by_base.values():
+        group.sort(key=lambda x: (x.count("/"), len(x)), reverse=True)
+        winners.append(group[0])
+    if len(winners) == 1:
+        return winners[0]
+    winners.sort(key=lambda x: (x.count("/"), len(x)), reverse=True)
+    return winners[0]
+
+
+def _collect_paths_from_user_text(text: str) -> list[str]:
+    """从单条用户正文中收集工作区相对路径候选（支持反引号、中英文引号、中文文件名）。"""
+    raw = text or ""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(p: str) -> None:
+        c = _clean_user_path_candidate(p)
+        if not c or c in seen:
+            return
+        if not _looks_like_workspace_rel_path(c):
+            return
+        seen.add(c)
+        out.append(c)
+
+    for c in re.findall(r"`([^`]{1,800})`", raw):
+        add(c)
+    for pat in (
+        r'[""]([^""]{1,800})[""]',
+        r"[「『]([^」』]{1,800})[」』]",
+    ):
+        for g in re.findall(pat, raw):
+            add(g)
+    for m in _EXT_RE.finditer(raw):
+        g = m.group(1)
+        # 避免把「文件路径就是test.md」整句当作路径；能拆则只取其中的 test.md / dir/a.md
+        if "就是" in g or "路径是" in g or "路径就是" in g:
+            inner = strip_llm_junk_from_read_path(g)
+            if inner and inner != g:
+                add(inner)
+            continue
+        add(g)
+    return out
+
+
+def _extract_path_from_last_user_for_read(messages: Sequence[BaseMessage]) -> str:
+    """从最近一条用户消息中提取 read_file 应用的路径（供补全或覆盖模型错误路径）。"""
+    last_user = None
+    for m in reversed(messages):
+        if isinstance(m, HumanMessage):
+            last_user = m
+            break
+    if last_user is None:
+        return ""
+    content = str(getattr(last_user, "content", "") or "").strip()
+    if not content:
+        return ""
+
+    # 用户纠正「要 A 而不是 B」时，只从「而不是」之前的子串取路径，避免取到被否定的旧路径
+    head = content
+    if "而不是" in content or "而非" in content:
+        head = re.split(r"而不是|而非", content, maxsplit=1)[0]
+
+    paths_head = _collect_paths_from_user_text(head)
+    if paths_head:
+        return _pick_best_workspace_path(paths_head)
+
+    # 常见句式：新增了 xxx、读取的是 xxx
+    m = re.search(
+        r"(?:新增[了]?[ \t]*|要读取的是[ \t]*|读取的是[ \t]*)[「「""'' \t]*"
+        r"([\w./\u4e00-\u9fff\-/]+\.(?:md|txt|json|yaml|yml|csv))",
+        content,
+    )
+    if m:
+        p = _clean_user_path_candidate(m.group(1))
+        if _looks_like_workspace_rel_path(p):
+            return p
+
+    paths_all = _collect_paths_from_user_text(content)
+    if paths_all:
+        return _pick_best_workspace_path(paths_all)
+    return ""
+
+
+def _should_override_read_file_path_with_user(last_user_content: str, model_path: str, user_path: str) -> bool:
+    """当模型沿用了会话中的旧路径，而用户最新消息已给出不同路径时，是否应以用户路径为准。"""
+    u = (user_path or "").strip().replace("\\", "/")
+    m = (model_path or "").strip().replace("\\", "/")
+    if not u or u == m:
+        return False
+    # 模型只传了 test.md，用户明确写了 note/test.md
+    if prefer_more_specific_path(u, m):
+        return True
+    lc = last_user_content or ""
+    # 用户明确在读文件 / 新增文件 / 纠正路径
+    if re.search(r"(读取|查看|打开|读一下|看下|浏览|新增[了]?|上传|保存的)", lc):
+        return True
+    if "而不是" in lc or "而非" in lc or "不是" in lc and "而是" in lc:
+        return True
+    if re.search(r"[「『""''`]", lc):
+        return True
+    return False
+
+
+def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[BaseMessage]) -> None:
+    """若最近用户消息中有可解析路径，则补全或覆盖 read_file 的 path（原地修改 arguments）。"""
+    raw_arg = (arguments.get("path") or arguments.get("__arg1") or "").strip()
+    if raw_arg:
+        fixed = strip_llm_junk_from_read_path(raw_arg)
+        if fixed and fixed != raw_arg:
+            logger.info("read_file: 清理模型 path 中的说明性文字: %s -> %s", raw_arg, fixed)
+            arguments["path"] = fixed
+            arguments.pop("__arg1", None)
+
+    auto_path = _extract_path_from_last_user_for_read(messages)
+    if not auto_path:
+        return
+    cur = (arguments.get("path") or arguments.get("__arg1") or "").strip()
+    last_user = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            last_user = msg
+            break
+    last_content = str(getattr(last_user, "content", "") or "") if last_user else ""
+
+    if not cur:
+        arguments["path"] = auto_path
+        arguments.pop("__arg1", None)
+        return
+    if cur.replace("\\", "/").strip() == auto_path.replace("\\", "/").strip():
+        return
+    if _should_override_read_file_path_with_user(last_content, cur, auto_path):
+        logger.info("read_file: 使用最近用户消息中的路径覆盖模型参数: %s -> %s", cur, auto_path)
+        arguments["path"] = auto_path
+        arguments.pop("__arg1", None)
 
 
 def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
@@ -29,9 +204,9 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
     )
     file_lines: List[str] = []
     if "read_file" in names:
-        file_lines.append("- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。")
+        file_lines.append("- read_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
     if "write_workspace_file" in names:
-        file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。")
+        file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。")
     if "edit_workspace_file" in names:
         file_lines.append("- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。")
     if "delete_workspace_file" in names:
@@ -44,7 +219,8 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
         if "read_file" in names:
             parts.append(
                 "- 当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，"
-                "你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。\n"
+                "你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；"
+                "path 必须用**用户本条消息里写的路径**，不要用会话里较早提到的旧文件路径。\n"
             )
         if "write_workspace_file" in names or "edit_workspace_file" in names:
             parts.append(
@@ -232,14 +408,14 @@ def create_react_agent(
 ## 文件操作（当前会话工作区）
 
 你拥有以下与“当前会话工作区”相关的工具：
-- read_file: 读取工作区内相对路径对应的文件内容（例如 notes/test.md）。
-- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 notes/test.md）。
+- read_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。
+- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。
 - edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。
 - delete_workspace_file: 删除工作区内文件。
 - rename_workspace_file: 重命名工作区内文件。
 
 **强制规则（优先级很高）：**
-- 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 notes/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确。
+- 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 note/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；path 必须用**用户本条消息里的路径**，不要沿用会话中较早提到的旧路径。
 - 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
 - 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
 - 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
@@ -690,35 +866,6 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             return text[:max_tool_result_chars].rstrip() + "\n...[工具结果已截断]"
         return text
 
-    def _extract_path_from_last_user(messages: Sequence[BaseMessage]) -> str:
-        """从最近一条用户消息中尽力提取文件路径（用于 read_file 自动补全 path）。"""
-        import re
-
-        # 从后往前找到最近一条 HumanMessage
-        last_user = None
-        for m in reversed(messages):
-            from langchain_core.messages import HumanMessage as _HM
-
-            if isinstance(m, _HM):
-                last_user = m
-                break
-        if last_user is None:
-            return ""
-        content = str(getattr(last_user, "content", "") or "").strip()
-        if not content:
-            return ""
-        # 1) 反引号中的内容优先视为路径（如 `notes/test.md`）
-        code_matches = re.findall(r"`([^`]+)`", content)
-        for c in code_matches:
-            s = c.strip()
-            if "/" in s or s.endswith(".md") or "." in s:
-                return s
-        # 2) 简单匹配类似 notes/test.md 或 output/.../text.md
-        m = re.search(r"([A-Za-z0-9_\-./]+\.md)", content)
-        if m:
-            return m.group(1).strip()
-        return ""
-
     def _extract_paths_from_last_user(messages: Sequence[BaseMessage]) -> list[str]:
         """从最近一条用户消息中提取可能的文件路径列表（用于 rename 参数兜底）。"""
         import re
@@ -794,11 +941,9 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     tool = t
                     break
             if tool:
-                # read_file 兜底：若未提供 path，则从最近一条用户消息中提取
-                if tool_name == "read_file" and not (arguments.get("path") or arguments.get("__arg1")):
-                    auto_path = _extract_path_from_last_user(messages)
-                    if auto_path:
-                        arguments["path"] = auto_path
+                # read_file：从最近用户消息补全 path，或在模型沿用旧路径时用用户本条消息覆盖
+                if tool_name == "read_file":
+                    _apply_read_file_path_from_user_message(arguments, messages)
                 # rename_workspace_file 兜底：若缺 path/new_name，则从最近用户消息中提取两个路径
                 if tool_name == "rename_workspace_file":
                     has_src = bool(arguments.get("path"))
@@ -863,11 +1008,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 tool = t
                 break
         if tool:
-            # read_file 兜底：若未提供 path，则从最近一条用户消息中提取
-            if tool_name == "read_file" and not (arguments.get("path") or arguments.get("__arg1")):
-                auto_path = _extract_path_from_last_user(messages)
-                if auto_path:
-                    arguments["path"] = auto_path
+            if tool_name == "read_file":
+                _apply_read_file_path_from_user_message(arguments, messages)
             if tool_name == "rename_workspace_file":
                 has_src = bool(arguments.get("path"))
                 has_dst = bool(arguments.get("new_name"))

@@ -29,11 +29,20 @@ class Skill:
         return self.content
 
 
+def _singleton_skills_dir_placeholder() -> Path:
+    """无 SKILLS_DIR 且未传入路径时的占位目录（可不创建）；业务请求请用 get_skills_loader_for_user。"""
+    return Path(__file__).resolve().parents[2] / "data" / ".skills_singleton_unused"
+
+
 class SkillsLoader:
     """Skills 加载器"""
 
     def __init__(self, skills_dir: str = None):
-        self.skills_dir = Path(skills_dir or os.getenv("SKILLS_DIR", "./skills"))
+        if skills_dir is not None:
+            self.skills_dir = Path(skills_dir)
+        else:
+            env = os.getenv("SKILLS_DIR")
+            self.skills_dir = Path(env) if env else _singleton_skills_dir_placeholder()
         self.skills: Dict[str, Skill] = {}
         self._tfidf_bundle_cache: Dict[Tuple[str, ...], Tuple[List[str], Any, Any]] = {}
 
@@ -434,7 +443,7 @@ _skills_loader: Optional[SkillsLoader] = None
 
 
 def get_skills_loader() -> SkillsLoader:
-    """进程级默认 SkillsLoader（./skills 或 SKILLS_DIR），勿在多用户请求路径依赖此单例。"""
+    """进程级默认 SkillsLoader（可选 SKILLS_DIR；未设置则空目录）。勿在多用户请求路径依赖此单例。"""
     global _skills_loader
     if _skills_loader is None:
         _skills_loader = SkillsLoader()

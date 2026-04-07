@@ -73,7 +73,6 @@ class QwenLLM:
         temperature: float = 0.7,
         max_tokens: int = 2000,
     ):
-        self.api_key = api_key or os.getenv("QWEN_API_KEY")
         self.base_url = base_url or os.getenv(
             "QWEN_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
@@ -82,8 +81,18 @@ class QwenLLM:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
+        # 勿对非 DashScope 的 base_url 回退到 QWEN_API_KEY，否则 Jeniya 等中转会收到阿里云 Key → 401「无效的令牌」
+        if api_key and str(api_key).strip():
+            self.api_key = str(api_key).strip()
+        elif "dashscope.aliyuncs.com" in (self.base_url or ""):
+            self.api_key = (os.getenv("QWEN_API_KEY") or "").strip() or None
+        else:
+            self.api_key = (os.getenv("JENIYA_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip() or None
+
         if not self.api_key:
-            raise ValueError("QWEN_API_KEY is required")
+            raise ValueError(
+                "缺少 API Key：DashScope 请设置 QWEN_API_KEY；Jeniya/OpenAI 兼容中转请设置 JENIYA_API_KEY（或 OPENAI_API_KEY）"
+            )
 
     def get_client(self):
         """获取 LangChain ChatOpenAI 客户端"""

@@ -12,6 +12,7 @@ except Exception:
             self.description = description
             self.func = func
 
+from app.agent.read_path_utils import strip_llm_junk_from_read_path
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 
 
@@ -36,6 +37,10 @@ def _read_file_content(path: Optional[str] = None, session_id: Optional[str] = N
     """读取文件。path 为相对当前会话工作区的路径。
     当 session_id 给定时，仅允许读取该会话工作区内的文件。"""
     path = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))
+    if path:
+        cleaned = strip_llm_junk_from_read_path(path)
+        if cleaned:
+            path = cleaned
     root = get_agent_outputs_root().resolve()
     root.mkdir(parents=True, exist_ok=True)
     normalized = (path or "").strip("/").replace("..", "")

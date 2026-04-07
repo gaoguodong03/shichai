@@ -118,14 +118,6 @@
 
             <label class="block text-sm font-medium text-primary mb-1">API Key</label>
 
-            <p class="text-xs text-muted mb-2">
-
-              从「设置 → 密钥管理」里选一条：左侧列表<strong>第二行小字（标识）</strong>与下拉里括号中的 id 一致即同一密钥。不选时，使用环境变量（如
-
-              <code class="font-mono text-[11px]">QWEN_API_KEY</code>）。
-
-            </p>
-
             <select
 
               v-model="edit.api_key_ref"

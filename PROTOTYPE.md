@@ -83,10 +83,10 @@ npm run dev
 
 ### Skills 配置
 
-在 `backend/skills/` 目录下创建 Skill：
+在每用户目录下创建 Skill（路径与登录邮箱一致）：
 
 ```
-backend/skills/
+backend/data/users/<你的邮箱>/skills/
 └── my-skill/
     └── SKILL.md
 ```

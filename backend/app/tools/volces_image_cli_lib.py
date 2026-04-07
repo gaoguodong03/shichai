@@ -1,6 +1,6 @@
 """Volces 图像生成 CLI 共享库。
 
-与 mcp_servers/volces_icon.py 使用相同 API 与 KEY 方式：
+与 app/mcp/stdio/volces_icon.py 使用相同 API 与 KEY 方式：
 - 环境变量 VOLCES_IMAGE_API_KEY（可为 "Bearer xxx" 或 "xxx"）
 - 用于 run_skill_script 调用的脚本，供各图片生成 Skill 复用。
 """

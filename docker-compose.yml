@@ -2,7 +2,7 @@
 # 使用：docker compose up -d
 # 访问：http://localhost:8000
 #
-# 默认挂载本地 backend/data、backend/skills、backend/config，与本地开发共用技能、MCP 配置、会话历史与产出。
+# 默认挂载本地 backend/data、backend/config；技能在 data/users/<用户>/skills。
 # 若不想用本地数据，可改回匿名卷：注释掉下面三行 volumes，改用 - app_data:/app/data 与 - app_config:/app/config
 
 services:
@@ -18,15 +18,13 @@ services:
       - "8000:8000"
     environment:
       - CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
-      - SKILLS_DIR=/app/data/skills
       - MCP_CONFIG_PATH=/app/config/mcp_servers.json
       - APP_SETTINGS_PATH=/app/config/app_settings.json
       - SESSIONS_DIR=/app/data/sessions
       - AGENT_OUTPUTS_DIR=/app/data/agent-outputs
     volumes:
-      # 与本地共用：会话、产出、技能、MCP 配置
+      # 与本地共用：用户数据（含各用户 skills）、MCP 配置
       - ./backend/data:/app/data
-      - ./backend/skills:/app/data/skills
       - ./backend/config:/app/config
       # 调试模式：将宿主机 .cursor 挂载到与代码中日志路径一致的位置，便于收集容器内 MCP 日志
       - ./.cursor:/Users/ggd/mycode/DHA/.cursor

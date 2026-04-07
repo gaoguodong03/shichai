@@ -146,7 +146,7 @@
                 type="text"
                 required
                 class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-                placeholder="例如：/path/to/skill 或 ./skills/example-skill"
+                placeholder="例如：本机目录或 zip；技能落盘在 data/users/<邮箱>/skills/"
               />
             </div>
 

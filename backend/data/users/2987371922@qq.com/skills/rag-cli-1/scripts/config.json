@@ -1,0 +1,17 @@
+{
+  "qa_engine_url": "http://qa.free4inno.com",
+  "app_id": "46",
+  "api_key": "71e4048eb4d97c5115e38e218353466a",
+  "chunk_size": 250,
+  "chunk_overlap": 25,
+  "separators": [
+    "\n\n",
+    "\n",
+    "。", "！", "？", ".", "!", "?",
+    "；", ";",
+    "，", ",", "、",
+    " ",
+    ""
+  ],
+  "rag_service_url": "http://rag.free4inno.com"
+}
