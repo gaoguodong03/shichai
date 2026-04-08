@@ -186,6 +186,14 @@
                           </div>
                           <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
                         </div>
+                        <div
+                          v-else-if="msg.role === 'host' && !isMemberJoinedMessage(msg)"
+                          class="group-chat-bubble-meta"
+                        >
+                          <span class="group-chat-bubble-name">{{ hostDisplayName }}</span>
+                          <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
+                          <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
+                        </div>
                         <div class="group-chat-bubble-body">
                           <template v-if="isMemberJoinedMessage(msg)">
                             <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
@@ -278,7 +286,7 @@
                 </span>
               </div>
               <div
-                v-else-if="groupAutoConfirm && groupWaitingForUser"
+                v-else-if="groupWaitingForUser"
                 class="group-chat-speaker-status-input group-chat-speaker-status-paused"
               >
                 <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
@@ -385,7 +393,7 @@
                   <div class="group-chat-input-block group-chat-input-block-at">
                     <label class="group-chat-input-block-label">
                       下一专家提示词
-                      <span v-if="groupAutoConfirm && groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
+                      <span v-if="groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
                     </label>
                     <textarea
                       ref="nextPromptTextareaRef"
@@ -537,31 +545,6 @@
                             <path d="M8 13h5" />
                           </svg>
                           <span>提示词框</span>
-                        </button>
-                      </div>
-                      <div class="group-chat-more-row group-chat-more-toggle-row">
-                        <button
-                          type="button"
-                          class="group-chat-toggle-pill"
-                          :class="{ 'group-chat-toggle-pill-active': groupAutoConfirm }"
-                          :title="groupAutoConfirm ? '每轮专家发言后暂停，由你点「确认并继续」再继续' : '自动连续执行直到任务完成'"
-                          @click="toggleGroupManualControl"
-                        >
-                          <svg
-                            class="group-chat-toggle-pill-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <circle cx="9" cy="12" r="3" />
-                            <circle cx="15" cy="12" r="3" />
-                            <path d="M4 12h2" />
-                            <path d="M18 12h2" />
-                          </svg>
-                          <span>手动控制</span>
                         </button>
                       </div>
                     </div>
@@ -825,6 +808,7 @@
                   borderRight: groupWorkspacePreviewCollapsed ? 'none' : undefined
                 }"
               >
+                <p v-if="groupWorkspacePath" class="group-chat-workspace-path-hint" :title="groupWorkspacePath">当前：{{ groupWorkspacePath }}</p>
                 <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
                 <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
                 <ul v-else class="group-chat-workspace-list">
@@ -991,8 +975,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'message-sent'): void
-  (e: 'speak-mode-changed'): void
   (e: 'dha-added'): void
+  (e: 'scenario-new-session', sessionId: string): void
   (e: 'middle-column-open-request'): void
   (e: 'middle-column-toggle'): void
 }>()
@@ -1004,7 +988,8 @@ type GroupDetail = {
   agent_map: Record<string, { name?: string; role?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
   agent_ids: string[]
   leader_agent_id?: string
-  speak_mode?: string
+  /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
+  orchestration_profile?: string
 }
 
 const groupDetail = ref<GroupDetail | null>(null)
@@ -1722,8 +1707,8 @@ async function confirmGroupNext(
               const endData = JSON.parse(dataStr)
               applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
-                // 只有在「手动控制」开启时才让前端进入“等待用户确认”的 UI 状态。
-                groupWaitingForUser.value = groupAutoConfirm.value
+                groupTurnLimitReached.value = !!endData.turns_limit_reached
+                groupWaitingForUser.value = !!endData.turns_limit_reached
                 groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
                   ? endData.suggested_next_speaker
                   : null
@@ -1744,11 +1729,10 @@ async function confirmGroupNext(
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
                 }
-                groupTurnLimitReached.value = !!endData.turns_limit_reached
                 if (groupTurnLimitReached.value) {
                   window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
                 }
-                if (!groupAutoConfirm.value) {
+                if (!endData.turns_limit_reached) {
                   const suggestedNext = endData.suggested_next_speaker
                   if (suggestedNext && suggestedNext !== 'user') {
                     nextTick(() => confirmGroupNext(suggestedNext))
@@ -1933,13 +1917,22 @@ const groupMemberNames = computed(() => {
   return d.agent_ids.map((id) => d.agent_map![id]?.name || id).join('、')
 })
 
+type ShortcutHostConfig = {
+  skill_ids: string[]
+  system_prompt?: string
+  llm_provider_id?: string
+  mcp_server_ids?: string[]
+}
 type ShortcutPreset = {
   id: string
   name: string
   agent_ids: string[]
+  leader_agent_id?: string
+  host_config?: ShortcutHostConfig
   description?: string
   discussion_goal_example?: string
 }
+const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
 function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
@@ -1955,10 +1948,14 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
       : []
     if (!id || !name || !dhaIds.length || seen.has(id)) continue
     seen.add(id)
+    const lid = String(raw?.leader_agent_id || '').trim()
+    const hc = raw?.host_config as ShortcutHostConfig | undefined
     out.push({
       id,
       name,
       agent_ids: dhaIds,
+      leader_agent_id: hc ? VIRTUAL_SCENE_HOST_ID : lid || dhaIds[0] || '',
+      host_config: hc,
       description: String(raw?.description || '').trim(),
       discussion_goal_example: String(raw?.discussion_goal_example || '').trim(),
     })
@@ -2009,13 +2006,22 @@ async function loadShortcutPresets() {
   }
 }
 function saveShortcutPresets() {
-  const payload = shortcutPresets.value.map((p) => ({
-    id: p.id,
-    name: p.name,
-    agent_ids: p.agent_ids,
-    description: p.description || '',
-    discussion_goal_example: p.discussion_goal_example || '',
-  }))
+  const payload = shortcutPresets.value.map((p) => {
+    const row: Record<string, unknown> = {
+      id: p.id,
+      name: p.name,
+      agent_ids: p.agent_ids,
+      description: p.description || '',
+      discussion_goal_example: p.discussion_goal_example || '',
+    }
+    if (p.host_config) {
+      row.host_config = p.host_config
+      row.leader_agent_id = VIRTUAL_SCENE_HOST_ID
+    } else {
+      row.leader_agent_id = p.leader_agent_id || p.agent_ids[0] || ''
+    }
+    return row
+  })
   try {
     localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(payload))
   } catch {}
@@ -2073,48 +2079,52 @@ function cancelEditShortcutPreset() {
   newShortcutDhaIds.value = []
   shortcutExpertSearch.value = ''
 }
+
+/** 从场景预设新建会话（不修改当前会话） */
+const pendingScenarioSessionId = ref<string | null>(null)
+const pendingScenarioDiscussionGoal = ref('')
+
 async function applyShortcutPreset(id: string) {
-  const detail = groupDetail.value
-  if (!detail) return
   const p = shortcutPresets.value.find((x) => x.id === id)
   if (!p) return
-  const confirmed = window.confirm('切换场景将会移除原场景中的专家，并加入新场景的专家。请确认是否继续？')
-  if (!confirmed) return
-  const tryFillDiscussionGoal = () => {
-    const goal = (p.discussion_goal_example || '').trim()
-    if (!goal) return
-    if ((groupDiscussionGoal.value || '').trim()) return
-    groupDiscussionGoal.value = goal
-  }
-  const currentExperts = Array.from(new Set((detail.agent_ids || []).filter((x) => !!x)))
   const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x)))
-  const targetSet = new Set(targetExperts)
-  const currentSet = new Set(currentExperts)
-  const toRemove = currentExperts.filter((x) => !targetSet.has(x))
-  const toInvite = targetExperts.filter((x) => !currentSet.has(x))
-  if (!toRemove.length && !toInvite.length) {
-    tryFillDiscussionGoal()
-    showShortcutEditor.value = false
-    showShortcutEditorModal.value = false
+  if (!targetExperts.length) {
+    window.alert('该场景未配置专家，无法创建会话')
     return
   }
+  const title = (p.name || '').trim() || '新对话'
+  const body: Record<string, unknown> = {
+    title,
+    agent_ids: targetExperts,
+  }
+  if (p.host_config) {
+    body.host_config = p.host_config
+    body.leader_agent_id = VIRTUAL_SCENE_HOST_ID
+  } else {
+    const lid = (p.leader_agent_id || p.agent_ids[0] || '').trim()
+    if (lid) body.leader_agent_id = lid
+  }
   try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}`, {
-      method: 'PUT',
+    const r = await fetch('/api/sessions', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remove_agent_ids: toRemove, add_agent_ids: toInvite }),
+      body: JSON.stringify(body),
     })
-    const j = await r.json().catch(() => ({}))
-    if ((j as { status?: string }).status === 'ok') {
-      // 显式保存快捷按钮配置，避免用户误以为“加入后未保存”
-      saveShortcutPresets()
-      tryFillDiscussionGoal()
-      showShortcutEditor.value = false
-      showShortcutEditorModal.value = false
-      emit('dha-added')
-      await loadGroupDetail()
+    const j = (await r.json().catch(() => ({}))) as { status?: string; data?: { id?: string }; detail?: string }
+    if (j.status !== 'ok' || !j.data?.id) {
+      window.alert(typeof j.detail === 'string' ? j.detail : '创建会话失败')
+      return
     }
-  } catch {}
+    const newId = j.data.id
+    pendingScenarioSessionId.value = newId
+    pendingScenarioDiscussionGoal.value = (p.discussion_goal_example || '').trim()
+    saveShortcutPresets()
+    showShortcutEditor.value = false
+    showShortcutEditorModal.value = false
+    emit('scenario-new-session', newId)
+  } catch {
+    window.alert('创建会话失败，请检查网络')
+  }
 }
 
 watch(
@@ -2174,7 +2184,6 @@ const autoSwitchHintText = computed(() => {
   if (!parts.length) return ''
   return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换${parts.join('，')}`
 })
-const groupAutoConfirm = ref(false) // 与会话 speak_mode 同步：true=手动控制（每轮暂停），false=自动跑完
 const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
 const groupOrchestrationPhase = ref('')
@@ -2278,6 +2287,11 @@ function updateAutoSwitchHint(payload: Record<string, unknown>) {
   lastRoute.value = { expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
   if (!changedExpert && !changedSkill) return
 
+  // 场景协作（名单固定、主持人编排）：专家/技能路由仍会切换，但不必用横幅打断用户
+  if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') {
+    return
+  }
+
   const map = groupDetail.value?.agent_map || {}
   const finalExpertId = routedExpertId
   const finalSkillId = routedSkillId
@@ -2348,6 +2362,9 @@ const orderedMemberIds = computed(() => {
 
 /** 主持人推荐的 DHA 的展示名（来自资源中心实例列表，多位用顿号连接） */
 const pendingSuggestedAddDhaIds = computed(() => {
+  if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') {
+    return []
+  }
   const aliasMap = buildExpertAliasMap()
   const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
   const normalized = (groupSuggestedAddDhaIds.value || [])
@@ -2475,7 +2492,8 @@ async function continueGroupStream() {
               const endData = JSON.parse(dataStr)
               applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
-                groupWaitingForUser.value = groupAutoConfirm.value
+                groupTurnLimitReached.value = !!endData.turns_limit_reached
+                groupWaitingForUser.value = !!endData.turns_limit_reached
                 groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
                   ? endData.suggested_next_speaker
                   : null
@@ -2496,7 +2514,10 @@ async function continueGroupStream() {
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
                 }
-                if (!groupAutoConfirm.value) {
+                if (groupTurnLimitReached.value) {
+                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
+                }
+                if (!endData.turns_limit_reached) {
                   const suggestedNext = endData.suggested_next_speaker
                   if (suggestedNext && suggestedNext !== 'user') nextTick(() => confirmGroupNext(suggestedNext))
                 }
@@ -2516,28 +2537,6 @@ async function continueGroupStream() {
     clearStreamingPlaceholders()
     groupStreaming.value = false
     groupStreamingPhase.value = ''
-  }
-}
-
-/** 切换「手动控制」：同步到会话 speak_mode，后端据此每轮暂停或一气跑完 */
-async function toggleGroupManualControl() {
-  const id = groupDetail.value?.id
-  if (!id) return
-  const next = !groupAutoConfirm.value
-  groupAutoConfirm.value = next
-  const speakMode = next ? 'manual' : 'auto'
-  try {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ speak_mode: speakMode }),
-    })
-    const j = await r.json().catch(() => ({}))
-    if ((j as { status?: string }).status !== 'ok') {
-      groupAutoConfirm.value = !next
-    }
-  } catch {
-    groupAutoConfirm.value = !next
   }
 }
 
@@ -2860,6 +2859,10 @@ function parseAgentIdsFromHostContent(content: string | null | undefined): strin
 
 function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
   if (!payload) return []
+  // 场景协作：名单固定，不信任后端/正文里的招募字段，避免误显「建议邀请」条
+  if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') {
+    return []
+  }
   const direct = extractSuggestedAddIds(payload)
   const aliasMap = buildExpertAliasMap()
   const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
@@ -2911,23 +2914,19 @@ watch(
   { immediate: true }
 )
 
-// 会话的 speak_mode 与「手动控制」开关同步
-watch(
-  () => groupDetail.value?.speak_mode,
-  (mode) => {
-    groupAutoConfirm.value = mode === 'manual'
-  },
-  { immediate: true }
-)
-
 // 切换会话时，清空上一场的「下一 DHA 提示词」、文件引用等状态，避免串场
 watch(
   () => props.selectedGroupSessionId,
-  () => {
+  (id) => {
+    if (pendingScenarioSessionId.value && id !== pendingScenarioSessionId.value) {
+      pendingScenarioSessionId.value = null
+      pendingScenarioDiscussionGoal.value = ''
+    }
     groupDiscussionGoal.value = null
     groupNextPrompt.value = ''
     attachedFiles.value = []
     groupWaitingForUser.value = false
+    groupTurnLimitReached.value = false
     groupSuggestedNextSpeaker.value = null
     groupSuggestedAddDhaIds.value = []
     groupNextSpeakerOverride.value = ''
@@ -3050,7 +3049,8 @@ async function createGroupWorkspaceDir() {
 async function createGroupWorkspaceFile() {
   const id = groupDetail.value?.id
   if (!id) return
-  const name = window.prompt('新建文件名（如 note.md）', 'note.md')?.trim()
+  const defaultName = groupWorkspacePath.value ? 'note.md' : 'novel-workflow-tasks.md'
+  const name = window.prompt('新建文件名（相对当前目录，如 novel-workflow-tasks.md）', defaultName)?.trim()
   if (!name) return
   try {
     const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
@@ -3623,8 +3623,8 @@ async function sendGroupMessage() {
               const endData = JSON.parse(dataStr)
               applyOrchestrationEndMeta(endData as Record<string, unknown>)
               if (endData.waiting_for_user) {
-                // 只有在「手动控制」开启时才展示“确认并继续”按钮。
-                groupWaitingForUser.value = groupAutoConfirm.value
+                groupTurnLimitReached.value = !!endData.turns_limit_reached
+                groupWaitingForUser.value = !!endData.turns_limit_reached
                 groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
                   ? endData.suggested_next_speaker
                   : null
@@ -3645,8 +3645,10 @@ async function sendGroupMessage() {
                 if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
                   attachedFiles.value = []
                 }
-                // 手动控制关闭时：收到 waiting_for_user 仍然自动进入下一位 DHA
-                if (!groupAutoConfirm.value) {
+                if (groupTurnLimitReached.value) {
+                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
+                }
+                if (!endData.turns_limit_reached) {
                   const suggestedNext = endData.suggested_next_speaker
                   if (suggestedNext && suggestedNext !== 'user') {
                     nextTick(() => confirmGroupNext(suggestedNext))
@@ -3734,6 +3736,7 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
   const messages = Array.isArray(raw.messages) ? raw.messages as GroupDetail['messages'] : []
   const agent_map = (raw.agent_map && typeof raw.agent_map === 'object') ? (raw.agent_map as GroupDetail['agent_map']) : {}
   const agent_ids = Array.isArray(raw.agent_ids) ? (raw.agent_ids as string[]) : []
+  const orch = String(raw.orchestration_profile ?? '').trim().toLowerCase()
   return {
     id,
     title: String(raw.title ?? '群聊'),
@@ -3741,7 +3744,7 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
     agent_map,
     agent_ids,
     leader_agent_id: String(raw.leader_agent_id ?? ''),
-    speak_mode: String((raw.speak_mode ?? raw.speak_node) ?? 'auto'),
+    orchestration_profile: orch === 'scene' || orch === 'recruitment' ? orch : undefined,
   }
 }
 
@@ -3776,6 +3779,13 @@ async function loadGroupDetail() {
     if (props.selectedGroupSessionId !== id) return
     if (parsed) {
       groupDetail.value = parsed
+      const pendId = pendingScenarioSessionId.value
+      const goal = pendingScenarioDiscussionGoal.value
+      if (pendId && id === pendId && goal && !(parsed.messages?.length)) {
+        groupDiscussionGoal.value = goal
+        pendingScenarioSessionId.value = null
+        pendingScenarioDiscussionGoal.value = ''
+      }
     } else {
       groupDetail.value = null
       groupError.value = !r.ok
@@ -5749,6 +5759,13 @@ defineExpose({ refresh: loadGroupDetail })
   overflow-y: auto;
   padding: 0.5rem;
   border-right: 1px solid var(--color-border);
+}
+.group-chat-workspace-path-hint {
+  margin: 0 0 0.35rem;
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+  word-break: break-all;
 }
 .group-chat-workspace-preview-col {
   flex: 1 1 0%;

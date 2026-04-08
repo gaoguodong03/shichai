@@ -6,13 +6,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from functools import lru_cache
 
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-except Exception:  # pragma: no cover - import 失败时自动回退到旧逻辑
-    TfidfVectorizer = None
-    cosine_similarity = None
-
 
 class Skill:
     """Skill 类"""
@@ -44,7 +37,6 @@ class SkillsLoader:
             env = os.getenv("SKILLS_DIR")
             self.skills_dir = Path(env) if env else _singleton_skills_dir_placeholder()
         self.skills: Dict[str, Skill] = {}
-        self._tfidf_bundle_cache: Dict[Tuple[str, ...], Tuple[List[str], Any, Any]] = {}
 
     def load_skill(self, skill_path: Path) -> Optional[Skill]:
         """加载单个 Skill"""
@@ -186,87 +178,16 @@ class SkillsLoader:
                 score += min(float(len(kw)), 16.0) * 0.45
         return score
 
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _tfidf_min_score() -> float:
-        """最低命中阈值：低于该分数则视为不确定，交由上层回退。"""
-        raw = os.getenv("SKILL_ROUTER_TFIDF_MIN_SCORE", "0.12").strip()
-        try:
-            return max(0.0, min(1.0, float(raw)))
-        except Exception:
-            return 0.12
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _tfidf_min_delta() -> float:
-        """TOP 与第二名的最小分差；过小则视为不确定（与专家路由 EXPERT_ROUTER_TFIDF_MIN_DELTA 语义一致）。"""
-        raw = os.getenv("SKILL_ROUTER_TFIDF_MIN_DELTA", "0.01").strip()
-        try:
-            return max(0.0, float(raw))
-        except Exception:
-            return 0.01
-
-    def _build_skill_route_text(self, skill: Skill) -> str:
-        """构造用于 TF-IDF 向量化的 skill 文本（仅名称 + 描述）。"""
-        name = (skill.name or "").strip()
-        desc = (skill.description or "").strip()
-        return "\n".join([x for x in [name, desc] if x]).strip()
-
-    def _get_tfidf_bundle(self, candidate_ids: List[str]) -> Optional[Tuple[List[str], Any, Any]]:
-        """按候选技能构建（或复用）TF-IDF 向量化结果。"""
-        if TfidfVectorizer is None:
-            return None
-        key = tuple(candidate_ids)
-        cached = self._tfidf_bundle_cache.get(key)
-        if cached is not None:
-            return cached
-
-        active_ids: List[str] = []
-        docs: List[str] = []
-        for sid in candidate_ids:
-            skill = self.skills.get(sid)
-            if not skill or not skill.metadata.get("enabled", True):
-                continue
-            route_text = self._build_skill_route_text(skill)
-            if not route_text:
-                continue
-            active_ids.append(sid)
-            docs.append(route_text)
-
-        if len(active_ids) < 2:
-            return None
-
-        vectorizer = TfidfVectorizer(
-            analyzer="char_wb",  # 对中文短句更稳，不依赖分词器
-            ngram_range=(2, 4),
-            lowercase=True,
-            sublinear_tf=True,
-        )
-        matrix = vectorizer.fit_transform(docs)
-        bundle = (active_ids, vectorizer, matrix)
-        self._tfidf_bundle_cache[key] = bundle
-        return bundle
-
     def pick_best_skill_with_debug(
         self,
         combined_text: str,
         candidate_ids: List[str],
-        *,
-        min_score: Optional[float] = None,
-        min_delta: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """返回路由决策详情，供日志/调试使用。min_score/min_delta 可由 app_settings 注入，实现热更新。"""
-        ms = float(min_score) if min_score is not None else self._tfidf_min_score()
-        md = float(min_delta) if min_delta is not None else self._tfidf_min_delta()
-        ms = max(0.0, min(1.0, ms))
-        md = max(0.0, md)
+        """按 name/description 关键词为候选 skill 与 combined_text 的匹配度打分并择优。"""
         ids = [str(x).strip() for x in candidate_ids if str(x).strip()]
         debug: Dict[str, Any] = {
             "selected_skill_id": None,
             "strategy": "none",
-            "min_score": ms,
-            "min_delta": md,
-            "tfidf_available": bool(TfidfVectorizer is not None and cosine_similarity is not None),
             "scores": [],
         }
         if not ids:
@@ -281,39 +202,6 @@ class SkillsLoader:
             debug["strategy"] = "empty_query"
             return debug
 
-        # 首选本地 TF-IDF 语义匹配
-        bundle = self._get_tfidf_bundle(ids)
-        if bundle and cosine_similarity is not None:
-            active_ids, vectorizer, matrix = bundle
-            try:
-                q_vec = vectorizer.transform([query])
-                sims = cosine_similarity(q_vec, matrix)
-                if sims is not None and len(sims) > 0 and len(sims[0]) > 0:
-                    row = sims[0]
-                    ranking = sorted(
-                        [{"skill_id": active_ids[i], "score": float(row[i])} for i in range(len(row))],
-                        key=lambda x: x["score"],
-                        reverse=True,
-                    )
-                    debug["scores"] = ranking[:5]
-                    best = ranking[0]
-                    top_score = float(best["score"])
-                    second_score = float(ranking[1]["score"]) if len(ranking) > 1 else 0.0
-                    min_s = float(debug["min_score"])
-                    min_d = float(debug["min_delta"])
-                    debug["strategy"] = "tfidf"
-                    score_ok = top_score >= min_s
-                    delta_ok = len(ranking) <= 1 or (top_score - second_score) >= min_d
-                    if score_ok and delta_ok:
-                        debug["selected_skill_id"] = best["skill_id"]
-                        return debug
-                    debug["strategy"] = (
-                        "tfidf_below_threshold" if not score_ok else "tfidf_low_confidence"
-                    )
-            except Exception:
-                debug["strategy"] = "tfidf_error"
-
-        # 兜底：关键词打分
         order = {sid: i for i, sid in enumerate(ids)}
         ranking_kw: List[Dict[str, Any]] = []
         for sid in ids:
@@ -327,8 +215,9 @@ class SkillsLoader:
             return debug
         ranking_kw.sort(key=lambda x: (-x["score"], order.get(str(x["skill_id"]), 999)))
         debug["scores"] = ranking_kw[:5]
-        debug["strategy"] = "keyword_fallback"
-        if float(ranking_kw[0]["score"]) > 0:
+        debug["strategy"] = "keyword"
+        top = float(ranking_kw[0]["score"])
+        if top > 0:
             debug["selected_skill_id"] = ranking_kw[0]["skill_id"]
         return debug
 
@@ -380,6 +269,23 @@ class SkillsLoader:
         return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"
 
 
+def get_builtin_skills_dir() -> Path:
+    """内置技能目录：用户 skills 目录无同名 id 时由运行时合并加载。"""
+    return Path(__file__).resolve().parent / "builtin_skills"
+
+
+def merge_builtin_skills(loader: SkillsLoader) -> None:
+    """将 builtin_skills 中用户尚未覆盖的 skill 并入 loader.skills。"""
+    bid = get_builtin_skills_dir()
+    if not bid.is_dir():
+        return
+    bl = SkillsLoader(str(bid))
+    bl.load_all_skills()
+    for sid, skill in bl.skills.items():
+        if sid not in loader.skills:
+            loader.skills[sid] = skill
+
+
 def _skills_tree_mtime(skills_dir: Path) -> float:
     """用于缓存失效：目录及下一层各 skill 的 SKILL.md 的最新 mtime。"""
     if not skills_dir.exists():
@@ -413,13 +319,14 @@ def get_skills_loader_for_user(username: str, skills_dir: Path) -> SkillsLoader:
     if not key:
         key = "_anonymous"
     sd = skills_dir.resolve()
-    mtime = _skills_tree_mtime(sd)
+    mtime = max(_skills_tree_mtime(sd), _skills_tree_mtime(get_builtin_skills_dir()))
     with _cache_lock:
         hit = _user_skill_cache.get(key)
         if hit is not None and hit[0] == mtime:
             return hit[1]
         loader = SkillsLoader(str(sd))
         loader.load_all_skills()
+        merge_builtin_skills(loader)
         _user_skill_cache[key] = (mtime, loader)
         return loader
 

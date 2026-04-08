@@ -1,18 +1,36 @@
 [
   {
-    "id": "scenario-mn8xlohz",
+    "id": "scenario-mnon8fe8",
     "name": "网文写作",
     "agent_ids": [
       "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
+      "agent-195b8c3a",
+      "agent-440b26f8"
     ],
     "expert_ids": [
       "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
+      "agent-195b8c3a",
+      "agent-440b26f8"
     ],
-    "description": "网文写作：资料爬取、文字创作与配图协作；配图与章节/人设对齐，并支持用户参与定稿。",
-    "discussion_goal_example": ""
+    "leader_agent_id": "agent-scene-host",
+    "description": "",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    }
   }
 ]

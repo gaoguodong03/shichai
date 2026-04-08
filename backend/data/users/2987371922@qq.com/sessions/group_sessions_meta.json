@@ -1,422 +1,415 @@
 {
-  "group-a71ad0c519f5": {
-    "title": "组会 Agent 讨论",
-    "agent_ids": [
-      "agent-66bafc4e",
-      "agent-ae100f7a",
-      "agent-9f6a2b8d"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-12T12:44:55.824061+00:00",
-    "updated_at": "2026-03-12T12:46:42.260917+00:00"
-  },
-  "group-e93558743ff9": {
-    "title": "博客生成与图片创作",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch",
-      "agent-format-conv"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T02:35:48.178282+00:00",
-    "updated_at": "2026-03-19T12:22:21.261688+00:00"
-  },
-  "group-ef1dc4819f55": {
-    "title": "Skill运行原理及触发逻辑",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-teacher-advisor",
-      "agent-seminar-ta-qa",
-      "agent-seminar-ai-peer"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T12:03:34.824556+00:00",
-    "updated_at": "2026-03-19T12:11:57.166985+00:00"
-  },
-  "group-357f6a326d26": {
-    "title": "智能体相关技能研究",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-paper-composer",
-      "agent-paper-strategist"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T12:54:12.667856+00:00",
-    "updated_at": "2026-03-19T13:22:28.568366+00:00"
-  },
-  "group-a3ed873dee2e": {
-    "title": "小米发布的Agent研究方向",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-ai-peer",
-      "agent-seminar-teacher-advisor"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T14:10:55.285190+00:00",
-    "updated_at": "2026-03-19T14:15:42.464981+00:00"
-  },
-  "group-dad1a2377ab2": {
-    "title": "博客生成和灵感来源",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-19T14:27:07.359844+00:00",
-    "updated_at": "2026-03-19T14:34:02.045044+00:00"
-  },
-  "group-386d211c7469": {
-    "title": "脑启发式智能体设计综述",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-paper-composer",
-      "agent-65fdbc8f",
-      "agent-paper-strategist"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-20T01:47:29.950667+00:00",
-    "updated_at": "2026-03-20T01:57:44.880162+00:00"
-  },
-  "group-4ac87fd2b3f8": {
-    "title": "科幻技术设计图片生成",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-440b26f8"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-20T14:17:38.181595+00:00",
-    "updated_at": "2026-03-20T14:18:00.012698+00:00"
-  },
-  "group-fea0f25c7939": {
-    "title": "博客生成与封面设计",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-22T11:46:27.119267+00:00",
-    "updated_at": "2026-03-22T11:47:28.859913+00:00"
-  },
-  "group-14445afd6590": {
-    "title": "博客生成与灵感来源",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-22T12:10:05.261964+00:00",
-    "updated_at": "2026-03-22T12:10:49.037299+00:00"
-  },
-  "group-cb59089435a5": {
-    "title": "博客创作灵感和设计",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-22T12:49:12.499090+00:00",
-    "updated_at": "2026-03-22T12:49:42.693285+00:00"
-  },
-  "group-a05305781c3d": {
-    "title": "基于灵感生成博客内容",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-22T12:54:46.957863+00:00",
-    "updated_at": "2026-03-22T13:12:00.366458+00:00"
-  },
-  "group-c166d3584e0c": {
-    "title": "博客内容创作与封面设计",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-thinking-ext",
-      "agent-440b26f8",
-      "agent-c1bf68ba",
-      "agent-195b8c3a",
-      "agent-seminar-guide",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-24T07:41:08.808081+00:00",
-    "updated_at": "2026-03-25T14:38:58.748687+00:00"
-  },
-  "group-b6d979e68c75": {
-    "title": "博客生成与内容创作",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-26T07:25:08.296539+00:00",
-    "updated_at": "2026-03-26T07:32:01.908647+00:00"
-  },
-  "group-8abe3f7c7fcc": {
-    "title": "博客创作工具和灵感分享",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-26T07:34:26.153942+00:00",
-    "updated_at": "2026-03-26T07:36:00.758231+00:00"
-  },
-  "group-40057f94515a": {
-    "title": "运营管理系统需求分析",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-548f5f8d"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-27T12:20:45.747566+00:00",
-    "updated_at": "2026-03-27T12:21:16.922478+00:00"
-  },
-  "group-ef4797fd0eba": {
-    "title": "元芳接入Gemini相关内容",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-440b26f8",
-      "agent-web-fetch",
-      "agent-thinking-ext",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-27T13:15:28.358198+00:00",
-    "updated_at": "2026-03-27T14:10:38.189045+00:00"
-  },
-  "group-598d7f8ad8a9": {
-    "title": "中国 AI 生态圈探访",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-440b26f8",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-28T01:46:15.289864+00:00",
-    "updated_at": "2026-03-28T02:53:52.223720+00:00",
-    "pending_owner_agent_id": "agent-440b26f8",
-    "pending_skill_id": "app-icon-generator",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
-  "group-8398d6173961": {
-    "title": "爬取天池比赛数据",
+  "group-e127edf8875d": {
+    "title": "张雪峰相关内容创作",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-440b26f8",
       "agent-195b8c3a",
       "agent-web-fetch"
     ],
-    "leader_agent_id": "",
+    "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
-    "created_at": "2026-03-28T10:55:32.172588+00:00",
-    "updated_at": "2026-03-28T10:55:48.089875+00:00"
+    "created_at": "2026-04-08T05:20:11.491739+00:00",
+    "updated_at": "2026-04-08T05:22:38.037463+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-web-fetch",
+    "skill_session_skill_id": "webnovel-web-crawler"
   },
-  "group-38675d7eaa55": {
-    "title": "基于爬取数据的内容创作",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-28T12:09:18.825496+00:00",
-    "updated_at": "2026-04-02T03:08:24.112582+00:00",
-    "pending_owner_agent_id": "agent-440b26f8",
-    "pending_skill_id": "app-icon-generator",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
-  "group-745523e25fc2": {
-    "title": "北邮相关推广内容生成",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-440b26f8",
-      "agent-web-fetch",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-03-30T14:52:26.092723+00:00",
-    "updated_at": "2026-03-30T15:03:19.270603+00:00",
-    "pending_owner_agent_id": "agent-195b8c3a",
-    "pending_skill_id": "news-summary",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
-  "group-9dc2b423c007": {
-    "title": "文件路径和内容管理",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-195b8c3a",
-      "agent-9f6a2b8d"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-02T03:14:47.678724+00:00",
-    "updated_at": "2026-04-02T08:24:20.824321+00:00"
-  },
-  "group-0cfa3ffd6d73": {
-    "title": "微信公众号内容创作与发布",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-440b26f8",
-      "agent-9f6a2b8d",
-      "agent-195b8c3a",
-      "agent-web-fetch"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-02T08:26:58.566939+00:00",
-    "updated_at": "2026-04-04T07:21:04.972434+00:00",
-    "pending_owner_agent_id": "agent-9f6a2b8d",
-    "pending_skill_id": "cs-expert-ggd",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
-  "group-d4c54a7a516b": {
-    "title": "文字创作技巧分享",
+  "group-b77bc8e76a01": {
+    "title": "张雪峰相关博客创作",
     "title_auto_generated": true,
     "agent_ids": [],
-    "leader_agent_id": "",
+    "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
-    "created_at": "2026-04-02T08:43:00.451131+00:00",
-    "updated_at": "2026-04-02T08:43:14.550245+00:00"
+    "created_at": "2026-04-08T05:35:57.728479+00:00",
+    "updated_at": "2026-04-08T05:36:06.820334+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "recruitment"
   },
-  "group-f65045deabff": {
-    "title": "编程Agent工程重塑方法",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-9f6a2b8d"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-04T07:36:47.183393+00:00",
-    "updated_at": "2026-04-04T07:49:33.540760+00:00"
-  },
-  "group-5aca8e95b91e": {
-    "title": "编程Agent与工程重塑",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-9f6a2b8d"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-04T07:49:42.534217+00:00",
-    "updated_at": "2026-04-04T08:25:11.302282+00:00"
-  },
-  "group-9448ff15fe61": {
-    "title": "GPT及编程Agent相关讨论",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-04T09:18:42.219189+00:00",
-    "updated_at": "2026-04-04T09:34:04.273328+00:00"
-  },
-  "group-4e239dc75bde": {
-    "title": "编程Agent与工程设计重塑",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-04T09:34:53.209903+00:00",
-    "updated_at": "2026-04-04T09:35:26.472872+00:00"
-  },
-  "group-7e3d37aa9893": {
-    "title": "编程Agent的重塑与设计",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-04T09:35:50.016897+00:00",
-    "updated_at": "2026-04-04T09:36:27.379306+00:00"
-  },
-  "group-b6380d77a9e8": {
-    "title": "读取文件内容和版本号解析",
+  "group-395fecaa9a95": {
+    "title": "张雪峰与大学报考分析",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-195b8c3a",
       "agent-web-fetch",
-      "agent-ee83c54f",
       "agent-440b26f8"
     ],
-    "leader_agent_id": "",
+    "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
-    "created_at": "2026-04-07T03:58:09.665150+00:00",
-    "updated_at": "2026-04-07T05:32:21.034141+00:00"
+    "created_at": "2026-04-08T05:36:12.159205+00:00",
+    "updated_at": "2026-04-08T06:09:24.188444+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "pending_owner_agent_id": "agent-web-fetch",
+    "pending_skill_id": "webnovel-web-crawler",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input",
+    "skill_session_owner_id": "agent-web-fetch",
+    "skill_session_skill_id": "webnovel-web-crawler"
   },
-  "group-1e71ca66c7dc": {
-    "title": "北邮学生和RAG相关讨论",
+  "group-9f054f9f6dab": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:11:48.291076+00:00",
+    "updated_at": "2026-04-08T06:12:21.938930+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-195b8c3a",
+    "skill_session_skill_id": "news-summary"
+  },
+  "group-8f8e981bff43": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:28:23.323942+00:00",
+    "updated_at": "2026-04-08T06:28:23.323942+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "recruitment"
+  },
+  "group-698051beac9a": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:28:24.771038+00:00",
+    "updated_at": "2026-04-08T06:42:12.673706+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "pending_owner_agent_id": "agent-web-fetch",
+    "pending_skill_id": "webnovel-web-crawler",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input",
+    "skill_session_owner_id": "agent-web-fetch",
+    "skill_session_skill_id": "webnovel-web-crawler"
+  },
+  "group-8b8f3665d27f": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:42:19.003776+00:00",
+    "updated_at": "2026-04-08T06:42:34.114841+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-195b8c3a",
+    "skill_session_skill_id": "news-summary"
+  },
+  "group-0b4f1af4ce09": {
+    "title": "张雪峰相关博客创作",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:51:21.735276+00:00",
+    "updated_at": "2026-04-08T06:51:29.156346+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "recruitment"
+  },
+  "group-86decaf65258": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:51:33.866926+00:00",
+    "updated_at": "2026-04-08T06:51:47.136478+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-195b8c3a",
+    "skill_session_skill_id": "news-summary"
+  },
+  "group-ec5fed5c1900": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T06:59:43.472458+00:00",
+    "updated_at": "2026-04-08T07:09:08.425205+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-440b26f8",
+    "skill_session_skill_id": "app-icon-generator"
+  },
+  "group-24476aee0e27": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T07:20:11.182817+00:00",
+    "updated_at": "2026-04-08T07:20:11.182817+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene"
+  },
+  "group-9fd1748ec8aa": {
+    "title": "网文写作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-195b8c3a",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-08T07:20:18.318294+00:00",
+    "updated_at": "2026-04-08T07:24:39.978391+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-195b8c3a",
+    "skill_session_skill_id": "news-summary"
+  },
+  "group-c5e3bcd724d4": {
+    "title": "张雪峰相关博客撰写",
     "title_auto_generated": true,
     "agent_ids": [
-      "agent-ee83c54f"
+      "agent-195b8c3a"
     ],
-    "leader_agent_id": "",
+    "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
-    "created_at": "2026-04-07T04:36:39.978009+00:00",
-    "updated_at": "2026-04-07T04:46:20.820187+00:00"
-  },
-  "group-a167d59ad4e6": {
-    "title": "Qwen-3.5版本号含义解析",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-ee83c54f"
-    ],
-    "leader_agent_id": "",
-    "speak_mode": "auto",
-    "created_at": "2026-04-07T05:27:04.520389+00:00",
-    "updated_at": "2026-04-07T05:28:05.269956+00:00"
+    "created_at": "2026-04-08T07:25:03.522319+00:00",
+    "updated_at": "2026-04-08T07:25:43.774629+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "delete": true,
+        "rename": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-195b8c3a",
+    "skill_session_skill_id": "news-summary"
   }
 }

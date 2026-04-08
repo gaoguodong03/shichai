@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from app.api.settings import get_mcp_servers_for_skill
 from app.api.dha import merge_file_capabilities
 from app.api.files import get_workspace_root
+from app.agent.host_plan import is_host_plan_reserved_path
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.tools.call_api import call_api
@@ -97,6 +98,11 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         return target
 
     def _edit_workspace_file(path: str, old_text: str, new_text: str) -> str:
+        if is_host_plan_reserved_path(path):
+            return (
+                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止修改；"
+                "请用户在侧边栏工作区中编辑。"
+            )
         target = _safe_path(path)
         if not target.exists() or target.is_dir():
             return "错误：文件不存在或是目录。"
@@ -107,6 +113,11 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         return f"已编辑文件：{path}"
 
     def _delete_workspace_file(path: str) -> str:
+        if is_host_plan_reserved_path(path):
+            return (
+                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止删除；"
+                "请用户在侧边栏工作区中管理该文件。"
+            )
         target = _safe_path(path)
         if not target.exists():
             return "错误：文件不存在。"
@@ -116,10 +127,17 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         return f"已删除文件：{path}"
 
     def _rename_workspace_file(path: str, new_name: str) -> str:
+        if is_host_plan_reserved_path(path):
+            return (
+                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止移动或重命名；"
+                "请用户在侧边栏工作区中操作。"
+            )
+        cleaned = str(new_name or "").strip().replace("\\", "/")
+        if is_host_plan_reserved_path(cleaned) or is_host_plan_reserved_path(cleaned.lstrip("/")):
+            return "错误：不能将文件移动或重命名为 memory/host_plan.md（该路径保留给用户任务清单）。"
         target = _safe_path(path)
         if not target.exists() or target.is_dir():
             return "错误：文件不存在或是目录。"
-        cleaned = str(new_name or "").strip().replace("\\", "/")
         if not cleaned:
             return "错误：new_name 不能为空。"
         if ".." in cleaned:

@@ -160,6 +160,10 @@ async def list_workspace_files(
     if (path or "").strip() == "":
         if not ws_root_path.exists() or not ws_root_path.is_dir():
             return {"status": "ok", "data": {"path": "/", "entries": []}}
+        # 延迟导入：确保用户侧可见可编辑的 host_plan.md 模板
+        from app.agent.host_plan import ensure_host_plan_stub
+
+        ensure_host_plan_stub(workspace_id)
     try:
         target = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:

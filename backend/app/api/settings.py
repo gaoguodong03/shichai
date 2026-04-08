@@ -22,6 +22,9 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Set
 
 from app.core.user_context import get_current_user_context, get_current_username
+from app.core.host_config import normalize_host_config_dict
+from app.skills.loader import get_builtin_skills_dir
+from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import user_context_dependency
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
 
@@ -197,71 +200,36 @@ _DEFAULT_LLM_PROVIDERS = {
     },
 }
 
-def _default_router_tfidf_from_env() -> Dict[str, float]:
-    """专家/技能 TF-IDF 路由阈值：未写入 app_settings 时以环境变量为准（与 .env 一致）。"""
-
-    def _f(name: str, default: str) -> float:
-        try:
-            return float(str(os.getenv(name, default) or default).strip())
-        except Exception:
-            return float(default)
-
-    return {
-        "expert_min_score": max(0.0, min(1.0, _f("EXPERT_ROUTER_TFIDF_MIN_SCORE", "0.05"))),
-        "expert_min_delta": max(0.0, _f("EXPERT_ROUTER_TFIDF_MIN_DELTA", "0.01")),
-        "skill_min_score": max(0.0, min(1.0, _f("SKILL_ROUTER_TFIDF_MIN_SCORE", "0.12"))),
-        "skill_min_delta": max(0.0, _f("SKILL_ROUTER_TFIDF_MIN_DELTA", "0.01")),
-    }
-
-
-def normalize_router_tfidf(raw: Any) -> Dict[str, float]:
-    """合并用户配置与环境默认值；保存后热更新，无需重启进程。"""
-    base = _default_router_tfidf_from_env()
-    if not isinstance(raw, dict):
-        return base
-    for k in ("expert_min_score", "expert_min_delta", "skill_min_score", "skill_min_delta"):
-        if k not in raw or raw[k] is None:
-            continue
-        try:
-            v = float(raw[k])
-        except Exception:
-            continue
-        if k.endswith("_min_score"):
-            base[k] = max(0.0, min(1.0, v))
-        else:
-            base[k] = max(0.0, v)
-    return base
-
-
 _DEFAULT_HOST_PROMPTS: Dict[str, str] = {
     "host_display_name": "四九",
-    # 方案 A：只保留两个字段，避免“首轮/非首轮、0/1 成员”等碎片化配置
+    # 全局层：与「资源中心 → 场景」里为虚拟主持人配置的 Skill 叠加（Skill 在后、本段在前）。
+    # 每轮用户消息中还会由系统注入职责边界、可邀请名单等，勿与此处重复赘述。
     "host_master_prompt": (
-        "你是群聊的主持人（调度器），你的职责只有三件事：\n"
-        "1) 决定下一位发言人（next_speaker）；\n"
-        "2) 为下一位专家生成本轮 next_prompt（必须自包含，能直接执行）；\n"
-        "3) 当现有成员不适合/卡住/缺少专长或工具时，推荐新增成员 suggested_add_agent_ids（由用户确认后再邀请）。\n\n"
-        "【输入中你将看到】\n"
-        "- 当前群聊参与者列表（含 agent_id/角色/技能）\n"
-        "- 讨论目标与最近讨论内容\n"
-        "- 可邀请专家列表（当需要补人时，从此列表选 suggested_add_agent_ids）\n\n"
-        "【输出规则（必须遵守）】\n"
-        "- 你必须输出一段简短主持词（1～4 句，说明下一步安排/为何补人）。\n"
-        "- 然后在最后输出且仅输出一段 JSON（可放在 ```json 代码块中或直接输出 JSON）。\n"
-        "- JSON 字段：\n"
-        '  {"task_done": bool, "next_speaker": "user|agent_id", "announcement": str, "reason": str, "next_prompt": str, "suggested_add_agent_ids": [agent_id,...]}\n'
-        "- next_speaker 若为某 agent_id：必须输出 next_prompt。\n"
-        "- next_prompt 必须「自包含」：与根本任务相关的关键细节都要写清楚，不能依赖“前面某轮写过”。\n"
-        "- 当你判断当前成员无法完成任务/明显不适合/连续两轮无进展/缺少专长或工具时：\n"
-        "  - 在 JSON 输出 suggested_add_agent_ids（按优先级排序，优先推荐 1~3 位最相关专家）。\n"
-        '  - 并把 next_speaker 设为 "user"（等待用户确认是否邀请）。\n'
+        "【身份】你是群聊主持人，只做调度：决定下一轮由谁发言（next_speaker），并在点名某位专家时给出对方**可直接执行**的 next_prompt。"
+        "你不代写专家的专业正文。\n\n"
+        "【输入】你会看到：在场专家（agent_id）、讨论目标、最近对话；需要补人时还会看到可邀请名单。"
+        "所有 ID 必须以系统给出的为准，勿编造。\n\n"
+        "【输出】\n"
+        "1）先写 1～4 句主持说明（对应 JSON 的 announcement，面向人读）。\n"
+        "2）最后输出**一段** JSON（可用 ```json 包裹），字段须包含："
+        'task_done、next_speaker、announcement、reason；若点专家则须含 next_prompt。\n'
+        "示例："
+        '{"task_done": true, "next_speaker": "agent-xxxx", "announcement": "…", "reason": "…", '
+        '"next_prompt": "给该专家的自包含任务说明", "suggested_add_agent_ids": []}\n\n'
+        "【约定】\n"
+        "- next_speaker 取在场专家的 agent_id，或 \"user\"（需用户补充/确认），或 \"end\"（用户已收束或目标完成）。\n"
+        "- 点某位专家时：next_prompt 必须自包含，不得用「同上」「见前文」代替关键条件。\n"
+        "- 招募模式下若需补人：suggested_add_agent_ids 从**可邀请列表**中选，通常 1～3 个，并把 next_speaker 设为 \"user\" 等待确认。"
+        "（若用户消息中已写明「参与者名单已固定」等场景策略，则不要输出 suggested_add_agent_ids，以该条为准。）\n"
     ),
     "host_zero_member_policy": (
-        "当前群聊 0 成员。你的目标是先组队：从可选专家列表中推荐最合适的 1~3 位专家加入讨论（按优先级排序）。\n"
-        "输出要求：\n"
-        "- 先用 1～4 句回复用户：说明你将邀请哪些专家以及理由。\n"
-        "- 最后一段输出 JSON：必须包含 suggested_add_agent_ids（从可选专家列表选，优先 1~3 位）。\n"
-        "推荐后先等待用户确认，不要假设系统会自动邀请。"
+        "【情形】当前会话里还没有任何协作专家（0 人）。\n\n"
+        "【目标】根据用户目标，从系统提供的「可邀请专家列表」中推荐 1～3 位最合适的专家，并简要说明分工或优先级。\n\n"
+        "【输出】\n"
+        "1）1～4 句面向用户的说明（将邀请谁、为何需要）。\n"
+        "2）一段 JSON，须含 suggested_add_agent_ids（列表元素为 agent_id，且必须来自可邀请列表），"
+        '并将 next_speaker 设为 "user"，表示先请用户确认邀请后再继续。\n\n'
+        "【注意】在用户确认前，不要假设专家已进入群聊。\n"
     ),
 }
 
@@ -299,7 +267,6 @@ def load_app_settings() -> Dict[str, Any]:
         "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
         # 主持人提示词（群聊主持调度用），默认使用 group_chat.py 的历史硬编码内容
         "host_prompts": dict(_DEFAULT_HOST_PROMPTS),
-        "router_tfidf": _default_router_tfidf_from_env(),
     }
     if path.exists():
         try:
@@ -315,12 +282,12 @@ def load_app_settings() -> Dict[str, Any]:
                         loaded = dict(loaded)
                         loaded["host_prompts"] = _normalize_host_prompts(hp)
                 data.update(loaded)
+                data.pop("router_tfidf", None)
                 providers = data.get("llm_providers") or {}
                 for k, v in _DEFAULT_LLM_PROVIDERS.items():
                     if k not in providers:
                         providers[k] = v
                 data["llm_providers"] = providers
-                data["router_tfidf"] = normalize_router_tfidf(data.get("router_tfidf"))
                 return data
         except Exception:
             pass
@@ -343,29 +310,17 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
-class RouterTfidfPatch(BaseModel):
-    """TF-IDF 路由阈值（专家切换 / 多 skill 选型）"""
-
-    expert_min_score: Optional[float] = None
-    expert_min_delta: Optional[float] = None
-    skill_min_score: Optional[float] = None
-    skill_min_delta: Optional[float] = None
-
-
 class HostPromptsBody(BaseModel):
     """主持人提示词（群聊调度用）"""
 
     host_display_name: Optional[str] = None
     host_master_prompt: Optional[str] = None
     host_zero_member_policy: Optional[str] = None
-    router_tfidf: Optional[RouterTfidfPatch] = None
 
 
 def _host_prompts_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
     hp = data.get("host_prompts") or {}
-    payload = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
-    payload["router_tfidf"] = normalize_router_tfidf(data.get("router_tfidf"))
-    return payload
+    return _normalize_host_prompts(hp if isinstance(hp, dict) else {})
 
 
 @router.get("/settings/host-prompts")
@@ -384,20 +339,6 @@ async def update_host_prompts(body: HostPromptsBody):
         if k in incoming:
             merged[k] = incoming[k] or ""
     patch: Dict[str, Any] = {"host_prompts": merged}
-    rtf_in = incoming.get("router_tfidf")
-    if isinstance(rtf_in, dict) and rtf_in:
-        merged_rt = normalize_router_tfidf(current.get("router_tfidf"))
-        for k in ("expert_min_score", "expert_min_delta", "skill_min_score", "skill_min_delta"):
-            if k in rtf_in and rtf_in[k] is not None:
-                try:
-                    merged_rt[k] = float(rtf_in[k])
-                except Exception:
-                    raise HTTPException(status_code=400, detail=f"router_tfidf.{k} 必须为数字")
-        merged_rt["expert_min_score"] = max(0.0, min(1.0, merged_rt["expert_min_score"]))
-        merged_rt["skill_min_score"] = max(0.0, min(1.0, merged_rt["skill_min_score"]))
-        merged_rt["expert_min_delta"] = max(0.0, merged_rt["expert_min_delta"])
-        merged_rt["skill_min_delta"] = max(0.0, merged_rt["skill_min_delta"])
-        patch["router_tfidf"] = merged_rt
     save_app_settings(patch)
     return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
 
@@ -407,14 +348,14 @@ async def get_host_prompts_defaults():
     """返回内置默认主持人提示词（不读配置文件）。"""
     return {
         "status": "ok",
-        "data": {**dict(_DEFAULT_HOST_PROMPTS), "router_tfidf": _default_router_tfidf_from_env()},
+        "data": {**dict(_DEFAULT_HOST_PROMPTS)},
     }
 
 
 @router.post("/settings/host-prompts/reset")
 async def reset_host_prompts():
-    """将主持人提示词与 TF-IDF 路由阈值恢复为内置默认值（阈值以当前环境变量为默认）。"""
-    save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS), "router_tfidf": _default_router_tfidf_from_env()})
+    """将主持人提示词恢复为内置默认值。"""
+    save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS)})
     return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
 
 
@@ -440,15 +381,23 @@ async def get_session_presets():
                     normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
                     if not pid or not name or not normalized_ids:
                         continue
-                    presets.append(
-                        {
-                            "id": pid,
-                            "name": name,
-                            "agent_ids": normalized_ids,
-                            "description": str(item.get("description") or ""),
-                            "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
-                        }
-                    )
+                    hc_raw = item.get("host_config")
+                    lid = str(item.get("leader_agent_id") or "").strip()
+                    if isinstance(hc_raw, dict) and hc_raw:
+                        lid = VIRTUAL_SCENE_HOST_ID
+                    elif not lid:
+                        lid = normalized_ids[0]
+                    row_out: Dict[str, Any] = {
+                        "id": pid,
+                        "name": name,
+                        "agent_ids": normalized_ids,
+                        "leader_agent_id": lid,
+                        "description": str(item.get("description") or ""),
+                        "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
+                    }
+                    if isinstance(hc_raw, dict):
+                        row_out["host_config"] = hc_raw
+                    presets.append(row_out)
         except Exception:
             presets = []
     return {"status": "ok", "data": {"presets": presets}}
@@ -460,6 +409,8 @@ class SessionPresetItem(BaseModel):
     agent_ids: List[str]
     description: Optional[str] = ""
     discussion_goal_example: Optional[str] = ""
+    leader_agent_id: Optional[str] = ""
+    host_config: Optional[Dict[str, Any]] = None
 
 
 class SessionPresetsBody(BaseModel):
@@ -469,10 +420,13 @@ class SessionPresetsBody(BaseModel):
 @router.put("/settings/session-presets")
 async def update_session_presets(body: SessionPresetsBody):
     """保存会话快捷预设（用于前端快捷按钮）。"""
+    from app.api.dha import load_dha_instances
+
     path = _get_session_presets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized: List[Dict[str, Any]] = []
     seen: Set[str] = set()
+    valid_dha_ids = {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
     for item in body.presets:
         pid = str(item.id or "").strip()
         name = str(item.name or "").strip()
@@ -480,16 +434,28 @@ async def update_session_presets(body: SessionPresetsBody):
         if not pid or not name or not agent_ids or pid in seen:
             continue
         seen.add(pid)
-        normalized.append(
-            {
-                "id": pid,
-                "name": name,
-                "agent_ids": agent_ids,
-                "expert_ids": agent_ids,  # 兼容字段
-                "description": str(item.description or ""),
-                "discussion_goal_example": str(item.discussion_goal_example or ""),
-            }
-        )
+        hc_norm: Optional[Dict[str, Any]] = None
+        if item.host_config is not None:
+            hc_norm = normalize_host_config_dict(item.host_config)
+            lid = VIRTUAL_SCENE_HOST_ID
+        else:
+            lid = str(item.leader_agent_id or "").strip() if item.leader_agent_id is not None else ""
+            if not lid:
+                lid = agent_ids[0]
+            elif lid not in valid_dha_ids and lid != VIRTUAL_SCENE_HOST_ID:
+                lid = agent_ids[0]
+        row: Dict[str, Any] = {
+            "id": pid,
+            "name": name,
+            "agent_ids": agent_ids,
+            "expert_ids": agent_ids,  # 兼容字段
+            "leader_agent_id": lid,
+            "description": str(item.description or ""),
+            "discussion_goal_example": str(item.discussion_goal_example or ""),
+        }
+        if hc_norm is not None:
+            row["host_config"] = hc_norm
+        normalized.append(row)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"status": "ok", "data": {"presets": normalized}}
 
@@ -528,6 +494,7 @@ def save_app_settings(data: Dict[str, Any]):
         patch["llm_providers"] = merged
 
     current.update(patch)
+    current.pop("router_tfidf", None)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=2)
 
@@ -1323,47 +1290,67 @@ def _import_skill_from_git_subdir(skill_dir: Path, git_url: str, subdir: str) ->
             shutil.rmtree(skill_dir)
         shutil.copytree(source, skill_dir)
 
+def _skill_item_from_skill_dir(skill_dir: Path) -> Optional[Dict[str, Any]]:
+    """从单个 skill 目录解析一条技能清单项（与 load_skills_config 原逻辑一致）。"""
+    skill_file = skill_dir / "SKILL.md"
+    if not skill_file.is_file():
+        return None
+    content = skill_file.read_text(encoding="utf-8")
+    if not content.startswith("---"):
+        return None
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return None
+    try:
+        frontmatter = _parse_frontmatter_lenient(parts[1])
+        skill_id = skill_dir.name
+        fm_mcp = frontmatter.get("mcp_server_ids")
+        mcp_ids = fm_mcp if isinstance(fm_mcp, list) else []
+        item: Dict[str, Any] = {
+            "id": skill_id,
+            "name": frontmatter.get("name", skill_id),
+            "description": frontmatter.get("description", ""),
+            "enabled": frontmatter.get("enabled", True),
+            "source": frontmatter.get("source", "local"),
+            "path": str(skill_dir),
+            "write_mode": frontmatter.get("write_mode", "readonly"),
+        }
+        if frontmatter.get("url"):
+            item["url"] = frontmatter.get("url")
+        if "mcp_server_ids" in frontmatter:
+            item["mcp_server_ids"] = mcp_ids
+        return item
+    except Exception:
+        return None
+
+
 def load_skills_config() -> List[Dict[str, Any]]:
-    """加载 Skills 配置"""
-    # 从 skills 目录读取
+    """加载 Skills 配置（用户 skills 目录优先；内置 builtin_skills 补全未覆盖的 id）。"""
     skills_dir = _get_skills_dir()
-    if not skills_dir.exists():
-        return []
-    
-    skills = []
-    for skill_dir in skills_dir.iterdir():
-        if skill_dir.is_dir():
-            skill_file = skill_dir / "SKILL.md"
-            if skill_file.exists():
-                # 读取 SKILL.md 的 frontmatter
-                content = skill_file.read_text(encoding='utf-8')
-                if content.startswith('---'):
-                    # 解析 frontmatter
-                    parts = content.split('---', 2)
-                    if len(parts) >= 3:
-                        try:
-                            frontmatter = _parse_frontmatter_lenient(parts[1])
-                            skill_id = skill_dir.name
-                            fm_mcp = frontmatter.get("mcp_server_ids")
-                            mcp_ids = fm_mcp if isinstance(fm_mcp, list) else []
-                            # 仅当 frontmatter 显式包含 mcp_server_ids 时返回，否则不包含（表示用默认/fallback）
-                            item = {
-                                "id": skill_id,
-                                "name": frontmatter.get("name", skill_id),
-                                "description": frontmatter.get("description", ""),
-                                "enabled": frontmatter.get("enabled", True),
-                                "source": frontmatter.get("source", "local"),
-                                "path": str(skill_dir),
-                                "write_mode": frontmatter.get("write_mode", "readonly"),
-                            }
-                            if frontmatter.get("url"):
-                                item["url"] = frontmatter.get("url")
-                            if "mcp_server_ids" in frontmatter:
-                                item["mcp_server_ids"] = mcp_ids
-                            skills.append(item)
-                        except Exception:
-                            pass
-    
+    seen: Set[str] = set()
+    skills: List[Dict[str, Any]] = []
+    if skills_dir.exists():
+        for skill_dir in skills_dir.iterdir():
+            if not skill_dir.is_dir():
+                continue
+            item = _skill_item_from_skill_dir(skill_dir)
+            if item:
+                skills.append(item)
+                seen.add(str(item.get("id") or ""))
+    builtin_root = get_builtin_skills_dir()
+    if builtin_root.exists():
+        for skill_dir in builtin_root.iterdir():
+            if not skill_dir.is_dir():
+                continue
+            item = _skill_item_from_skill_dir(skill_dir)
+            if not item:
+                continue
+            sid = str(item.get("id") or "")
+            if sid and sid not in seen:
+                if not item.get("source"):
+                    item["source"] = "builtin"
+                skills.append(item)
+                seen.add(sid)
     skills.sort(key=lambda x: (x.get("name") or x.get("id") or "").strip())
     return skills
 
@@ -1390,6 +1377,7 @@ _SKILL_MCP_SERVERS_FALLBACK: Dict[str, List[str]] = {
     "xlsx": ["file-reader"],
     "math-assistant": [],
     "group-host": ["file-reader"],
+    "group-host-webnovel": ["file-reader"],
     "url-fetch": ["file-reader"],
     "seminar-companion": [],
     "seminar-guide": [],

@@ -230,7 +230,7 @@
             >
               <div class="flex-1 min-w-0 text-left">
                 <div class="truncate font-medium">{{ s.name }}</div>
-                <div class="truncate text-xs text-muted mt-0.5">{{ s.agent_ids.length }} 位专家</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ (s.agent_ids || []).length }} 位专家</div>
               </div>
               <button
                 type="button"
@@ -570,7 +570,7 @@
           @middle-column-open-request="middleColumnOpen = true"
           @middle-column-toggle="toggleMiddleColumn"
           @message-sent="onChatMessageSent"
-          @speak-mode-changed="onGroupChatRefresh"
+          @scenario-new-session="onScenarioNewSession"
           @dha-added="onDhaAdded"
         />
       </div>
@@ -603,11 +603,65 @@
                     placeholder="请输入场景描述"
                   />
                 </div>
+                <div class="border border-border-light rounded-lg p-3 space-y-3">
+                  <div>
+                    <label class="block text-sm font-medium text-primary mb-1">场景主持人（四九）</label>
+                    <p class="text-xs text-muted mb-3">
+                      仅保存在本场景内，不占用专家位；从此场景<strong>新建会话</strong>时，会把下面的 Skill / 系统提示写入会话。
+                      运行时还会叠加「应用设置 → 主持人」里的<strong>全局调度规则</strong>（JSON 约定、0 人组队等），与这里选的 Skill <strong>一起</strong>生效——全局里不必重复写网文等业务细节，应放在本场景的 Skill（例如群聊主持·网文）中。
+                    </p>
+                    <div class="text-sm text-primary mb-3">
+                      <span class="font-medium">四九</span>
+                      <span class="text-muted text-xs ml-2">{{ VIRTUAL_SCENE_HOST_ID }}</span>
+                    </div>
+                    <div class="space-y-3">
+                      <div>
+                        <label class="block text-xs font-medium text-primary mb-1">大模型</label>
+                        <select
+                          v-model="scenarioLeaderLlmId"
+                          class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                        >
+                          <option value="">使用应用默认</option>
+                          <option v-for="pid in llmProviderIds" :key="pid" :value="pid">
+                            {{ scenarioLlmOptionLabel(pid) }}
+                          </option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium text-primary mb-1">Skill（多选）</label>
+                        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto themed-scrollbar">
+                          <label
+                            v-for="sk in skills"
+                            :key="sk.id"
+                            class="inline-flex items-center gap-1 text-xs cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              :value="sk.id"
+                              :checked="scenarioLeaderSkillIds.includes(sk.id)"
+                              @change="toggleScenarioLeaderSkill(sk.id)"
+                            />
+                            <span>{{ sk.name || sk.id }}</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium text-primary mb-1">系统提示词</label>
+                        <textarea
+                          v-model="scenarioLeaderSystemPrompt"
+                          rows="4"
+                          class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
+                          placeholder="场景主持人的系统提示词"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div>
-                  <label class="block text-sm font-medium text-primary mb-2">专家</label>
+                  <label class="block text-sm font-medium text-primary mb-2">协作专家</label>
                   <div class="flex flex-wrap gap-2">
                     <span
-                      v-for="id in scenarioDraft.agent_ids"
+                      v-for="id in scenarioDraft.agent_ids || []"
                       :key="id"
                       class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
                     >
@@ -618,7 +672,7 @@
                         @click="removeScenarioExpert(id)"
                       >×</button>
                     </span>
-                    <span v-if="!scenarioDraft.agent_ids.length" class="text-xs text-muted">暂无专家</span>
+                    <span v-if="!(scenarioDraft.agent_ids || []).length" class="text-xs text-muted">暂无专家</span>
                   </div>
                   <div class="mt-3">
                     <input
@@ -667,7 +721,7 @@
             </div>
           </div>
         </template>
-        <template v-if="resourceSubModule === 'dha'">
+        <template v-else-if="resourceSubModule === 'dha'">
           <DHAView
             :selected-dha-id="selectedId"
             :dha-instances="dhaInstances"
@@ -758,6 +812,8 @@ import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
 
 const router = useRouter()
+/** 与后端 app.core.scene_host.VIRTUAL_SCENE_HOST_ID 一致 */
+const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 // 主题 composable 在该视图内会触发全局样式变量初始化；无需直接读取其返回值
 inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
@@ -789,10 +845,18 @@ const resourceSubModule = ref<ResourceSubModule>('scenario')
 const selectedId = ref<string | null>(null)
 const resourceMenuExpanded = ref(false)
 
+interface ScenarioHostConfig {
+  skill_ids: string[]
+  system_prompt?: string
+  llm_provider_id?: string
+  mcp_server_ids?: string[]
+}
 interface ScenarioPreset {
   id: string
   name: string
   agent_ids: string[]
+  leader_agent_id?: string
+  host_config?: ScenarioHostConfig
   description?: string
 }
 type ScenarioDraft = {
@@ -807,6 +871,9 @@ const scenarioSaving = ref(false)
 const creatingScenarioId = ref<string | null>(null)
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
+const scenarioLeaderSkillIds = ref<string[]>([])
+const scenarioLeaderSystemPrompt = ref('')
+const scenarioLeaderLlmId = ref('')
 const scenarioDraft = ref<ScenarioDraft>({
   id: '',
   name: '',
@@ -843,7 +910,9 @@ const skillsLoading = ref(false)
 const mcpServers = ref<{ id: string; name: string; description?: string; metadata?: Record<string, any>; status: string; tool_count: number }[]>([])
 const mcpLoading = ref(false)
 const llmDefault = ref<string>('qwen')
-const llmProviders = ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>({})
+const llmProviders = ref<
+  Record<string, { base_url?: string; model?: string; api_key_env?: string; label?: string }>
+>({})
 const llmLoading = ref(false)
 const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
 const fileSessions = ref<{ id: string; title: string; updated_at: string; file_count: number }[]>([])
@@ -942,10 +1011,24 @@ const settingsCategories = [
 ]
 // Group
 const selectedGroupSessionId = ref<string | null>(null)
-const groupSessions = ref<{ id: string; title: string; updated_at: string; agent_ids?: string[]; speak_mode?: string }[]>([])
+const groupSessions = ref<{ id: string; title: string; updated_at: string; agent_ids?: string[] }[]>([])
 const groupSessionsLoading = ref(false)
 const creatingSession = ref(false)
-const dhaInstances = ref<{ agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]>([])
+const dhaInstances = ref<
+  {
+    agent_id: string
+    name: string
+    role?: string
+    system_prompt?: string
+    skill_ids?: string[]
+    mcp_server_ids?: string[]
+    is_leader?: boolean
+    llm_provider_id?: string
+    file_capabilities?: Record<string, boolean>
+    file_capability_labels?: string[]
+    url_capability?: boolean
+  }[]
+>([])
 const dhaInstancesLoading = ref(false)
 const skillZipInputRef = ref<HTMLInputElement | null>(null)
 const skillZipImporting = ref(false)
@@ -1097,18 +1180,44 @@ function dhaDisplayName(dhaId: string): string {
   return hit?.name || dhaId
 }
 
+function scenarioLlmOptionLabel(pid: string) {
+  const m = llmProviders.value[pid]
+  if (!m) return pid
+  return m.label || m.model || pid
+}
+
 function syncScenarioDraftFromSelected() {
   const s = selectedScenarioPreset.value
   if (!s) {
     scenarioDraft.value = { id: '', name: '', agent_ids: [], description: '' }
+    scenarioLeaderSkillIds.value = ['group-host']
+    scenarioLeaderSystemPrompt.value = ''
+    scenarioLeaderLlmId.value = ''
     return
   }
+  const ids = [...(s.agent_ids || [])].filter((id) => id !== VIRTUAL_SCENE_HOST_ID)
   scenarioDraft.value = {
     id: s.id,
     name: s.name || '',
-    agent_ids: [...(s.agent_ids || [])],
+    agent_ids: ids,
     description: s.description || '',
   }
+  const hc = s.host_config
+  if (hc && Array.isArray(hc.skill_ids) && hc.skill_ids.length) {
+    scenarioLeaderSkillIds.value = [...hc.skill_ids]
+    scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
+    scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
+  } else {
+    scenarioLeaderSkillIds.value = ['group-host']
+    scenarioLeaderSystemPrompt.value = ''
+    scenarioLeaderLlmId.value = ''
+  }
+}
+function toggleScenarioLeaderSkill(skillId: string) {
+  const set = new Set(scenarioLeaderSkillIds.value)
+  if (set.has(skillId)) set.delete(skillId)
+  else set.add(skillId)
+  scenarioLeaderSkillIds.value = Array.from(set)
 }
 
 function createScenarioPreset() {
@@ -1119,6 +1228,8 @@ function createScenarioPreset() {
     name: '',
     agent_ids: [],
     description: '',
+    leader_agent_id: VIRTUAL_SCENE_HOST_ID,
+    host_config: { skill_ids: ['group-host'] },
   }
   scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
   selectedId.value = id
@@ -1138,12 +1249,22 @@ function addScenarioExpert(dhaId: string) {
 
 async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
   const payload = {
-    presets: nextPresets.map((p) => ({
-      id: p.id,
-      name: (p.name || '').trim(),
-      agent_ids: [...(p.agent_ids || [])],
-      description: p.description || '',
-    })),
+    presets: nextPresets.map((p) => {
+      const row: Record<string, unknown> = {
+        id: p.id,
+        name: (p.name || '').trim(),
+        agent_ids: [...(p.agent_ids || [])],
+        description: p.description || '',
+        discussion_goal_example: (p as { discussion_goal_example?: string }).discussion_goal_example || '',
+      }
+      if (p.host_config && typeof p.host_config === 'object') {
+        row.host_config = p.host_config
+        row.leader_agent_id = VIRTUAL_SCENE_HOST_ID
+      } else {
+        row.leader_agent_id = p.leader_agent_id || VIRTUAL_SCENE_HOST_ID
+      }
+      return row
+    }),
   }
   const r = await fetch('/api/settings/session-presets', {
     method: 'PUT',
@@ -1162,15 +1283,23 @@ async function saveScenarioPreset() {
   const cur = selectedScenarioPreset.value
   if (!cur) return
   const name = (scenarioDraft.value.name || '').trim()
-  const dhaIds = [...(scenarioDraft.value.agent_ids || [])]
+  const rawIds = [...(scenarioDraft.value.agent_ids || [])]
   if (!name) {
     window.alert('场景名称不能为空')
     return
   }
-  if (!dhaIds.length) {
-    window.alert('请至少选择 1 位专家')
+  if (!rawIds.length) {
+    window.alert('请至少选择 1 位协作专家')
     return
   }
+  const skillIds =
+    scenarioLeaderSkillIds.value.length > 0 ? [...scenarioLeaderSkillIds.value] : ['group-host']
+  const host_config: ScenarioHostConfig = {
+    skill_ids: skillIds,
+    system_prompt: scenarioLeaderSystemPrompt.value || undefined,
+    llm_provider_id: scenarioLeaderLlmId.value || undefined,
+  }
+  const dhaIds = rawIds
   scenarioSaving.value = true
   try {
     const next = (scenarioPresets.value || []).map((p) =>
@@ -1180,6 +1309,8 @@ async function saveScenarioPreset() {
             name,
             description: scenarioDraft.value.description || '',
             agent_ids: dhaIds,
+            leader_agent_id: VIRTUAL_SCENE_HOST_ID,
+            host_config,
           }
         : p,
     )
@@ -1296,8 +1427,11 @@ async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()
   await fetchGroupSessions()
 }
-function onGroupChatRefresh() {
-  workspaceContentRef.value?.refresh()
+
+/** 从场景预设新建会话后：切到新会话并刷新列表 */
+async function onScenarioNewSession(sessionId: string) {
+  selectedGroupSessionId.value = sessionId
+  await fetchGroupSessions()
 }
 
 /** 新加成员后：刷新当前会话详情并刷新左侧会话列表，使成员数立即更新 */
@@ -1593,7 +1727,6 @@ watch(currentModule, (mod) => {
 }, { immediate: true })
 
 watch(resourceSubModule, (sub) => {
-  selectedId.value = null
   // 切换子栏目时收起搜索，避免“跨栏目残留过滤”造成误解
   showDhaSearch.value = false
   showSkillSearch.value = false
@@ -1602,7 +1735,12 @@ watch(resourceSubModule, (sub) => {
   skillSearch.value = ''
   mcpSearch.value = ''
   scenarioSearch.value = ''
-  if (sub === 'scenario') fetchScenarioPresets()
+  // 切到「场景」时保留/由 fetch 校验 selectedId，避免右侧表单短暂空白；其它子栏目仍清空选中
+  if (sub === 'scenario') {
+    fetchScenarioPresets()
+    return
+  }
+  selectedId.value = null
   if (sub === 'dha') fetchDHA()
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()

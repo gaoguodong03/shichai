@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.api.files import get_workspace_root_path
 
@@ -14,6 +14,83 @@ def _audit_file(session_id: str) -> Path:
     p = root / "memory" / "orchestrator_audit.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def _truncate(s: str, max_len: int) -> str:
+    t = (s or "").strip()
+    if len(t) <= max_len:
+        return t
+    return t[: max_len - 1] + "…"
+
+
+def _format_one_audit_line(event_type: str, payload: Dict[str, Any]) -> str:
+    """将单条审计 JSON 压成一行可读摘要，供主持人对照进度。"""
+    payload = payload or {}
+    if event_type == "scheduler_decision":
+        d = payload.get("decision") or {}
+        ns = d.get("next_speaker")
+        td = d.get("task_done")
+        r = _truncate(str(d.get("reason") or ""), 220)
+        np = _truncate(str(d.get("next_prompt") or ""), 180)
+        parts = [f"调度 → {ns}", f"task_done={td}"]
+        if r:
+            parts.append(f"理由:{r}")
+        if np:
+            parts.append(f"指派:{np}")
+        return "- " + " | ".join(parts)
+    if event_type == "turn_started":
+        sp = payload.get("speaker")
+        return f"- 发言开始 → {sp}"
+    if event_type == "hook_interrupt":
+        reason = payload.get("reason") or payload.get("message") or ""
+        return f"- 中断: {_truncate(str(reason), 120)}"
+    if event_type == "fsm_skip_host_dispatch":
+        ns = (payload.get("next_speaker") or "")
+        return f"- 直派专家（跳过本轮主持人调度）→ {ns}"
+    if event_type == "user_exit_skill_session":
+        pv = _truncate(str(payload.get("preview") or ""), 160)
+        return f"- 用户结束技能会话: {pv}" if pv else "- 用户结束技能会话"
+    return f"- {event_type}"
+
+
+def format_audit_for_host_prompt(
+    session_id: str,
+    *,
+    max_lines: int = 80,
+    max_chars: int = 14000,
+) -> str:
+    """
+    读取 memory/orchestrator_audit.jsonl 尾部若干行，渲染为纯文本段落。
+    供主持人 / 默认调度器判断「已执行步骤」与 task_done 时参考（类似计划清单的执行记录）。
+    """
+    p = _audit_file(session_id)
+    if not p.exists():
+        return ""
+    try:
+        raw = p.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    lines = lines[-max(1, int(max_lines)) :]
+    out: List[str] = []
+    for ln in lines:
+        try:
+            rec = json.loads(ln)
+        except json.JSONDecodeError:
+            continue
+        et = str(rec.get("event_type") or "")
+        pl = rec.get("payload")
+        if not isinstance(pl, dict):
+            pl = {}
+        one = _format_one_audit_line(et, pl)
+        if one:
+            out.append(one)
+    text = "\n".join(out).strip()
+    if not text:
+        return ""
+    if len(text) > max_chars:
+        text = "…\n" + text[-max_chars:]
+    return text
 
 
 def append_audit_event(session_id: str, event_type: str, payload: Dict[str, Any], turn_id: Optional[str] = None) -> None:

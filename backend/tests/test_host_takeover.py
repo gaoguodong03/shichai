@@ -28,36 +28,29 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
     assert not gc._user_requests_host_takeover("【主持人补充指令】请撰写报告", explicit_flag=None, host_display_name="四九")
 
 
-def test_select_next_speaker_without_host_prefers_last_speaker():
+def test_parse_host_response_extracts_next_prompt():
     gc = _get_group_chat_module()
-    out = gc._select_next_speaker_without_host(
-        agent_ids=["a", "b", "c"],
-        last_speaker_agent_id="b",
-        explicit_requested_agent_ids=["a"],
-    )
-    assert out == "b"
+    raw = """开场白
+```json
+{"task_done": false, "next_speaker": "agent-a", "next_prompt": "请结合上文补充要点", "reason": "继续"}
+```
+"""
+    out = gc._parse_host_response(raw)
+    assert out is not None
+    assert out.get("next_prompt") == "请结合上文补充要点"
+    assert out.get("next_speaker") == "agent-a"
 
 
-def test_select_next_speaker_without_host_fallback_rules():
+def test_parse_host_response_without_next_prompt():
     gc = _get_group_chat_module()
-    out_explicit = gc._select_next_speaker_without_host(
-        agent_ids=["a", "b", "c"],
-        last_speaker_agent_id=None,
-        explicit_requested_agent_ids=["x", "c"],
-    )
-    assert out_explicit == "c"
-    out_single = gc._select_next_speaker_without_host(
-        agent_ids=["solo"],
-        last_speaker_agent_id=None,
-        explicit_requested_agent_ids=[],
-    )
-    assert out_single == "solo"
-    out_none = gc._select_next_speaker_without_host(
-        agent_ids=["a", "b"],
-        last_speaker_agent_id=None,
-        explicit_requested_agent_ids=[],
-    )
-    assert out_none is None
+    raw = """说明
+```json
+{"task_done": true, "next_speaker": "user"}
+```
+"""
+    out = gc._parse_host_response(raw)
+    assert out is not None
+    assert out.get("next_prompt") is None
 
 
 def test_preferred_agent_id_map_prefers_agent_namespace():
@@ -99,11 +92,21 @@ def test_extract_explicit_requested_agent_ids_matches_writing_intent():
 
 
 def test_prioritize_suggested_add_ids_prefers_user_requested_experts():
-    gc = _get_group_chat_module()
-    out = gc._prioritize_suggested_add_ids(
+    from app.core.recruitment_helpers import prioritize_suggested_add_ids
+
+    out = prioritize_suggested_add_ids(
         ["agent-a", "agent-b"],
         explicit_requested_agent_ids=["agent-x", "agent-a"],
         recruitable_ids={"agent-a", "agent-b", "agent-x"},
         max_n=3,
     )
     assert out == ["agent-x", "agent-a", "agent-b"]
+
+
+def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
+    gc = _get_group_chat_module()
+    pick = gc._pick_resolved_host_skill_id
+    assert pick(["group-host", "group-host-webnovel"]) == "group-host-webnovel"
+    assert pick(["group-host-webnovel", "group-host"]) == "group-host-webnovel"
+    assert pick(["group-host"]) == "group-host"
+    assert pick([]) == "group-host"

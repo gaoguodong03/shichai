@@ -44,7 +44,8 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
         decision_next_prompt="补充要求",
     )
     assert "关键事实" in out
-    assert "主持人补充指令" not in out
+    assert "补充要求" in out
+    assert "主持人本轮指派" in out
 
 
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():
@@ -66,7 +67,7 @@ def test_append_workspace_image_preview_markdown_appends_image_links():
 def test_has_auto_continue_signal_detects_continue_intent():
     gc = _get_group_chat_module()
     assert gc._has_auto_continue_signal("接下来我会继续执行下一步。") is True
-    assert gc._has_auto_continue_signal("I will continue with step 2.") is True
+    assert gc._has_auto_continue_signal("[[AUTO_CONTINUE]] proceeding.") is True
 
 
 def test_has_auto_continue_signal_defaults_to_handoff_user():

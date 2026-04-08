@@ -8,6 +8,16 @@ from app.agent.orchestrator_state import (
 )
 
 
+def test_normalize_respects_next_speaker_without_binding_last_expert():
+    """不再根据 task_done 把 next_speaker 绑回 last_speaker；以主持人 JSON 为准。"""
+    out = normalize_scheduler_decision(
+        {"next_speaker": "agent-b", "task_done": False, "reason": "x"},
+        agent_ids=["agent-a", "agent-b"],
+        current_owner_agent_id="agent-a",
+    )
+    assert out["next_speaker"] == "agent-b"
+
+
 def test_normalize_scheduler_decision_filters_suggested_add_by_recruitable_ids():
     out = normalize_scheduler_decision(
         {
@@ -17,7 +27,6 @@ def test_normalize_scheduler_decision_filters_suggested_add_by_recruitable_ids()
         },
         agent_ids=["host", "writer", "illustrator"],
         recruitable_ids=["newcomer", "contact"],
-        last_speaker_agent_id="writer",
         current_owner_agent_id="writer",
     )
     assert out["suggested_add_agent_ids"] == ["newcomer"]

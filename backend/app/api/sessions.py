@@ -1,7 +1,7 @@
 """统一会话 API：与群聊共用存储，所有会话均为「带主持人的会话」。详见仓库 README / docs/书童四九.md。"""
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from app.core.security import user_context_dependency
 
@@ -28,6 +28,8 @@ class SessionCreate(BaseModel):
     title: str = "新对话"
     agent_ids: List[str] = []
     expert_ids: List[str] = []  # 兼容字段：expert_ids
+    leader_agent_id: Optional[str] = None  # 虚拟主持人 id 或兼容旧版真实 DHA
+    host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
 
 
 @router.get("/sessions")
@@ -49,6 +51,8 @@ async def create_session(body: SessionCreate):
         agent_ids=body.agent_ids,
         expert_ids=body.expert_ids,
         speak_mode="auto",
+        leader_agent_id=body.leader_agent_id,
+        host_config=body.host_config,
     )
     return {"status": "ok", "data": data}
 

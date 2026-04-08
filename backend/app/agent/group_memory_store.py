@@ -97,16 +97,11 @@ def append_turn_log(
     if isinstance(skill_route_debug, dict) and skill_route_debug:
         strategy = str(skill_route_debug.get("strategy") or "")
         selected = str(skill_route_debug.get("selected_skill_id") or "")
-        min_score = skill_route_debug.get("min_score")
         lines5: List[str] = []
         if strategy:
             lines5.append(f"- strategy: {strategy}")
         if selected:
             lines5.append(f"- selected_skill_id: {selected}")
-        if min_score is not None:
-            lines5.append(f"- min_score: {min_score}")
-        if "tfidf_available" in skill_route_debug:
-            lines5.append(f"- tfidf_available: {skill_route_debug.get('tfidf_available')}")
         scores = skill_route_debug.get("scores") or []
         if isinstance(scores, list) and scores:
             lines5.append("- scores:")

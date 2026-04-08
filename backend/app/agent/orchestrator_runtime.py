@@ -33,14 +33,12 @@ def normalize_scheduler_decision(
     *,
     agent_ids: List[str],
     recruitable_ids: Optional[List[str]] = None,
-    last_speaker_agent_id: Optional[str],
     current_owner_agent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Normalize host/leader decision to a stable orchestration payload.
 
     Rules:
-    - Preserve same owner when task is not done.
-    - Never apply round-robin fallback.
+    - 不再根据 task_done 强行把 next_speaker 改回「上一位专家」；由主持人/leader 的 JSON 与 Skill 会话锁表达流程。
     - Invalid next_speaker falls back to user with conflict interrupt.
     """
     data = dict(raw or {})
@@ -63,9 +61,6 @@ def normalize_scheduler_decision(
     )
     if suggested:
         interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT
-
-    if not task_done and last_speaker_agent_id and last_speaker_agent_id in agent_ids:
-        next_speaker = last_speaker_agent_id
 
     if next_speaker not in agent_ids and next_speaker not in ("user", "end"):
         next_speaker = "user"
