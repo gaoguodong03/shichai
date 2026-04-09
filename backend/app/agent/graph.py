@@ -209,10 +209,12 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
         file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。")
     if "edit_workspace_file" in names:
         file_lines.append("- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。")
-    if "delete_workspace_file" in names:
-        file_lines.append("- delete_workspace_file: 删除工作区内文件。")
     if "rename_workspace_file" in names:
-        file_lines.append("- rename_workspace_file: 重命名工作区内文件。")
+        file_lines.append("- rename_workspace_file: 重命名工作区内文件或目录。")
+    if "mkdir_workspace" in names:
+        file_lines.append("- mkdir_workspace: 在工作区内新建目录。")
+    if "list_workspace_directory" in names:
+        file_lines.append("- list_workspace_directory: 递归列出目录中文件（含子目录）。")
     if file_lines:
         parts.append("## 文件操作（当前会话工作区）\n\n你拥有以下与「当前会话工作区」相关的工具：\n")
         parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
@@ -411,8 +413,9 @@ def create_react_agent(
 - read_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。
 - write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。
 - edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。
-- delete_workspace_file: 删除工作区内文件。
-- rename_workspace_file: 重命名工作区内文件。
+- rename_workspace_file: 重命名工作区内文件或目录。
+- mkdir_workspace: 在工作区内新建目录。
+- list_workspace_directory: 递归列出目录中文件（含子目录）。
 
 **强制规则（优先级很高）：**
 - 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 note/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；path 必须用**用户本条消息里的路径**，不要沿用会话中较早提到的旧路径。
