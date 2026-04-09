@@ -46,7 +46,6 @@ from app.agent.orchestrator_state import (
     build_end_payload,
 )
 from app.agent.orchestrator_reducer import apply_decision, move_to_interrupt, start_turn
-from app.agent.host_plan import read_host_plan_for_prompt
 from app.agent.orchestrator_audit import append_audit_event
 from app.agent.hook_pipeline import HookPipeline, HookPriority, HookResult
 from app.agent.file_ref_resolver import resolve_file_refs_in_text
@@ -500,17 +499,9 @@ def _messages_to_context(
 
 
 def _scheduler_recent_context(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
-    """对话摘录 + 用户可编辑的 memory/host_plan.md，供主持人对照「讨论目标」判断进度与 task_done（与自动审计 JSONL 分离）。"""
-    recent = _messages_to_context(messages)
-    plan = read_host_plan_for_prompt(group_session_id)
-    if not (plan or "").strip():
-        return recent
-    return (
-        "【用户任务清单（工作区 memory/host_plan.md；与 orchestrator_audit.jsonl 自动审计分离，请对照讨论目标判断进度）】\n"
-        f"{plan}\n\n"
-        "【对话与发言摘录】\n"
-        f"{recent}"
-    )
+    """主持人调度上下文：仅使用最近对话摘录。"""
+    _ = group_session_id
+    return _messages_to_context(messages)
 
 
 def _normalize_discussion_goal(raw: str, max_len: int = 200) -> str:
@@ -1210,13 +1201,34 @@ async def _resolve_expert_skill_id_and_content(
         if c:
             return locked, c, {"strategy": "locked_skill_session", "selected_skill_id": locked}
 
-    if len(skill_ids) <= 1:
-        return _resolve_dha_skill_id_and_content(dha, discussion_goal, messages, ignored_auto_skill_id)
+    # 仅保留可加载正文的候选 Skill，避免 LLM 选中不存在/未就绪的 skill_id。
+    loaded_skill_ids: List[str] = []
+    for sid in skill_ids:
+        if sl.get_skill_full_content(sid):
+            loaded_skill_ids.append(sid)
+    if not loaded_skill_ids:
+        return "", "", {
+            "strategy": "expert_skill_catalog_empty",
+            "blocking_error": "expert_skill_content_missing",
+            "strict_llm_required": True,
+            "candidate_skill_ids": skill_ids,
+        }
+    if len(loaded_skill_ids) == 1:
+        only_sid = loaded_skill_ids[0]
+        c = sl.get_skill_full_content(only_sid)
+        if c:
+            return only_sid, c, {"strategy": "single_loaded_skill", "selected_skill_id": only_sid}
+        return "", "", {
+            "strategy": "single_loaded_skill_missing_content",
+            "blocking_error": "expert_skill_content_missing",
+            "strict_llm_required": True,
+            "candidate_skill_ids": loaded_skill_ids,
+        }
 
     llm_dha = _get_llm_for_dha(dha, app_settings)
     picked, dbg = await _expert_llm_pick_skill_id(
         llm_dha,
-        skill_ids,
+        loaded_skill_ids,
         discussion_goal,
         messages,
         round_user_text,
@@ -1447,33 +1459,15 @@ def _extract_explicit_requested_agent_ids(user_text: str, all_instances: List[Di
     if not text:
         return []
     out: List[str] = []
-    writing_intent = any(k in text for k in ("写", "撰写", "报告", "文案", "创作", "改写", "润色", "文本"))
-    matched_debug: List[Dict[str, Any]] = []
     for d in all_instances or []:
         did = (d.get("agent_id") or "").strip()
         if not did:
             continue
         name = str(d.get("name") or "").strip()
-        role = str(d.get("role") or "").strip()
-        skills = " ".join([str(x) for x in (d.get("skill_ids") or [])])
-        hay = f"{did} {name} {role} {skills}".lower()
         did_hit = did.lower() in text
         name_hit = bool(name) and (name.lower() in text)
-        intent_hit = (
-            writing_intent
-            and any(k in hay for k in ("文书", "写作", "文案", "编辑", "文本", "报告", "coauthor", "blog-write"))
-        )
-        if did_hit or name_hit or intent_hit:
+        if did_hit or name_hit:
             out.append(did)
-            matched_debug.append(
-                {
-                    "did": did,
-                    "name": name,
-                    "did_hit": did_hit,
-                    "name_hit": name_hit,
-                    "intent_hit": intent_hit,
-                }
-            )
     return list(dict.fromkeys(out))
 
 
@@ -1629,7 +1623,7 @@ async def _host_decide_by_dha(
         + mode_line
         + f"【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】\n{dha_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
         f"【讨论目标】\n{discussion_goal}\n\n"
-        "【主持人决策上下文（可能含用户任务清单 host_plan.md + 对话与发言摘录）】\n"
+        "【主持人决策上下文（对话与发言摘录）】\n"
         f"{recent_messages}\n\n"
         + extra_policy
     )
@@ -1737,7 +1731,7 @@ async def _host_only_respond_and_recommend(
         )
         if not content_str or not content_str.strip():
             # LLM 没输出：直接兜底推荐
-            fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
+            fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
             return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
         text = content_str.strip()
         announcement = text
@@ -1762,7 +1756,7 @@ async def _host_only_respond_and_recommend(
                         cleaned = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids]
                         if cleaned:
                             # 保持顺序去重
-                            suggested_add_agent_ids = list(dict.fromkeys(cleaned))[:2]
+                            suggested_add_agent_ids = list(dict.fromkeys(cleaned))[:3]
                     if not suggested_add_agent_ids:
                         sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_agent_id") or "").strip()
                         if sid and sid in valid_ids:
@@ -1772,12 +1766,12 @@ async def _host_only_respond_and_recommend(
                 break
         # 若 JSON 未解析出推荐列表，从正文中提取 agent_id/name/role 映射作为备用
         if not suggested_add_agent_ids and valid_ids:
-            found = _extract_candidate_agent_ids_from_text(text, all_instances, max_n=2)
-            suggested_add_agent_ids = [x for x in found if x in valid_ids][:2]
+            found = _extract_candidate_agent_ids_from_text(text, all_instances, max_n=3)
+            suggested_add_agent_ids = [x for x in found if x in valid_ids][:3]
         return announcement or text, suggested_add_agent_ids
     except Exception as e:
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
-        fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
+        fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
         return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
 
 
@@ -2308,11 +2302,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
     user_message = (request.message or "").strip()
     custom_prompt = (request.custom_prompt or "").strip()
+    had_file_ref_tag = ("【文件引用：" in user_message) or ("【文件引用：" in custom_prompt)
+    file_refs_resolved_in_request = False
     # 默认在服务端把【文件引用】展开为正文片段拼入用户消息，避免专家仅看到标签却未主动调用读文件工具。
     # 若上下文过大或需强制走工具链，可设置环境变量 FILE_REF_SERVER_RESOLVE_ENABLED=false 关闭。
     if is_feature_enabled("FILE_REF_SERVER_RESOLVE_ENABLED", default=True):
         user_message = resolve_file_refs_in_text(user_message, group_session_id)
         custom_prompt = resolve_file_refs_in_text(custom_prompt, group_session_id)
+        file_refs_resolved_in_request = ("【文件内容已解析】" in user_message) or ("【文件内容已解析】" in custom_prompt)
 
     explicit_requested_agent_ids = _extract_explicit_requested_agent_ids(user_message, preferred_instances) if user_message else []
     explicit_requested_agent_ids = _normalize_to_preferred_agent_ids(explicit_requested_agent_ids, id_to_preferred=id_to_preferred)
@@ -2507,10 +2504,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     discussion_goal, recent, all_instances, extra_system_prompt
                 )
                 suggested_add_agent_ids = suggested_add_agent_ids or []
-                picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:2]
+                picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:3]
                 if not picked:
-                    auto_picked = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
-                    picked = list(dict.fromkeys([x for x in auto_picked if x in valid_ids]))[:2]
+                    auto_picked = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
+                    picked = list(dict.fromkeys([x for x in auto_picked if x in valid_ids]))[:3]
                 host_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                     "role": "host",
@@ -2573,6 +2570,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         "ctx": orch_ctx.to_dict(),
                     },
                 )
+            elif explicit_requested_agent_ids:
+                # 用户显式点名场内专家时优先直达，避免被上一轮 skill 锁误续跑到其他专家。
+                requested_in_room = [aid for aid in explicit_requested_agent_ids if aid in agent_ids]
+                if requested_in_room:
+                    clear_skill_session_lock(meta_item)
+                    _save_group_meta(meta)
+                    next_speaker = requested_in_room[0]
+                    orch_ctx.phase = OrchestrationPhase.EXECUTING
+                    orch_ctx.owner_agent_id = next_speaker
+                    _audit(
+                        "explicit_named_speaker",
+                        {
+                            "requested_ids": explicit_requested_agent_ids,
+                            "next_speaker": next_speaker,
+                            "ctx": orch_ctx.to_dict(),
+                        },
+                    )
             elif entry_route.skip_host_dispatch and entry_route.direct_expert_id:
                 next_speaker = entry_route.direct_expert_id
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
@@ -2693,10 +2707,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     messages.append(host_msg)
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                # 主持人发言（单人会话时也由主持人先点名，再让该 DHA 发言）
+                # 主持人点名后，当前轮次继续执行被点名专家发言，避免用户看到“将安排发言”却无下文。
                 if next_speaker in agent_ids:
-                    orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_agent_id = next_speaker
                     next_dha = dha_map.get(next_speaker)
                     next_name = (next_dha.get("name") or next_speaker) if next_dha else next_speaker
                     # 优先展示主持人在 JSON 外撰写的主持说明（announcement）；勿仅用固定模板覆盖技能产出
@@ -2706,6 +2718,22 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         {"", "请下一位发言。", "请下一位发言", "请下一位发言。 "}
                     )
                     host_content = _short if not _ann or _ann in _generic_host else _ann
+                    # 若主持人给了 suggested_order，但 announcement 未展开具体顺序，
+                    # 则补一段可读列表，避免前端只看到“以下是我的安排：”这类半句。
+                    raw_order = decision.get("suggested_order")
+                    if isinstance(raw_order, list) and raw_order:
+                        ordered_names: List[str] = []
+                        for aid in raw_order:
+                            sid = str(aid or "").strip()
+                            if not sid:
+                                continue
+                            d = dha_map.get(sid)
+                            ordered_names.append((d.get("name") or sid) if d else sid)
+                        if ordered_names:
+                            has_list_marker = ("1." in host_content) or ("- " in host_content)
+                            if not has_list_marker:
+                                lines = [f"{idx + 1}. {nm}" for idx, nm in enumerate(ordered_names[:5])]
+                                host_content = (host_content.rstrip() + "\n\n" + "建议顺序：\n" + "\n".join(lines)).strip()
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host" if not leader_agent_id else "assistant",
@@ -2722,8 +2750,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                    # 这里不再发送 waiting_for_user 的 end 事件，而是直接在同一条流中继续执行
-                    # 下方 while next_speaker 循环会立刻进入对应 DHA 的发言，实现“主持人点名后自动发言”。
+                    orch_ctx.phase = OrchestrationPhase.EXECUTING
+                    orch_ctx.owner_agent_id = next_speaker
+                elif next_speaker in ("user", "end"):
+                    # 当主持人决策本轮交还用户或结束时，也应把 announcement 落成可见消息，
+                    # 否则前端只看到用户连续发言，误以为“无响应”。
+                    _ann = (announcement or "").strip()
+                    _generic_host = frozenset(
+                        {"", "请下一位发言。", "请下一位发言", "请下一位发言。 "}
+                    )
+                    if _ann and _ann not in _generic_host:
+                        host_msg = {
+                            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                            "role": "host" if not leader_agent_id else "assistant",
+                            "content": _ann,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "skill_id": _host_bubble_skill_id(),
+                        }
+                        if leader_agent_id:
+                            host_msg["agent_id"] = leader_agent_id
+                        messages.append(host_msg)
+                        _save_group_history(group_session_id, messages)
+                        yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                    if next_speaker == "user":
+                        orch_ctx.phase = OrchestrationPhase.AWAITING_USER
 
             while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_ids:
                 # 在自动或手动模式下，单次流中专家发言超过一定轮次（默认 32）时强制停下来，让用户确认是否继续，
@@ -2778,10 +2828,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     and (not resolved_skill_id or not skill_content)
                 ):
                     move_to_interrupt(orch_ctx, InterruptReason.NEED_USER_INPUT)
-                    err_msg = (
-                        "当前专家的技能选择依赖 LLM，但本轮选择失败，已停止自动执行。"
-                        "请重试，或由主持人重新安排下一步。"
-                    )
+                    err_code = str(skill_route_debug.get("blocking_error") or "expert_skill_pick_llm_failed")
+                    if err_code == "expert_skill_content_missing":
+                        err_msg = (
+                            "当前专家的可用技能未正确加载，暂时无法继续执行。"
+                            "请检查该专家的 skill 配置后重试，或由主持人改派其他专家。"
+                        )
+                    else:
+                        err_msg = (
+                            "当前专家的技能选择依赖 LLM，但本轮选择失败，已停止自动执行。"
+                            "请重试，或由主持人重新安排下一步。"
+                        )
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host" if not leader_agent_id else "assistant",
@@ -2789,7 +2846,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "skill_id": _host_bubble_skill_id(),
                         "meta": {
-                            "error_code": "expert_skill_pick_llm_failed",
+                            "error_code": err_code,
                             "agent_id": next_speaker,
                             "skill_route_debug": skill_route_debug,
                         },
@@ -2810,7 +2867,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         turn_id=orch_ctx.turn_id,
                         token_version=orch_ctx.token_version,
                         handoff_reason=err_msg,
-                        extra={"error_code": "expert_skill_pick_llm_failed"},
+                        extra={"error_code": err_code},
                     )
                     _persist_pending_state(end_data)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
@@ -2880,9 +2937,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _preparing_hint = (
                     "（正在读取你插入的文件并组织回复，请稍候…）\n\n"
                 )
-                # 先推一条可见占位，避免“直到最终 message 才出现整条”的体感。
-                # 该占位不会写入最终 assistant_msg（由前端在 message 事件时替换）。
-                yield f"event: content\ndata: {json_module.dumps({'text': _preparing_hint, 'agent_id': next_speaker, 'meta': {'phase': 'preparing'}}, ensure_ascii=False)}\n\n"
+                _file_parsed_hint = "（文件内容已解析：仅展示前 5 行）\n\n"
+                should_emit_preparing_hint = had_file_ref_tag and file_refs_resolved_in_request
+                emitted_tool_pending_hint = False
+                # 仅在请求里包含并成功解析了【文件引用】时展示“正在读取文件”占位；
+                # memory 检索、普通推理、工具执行等流程不显示该文案。
+                if should_emit_preparing_hint:
+                    # 先推一条可见占位，避免“直到最终 message 才出现整条”的体感。
+                    # 该占位不会写入最终 assistant_msg（由前端在 message 事件时替换）。
+                    yield f"event: content\ndata: {json_module.dumps({'text': _preparing_hint, 'agent_id': next_speaker, 'meta': {'phase': 'preparing'}}, ensure_ascii=False)}\n\n"
+                    yield f"event: content\ndata: {json_module.dumps({'text': _file_parsed_hint, 'agent_id': next_speaker, 'meta': {'phase': 'file_parsed'}}, ensure_ascii=False)}\n\n"
                 try:
                     async for stream_item in agent.astream(
                         initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"]
@@ -2901,8 +2965,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 if has_tool_calls:
                                     # Keep tool call payloads in internal traces only.
                                     # 脚本/API（如生图）可能数十秒无 token；在真正执行工具前再推一行提示。
-                                    if _tool_pending_hint not in accumulated:
-                                        accumulated.append(_tool_pending_hint)
+                                    if not emitted_tool_pending_hint:
+                                        emitted_tool_pending_hint = True
                                         yield f"event: content\ndata: {json_module.dumps({'text': _tool_pending_hint, 'agent_id': next_speaker, 'meta': {'phase': 'tool_pending'}}, ensure_ascii=False)}\n\n"
                             continue
                         if ev_type == "tool_step":

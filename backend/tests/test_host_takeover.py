@@ -81,13 +81,13 @@ def test_preferred_agent_id_map_generates_agent_id_for_dha_only():
     assert preferred_rows[0]["agent_id"] == "agent-web-fetch"
 
 
-def test_extract_explicit_requested_agent_ids_matches_writing_intent():
+def test_extract_explicit_requested_agent_ids_matches_explicit_name_only():
     gc = _get_group_chat_module()
     instances = [
         {"agent_id": "agent-d92e733e", "name": "文书专员", "role": "文本创作与报告撰写", "skill_ids": ["doc-coauthoring"]},
         {"agent_id": "agent-other", "name": "网页爬取专家", "role": "网页抓取", "skill_ids": ["url-fetch"]},
     ]
-    out = gc._extract_explicit_requested_agent_ids("请文本创作人员帮我写报告", instances)
+    out = gc._extract_explicit_requested_agent_ids("请文书专员帮我写报告", instances)
     assert "agent-d92e733e" in out
 
 

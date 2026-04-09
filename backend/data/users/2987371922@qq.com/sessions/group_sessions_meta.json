@@ -504,5 +504,66 @@
     "orchestration_profile": "scene",
     "skill_session_owner_id": "agent-195b8c3a",
     "skill_session_skill_id": "news-summary"
+  },
+  "group-d4d3b3a877e1": {
+    "title": "张雪峰相关博客创作",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-deepresearch-exp",
+      "agent-2be73edd",
+      "agent-file-workspace",
+      "agent-195b8c3a",
+      "agent-seminar-guide"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-09T11:09:48.087429+00:00",
+    "updated_at": "2026-04-09T11:13:45.902652+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-43923571cedd": {
+    "title": "创作流程与安排",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-seminar-guide",
+      "agent-195b8c3a",
+      "agent-c1bf68ba"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-09T11:20:34.884575+00:00",
+    "updated_at": "2026-04-09T14:44:18.645254+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-eec2a5ad1b52": {
+    "title": "cluadecode代码泄露问题",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-seminar-teacher-advisor",
+      "agent-seminar-teacher-review",
+      "agent-seminar-ai-peer"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-09T14:55:25.570700+00:00",
+    "updated_at": "2026-04-09T15:03:49.546307+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-seminar-ai-peer",
+    "skill_session_skill_id": "seminar-divergence"
+  },
+  "group-c9595655a040": {
+    "title": "cluadecode代码泄露问题",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-9f6a2b8d",
+      "agent-seminar-teacher-advisor"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-09T15:07:05.478422+00:00",
+    "updated_at": "2026-04-09T15:21:54.629818+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-seminar-teacher-advisor",
+    "skill_session_skill_id": "seminar-divergence"
   }
 }

@@ -67,6 +67,12 @@ def resolve_file_refs_in_text(
             except UnicodeDecodeError:
                 injected.append((p, "[非 UTF-8 文本，无法直接注入]"))
                 continue
+            # 仅注入前 5 行，避免把整文件塞进对话上下文。
+            all_lines = (content or "").splitlines()
+            first_five_lines = all_lines[:5]
+            content = "\n".join(first_five_lines)
+            if len(all_lines) > 5:
+                content += "\n...[仅展示前 5 行]"
             content = content[:max_chars_per_file]
             if total_chars + len(content) > max_total_chars:
                 content = content[: max(0, max_total_chars - total_chars)]

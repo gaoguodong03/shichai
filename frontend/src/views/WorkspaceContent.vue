@@ -871,7 +871,7 @@
                 <div class="group-chat-workspace-preview-header">
                   <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
                   <div class="group-chat-workspace-preview-actions">
-                    <template v-if="groupWorkspacePreviewIsMd && !groupWorkspacePreviewLoading">
+                    <template v-if="isTextFile(groupWorkspacePreviewName) && !groupWorkspacePreviewLoading">
                       <template v-if="!groupWorkspacePreviewEditing">
                         <button
                           type="button"
@@ -1644,6 +1644,7 @@ async function confirmGroupNext(
     const reader = r.body?.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let sawExpertAssistantMessageThisRun = false
     if (reader) {
       while (true) {
         const { done, value } = await reader.read()
@@ -1665,8 +1666,9 @@ async function confirmGroupNext(
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
               if (data?.text != null && data?.agent_id) {
+                if (consumeStreamingStatusContent(data)) continue
                 appendStreamingContent(data.agent_id, data.text)
               }
             } catch (_) {}
@@ -1678,6 +1680,9 @@ async function confirmGroupNext(
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
+                  if (isExpertAssistantMessagePayload(data)) {
+                    sawExpertAssistantMessageThisRun = true
+                  }
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
                 }
@@ -1743,6 +1748,9 @@ async function confirmGroupNext(
               }
               if (endData.discussion_ended) {
                 attachedFiles.value = []
+              }
+              if (sawExpertAssistantMessageThisRun) {
+                autoSwitchHint.value = null
               }
             } catch (_) {}
           }
@@ -2189,11 +2197,9 @@ const lastRoute = ref<{ expertId: string; skillId: string } | null>(null)
 const autoSwitchHintText = computed(() => {
   const h = autoSwitchHint.value
   if (!h) return ''
-  const parts: string[] = []
-  if (h.expertName) parts.push(`专家：${h.expertName}`)
-  if (h.skillName) parts.push(`技能：${h.skillName}`)
-  if (!parts.length) return ''
-  return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换${parts.join('，')}`
+  const expert = (h.expertName || '').trim()
+  if (!expert) return ''
+  return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换专家：${expert}`
 })
 const groupStreamAbort = ref<AbortController | null>(null)
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
@@ -2265,6 +2271,15 @@ function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefin
   const agentIds = payload.auto_invited_agent_ids as string[] | undefined
   if (Array.isArray(agentIds) && agentIds.length) return agentIds
   return []
+}
+
+function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null | undefined): boolean {
+  if (!payload) return false
+  if (payload.role !== 'assistant') return false
+  const agentId = String(payload.agent_id || '').trim()
+  const skillId = String(payload.skill_id || '').trim()
+  // 主持人消息通常不含 skill_id；专家发言会带 skill_id。
+  return Boolean(agentId && skillId)
 }
 
 function updateAutoSwitchHint(payload: Record<string, unknown>) {
@@ -2465,8 +2480,9 @@ async function continueGroupStream() {
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
               if (data?.text != null && data?.agent_id) {
+                if (consumeStreamingStatusContent(data)) continue
                 appendStreamingContent(data.agent_id, data.text)
               }
             } catch (_) {}
@@ -3159,7 +3175,7 @@ async function deleteGroupWorkspaceEntry(e: { name: string; path: string; is_dir
   }
 }
 
-const TEXT_EXT = ['.md', '.txt', '.json', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
+const TEXT_EXT = ['.md', '.txt', '.json', '.jsonl', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
 const IMAGE_EXT = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
 function isTextFile(name: string) {
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
@@ -3495,6 +3511,24 @@ function clearStreamingPlaceholders() {
   if (changed) groupDisplayMessages.value = next
 }
 
+function consumeStreamingStatusContent(data: { text?: string; agent_id?: string; meta?: { phase?: string } }): boolean {
+  const phase = String(data?.meta?.phase || '').trim()
+  if (!phase) return false
+  if (phase === 'preparing') {
+    groupStreamingPhase.value = '正在读取文件…'
+    return true
+  }
+  if (phase === 'file_parsed') {
+    groupStreamingPhase.value = '文件已解析（仅前 5 行）'
+    return true
+  }
+  if (phase === 'tool_pending') {
+    groupStreamingPhase.value = '正在执行工具（可能需要 1～3 分钟）…'
+    return true
+  }
+  return false
+}
+
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
   // 保留用户通过 Shift+Enter 输入的换行，只做轻度规范化
@@ -3564,6 +3598,7 @@ async function sendGroupMessage() {
     const reader = r.body?.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let sawExpertAssistantMessageThisRun = false
     if (reader) {
       while (true) {
         const { done, value } = await reader.read()
@@ -3585,8 +3620,9 @@ async function sendGroupMessage() {
           const dataStr = dataLines.join('\n')
           if (eventType === 'content' && dataStr) {
             try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string }
+              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
               if (data?.text != null && data?.agent_id) {
+                if (consumeStreamingStatusContent(data)) continue
                 appendStreamingContent(data.agent_id, data.text)
                 // 开始输出内容：视为进入自检（生成最终回复）
               }
@@ -3599,6 +3635,9 @@ async function sendGroupMessage() {
               if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
                 if (data.role === 'assistant') {
                   replaceOrPushAssistantMessage(data)
+                  if (isExpertAssistantMessagePayload(data)) {
+                    sawExpertAssistantMessageThisRun = true
+                  }
                   // 如果该条 assistant 携带工具结果/查找结果：认为是在“生成草稿/查找内容”
                 } else {
                   groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
@@ -3669,6 +3708,9 @@ async function sendGroupMessage() {
               if (endData.discussion_ended) {
                 attachedFiles.value = []
               }
+              if (sawExpertAssistantMessageThisRun) {
+                autoSwitchHint.value = null
+              }
             } catch (_) {}
           }
         }
@@ -3678,8 +3720,8 @@ async function sendGroupMessage() {
   } catch (e) {
     console.error('群聊发送失败', e)
   } finally {
-    clearStreamingPlaceholders()
     groupStreaming.value = false
+    clearStreamingPlaceholders()
     groupStreamingPhase.value = ''
     groupNextSpeakerOverride.value = ''
   }

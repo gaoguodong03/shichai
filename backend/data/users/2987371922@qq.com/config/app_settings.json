@@ -59,8 +59,9 @@
       "read": true,
       "edit": true,
       "write": true,
-      "delete": true,
-      "rename": true
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
     },
     "url_capability": true
   },

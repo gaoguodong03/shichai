@@ -47,72 +47,38 @@
       <div class="flex-1 min-h-0 flex bg-page">
         <aside class="w-64 flex-shrink-0 border-r border-border bg-sidebar overflow-y-auto">
           <div class="px-3 py-2 border-b border-border/40 sticky top-0 bg-sidebar z-10">
-            <div class="text-xs text-muted">当前分区：{{ tabs.find((t) => t.id === activeTab)?.label || 'SKILL.md' }}</div>
-            <div v-if="activeTab !== 'main'" class="mt-2 flex items-center gap-2">
+            <div class="text-xs text-muted truncate">当前目录：{{ currentSidebarDir }}</div>
+            <div class="mt-2 flex items-center gap-2">
               <button
                 type="button"
                 class="px-2 py-1 text-xs rounded border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-                :disabled="!partDirPath"
-                @click="goPartDirUp"
+                :disabled="activeTab === 'main'"
+                @click="goUpFromSidebar"
               >
                 上一级
               </button>
-              <span class="text-xs text-muted truncate">当前目录：{{ partDirPath || '/' }}</span>
             </div>
           </div>
           <div class="p-2 space-y-1">
-            <template v-if="activeTab === 'main'">
-              <button
-                v-for="t in tabs"
-                :key="t.id"
-                type="button"
-                @click="activeTab = t.id"
-                :class="[
-                  'w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                  activeTab === t.id ? 'bg-accent-subtle text-accent-subtle-text' : 'text-primary hover:bg-list-hover'
-                ]"
-              >
-                {{ t.label }}
-              </button>
-            </template>
-            <template v-else>
-              <button
-                type="button"
-                class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors text-primary hover:bg-list-hover"
-                @click="activeTab = 'main'"
-              >
-                ← 返回分区
-              </button>
-              <div v-if="partsLoading" class="px-2 py-2 text-sm text-muted">加载中...</div>
-              <div v-else-if="!partFileBrowser.dirs.length && !partFileBrowser.files.length" class="px-2 py-2 text-sm text-muted">暂无文件</div>
-              <template v-else>
-                <div v-if="partFileBrowser.dirs.length" class="pt-2 px-1 py-1 text-[11px] font-semibold tracking-wide text-muted">DIR</div>
-                <button
-                  v-for="d in partFileBrowser.dirs"
-                  :key="`dir-${d.path}`"
-                  type="button"
-                  class="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors text-primary hover:bg-list-hover"
-                  @click="enterPartDir(d.path)"
-                >
-                  [DIR] {{ d.name }}
-                </button>
-                <div v-if="partFileBrowser.files.length" class="pt-2 px-1 py-1 text-[11px] font-semibold tracking-wide text-muted">FILE</div>
-                <button
-                  v-for="f in partFileBrowser.files"
-                  :key="`file-${f.path}`"
-                  type="button"
-                  @click="selectPartFile(activeTab as PartType, f.path)"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors',
-                    selectedPartFile?.type === activeTab && selectedPartFile?.path === f.path
-                      ? 'bg-accent-subtle text-accent-subtle-text'
-                      : 'hover:bg-list-hover text-primary'
-                  ]"
-                >
-                  [FILE] {{ f.name }}
-                </button>
-              </template>
-            </template>
+            <div v-if="activeTab !== 'main' && partsLoading" class="px-2 py-2 text-sm text-muted">加载中...</div>
+            <div v-else-if="!sidebarEntries.length" class="px-2 py-2 text-sm text-muted">暂无文件</div>
+            <button
+              v-else
+              v-for="e in sidebarEntries"
+              :key="e.key"
+              type="button"
+              class="w-full px-3 py-2.5 text-left text-sm transition-colors border-b border-border/40"
+              :class="e.active
+                ? 'bg-accent-subtle text-accent-subtle-text'
+                : 'hover:bg-list-hover text-primary'"
+              @click="onSidebarEntryClick(e)"
+            >
+              <div class="truncate font-medium">
+                <span class="mr-1 text-muted">{{ e.isDir ? '[DIR]' : '[FILE]' }}</span>
+                {{ e.name }}
+              </div>
+              <div class="truncate text-xs text-muted mt-0.5">{{ e.displayPath }}</div>
+            </button>
           </div>
         </aside>
 
@@ -190,10 +156,16 @@
 
           <template v-else>
             <div v-if="!selectedPartFile" class="h-full flex items-center justify-center text-sm text-muted">选择文件后可预览与编辑</div>
-            <div v-else class="mx-auto w-full max-w-4xl h-full flex flex-col min-h-0">
+            <div v-else class="h-full flex flex-col min-h-0">
               <div class="flex items-center justify-between gap-2 mb-2 flex-shrink-0">
                 <span class="text-xs text-muted truncate">{{ selectedPartFile.path }}</span>
                 <div class="flex gap-2">
+                  <button
+                    @click="partMarkdownPreviewMode = !partMarkdownPreviewMode"
+                    class="inline-flex items-center justify-center px-2 py-1 text-xs font-medium rounded border border-input-border bg-card text-primary hover:bg-list-hover"
+                  >
+                    {{ partMarkdownPreviewMode ? '编辑源文件' : '预览渲染' }}
+                  </button>
                   <button
                     @click="savePartFile"
                     :disabled="partSaving"
@@ -210,6 +182,17 @@
                 </div>
               </div>
               <div v-if="partContentLoading" class="text-sm text-muted flex-1">加载中...</div>
+              <div v-else-if="partMarkdownPreviewMode" class="flex-1 overflow-auto p-4 flex flex-col">
+                <div
+                  v-if="isSelectedPartMarkdown"
+                  class="prose prose-sm max-w-none text-primary file-detail-markdown"
+                  v-html="renderMarkdown(partContent || '')"
+                />
+                <pre
+                  v-else
+                  class="text-sm text-primary whitespace-pre-wrap break-words font-sans"
+                >{{ partContent || '' }}</pre>
+              </div>
               <textarea
                 v-else
                 v-model="partContent"
@@ -271,6 +254,7 @@ const partContent = ref('')
 const partContentLoading = ref(false)
 const partSaving = ref(false)
 const exporting = ref(false)
+const partMarkdownPreviewMode = ref(true)
 
 const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
@@ -311,6 +295,56 @@ const partFileBrowser = computed(() => {
   files.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
   return { dirs, files }
 })
+const partBrowserEntries = computed(() => {
+  const dirs = partFileBrowser.value.dirs.map((d) => ({ ...d, isDir: true }))
+  const files = partFileBrowser.value.files.map((f) => ({ ...f, isDir: false }))
+  return [...dirs, ...files]
+})
+const currentSidebarDir = computed(() => {
+  if (activeTab.value === 'main') return '/'
+  const tabRoot = `/${activeTab.value}`
+  return partDirPath.value ? `${tabRoot}/${partDirPath.value}` : tabRoot
+})
+const sidebarEntries = computed(() => {
+  if (activeTab.value === 'main') {
+    const rootDirs = tabs
+      .filter((t) => t.id !== 'main')
+      .map((t) => ({
+        key: `root-dir-${t.id}`,
+        kind: 'root-dir' as const,
+        isDir: true,
+        name: t.label,
+        path: t.id,
+        displayPath: `/${t.id}`,
+        active: false,
+      }))
+    return [
+      {
+        key: 'root-file-skill-md',
+        kind: 'root-file' as const,
+        isDir: false,
+        name: 'SKILL.md',
+        path: 'SKILL.md',
+        displayPath: '/SKILL.md',
+        active: true,
+      },
+      ...rootDirs,
+    ]
+  }
+  return partBrowserEntries.value.map((e) => {
+    const full = e.path ? `/${activeTab.value}/${e.path}` : `/${activeTab.value}`
+    return {
+      key: `${e.isDir ? 'part-dir' : 'part-file'}-${e.path}`,
+      kind: e.isDir ? ('part-dir' as const) : ('part-file' as const),
+      isDir: e.isDir,
+      name: e.name,
+      path: e.path,
+      displayPath: full,
+      active: !e.isDir && selectedPartFile.value?.type === activeTab.value && selectedPartFile.value?.path === e.path,
+    }
+  })
+})
+const isSelectedPartMarkdown = computed(() => /\.md$/i.test(selectedPartFile.value?.path || ''))
 
 function enterPartDir(path: string) {
   partDirPath.value = normalizePartPath(path)
@@ -321,6 +355,34 @@ function goPartDirUp() {
   if (!cur) return
   const idx = cur.lastIndexOf('/')
   partDirPath.value = idx >= 0 ? cur.slice(0, idx) : ''
+}
+function goUpFromSidebar() {
+  if (activeTab.value === 'main') return
+  if (partDirPath.value) {
+    goPartDirUp()
+    return
+  }
+  activeTab.value = 'main'
+}
+function onSidebarEntryClick(entry: {
+  kind: 'root-file' | 'root-dir' | 'part-dir' | 'part-file'
+  path: string
+  isDir: boolean
+}) {
+  if (entry.kind === 'root-file') {
+    activeTab.value = 'main'
+    return
+  }
+  if (entry.kind === 'root-dir') {
+    activeTab.value = entry.path as PartType
+    partDirPath.value = ''
+    return
+  }
+  if (entry.kind === 'part-dir') {
+    enterPartDir(entry.path)
+    return
+  }
+  selectPartFile(activeTab.value as PartType, entry.path)
 }
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
@@ -455,6 +517,7 @@ async function loadParts() {
 async function selectPartFile(type: PartType, path: string) {
   selectedPartFile.value = { type, path }
   partDirPath.value = dirnameOfPath(path)
+  partMarkdownPreviewMode.value = true
   partContentLoading.value = true
   partContent.value = ''
   try {
@@ -632,6 +695,7 @@ watch(activeTab, async (tab) => {
     markdownPreviewMode.value = true
     selectedPartFile.value = null
     partContent.value = ''
+    partMarkdownPreviewMode.value = true
     return
   }
   if (!skill.value) return
@@ -669,4 +733,14 @@ watch(activeTab, async (tab) => {
   padding: 0.1rem 0.3rem;
 }
 .skill-markdown-preview :deep(a) { color: var(--color-accent); text-decoration: underline; }
+
+.file-detail-markdown :deep(h1) { font-size: 1.5rem; font-weight: 700; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(h2) { font-size: 1.25rem; font-weight: 600; margin-top: 0.75rem; margin-bottom: 0.25rem; }
+.file-detail-markdown :deep(h3) { font-size: 1.125rem; font-weight: 600; margin-top: 0.5rem; }
+.file-detail-markdown :deep(p) { margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(ul) { list-style-type: disc; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(ol) { list-style-type: decimal; margin-left: 1.5rem; margin-bottom: 0.5rem; }
+.file-detail-markdown :deep(pre) { background: var(--color-list-hover); padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
+.file-detail-markdown :deep(code) { background: var(--color-list-hover); padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
+.file-detail-markdown :deep(a) { color: var(--color-accent); text-decoration: underline; }
 </style>
