@@ -1,6 +1,7 @@
 """LLM 客户端 - 支持 Qwen 及 OpenAI 兼容 API，可配置化切换"""
 import os
 from typing import Optional, Dict, Any
+from app.core.llm_trace import append_llm_trace
 
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "http://jeniya.top/v1"
@@ -104,7 +105,7 @@ class QwenLLM:
         request_timeout = _parse_int_env("QWEN_REQUEST_TIMEOUT", 180)
         # max_retries：默认 2。若每次调用都 Retrying，多为 DashScope 限流（429），可设 QWEN_MAX_RETRIES=0 先看真实错误
         max_retries = _parse_int_env("QWEN_MAX_RETRIES", 2)
-        return ChatOpenAI(
+        client = ChatOpenAI(
             model=self.model,
             openai_api_key=self.api_key,
             openai_api_base=self.base_url,
@@ -114,3 +115,113 @@ class QwenLLM:
             request_timeout=request_timeout,
             max_retries=max_retries,
         )
+        return _instrument_llm_client(
+            client,
+            provider_base_url=self.base_url,
+            model_name=self.model,
+        )
+
+
+def _message_content_to_text(obj: Any) -> str:
+    if obj is None:
+        return ""
+    content = getattr(obj, "content", obj)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                t = item.get("text")
+                if t is not None:
+                    parts.append(str(t))
+                else:
+                    parts.append(str(item))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _input_to_text(inp: Any) -> str:
+    if isinstance(inp, list):
+        return "\n\n".join(_message_content_to_text(x) for x in inp)
+    return _message_content_to_text(inp)
+
+
+class _TracedLLMClient:
+    """对底层 LLM client 的只读代理：不修改原对象，避免 Pydantic 字段限制报错。"""
+
+    def __init__(self, raw_client: Any, *, provider_base_url: str, model_name: str):
+        self._raw_client = raw_client
+        self._provider_base_url = provider_base_url
+        self._model_name = model_name
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self._raw_client, item)
+
+    async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            out = await self._raw_client.ainvoke(inp, *args, **kwargs)
+            append_llm_trace(
+                tag="global_llm_ainvoke",
+                system_content="",
+                user_content=_input_to_text(inp),
+                model_output=_message_content_to_text(out),
+                extra={
+                    "base_url": self._provider_base_url,
+                    "model": self._model_name,
+                },
+            )
+            return out
+        except Exception as e:
+            append_llm_trace(
+                tag="global_llm_ainvoke_error",
+                system_content="",
+                user_content=_input_to_text(inp),
+                model_output=f"[ERROR] {type(e).__name__}: {e}",
+                extra={
+                    "base_url": self._provider_base_url,
+                    "model": self._model_name,
+                },
+            )
+            raise
+
+    def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            out = self._raw_client.invoke(inp, *args, **kwargs)
+            append_llm_trace(
+                tag="global_llm_invoke",
+                system_content="",
+                user_content=_input_to_text(inp),
+                model_output=_message_content_to_text(out),
+                extra={
+                    "base_url": self._provider_base_url,
+                    "model": self._model_name,
+                },
+            )
+            return out
+        except Exception as e:
+            append_llm_trace(
+                tag="global_llm_invoke_error",
+                system_content="",
+                user_content=_input_to_text(inp),
+                model_output=f"[ERROR] {type(e).__name__}: {e}",
+                extra={
+                    "base_url": self._provider_base_url,
+                    "model": self._model_name,
+                },
+            )
+            raise
+
+
+def _instrument_llm_client(client: Any, *, provider_base_url: str, model_name: str) -> Any:
+    if isinstance(client, _TracedLLMClient):
+        return client
+    return _TracedLLMClient(
+        client,
+        provider_base_url=provider_base_url,
+        model_name=model_name,
+    )

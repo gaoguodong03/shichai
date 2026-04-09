@@ -18,8 +18,9 @@ _FILE_CAP_LABELS = {
     "read": "文件读取",
     "edit": "文件编辑",
     "write": "文件写入",
-    "delete": "文件删除",
     "rename": "文件重命名",
+    "mkdir": "文件夹新建",
+    "list_dir": "列出目录中文件（含子目录）",
 }
 
 def _get_dha_instances_path() -> Path:
@@ -40,7 +41,7 @@ class DHACreate(BaseModel):
     is_leader: bool = False
     llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
     avatar_url: Optional[str] = None  # 头像（可选，前端可传 data URL 或远程地址）
-    file_capabilities: Optional[Dict[str, bool]] = None  # read/edit/write/delete/rename
+    file_capabilities: Optional[Dict[str, bool]] = None  # read/edit/write/rename/mkdir/list_dir
     url_capability: Optional[bool] = None  # 是否可使用 call_api 访问外部 http(s) URL
     agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
     expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
@@ -75,13 +76,21 @@ _DEFAULT_FILE_CAPS: Dict[str, bool] = {
     "read": True,
     "edit": True,
     "write": True,
-    "delete": True,
     "rename": True,
+    "mkdir": True,
+    "list_dir": True,
 }
 
 
 def _empty_file_capabilities() -> Dict[str, bool]:
-    return {"read": False, "edit": False, "write": False, "delete": False, "rename": False}
+    return {
+        "read": False,
+        "edit": False,
+        "write": False,
+        "rename": False,
+        "mkdir": False,
+        "list_dir": False,
+    }
 
 
 def merge_file_capabilities(stored: Any) -> Dict[str, bool]:

@@ -78,13 +78,17 @@ class EditWorkspaceFileInput(BaseModel):
     new_text: str = Field(description="替换后的新文本")
 
 
-class DeleteWorkspaceFileInput(BaseModel):
-    path: str = Field(description="工作区内相对路径")
-
-
 class RenameWorkspaceFileInput(BaseModel):
     path: str = Field(description="原文件相对路径")
     new_name: str = Field(description="新文件名或新相对路径（如 notes/key.md，可用于移动）")
+
+
+class MkdirWorkspaceInput(BaseModel):
+    path: str = Field(description="要创建的目录相对路径，例如 notes/archive")
+
+
+class ListWorkspaceDirectoryInput(BaseModel):
+    path: str = Field(description="目录相对路径，留空表示工作区根目录", default="")
 
 
 def _create_builtin_workspace_tools(workspace_id: str) -> List:
@@ -112,20 +116,6 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         target.write_text(content.replace(old_text, new_text), encoding="utf-8")
         return f"已编辑文件：{path}"
 
-    def _delete_workspace_file(path: str) -> str:
-        if is_host_plan_reserved_path(path):
-            return (
-                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止删除；"
-                "请用户在侧边栏工作区中管理该文件。"
-            )
-        target = _safe_path(path)
-        if not target.exists():
-            return "错误：文件不存在。"
-        if target.is_dir():
-            return "错误：仅支持删除文件，不支持目录。"
-        target.unlink()
-        return f"已删除文件：{path}"
-
     def _rename_workspace_file(path: str, new_name: str) -> str:
         if is_host_plan_reserved_path(path):
             return (
@@ -136,8 +126,8 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         if is_host_plan_reserved_path(cleaned) or is_host_plan_reserved_path(cleaned.lstrip("/")):
             return "错误：不能将文件移动或重命名为 memory/host_plan.md（该路径保留给用户任务清单）。"
         target = _safe_path(path)
-        if not target.exists() or target.is_dir():
-            return "错误：文件不存在或是目录。"
+        if not target.exists():
+            return "错误：文件或目录不存在。"
         if not cleaned:
             return "错误：new_name 不能为空。"
         if ".." in cleaned:
@@ -152,7 +142,36 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         new_path.parent.mkdir(parents=True, exist_ok=True)
         target.rename(new_path)
         rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
-        return f"已重命名文件：{rel}"
+        kind = "目录" if new_path.is_dir() else "文件"
+        return f"已重命名{kind}：{rel}"
+
+    def _mkdir_workspace(path: str) -> str:
+        cleaned = str(path or "").strip().replace("\\", "/").strip("/")
+        if not cleaned:
+            return "错误：path 不能为空。"
+        if ".." in cleaned:
+            return "错误：path 非法。"
+        if is_host_plan_reserved_path(cleaned):
+            return "错误：不能创建保留路径 memory/host_plan.md。"
+        target = _safe_path(cleaned)
+        target.mkdir(parents=True, exist_ok=True)
+        rel = str(target.relative_to(ws_root)).replace("\\", "/")
+        return f"已创建目录：{rel}"
+
+    def _list_workspace_directory(path: str = "") -> str:
+        cleaned = str(path or "").strip().replace("\\", "/").strip("/")
+        target = _safe_path(cleaned) if cleaned else ws_root
+        if not target.exists() or not target.is_dir():
+            return "错误：目录不存在。"
+        items: List[str] = []
+        for p in sorted(target.rglob("*")):
+            rel = str(p.relative_to(target)).replace("\\", "/")
+            if not rel:
+                continue
+            items.append(f"{rel}/" if p.is_dir() else rel)
+        prefix = cleaned or "."
+        body = "\n".join(items) if items else "(空目录)"
+        return f"目录 {prefix} 下的内容（含子目录）：\n{body}"
 
     return [
         create_read_file_tool(session_id=workspace_id),
@@ -164,16 +183,22 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             args_schema=EditWorkspaceFileInput,
         ),
         StructuredTool.from_function(
-            name="delete_workspace_file",
-            description="删除当前工作区内的文件。",
-            func=_delete_workspace_file,
-            args_schema=DeleteWorkspaceFileInput,
-        ),
-        StructuredTool.from_function(
             name="rename_workspace_file",
-            description="重命名或移动当前工作区内的文件。new_name 可传新文件名，或传相对路径（如 notes/key.md）。",
+            description="重命名或移动当前工作区内的文件/目录。new_name 可传新名称，或传相对路径（如 notes/key.md）。",
             func=_rename_workspace_file,
             args_schema=RenameWorkspaceFileInput,
+        ),
+        StructuredTool.from_function(
+            name="mkdir_workspace",
+            description="在当前工作区创建目录。",
+            func=_mkdir_workspace,
+            args_schema=MkdirWorkspaceInput,
+        ),
+        StructuredTool.from_function(
+            name="list_workspace_directory",
+            description="递归列出当前工作区目录内容（含子目录）。",
+            func=_list_workspace_directory,
+            args_schema=ListWorkspaceDirectoryInput,
         ),
     ]
 
@@ -182,8 +207,9 @@ _FILE_CAP_TO_TOOL = (
     ("read", "read_file"),
     ("write", "write_workspace_file"),
     ("edit", "edit_workspace_file"),
-    ("delete", "delete_workspace_file"),
     ("rename", "rename_workspace_file"),
+    ("mkdir", "mkdir_workspace"),
+    ("list_dir", "list_workspace_directory"),
 )
 
 

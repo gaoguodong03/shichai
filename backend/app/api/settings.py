@@ -200,63 +200,27 @@ _DEFAULT_LLM_PROVIDERS = {
     },
 }
 
-_DEFAULT_HOST_PROMPTS: Dict[str, str] = {
-    "host_display_name": "四九",
-    # 全局层：与「资源中心 → 场景」里为虚拟主持人配置的 Skill 叠加（Skill 在后、本段在前）。
-    # 每轮用户消息中还会由系统注入职责边界、可邀请名单等，勿与此处重复赘述。
-    "host_master_prompt": (
-        "【身份】你是群聊主持人，只做调度：决定下一轮由谁发言（next_speaker），并在点名某位专家时给出对方**可直接执行**的 next_prompt。"
-        "你不代写专家的专业正文。\n\n"
-        "【输入】你会看到：在场专家（agent_id）、讨论目标、最近对话；需要补人时还会看到可邀请名单。"
-        "所有 ID 必须以系统给出的为准，勿编造。\n\n"
-        "【输出】\n"
-        "1）先写 1～4 句主持说明（对应 JSON 的 announcement，面向人读）。\n"
-        "2）最后输出**一段** JSON（可用 ```json 包裹），字段须包含："
-        'task_done、next_speaker、announcement、reason；若点专家则须含 next_prompt。\n'
-        "示例："
-        '{"task_done": true, "next_speaker": "agent-xxxx", "announcement": "…", "reason": "…", '
-        '"next_prompt": "给该专家的自包含任务说明", "suggested_add_agent_ids": []}\n\n'
-        "【约定】\n"
-        "- next_speaker 取在场专家的 agent_id，或 \"user\"（需用户补充/确认），或 \"end\"（用户已收束或目标完成）。\n"
-        "- 点某位专家时：next_prompt 必须自包含，不得用「同上」「见前文」代替关键条件。\n"
-        "- 招募模式下若需补人：suggested_add_agent_ids 从**可邀请列表**中选，通常 1～3 个，并把 next_speaker 设为 \"user\" 等待确认。"
-        "（若用户消息中已写明「参与者名单已固定」等场景策略，则不要输出 suggested_add_agent_ids，以该条为准。）\n"
-    ),
-    "host_zero_member_policy": (
-        "【情形】当前会话里还没有任何协作专家（0 人）。\n\n"
-        "【目标】根据用户目标，从系统提供的「可邀请专家列表」中推荐 1～3 位最合适的专家，并简要说明分工或优先级。\n\n"
-        "【输出】\n"
-        "1）1～4 句面向用户的说明（将邀请谁、为何需要）。\n"
-        "2）一段 JSON，须含 suggested_add_agent_ids（列表元素为 agent_id，且必须来自可邀请列表），"
-        '并将 next_speaker 设为 "user"，表示先请用户确认邀请后再继续。\n\n'
-        "【注意】在用户确认前，不要假设专家已进入群聊。\n"
-    ),
+_DEFAULT_HOST_PROFILE: Dict[str, Any] = {
+    "display_name": "四九",
+    "system_prompt": "",
+    "skill_ids": ["group-host"],
+    "llm_provider_id": "",
+    "mcp_server_ids": [],
+    "file_capabilities": normalize_host_config_dict({}).get("file_capabilities") or {},
+    "url_capability": True,
 }
 
 
-def _normalize_host_prompts(hp: Dict[str, Any]) -> Dict[str, str]:
-    """将历史的 host_prompts 结构迁移/归一为方案 A 的两字段结构。"""
-    base = dict(_DEFAULT_HOST_PROMPTS)
-    if not isinstance(hp, dict):
-        return base
-    if isinstance(hp.get("host_display_name"), str) and hp.get("host_display_name").strip():
-        base["host_display_name"] = hp["host_display_name"].strip()
-    # 新字段优先
-    if isinstance(hp.get("host_master_prompt"), str) and hp.get("host_master_prompt").strip():
-        base["host_master_prompt"] = hp["host_master_prompt"]
-    else:
-        # 迁移：保留旧 next_prompt 规则（若存在）以减少用户已调优内容丢失
-        legacy_rules = hp.get("host_next_prompt_rules")
-        if isinstance(legacy_rules, str) and legacy_rules.strip():
-            base["host_master_prompt"] = base["host_master_prompt"].rstrip() + "\n\n【补充规则（来自旧配置）】\n" + legacy_rules.strip()
-    if isinstance(hp.get("host_zero_member_policy"), str) and hp.get("host_zero_member_policy").strip():
-        base["host_zero_member_policy"] = hp["host_zero_member_policy"]
-    else:
-        # 迁移：若旧 0 成员 user 模板存在，则附加到 policy，减少迁移损失
-        legacy_zero = hp.get("host_zero_member_user_template")
-        if isinstance(legacy_zero, str) and legacy_zero.strip():
-            base["host_zero_member_policy"] = base["host_zero_member_policy"].rstrip() + "\n\n【补充模板（来自旧配置）】\n" + legacy_zero.strip()
-    return base
+def normalize_host_profile(raw: Any) -> Dict[str, Any]:
+    """主持人独立配置：名称 + DHA 同构能力字段。"""
+    if not isinstance(raw, dict):
+        raw = {}
+    base_cfg = normalize_host_config_dict(raw)
+    display_name = str(raw.get("display_name") or "").strip() or str(_DEFAULT_HOST_PROFILE["display_name"])
+    out = dict(_DEFAULT_HOST_PROFILE)
+    out.update(base_cfg)
+    out["display_name"] = display_name
+    return out
 
 def load_app_settings() -> Dict[str, Any]:
     """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
@@ -265,8 +229,7 @@ def load_app_settings() -> Dict[str, Any]:
     data = {
         "default_llm": "qwen",
         "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
-        # 主持人提示词（群聊主持调度用），默认使用 group_chat.py 的历史硬编码内容
-        "host_prompts": dict(_DEFAULT_HOST_PROMPTS),
+        "host_profile": dict(_DEFAULT_HOST_PROFILE),
     }
     if path.exists():
         try:
@@ -275,12 +238,12 @@ def load_app_settings() -> Dict[str, Any]:
                 if isinstance(loaded, dict) and "system_prompt" in loaded:
                     loaded = dict(loaded)
                     loaded.pop("system_prompt", None)
-                # 合并 host_prompts，保证新增字段不会因为旧配置缺失而丢失
+                # 合并 host_profile，保证新增字段不会因为旧配置缺失而丢失
                 if isinstance(loaded, dict):
-                    hp = loaded.get("host_prompts")
+                    hp = loaded.get("host_profile")
                     if isinstance(hp, dict):
                         loaded = dict(loaded)
-                        loaded["host_prompts"] = _normalize_host_prompts(hp)
+                        loaded["host_profile"] = normalize_host_profile(hp)
                 data.update(loaded)
                 data.pop("router_tfidf", None)
                 providers = data.get("llm_providers") or {}
@@ -310,53 +273,62 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
-class HostPromptsBody(BaseModel):
-    """主持人提示词（群聊调度用）"""
+class HostProfileBody(BaseModel):
+    """主持人独立配置（账号级默认）。"""
 
-    host_display_name: Optional[str] = None
-    host_master_prompt: Optional[str] = None
-    host_zero_member_policy: Optional[str] = None
+    display_name: Optional[str] = None
+    system_prompt: Optional[str] = None
+    skill_ids: Optional[List[str]] = None
+    llm_provider_id: Optional[str] = None
+    mcp_server_ids: Optional[List[str]] = None
+    file_capabilities: Optional[Dict[str, bool]] = None
+    url_capability: Optional[bool] = None
 
 
-def _host_prompts_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    hp = data.get("host_prompts") or {}
-    return _normalize_host_prompts(hp if isinstance(hp, dict) else {})
+def _host_profile_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    hp = data.get("host_profile") or {}
+    return normalize_host_profile(hp if isinstance(hp, dict) else {})
 
 
-@router.get("/settings/host-prompts")
-async def get_host_prompts():
+@router.get("/settings/host-profile")
+async def get_host_profile():
     data = load_app_settings()
-    return {"status": "ok", "data": _host_prompts_response_payload(data)}
+    return {"status": "ok", "data": _host_profile_response_payload(data)}
 
 
-@router.put("/settings/host-prompts")
-async def update_host_prompts(body: HostPromptsBody):
+@router.put("/settings/host-profile")
+async def update_host_profile(body: HostProfileBody):
     incoming = body.model_dump(exclude_none=True)
     current = load_app_settings()
-    hp = current.get("host_prompts") if isinstance(current.get("host_prompts"), dict) else {}
-    merged = _normalize_host_prompts(hp if isinstance(hp, dict) else {})
-    for k in ("host_display_name", "host_master_prompt", "host_zero_member_policy"):
+    hp = current.get("host_profile") if isinstance(current.get("host_profile"), dict) else {}
+    merged = dict(hp if isinstance(hp, dict) else {})
+    for k in (
+        "display_name",
+        "system_prompt",
+        "skill_ids",
+        "llm_provider_id",
+        "mcp_server_ids",
+        "file_capabilities",
+        "url_capability",
+    ):
         if k in incoming:
-            merged[k] = incoming[k] or ""
-    patch: Dict[str, Any] = {"host_prompts": merged}
-    save_app_settings(patch)
-    return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
+            merged[k] = incoming[k]
+    merged = normalize_host_profile(merged)
+    save_app_settings({"host_profile": merged})
+    return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
 
 
-@router.get("/settings/host-prompts/defaults")
-async def get_host_prompts_defaults():
-    """返回内置默认主持人提示词（不读配置文件）。"""
-    return {
-        "status": "ok",
-        "data": {**dict(_DEFAULT_HOST_PROMPTS)},
-    }
+@router.get("/settings/host-profile/defaults")
+async def get_host_profile_defaults():
+    """返回内置默认主持人配置（不读配置文件）。"""
+    return {"status": "ok", "data": {**dict(_DEFAULT_HOST_PROFILE)}}
 
 
-@router.post("/settings/host-prompts/reset")
-async def reset_host_prompts():
-    """将主持人提示词恢复为内置默认值。"""
-    save_app_settings({"host_prompts": dict(_DEFAULT_HOST_PROMPTS)})
-    return {"status": "ok", "data": _host_prompts_response_payload(load_app_settings())}
+@router.post("/settings/host-profile/reset")
+async def reset_host_profile():
+    """将主持人配置恢复为内置默认值。"""
+    save_app_settings({"host_profile": dict(_DEFAULT_HOST_PROFILE)})
+    return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
 
 
 @router.get("/settings/session-presets")

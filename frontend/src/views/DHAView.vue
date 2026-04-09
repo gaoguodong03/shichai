@@ -117,7 +117,7 @@
                       : 'bg-card text-muted border-border-light hover:bg-list-hover'"
                     @click="toggleUrlCapability"
                   >
-                    外部链接
+                    获取url数据
                   </button>
                 </div>
               </div>
@@ -278,8 +278,9 @@ const defaultFileCaps = () => ({
   read: true,
   edit: true,
   write: true,
-  delete: true,
   rename: true,
+  mkdir: true,
+  list_dir: true,
 })
 
 const form = ref({
@@ -326,8 +327,9 @@ watch(
             read: fc.read !== false,
             edit: fc.edit !== false,
             write: fc.write !== false,
-            delete: fc.delete !== false,
             rename: fc.rename !== false,
+            mkdir: fc.mkdir !== false,
+            list_dir: fc.list_dir !== false,
           },
           url_capability: d.url_capability !== false,
         }
@@ -346,7 +348,7 @@ async function fetchSkills() {
   }
 }
 
-function toggleFileCapability(key: 'read' | 'edit' | 'write' | 'delete' | 'rename') {
+function toggleFileCapability(key: 'read' | 'edit' | 'write' | 'rename' | 'mkdir' | 'list_dir') {
   form.value.file_capabilities[key] = !form.value.file_capabilities[key]
 }
 
@@ -411,8 +413,9 @@ const fileCapabilityItems = computed(() => {
     { key: 'read' as const, label: '文件读取', enabled: !!caps.read },
     { key: 'edit' as const, label: '文件编辑', enabled: !!caps.edit },
     { key: 'write' as const, label: '文件写入', enabled: !!caps.write },
-    { key: 'delete' as const, label: '文件删除', enabled: !!caps.delete },
     { key: 'rename' as const, label: '文件重命名', enabled: !!caps.rename },
+    { key: 'mkdir' as const, label: '文件夹新建', enabled: !!caps.mkdir },
+    { key: 'list_dir' as const, label: '列出目录中文件（含子目录）', enabled: !!caps.list_dir },
   ]
 })
 

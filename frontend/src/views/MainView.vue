@@ -607,8 +607,8 @@
                   <div>
                     <label class="block text-sm font-medium text-primary mb-1">场景主持人（四九）</label>
                     <p class="text-xs text-muted mb-3">
-                      仅保存在本场景内，不占用专家位；从此场景<strong>新建会话</strong>时，会把下面的 Skill / 系统提示写入会话。
-                      运行时还会叠加「应用设置 → 主持人」里的<strong>全局调度规则</strong>（JSON 约定、0 人组队等），与这里选的 Skill <strong>一起</strong>生效——全局里不必重复写网文等业务细节，应放在本场景的 Skill（例如群聊主持·网文）中。
+                      仅保存在本场景内，不占用专家位；从此场景<strong>新建会话</strong>时，会把下面配置写入会话。
+                      与“主持人设置”独立：这里的技能与基础能力只影响当前场景。
                     </p>
                     <div class="text-sm text-primary mb-3">
                       <span class="font-medium">四九</span>
@@ -629,20 +629,58 @@
                       </div>
                       <div>
                         <label class="block text-xs font-medium text-primary mb-1">Skill（多选）</label>
-                        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto themed-scrollbar">
-                          <label
-                            v-for="sk in skills"
+                        <input
+                          v-if="skills.length"
+                          v-model.trim="scenarioLeaderSkillSearch"
+                          type="text"
+                          class="w-full mb-2 bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                          placeholder="搜索技能（名称/描述）"
+                        />
+                        <div
+                          v-if="skills.length"
+                          class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3 max-h-40 overflow-y-auto themed-scrollbar"
+                        >
+                          <button
+                            v-for="sk in filteredScenarioLeaderSkills"
                             :key="sk.id"
-                            class="inline-flex items-center gap-1 text-xs cursor-pointer"
+                            type="button"
+                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                            :class="scenarioLeaderSkillIds.includes(sk.id)
+                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                            @click="toggleScenarioLeaderSkill(sk.id)"
                           >
-                            <input
-                              type="checkbox"
-                              :value="sk.id"
-                              :checked="scenarioLeaderSkillIds.includes(sk.id)"
-                              @change="toggleScenarioLeaderSkill(sk.id)"
-                            />
-                            <span>{{ sk.name || sk.id }}</span>
-                          </label>
+                            {{ sk.name || sk.id }}
+                          </button>
+                        </div>
+                        <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
+                        <p v-else-if="!skills.length" class="text-xs text-muted">当前技能库为空，请先到左侧“技能”中新建或导入 Skill。</p>
+                      </div>
+                      <div class="mt-4 pt-4 border-t border-border-light">
+                        <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
+                        <div class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
+                          <button
+                            v-for="item in scenarioLeaderFileCapabilityItems"
+                            :key="item.key"
+                            type="button"
+                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                            :class="item.enabled
+                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                            @click="toggleScenarioLeaderFileCapability(item.key)"
+                          >
+                            {{ item.label }}
+                          </button>
+                          <button
+                            type="button"
+                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                            :class="scenarioLeaderUrlCapability
+                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                            @click="toggleScenarioLeaderUrlCapability"
+                          >
+                            获取url数据
+                          </button>
                         </div>
                       </div>
                       <div>
@@ -850,6 +888,14 @@ interface ScenarioHostConfig {
   system_prompt?: string
   llm_provider_id?: string
   mcp_server_ids?: string[]
+  file_capabilities?: {
+    read?: boolean
+    edit?: boolean
+    write?: boolean
+    delete?: boolean
+    rename?: boolean
+  }
+  url_capability?: boolean
 }
 interface ScenarioPreset {
   id: string
@@ -871,9 +917,19 @@ const scenarioSaving = ref(false)
 const creatingScenarioId = ref<string | null>(null)
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
+const scenarioLeaderSkillSearch = ref('')
 const scenarioLeaderSkillIds = ref<string[]>([])
 const scenarioLeaderSystemPrompt = ref('')
 const scenarioLeaderLlmId = ref('')
+const scenarioLeaderFileCaps = ref({
+  read: true,
+  edit: true,
+  write: true,
+  rename: true,
+  mkdir: true,
+  list_dir: true,
+})
+const scenarioLeaderUrlCapability = ref(true)
 const scenarioDraft = ref<ScenarioDraft>({
   id: '',
   name: '',
@@ -903,6 +959,26 @@ const filteredScenarioAddableExperts = computed(() => {
     const hay = `${d.name || ''} ${d.role || ''}`.toLowerCase()
     return hay.includes(q)
   })
+})
+const filteredScenarioLeaderSkills = computed(() => {
+  const q = (scenarioLeaderSkillSearch.value || '').trim().toLowerCase()
+  const list = skills.value || []
+  if (!q) return list
+  return list.filter((s) => {
+    const hay = `${s.name || ''} ${s.description || ''} ${s.id || ''}`.toLowerCase()
+    return hay.includes(q)
+  })
+})
+const scenarioLeaderFileCapabilityItems = computed(() => {
+  const caps = scenarioLeaderFileCaps.value
+  return [
+    { key: 'read' as const, label: '文件读取', enabled: !!caps.read },
+    { key: 'edit' as const, label: '文件编辑', enabled: !!caps.edit },
+    { key: 'write' as const, label: '文件写入', enabled: !!caps.write },
+    { key: 'rename' as const, label: '文件重命名', enabled: !!caps.rename },
+    { key: 'mkdir' as const, label: '文件夹新建', enabled: !!caps.mkdir },
+    { key: 'list_dir' as const, label: '列出目录中文件（含子目录）', enabled: !!caps.list_dir },
+  ]
 })
 
 const skills = ref<{ id: string; name: string; description?: string; enabled: boolean }[]>([])
@@ -1187,12 +1263,15 @@ function scenarioLlmOptionLabel(pid: string) {
 }
 
 function syncScenarioDraftFromSelected() {
+  scenarioLeaderSkillSearch.value = ''
   const s = selectedScenarioPreset.value
   if (!s) {
     scenarioDraft.value = { id: '', name: '', agent_ids: [], description: '' }
     scenarioLeaderSkillIds.value = ['group-host']
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
+    scenarioLeaderFileCaps.value = { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true }
+    scenarioLeaderUrlCapability.value = true
     return
   }
   const ids = [...(s.agent_ids || [])].filter((id) => id !== VIRTUAL_SCENE_HOST_ID)
@@ -1207,10 +1286,22 @@ function syncScenarioDraftFromSelected() {
     scenarioLeaderSkillIds.value = [...hc.skill_ids]
     scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
     scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
+    const fc = (hc.file_capabilities || {}) as Record<string, boolean>
+    scenarioLeaderFileCaps.value = {
+      read: fc.read !== false,
+      edit: fc.edit !== false,
+      write: fc.write !== false,
+      rename: fc.rename !== false,
+      mkdir: fc.mkdir !== false,
+      list_dir: fc.list_dir !== false,
+    }
+    scenarioLeaderUrlCapability.value = hc.url_capability !== false
   } else {
     scenarioLeaderSkillIds.value = ['group-host']
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
+    scenarioLeaderFileCaps.value = { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true }
+    scenarioLeaderUrlCapability.value = true
   }
 }
 function toggleScenarioLeaderSkill(skillId: string) {
@@ -1218,6 +1309,12 @@ function toggleScenarioLeaderSkill(skillId: string) {
   if (set.has(skillId)) set.delete(skillId)
   else set.add(skillId)
   scenarioLeaderSkillIds.value = Array.from(set)
+}
+function toggleScenarioLeaderFileCapability(key: 'read' | 'edit' | 'write' | 'rename' | 'mkdir' | 'list_dir') {
+  scenarioLeaderFileCaps.value[key] = !scenarioLeaderFileCaps.value[key]
+}
+function toggleScenarioLeaderUrlCapability() {
+  scenarioLeaderUrlCapability.value = !scenarioLeaderUrlCapability.value
 }
 
 function createScenarioPreset() {
@@ -1298,6 +1395,8 @@ async function saveScenarioPreset() {
     skill_ids: skillIds,
     system_prompt: scenarioLeaderSystemPrompt.value || undefined,
     llm_provider_id: scenarioLeaderLlmId.value || undefined,
+    file_capabilities: { ...scenarioLeaderFileCaps.value },
+    url_capability: scenarioLeaderUrlCapability.value,
   }
   const dhaIds = rawIds
   scenarioSaving.value = true

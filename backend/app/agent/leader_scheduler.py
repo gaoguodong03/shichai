@@ -5,6 +5,7 @@ import logging
 from typing import List, Dict, Any, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
+from app.core.llm_trace import append_llm_trace
 
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -24,7 +25,7 @@ def _build_leader_prompt(
     *,
     allow_recruitment: bool = True,
 ) -> str:
-    """构建领导人调度的系统提示词。available_to_add：当前不在群内的专家列表；场景模式 allow_recruitment=False 时不展示招募段。"""
+    """构建领导人调度的最小提示词。"""
     agent_lines = []
     for d in agent_list:
         role = d.get("role") or "参与者"
@@ -57,12 +58,13 @@ def _build_leader_prompt(
 
     recruit_output = ""
     if allow_recruitment:
-        recruit_output = "- 当建议邀请新成员时，输出 suggested_add_agent_ids 并 next_speaker=\"user\"。\n\n格式示例：\n{{\"task_done\": true, \"next_speaker\": \"某agent_id\", \"next_prompt\": \"请该专家完成的具体说明\", \"reason\": \"简短理由\"}}\n或需要补人时：\n{{\"task_done\": true, \"next_speaker\": \"user\", \"reason\": \"...\", \"suggested_add_agent_ids\": [\"agent_id1\"]}}\n"
+        recruit_output = "- 建议邀请新成员时：输出 suggested_add_agent_ids，next_speaker=\"user\"。\n"
     else:
-        recruit_output = '- 不要输出 suggested_add_agent_ids 字段。\n\n格式示例：\n{"task_done": true, "next_speaker": "某agent_id", "next_prompt": "请该专家完成的具体说明", "reason": "简短理由"}\n'
+        recruit_output = "- 不要输出 suggested_add_agent_ids。\n"
 
-    return f"""你是群聊主持人，只负责输出调度 JSON（next_speaker / task_done / reason；可含 suggested_add；点名专家时必须含 next_prompt）。
-不要为专家指定 Skill——专家被点名后自行选择 Skill。
+    return f"""你是群聊主持人，只做调度，不代写专家正文，也不要为专家指定 Skill。
+你必须输出一段 JSON（可用 ```json 包裹），字段至少包含：task_done、next_speaker、reason。
+当 next_speaker 是某专家时必须给出 next_prompt；next_speaker 只能是在场 agent_id 或 \"user\" 或 \"end\"。
 
 ## 参与者
 {agent_text}
@@ -72,17 +74,14 @@ def _build_leader_prompt(
 {discussion_goal}
 
 ## 最近讨论（摘要）
-你将看到最近讨论摘录。若开头另有「用户任务清单」段落，那是工作区 `memory/host_plan.md`（用户可编辑，与自动审计 JSONL 分离）；可对照讨论目标判断进度与 task_done。其余为对话与发言摘录。以上合起来视为唯一上下文。
+若开头另有「用户任务清单」段落，来自工作区 `memory/host_plan.md`（用户可编辑）；可对照讨论目标判断进度与 task_done。其余为对话与发言摘录，合起来视为唯一上下文。
 
-## 流程约束（必须一致，勿使用与此矛盾的其它策略）
-- next_speaker 只能是：在场某一 agent_id，或 \"user\"（交还用户），或 \"end\"（本场景结束）。
-- 需要用户提出新目标、确认、或补充关键信息时 → next_speaker=\"user\"。
-- 判断本场景讨论应彻底结束时 → next_speaker=\"end\"。
-- 需要某位专家执行下一步时 → next_speaker=该 agent_id，并给出可执行的 next_prompt。
+## 本轮约束（与上文契约一致）
+- next_speaker：在场 agent_id | \"user\" | \"end\"。
+- 点专家时须给出可执行的 next_prompt。
 {recruit_rule}{scene_extra}
-**输出（仅 JSON）：** task_done、next_speaker、reason；招募模式可含 suggested_add_agent_ids。
 {recruit_output}
-next_speaker 必须是参与者列表中的 agent_id 之一，或 \"user\" 或 \"end\"。"""
+**本路径要求：仅输出一段 JSON**（可含 task_done、next_speaker、reason、announcement、next_prompt、suggested_add_agent_ids）。"""
 
 
 async def leader_decide(
@@ -117,12 +116,26 @@ async def leader_decide(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_content),
     ]
+    logger.info(
+        "[LLM_TRACE][leader_decide] system_prompt:\n%s\n\n[LLM_TRACE][leader_decide] user_prompt:\n%s",
+        system_prompt,
+        user_content,
+    )
 
     try:
         client = llm.get_client()
         response = await asyncio.wait_for(client.ainvoke(messages), timeout=30.0)
         content = (response.content or "").strip()
-        logger.info(f"领导人调度 LLM 返回: {content[:400]}")
+        logger.info("[LLM_TRACE][leader_decide] model_output:\n%s", content)
+        try:
+            append_llm_trace(
+                tag="leader_decide",
+                system_content=system_prompt,
+                user_content=user_content,
+                model_output=content,
+            )
+        except Exception as e:
+            logger.warning("写入 LLM_TRACE 文件失败(tag=leader_decide): %s", e)
 
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()

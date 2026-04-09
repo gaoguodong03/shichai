@@ -22,7 +22,11 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage  # ty
 from app.api.dha import load_dha_instances, enrich_dha_instances
 from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
-from app.api.settings import load_app_settings, load_api_secret_values
+from app.api.settings import (
+    normalize_host_profile,
+    load_api_secret_values,
+    load_app_settings,
+)
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
@@ -50,6 +54,7 @@ from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.skills.loader import get_skills_loader_for_user
 from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.feature_flags import is_feature_enabled
+from app.core.llm_trace import append_llm_trace
 from app.core.user_context import get_current_user_context
 from app.core.security import user_context_dependency, get_current_user
 from app.core.scene_scheduler import finalize_host_scheduler_decision, RECRUIT_FIXED_MESSAGE
@@ -67,6 +72,33 @@ from app.agent.group_orchestration_fsm import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_dependency)])
+
+
+def _log_llm_roundtrip(tag: str, *, system_content: str, user_content: str, model_output: str, max_chars: int = 6000) -> None:
+    """统一打印 LLM 往返（用于排查主持/调度选人问题）。"""
+    def _clip(s: str) -> str:
+        t = str(s or "")
+        return t if len(t) <= max_chars else (t[:max_chars] + f"\n... [truncated {len(t) - max_chars} chars]")
+
+    logger.info(
+        "[LLM_TRACE][%s] system_prompt:\n%s\n\n[LLM_TRACE][%s] user_prompt:\n%s\n\n[LLM_TRACE][%s] model_output:\n%s",
+        tag,
+        _clip(system_content),
+        tag,
+        _clip(user_content),
+        tag,
+        _clip(model_output),
+    )
+    try:
+        append_llm_trace(
+            tag=tag,
+            system_content=system_content,
+            user_content=user_content,
+            model_output=model_output,
+            max_chars=max_chars,
+        )
+    except Exception as e:
+        logger.warning("写入 LLM_TRACE 文件失败(tag=%s): %s", tag, e)
 
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
@@ -220,23 +252,28 @@ def _resolve_scene_host_profile(
     app_settings: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     """合成「类 DHA」主持人 profile：优先 meta.host_config + 虚拟 id；否则回退到真实 leader DHA。"""
-    host_prompts = app_settings.get("host_prompts") or {}
-    if not isinstance(host_prompts, dict):
-        host_prompts = {}
-    display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
+    hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
+    display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
+    base_host_cfg = normalize_host_config_dict(hp_norm)
     leader = str(meta_item.get("leader_agent_id") or "").strip()
+    agent_ids_meta = [str(x).strip() for x in (meta_item.get("agent_ids") or []) if str(x).strip()]
+    orch = effective_orchestration_profile(meta_item, agent_ids=agent_ids_meta)
+    role_label = "群聊场景主持人" if orch == "scene" else "群聊主持人"
+
+    def _apply_virtual(prof: Dict[str, Any]) -> Dict[str, Any]:
+        prof["agent_id"] = VIRTUAL_SCENE_HOST_ID
+        prof["name"] = display_name
+        prof["role"] = role_label
+        return prof
+
     if "host_config" in meta_item and isinstance(meta_item.get("host_config"), dict):
-        prof = normalize_host_config_dict(meta_item["host_config"])
-        prof["agent_id"] = VIRTUAL_SCENE_HOST_ID
-        prof["name"] = display_name
-        prof["role"] = "群聊场景主持人"
-        return prof
+        merged = dict(base_host_cfg)
+        merged.update(meta_item["host_config"])
+        prof = normalize_host_config_dict(merged)
+        return _apply_virtual(prof)
     if leader == VIRTUAL_SCENE_HOST_ID:
-        prof = normalize_host_config_dict({})
-        prof["agent_id"] = VIRTUAL_SCENE_HOST_ID
-        prof["name"] = display_name
-        prof["role"] = "群聊场景主持人"
-        return prof
+        prof = normalize_host_config_dict(base_host_cfg)
+        return _apply_virtual(prof)
     if leader and leader in dha_map:
         return dict(dha_map[leader])
     return None
@@ -1124,7 +1161,8 @@ async def _expert_llm_pick_skill_id(
         f"【候选 Skill】\n{catalog}\n"
     )
     try:
-        out = await llm.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human)])
+        client = llm.get_client()
+        out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human)])
         raw = out.content if hasattr(out, "content") else str(out)
         if isinstance(raw, list):
             raw = "".join(str(x) for x in raw)
@@ -1189,11 +1227,10 @@ async def _resolve_expert_skill_id_and_content(
             dbg["selected_skill_id"] = picked
             return picked, c, dbg
 
-    fb = _resolve_dha_skill_id_and_content(dha, discussion_goal, messages, ignored_auto_skill_id)
-    merged = dict(fb[2])
-    merged["strategy"] = f"{merged.get('strategy') or 'unknown'}_after_expert_llm_fallback"
-    merged["expert_llm_pick_debug"] = dbg
-    return fb[0], fb[1], merged
+    # 严格模式：多 Skill 只允许 LLM 选择，不再回退关键词路由
+    dbg["strict_llm_required"] = True
+    dbg["blocking_error"] = "expert_skill_pick_llm_failed"
+    return "", "", dbg
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
@@ -1370,6 +1407,40 @@ def _heuristic_recommend_dhas(
     return picked
 
 
+def _extract_candidate_agent_ids_from_text(
+    text: str,
+    all_instances: List[Dict[str, Any]],
+    *,
+    max_n: int = 2,
+) -> List[str]:
+    """从主持人自然语言正文中提取候选专家（支持 agent_id/name/role 子串映射）。"""
+    t = (text or "").strip().lower()
+    if not t:
+        return []
+    out: List[str] = []
+    # 1) 先提取显式 agent_id
+    for aid in re.findall(r"agent-[a-zA-Z0-9\-]+", t, flags=re.I):
+        s = str(aid or "").strip()
+        if s:
+            out.append(s)
+        if len(out) >= max_n:
+            return list(dict.fromkeys(out))[:max_n]
+    # 2) 再按名称/角色映射回 agent_id
+    for d in all_instances or []:
+        did = str(d.get("agent_id") or "").strip()
+        if not did:
+            continue
+        name = str(d.get("name") or "").strip().lower()
+        role = str(d.get("role") or "").strip().lower()
+        if name and name in t:
+            out.append(did)
+        elif role and role in t:
+            out.append(did)
+        if len(out) >= max_n:
+            break
+    return list(dict.fromkeys(out))[:max_n]
+
+
 def _extract_explicit_requested_agent_ids(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
     """从用户文本中提取明确点名的专家（按 agent_id/name 精确包含匹配）。"""
     text = (user_text or "").strip().lower()
@@ -1491,10 +1562,8 @@ async def _host_decide_by_dha(
     orchestration_profile==scene 时不注入可邀请名单与补人策略。
     """
     app_settings = app_settings or load_app_settings()
-    host_prompts = app_settings.get("host_prompts") or {}
-    if not isinstance(host_prompts, dict):
-        host_prompts = {}
-    host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
+    hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
+    host_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
     name = host_dha.get("name") or host_dha.get("agent_id", host_display_name)
     role = host_dha.get("role") or "群聊主持人"
     sl = _request_skills_loader()
@@ -1545,36 +1614,19 @@ async def _host_decide_by_dha(
             continue
         n = (d.get("name") or did) if isinstance(d.get("name") or did, str) else did
         r = d.get("role") or "参与者"
-        skills = d.get("skill_ids") or []
-        skills_txt = ""
-        if isinstance(skills, list) and skills:
-            skills_txt = " skills=" + ",".join([str(x) for x in skills if str(x).strip()][:4])
-        add_lines.append(f"- {n} ({did}): {r}{skills_txt}")
+        add_lines.append(f"- {n} ({did}): {r}")
     available_text = "\n".join(add_lines) if add_lines else "（暂无可邀请专家）"
-    host_master_prompt = str(host_prompts.get("host_master_prompt") or "")
-
     scene_mode = str(orchestration_profile or "").strip().lower() == "scene"
-    if scene_mode:
-        extra_policy = (
-            "【职责边界】你只决定**由哪位专家**发言（next_speaker）、是否交还用户、或结束场景（next_speaker=\"end\"）；"
-            "不要为专家指定 Skill——专家被点名后会根据其配置自行选择 Skill。\n"
-            "【本场策略】参与者名单已固定，不要输出 suggested_add_agent_ids；"
-            "仅从上方参与者中选择 next_speaker，或交还 user/end。\n"
-            "- JSON 中可为下一位专家输出 next_prompt（自包含的执行说明）。\n\n"
-        )
-    else:
-        extra_policy = (
-            "【职责边界】在已有专家在场时，你只决定**由哪位专家**发言（next_speaker）与是否建议邀请新人；"
-            "不要为专家指定 Skill——专家被点名后会根据其配置自行选择 Skill。\n"
-            f"【可邀请专家列表（需要补人时，从此列表选择 suggested_add_agent_ids）】\n{available_text}\n\n"
-            "【建议策略】\n"
-            "- 若建议补人，优先推荐 1~3 位最相关专家；\n"
-            "- 推荐后请先交还给用户确认，不要假设会自动邀请。\n"
-            "- JSON 中可为下一位专家输出 next_prompt（自包含的执行说明）。\n\n"
-        )
+    mode_line = (
+        "【模式】场景协作（名单固定，不建议补人）。\n\n"
+        if scene_mode
+        else "【模式】新建会话（可在必要时建议用户邀请专家）。\n\n"
+    )
+    extra_policy = "" if scene_mode else (f"【可邀请专家列表】\n{available_text}\n\n")
 
     user_content = (
         orphan_block
+        + mode_line
         + f"【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】\n{dha_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
         f"【讨论目标】\n{discussion_goal}\n\n"
         "【主持人决策上下文（可能含用户任务清单 host_plan.md + 对话与发言摘录）】\n"
@@ -1599,7 +1651,7 @@ async def _host_decide_by_dha(
         if group_session_id:
             tools = await build_tools_for_group_chat(host_dha, group_session_id, resolved_skill_id=resolved_skill_id)
         agent = create_skill_execution_agent(
-            llm, tools, skill_content, (host_master_prompt + "\n\n" + (extra_system_prompt or "")).strip()
+            llm, tools, skill_content, extra_system_prompt or ""
         )
         initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
         run_cfg = {"configurable": {"thread_id": f"host-decide:{uuid.uuid4().hex}"}}
@@ -1610,6 +1662,12 @@ async def _host_decide_by_dha(
             if isinstance(m, AIMessage):
                 content_str = str(m.content) if isinstance(m.content, str) else str(m.content or "")
                 break
+        _log_llm_roundtrip(
+            "host_decide",
+            system_content=(extra_system_prompt or "") + "\n\n" + skill_content,
+            user_content=user_content,
+            model_output=content_str,
+        )
         return _parse_host_response(content_str)
     except Exception as e:
         logger.warning("主持人 DHA 调用失败，将回退到默认调度: %s", e)
@@ -1626,17 +1684,22 @@ async def _host_only_respond_and_recommend(
     当前群聊 0 个成员时：主持人回复用户并推荐 1~3 位专家加入（等待用户确认）。
     返回 (主持人回复正文, suggested_add_agent_ids 或 None)。
     """
-    skill_content = _request_skills_loader().get_skill_full_content("group-host")
+    sl = _request_skills_loader()
+    app_settings = load_app_settings()
+    hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
+    host_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
+    host_system_prompt = str(hp_norm.get("system_prompt") or "").strip()
+    host_skill_ids = [str(x).strip() for x in (hp_norm.get("skill_ids") or []) if str(x).strip()]
+    skill_content = ""
+    if host_skill_ids:
+        sid0 = _pick_resolved_host_skill_id(host_skill_ids)
+        skill_content = str(sl.get_skill_full_content(sid0) or "")
+    if not skill_content:
+        skill_content = str(sl.get_skill_full_content("group-host") or "")
     if not skill_content:
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的专家加入。"
-    app_settings = load_app_settings()
-    host_prompts = app_settings.get("host_prompts") or {}
-    if not isinstance(host_prompts, dict):
-        host_prompts = {}
-    host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
-    host_zero_member_policy = str(host_prompts.get("host_zero_member_policy") or "")
     host_intro = f"你是 {host_display_name}，担任本群主持人。"
-    system_content = (host_zero_member_policy + "\n\n" + host_intro + "\n\n" + str(skill_content or "")).strip()
+    system_content = ("\n\n".join([x for x in (host_system_prompt, host_intro, str(skill_content or "")) if str(x).strip()])).strip()
     dha_lines = []
     for d in all_instances:
         did = d.get("agent_id", "")
@@ -1666,9 +1729,15 @@ async def _host_only_respond_and_recommend(
             if isinstance(m, AIMessage):
                 content_str = str(m.content) if isinstance(m.content, str) else str(m.content or "")
                 break
+        _log_llm_roundtrip(
+            "host_zero_recommend",
+            system_content=(extra_system_prompt or "") + "\n\n" + system_content,
+            user_content=user_content,
+            model_output=content_str,
+        )
         if not content_str or not content_str.strip():
             # LLM 没输出：直接兜底推荐
-            fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
+            fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
             return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
         text = content_str.strip()
         announcement = text
@@ -1693,7 +1762,7 @@ async def _host_only_respond_and_recommend(
                         cleaned = [str(x).strip() for x in ids_raw if str(x).strip() in valid_ids]
                         if cleaned:
                             # 保持顺序去重
-                            suggested_add_agent_ids = list(dict.fromkeys(cleaned))[:3]
+                            suggested_add_agent_ids = list(dict.fromkeys(cleaned))[:2]
                     if not suggested_add_agent_ids:
                         sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_agent_id") or "").strip()
                         if sid and sid in valid_ids:
@@ -1701,15 +1770,14 @@ async def _host_only_respond_and_recommend(
                 except Exception:
                     pass
                 break
-        # 若 JSON 未解析出推荐列表，从正文中提取 agent-xxx 作为备用（主持人常在正文中写专家 id）
+        # 若 JSON 未解析出推荐列表，从正文中提取 agent_id/name/role 映射作为备用
         if not suggested_add_agent_ids and valid_ids:
-            agent_id_pattern = re.compile(r"agent-[a-zA-Z0-9\-]+", re.I)
-            found = list(dict.fromkeys(agent_id_pattern.findall(text)))
-            suggested_add_agent_ids = [x for x in found if x in valid_ids][:3]
+            found = _extract_candidate_agent_ids_from_text(text, all_instances, max_n=2)
+            suggested_add_agent_ids = [x for x in found if x in valid_ids][:2]
         return announcement or text, suggested_add_agent_ids
     except Exception as e:
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
-        fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
+        fallback_ids = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
         return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
 
 
@@ -1835,7 +1903,6 @@ def create_session_internal(
         leader_resolved = VIRTUAL_SCENE_HOST_ID
     elif raw_lid:
         if raw_lid == VIRTUAL_SCENE_HOST_ID:
-            meta_host_config = normalize_host_config_dict({})
             leader_resolved = VIRTUAL_SCENE_HOST_ID
         else:
             ln = _normalize_to_preferred_agent_ids([raw_lid], id_to_preferred=id_to_preferred)
@@ -1844,7 +1911,6 @@ def create_session_internal(
                 raise HTTPException(status_code=400, detail=f"主持人 {leader_resolved} 不存在")
     else:
         leader_resolved = VIRTUAL_SCENE_HOST_ID
-        meta_host_config = normalize_host_config_dict({})
     gsid = f"group-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
     meta = _load_group_meta()
@@ -1993,10 +2059,8 @@ async def get_group_session(group_session_id: str):
         if k in relevant_ids
     }
     app_settings_gs = load_app_settings()
-    hp_gs = app_settings_gs.get("host_prompts") or {}
-    if not isinstance(hp_gs, dict):
-        hp_gs = {}
-    host_dn = str(hp_gs.get("host_display_name") or "四九").strip() or "四九"
+    hp_gs = normalize_host_profile(app_settings_gs.get("host_profile") or {})
+    host_dn = str(hp_gs.get("display_name") or "四九").strip() or "四九"
     if VIRTUAL_SCENE_HOST_ID in relevant_ids or str(m.get("leader_agent_id") or "").strip() == VIRTUAL_SCENE_HOST_ID:
         agent_map[VIRTUAL_SCENE_HOST_ID] = {
             "name": host_dn,
@@ -2028,7 +2092,6 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 "title_auto_generated": True,
                 "agent_ids": [],
                 "leader_agent_id": VIRTUAL_SCENE_HOST_ID,
-                "host_config": normalize_host_config_dict({}),
                 "speak_mode": "auto",
                 "orchestration_profile": "recruitment",
                 "created_at": now,
@@ -2070,9 +2133,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             if lid and lid not in valid_ids and lid != VIRTUAL_SCENE_HOST_ID:
                 raise HTTPException(status_code=400, detail=f"主持人 {lid} 不存在")
             meta[group_session_id]["leader_agent_id"] = lid
-            if lid == VIRTUAL_SCENE_HOST_ID and "host_config" not in meta[group_session_id]:
-                meta[group_session_id]["host_config"] = normalize_host_config_dict({})
-            elif lid != VIRTUAL_SCENE_HOST_ID:
+            if lid != VIRTUAL_SCENE_HOST_ID:
                 meta[group_session_id].pop("host_config", None)
     if body.orchestration_profile is not None:
         op = str(body.orchestration_profile).strip().lower()
@@ -2241,10 +2302,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     messages = _load_group_history(group_session_id)
     app_settings = load_app_settings()
-    host_prompts = app_settings.get("host_prompts") or {}
-    if not isinstance(host_prompts, dict):
-        host_prompts = {}
-    host_display_name = str(host_prompts.get("host_display_name") or "四九").strip() or "四九"
+    hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
+    host_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
     pending_owner_agent_id = (m.get("pending_owner_agent_id") or "").strip().lower()
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
     user_message = (request.message or "").strip()
@@ -2443,33 +2502,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 all_instances = [d for d in preferred_instances if d.get("agent_id") and d.get("agent_id") != CHAT_AGENT_ID]
                 picked: List[str] = []
                 valid_ids = {d.get("agent_id") for d in all_instances if d.get("agent_id")}
-                if explicit_requested_agent_ids:
-                    picked = list(dict.fromkeys([x for x in explicit_requested_agent_ids if x in valid_ids]))[:3]
-                else:
-                    if host_takeover_requested:
-                        host_content, suggested_add_agent_ids = await _host_only_respond_and_recommend(
-                            discussion_goal, recent, all_instances, extra_system_prompt
-                        )
-                        suggested_add_agent_ids = suggested_add_agent_ids or []
-                        picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:3]
-                        host_msg = {
-                            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                            "role": "host",
-                            "content": host_content,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "skill_id": _host_bubble_skill_id(),
-                        }
-                        if picked:
-                            host_msg["suggested_add_agent_ids"] = picked
-                            host_msg["suggested_add_expert_ids"] = picked
-                        messages.append(host_msg)
-                        _save_group_history(group_session_id, messages)
-                        meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
-                        _save_group_meta(meta)
-                        yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
-                    else:
-                        auto_picked = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=3)
-                        picked = list(dict.fromkeys([x for x in auto_picked if x in valid_ids]))[:3]
+                # 0 专家场景始终由主持人先回复并给出推荐，避免任何非 LLM 的短路分支
+                host_content, suggested_add_agent_ids = await _host_only_respond_and_recommend(
+                    discussion_goal, recent, all_instances, extra_system_prompt
+                )
+                suggested_add_agent_ids = suggested_add_agent_ids or []
+                picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:2]
+                if not picked:
+                    auto_picked = _heuristic_recommend_dhas(discussion_goal, all_instances, max_n=2)
+                    picked = list(dict.fromkeys([x for x in auto_picked if x in valid_ids]))[:2]
+                host_msg = {
+                    "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                    "role": "host",
+                    "content": host_content,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "skill_id": _host_bubble_skill_id(),
+                }
+                if picked:
+                    host_msg["suggested_add_agent_ids"] = picked
+                    host_msg["suggested_add_expert_ids"] = picked
+                messages.append(host_msg)
+                _save_group_history(group_session_id, messages)
+                meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                _save_group_meta(meta)
+                yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 end_payload = build_end_payload(
                     waiting_for_user=True,
                     phase=OrchestrationPhase.AWAITING_USER,
@@ -2716,6 +2772,49 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     app_settings=app_settings,
                     round_user_text=user_message,
                 )
+                if (
+                    isinstance(skill_route_debug, dict)
+                    and skill_route_debug.get("strict_llm_required")
+                    and (not resolved_skill_id or not skill_content)
+                ):
+                    move_to_interrupt(orch_ctx, InterruptReason.NEED_USER_INPUT)
+                    err_msg = (
+                        "当前专家的技能选择依赖 LLM，但本轮选择失败，已停止自动执行。"
+                        "请重试，或由主持人重新安排下一步。"
+                    )
+                    host_msg = {
+                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                        "role": "host" if not leader_agent_id else "assistant",
+                        "content": err_msg,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "skill_id": _host_bubble_skill_id(),
+                        "meta": {
+                            "error_code": "expert_skill_pick_llm_failed",
+                            "agent_id": next_speaker,
+                            "skill_route_debug": skill_route_debug,
+                        },
+                    }
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
+                    messages.append(host_msg)
+                    _save_group_history(group_session_id, messages)
+                    _save_group_meta(meta)
+                    yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+                    end_data = build_end_payload(
+                        waiting_for_user=True,
+                        suggested_next_speaker="user",
+                        phase=OrchestrationPhase.AWAITING_USER,
+                        interrupt_reason=InterruptReason.NEED_USER_INPUT,
+                        resume_target_agent_id=next_speaker,
+                        required_user_fields=required_user_fields,
+                        turn_id=orch_ctx.turn_id,
+                        token_version=orch_ctx.token_version,
+                        handoff_reason=err_msg,
+                        extra={"error_code": "expert_skill_pick_llm_failed"},
+                    )
+                    _persist_pending_state(end_data)
+                    yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
+                    return
                 tools = await build_tools_for_group_chat(
                     dha, group_session_id, resolved_skill_id=resolved_skill_id
                 )
@@ -2870,6 +2969,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "has_raw_result": bool(accumulated_raw_tool_results),
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
+                try:
+                    append_llm_trace(
+                        tag="expert_turn",
+                        system_content=skill_content,
+                        user_content=user_content,
+                        model_output=full_content,
+                        extra={
+                            "group_session_id": group_session_id,
+                            "agent_id": next_speaker,
+                            "skill_id": skill_id,
+                            "has_tool_call": bool(tool_calls_trace),
+                            "raw_result_count": len(accumulated_raw_tool_results or []),
+                            "tool_attempt_count": len(tool_attempt_debug or []),
+                        },
+                    )
+                except Exception as e:
+                    logger.warning("写入 LLM_TRACE 文件失败(tag=expert_turn): %s", e)
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()

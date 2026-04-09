@@ -1140,15 +1140,16 @@ const archiveItems = computed(() => {
 
 const groupFileCapabilitySummary = computed(() => {
   const detail = groupDetail.value
-  const out = { read: false, edit: false, write: false, delete: false, rename: false, url: false }
+  const out = { read: false, edit: false, write: false, rename: false, mkdir: false, list_dir: false, url: false }
   if (!detail?.agent_map) return out
   for (const agentId of detail.agent_ids || []) {
     const caps = detail.agent_map?.[agentId]?.file_capabilities || {}
     out.read = out.read || !!caps.read
     out.edit = out.edit || !!caps.edit
     out.write = out.write || !!caps.write
-    out.delete = out.delete || !!caps.delete
     out.rename = out.rename || !!caps.rename
+    out.mkdir = out.mkdir || !!caps.mkdir
+    out.list_dir = out.list_dir || !!caps.list_dir
     out.url = out.url || !!detail.agent_map?.[agentId]?.url_capability
   }
   return out
@@ -1160,8 +1161,9 @@ const groupFileCapabilityItems = computed(() => {
     { key: 'read', label: '读取', enabled: !!caps.read },
     { key: 'edit', label: '编辑', enabled: !!caps.edit },
     { key: 'write', label: '写入', enabled: !!caps.write },
-    { key: 'delete', label: '删除', enabled: !!caps.delete },
     { key: 'rename', label: '重命名', enabled: !!caps.rename },
+    { key: 'mkdir', label: '新建目录', enabled: !!caps.mkdir },
+    { key: 'list_dir', label: '递归列目录', enabled: !!caps.list_dir },
     { key: 'url', label: 'URL数据', enabled: !!caps.url },
   ]
 })
@@ -1934,6 +1936,7 @@ type ShortcutPreset = {
 }
 const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 const shortcutPresets = ref<ShortcutPreset[]>([])
+const shortcutPresetsLoaded = ref(false)
 const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
 function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
   if (!Array.isArray(input)) return []
@@ -1977,18 +1980,21 @@ async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
   }
 }
 async function loadShortcutPresets() {
+  shortcutPresetsLoaded.value = false
   const serverPresets = await loadServerShortcutPresets()
   if (serverPresets.length) {
     // 后端有配置时以其为准，避免本地旧缓存把已删除项带回来
     shortcutPresets.value = serverPresets
-    saveShortcutPresets()
+    saveShortcutPresets(false)
+    shortcutPresetsLoaded.value = true
     return
   }
   try {
     const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
     if (!raw) {
       shortcutPresets.value = defaultShortcutPresets()
-      saveShortcutPresets()
+      saveShortcutPresets(false)
+      shortcutPresetsLoaded.value = true
       return
     }
     const parsed = JSON.parse(raw)
@@ -1999,13 +2005,14 @@ async function loadShortcutPresets() {
       shortcutPresets.value = defaultShortcutPresets()
     }
     // 读取时立即回写一次，修复历史脏数据，避免下次重开丢失
-    saveShortcutPresets()
+    saveShortcutPresets(false)
   } catch {
     shortcutPresets.value = defaultShortcutPresets()
-    saveShortcutPresets()
+    saveShortcutPresets(false)
   }
+  shortcutPresetsLoaded.value = true
 }
-function saveShortcutPresets() {
+function saveShortcutPresets(syncRemote = true) {
   const payload = shortcutPresets.value.map((p) => {
     const row: Record<string, unknown> = {
       id: p.id,
@@ -2025,6 +2032,7 @@ function saveShortcutPresets() {
   try {
     localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(payload))
   } catch {}
+  if (!syncRemote) return
   fetch('/api/settings/session-presets', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -2137,7 +2145,10 @@ watch(
 
 watch(
   () => shortcutPresets.value,
-  () => saveShortcutPresets(),
+  () => {
+    if (!shortcutPresetsLoaded.value) return
+    saveShortcutPresets(true)
+  },
   { deep: true },
 )
 
@@ -2403,9 +2414,9 @@ const filteredShortcutPresets = computed(() => {
 
 async function loadHostDisplayName() {
   try {
-    const r = await fetch('/api/settings/host-prompts')
+    const r = await fetch('/api/settings/host-profile')
     const j = await r.json().catch(() => ({}))
-    const next = String((j as { data?: { host_display_name?: string } })?.data?.host_display_name || '').trim()
+    const next = String((j as { data?: { display_name?: string } })?.data?.display_name || '').trim()
     hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
   } catch {
     hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME
@@ -4304,11 +4315,19 @@ defineExpose({ refresh: loadGroupDetail })
 }
 .group-chat-avatar-host {
   background: var(--color-dha-box-0) !important;
-  color: #fff;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
 }
 .group-chat-avatar-host svg {
   width: 0.875rem;
   height: 0.875rem;
+  stroke: currentColor;
+}
+.group-chat-avatar-host:empty::before {
+  content: "四";
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 .group-chat-fill-btn {
   flex-shrink: 0;

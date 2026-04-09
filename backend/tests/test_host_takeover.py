@@ -110,3 +110,17 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
     assert pick(["group-host-webnovel", "group-host"]) == "group-host-webnovel"
     assert pick(["group-host"]) == "group-host"
     assert pick([]) == "group-host"
+
+
+def test_leader_prompt_hides_skill_details_from_host():
+    from app.agent.leader_scheduler import _build_leader_prompt
+
+    prompt = _build_leader_prompt(
+        [{"agent_id": "agent-a", "name": "专家A", "role": "文案"}],
+        "完成文案任务",
+        "最近对话",
+        [{"agent_id": "agent-b", "name": "专家B", "role": "检索", "skill_ids": ["skill-x", "skill-y"]}],
+        allow_recruitment=True,
+    )
+    assert "skills=" not in prompt
+    assert "skill-x" not in prompt

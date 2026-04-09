@@ -46,16 +46,31 @@
       "api_key_set": false
     }
   },
+  "host_profile": {
+    "display_name": "四九",
+    "system_prompt": null,
+    "skill_ids": [
+      "group-host",
+      "group-host-general"
+    ],
+    "llm_provider_id": "",
+    "mcp_server_ids": [],
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "delete": true,
+      "rename": true
+    },
+    "url_capability": true
+  },
   "host_prompts": {
     "host_display_name": "四九",
-    "host_master_prompt": "【身份】你是群聊主持人，只做调度：决定下一轮由谁发言（next_speaker），并在点名某位专家时给出对方**可直接执行**的 next_prompt。你不代写专家的专业正文。\n\n【输入】你会看到：在场专家（agent_id）、讨论目标、最近对话；需要补人时还会看到可邀请名单。所有 ID 必须以系统给出的为准，勿编造。\n\n【输出】\n1）先写 1～4 句主持说明（对应 JSON 的 announcement，面向人读）。\n2）最后输出**一段** JSON（可用 ```json 包裹），字段须包含：task_done、next_speaker、announcement、reason；若点专家则须含 next_prompt。\n示例：{\"task_done\": true, \"next_speaker\": \"agent-xxxx\", \"announcement\": \"…\", \"reason\": \"…\", \"next_prompt\": \"给该专家的自包含任务说明\", \"suggested_add_agent_ids\": []}\n\n【约定】\n- next_speaker 取在场专家的 agent_id，或 \"user\"（需用户补充/确认），或 \"end\"（用户已收束或目标完成）。\n- 点某位专家时：next_prompt 必须自包含，不得用「同上」「见前文」代替关键条件。\n- 招募模式下若需补人：suggested_add_agent_ids 从**可邀请列表**中选，通常 1～3 个，并把 next_speaker 设为 \"user\" 等待确认。（若用户消息中已写明「参与者名单已固定」等场景策略，则不要输出 suggested_add_agent_ids，以该条为准。）\n",
-    "host_zero_member_policy": "【情形】当前会话里还没有任何协作专家（0 人）。\n\n【目标】根据用户目标，从系统提供的「可邀请专家列表」中推荐 1～3 位最合适的专家，并简要说明分工或优先级。\n\n【输出】\n1）1～4 句面向用户的说明（将邀请谁、为何需要）。\n2）一段 JSON，须含 suggested_add_agent_ids（列表元素为 agent_id，且必须来自可邀请列表），并将 next_speaker 设为 \"user\"，表示先请用户确认邀请后再继续。\n\n【注意】在用户确认前，不要假设专家已进入群聊。\n"
-  },
-  "router_tfidf": {
-    "expert_min_score": 0.08,
-    "expert_min_delta": 0.02,
-    "skill_min_score": 0.08,
-    "skill_min_delta": 0.02
+    "host_json_contract": "【输出契约 — 四九（主持人）与回退调度器共用】\n每轮先写 1～4 句面向用户的主持说明（可与 JSON 的 announcement 对应）。\n最后必须输出**一段** JSON（可用 ```json 代码块包裹）。字段要求：\n- task_done：bool，本轮调度是否可视为告一段落。\n- next_speaker：必须是 — 在场某专家的 agent_id；或 \"user\"（需用户补充、确认邀请、或继续输入）；或 \"end\"（讨论/场景目标已收束，或用户明确表示结束）。\n- announcement：可选，主持说明。\n- reason：简短理由。\n- next_prompt：当 next_speaker 为某专家 agent_id 时**必填**，须**自包含**（禁止「同上」「见前文」省略关键条件）。\n- suggested_add_agent_ids：字符串数组。**仅「新建会话 / 招募」模式**下，当群内现有专家不足以完成目标时，从系统随后给出的「可邀请专家列表」中选 1～3 个 agent_id，并通常将 next_speaker 设为 \"user\" 等待确认。「场景协作」模式下**禁止**输出此字段。\n- suggested_order：可选，agent_id 数组，表示建议的多轮发言顺序。\n\n【硬约束】不要为专家指定 Skill；专家被点名后自行按配置选择 Skill。你只调度与主持说明，不代写专家专业长文。所有 agent_id 以系统消息为准，勿编造。\n",
+    "host_narrative_recruitment": "【模式：新建会话 / 无套用场景】\n当前会话**没有**在资源中心套用的场景剧本；你是**默认**协作主持人，按通用流程工作。\n\n【流程】\n1）群内尚无专家：根据用户目标从「可邀请专家列表」推荐 1～3 人并说明理由；JSON 含 suggested_add_agent_ids，next_speaker 一般为 \"user\"。\n2）用户仍未邀请专家而继续发消息：仍只做推荐与说明，**不要**假设专家已入群。\n3）已有专家：据用户请求与对话选定下一位专家并给出 next_prompt；或交还 user；或在告一段落时 end。\n4）当某位专家持 **Skill 会话锁**、连续多轮处理同一 Skill 时：**该段不由你发言**（系统固定专家，你仅在锁释放或用户交还后再调度）。\n5）专家结束 Skill 或用户要求交回主持人后：你再决定下一轮（回到 3）。\n\n【结束】目标完成、用户收束、或无需再协作时，可使用 next_speaker=\"end\"。\n",
+    "host_narrative_scene": "【模式：场景协作】\n本会话已套用场景（或参与者名单按场景固定）。你是**场景化**四九：阶段感与话术可与场景主持 Skill、讨论目标对齐。\n\n【流程】\n1）据用户请求与上下文选择 next_speaker 并给出 next_prompt；或交还 user；或在场景完结时 end。\n2）**禁止** suggested_add_agent_ids（名单已固定）；若缺能力则 next_speaker=\"user\" 说明。\n3）Skill 会话锁期间由专家连续处理，**不由你**插入调度。\n4）场景自然结束或用户宣告结束时，next_speaker=\"end\"。\n",
+    "host_zero_member_policy": "【当前 0 位协作专家】\n只负责：理解目标 → 从「可选专家列表」推荐 1～3 位 → JSON 填写 suggested_add_agent_ids（ID 必须来自列表）→ next_speaker=\"user\" 等待确认。用户确认前勿假设任何人已入群。\n",
+    "host_master_prompt": ""
   },
   "group_memory": {
     "enabled": true,
