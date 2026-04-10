@@ -7,7 +7,7 @@ from urllib import request
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
-from rag_stdin import read_stdin_json_dict
+from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -134,9 +134,27 @@ def main() -> None:
         elif has_text and has_path:
             args = argparse.Namespace(input_text=str(stdin_cfg["input_text"]), input_path=None)
         else:
-            args = parse_args()
+            if has_cli_argv() or is_interactive_cli():
+                args = parse_args()
+            else:
+                print(
+                    "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
+                    '{"input_text": "..."} 或 {"input_path": "chunks.json"}；'
+                    "或使用 run_skill_script 的 cli_args_json 传 --input_text / --input_path。",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
     else:
-        args = parse_args()
+        if has_cli_argv() or is_interactive_cli():
+            args = parse_args()
+        else:
+            print(
+                "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
+                '{"input_text": "..."} 或 {"input_path": "相对工作区的路径"}；'
+                "或使用 cli_args_json，例如 [\"--input_text\",\"文本\"]。",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     config = load_config()
     if not config:

@@ -3,7 +3,9 @@
 # 访问：http://localhost:8000
 #
 # 默认挂载本地 backend/data、backend/config；技能在 data/users/<用户>/skills。
-# 若不想用本地数据，可改回匿名卷：注释掉下面三行 volumes，改用 - app_data:/app/data 与 - app_config:/app/config
+# 与 Dockerfile 一致：容器内路径为 /app/backend/data、/app/backend/config（与 1Panel 命名卷挂到 /app/backend/data 一致）。
+# 远程若用 compose + 命名卷：volumes 写「- st49:/app/backend/data」，并增加：
+# volumes: { st49: { external: true } }  （卷需已在 Docker 中创建，如 1Panel 建的 st49）
 
 services:
   dha:
@@ -18,14 +20,11 @@ services:
       - "8000:8000"
     environment:
       - CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
-      - MCP_CONFIG_PATH=/app/config/mcp_servers.json
-      - APP_SETTINGS_PATH=/app/config/app_settings.json
-      - SESSIONS_DIR=/app/data/sessions
-      - AGENT_OUTPUTS_DIR=/app/data/agent-outputs
+      # MCP_CONFIG_PATH / APP_SETTINGS_PATH / SESSIONS_DIR / AGENT_OUTPUTS_DIR 使用镜像内 ENV（/app/backend/...）
     volumes:
-      # 与本地共用：用户数据（含各用户 skills）、MCP 配置
-      - ./backend/data:/app/data
-      - ./backend/config:/app/config
+      # 与本地 / 远程持久化一致：用户数据与各用户 skills
+      - ./backend/data:/app/backend/data
+      - ./backend/config:/app/backend/config
       # 调试模式：将宿主机 .cursor 挂载到与代码中日志路径一致的位置，便于收集容器内 MCP 日志
       - ./.cursor:/Users/ggd/mycode/DHA/.cursor
     # 从宿主机 backend/.env 注入 QWEN_API_KEY 等（文件需存在，否则聊天会 500）

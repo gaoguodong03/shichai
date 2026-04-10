@@ -49,6 +49,17 @@ def test_file_ref_resolver_blocks_traversal(temp_user_data_root):
     assert "读取失败" in out or "不存在" in out
 
 
+def test_normalize_skill_script_path_strips_scripts_prefix():
+    from app.tools import run_skill_script as rss
+
+    assert rss._normalize_skill_script_path("kb_document_store_cli.py") == "kb_document_store_cli.py"
+    assert rss._normalize_skill_script_path("scripts/kb_document_store_cli.py") == "kb_document_store_cli.py"
+    assert rss._normalize_skill_script_path(r"scripts\kb_document_store_cli.py") == "kb_document_store_cli.py"
+    assert rss._normalize_skill_script_path("./scripts/foo.py") == "foo.py"
+    assert rss._apply_script_path_normalization("scripts/__list__") == "__list__"
+    assert rss._apply_script_path_normalization("__describe__:scripts/bar.py") == "__describe__:bar.py"
+
+
 def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     from app.tools import run_skill_script as rss
 
@@ -71,6 +82,7 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
         workspace_id="sess-probe",
         write_mode="workspace_all",
         input_json="",
+        cli_argv=[],
         script_root=script_root,
         timeout_sec=10,
     )

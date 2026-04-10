@@ -7,7 +7,7 @@ from urllib import request
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
-from rag_stdin import read_stdin_json_dict
+from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -111,7 +111,15 @@ def main() -> None:
     if stdin_cfg and "query" in stdin_cfg and str(stdin_cfg.get("query", "")).strip():
         args = argparse.Namespace(query=str(stdin_cfg["query"]).strip())
     else:
-        args = parse_args()
+        if has_cli_argv() or is_interactive_cli():
+            args = parse_args()
+        else:
+            print(
+                "非交互且无命令行参数时，请在 stdin 传入 JSON："
+                '{"query": "..."}；或使用 cli_args_json：[\"--query\",\"问题\"]。',
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     config = load_config()
     if not config:

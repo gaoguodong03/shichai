@@ -10,7 +10,7 @@ from urllib import request
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
-from rag_stdin import read_stdin_json_dict
+from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
@@ -92,7 +92,14 @@ def main() -> int:
             output_path=str(stdin_cfg["output_path"]),
         )
     else:
-        args = build_arg_parser().parse_args()
+        if has_cli_argv() or is_interactive_cli():
+            args = build_arg_parser().parse_args()
+        else:
+            logger.error(
+                "非交互且无命令行参数时，请在 stdin 传入 JSON 或使用 cli_args_json 传 "
+                "--input_path / --output_path（路径相对工作区）。"
+            )
+            return 2
 
     input_path = Path(args.input_path).expanduser().resolve()
     output_path = Path(args.output_path).expanduser().resolve()

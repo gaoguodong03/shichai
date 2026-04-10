@@ -17,6 +17,9 @@ from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
 
 _ALLOWED_SCRIPT_SUFFIX = {".py", ".sh", ".bash", ".ps1", ".cmd", ".bat"}
+# 命令行参数上限（防滥用）；单段长度上限（兼顾长文本与 --input_text）
+_CLI_ARGV_MAX_ITEMS = 64
+_CLI_ARGV_MAX_STRLEN = 32_768
 _SCRIPT_GATEWAY = UnifiedToolGateway()
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -96,6 +99,34 @@ def _parse_input_json(input_json: str) -> tuple[Any, str | None]:
         return None, f"input_json 不是合法 JSON: {e}"
 
 
+def _parse_cli_args_json(cli_args_json: str) -> tuple[list[str] | None, str | None]:
+    """
+    解析追加到脚本后的 argv（JSON 字符串数组），由 subprocess 列表传入，不经 shell。
+    空字符串表示无额外参数。
+    """
+    raw = (cli_args_json or "").strip()
+    if not raw:
+        return [], None
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        return None, f"cli_args_json 不是合法 JSON: {e}"
+    if not isinstance(data, list):
+        return None, "cli_args_json 必须是 JSON 数组（每项为字符串，对应 argv 片段）"
+    if len(data) > _CLI_ARGV_MAX_ITEMS:
+        return None, f"cli_args_json 数组长度不能超过 {_CLI_ARGV_MAX_ITEMS}"
+    out: list[str] = []
+    for i, item in enumerate(data):
+        if not isinstance(item, str):
+            return None, f"cli_args_json[{i}] 必须是字符串"
+        if "\x00" in item:
+            return None, f"cli_args_json[{i}] 含非法字符"
+        if len(item) > _CLI_ARGV_MAX_STRLEN:
+            return None, f"cli_args_json[{i}] 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
+        out.append(item)
+    return out, None
+
+
 def _validate_against_manifest(script_path: str, script_meta: dict[str, Any], parsed_input: Any) -> str | None:
     """按 manifest.input_schema 做最小校验（仅 required）。"""
     schema = script_meta.get("input_schema")
@@ -117,25 +148,52 @@ def _json_result(**kwargs: Any) -> str:
     return json.dumps(kwargs, ensure_ascii=False)
 
 
-def _build_script_command(full: Path) -> list[str]:
-    """按脚本后缀构造执行命令，优先兼容当前 Python/Windows 环境。"""
+def _normalize_skill_script_path(script_path: str) -> str:
+    """
+    script_path 约定为相对 skill 的 scripts/ 目录。
+    SKILL.md 常写「scripts/foo.py」，模型照抄后会拼成 scripts/scripts/foo.py；
+    另如 scripts/__list__ 会误传。此处剥掉多余的 scripts/ 前缀（大小写不敏感）。
+    """
+    p = (script_path or "").strip().replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:].lstrip("/")
+    p = p.lstrip("/")
+    low = p.lower()
+    if low == "scripts":
+        return ""
+    if low.startswith("scripts/"):
+        p = p[8:].lstrip("/")
+    return p
+
+
+def _apply_script_path_normalization(script_path: str) -> str:
+    """对 __describe__:<path> 只规范化冒号后的路径。"""
+    if script_path.startswith("__describe__:"):
+        _, sep, tail = script_path.partition(":")
+        return "__describe__:" + _normalize_skill_script_path(tail)
+    return _normalize_skill_script_path(script_path)
+
+
+def _build_script_command(full: Path, extra_argv: list[str] | None = None) -> list[str]:
+    """按脚本后缀构造执行命令，优先兼容当前 Python/Windows 环境。extra_argv 追加在脚本路径之后。"""
+    argv = list(extra_argv or [])
     suffix = full.suffix.lower()
     if suffix == ".py":
         # 使用当前解释器，保证 conda/venv 环境一致
-        return [sys.executable or "python", str(full)]
+        return [sys.executable or "python", str(full), *argv]
     if suffix in (".sh", ".bash"):
         bash = shutil.which("bash")
         if not bash:
             raise RuntimeError("当前环境未找到 bash，无法执行 .sh/.bash 脚本。")
-        return [bash, str(full)]
+        return [bash, str(full), *argv]
     if suffix == ".ps1":
         pwsh = shutil.which("pwsh") or shutil.which("powershell")
         if not pwsh:
             raise RuntimeError("当前环境未找到 PowerShell，无法执行 .ps1 脚本。")
-        return [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(full)]
+        return [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(full), *argv]
     if suffix in (".cmd", ".bat"):
         comspec = os.environ.get("ComSpec") or "cmd.exe"
-        return [comspec, "/c", str(full)]
+        return [comspec, "/c", str(full), *argv]
     raise RuntimeError(f"不支持的脚本后缀: {suffix}")
 
 
@@ -147,13 +205,14 @@ def _execute_script_subprocess(
     workspace_id: str,
     write_mode: str,
     input_json: str,
+    cli_argv: list[str],
     script_root: Path,
     timeout_sec: int,
 ) -> dict[str, Any]:
     workspace_root = _get_workspace_root(workspace_id)
     workspace_root.mkdir(parents=True, exist_ok=True)
     try:
-        cmd = _build_script_command(script_full_path)
+        cmd = _build_script_command(script_full_path, cli_argv)
     except RuntimeError as e:
         return {"ok": False, "code": "runtime_missing", "message": str(e)}
     try:
@@ -233,8 +292,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         script_root.mkdir(parents=True, exist_ok=True)
 
     @tool
-    async def run_skill_script(script_path: str, input_json: str = "") -> str:
-        """执行当前技能 scripts 目录下的脚本。script_path 为相对 scripts 的路径（如 optimize-prompt.py）；input_json 为可选 JSON 字符串，会作为 stdin 传入脚本。支持 .py/.sh/.ps1/.cmd/.bat。"""
+    async def run_skill_script(script_path: str, input_json: str = "", cli_args_json: str = "") -> str:
+        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。input_json 可选（stdin）；cli_args_json 可选（argv 数组 JSON）。支持 .py/.sh/.ps1/.cmd/.bat。"""
         if write_mode != "workspace_all":
             return _json_result(
                 ok=False,
@@ -263,12 +322,19 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     if "input_json" in maybe_obj and not input_json:
                         ij = maybe_obj["input_json"]
                         input_json = ij if isinstance(ij, str) else json.dumps(ij, ensure_ascii=False)
+                    if "cli_args_json" in maybe_obj and not (cli_args_json or "").strip():
+                        caj = maybe_obj["cli_args_json"]
+                        cli_args_json = (
+                            caj if isinstance(caj, str) else json.dumps(caj, ensure_ascii=False)
+                        )
                 else:
                     script_path = raw_script_param
             else:
                 script_path = raw_script_param
         except Exception:
             script_path = raw_script_param
+
+        script_path = _apply_script_path_normalization(script_path)
 
         if script_path in ("__list__", ":list", "list"):
             return _json_result(
@@ -301,7 +367,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 code="invalid_script_path",
                 message="script_path 必须为相对路径且不包含 ..。",
             )
-        script_path = script_path.strip().lstrip("/")
+        script_path = _normalize_skill_script_path(script_path)
         full = (script_root / script_path).resolve()
         if not str(full).startswith(str(script_root)) or not full.is_file():
             hint = ""
@@ -330,6 +396,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         parsed_input, parse_error = _parse_input_json(input_json)
         if parse_error:
             return _json_result(ok=False, code="invalid_input_json", message=parse_error)
+        cli_argv, cli_err = _parse_cli_args_json(cli_args_json)
+        if cli_err:
+            return _json_result(ok=False, code="invalid_cli_args_json", message=cli_err)
         script_meta = _script_meta_for(manifest, script_path)
         schema_error = _validate_against_manifest(script_path, script_meta, parsed_input)
         if schema_error:
@@ -345,6 +414,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 workspace_id=workspace_id,
                 write_mode=write_mode,
                 input_json=input_json,
+                cli_argv=cli_argv or [],
                 script_root=script_root,
                 timeout_sec=timeout_sec,
             )
@@ -370,7 +440,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             gw = await _SCRIPT_GATEWAY.execute(
                 tool_name=f"run_skill_script_{skill_id}",
                 tool_kind="script",
-                payload={"script_path": script_path},
+                payload={"script_path": script_path, "cli_argv": cli_argv or []},
                 context=ctx,
                 runner=_runner,
             )
@@ -389,7 +459,13 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
     run_skill_script.name = "run_skill_script"
     run_skill_script.description = (
         "执行当前技能 scripts 目录下的脚本（如 optimize-prompt.py）。"
-        "参数：script_path（相对 scripts 的文件名），input_json（可选，JSON 字符串作为 stdin）。"
+        "script_path 填相对该 scripts 目录的路径（如 kb_document_store_cli.py）；"
+        "若 SKILL.md 写 scripts/foo.py 而误带上 scripts/ 前缀，会自动剥掉。"
+        "传参两种方式等价支持："
+        "（1）input_json：整段作为进程 stdin，适合读 JSON 的脚本；"
+        "（2）cli_args_json：JSON 数组字符串，每项为一段 argv，与在终端执行 python script.py --foo bar 一致，路径相对工作区根，"
+        '例如 ["--input_text","你好"] 或 ["--query","问题"]。'
+        "可只用其中一种，或按脚本需要同时使用。"
         "支持命令：__list__（列出脚本）、__manifest__（查看 manifest）、__describe__:<script>。"
         "技能说明或 scripts 中若要求「运行某脚本」时使用本工具。"
     )
