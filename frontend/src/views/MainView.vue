@@ -190,6 +190,25 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入 JSON 或场景包（ZIP）"
+                  @click="pickScenarioImportFile"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
                   title="搜索场景"
                   @click="toggleSearch('scenario')"
                 >
@@ -214,6 +233,13 @@
                 type="text"
                 placeholder="搜索场景（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="scenarioImportFileInputRef"
+                type="file"
+                accept=".json,.zip,application/json,application/zip"
+                class="hidden"
+                @change="onScenarioImportFile"
               />
             </div>
             <div v-if="scenarioLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -261,6 +287,25 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入 JSON 或专家包（ZIP）"
+                  @click="pickDhaImportFile"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
                   title="搜索专家"
                   @click="toggleSearch('dha')"
                 >
@@ -280,6 +325,13 @@
                 </button>
               </div>
             </div>
+            <input
+              ref="dhaImportFileInputRef"
+              type="file"
+              accept=".json,.zip,application/json,application/zip"
+              class="hidden"
+              @change="onDhaImportFile"
+            />
             <div v-if="showDhaSearch" class="px-3 mb-2">
               <input
                 v-model="dhaSearch"
@@ -734,7 +786,7 @@
                     </div>
                   </div>
                 </div>
-                <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
+                <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0 flex-wrap">
                   <button
                     type="button"
                     class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
@@ -742,6 +794,24 @@
                     @click="saveScenarioPreset"
                   >
                     {{ scenarioSaving ? '保存中...' : '保存' }}
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
+                    :disabled="scenarioSaving || isCreatingScenario"
+                    title="导出为 JSON，便于分享或备份"
+                    @click="exportScenarioPreset"
+                  >
+                    导出 JSON
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
+                    :disabled="scenarioSaving || isCreatingScenario"
+                    title="导出场景包 ZIP（含专家、技能、MCP 与场景），一键分享"
+                    @click="exportScenarioBundle"
+                  >
+                    导出场景包
                   </button>
                   <button
                     type="button"
@@ -826,6 +896,262 @@
         </div>
       </template>
     </main>
+
+    <!-- 场景导入：依赖校验与确认 -->
+    <div
+      v-if="scenarioImportModalOpen"
+      class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="scenario-import-title"
+      @click.self="closeScenarioImportModal"
+    >
+      <div
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar"
+        @click.stop
+      >
+        <h3 id="scenario-import-title" class="text-lg font-semibold mb-2">导入场景</h3>
+        <p class="text-sm text-muted mb-3">
+          仅导入 JSON 时，下列为与当前账号的对比结果。若缺少专家/技能/MCP，需在<strong>服务器</strong>上编辑该用户目录下的配置文件（如
+          <code class="text-xs bg-page px-1 rounded align-middle">data/users/&lt;账号&gt;/config/dha_instances.json</code>、
+          <code class="text-xs bg-page px-1 rounded align-middle">skills/</code>、
+          <code class="text-xs bg-page px-1 rounded align-middle">mcp_servers.json</code>）；<strong>前端无法修改专家的 agent_id</strong>。
+        </p>
+        <template v-if="scenarioImportMode === 'bundle' && scenarioBundlePreview?.bundle_preview">
+          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+            <div class="font-medium text-primary">{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
+            <div class="text-xs text-muted font-mono">{{ scenarioBundlePreview.bundle_preview.preset_id }}</div>
+            <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length" class="pt-2">
+              <div class="text-xs font-medium text-muted mb-1">包内专家</div>
+              <ul class="list-disc pl-4 text-muted space-y-0.5">
+                <li v-for="ex in scenarioBundlePreview.bundle_preview.experts" :key="ex.agent_id">
+                  <span class="font-mono text-primary">{{ ex.agent_id }}</span> {{ ex.name }}
+                </li>
+              </ul>
+            </div>
+            <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length" class="pt-2">
+              <div class="text-xs font-medium text-muted mb-1">包内技能目录</div>
+              <p class="font-mono text-xs text-primary">{{ (scenarioBundlePreview.bundle_preview.skills || []).join(', ') }}</p>
+            </div>
+            <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
+              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
+              <ul class="list-disc pl-4 text-muted space-y-0.5">
+                <li v-for="m in scenarioBundlePreview.bundle_preview.mcps" :key="m.id">
+                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
+                </li>
+              </ul>
+            </div>
+            <p v-if="(scenarioBundlePreview.bundle_preview.would_overwrite_skills || []).length" class="text-xs text-amber-700 dark:text-amber-400 pt-2">
+              将覆盖已有技能目录：{{ (scenarioBundlePreview.bundle_preview.would_overwrite_skills || []).join(', ') }}
+            </p>
+            <p v-if="(scenarioBundlePreview.bundle_preview.would_skip_skills || []).length" class="text-xs text-muted pt-1">
+              因未勾选覆盖，将跳过已有技能：{{ (scenarioBundlePreview.bundle_preview.would_skip_skills || []).join(', ') }}
+            </p>
+          </div>
+          <div class="space-y-2 mb-4 text-sm">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input v-model="scenarioBundleOverwriteExperts" type="checkbox" class="rounded border-input-border" />
+              同名专家覆盖本地配置
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input v-model="scenarioBundleOverwriteSkills" type="checkbox" class="rounded border-input-border" />
+              同名技能目录覆盖本地
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input v-model="scenarioBundleMcpSkipExisting" type="checkbox" class="rounded border-input-border" />
+              已存在的 MCP id 不覆盖（仅追加缺失的）
+            </label>
+          </div>
+        </template>
+        <template v-else-if="scenarioImportMode === 'json'">
+          <div v-if="!scenarioImportPreview.length" class="text-sm text-muted mb-4">无校验结果</div>
+          <template v-else>
+            <div
+              v-for="(row, idx) in scenarioImportPreview"
+              :key="idx"
+              class="mb-4 border-b border-border-light pb-4 last:border-0"
+            >
+            <div v-if="row.error" class="text-sm text-danger">
+              {{ row.message || row.error }}（id: {{ row.preset_id || '—' }}）
+            </div>
+            <template v-else>
+              <div class="font-medium text-sm">{{ row.name || row.preset_id }}</div>
+              <div class="text-xs text-muted mb-2">{{ row.preset_id }}</div>
+              <ul v-if="row.validation && !row.validation.valid" class="text-sm space-y-1 list-disc pl-4 text-muted">
+                <li v-for="aid in row.validation.missing_agent_ids || []" :key="'a-' + aid">缺少专家：<span class="text-primary font-mono">{{ aid }}</span></li>
+                <li v-for="(sk, i) in row.validation.missing_skills || []" :key="'s-' + i">
+                  缺少技能：<span class="font-mono text-primary">{{ sk.skill_id }}</span>
+                  <span v-if="sk.context === 'host'">（场景主持人）</span>
+                  <span v-else>（专家 {{ sk.agent_id }}）</span>
+                </li>
+                <li v-for="(m, i) in row.validation.missing_mcp_servers || []" :key="'m-' + i">
+                  缺少 MCP：<span class="font-mono text-primary">{{ m.mcp_server_id }}</span>
+                  <span v-if="m.context === 'host'">（场景主持人）</span>
+                  <span v-else>（专家 {{ m.agent_id }}）</span>
+                </li>
+              </ul>
+              <p v-else-if="row.validation?.valid" class="text-sm text-muted">未检测到缺失的专家 / 技能 / MCP。</p>
+              <ul v-if="row.validation?.disabled_mcp_servers?.length" class="text-sm space-y-1 list-disc pl-4 text-amber-700 dark:text-amber-400 mt-2">
+                <li v-for="(m, i) in row.validation.disabled_mcp_servers" :key="'d-' + i">
+                  MCP 已配置但未启用：<span class="font-mono">{{ m.mcp_server_id }}</span>
+                  <span v-if="m.context === 'host'">（主持人）</span>
+                  <span v-else>（专家 {{ m.agent_id }}）</span>
+                </li>
+              </ul>
+            </template>
+            </div>
+          </template>
+        </template>
+        <div class="space-y-2 mb-4">
+          <div class="text-xs font-medium text-muted">若与已有场景 id 冲突</div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input v-model="scenarioImportIdConflict" type="radio" value="new_id" class="rounded border-input-border" />
+            自动生成新 id（推荐）
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input v-model="scenarioImportIdConflict" type="radio" value="overwrite" class="rounded border-input-border" />
+            覆盖同名场景
+          </label>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover"
+            @click="closeScenarioImportModal"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+            :disabled="scenarioImportCommitting || !canConfirmScenarioImport"
+            @click="commitScenarioImport"
+          >
+            {{ scenarioImportCommitting ? '导入中…' : '确认导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 专家导入 -->
+    <div
+      v-if="dhaImportModalOpen"
+      class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      @click.self="closeDhaImportModal"
+    >
+      <div
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar"
+        @click.stop
+      >
+        <h3 class="text-lg font-semibold mb-2">导入专家</h3>
+        <p class="text-sm text-muted mb-3">
+          仅导入 JSON 时下列为依赖校验。缺少技能或 MCP 时需在<strong>服务器</strong>上编辑该用户的
+          <code class="text-xs bg-page px-1 rounded align-middle">skills/</code> 与
+          <code class="text-xs bg-page px-1 rounded align-middle">config/mcp_servers.json</code>。
+          <strong>前端无法修改 agent_id</strong>，需改 id 请编辑 <code class="text-xs bg-page px-1 rounded align-middle">dha_instances.json</code>。
+        </p>
+        <template v-if="dhaImportMode === 'bundle' && dhaBundlePreview?.bundle_preview">
+          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+            <div class="font-medium text-primary">{{ dhaBundlePreview.bundle_preview.name }}</div>
+            <div class="text-xs text-muted font-mono">{{ dhaBundlePreview.bundle_preview.agent_id }}</div>
+            <div v-if="(dhaBundlePreview.bundle_preview.skills || []).length" class="pt-2">
+              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
+              <p class="font-mono text-xs text-primary">{{ (dhaBundlePreview.bundle_preview.skills || []).join(', ') }}</p>
+            </div>
+            <div v-if="(dhaBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
+              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
+              <ul class="list-disc pl-4 text-muted space-y-0.5">
+                <li v-for="m in dhaBundlePreview.bundle_preview.mcps" :key="m.id">
+                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
+                </li>
+              </ul>
+            </div>
+            <p v-if="(dhaBundlePreview.bundle_preview.would_overwrite_skills || []).length" class="text-xs text-amber-700 dark:text-amber-400 pt-2">
+              将覆盖已有技能目录：{{ (dhaBundlePreview.bundle_preview.would_overwrite_skills || []).join(', ') }}
+            </p>
+            <p v-if="(dhaBundlePreview.bundle_preview.would_skip_skills || []).length" class="text-xs text-muted pt-1">
+              将跳过已有技能：{{ (dhaBundlePreview.bundle_preview.would_skip_skills || []).join(', ') }}
+            </p>
+            <p class="text-xs text-muted pt-2">确认导入后会把包内技能写入本账号目录，再合并专家；若仍有缺失会在成功提示后查看服务端日志或自行校验。</p>
+          </div>
+          <div class="space-y-2 mb-4 text-sm">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input v-model="dhaBundleOverwriteSkills" type="checkbox" class="rounded border-input-border" />
+              同名技能目录覆盖本地
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input v-model="dhaBundleMcpSkipExisting" type="checkbox" class="rounded border-input-border" />
+              已存在的 MCP id 不覆盖（仅追加缺失的）
+            </label>
+          </div>
+        </template>
+        <template v-else-if="dhaImportMode === 'json'">
+          <div v-if="!dhaImportPreview.length" class="text-sm text-muted mb-4">无校验结果</div>
+          <template v-else>
+            <div
+              v-for="(row, idx) in dhaImportPreview"
+              :key="idx"
+              class="mb-4 border-b border-border-light pb-4 last:border-0"
+            >
+              <div v-if="row.error" class="text-sm text-danger">
+                {{ row.message || row.error }}（{{ row.agent_id || '—' }}）
+              </div>
+              <template v-else>
+                <div class="font-medium text-sm">{{ row.name || row.agent_id }}</div>
+                <div class="text-xs text-muted mb-2 font-mono">{{ row.agent_id }}</div>
+                <ul v-if="row.validation && !row.validation.valid" class="text-sm space-y-1 list-disc pl-4 text-muted">
+                  <li v-for="(sk, i) in row.validation.missing_skills || []" :key="'s-' + i">
+                    缺少技能：<span class="font-mono text-primary">{{ sk.skill_id }}</span>
+                  </li>
+                  <li v-for="(m, i) in row.validation.missing_mcp_servers || []" :key="'m-' + i">
+                    缺少 MCP：<span class="font-mono text-primary">{{ m.mcp_server_id }}</span>
+                  </li>
+                </ul>
+                <p v-else-if="row.validation?.valid" class="text-sm text-muted">未检测到缺失的技能 / MCP。</p>
+                <ul
+                  v-if="row.validation?.disabled_mcp_servers?.length"
+                  class="text-sm space-y-1 list-disc pl-4 text-amber-700 dark:text-amber-400 mt-2"
+                >
+                  <li v-for="(m, i) in row.validation.disabled_mcp_servers" :key="'d-' + i">
+                    MCP 已配置但未启用：<span class="font-mono">{{ m.mcp_server_id }}</span>
+                  </li>
+                </ul>
+              </template>
+            </div>
+          </template>
+        </template>
+        <div class="space-y-2 mb-4">
+          <div class="text-xs font-medium text-muted">若与已有专家 agent_id 冲突</div>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input v-model="dhaImportIdConflict" type="radio" value="new_id" class="rounded border-input-border" />
+            自动生成新 agent_id（推荐）
+          </label>
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input v-model="dhaImportIdConflict" type="radio" value="overwrite" class="rounded border-input-border" />
+            覆盖同名专家
+          </label>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover"
+            @click="closeDhaImportModal"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+            :disabled="dhaImportCommitting || !canConfirmDhaImport"
+            @click="commitDhaImport"
+          >
+            {{ dhaImportCommitting ? '导入中…' : '确认导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -936,6 +1262,104 @@ const scenarioDraft = ref<ScenarioDraft>({
   agent_ids: [],
   description: '',
 })
+
+const scenarioImportFileInputRef = ref<HTMLInputElement | null>(null)
+const scenarioImportModalOpen = ref(false)
+const scenarioImportPreview = ref<
+  Array<{
+    preset_id?: string
+    name?: string
+    error?: string
+    message?: string
+    validation?: {
+      valid: boolean
+      missing_agent_ids?: string[]
+      missing_skills?: Array<{ context: string; skill_id: string; agent_id?: string }>
+      missing_mcp_servers?: Array<{ context: string; mcp_server_id: string; agent_id?: string }>
+      disabled_mcp_servers?: Array<{ context: string; mcp_server_id: string; agent_id?: string }>
+    }
+  }>
+>([])
+const scenarioImportPayloadForCommit = ref<Record<string, unknown> | null>(null)
+const scenarioImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
+const scenarioImportCommitting = ref(false)
+const scenarioImportMode = ref<'json' | 'bundle' | null>(null)
+const pendingBundleFile = ref<File | null>(null)
+const scenarioBundlePreview = ref<{
+  bundle_preview?: {
+    preset_id: string
+    preset_name: string
+    experts: { agent_id: string; name: string }[]
+    skills: string[]
+    mcps: { id: string; name: string }[]
+    would_overwrite_skills?: string[]
+    would_skip_skills?: string[]
+  }
+} | null>(null)
+const scenarioBundleOverwriteExperts = ref(true)
+const scenarioBundleOverwriteSkills = ref(true)
+const scenarioBundleMcpSkipExisting = ref(true)
+
+const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
+const dhaImportModalOpen = ref(false)
+const dhaImportMode = ref<'json' | 'bundle' | null>(null)
+const pendingDhaBundleFile = ref<File | null>(null)
+const dhaImportPreview = ref<
+  Array<{
+    agent_id?: string
+    name?: string
+    error?: string
+    message?: string
+    validation?: {
+      valid: boolean
+      missing_skills?: Array<{ skill_id: string }>
+      missing_mcp_servers?: Array<{ mcp_server_id: string }>
+      disabled_mcp_servers?: Array<{ mcp_server_id: string }>
+    }
+  }>
+>([])
+const dhaImportPayloadForCommit = ref<Record<string, unknown> | null>(null)
+const dhaImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
+const dhaImportCommitting = ref(false)
+const dhaBundlePreview = ref<{
+  bundle_preview?: {
+    agent_id: string
+    name?: string
+    skills: string[]
+    mcps: { id: string; name: string }[]
+    would_overwrite_skills?: string[]
+    would_skip_skills?: string[]
+  }
+} | null>(null)
+const dhaBundleOverwriteSkills = ref(true)
+const dhaBundleMcpSkipExisting = ref(true)
+
+const canConfirmDhaImport = computed(() => {
+  if (dhaImportMode.value === 'bundle') {
+    return !!(dhaBundlePreview.value?.bundle_preview && pendingDhaBundleFile.value)
+  }
+  if (dhaImportMode.value === 'json') {
+    return (
+      dhaImportPreview.value.length > 0 &&
+      !dhaImportPreview.value.some((r) => !!r.error)
+    )
+  }
+  return false
+})
+
+const canConfirmScenarioImport = computed(() => {
+  if (scenarioImportMode.value === 'bundle') {
+    return !!(scenarioBundlePreview.value?.bundle_preview && pendingBundleFile.value)
+  }
+  if (scenarioImportMode.value === 'json') {
+    return (
+      scenarioImportPreview.value.length > 0 &&
+      !scenarioImportPreview.value.some((r) => !!r.error)
+    )
+  }
+  return false
+})
+
 const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
 const filteredScenarioPresets = computed(() => {
   const q = (scenarioSearch.value || '').trim().toLowerCase()
@@ -1473,6 +1897,359 @@ async function fetchScenarioPresets() {
     syncScenarioDraftFromSelected()
   } finally {
     scenarioLoading.value = false
+  }
+}
+
+function pickScenarioImportFile() {
+  scenarioImportFileInputRef.value?.click()
+}
+
+function closeScenarioImportModal() {
+  scenarioImportModalOpen.value = false
+  scenarioImportPayloadForCommit.value = null
+  scenarioImportPreview.value = []
+  pendingBundleFile.value = null
+  scenarioBundlePreview.value = null
+  scenarioImportMode.value = null
+}
+
+async function onScenarioImportFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const lower = file.name.toLowerCase()
+  if (lower.endsWith('.zip')) {
+    scenarioImportMode.value = 'bundle'
+    pendingBundleFile.value = file
+    scenarioBundlePreview.value = null
+    scenarioImportPreview.value = []
+    scenarioImportPayloadForCommit.value = null
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('dry_run', 'true')
+      fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
+      fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', scenarioBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+      const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: typeof scenarioBundlePreview.value
+      }
+      if (j?.status !== 'ok') {
+        throw new Error(j.detail || '场景包预览失败')
+      }
+      scenarioBundlePreview.value = j.data || null
+      scenarioImportIdConflict.value = 'new_id'
+      scenarioImportModalOpen.value = true
+    } catch (e) {
+      window.alert((e as Error).message || '无法读取场景包')
+      pendingBundleFile.value = null
+      scenarioImportMode.value = null
+    }
+    return
+  }
+
+  scenarioImportMode.value = 'json'
+  pendingBundleFile.value = null
+  scenarioBundlePreview.value = null
+  try {
+    const text = await file.text()
+    const parsed = JSON.parse(text) as Record<string, unknown>
+    scenarioImportPayloadForCommit.value = parsed
+    const r = await fetch('/api/settings/session-presets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...parsed, dry_run: true }),
+    })
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      detail?: string
+      data?: { results?: typeof scenarioImportPreview.value }
+    }
+    if (j?.status !== 'ok') {
+      throw new Error(j.detail || '校验失败')
+    }
+    scenarioImportPreview.value = j.data?.results || []
+    scenarioImportIdConflict.value = 'new_id'
+    scenarioImportModalOpen.value = true
+  } catch (e) {
+    window.alert((e as Error).message || '无法读取或解析 JSON')
+    scenarioImportPayloadForCommit.value = null
+    scenarioImportMode.value = null
+  }
+}
+
+async function commitScenarioImport() {
+  if (scenarioImportMode.value === 'bundle' && pendingBundleFile.value) {
+    scenarioImportCommitting.value = true
+    try {
+      const fd = new FormData()
+      fd.append('file', pendingBundleFile.value)
+      fd.append('dry_run', 'false')
+      fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
+      fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', scenarioBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+      const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: {
+          summary?: {
+            preset_imported_ids?: string[]
+            skills_imported?: string[]
+            skills_skipped?: string[]
+            mcp_added?: number
+          }
+        }
+      }
+      if (j?.status !== 'ok') {
+        throw new Error(j.detail || '导入失败')
+      }
+      const s = j.data?.summary
+      const msg = s
+        ? `场景 id：${(s.preset_imported_ids || []).join(', ') || '—'}\n技能写入：${(s.skills_imported || []).length} 个，跳过：${(s.skills_skipped || []).length} 个\n新增 MCP 配置：${s.mcp_added ?? 0} 条`
+        : '导入成功'
+      closeScenarioImportModal()
+      await fetchScenarioPresets()
+      await fetchDHA()
+      await fetchSkills()
+      await fetchMCP()
+      window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
+      window.alert(msg)
+    } catch (e) {
+      window.alert((e as Error).message || '导入失败')
+    } finally {
+      scenarioImportCommitting.value = false
+    }
+    return
+  }
+
+  const payload = scenarioImportPayloadForCommit.value
+  if (!payload) return
+  scenarioImportCommitting.value = true
+  try {
+    const r = await fetch('/api/settings/session-presets/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        dry_run: false,
+        id_conflict: scenarioImportIdConflict.value,
+      }),
+    })
+    const j = (await r.json().catch(() => ({}))) as { status?: string; detail?: string }
+    if (j?.status !== 'ok') {
+      throw new Error(j.detail || '导入失败')
+    }
+    closeScenarioImportModal()
+    await fetchScenarioPresets()
+    window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
+    window.alert('导入成功')
+  } catch (e) {
+    window.alert((e as Error).message || '导入失败')
+  } finally {
+    scenarioImportCommitting.value = false
+  }
+}
+
+async function exportScenarioPreset() {
+  const cur = selectedScenarioPreset.value
+  if (!cur?.id || isCreatingScenario.value) return
+  try {
+    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(cur.id)}/export`)
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { detail?: string }
+      throw new Error(j.detail || '导出失败')
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `scenario-${cur.id.replace(/[/\\]/g, '_')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    window.alert((e as Error).message || '导出失败')
+  }
+}
+
+async function exportScenarioBundle() {
+  const cur = selectedScenarioPreset.value
+  if (!cur?.id || isCreatingScenario.value) return
+  try {
+    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(cur.id)}/export-bundle`)
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { detail?: string }
+      throw new Error(j.detail || '导出失败')
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `scenario-bundle-${cur.id.replace(/[/\\]/g, '_')}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    window.alert((e as Error).message || '导出场景包失败')
+  }
+}
+
+function pickDhaImportFile() {
+  dhaImportFileInputRef.value?.click()
+}
+
+function closeDhaImportModal() {
+  dhaImportModalOpen.value = false
+  dhaImportPayloadForCommit.value = null
+  dhaImportPreview.value = []
+  pendingDhaBundleFile.value = null
+  dhaBundlePreview.value = null
+  dhaImportMode.value = null
+}
+
+async function onDhaImportFile(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const lower = file.name.toLowerCase()
+  if (lower.endsWith('.zip')) {
+    dhaImportMode.value = 'bundle'
+    pendingDhaBundleFile.value = file
+    dhaBundlePreview.value = null
+    dhaImportPreview.value = []
+    dhaImportPayloadForCommit.value = null
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('dry_run', 'true')
+      fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', dhaBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('id_conflict', dhaImportIdConflict.value)
+      const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: typeof dhaBundlePreview.value
+      }
+      if (j?.status !== 'ok') {
+        throw new Error(j.detail || '专家包预览失败')
+      }
+      dhaBundlePreview.value = j.data || null
+      dhaImportIdConflict.value = 'new_id'
+      dhaImportModalOpen.value = true
+    } catch (e) {
+      window.alert((e as Error).message || '无法读取专家包')
+      pendingDhaBundleFile.value = null
+      dhaImportMode.value = null
+    }
+    return
+  }
+
+  dhaImportMode.value = 'json'
+  pendingDhaBundleFile.value = null
+  dhaBundlePreview.value = null
+  try {
+    const text = await file.text()
+    const parsed = JSON.parse(text) as Record<string, unknown>
+    dhaImportPayloadForCommit.value = parsed
+    const r = await fetch('/api/dha/instances/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...parsed, dry_run: true }),
+    })
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      detail?: string
+      data?: { results?: typeof dhaImportPreview.value }
+    }
+    if (j?.status !== 'ok') {
+      throw new Error(j.detail || '校验失败')
+    }
+    dhaImportPreview.value = j.data?.results || []
+    dhaImportIdConflict.value = 'new_id'
+    dhaImportModalOpen.value = true
+  } catch (e) {
+    window.alert((e as Error).message || '无法读取或解析 JSON')
+    dhaImportPayloadForCommit.value = null
+    dhaImportMode.value = null
+  }
+}
+
+async function commitDhaImport() {
+  if (dhaImportMode.value === 'bundle' && pendingDhaBundleFile.value) {
+    dhaImportCommitting.value = true
+    try {
+      const fd = new FormData()
+      fd.append('file', pendingDhaBundleFile.value)
+      fd.append('dry_run', 'false')
+      fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', dhaBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('id_conflict', dhaImportIdConflict.value)
+      const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: { summary?: { imported_agent_id?: string; skills_imported?: string[] } }
+      }
+      if (j?.status !== 'ok') {
+        throw new Error(j.detail || '导入失败')
+      }
+      const aid = j.data?.summary?.imported_agent_id
+      closeDhaImportModal()
+      await fetchDHA()
+      await fetchSkills()
+      await fetchMCP()
+      window.alert(
+        aid
+          ? `导入成功，专家 id：${aid}（技能写入 ${(j.data?.summary?.skills_imported || []).length} 个）`
+          : '导入成功',
+      )
+    } catch (e) {
+      window.alert((e as Error).message || '导入失败')
+    } finally {
+      dhaImportCommitting.value = false
+    }
+    return
+  }
+
+  const payload = dhaImportPayloadForCommit.value
+  if (!payload) return
+  dhaImportCommitting.value = true
+  try {
+    const r = await fetch('/api/dha/instances/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        dry_run: false,
+        id_conflict: dhaImportIdConflict.value,
+      }),
+    })
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      detail?: string
+      data?: { imported_ids?: string[] }
+    }
+    if (j?.status !== 'ok') {
+      throw new Error(j.detail || '导入失败')
+    }
+    closeDhaImportModal()
+    await fetchDHA()
+    window.alert(
+      (j.data?.imported_ids || []).length
+        ? `导入成功：${(j.data?.imported_ids || []).join(', ')}`
+        : '导入成功',
+    )
+  } catch (e) {
+    window.alert((e as Error).message || '导入失败')
+  } finally {
+    dhaImportCommitting.value = false
   }
 }
 

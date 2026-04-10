@@ -8,6 +8,7 @@
     "expert_ids": [
       "agent-d92e733e"
     ],
+    "leader_agent_id": "agent-d92e733e",
     "description": "工作流程：\n背景收集：了解报告的目标、受众以及内容范围。\n精炼与结构：头脑风暴报告的内容，逐步起草各部分并进行优化。\n读者测试：测试报告是否对目标读者有效，确保内容清晰、易于理解。",
     "discussion_goal_example": ""
   },
@@ -20,6 +21,7 @@
     "expert_ids": [
       "agent-c1bf68ba"
     ],
+    "leader_agent_id": "agent-c1bf68ba",
     "description": "",
     "discussion_goal_example": ""
   },
@@ -34,7 +36,43 @@
       "agent-web-fetch",
       "agent-440b26f8"
     ],
+    "leader_agent_id": "agent-web-fetch",
     "description": "",
     "discussion_goal_example": ""
+  },
+  {
+    "id": "scenario-mnrbpjb1",
+    "name": "网文创作",
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "expert_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    }
   }
 ]

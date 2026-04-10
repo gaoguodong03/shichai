@@ -229,5 +229,18 @@
       "rename": true
     },
     "url_capability": true
+  },
+  {
+    "agent_id": "agent-d92e733e",
+    "name": "文书专员",
+    "role": "创作、修改报告时使用。",
+    "system_prompt": "你是文书专员，按照技能规范，帮助用户撰写报告。",
+    "skill_ids": [
+      "doc-coauthoring"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": ""
   }
 ]

@@ -13,17 +13,35 @@ import tempfile
 import uuid
 import yaml
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any, Set
+from typing import List, Optional, Dict, Any, Set, Tuple
 
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.host_config import normalize_host_config_dict
-from app.skills.loader import get_builtin_skills_dir
+from app.core.session_preset_validate import (
+    extract_presets_from_import_body,
+    normalize_preset_dict_for_validation,
+    validate_session_preset,
+    validation_to_api_dict,
+)
+from app.core.scenario_bundle import (
+    build_scenario_bundle_zip_bytes,
+    collect_skill_and_mcp_ids_for_preset,
+    copy_bundle_skills_to_user,
+    extract_scenario_bundle_dir,
+    list_skill_ids_in_bundle_skills_dir,
+    merge_dha_instances_for_bundle,
+    merge_mcp_servers_for_bundle,
+    read_bundle_manifest_and_lists,
+    strip_dha_row_for_disk,
+)
+from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user, invalidate_skills_cache_for_user
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import user_context_dependency
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
@@ -74,6 +92,49 @@ def _get_session_presets_path() -> Path:
     """根据当前用户返回 session_presets.json 路径。"""
     user_ctx = _require_user_ctx()
     return (user_ctx.config_dir / "session_presets.json").resolve()
+
+
+def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
+    """解析磁盘 session_presets.json 为与 GET session-presets 一致的行列表。"""
+    presets: List[Dict[str, Any]] = []
+    if not path.exists():
+        return presets
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            for item in raw:
+                if not isinstance(item, dict):
+                    continue
+                pid = str(item.get("id") or "").strip()
+                name = str(item.get("name") or "").strip()
+                agent_ids = item.get("agent_ids")
+                if not isinstance(agent_ids, list) or not agent_ids:
+                    agent_ids = item.get("expert_ids")
+                if not isinstance(agent_ids, list):
+                    agent_ids = []
+                normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
+                if not pid or not name or not normalized_ids:
+                    continue
+                hc_raw = item.get("host_config")
+                lid = str(item.get("leader_agent_id") or "").strip()
+                if isinstance(hc_raw, dict) and hc_raw:
+                    lid = VIRTUAL_SCENE_HOST_ID
+                elif not lid:
+                    lid = normalized_ids[0]
+                row_out: Dict[str, Any] = {
+                    "id": pid,
+                    "name": name,
+                    "agent_ids": normalized_ids,
+                    "leader_agent_id": lid,
+                    "description": str(item.get("description") or ""),
+                    "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
+                }
+                if isinstance(hc_raw, dict):
+                    row_out["host_config"] = hc_raw
+                presets.append(row_out)
+    except Exception:
+        return []
+    return presets
 
 
 def _get_api_secrets_path() -> Path:
@@ -335,43 +396,7 @@ async def reset_host_profile():
 async def get_session_presets():
     """读取会话快捷预设（用于前端快捷按钮），兼容历史字段 expert_ids。"""
     path = _get_session_presets_path()
-    presets: List[Dict[str, Any]] = []
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
-                for item in raw:
-                    if not isinstance(item, dict):
-                        continue
-                    pid = str(item.get("id") or "").strip()
-                    name = str(item.get("name") or "").strip()
-                    agent_ids = item.get("agent_ids")
-                    if not isinstance(agent_ids, list) or not agent_ids:
-                        agent_ids = item.get("expert_ids")
-                    if not isinstance(agent_ids, list):
-                        agent_ids = []
-                    normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
-                    if not pid or not name or not normalized_ids:
-                        continue
-                    hc_raw = item.get("host_config")
-                    lid = str(item.get("leader_agent_id") or "").strip()
-                    if isinstance(hc_raw, dict) and hc_raw:
-                        lid = VIRTUAL_SCENE_HOST_ID
-                    elif not lid:
-                        lid = normalized_ids[0]
-                    row_out: Dict[str, Any] = {
-                        "id": pid,
-                        "name": name,
-                        "agent_ids": normalized_ids,
-                        "leader_agent_id": lid,
-                        "description": str(item.get("description") or ""),
-                        "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
-                    }
-                    if isinstance(hc_raw, dict):
-                        row_out["host_config"] = hc_raw
-                    presets.append(row_out)
-        except Exception:
-            presets = []
+    presets = _load_session_preset_rows_from_file(path)
     return {"status": "ok", "data": {"presets": presets}}
 
 
@@ -389,47 +414,362 @@ class SessionPresetsBody(BaseModel):
     presets: List[SessionPresetItem]
 
 
+def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
+    """与 update_session_presets 落盘格式一致；无效项返回 None。"""
+    from app.api.dha import load_dha_instances
+
+    pid = str(item.id or "").strip()
+    name = str(item.name or "").strip()
+    agent_ids = [str(x).strip() for x in (item.agent_ids or []) if str(x).strip()]
+    if not pid or not name or not agent_ids:
+        return None
+    hc_norm: Optional[Dict[str, Any]] = None
+    valid_dha_ids = {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
+    if item.host_config is not None:
+        hc_norm = normalize_host_config_dict(item.host_config)
+        lid = VIRTUAL_SCENE_HOST_ID
+    else:
+        lid = str(item.leader_agent_id or "").strip() if item.leader_agent_id is not None else ""
+        if not lid:
+            lid = agent_ids[0]
+        elif lid not in valid_dha_ids and lid != VIRTUAL_SCENE_HOST_ID:
+            lid = agent_ids[0]
+    row: Dict[str, Any] = {
+        "id": pid,
+        "name": name,
+        "agent_ids": agent_ids,
+        "expert_ids": agent_ids,
+        "leader_agent_id": lid,
+        "description": str(item.description or ""),
+        "discussion_goal_example": str(item.discussion_goal_example or ""),
+    }
+    if hc_norm is not None:
+        row["host_config"] = hc_norm
+    return row
+
+
+def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]:
+    """当前登录用户下校验场景预设依赖。"""
+    from app.api.dha import load_dha_instances
+
+    un = get_current_username() or ""
+    sl = get_skills_loader_for_user(un, _get_skills_dir())
+
+    def skill_ok(sid: str) -> bool:
+        return bool(sl.get_skill_full_content(sid))
+
+    dha_by_id: Dict[str, Any] = {
+        str(d.get("agent_id")): d for d in load_dha_instances() if d.get("agent_id")
+    }
+    v = validate_session_preset(
+        preset,
+        dha_by_id=dha_by_id,
+        skill_has_content=skill_ok,
+        mcp_servers=load_mcp_config(),
+    )
+    return validation_to_api_dict(v)
+
+
+def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetItem]:
+    try:
+        hc = row.get("host_config")
+        return SessionPresetItem(
+            id=str(row["id"]),
+            name=str(row["name"]),
+            agent_ids=list(row["agent_ids"]),
+            description=str(row.get("description") or ""),
+            discussion_goal_example=str(row.get("discussion_goal_example") or ""),
+            leader_agent_id=str(row.get("leader_agent_id") or ""),
+            host_config=hc if isinstance(hc, dict) else None,
+        )
+    except Exception:
+        return None
+
+
+def _merge_session_presets_into_file(
+    normalized_rows: List[Dict[str, Any]], id_conflict: str
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """将已规范化的场景行合并写入 session_presets.json；返回 (合并后列表, 本次写入的 preset id 列表)。"""
+    path = _get_session_presets_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing_rows = _load_session_preset_rows_from_file(path)
+    by_id: Dict[str, Dict[str, Any]] = {str(r["id"]): dict(r) for r in existing_rows if r.get("id")}
+    original_ids = [str(r["id"]) for r in existing_rows if r.get("id")]
+
+    imported_ids: List[str] = []
+    for norm in normalized_rows:
+        work = dict(norm)
+        pid0 = str(work["id"])
+        if pid0 in by_id and id_conflict == "new_id":
+            work["id"] = f"scenario-{uuid.uuid4().hex[:10]}"
+        item = _dict_to_session_preset_item(work)
+        if item is None:
+            continue
+        row = _session_preset_item_to_disk_row(item)
+        if row is None:
+            continue
+        by_id[row["id"]] = row
+        imported_ids.append(row["id"])
+
+    merged: List[Dict[str, Any]] = []
+    for rid in original_ids:
+        if rid in by_id:
+            merged.append(by_id[rid])
+    used = set(original_ids)
+    for rid, row in by_id.items():
+        if rid not in used:
+            merged.append(row)
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    return merged, imported_ids
+
+
 @router.put("/settings/session-presets")
 async def update_session_presets(body: SessionPresetsBody):
     """保存会话快捷预设（用于前端快捷按钮）。"""
-    from app.api.dha import load_dha_instances
-
     path = _get_session_presets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     normalized: List[Dict[str, Any]] = []
     seen: Set[str] = set()
-    valid_dha_ids = {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
     for item in body.presets:
-        pid = str(item.id or "").strip()
-        name = str(item.name or "").strip()
-        agent_ids = [str(x).strip() for x in (item.agent_ids or []) if str(x).strip()]
-        if not pid or not name or not agent_ids or pid in seen:
+        row = _session_preset_item_to_disk_row(item)
+        if row is None or row["id"] in seen:
             continue
-        seen.add(pid)
-        hc_norm: Optional[Dict[str, Any]] = None
-        if item.host_config is not None:
-            hc_norm = normalize_host_config_dict(item.host_config)
-            lid = VIRTUAL_SCENE_HOST_ID
-        else:
-            lid = str(item.leader_agent_id or "").strip() if item.leader_agent_id is not None else ""
-            if not lid:
-                lid = agent_ids[0]
-            elif lid not in valid_dha_ids and lid != VIRTUAL_SCENE_HOST_ID:
-                lid = agent_ids[0]
-        row: Dict[str, Any] = {
-            "id": pid,
-            "name": name,
-            "agent_ids": agent_ids,
-            "expert_ids": agent_ids,  # 兼容字段
-            "leader_agent_id": lid,
-            "description": str(item.description or ""),
-            "discussion_goal_example": str(item.discussion_goal_example or ""),
-        }
-        if hc_norm is not None:
-            row["host_config"] = hc_norm
+        seen.add(row["id"])
         normalized.append(row)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"status": "ok", "data": {"presets": normalized}}
+
+
+@router.get("/settings/session-presets/{preset_id}/export")
+async def export_session_preset(preset_id: str):
+    """导出单条场景为 JSON 文件（含 export_version，便于分享与再导入）。"""
+    key = str(preset_id or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="preset_id required")
+    path = _get_session_presets_path()
+    rows = _load_session_preset_rows_from_file(path)
+    match = next((r for r in rows if r.get("id") == key), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Session preset not found")
+    payload = {
+        "export_version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "preset": match,
+    }
+    safe_name = key.replace("..", "").replace("/", "").replace("\\", "") or "scenario"
+    filename = f"scenario-{safe_name}.json"
+    return JSONResponse(
+        content=payload,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/settings/session-presets/{preset_id}/export-bundle")
+async def export_session_preset_bundle(preset_id: str):
+    """导出场景包 ZIP：含 scenario_bundle.json、dha_instances.json、skills/、可选 mcp_servers.json。"""
+    from app.api.dha import load_dha_instances
+
+    key = str(preset_id or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="preset_id required")
+    path = _get_session_presets_path()
+    rows = _load_session_preset_rows_from_file(path)
+    match = next((r for r in rows if r.get("id") == key), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Session preset not found")
+
+    dha_all = load_dha_instances()
+    dha_by_id = {str(d.get("agent_id")): d for d in dha_all if d.get("agent_id")}
+    expert_rows: List[Dict[str, Any]] = []
+    for aid in match.get("agent_ids") or []:
+        a = str(aid).strip()
+        if a in dha_by_id:
+            expert_rows.append(strip_dha_row_for_disk(dict(dha_by_id[a])))
+
+    skill_ids, mcp_ids = collect_skill_and_mcp_ids_for_preset(match, dha_by_id)
+    mcp_all = load_mcp_config()
+    mcp_by = {str(s.get("id")): s for s in mcp_all if s.get("id")}
+    mcp_rows = [dict(mcp_by[mid]) for mid in sorted(mcp_ids) if mid in mcp_by]
+
+    zip_bytes = build_scenario_bundle_zip_bytes(
+        match,
+        expert_rows,
+        mcp_rows,
+        _get_skills_dir(),
+        sorted(skill_ids),
+    )
+    safe_name = key.replace("..", "").replace("/", "").replace("\\", "") or "scenario"
+    filename = f"scenario-bundle-{safe_name}.zip"
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition_attachment(filename)},
+    )
+
+
+@router.post("/settings/session-presets/import-bundle")
+async def import_session_preset_bundle(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    overwrite_experts: bool = Form(True),
+    overwrite_skills: bool = Form(True),
+    mcp_skip_existing: bool = Form(True),
+    preset_id_conflict: str = Form("new_id"),
+):
+    """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单与将覆盖的技能提示。"""
+    from app.api.dha import load_dha_instances, save_dha_instances
+
+    fn = (file.filename or "").strip().lower()
+    if not fn.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="请上传 ZIP 场景包")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    conflict = str(preset_id_conflict or "new_id").strip().lower()
+    if conflict not in ("overwrite", "new_id"):
+        conflict = "new_id"
+
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        _manifest, preset, dha_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
+        norm = normalize_preset_dict_for_validation(preset)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="场景包内 preset 无效（需 id、name、agent_ids）")
+
+        skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        experts_preview = [
+            {"agent_id": str(x.get("agent_id") or ""), "name": str(x.get("name") or "")}
+            for x in dha_bundle
+            if str(x.get("agent_id") or "").strip()
+        ]
+        mcps_preview = [
+            {"id": str(x.get("id") or ""), "name": str(x.get("name") or "")}
+            for x in mcp_bundle
+            if str(x.get("id") or "").strip()
+        ]
+
+        user_skills = _get_skills_dir()
+        would_overwrite_skills: List[str] = []
+        would_skip_skills: List[str] = []
+        for sid in skill_ids_in_zip:
+            dest = user_skills / sid
+            if dest.is_dir():
+                if overwrite_skills:
+                    would_overwrite_skills.append(sid)
+                else:
+                    would_skip_skills.append(sid)
+
+        if dry_run:
+            return {
+                "status": "ok",
+                "data": {
+                    "dry_run": True,
+                    "bundle_preview": {
+                        "preset_id": norm["id"],
+                        "preset_name": norm["name"],
+                        "experts": experts_preview,
+                        "skills": skill_ids_in_zip,
+                        "mcps": mcps_preview,
+                        "would_overwrite_skills": would_overwrite_skills,
+                        "would_skip_skills": would_skip_skills,
+                    },
+                    "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹。界面无法修改专家 agent_id；若需改 id，请在服务端编辑 dha_instances.json。",
+                },
+            }
+
+        imported_skills, skipped_skills = copy_bundle_skills_to_user(
+            tmp, user_skills, overwrite=overwrite_skills
+        )
+        invalidate_skills_cache_for_user(get_current_username() or "")
+
+        merged_dha = merge_dha_instances_for_bundle(
+            load_dha_instances(), dha_bundle, overwrite=overwrite_experts
+        )
+        save_dha_instances(merged_dha)
+
+        merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+            load_mcp_config(), mcp_bundle, skip_existing=mcp_skip_existing
+        )
+        save_mcp_config(merged_mcp)
+        await _invalidate_mcp_runtime_after_config_change()
+
+        merged_presets, imported_ids = _merge_session_presets_into_file([norm], conflict)
+        val_after = _session_preset_validation_payload(norm)
+
+        return {
+            "status": "ok",
+            "data": {
+                "dry_run": False,
+                "summary": {
+                    "preset_imported_ids": imported_ids,
+                    "skills_imported": imported_skills,
+                    "skills_skipped": skipped_skills,
+                    "experts_total_after": len(merged_dha),
+                    "mcp_added": mcp_added,
+                    "mcp_skipped": mcp_skipped,
+                    "mcp_updated": mcp_updated,
+                },
+                "validation_after": val_after,
+                "presets": merged_presets,
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "无效的场景包") from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"场景包导入失败：{e}") from e
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+@router.post("/settings/session-presets/import")
+async def import_session_presets(request: Request):
+    """导入场景预设。dry_run=true 时仅校验依赖，不写盘。"""
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    # 缺省 dry_run：避免误 POST 即写盘；显式 dry_run:false 才提交
+    dry_run = True if "dry_run" not in data else bool(data.get("dry_run"))
+    id_conflict = str(data.get("id_conflict") or "new_id").strip().lower()
+    if id_conflict not in ("overwrite", "new_id"):
+        id_conflict = "new_id"
+
+    raw_presets = extract_presets_from_import_body(data)
+    if not raw_presets:
+        raise HTTPException(status_code=400, detail="未识别到场景数据（需要 preset 字段或完整场景对象）")
+
+    results: List[Dict[str, Any]] = []
+    normalized_rows: List[Dict[str, Any]] = []
+
+    for raw in raw_presets:
+        norm = normalize_preset_dict_for_validation(raw)
+        if norm is None:
+            results.append(
+                {
+                    "preset_id": str(raw.get("id") or ""),
+                    "error": "invalid_preset",
+                    "message": "场景需包含非空的 id、name 与 agent_ids",
+                }
+            )
+            continue
+        val = _session_preset_validation_payload(norm)
+        results.append({"preset_id": norm["id"], "name": norm["name"], "validation": val})
+        normalized_rows.append(norm)
+
+    if dry_run:
+        return {"status": "ok", "data": {"dry_run": True, "results": results}}
+
+    merged, imported_ids = _merge_session_presets_into_file(normalized_rows, id_conflict)
+    return {"status": "ok", "data": {"dry_run": False, "imported_ids": imported_ids, "presets": merged, "results": results}}
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""

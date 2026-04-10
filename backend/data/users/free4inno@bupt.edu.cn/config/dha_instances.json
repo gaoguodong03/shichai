@@ -115,7 +115,6 @@
       "url-fetch"
     ],
     "mcp_server_ids": [
-      "fetch"
     ],
     "is_leader": false,
     "llm_provider_id": ""

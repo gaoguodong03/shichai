@@ -125,12 +125,28 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
-            <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0">
+            <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
               <button
                 type="submit"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover shadow-sm transition-colors"
               >
                 保存
+              </button>
+              <button
+                v-if="selectedDhaId && selectedDhaId !== '__new__'"
+                type="button"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+                @click="exportDhaJson"
+              >
+                导出 JSON
+              </button>
+              <button
+                v-if="selectedDhaId && selectedDhaId !== '__new__'"
+                type="button"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+                @click="exportDhaBundle"
+              >
+                导出专家包
               </button>
               <button
                 type="button"
@@ -428,6 +444,48 @@ const filteredSkills = computed(() => {
     return name.includes(q) || description.includes(q)
   })
 })
+
+async function exportDhaJson() {
+  const id = props.selectedDhaId
+  if (!id || id === '__new__') return
+  try {
+    const r = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/export`)
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { detail?: string }
+      throw new Error(j.detail || '导出失败')
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `expert-${id.replace(/[/\\]/g, '_')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    window.alert((e as Error).message || '导出失败')
+  }
+}
+
+async function exportDhaBundle() {
+  const id = props.selectedDhaId
+  if (!id || id === '__new__') return
+  try {
+    const r = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/export-bundle`)
+    if (!r.ok) {
+      const j = (await r.json().catch(() => ({}))) as { detail?: string }
+      throw new Error(j.detail || '导出失败')
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `expert-bundle-${id.replace(/[/\\]/g, '_')}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    window.alert((e as Error).message || '导出专家包失败')
+  }
+}
 
 async function deleteDha() {
   if (!props.selectedDhaId) return

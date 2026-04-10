@@ -1,16 +1,20 @@
 """Agent 实例 API - 多专家群聊的智能体配置"""
 from __future__ import annotations
 
+import io
 import json
+import shutil
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.security import user_context_dependency
-from app.core.user_context import get_current_user_context
+from app.core.user_context import get_current_user_context, get_current_username
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
@@ -157,6 +161,301 @@ def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
     path = _ensure_config_dir()
     with open(path, "w", encoding="utf-8") as f:
         json.dump(normalized, f, ensure_ascii=False, indent=2)
+
+
+def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """将导入 JSON 规范为可写入 dha_instances 的条目；name 必填。"""
+    name = str(raw.get("name") or "").strip()
+    if not name:
+        return None
+    aid = str(raw.get("agent_id") or raw.get("expert_id") or "").strip()
+    return {
+        "agent_id": aid,
+        "name": name,
+        "role": str(raw.get("role") or ""),
+        "system_prompt": str(raw.get("system_prompt") or "")
+        if raw.get("system_prompt") is not None
+        else "",
+        "skill_ids": [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()],
+        "mcp_server_ids": [str(x).strip() for x in (raw.get("mcp_server_ids") or []) if str(x).strip()],
+        "is_leader": bool(raw.get("is_leader", False)),
+        "llm_provider_id": str(raw.get("llm_provider_id") or "").strip(),
+        "avatar_url": str(raw.get("avatar_url") or "").strip(),
+        "file_capabilities": merge_file_capabilities(
+            raw.get("file_capabilities") if isinstance(raw.get("file_capabilities"), dict) else {}
+        ),
+        "url_capability": True if raw.get("url_capability") is None else bool(raw.get("url_capability")),
+    }
+
+
+def _dha_skills_dir() -> Path:
+    ctx = get_current_user_context(default_fallback=False)
+    if ctx is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    return ctx.skills_dir.resolve()
+
+
+def _dha_validation_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    from app.api.settings import load_mcp_config
+    from app.core.dha_import_validate import validate_dha_instance_row, dha_validation_to_api_dict
+    from app.skills.loader import get_skills_loader_for_user
+
+    un = get_current_username() or ""
+    sl = get_skills_loader_for_user(un, _dha_skills_dir())
+
+    def skill_ok(sid: str) -> bool:
+        return bool(sl.get_skill_full_content(sid))
+
+    v = validate_dha_instance_row(row, skill_has_content=skill_ok, mcp_servers=load_mcp_config())
+    return dha_validation_to_api_dict(v)
+
+
+def _find_dha_row(agent_id: str) -> Optional[Dict[str, Any]]:
+    key = str(agent_id or "").strip()
+    if not key:
+        return None
+    for d in load_dha_instances():
+        if str(d.get("agent_id") or "").strip() == key:
+            return dict(d)
+    return None
+
+
+@router.get("/dha/instances/{agent_id}/export")
+async def export_dha_instance(agent_id: str):
+    """导出单条专家为 JSON（含 export_version）。"""
+    row = _find_dha_row(agent_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="DHA instance not found")
+    from app.core.scenario_bundle import strip_dha_row_for_disk
+
+    clean = strip_dha_row_for_disk(row)
+    payload = {
+        "export_version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "expert": clean,
+    }
+    safe = str(agent_id).replace("..", "").replace("/", "").replace("\\", "") or "expert"
+    filename = f"expert-{safe}.json"
+    return JSONResponse(
+        content=payload,
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/dha/instances/import")
+async def import_dha_instances(request: Request):
+    """导入专家 JSON。支持 expert / experts / 裸对象；默认 dry_run 为 true。"""
+    from app.core.dha_import_validate import extract_expert_from_import_body
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    dry_run = True if "dry_run" not in data else bool(data.get("dry_run"))
+    id_conflict = str(data.get("id_conflict") or "new_id").strip().lower()
+    if id_conflict not in ("overwrite", "new_id"):
+        id_conflict = "new_id"
+
+    raw_list = extract_expert_from_import_body(data)
+    if not raw_list:
+        raise HTTPException(status_code=400, detail="未识别到专家数据（需要 expert 字段或含 name 的对象）")
+
+    results: List[Dict[str, Any]] = []
+    normalized_rows: List[Dict[str, Any]] = []
+
+    for raw in raw_list:
+        norm = normalize_expert_row_for_import(raw)
+        if norm is None:
+            results.append(
+                {
+                    "agent_id": str(raw.get("agent_id") or raw.get("expert_id") or ""),
+                    "error": "invalid_expert",
+                    "message": "专家 name 不能为空",
+                }
+            )
+            continue
+        val = _dha_validation_payload(norm)
+        aid = str(norm.get("agent_id") or "").strip() or "（将自动生成）"
+        results.append({"agent_id": aid, "name": norm.get("name"), "validation": val})
+        normalized_rows.append(norm)
+
+    if dry_run:
+        return {"status": "ok", "data": {"dry_run": True, "results": results}}
+
+    from app.core.expert_bundle import merge_single_expert_into_instances
+
+    instances = load_dha_instances()
+    imported_ids: List[str] = []
+    for norm in normalized_rows:
+        instances, final_id = merge_single_expert_into_instances(
+            instances, norm, id_conflict=id_conflict
+        )
+        imported_ids.append(final_id)
+    save_dha_instances(instances)
+
+    return {
+        "status": "ok",
+        "data": {
+            "dry_run": False,
+            "imported_ids": imported_ids,
+            "results": results,
+            "instances": await enrich_dha_instances(instances),
+        },
+    }
+
+
+@router.get("/dha/instances/{agent_id}/export-bundle")
+async def export_dha_instance_bundle(agent_id: str):
+    """导出专家包 ZIP：expert_bundle.json、skills/、可选 mcp_servers.json。"""
+    from app.api.settings import load_mcp_config
+    from app.core.expert_bundle import build_expert_bundle_zip_bytes
+
+    row = _find_dha_row(agent_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="DHA instance not found")
+
+    skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
+    mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
+    mcp_all = load_mcp_config()
+    mcp_by = {str(s.get("id")): s for s in mcp_all if s.get("id")}
+    mcp_rows = [dict(mcp_by[mid]) for mid in mcp_ids if mid in mcp_by]
+
+    zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
+    safe = str(agent_id).replace("..", "").replace("/", "").replace("\\", "") or "expert"
+    filename = f"expert-bundle-{safe}.zip"
+    from app.api.settings import _content_disposition_attachment
+
+    return StreamingResponse(
+        io.BytesIO(zip_bytes),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition_attachment(filename)},
+    )
+
+
+@router.post("/dha/instances/import-bundle")
+async def import_dha_instance_bundle(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    overwrite_skills: bool = Form(True),
+    mcp_skip_existing: bool = Form(True),
+    id_conflict: str = Form("new_id"),
+):
+    """导入专家包：合并技能、MCP 与专家条目。"""
+    from app.api.settings import load_mcp_config, save_mcp_config, _invalidate_mcp_runtime_after_config_change
+    from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
+    from app.core.scenario_bundle import (
+        extract_scenario_bundle_dir,
+        copy_bundle_skills_to_user,
+        list_skill_ids_in_bundle_skills_dir,
+        merge_mcp_servers_for_bundle,
+    )
+    from app.skills.loader import invalidate_skills_cache_for_user
+
+    fn = (file.filename or "").strip().lower()
+    if not fn.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="请上传 ZIP 专家包")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    conflict = str(id_conflict or "new_id").strip().lower()
+    if conflict not in ("overwrite", "new_id"):
+        conflict = "new_id"
+
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        _man, expert_raw = read_expert_bundle_manifest(tmp)
+        norm = normalize_expert_row_for_import(expert_raw)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="专家包内 expert 无效（需 name）")
+
+        user_skills = _dha_skills_dir()
+        skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        would_overwrite: List[str] = []
+        would_skip: List[str] = []
+        for sid in skill_ids_in_zip:
+            dest = user_skills / sid
+            if dest.is_dir():
+                if overwrite_skills:
+                    would_overwrite.append(sid)
+                else:
+                    would_skip.append(sid)
+
+        mcp_path = tmp / "mcp_servers.json"
+        mcp_bundle: List[Dict[str, Any]] = []
+        if mcp_path.is_file():
+            raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
+            if isinstance(raw_m, list):
+                mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
+
+        mcps_preview = [
+            {"id": str(x.get("id") or ""), "name": str(x.get("name") or "")}
+            for x in mcp_bundle
+            if str(x.get("id") or "").strip()
+        ]
+
+        if dry_run:
+            return {
+                "status": "ok",
+                "data": {
+                    "dry_run": True,
+                    "bundle_preview": {
+                        "agent_id": str(norm.get("agent_id") or "") or "（可空，提交时生成）",
+                        "name": norm.get("name"),
+                        "skills": skill_ids_in_zip,
+                        "mcps": mcps_preview,
+                        "would_overwrite_skills": would_overwrite,
+                        "would_skip_skills": would_skip,
+                    },
+                    "note": "确认后将写入技能目录并合并专家；依赖校验在提交完成后返回。agent_id 仅可在服务端配置文件中修改。",
+                },
+            }
+
+        imported_skills, skipped_skills = copy_bundle_skills_to_user(
+            tmp, user_skills, overwrite=overwrite_skills
+        )
+        invalidate_skills_cache_for_user(get_current_username() or "")
+
+        if mcp_bundle:
+            merged_mcp, _a, _s, _u = merge_mcp_servers_for_bundle(
+                load_mcp_config(), mcp_bundle, skip_existing=mcp_skip_existing
+            )
+            save_mcp_config(merged_mcp)
+            await _invalidate_mcp_runtime_after_config_change()
+
+        instances = load_dha_instances()
+        instances, final_id = merge_single_expert_into_instances(
+            instances, norm, id_conflict=conflict
+        )
+        save_dha_instances(instances)
+        val_after = _dha_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
+
+        return {
+            "status": "ok",
+            "data": {
+                "dry_run": False,
+                "summary": {
+                    "imported_agent_id": final_id,
+                    "skills_imported": imported_skills,
+                    "skills_skipped": skipped_skills,
+                },
+                "validation_after": val_after,
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "无效的专家包") from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"专家包导入失败：{e}") from e
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 @router.get("/dha/instances")

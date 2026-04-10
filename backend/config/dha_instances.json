@@ -190,7 +190,6 @@
       "url-fetch"
     ],
     "mcp_server_ids": [
-      "fetch",
       "file-reader"
     ],
     "is_leader": false,
