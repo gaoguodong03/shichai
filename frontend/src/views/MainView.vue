@@ -1406,10 +1406,18 @@ const scenarioBundleOverwriteMcp = ref(true)
 const scenarioShareAutoPublishing = ref(false)
 const scenarioShareRouteImportLoading = ref(false)
 const scenarioShareLinkData = ref<{ share_id: string | null }>({ share_id: null })
+function publicAppOriginForShareLink(): string {
+  const raw = import.meta.env.VITE_PUBLIC_APP_ORIGIN
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim().replace(/\/$/, '')
+  }
+  return window.location.origin
+}
+
 const scenarioShareFullUrl = computed(() => {
   const id = scenarioShareLinkData.value.share_id
   if (!id) return ''
-  return `${window.location.origin}/scenario/run?id=${encodeURIComponent(id)}`
+  return `${publicAppOriginForShareLink()}/scenario/run?id=${encodeURIComponent(id)}`
 })
 const scenarioShareRouteHandled = ref('')
 const scenarioShareOpenInFlight = ref(false)
