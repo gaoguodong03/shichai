@@ -42,6 +42,8 @@
               </div>
             </div>
 
+            <!-- 头像：在右侧工牌大图点击打开弹窗选择 -->
+
             <div>
               <label class="block text-sm font-medium text-primary mb-1">描述</label>
               <textarea
@@ -179,7 +181,7 @@
                   <div class="shrink-0">
                     <div
                       class="w-32 h-32 rounded-3xl border border-border-light bg-page flex items-center justify-center overflow-hidden cursor-pointer"
-                      @click="avatarInputRef?.click()"
+                      @click="showAvatarModal = true"
                     >
                       <img
                         v-if="avatarPreview"
@@ -260,15 +262,80 @@
         </div>
       </div>
     </template>
+
+    <Teleport to="body">
+      <div
+        v-if="showAvatarModal"
+        class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/40"
+        role="dialog"
+        aria-modal="true"
+        aria-label="选择头像"
+        @click.self="showAvatarModal = false"
+      >
+        <div
+          class="w-full max-w-md rounded-2xl border border-border-light bg-card shadow-xl p-5 text-left"
+          @click.stop
+        >
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-base font-semibold text-primary">专家头像</h3>
+            <button
+              type="button"
+              class="text-muted hover:text-primary text-xl leading-none px-1"
+              aria-label="关闭"
+              @click="showAvatarModal = false"
+            >
+              ×
+            </button>
+          </div>
+          <p class="text-xs text-muted mb-3">点选一张内置图，或使用相册上传；也可随机一张。</p>
+          <div class="flex flex-wrap gap-2 mb-4">
+            <button
+              v-for="url in EXPERT_PRESET_AVATAR_URLS"
+              :key="url"
+              type="button"
+              class="shrink-0 w-12 h-12 rounded-xl border-2 overflow-hidden transition-colors focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              :class="form.avatar_url === url ? 'border-accent ring-1 ring-accent/30' : 'border-border-light hover:border-muted'"
+              @click="selectPresetAvatar(url)"
+            >
+              <img :src="url" alt="" class="w-full h-full object-cover" />
+            </button>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+              @click="randomizePresetAvatar"
+            >
+              随机一张
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="avatarInputRef?.click()"
+            >
+              从相册上传
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted border border-border-light hover:bg-list-hover ml-auto"
+              @click="showAvatarModal = false"
+            >
+              完成
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
+import { EXPERT_PRESET_AVATAR_URLS, pickRandomExpertAvatar } from '@/constants/expertAvatars'
 
 const props = defineProps<{
   selectedDhaId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
 }>()
 
 const emit = defineEmits<{
@@ -282,6 +349,7 @@ const skillSearch = ref('')
 const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
+const showAvatarModal = ref(false)
 
 const defaultFileCaps = () => ({
   read: true,
@@ -308,6 +376,7 @@ watch(
   () => [props.selectedDhaId, props.dhaInstances],
   () => {
     if (props.selectedDhaId === '__new__') {
+      const randomAv = pickRandomExpertAvatar()
       form.value = {
         name: '',
         role: '',
@@ -315,11 +384,11 @@ watch(
         skill_ids: [],
         is_leader: false,
         llm_provider_id: '',
-        avatar_url: '',
+        avatar_url: randomAv,
         file_capabilities: defaultFileCaps(),
         url_capability: true,
       }
-      avatarPreview.value = null
+      avatarPreview.value = randomAv
     } else if (props.selectedDhaId) {
       const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
       if (d) {
@@ -365,7 +434,37 @@ function toggleUrlCapability() {
   form.value.url_capability = !form.value.url_capability
 }
 
+function persistAvatarQuiet() {
+  if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
+    fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ avatar_url: form.value.avatar_url }),
+    }).catch(() => {})
+  }
+}
+
+function selectPresetAvatar(url: string) {
+  form.value.avatar_url = url
+  avatarPreview.value = url
+  persistAvatarQuiet()
+  showAvatarModal.value = false
+}
+
+function randomizePresetAvatar() {
+  const url = pickRandomExpertAvatar()
+  form.value.avatar_url = url
+  avatarPreview.value = url
+  persistAvatarQuiet()
+  showAvatarModal.value = false
+}
+
 async function saveDha() {
+  if (props.selectedDhaId === '__new__' && !String(form.value.avatar_url || '').trim()) {
+    const url = pickRandomExpertAvatar()
+    form.value.avatar_url = url
+    avatarPreview.value = url
+  }
   if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
     const r = await fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, {
       method: 'PUT',
@@ -485,15 +584,8 @@ function onAvatarChange(e: Event) {
     if (typeof reader.result === 'string') {
       avatarPreview.value = reader.result
       form.value.avatar_url = reader.result
-      if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-        fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ avatar_url: form.value.avatar_url }),
-        }).catch(() => {
-          // 忽略头像即时保存失败，后续「保存」仍会带上头像
-        })
-      }
+      persistAvatarQuiet()
+      showAvatarModal.value = false
     }
   }
   reader.readAsDataURL(file)

@@ -136,14 +136,28 @@
                     >
                       <template v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)">
                         <span
-                          v-if="msg.role !== 'host'"
+                          v-if="msg.role !== 'host' && msg.agent_id !== VIRTUAL_SCENE_HOST_ID"
                           class="group-chat-avatar"
-                          :style="{ backgroundColor: dhaAvatarColor(dhaIndex(msg.agent_id)) }"
+                          :style="
+                            expertAvatarUrl(msg.agent_id)
+                              ? { background: 'transparent', overflow: 'hidden' }
+                              : { backgroundColor: dhaAvatarColor(dhaIndex(msg.agent_id)) }
+                          "
                         >
-                          {{ dhaAvatarChar(msg.agent_id) }}
+                          <img
+                            v-if="expertAvatarUrl(msg.agent_id)"
+                            :src="expertAvatarUrl(msg.agent_id)!"
+                            alt=""
+                            class="group-chat-avatar-photo"
+                          />
+                          <template v-else>{{ dhaAvatarChar(msg.agent_id) }}</template>
                         </span>
-                        <div v-else class="group-chat-avatar group-chat-avatar-host" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        <div
+                          v-else
+                          class="group-chat-avatar group-chat-avatar-host group-chat-avatar-host-logo"
+                          aria-hidden="true"
+                        >
+                          <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                         </div>
                       </template>
                       <div
@@ -335,15 +349,30 @@
                         @mousedown.prevent
                         @click="selectMention(opt)"
                       >
-                        <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                            <line x1="12" y1="19" x2="12" y2="23"/>
-                            <line x1="8" y1="23" x2="16" y2="23"/>
-                          </svg>
+                        <span
+                          v-if="opt.type === 'host'"
+                          class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
+                          aria-hidden="true"
+                        >
+                          <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                         </span>
-                        <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                        <span
+                          v-else
+                          class="group-chat-avatar group-chat-avatar-sm"
+                          :style="
+                            expertAvatarUrl(opt.id)
+                              ? { background: 'transparent', overflow: 'hidden' }
+                              : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                          "
+                        >
+                          <img
+                            v-if="expertAvatarUrl(opt.id)"
+                            :src="expertAvatarUrl(opt.id)!"
+                            alt=""
+                            class="group-chat-avatar-photo"
+                          />
+                          <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                        </span>
                         <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
                     </ul>
@@ -375,15 +404,30 @@
                           @mousedown.prevent
                           @click="selectMention(opt)"
                         >
-                          <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                              <line x1="12" y1="19" x2="12" y2="23"/>
-                              <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
+                          <span
+                            v-if="opt.type === 'host'"
+                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
+                            aria-hidden="true"
+                          >
+                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                           </span>
-                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span
+                            v-else
+                            class="group-chat-avatar group-chat-avatar-sm"
+                            :style="
+                              expertAvatarUrl(opt.id)
+                                ? { background: 'transparent', overflow: 'hidden' }
+                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                            "
+                          >
+                            <img
+                              v-if="expertAvatarUrl(opt.id)"
+                              :src="expertAvatarUrl(opt.id)!"
+                              alt=""
+                              class="group-chat-avatar-photo"
+                            />
+                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                          </span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
@@ -416,15 +460,30 @@
                           @mousedown.prevent
                           @click="selectMention(opt)"
                         >
-                          <span v-if="opt.type === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar" aria-hidden="true">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                              <line x1="12" y1="19" x2="12" y2="23"/>
-                              <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
+                          <span
+                            v-if="opt.type === 'host'"
+                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
+                            aria-hidden="true"
+                          >
+                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                           </span>
-                          <span v-else class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }">{{ dhaAvatarChar(opt.id) }}</span>
+                          <span
+                            v-else
+                            class="group-chat-avatar group-chat-avatar-sm"
+                            :style="
+                              expertAvatarUrl(opt.id)
+                                ? { background: 'transparent', overflow: 'hidden' }
+                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                            "
+                          >
+                            <img
+                              v-if="expertAvatarUrl(opt.id)"
+                              :src="expertAvatarUrl(opt.id)!"
+                              alt=""
+                              class="group-chat-avatar-photo"
+                            />
+                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                          </span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
                       </ul>
@@ -444,11 +503,29 @@
                       :aria-expanded="showAddMemberModal"
                       @click="showAddMemberModal = true; showMoreMenu = false"
                     >
-                      <span v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'" class="group-chat-avatar group-chat-avatar-sm" :style="{ backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }">
-                        {{ dhaAvatarChar(effectiveNextSpeaker) }}
+                      <span
+                        v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'"
+                        class="group-chat-avatar group-chat-avatar-sm"
+                        :style="
+                          expertAvatarUrl(effectiveNextSpeaker)
+                            ? { background: 'transparent', overflow: 'hidden' }
+                            : { backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }
+                        "
+                      >
+                        <img
+                          v-if="expertAvatarUrl(effectiveNextSpeaker)"
+                          :src="expertAvatarUrl(effectiveNextSpeaker)!"
+                          alt=""
+                          class="group-chat-avatar-photo"
+                        />
+                        <template v-else>{{ dhaAvatarChar(effectiveNextSpeaker) }}</template>
                       </span>
-                      <span v-else-if="effectiveNextSpeaker === 'host'" class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host" aria-hidden="true">
-                        {{ (hostDisplayName || DEFAULT_HOST_DISPLAY_NAME || '主').trim().slice(0, 1) }}
+                      <span
+                        v-else-if="effectiveNextSpeaker === 'host'"
+                        class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
+                        aria-hidden="true"
+                      >
+                        <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                       </span>
                       <span class="group-chat-next-speaker-name">
                         {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.agent_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
@@ -632,18 +709,36 @@
                           <ul v-if="orderedMemberIds.length > 0" class="group-chat-members-list">
                             <li v-for="id in orderedMemberIds" :key="id" class="group-chat-members-item group-chat-member-skill-row">
                               <span
-                                v-if="id !== 'host'"
+                                v-if="id !== 'host' && id !== VIRTUAL_SCENE_HOST_ID"
                                 class="group-chat-avatar group-chat-avatar-sm"
-                                :style="{ backgroundColor: dhaAvatarColor(dhaIndex(id)) }"
+                                :style="
+                                  expertAvatarUrl(id)
+                                    ? { background: 'transparent', overflow: 'hidden' }
+                                    : { backgroundColor: dhaAvatarColor(dhaIndex(id)) }
+                                "
                               >
-                                {{ dhaAvatarChar(id) }}
+                                <img
+                                  v-if="expertAvatarUrl(id)"
+                                  :src="expertAvatarUrl(id)!"
+                                  alt=""
+                                  class="group-chat-avatar-photo"
+                                />
+                                <template v-else>{{ dhaAvatarChar(id) }}</template>
                               </span>
-                              <span v-else class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host" aria-hidden="true">
-                                {{ (hostDisplayName || DEFAULT_HOST_DISPLAY_NAME || '主').trim().slice(0, 1) }}
+                              <span
+                                v-else
+                                class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
+                                aria-hidden="true"
+                              >
+                                <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                               </span>
                               <span class="group-chat-member-skill-name">
                                 <span class="group-chat-member-skill-name-text">
-                                  {{ id === 'host' ? hostDisplayName : ((groupDetail?.agent_map || {})[id]?.name || id) }}
+                                  {{
+                                    id === 'host' || id === VIRTUAL_SCENE_HOST_ID
+                                      ? hostDisplayName
+                                      : ((groupDetail?.agent_map || {})[id]?.name || id)
+                                  }}
                                 </span>
                                 <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
                               </span>
@@ -656,6 +751,22 @@
                           <p class="group-chat-members-dropdown-title">可邀请的专家</p>
                           <ul v-if="invitableDhas.length" class="group-chat-members-list">
                             <li v-for="d in invitableDhas" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
+                              <span
+                                class="group-chat-avatar group-chat-avatar-sm"
+                                :style="
+                                  expertAvatarUrl(d.agent_id)
+                                    ? { background: 'transparent', overflow: 'hidden' }
+                                    : { backgroundColor: dhaAvatarColor(dhaIndex(d.agent_id)) }
+                                "
+                              >
+                                <img
+                                  v-if="expertAvatarUrl(d.agent_id)"
+                                  :src="expertAvatarUrl(d.agent_id)!"
+                                  alt=""
+                                  class="group-chat-avatar-photo"
+                                />
+                                <template v-else>{{ (d.name || d.agent_id || '?').trim().slice(0, 1).toUpperCase() }}</template>
+                              </span>
                               <span class="group-chat-add-member-label">{{ d.name || d.agent_id }}</span>
                               <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_id)">邀请</button>
                             </li>
@@ -952,6 +1063,11 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
+import hostLogoUrl from '@/assets/49logo.png'
+
+/** 与后端群聊虚拟主持人 agent_id 一致 */
+const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
+
 interface MsgExt {
   timestamp?: string
   skill_id?: string
@@ -967,7 +1083,7 @@ interface MsgExt {
 
 const props = defineProps<{
   selectedGroupSessionId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; skill_ids?: string[]; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; avatar_url?: string; skill_ids?: string[]; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }[]
   /** 用于气泡上 skill 标签：将内部 skill_id 解析为 SKILL 中的展示名 */
   skills?: { id: string; name: string }[]
   middleColumnOpen?: boolean
@@ -985,7 +1101,7 @@ type GroupDetail = {
   id: string
   title: string
   messages: { message_id?: string; role: string; agent_id?: string; content: string }[]
-  agent_map: Record<string, { name?: string; role?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
+  agent_map: Record<string, { name?: string; role?: string; avatar_url?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
   agent_ids: string[]
   leader_agent_id?: string
   /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
@@ -1943,7 +2059,6 @@ type ShortcutPreset = {
   description?: string
   discussion_goal_example?: string
 }
-const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const shortcutPresetsLoaded = ref(false)
 const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
@@ -2185,6 +2300,17 @@ function dhaAvatarColor(index: number): string {
 function dhaAvatarChar(dhaId?: string): string {
   const name = groupDetail.value?.agent_map?.[dhaId || '']?.name || dhaId || '?'
   return name.slice(0, 1).toUpperCase()
+}
+
+/** 专家头像 URL：优先当前页专家列表，其次群聊详情里的 agent_map（含后端下发的 avatar_url） */
+function expertAvatarUrl(dhaId?: string): string | null {
+  if (!dhaId) return null
+  const fromList = (props.dhaInstances || []).find((x) => x.agent_id === dhaId)?.avatar_url
+  const u1 = fromList && String(fromList).trim()
+  if (u1) return u1
+  const fromMap = groupDetail.value?.agent_map?.[dhaId]?.avatar_url
+  const u2 = fromMap && String(fromMap).trim()
+  return u2 || null
 }
 
 const groupWaitingForUser = ref(false)
@@ -4351,6 +4477,13 @@ defineExpose({ refresh: loadGroupDetail })
   font-weight: 600;
   color: #fff;
 }
+.group-chat-avatar-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
 .group-chat-avatar-sm {
   width: 1.25rem;
   height: 1.25rem;
@@ -4360,6 +4493,11 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-dha-box-0) !important;
   color: var(--color-text);
   border: 1px solid var(--color-border);
+}
+.group-chat-avatar-host-logo {
+  background: transparent !important;
+  padding: 0 !important;
+  overflow: hidden;
 }
 .group-chat-avatar-host svg {
   width: 0.875rem;
@@ -5306,6 +5444,10 @@ defineExpose({ refresh: loadGroupDetail })
   width: 0.78rem;
   height: 0.78rem;
   display: block;
+}
+.group-chat-at-special-icon.group-chat-avatar-host-logo .group-chat-avatar-photo {
+  width: 100%;
+  height: 100%;
 }
 .group-chat-at-host-avatar {
   background: var(--color-dha-box-0);

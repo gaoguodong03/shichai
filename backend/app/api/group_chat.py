@@ -464,7 +464,15 @@ async def get_group_archive(group_session_id: str):
     segments = _build_archive_segments(messages)
     # agent_map 用于前端展示名字
     instances = load_dha_instances()
-    agent_map = {d.get("agent_id"): {"name": d.get("name") or d.get("agent_id"), "role": d.get("role") or ""} for d in instances if d.get("agent_id")}
+    agent_map = {
+        d.get("agent_id"): {
+            "name": d.get("name") or d.get("agent_id"),
+            "role": d.get("role") or "",
+            "avatar_url": str(d.get("avatar_url") or "").strip(),
+        }
+        for d in instances
+        if d.get("agent_id")
+    }
     return {"status": "ok", "data": {"segments": segments, "agent_map": agent_map, "expert_map": agent_map}}
 
 
@@ -2046,6 +2054,7 @@ async def get_group_session(group_session_id: str):
         k: {
             "name": v.get("name") or "",
             "role": v.get("role") or "",
+            "avatar_url": str(v.get("avatar_url") or "").strip(),
             "is_leader": v.get("is_leader", False),
             "file_capabilities": v.get("file_capabilities") or {},
             "file_capability_labels": v.get("file_capability_labels") or [],

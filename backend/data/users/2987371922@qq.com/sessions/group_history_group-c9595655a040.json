@@ -217,5 +217,15 @@
       "has_raw_result": false,
       "note": "no_tool_call_detected"
     }
+  },
+  {
+    "message_id": "msg-6e793af0",
+    "role": "host",
+    "content": "已将“agent-9f6a2b8d”移出会话",
+    "timestamp": "2026-04-12T07:42:39.602044+00:00",
+    "event_type": "member_left",
+    "left_agent_ids": [
+      "agent-9f6a2b8d"
+    ]
   }
 ]

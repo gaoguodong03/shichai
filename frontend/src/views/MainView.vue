@@ -144,10 +144,17 @@
                     <span
                       v-for="id in (s.agent_ids || []).slice(0, 3)"
                       :key="id"
-                      class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-semibold text-text-inverse shrink-0 ring-1 ring-sidebar"
-                      :style="{ backgroundColor: dhaAvatarColorForId(id) }"
+                      class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-semibold shrink-0 ring-1 ring-sidebar overflow-hidden"
+                      :class="dhaAvatarImgUrlForSession(id) ? '' : 'text-text-inverse'"
+                      :style="dhaAvatarImgUrlForSession(id) ? {} : { backgroundColor: dhaAvatarColorForId(id) }"
                     >
-                      {{ dhaAvatarCharForId(id) }}
+                      <img
+                        v-if="dhaAvatarImgUrlForSession(id)"
+                        :src="dhaAvatarImgUrlForSession(id)!"
+                        alt=""
+                        class="w-full h-full object-cover"
+                      />
+                      <template v-else>{{ dhaAvatarCharForId(id) }}</template>
                     </span>
                   </div>
                   <span class="truncate text-xs text-muted">
@@ -356,6 +363,17 @@
               ]"
               @click="selectedId = d.agent_id"
             >
+              <div
+                class="shrink-0 w-9 h-9 rounded-xl border border-border-light overflow-hidden bg-page flex items-center justify-center text-muted text-sm font-semibold"
+              >
+                <img
+                  v-if="d.avatar_url"
+                  :src="d.avatar_url"
+                  alt=""
+                  class="w-full h-full object-cover"
+                />
+                <span v-else>{{ (d.name || d.agent_id || '?').trim().charAt(0) || '?' }}</span>
+              </div>
               <div class="flex-1 min-w-0 text-left">
               <div class="truncate font-medium">{{ d.name || d.agent_id }}</div>
                 <div class="truncate text-xs text-muted mt-0.5">{{ d.role || '（无角色）' }}</div>
@@ -1582,6 +1600,7 @@ const dhaInstances = ref<
     mcp_server_ids?: string[]
     is_leader?: boolean
     llm_provider_id?: string
+    avatar_url?: string
     file_capabilities?: Record<string, boolean>
     file_capability_labels?: string[]
     url_capability?: boolean
@@ -1684,6 +1703,11 @@ function dhaAvatarCharForId(dhaId: string): string {
   const found = list.find((d) => d.agent_id === dhaId)
   const name = (found?.name || dhaId || '?').trim()
   return name ? name.slice(0, 1).toUpperCase() : '?'
+}
+
+function dhaAvatarImgUrlForSession(dhaId: string): string | null {
+  const u = (dhaInstances.value || []).find((d) => d.agent_id === dhaId)?.avatar_url
+  return u && String(u).trim() ? String(u).trim() : null
 }
 
 

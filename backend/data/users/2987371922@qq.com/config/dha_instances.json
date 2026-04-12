@@ -9,7 +9,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-03.png"
   },
   {
     "agent_id": "agent-440b26f8",
@@ -23,7 +24,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-195b8c3a",
@@ -38,7 +39,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": "",
+    "avatar_url": "/expert-avatars/expert-03.png",
     "file_capabilities": {
       "read": true,
       "edit": true,
@@ -62,7 +63,8 @@
       "zhipu-web-search"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-10.png"
   },
   {
     "agent_id": "agent-seminar-teacher-advisor",
@@ -75,7 +77,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-03.png"
   },
   {
     "agent_id": "agent-seminar-ai-peer",
@@ -87,7 +89,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-02.png"
   },
   {
     "agent_id": "agent-seminar-teacher-review",
@@ -98,7 +101,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-07.png"
   },
   {
     "agent_id": "agent-b6dba178",
@@ -110,7 +113,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-02.png"
   },
   {
     "agent_id": "agent-format-conv",
@@ -123,7 +127,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-10.png"
   },
   {
     "agent_id": "agent-web-fetch",
@@ -136,7 +141,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-2be73edd",
@@ -149,7 +154,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-01.png"
   },
   {
     "agent_id": "agent-deepresearch-exp",
@@ -166,7 +172,8 @@
       "zhipu-web-search"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-05.png"
   },
   {
     "agent_id": "agent-thinking-ext",
@@ -183,7 +190,8 @@
       "zhipu-web-search"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-65fdbc8f",
@@ -194,7 +202,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-548f5f8d",
@@ -207,7 +215,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-ee83c54f",
@@ -220,7 +228,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": "",
+    "avatar_url": "/expert-avatars/expert-11.png",
     "file_capabilities": {
       "read": true,
       "edit": true,
@@ -241,6 +249,6 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-10.png"
   }
 ]

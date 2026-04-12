@@ -9,7 +9,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-c9b8ae32",
@@ -21,7 +22,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-05.png"
   },
   {
     "agent_id": "agent-440b26f8",
@@ -34,7 +36,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-05.png"
   },
   {
     "agent_id": "agent-195b8c3a",
@@ -53,7 +55,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-04.png"
   },
   {
     "agent_id": "agent-c1bf68ba",
@@ -70,7 +73,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-03.png"
   },
   {
     "agent_id": "agent-browser-ops",
@@ -82,7 +86,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-10.png"
   },
   {
     "agent_id": "agent-file-workspace",
@@ -98,7 +103,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-seminar-guide",
@@ -111,7 +117,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-09.png"
   },
   {
     "agent_id": "agent-seminar-teacher-advisor",
@@ -125,7 +132,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-04.png"
   },
   {
     "agent_id": "agent-seminar-ai-peer",
@@ -138,7 +145,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-09.png"
   },
   {
     "agent_id": "agent-seminar-teacher-review",
@@ -151,7 +159,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-b6dba178",
@@ -163,7 +171,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-format-conv",
@@ -179,7 +188,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-02.png"
   },
   {
     "agent_id": "agent-web-fetch",
@@ -193,7 +203,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-11.png"
   },
   {
     "agent_id": "agent-2be73edd",
@@ -206,7 +217,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-11.png"
   },
   {
     "agent_id": "agent-66bafc4e",
@@ -220,7 +232,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-9f6a2b8d",
@@ -236,7 +249,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-11.png"
   },
   {
     "agent_id": "agent-ae100f7a",
@@ -251,7 +265,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-10.png"
   },
   {
     "agent_id": "agent-cf4de333",
@@ -264,7 +279,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-deepresearch-exp",
@@ -282,7 +297,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-06.png"
   },
   {
     "agent_id": "agent-thinking-ext",
@@ -300,7 +316,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": ""
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-03.png"
   },
   {
     "agent_id": "agent-workspace-expert",
@@ -314,7 +331,8 @@
       "file-reader"
     ],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-05.png"
   },
   {
     "agent_id": "agent-paper-strategist",
@@ -326,7 +344,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-04.png"
   },
   {
     "agent_id": "agent-paper-composer",
@@ -338,7 +357,8 @@
     ],
     "mcp_server_ids": [],
     "is_leader": false,
-    "llm_provider_id": "glm"
+    "llm_provider_id": "glm",
+    "avatar_url": "/expert-avatars/expert-01.png"
   },
   {
     "agent_id": "agent-65fdbc8f",
@@ -352,6 +372,6 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-11.png"
   }
 ]

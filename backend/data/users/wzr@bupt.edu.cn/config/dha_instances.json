@@ -11,7 +11,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-08.png"
   },
   {
     "agent_id": "agent-37b30426",
@@ -24,7 +24,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-09.png"
   },
   {
     "agent_id": "agent-e52af5f5",
@@ -39,7 +39,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-05.png"
   },
   {
     "agent_id": "agent-8d0d15ba",
@@ -52,7 +52,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-09.png"
   },
   {
     "agent_id": "agent-3087c6f3",
@@ -66,7 +66,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-11.png"
   },
   {
     "agent_id": "agent-d29a5560",
@@ -79,7 +79,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-01.png"
   },
   {
     "agent_id": "agent-b8e013ee",
@@ -90,7 +90,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-03.png"
   },
   {
     "agent_id": "agent-00a615ed",
@@ -103,6 +103,6 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": ""
+    "avatar_url": "/expert-avatars/expert-06.png"
   }
 ]
