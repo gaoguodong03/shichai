@@ -341,7 +341,8 @@ async def import_dha_instance_bundle(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     overwrite_skills: bool = Form(True),
-    mcp_skip_existing: bool = Form(True),
+    # False=用包内覆盖本地同名 MCP；True=保留本地同名，仅追加缺失 id
+    mcp_skip_existing: bool = Form(False),
     id_conflict: str = Form("new_id"),
 ):
     """导入专家包：合并技能、MCP 与专家条目。"""

@@ -136,17 +136,10 @@
                 v-if="selectedDhaId && selectedDhaId !== '__new__'"
                 type="button"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
-                @click="exportDhaJson"
-              >
-                导出 JSON
-              </button>
-              <button
-                v-if="selectedDhaId && selectedDhaId !== '__new__'"
-                type="button"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+                title="导出 ZIP 专家包（含技能等）"
                 @click="exportDhaBundle"
               >
-                导出专家包
+                导出
               </button>
               <button
                 type="button"
@@ -445,27 +438,6 @@ const filteredSkills = computed(() => {
   })
 })
 
-async function exportDhaJson() {
-  const id = props.selectedDhaId
-  if (!id || id === '__new__') return
-  try {
-    const r = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/export`)
-    if (!r.ok) {
-      const j = (await r.json().catch(() => ({}))) as { detail?: string }
-      throw new Error(j.detail || '导出失败')
-    }
-    const blob = await r.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `expert-${id.replace(/[/\\]/g, '_')}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    window.alert((e as Error).message || '导出失败')
-  }
-}
-
 async function exportDhaBundle() {
   const id = props.selectedDhaId
   if (!id || id === '__new__') return
@@ -483,7 +455,7 @@ async function exportDhaBundle() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    window.alert((e as Error).message || '导出专家包失败')
+    window.alert((e as Error).message || '导出失败')
   }
 }
 

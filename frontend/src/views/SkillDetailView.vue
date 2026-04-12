@@ -23,7 +23,7 @@
             :disabled="exporting"
             @click="exportZip"
           >
-            {{ exporting ? '导出中…' : '导出 ZIP' }}
+            {{ exporting ? '导出中…' : '导出' }}
           </button>
           <button
             type="button"

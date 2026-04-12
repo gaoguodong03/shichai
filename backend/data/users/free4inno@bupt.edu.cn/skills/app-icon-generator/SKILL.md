@@ -23,6 +23,8 @@ name: 图片生成
 ### run_skill_script（唯一推荐）
 
 - **工具名**：单聊为 `run_skill_script`；群聊为 `run_skill_script_app-icon-generator`。生成图标时只调用此工具，不要调用 list_allowed_directories、read_file 等文件/目录类 MCP 来「检查」配置。
+- **命名约定（重要）**：群聊中必须优先输出 `run_skill_script_app-icon-generator`。若误输出 `run_skill_script`，后端会做别名映射到 `run_skill_script_app-icon-generator` 作为兼容，但不建议依赖该兼容行为。
+- **调用链调试字段**：若执行异常，请检查回合日志中的 `Tool Attempt Debug`、`Tool Raw Outputs`、`Sandbox Entry Trace` 三段；它们分别表示工具名解析、工具原始返回、是否进入 sandbox。
 - **参数**：
   - `script_path`：`"generate_image.py"`
   - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`
@@ -116,6 +118,10 @@ name: 图片生成
 - **小红书信息图**：多张统一风格（如 cute/fresh/minimal），description 中写明「小红书风格」「信息图」「第 N 张」及本张内容要点。
 
 以上场景均使用同一工具（run_skill_script 的 generate_image.py 或 volces-icon_generate_app_icon），仅 description 与 pic_size 不同。
+
+### 网文 / 小说 / 连载（请改用专用技能）
+
+若任务是**网络小说、章节插图、人物立绘、与剧情强绑定的封面**，应使用 **`webnovel-illustration`（网文配图）** 技能：先与用户共创「配图方案表」、每张图锚定正文，再生成；本技能仍负责图标、通用封面、技术文章配图、小红书信息图等。
 
 ---
 

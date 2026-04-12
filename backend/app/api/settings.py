@@ -614,7 +614,8 @@ async def import_session_preset_bundle(
     dry_run: bool = Form(True),
     overwrite_experts: bool = Form(True),
     overwrite_skills: bool = Form(True),
-    mcp_skip_existing: bool = Form(True),
+    # False=用包内覆盖本地同名 MCP（与前端「同名工具覆盖本地工具配置」勾选一致）；True=保留本地同名，仅追加缺失 id
+    mcp_skip_existing: bool = Form(False),
     preset_id_conflict: str = Form("new_id"),
 ):
     """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单与将覆盖的技能提示。"""

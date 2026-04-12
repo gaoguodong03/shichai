@@ -177,7 +177,7 @@
         <template v-else-if="currentModule === 'resource'">
           <!-- 场景 -->
           <template v-if="resourceSubModule === 'scenario'">
-            <div class="px-3 mb-2 space-y-2">
+            <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
                   type="button"
@@ -198,12 +198,14 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
                   >
-                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
                 <button
@@ -217,7 +219,7 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
@@ -287,7 +289,7 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                  title="导入 JSON 或专家包（ZIP）"
+                  title="导入 JSON 或场景包（ZIP）"
                   @click="pickDhaImportFile"
                 >
                   <svg
@@ -295,12 +297,14 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
                   >
-                    <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
                 <button
@@ -314,7 +318,7 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
@@ -419,7 +423,7 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
@@ -479,7 +483,7 @@
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    stroke-width="1.5"
+                    stroke-width="1.8"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     aria-hidden="true"
@@ -799,19 +803,10 @@
                     type="button"
                     class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
                     :disabled="scenarioSaving || isCreatingScenario"
-                    title="导出为 JSON，便于分享或备份"
-                    @click="exportScenarioPreset"
-                  >
-                    导出 JSON
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
-                    :disabled="scenarioSaving || isCreatingScenario"
-                    title="导出场景包 ZIP（含专家、技能、MCP 与场景），一键分享"
+                    title="导出 ZIP 场景包（含专家、技能、MCP 与场景）"
                     @click="exportScenarioBundle"
                   >
-                    导出场景包
+                    导出
                   </button>
                   <button
                     type="button"
@@ -904,19 +899,47 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby="scenario-import-title"
-      @click.self="closeScenarioImportModal"
+      @click.self="onScenarioImportBackdropClick"
     >
       <div
-        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar"
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
         @click.stop
       >
-        <h3 id="scenario-import-title" class="text-lg font-semibold mb-2">导入场景</h3>
-        <p class="text-sm text-muted mb-3">
-          仅导入 JSON 时，下列为与当前账号的对比结果。若缺少专家/技能/MCP，需在<strong>服务器</strong>上编辑该用户目录下的配置文件（如
-          <code class="text-xs bg-page px-1 rounded align-middle">data/users/&lt;账号&gt;/config/dha_instances.json</code>、
-          <code class="text-xs bg-page px-1 rounded align-middle">skills/</code>、
-          <code class="text-xs bg-page px-1 rounded align-middle">mcp_servers.json</code>）；<strong>前端无法修改专家的 agent_id</strong>。
-        </p>
+        <div
+          v-if="scenarioImportCommitting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span
+            class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin"
+            aria-hidden="true"
+          />
+          <p class="text-sm font-medium text-primary">正在导入…</p>
+          <p class="text-xs text-muted px-4 text-center">请勿关闭页面，导入完成后将在此显示结果</p>
+        </div>
+        <template v-if="scenarioImportResult">
+          <h3 id="scenario-import-title" class="text-lg font-semibold mb-3">
+            {{ scenarioImportResult.ok ? '导入成功' : '导入失败' }}
+          </h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="scenarioImportResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ scenarioImportResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeScenarioImportModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+        <h3 id="scenario-import-title" class="text-lg font-semibold mb-3">导入场景</h3>
         <template v-if="scenarioImportMode === 'bundle' && scenarioBundlePreview?.bundle_preview">
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
@@ -958,8 +981,8 @@
               同名技能目录覆盖本地
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="scenarioBundleMcpSkipExisting" type="checkbox" class="rounded border-input-border" />
-              已存在的 MCP id 不覆盖（仅追加缺失的）
+              <input v-model="scenarioBundleOverwriteMcp" type="checkbox" class="rounded border-input-border" />
+              同名工具覆盖本地工具配置
             </label>
           </div>
         </template>
@@ -1013,10 +1036,11 @@
             覆盖同名场景
           </label>
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="flex justify-start gap-2">
           <button
             type="button"
-            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover"
+            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+            :disabled="scenarioImportCommitting"
             @click="closeScenarioImportModal"
           >
             取消
@@ -1030,6 +1054,7 @@
             {{ scenarioImportCommitting ? '导入中…' : '确认导入' }}
           </button>
         </div>
+        </template>
       </div>
     </div>
 
@@ -1039,19 +1064,45 @@
       class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
       role="dialog"
       aria-modal="true"
-      @click.self="closeDhaImportModal"
+      @click.self="onDhaImportBackdropClick"
     >
       <div
-        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar"
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
         @click.stop
       >
-        <h3 class="text-lg font-semibold mb-2">导入专家</h3>
-        <p class="text-sm text-muted mb-3">
-          仅导入 JSON 时下列为依赖校验。缺少技能或 MCP 时需在<strong>服务器</strong>上编辑该用户的
-          <code class="text-xs bg-page px-1 rounded align-middle">skills/</code> 与
-          <code class="text-xs bg-page px-1 rounded align-middle">config/mcp_servers.json</code>。
-          <strong>前端无法修改 agent_id</strong>，需改 id 请编辑 <code class="text-xs bg-page px-1 rounded align-middle">dha_instances.json</code>。
-        </p>
+        <div
+          v-if="dhaImportCommitting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span
+            class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin"
+            aria-hidden="true"
+          />
+          <p class="text-sm font-medium text-primary">正在导入…</p>
+          <p class="text-xs text-muted px-4 text-center">请勿关闭页面，导入完成后将在此显示结果</p>
+        </div>
+        <template v-if="dhaImportResult">
+          <h3 class="text-lg font-semibold mb-3">{{ dhaImportResult.ok ? '导入成功' : '导入失败' }}</h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="dhaImportResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ dhaImportResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeDhaImportModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+        <h3 class="text-lg font-semibold mb-3">导入专家</h3>
         <template v-if="dhaImportMode === 'bundle' && dhaBundlePreview?.bundle_preview">
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ dhaBundlePreview.bundle_preview.name }}</div>
@@ -1074,7 +1125,6 @@
             <p v-if="(dhaBundlePreview.bundle_preview.would_skip_skills || []).length" class="text-xs text-muted pt-1">
               将跳过已有技能：{{ (dhaBundlePreview.bundle_preview.would_skip_skills || []).join(', ') }}
             </p>
-            <p class="text-xs text-muted pt-2">确认导入后会把包内技能写入本账号目录，再合并专家；若仍有缺失会在成功提示后查看服务端日志或自行校验。</p>
           </div>
           <div class="space-y-2 mb-4 text-sm">
             <label class="flex items-center gap-2 cursor-pointer">
@@ -1082,8 +1132,8 @@
               同名技能目录覆盖本地
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="dhaBundleMcpSkipExisting" type="checkbox" class="rounded border-input-border" />
-              已存在的 MCP id 不覆盖（仅追加缺失的）
+              <input v-model="dhaBundleOverwriteMcp" type="checkbox" class="rounded border-input-border" />
+              同名工具覆盖本地工具配置
             </label>
           </div>
         </template>
@@ -1133,10 +1183,11 @@
             覆盖同名专家
           </label>
         </div>
-        <div class="flex justify-end gap-2">
+        <div class="flex justify-start gap-2">
           <button
             type="button"
-            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover"
+            class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+            :disabled="dhaImportCommitting"
             @click="closeDhaImportModal"
           >
             取消
@@ -1150,6 +1201,7 @@
             {{ dhaImportCommitting ? '导入中…' : '确认导入' }}
           </button>
         </div>
+        </template>
       </div>
     </div>
   </div>
@@ -1285,6 +1337,8 @@ const scenarioImportPreview = ref<
 const scenarioImportPayloadForCommit = ref<Record<string, unknown> | null>(null)
 const scenarioImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
 const scenarioImportCommitting = ref(false)
+/** 导入完成后在弹窗内展示结果，用户点「关闭」后再收起（避免先关弹窗再等 alert） */
+const scenarioImportResult = ref<{ ok: boolean; message: string } | null>(null)
 const scenarioImportMode = ref<'json' | 'bundle' | null>(null)
 const pendingBundleFile = ref<File | null>(null)
 const scenarioBundlePreview = ref<{
@@ -1300,7 +1354,8 @@ const scenarioBundlePreview = ref<{
 } | null>(null)
 const scenarioBundleOverwriteExperts = ref(true)
 const scenarioBundleOverwriteSkills = ref(true)
-const scenarioBundleMcpSkipExisting = ref(true)
+/** true：用包内配置覆盖同名 MCP（对应后端 mcp_skip_existing=false）；false：不覆盖同名，仅追加包里有而本地没有的 */
+const scenarioBundleOverwriteMcp = ref(true)
 
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
@@ -1323,6 +1378,7 @@ const dhaImportPreview = ref<
 const dhaImportPayloadForCommit = ref<Record<string, unknown> | null>(null)
 const dhaImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
 const dhaImportCommitting = ref(false)
+const dhaImportResult = ref<{ ok: boolean; message: string } | null>(null)
 const dhaBundlePreview = ref<{
   bundle_preview?: {
     agent_id: string
@@ -1334,7 +1390,7 @@ const dhaBundlePreview = ref<{
   }
 } | null>(null)
 const dhaBundleOverwriteSkills = ref(true)
-const dhaBundleMcpSkipExisting = ref(true)
+const dhaBundleOverwriteMcp = ref(true)
 
 const canConfirmDhaImport = computed(() => {
   if (dhaImportMode.value === 'bundle') {
@@ -1920,6 +1976,12 @@ function closeScenarioImportModal() {
   pendingBundleFile.value = null
   scenarioBundlePreview.value = null
   scenarioImportMode.value = null
+  scenarioImportResult.value = null
+}
+
+function onScenarioImportBackdropClick() {
+  if (scenarioImportCommitting.value || scenarioImportResult.value) return
+  closeScenarioImportModal()
 }
 
 async function onScenarioImportFile(ev: Event) {
@@ -1940,7 +2002,7 @@ async function onScenarioImportFile(ev: Event) {
       fd.append('dry_run', 'true')
       fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
       fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
-      fd.append('mcp_skip_existing', scenarioBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
       fd.append('preset_id_conflict', scenarioImportIdConflict.value)
       const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
       const j = (await r.json().catch(() => ({}))) as {
@@ -1994,6 +2056,7 @@ async function onScenarioImportFile(ev: Event) {
 
 async function commitScenarioImport() {
   if (scenarioImportMode.value === 'bundle' && pendingBundleFile.value) {
+    scenarioImportResult.value = null
     scenarioImportCommitting.value = true
     try {
       const fd = new FormData()
@@ -2001,7 +2064,7 @@ async function commitScenarioImport() {
       fd.append('dry_run', 'false')
       fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
       fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
-      fd.append('mcp_skip_existing', scenarioBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
       fd.append('preset_id_conflict', scenarioImportIdConflict.value)
       const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
       const j = (await r.json().catch(() => ({}))) as {
@@ -2023,15 +2086,14 @@ async function commitScenarioImport() {
       const msg = s
         ? `场景 id：${(s.preset_imported_ids || []).join(', ') || '—'}\n技能写入：${(s.skills_imported || []).length} 个，跳过：${(s.skills_skipped || []).length} 个\n新增 MCP 配置：${s.mcp_added ?? 0} 条`
         : '导入成功'
-      closeScenarioImportModal()
       await fetchScenarioPresets()
       await fetchDHA()
       await fetchSkills()
       await fetchMCP()
       window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
-      window.alert(msg)
+      scenarioImportResult.value = { ok: true, message: msg }
     } catch (e) {
-      window.alert((e as Error).message || '导入失败')
+      scenarioImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
     } finally {
       scenarioImportCommitting.value = false
     }
@@ -2040,6 +2102,7 @@ async function commitScenarioImport() {
 
   const payload = scenarioImportPayloadForCommit.value
   if (!payload) return
+  scenarioImportResult.value = null
   scenarioImportCommitting.value = true
   try {
     const r = await fetch('/api/settings/session-presets/import', {
@@ -2055,35 +2118,13 @@ async function commitScenarioImport() {
     if (j?.status !== 'ok') {
       throw new Error(j.detail || '导入失败')
     }
-    closeScenarioImportModal()
     await fetchScenarioPresets()
     window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
-    window.alert('导入成功')
+    scenarioImportResult.value = { ok: true, message: '导入成功' }
   } catch (e) {
-    window.alert((e as Error).message || '导入失败')
+    scenarioImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
   } finally {
     scenarioImportCommitting.value = false
-  }
-}
-
-async function exportScenarioPreset() {
-  const cur = selectedScenarioPreset.value
-  if (!cur?.id || isCreatingScenario.value) return
-  try {
-    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(cur.id)}/export`)
-    if (!r.ok) {
-      const j = (await r.json().catch(() => ({}))) as { detail?: string }
-      throw new Error(j.detail || '导出失败')
-    }
-    const blob = await r.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `scenario-${cur.id.replace(/[/\\]/g, '_')}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    window.alert((e as Error).message || '导出失败')
   }
 }
 
@@ -2104,7 +2145,7 @@ async function exportScenarioBundle() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    window.alert((e as Error).message || '导出场景包失败')
+    window.alert((e as Error).message || '导出失败')
   }
 }
 
@@ -2119,6 +2160,12 @@ function closeDhaImportModal() {
   pendingDhaBundleFile.value = null
   dhaBundlePreview.value = null
   dhaImportMode.value = null
+  dhaImportResult.value = null
+}
+
+function onDhaImportBackdropClick() {
+  if (dhaImportCommitting.value || dhaImportResult.value) return
+  closeDhaImportModal()
 }
 
 async function onDhaImportFile(ev: Event) {
@@ -2138,7 +2185,7 @@ async function onDhaImportFile(ev: Event) {
       fd.append('file', file)
       fd.append('dry_run', 'true')
       fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
-      fd.append('mcp_skip_existing', dhaBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', dhaBundleOverwriteMcp.value ? 'false' : 'true')
       fd.append('id_conflict', dhaImportIdConflict.value)
       const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
       const j = (await r.json().catch(() => ({}))) as {
@@ -2192,13 +2239,14 @@ async function onDhaImportFile(ev: Event) {
 
 async function commitDhaImport() {
   if (dhaImportMode.value === 'bundle' && pendingDhaBundleFile.value) {
+    dhaImportResult.value = null
     dhaImportCommitting.value = true
     try {
       const fd = new FormData()
       fd.append('file', pendingDhaBundleFile.value)
       fd.append('dry_run', 'false')
       fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
-      fd.append('mcp_skip_existing', dhaBundleMcpSkipExisting.value ? 'true' : 'false')
+      fd.append('mcp_skip_existing', dhaBundleOverwriteMcp.value ? 'false' : 'true')
       fd.append('id_conflict', dhaImportIdConflict.value)
       const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
       const j = (await r.json().catch(() => ({}))) as {
@@ -2210,17 +2258,15 @@ async function commitDhaImport() {
         throw new Error(j.detail || '导入失败')
       }
       const aid = j.data?.summary?.imported_agent_id
-      closeDhaImportModal()
+      const msg = aid
+        ? `导入成功，专家 id：${aid}（技能写入 ${(j.data?.summary?.skills_imported || []).length} 个）`
+        : '导入成功'
       await fetchDHA()
       await fetchSkills()
       await fetchMCP()
-      window.alert(
-        aid
-          ? `导入成功，专家 id：${aid}（技能写入 ${(j.data?.summary?.skills_imported || []).length} 个）`
-          : '导入成功',
-      )
+      dhaImportResult.value = { ok: true, message: msg }
     } catch (e) {
-      window.alert((e as Error).message || '导入失败')
+      dhaImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
     } finally {
       dhaImportCommitting.value = false
     }
@@ -2229,6 +2275,7 @@ async function commitDhaImport() {
 
   const payload = dhaImportPayloadForCommit.value
   if (!payload) return
+  dhaImportResult.value = null
   dhaImportCommitting.value = true
   try {
     const r = await fetch('/api/dha/instances/import', {
@@ -2248,15 +2295,14 @@ async function commitDhaImport() {
     if (j?.status !== 'ok') {
       throw new Error(j.detail || '导入失败')
     }
-    closeDhaImportModal()
     await fetchDHA()
-    window.alert(
-      (j.data?.imported_ids || []).length
-        ? `导入成功：${(j.data?.imported_ids || []).join(', ')}`
-        : '导入成功',
-    )
+    const ids = j.data?.imported_ids || []
+    dhaImportResult.value = {
+      ok: true,
+      message: ids.length ? `导入成功：${ids.join(', ')}` : '导入成功',
+    }
   } catch (e) {
-    window.alert((e as Error).message || '导入失败')
+    dhaImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
   } finally {
     dhaImportCommitting.value = false
   }
