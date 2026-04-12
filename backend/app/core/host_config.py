@@ -21,7 +21,8 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
     url_cap = raw.get("url_capability")
     if url_cap is None:
         url_cap = True
-    return {
+    display_name = str(raw.get("display_name") or "").strip()
+    out: Dict[str, Any] = {
         "skill_ids": skill_ids,
         "system_prompt": system_prompt or None,
         "llm_provider_id": llm,
@@ -29,3 +30,6 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
         "file_capabilities": fc,
         "url_capability": bool(url_cap),
     }
+    if display_name:
+        out["display_name"] = display_name
+    return out

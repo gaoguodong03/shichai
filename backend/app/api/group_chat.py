@@ -252,27 +252,29 @@ def _resolve_scene_host_profile(
 ) -> Optional[Dict[str, Any]]:
     """合成「类 DHA」主持人 profile：优先 meta.host_config + 虚拟 id；否则回退到真实 leader DHA。"""
     hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
-    display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
+    default_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
     base_host_cfg = normalize_host_config_dict(hp_norm)
     leader = str(meta_item.get("leader_agent_id") or "").strip()
     agent_ids_meta = [str(x).strip() for x in (meta_item.get("agent_ids") or []) if str(x).strip()]
     orch = effective_orchestration_profile(meta_item, agent_ids=agent_ids_meta)
     role_label = "群聊场景主持人" if orch == "scene" else "群聊主持人"
 
-    def _apply_virtual(prof: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_virtual(prof: Dict[str, Any], *, name: str) -> Dict[str, Any]:
         prof["agent_id"] = VIRTUAL_SCENE_HOST_ID
-        prof["name"] = display_name
+        prof["name"] = name
         prof["role"] = role_label
         return prof
 
     if "host_config" in meta_item and isinstance(meta_item.get("host_config"), dict):
         merged = dict(base_host_cfg)
         merged.update(meta_item["host_config"])
+        hc_dn = str(merged.get("display_name") or "").strip()
+        resolved_name = hc_dn or default_display_name
         prof = normalize_host_config_dict(merged)
-        return _apply_virtual(prof)
+        return _apply_virtual(prof, name=resolved_name)
     if leader == VIRTUAL_SCENE_HOST_ID:
         prof = normalize_host_config_dict(base_host_cfg)
-        return _apply_virtual(prof)
+        return _apply_virtual(prof, name=default_display_name)
     if leader and leader in dha_map:
         return dict(dha_map[leader])
     return None
@@ -2297,7 +2299,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     messages = _load_group_history(group_session_id)
     app_settings = load_app_settings()
     hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
-    host_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
+    hc_meta = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
+    hc_dn = str(hc_meta.get("display_name") or "").strip()
+    host_display_name = hc_dn or str(hp_norm.get("display_name") or "四九").strip() or "四九"
     pending_owner_agent_id = (m.get("pending_owner_agent_id") or "").strip().lower()
     pending_skill_id = (m.get("pending_skill_id") or "").strip()
     user_message = (request.message or "").strip()

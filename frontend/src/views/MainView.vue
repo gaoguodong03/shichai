@@ -636,13 +636,13 @@
                   {{ isCreatingScenario ? '创建场景' : '配置场景' }}
                 </h2>
               </div>
-              <form class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
+              <form class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
                 <div>
                   <label class="block text-sm font-medium text-primary mb-1">名称</label>
                   <input
                     v-model="scenarioDraft.name"
                     type="text"
-                    class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                     placeholder="请输入场景名称"
                   />
                 </div>
@@ -651,98 +651,98 @@
                   <textarea
                     v-model="scenarioDraft.description"
                     rows="3"
-                    class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
+                    class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring resize-y"
                     placeholder="请输入场景描述"
                   />
                 </div>
-                <div class="border border-border-light rounded-lg p-3 space-y-3">
-                  <div>
-                    <label class="block text-sm font-medium text-primary mb-1">场景主持人（四九）</label>
-                    <p class="text-xs text-muted mb-3">
-                      仅保存在本场景内，不占用专家位；从此场景<strong>新建会话</strong>时，会把下面配置写入会话。
-                      与“主持人设置”独立：这里的技能与基础能力只影响当前场景。
-                    </p>
-                    <div class="text-sm text-primary mb-3">
-                      <span class="font-medium">四九</span>
-                      <span class="text-muted text-xs ml-2">{{ VIRTUAL_SCENE_HOST_ID }}</span>
+                <div class="border border-border-light rounded-lg px-5 py-6 space-y-6">
+                  <label class="block text-sm font-medium text-primary mb-2">场景主持人</label>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-primary mb-1">名称</label>
+                      <input
+                        v-model="scenarioLeaderDisplayName"
+                        type="text"
+                        class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                        placeholder="例如：四九"
+                      />
                     </div>
-                    <div class="space-y-3">
-                      <div>
-                        <label class="block text-xs font-medium text-primary mb-1">大模型</label>
-                        <select
-                          v-model="scenarioLeaderLlmId"
-                          class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    <div>
+                      <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
+                      <select
+                        v-model="scenarioLeaderLlmId"
+                        class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                      >
+                        <option value="">使用应用默认</option>
+                        <option v-for="pid in llmProviderIds" :key="pid" :value="pid">
+                          {{ scenarioLlmOptionLabel(pid) }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-primary mb-1">系统提示词（可选）</label>
+                    <textarea
+                      v-model="scenarioLeaderSystemPrompt"
+                      rows="6"
+                      class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                      placeholder="例如：你是群聊主持人，只负责决定下一位发言人与 next_prompt，不代写专家正文。"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
+                    <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+                    <input
+                      v-if="skills.length"
+                      v-model.trim="scenarioLeaderSkillSearch"
+                      type="text"
+                      class="w-full mb-2 bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                      placeholder="搜索技能（名称/描述）"
+                    />
+                    <div
+                      v-if="skills.length"
+                      class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
+                    >
+                      <button
+                        v-for="sk in filteredScenarioLeaderSkills"
+                        :key="sk.id"
+                        type="button"
+                        class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                        :class="scenarioLeaderSkillIds.includes(sk.id)
+                          ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                          : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                        @click="toggleScenarioLeaderSkill(sk.id)"
+                      >
+                        {{ sk.name || sk.id }}
+                      </button>
+                    </div>
+                    <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
+                    <p v-else-if="!skills.length" class="text-xs text-muted">当前技能库为空，请先到左侧“技能”中新建或导入 Skill。</p>
+                    <div class="mt-4 pt-4 border-t border-border-light">
+                      <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
+                      <div class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
+                        <button
+                          v-for="item in scenarioLeaderFileCapabilityItems"
+                          :key="item.key"
+                          type="button"
+                          class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                          :class="item.enabled
+                            ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                            : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                          @click="toggleScenarioLeaderFileCapability(item.key)"
                         >
-                          <option value="">使用应用默认</option>
-                          <option v-for="pid in llmProviderIds" :key="pid" :value="pid">
-                            {{ scenarioLlmOptionLabel(pid) }}
-                          </option>
-                        </select>
-                      </div>
-                      <div>
-                        <label class="block text-xs font-medium text-primary mb-1">Skill（多选）</label>
-                        <input
-                          v-if="skills.length"
-                          v-model.trim="scenarioLeaderSkillSearch"
-                          type="text"
-                          class="w-full mb-2 bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                          placeholder="搜索技能（名称/描述）"
-                        />
-                        <div
-                          v-if="skills.length"
-                          class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3 max-h-40 overflow-y-auto themed-scrollbar"
+                          {{ item.label }}
+                        </button>
+                        <button
+                          type="button"
+                          class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                          :class="scenarioLeaderUrlCapability
+                            ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                            : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                          @click="toggleScenarioLeaderUrlCapability"
                         >
-                          <button
-                            v-for="sk in filteredScenarioLeaderSkills"
-                            :key="sk.id"
-                            type="button"
-                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                            :class="scenarioLeaderSkillIds.includes(sk.id)
-                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                            @click="toggleScenarioLeaderSkill(sk.id)"
-                          >
-                            {{ sk.name || sk.id }}
-                          </button>
-                        </div>
-                        <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
-                        <p v-else-if="!skills.length" class="text-xs text-muted">当前技能库为空，请先到左侧“技能”中新建或导入 Skill。</p>
-                      </div>
-                      <div class="mt-4 pt-4 border-t border-border-light">
-                        <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
-                        <div class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
-                          <button
-                            v-for="item in scenarioLeaderFileCapabilityItems"
-                            :key="item.key"
-                            type="button"
-                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                            :class="item.enabled
-                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                            @click="toggleScenarioLeaderFileCapability(item.key)"
-                          >
-                            {{ item.label }}
-                          </button>
-                          <button
-                            type="button"
-                            class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                            :class="scenarioLeaderUrlCapability
-                              ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                              : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                            @click="toggleScenarioLeaderUrlCapability"
-                          >
-                            获取url数据
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <label class="block text-xs font-medium text-primary mb-1">系统提示词</label>
-                        <textarea
-                          v-model="scenarioLeaderSystemPrompt"
-                          rows="4"
-                          class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring resize-y"
-                          placeholder="场景主持人的系统提示词"
-                        />
+                          获取url数据
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1211,6 +1211,7 @@ const resourceMenuExpanded = ref(false)
 
 interface ScenarioHostConfig {
   skill_ids: string[]
+  display_name?: string
   system_prompt?: string
   llm_provider_id?: string
   mcp_server_ids?: string[]
@@ -1244,6 +1245,7 @@ const creatingScenarioId = ref<string | null>(null)
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
 const scenarioLeaderSkillSearch = ref('')
+const scenarioLeaderDisplayName = ref('')
 const scenarioLeaderSkillIds = ref<string[]>([])
 const scenarioLeaderSystemPrompt = ref('')
 const scenarioLeaderLlmId = ref('')
@@ -1691,6 +1693,7 @@ function syncScenarioDraftFromSelected() {
   const s = selectedScenarioPreset.value
   if (!s) {
     scenarioDraft.value = { id: '', name: '', agent_ids: [], description: '' }
+    scenarioLeaderDisplayName.value = ''
     scenarioLeaderSkillIds.value = ['group-host']
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
@@ -1707,6 +1710,7 @@ function syncScenarioDraftFromSelected() {
   }
   const hc = s.host_config
   if (hc && Array.isArray(hc.skill_ids) && hc.skill_ids.length) {
+    scenarioLeaderDisplayName.value = (hc.display_name as string) || ''
     scenarioLeaderSkillIds.value = [...hc.skill_ids]
     scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
     scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
@@ -1721,6 +1725,7 @@ function syncScenarioDraftFromSelected() {
     }
     scenarioLeaderUrlCapability.value = hc.url_capability !== false
   } else {
+    scenarioLeaderDisplayName.value = ''
     scenarioLeaderSkillIds.value = ['group-host']
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
@@ -1821,6 +1826,10 @@ async function saveScenarioPreset() {
     llm_provider_id: scenarioLeaderLlmId.value || undefined,
     file_capabilities: { ...scenarioLeaderFileCaps.value },
     url_capability: scenarioLeaderUrlCapability.value,
+  }
+  const leaderName = scenarioLeaderDisplayName.value.trim()
+  if (leaderName) {
+    host_config.display_name = leaderName
   }
   const dhaIds = rawIds
   scenarioSaving.value = true

@@ -47,9 +47,6 @@
             <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
 
             <div class="text-xs font-medium text-muted mb-1.5">技能</div>
-            <p class="text-xs text-muted mb-2">
-              新建会话主持人默认使用这里的技能；场景主持人的技能在场景页独立配置。
-            </p>
               <input
                 v-if="skills.length"
                 v-model.trim="skillSearch"

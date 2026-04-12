@@ -1929,6 +1929,7 @@ const groupMemberNames = computed(() => {
 
 type ShortcutHostConfig = {
   skill_ids: string[]
+  display_name?: string
   system_prompt?: string
   llm_provider_id?: string
   mcp_server_ids?: string[]
