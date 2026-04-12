@@ -4,3 +4,6 @@ backend/.cursor/debug*.log
 
 # Agent 临时输出（错误文字等）
 backend/data/agent-outputs/workspaces/*/错误文字.md
+
+# 公开分享场景包（体积大，registry.json 可提交）
+backend/data/scenario_shares/*.zip

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "entries": {
+    "1c9d0219e444": {
+      "preset_name": "网文创作",
+      "source_preset_id": "scenario-mnrbpjb1",
+      "created_by": "2987371922@qq.com",
+      "filename": "1c9d0219e444.zip",
+      "created_at": "2026-04-12T10:25:31.993506+00:00"
+    },
+    "aeba1e80a2c8": {
+      "preset_name": "报告写作",
+      "source_preset_id": "scenario-mn7duusy",
+      "created_by": "free4inno@bupt.edu.cn",
+      "filename": "aeba1e80a2c8.zip",
+      "created_at": "2026-04-12T10:25:42.994084+00:00"
+    },
+    "b5d1185e14d7": {
+      "preset_name": "网文创作",
+      "source_preset_id": "scenario-mnrbpjb1",
+      "created_by": "2987371922@qq.com",
+      "filename": "b5d1185e14d7.zip",
+      "created_at": "2026-04-12T10:32:44.935882+00:00"
+    },
+    "597b21e29501": {
+      "preset_name": "报告写作",
+      "source_preset_id": "scenario-mn7duusy",
+      "created_by": "2987371922@qq.com",
+      "filename": "597b21e29501.zip",
+      "created_at": "2026-04-12T10:42:05.608392+00:00"
+    },
+    "e31301732732": {
+      "preset_name": "网文创作",
+      "source_preset_id": "scenario-c0e66f5803",
+      "created_by": "2987371922@qq.com",
+      "filename": "e31301732732.zip",
+      "created_at": "2026-04-12T10:42:07.069541+00:00"
+    }
+  }
+}

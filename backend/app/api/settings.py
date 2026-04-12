@@ -565,9 +565,8 @@ async def export_session_preset(preset_id: str):
     )
 
 
-@router.get("/settings/session-presets/{preset_id}/export-bundle")
-async def export_session_preset_bundle(preset_id: str):
-    """导出场景包 ZIP：含 scenario_bundle.json、dha_instances.json、skills/、可选 mcp_servers.json。"""
+def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[str, Any], str]:
+    """构建场景包 ZIP；返回 (zip_bytes, preset_row, safe_name)。"""
     from app.api.dha import load_dha_instances
 
     key = str(preset_id or "").strip()
@@ -600,12 +599,68 @@ async def export_session_preset_bundle(preset_id: str):
         sorted(skill_ids),
     )
     safe_name = key.replace("..", "").replace("/", "").replace("\\", "") or "scenario"
+    return zip_bytes, match, safe_name
+
+
+@router.get("/settings/session-presets/{preset_id}/export-bundle")
+async def export_session_preset_bundle(preset_id: str):
+    """导出场景包 ZIP：含 scenario_bundle.json、dha_instances.json、skills/、可选 mcp_servers.json。"""
+    zip_bytes, _match, safe_name = _session_preset_bundle_zip_for_preset(preset_id)
     filename = f"scenario-bundle-{safe_name}.zip"
     return StreamingResponse(
         io.BytesIO(zip_bytes),
         media_type="application/zip",
         headers={"Content-Disposition": _content_disposition_attachment(filename)},
     )
+
+
+@router.get("/settings/session-presets/{preset_id}/share-link")
+async def get_session_preset_share_link(preset_id: str):
+    """若当前用户已发布过该场景，返回固定 share_id 与路径（未发布则 share_id 为 null）。"""
+    from app.core.scenario_share_store import find_share_id_for_source
+
+    key = str(preset_id or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="preset_id required")
+    path = _get_session_presets_path()
+    rows = _load_session_preset_rows_from_file(path)
+    if not next((r for r in rows if r.get("id") == key), None):
+        raise HTTPException(status_code=404, detail="Session preset not found")
+    uid = get_current_username() or ""
+    sid = find_share_id_for_source(uid, key)
+    if not sid:
+        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
+    return {
+        "status": "ok",
+        "data": {
+            "share_id": sid,
+            "open_path": f"/scenario/run?id={sid}",
+        },
+    }
+
+
+@router.post("/settings/session-presets/{preset_id}/publish-share")
+async def publish_session_preset_share(preset_id: str):
+    """将场景包发布到服务器公开目录；同一账号下同一场景 id 复用同一分享编号（链接固定）。"""
+    from app.core.scenario_share_store import upsert_public_share
+
+    zip_bytes, match, _safe = _session_preset_bundle_zip_for_preset(preset_id)
+    share_id = upsert_public_share(
+        zip_bytes,
+        {
+            "preset_name": str(match.get("name") or ""),
+            "source_preset_id": str(match.get("id") or ""),
+            "created_by": get_current_username() or "",
+        },
+    )
+    return {
+        "status": "ok",
+        "data": {
+            "share_id": share_id,
+            "open_path": f"/scenario/run?id={share_id}",
+            "preset_name": str(match.get("name") or ""),
+        },
+    }
 
 
 @router.post("/settings/session-presets/import-bundle")

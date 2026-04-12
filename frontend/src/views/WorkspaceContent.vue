@@ -2236,13 +2236,12 @@ function cancelEditShortcutPreset() {
 const pendingScenarioSessionId = ref<string | null>(null)
 const pendingScenarioDiscussionGoal = ref('')
 
-async function applyShortcutPreset(id: string) {
-  const p = shortcutPresets.value.find((x) => x.id === id)
-  if (!p) return
+/** 供父组件在导入场景包后拉起新会话（与快捷场景「新建会话」同一套逻辑） */
+async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
   const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x)))
   if (!targetExperts.length) {
     window.alert('该场景未配置专家，无法创建会话')
-    return
+    return null
   }
   const title = (p.name || '').trim() || '新对话'
   const body: Record<string, unknown> = {
@@ -2265,18 +2264,27 @@ async function applyShortcutPreset(id: string) {
     const j = (await r.json().catch(() => ({}))) as { status?: string; data?: { id?: string }; detail?: string }
     if (j.status !== 'ok' || !j.data?.id) {
       window.alert(typeof j.detail === 'string' ? j.detail : '创建会话失败')
-      return
+      return null
     }
     const newId = j.data.id
     pendingScenarioSessionId.value = newId
     pendingScenarioDiscussionGoal.value = (p.discussion_goal_example || '').trim()
-    saveShortcutPresets()
-    showShortcutEditor.value = false
-    showShortcutEditorModal.value = false
     emit('scenario-new-session', newId)
+    return newId
   } catch {
     window.alert('创建会话失败，请检查网络')
+    return null
   }
+}
+
+async function applyShortcutPreset(id: string) {
+  const p = shortcutPresets.value.find((x) => x.id === id)
+  if (!p) return
+  const newId = await createSessionFromScenarioPreset(p)
+  if (!newId) return
+  saveShortcutPresets()
+  showShortcutEditor.value = false
+  showShortcutEditorModal.value = false
 }
 
 watch(
@@ -4019,7 +4027,7 @@ watch(
 )
 
 
-defineExpose({ refresh: loadGroupDetail })
+defineExpose({ refresh: loadGroupDetail, createSessionFromScenarioPreset })
 </script>
 
 <style scoped>

@@ -24,7 +24,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": "/expert-avatars/expert-10.png"
+    "avatar_url": ""
   },
   {
     "agent_id": "agent-c1bf68ba",
@@ -142,7 +142,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": "/expert-avatars/expert-04.png"
+    "avatar_url": ""
   },
   {
     "agent_id": "agent-2be73edd",
@@ -255,7 +255,7 @@
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
-    "avatar_url": "/expert-avatars/expert-11.png",
+    "avatar_url": "",
     "file_capabilities": {
       "read": true,
       "edit": true,

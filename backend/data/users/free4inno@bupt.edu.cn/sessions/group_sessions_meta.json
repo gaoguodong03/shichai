@@ -129,5 +129,37 @@
     "speak_mode": "auto",
     "created_at": "2026-03-27T01:39:15.405535+00:00",
     "updated_at": "2026-03-27T02:08:40.772145+00:00"
+  },
+  "group-82087d922718": {
+    "title": "网文创作",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-12T10:33:05.687756+00:00",
+    "updated_at": "2026-04-12T10:33:05.687756+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene"
   }
 }

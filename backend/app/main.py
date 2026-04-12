@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.api import settings, files, auth, dha, group_chat, sessions
+from app.api import settings, files, auth, dha, group_chat, sessions, public_scenario
 from app.mcp.manager import cleanup_all_mcp_runtimes
 from dotenv import load_dotenv
 import os
@@ -49,6 +49,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(dha.router, prefix="/api")
 app.include_router(group_chat.router, prefix="/api")
 app.include_router(sessions.router, prefix="/api")
+app.include_router(public_scenario.router, prefix="/api")
 
 # Docker/生产：挂载前端静态并 SPA 回退
 _static_dir = os.getenv("STATIC_DIR")

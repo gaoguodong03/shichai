@@ -103,7 +103,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import landingImageUrl from '@/assets/landing.png'
 import logoUrl from '@/assets/49logo.png'
 
@@ -112,6 +112,7 @@ const USER_STORAGE_KEY = 'dha_user'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const passwordConfirm = ref('')
@@ -168,7 +169,12 @@ async function onSubmit() {
     localStorage.setItem(LOGIN_STORAGE_KEY, 'true')
     localStorage.setItem(USER_STORAGE_KEY, name)
     localStorage.setItem(TOKEN_STORAGE_KEY, j.data.access_token as string)
-    router.replace('/')
+    const redir = route.query.redirect
+    if (typeof redir === 'string' && redir.startsWith('/') && !redir.startsWith('//')) {
+      router.replace(redir)
+    } else {
+      router.replace('/')
+    }
   } catch (e) {
     error.value = '网络错误，请稍后重试'
   } finally {
@@ -216,7 +222,12 @@ async function onRegister() {
     localStorage.setItem(LOGIN_STORAGE_KEY, 'true')
     localStorage.setItem(USER_STORAGE_KEY, name)
     localStorage.setItem(TOKEN_STORAGE_KEY, j.data.access_token as string)
-    router.replace('/')
+    const redir = route.query.redirect
+    if (typeof redir === 'string' && redir.startsWith('/') && !redir.startsWith('//')) {
+      router.replace(redir)
+    } else {
+      router.replace('/')
+    }
   } catch (e) {
     error.value = '网络错误，请稍后重试'
   } finally {

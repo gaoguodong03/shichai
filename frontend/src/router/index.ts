@@ -14,6 +14,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/scenario/run',
+      name: 'scenario-run',
+      component: MainView,
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/login',
       name: 'login',
       component: LoginView
@@ -24,7 +30,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const loggedIn = localStorage.getItem(LOGIN_STORAGE_KEY) === 'true'
   if (to.meta.requiresAuth && !loggedIn) {
-    return { path: '/login' }
+    const q: Record<string, string> = {}
+    if (to.fullPath && to.fullPath !== '/login') {
+      q.redirect = to.fullPath
+    }
+    return { path: '/login', query: Object.keys(q).length ? q : undefined }
   }
   if (to.path === '/login' && loggedIn) {
     return { path: '/' }

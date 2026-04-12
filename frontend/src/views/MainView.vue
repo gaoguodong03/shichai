@@ -1,4 +1,10 @@
 <template>
+  <div
+    v-if="scenarioShareRouteImportLoading"
+    class="fixed top-0 left-0 right-0 z-[300] px-4 py-2 text-center text-sm bg-accent text-text-inverse shadow"
+  >
+    正在加载分享场景…
+  </div>
   <div class="flex flex-1 min-h-0 min-w-0 bg-page">
     <!-- 最左侧：导航（图标 + 名称） -->
     <nav class="w-28 flex-shrink-0 flex flex-col bg-sidebar py-3">
@@ -808,6 +814,27 @@
                     </div>
                   </div>
                 </div>
+                <div v-if="!isCreatingScenario" class="space-y-2 pt-1 border-t border-border-light">
+                  <div class="text-sm font-medium text-primary">访问方式</div>
+                  <div v-if="scenarioShareAutoPublishing" class="text-sm text-muted py-1">
+                    正在生成推广链接…
+                  </div>
+                  <template v-else-if="scenarioShareFullUrl">
+                    <div
+                      class="rounded-lg bg-accent-subtle/80 dark:bg-input-bg/40 border border-border-light px-3 py-2.5"
+                    >
+                      <a
+                        :href="scenarioShareFullUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-blue-600 dark:text-blue-400 hover:underline break-all text-sm leading-relaxed"
+                      >{{ scenarioShareFullUrl }}</a>
+                    </div>
+                  </template>
+                  <p v-else class="text-xs text-muted">
+                    请先填写名称、至少选择一位协作专家并保存，系统将自动生成固定推广链接。
+                  </p>
+                </div>
                 <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0 flex-wrap">
                   <button
                     type="button"
@@ -1226,8 +1253,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, inject, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, inject, onUnmounted, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 
 import SkillDetailView from './SkillDetailView.vue'
 import MCPDetailView from './MCPDetailView.vue'
@@ -1246,6 +1273,7 @@ import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
 
 const router = useRouter()
+const route = useRoute()
 /** 与后端 app.core.scene_host.VIRTUAL_SCENE_HOST_ID 一致 */
 const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 // 主题 composable 在该视图内会触发全局样式变量初始化；无需直接读取其返回值
@@ -1301,6 +1329,7 @@ interface ScenarioPreset {
   leader_agent_id?: string
   host_config?: ScenarioHostConfig
   description?: string
+  discussion_goal_example?: string
 }
 type ScenarioDraft = {
   id: string
@@ -1374,6 +1403,16 @@ const scenarioBundleOverwriteExperts = ref(true)
 const scenarioBundleOverwriteSkills = ref(true)
 /** true：用包内配置覆盖同名 MCP（对应后端 mcp_skip_existing=false）；false：不覆盖同名，仅追加包里有而本地没有的 */
 const scenarioBundleOverwriteMcp = ref(true)
+const scenarioShareAutoPublishing = ref(false)
+const scenarioShareRouteImportLoading = ref(false)
+const scenarioShareLinkData = ref<{ share_id: string | null }>({ share_id: null })
+const scenarioShareFullUrl = computed(() => {
+  const id = scenarioShareLinkData.value.share_id
+  if (!id) return ''
+  return `${window.location.origin}/scenario/run?id=${encodeURIComponent(id)}`
+})
+const scenarioShareRouteHandled = ref('')
+const scenarioShareOpenInFlight = ref(false)
 
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
@@ -1930,6 +1969,7 @@ async function saveScenarioPreset() {
     scenarioPresets.value = next
     if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
     syncScenarioDraftFromSelected()
+    void ensureScenarioSharePublishedSilent()
   } catch (e) {
     window.alert((e as Error).message || '保存场景失败')
   } finally {
@@ -1980,6 +2020,7 @@ async function fetchScenarioPresets() {
         creatingScenarioId.value = null
       }
       syncScenarioDraftFromSelected()
+      void fetchScenarioShareLink()
     }
   } catch {
     scenarioPresets.value = []
@@ -2116,6 +2157,26 @@ async function commitScenarioImport() {
       await fetchMCP()
       window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
       scenarioImportResult.value = { ok: true, message: msg }
+      if (route.path === '/scenario/run') {
+        const importedPid = (s?.preset_imported_ids || [])[0]
+        if (importedPid) {
+          const preset = scenarioPresets.value.find((x) => x.id === importedPid)
+          if (preset && (preset.agent_ids || []).length) {
+            currentModule.value = 'workspace'
+            await nextTick()
+            await workspaceContentRef.value?.createSessionFromScenarioPreset?.({
+              id: preset.id,
+              name: preset.name,
+              agent_ids: preset.agent_ids,
+              leader_agent_id: preset.leader_agent_id,
+              host_config: preset.host_config,
+              description: preset.description || '',
+              discussion_goal_example: preset.discussion_goal_example || '',
+            })
+          }
+        }
+        router.replace('/')
+      }
     } catch (e) {
       scenarioImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
     } finally {
@@ -2172,6 +2233,137 @@ async function exportScenarioBundle() {
     window.alert((e as Error).message || '导出失败')
   }
 }
+
+function canAutoPublishFromPreset(p: ScenarioPreset | null): boolean {
+  if (!p?.id) return false
+  const name = (p.name || '').trim()
+  const ids = p.agent_ids || []
+  return !!name && ids.length > 0
+}
+
+/** 静默发布/刷新推广包（链接 id 不变），用于打开场景页与保存后自动生成 */
+async function ensureScenarioSharePublishedSilent() {
+  const cur = selectedScenarioPreset.value
+  if (!cur?.id || isCreatingScenario.value || !canAutoPublishFromPreset(cur)) return
+  if (scenarioShareAutoPublishing.value) return
+  scenarioShareAutoPublishing.value = true
+  try {
+    const r = await fetch(
+      `/api/settings/session-presets/${encodeURIComponent(cur.id)}/publish-share`,
+      { method: 'POST' }
+    )
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      data?: { share_id?: string }
+    }
+    if (r.ok && j?.status === 'ok' && j.data?.share_id) {
+      scenarioShareLinkData.value = { share_id: j.data.share_id }
+    }
+  } catch {
+    // 静默失败，由「访问方式」区提示补充条件
+  } finally {
+    scenarioShareAutoPublishing.value = false
+  }
+}
+
+async function fetchScenarioShareLink() {
+  scenarioShareLinkData.value = { share_id: null }
+  const p = selectedScenarioPreset.value
+  if (!p?.id || isCreatingScenario.value) return
+  try {
+    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(p.id)}/share-link`)
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      data?: { share_id?: string | null }
+    }
+    if (j?.status === 'ok' && j.data?.share_id) {
+      scenarioShareLinkData.value = { share_id: j.data.share_id }
+      return
+    }
+    if (canAutoPublishFromPreset(p)) {
+      await ensureScenarioSharePublishedSilent()
+    }
+  } catch {
+    scenarioShareLinkData.value = { share_id: null }
+  }
+}
+
+async function tryOpenScenarioShareFromRoute() {
+  if (route.path !== '/scenario/run') return
+  const raw = route.query.id
+  const id = typeof raw === 'string' ? raw.trim() : ''
+  if (!id) return
+  if (scenarioShareRouteHandled.value === id) return
+  if (scenarioShareOpenInFlight.value) return
+  scenarioShareOpenInFlight.value = true
+  scenarioShareRouteImportLoading.value = true
+  try {
+    const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
+    if (!metaR.ok) {
+      window.alert('分享链接无效或已失效')
+      router.replace('/')
+      return
+    }
+    const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
+    if (!bundleR.ok) {
+      window.alert('无法下载场景包')
+      router.replace('/')
+      return
+    }
+    const blob = await bundleR.blob()
+    const file = new File([blob], `scenario-share-${id}.zip`, { type: 'application/zip' })
+    scenarioImportMode.value = 'bundle'
+    pendingBundleFile.value = file
+    scenarioBundlePreview.value = null
+    scenarioImportPreview.value = []
+    scenarioImportPayloadForCommit.value = null
+    currentModule.value = 'resource'
+    resourceSubModule.value = 'scenario'
+    resourceMenuExpanded.value = true
+    ensureMiddleColumnOpen()
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('dry_run', 'true')
+    fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
+    fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
+    fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
+    fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+    const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+    const j = (await r.json().catch(() => ({}))) as {
+      status?: string
+      detail?: string
+      data?: typeof scenarioBundlePreview.value
+    }
+    if (j?.status !== 'ok') {
+      throw new Error(j.detail || '场景包预览失败')
+    }
+    scenarioBundlePreview.value = j.data || null
+    scenarioImportIdConflict.value = 'new_id'
+    scenarioImportModalOpen.value = true
+    scenarioShareRouteHandled.value = id
+  } catch (e) {
+    window.alert((e as Error).message || '无法加载分享场景')
+    router.replace('/')
+  } finally {
+    scenarioShareRouteImportLoading.value = false
+    scenarioShareOpenInFlight.value = false
+  }
+}
+
+watch(
+  () => [route.path, typeof route.query.id === 'string' ? route.query.id : ''] as const,
+  () => {
+    void tryOpenScenarioShareFromRoute()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => route.path,
+  (p) => {
+    if (p !== '/scenario/run') scenarioShareRouteHandled.value = ''
+  }
+)
 
 function pickDhaImportFile() {
   dhaImportFileInputRef.value?.click()
@@ -2377,7 +2569,18 @@ async function fetchGroupSessions() {
   }
 }
 
-const workspaceContentRef = ref<{ refresh: () => void } | null>(null)
+const workspaceContentRef = ref<{
+  refresh: () => void
+  createSessionFromScenarioPreset: (p: {
+    id: string
+    name: string
+    agent_ids: string[]
+    leader_agent_id?: string
+    host_config?: ScenarioHostConfig
+    description?: string
+    discussion_goal_example?: string
+  }) => Promise<string | null>
+} | null>(null)
 async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()
   await fetchGroupSessions()
@@ -2706,6 +2909,7 @@ watch(resourceSubModule, (sub) => {
 watch(selectedScenarioPreset, () => {
   if (resourceSubModule.value !== 'scenario') return
   syncScenarioDraftFromSelected()
+  void fetchScenarioShareLink()
 })
 
 // 初始加载：切到对应模块时再请求数据
