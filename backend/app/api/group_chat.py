@@ -2708,7 +2708,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     orch_ctx.phase = OrchestrationPhase.RECRUITING
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_agent_id else "assistant",
+                        "role": "host",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "skill_id": _host_bubble_skill_id(),
@@ -2749,7 +2749,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 host_content = (host_content.rstrip() + "\n\n" + "建议顺序：\n" + "\n".join(lines)).strip()
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_agent_id else "assistant",
+                        "role": "host",
                         "content": host_content,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "skill_id": _host_bubble_skill_id(),
@@ -2775,7 +2775,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     if _ann and _ann not in _generic_host:
                         host_msg = {
                             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                            "role": "host" if not leader_agent_id else "assistant",
+                            "role": "host",
                             "content": _ann,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                             "skill_id": _host_bubble_skill_id(),
@@ -2854,7 +2854,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         )
                     host_msg = {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host" if not leader_agent_id else "assistant",
+                        "role": "host",
                         "content": err_msg,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "skill_id": _host_bubble_skill_id(),

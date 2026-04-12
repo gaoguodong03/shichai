@@ -136,7 +136,7 @@
                     >
                       <template v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)">
                         <span
-                          v-if="msg.role !== 'host' && msg.agent_id !== VIRTUAL_SCENE_HOST_ID"
+                          v-if="!isHostBubbleMessage(msg)"
                           class="group-chat-avatar"
                           :style="
                             expertAvatarUrl(msg.agent_id)
@@ -165,12 +165,11 @@
                           'group-chat-bubble',
                           isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
                           msg.role === 'user' && 'group-chat-bubble-user',
-                          msg.role === 'host' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-host',
-                          msg.role !== 'user' && msg.role !== 'host' && 'group-chat-bubble-dha'
+                          msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-dha',
                         ]"
                       >
-                        <div v-if="msg.role !== 'user' && msg.role !== 'host'" class="group-chat-bubble-meta">
-                          <span class="group-chat-bubble-name">{{ (groupDetail.agent_map || {})[msg.agent_id || '']?.name }}</span>
+                        <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
+                          <span class="group-chat-bubble-name">{{ bubbleDisplayName(msg) }}</span>
                       <span
                         v-if="(msg as GroupMessage)._streaming"
                         class="group-chat-bubble-streaming-indicator"
@@ -200,14 +199,6 @@
                           </div>
                           <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
                         </div>
-                        <div
-                          v-else-if="msg.role === 'host' && !isMemberJoinedMessage(msg)"
-                          class="group-chat-bubble-meta"
-                        >
-                          <span class="group-chat-bubble-name">{{ hostDisplayName }}</span>
-                          <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
-                          <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
-                        </div>
                         <div class="group-chat-bubble-body">
                           <template v-if="isMemberJoinedMessage(msg)">
                             <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
@@ -226,7 +217,7 @@
                           </template>
                         </div>
                         <div
-                          v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
+                          v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg) && (msg.content || '').trim()"
                           class="group-chat-bubble-actions"
                         >
                           <button
@@ -239,7 +230,6 @@
                             删除该条发言
                           </button>
                           <button
-                            v-if="msg.role !== 'user' && msg.role !== 'host' && (msg.content || '').trim()"
                             type="button"
                             class="group-chat-save-file-btn"
                             @click="saveDhaMessageToFile(msg)"
@@ -1456,6 +1446,36 @@ function formatSkillId(skillId?: string) {
   const label = (hit?.name || '').trim()
   if (label) return label
   return skillId
+}
+
+/** 是否按主持人气泡样式展示（与后端 role=host 一致；旧版曾在有 leader 时存成 assistant） */
+function isHostBubbleMessage(msg: GroupMessage): boolean {
+  if (msg.role === 'host') return true
+  if (msg.role !== 'assistant') return false
+  const row = msg as GroupMessage & MsgExt & { agent_id?: string }
+  const mid = String(row.agent_id || '').trim()
+  if (!mid) return false
+  if (mid === VIRTUAL_SCENE_HOST_ID) return true
+  const lid = String(groupDetail.value?.leader_agent_id || '').trim()
+  if (lid && mid === lid) {
+    const sid = row.skill_id
+    const label = formatSkillId(sid)
+    if (label.includes('主持')) return true
+    if (sid && String(sid).toLowerCase().includes('host')) return true
+  }
+  return false
+}
+
+/** 气泡标题行显示名：与专家一致优先用 agent_map；主持人类无映射时用当前主持展示名 */
+function bubbleDisplayName(msg: GroupMessage): string {
+  const row = msg as GroupMessage & { agent_id?: string }
+  const aid = String(row.agent_id || '').trim()
+  if (aid) {
+    const n = (groupDetail.value?.agent_map || {})[aid]?.name
+    if (n && String(n).trim()) return String(n).trim()
+  }
+  if (isHostBubbleMessage(msg)) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim()
+  return aid || '—'
 }
 
 /** 解析 tool_raw_result：提取工具名（标签）和原始返回值（展开浮层用） */
@@ -4730,13 +4750,6 @@ defineExpose({ refresh: loadGroupDetail })
   background: var(--color-card);
   color: var(--color-text);
   border: 1px solid var(--color-border-light);
-  border-bottom-left-radius: 4px;
-}
-.group-chat-bubble-host {
-  background: var(--color-list-hover);
-  color: var(--color-text-muted);
-  font-style: italic;
-  text-align: center;
   border-bottom-left-radius: 4px;
 }
 .group-chat-bubble-system {

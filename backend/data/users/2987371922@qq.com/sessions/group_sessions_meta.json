@@ -105,5 +105,20 @@
     "orchestration_profile": "scene",
     "skill_session_owner_id": "agent-195b8c3a",
     "skill_session_skill_id": "wechat-article-writer"
+  },
+  "group-dc98b4cb9ed4": {
+    "title": "cluadecode代码泄露问题",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-seminar-teacher-advisor",
+      "agent-c1bf68ba"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-12T08:04:34.505060+00:00",
+    "updated_at": "2026-04-12T08:06:23.362985+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-seminar-teacher-advisor",
+    "skill_session_skill_id": "seminar-divergence"
   }
 }
