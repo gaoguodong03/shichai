@@ -24,11 +24,6 @@
     "display_name": "test@bupt.edu.cn",
     "created_at": "2026-03-29T06:23:56.377298+00:00"
   },
-  "zry@bupt.edu.cn": {
-    "username": "zry@bupt.edu.cn",
-    "display_name": "zry@bupt.edu.cn",
-    "created_at": "2026-03-30T01:07:22.401867+00:00"
-  },
   "mzg@bupt.edu.cn": {
     "username": "mzg@bupt.edu.cn",
     "display_name": "mzg@bupt.edu.cn",
@@ -43,5 +38,35 @@
     "username": "cjg@bupt.edu.cn",
     "display_name": "cjg@bupt.edu.cn",
     "created_at": "2026-03-30T14:51:24.108443+00:00"
+  },
+  "hjl@bupt.edu.cn": {
+    "username": "hjl@bupt.edu.cn",
+    "display_name": "hjl@bupt.edu.cn",
+    "created_at": "2026-04-12T09:54:12.468825+00:00"
+  },
+  "cwz@bupt.edu.cn": {
+    "username": "cwz@bupt.edu.cn",
+    "display_name": "cwz@bupt.edu.cn",
+    "created_at": "2026-04-12T09:54:44.149319+00:00"
+  },
+  "lcr@bupt.edu.cn": {
+    "username": "lcr@bupt.edu.cn",
+    "display_name": "lcr@bupt.edu.cn",
+    "created_at": "2026-04-12T09:54:49.411491+00:00"
+  },
+  "mqb@bupt.edu.cn": {
+    "username": "mqb@bupt.edu.cn",
+    "display_name": "mqb@bupt.edu.cn",
+    "created_at": "2026-04-12T09:55:07.378921+00:00"
+  },
+  "hb@bupt.edu.cn": {
+    "username": "hb@bupt.edu.cn",
+    "display_name": "hb@bupt.edu.cn",
+    "created_at": "2026-04-12T09:55:28.618756+00:00"
+  },
+  "lzd@bupt.edu.cn": {
+    "username": "lzd@bupt.edu.cn",
+    "display_name": "lzd@bupt.edu.cn",
+    "created_at": "2026-04-12T09:55:51.602152+00:00"
   }
 }
