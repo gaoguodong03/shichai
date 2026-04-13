@@ -1,5 +1,73 @@
 [
   {
+    "id": "scenario-osweekly-8f3e2a1d",
+    "name": "开源周榜与趋势",
+    "agent_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "expert_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "围绕 GitHub 开源周榜（OpenGithubs/github-weekly-rank）收集当周榜单，再分析主题与一周趋势，并可按需补充「今日技术圈大事」摘要，最终合成一篇可读简报。",
+    "discussion_goal_example": "请先拉取本周周榜 README，整理 Top 项目要点；再解读本周开源热点相对近期的变化；最后输出一篇合并「周榜 + 趋势（+ 可选今日大事）」的简报。",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-github-weekly"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    }
+  },
+  {
+    "id": "scenario-test-seq-ab",
+    "name": "测试·甲乙顺序",
+    "agent_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "expert_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-test-seq-ab"
+      ],
+      "system_prompt": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": false
+    }
+  },
+  {
     "id": "scenario-mnrbpjb1",
     "name": "网文创作",
     "agent_ids": [

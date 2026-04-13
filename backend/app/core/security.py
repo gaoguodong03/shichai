@@ -55,8 +55,21 @@ def _allow_anonymous_api() -> bool:
     return os.getenv("ALLOW_ANONYMOUS_API", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def create_access_token(username: str, expires_minutes: int = 60 * 24) -> str:
+def _default_access_token_expire_minutes() -> int:
+    """默认 30 天；可通过环境变量 ACCESS_TOKEN_EXPIRE_MINUTES 覆盖（单位：分钟）。"""
+    raw = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return 60 * 24 * 30
+
+
+def create_access_token(username: str, expires_minutes: int | None = None) -> str:
     """创建一个简单的 HMAC-SHA256 JWT 兼容 token，不依赖外部库。"""
+    if expires_minutes is None:
+        expires_minutes = _default_access_token_expire_minutes()
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
     payload = {"sub": username, "iat": now, "exp": now + expires_minutes * 60}

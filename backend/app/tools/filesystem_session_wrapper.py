@@ -14,6 +14,7 @@ except Exception:
             self.description = description
             self.func = func
 
+from app.agent.read_path_utils import looks_like_url_or_remote_path
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 
 
@@ -96,6 +97,20 @@ def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
 
     async def wrapped_func(*args: Any, **kwargs: Any) -> str:
         # LangChain Tool 可能用 *args 或 **kwargs 传参
+        peek = ""
+        if kwargs:
+            for key in _path_arg_keys():
+                v = kwargs.get(key)
+                if isinstance(v, str) and v.strip():
+                    peek = v.strip()
+                    break
+        elif args and isinstance(args[0], str):
+            peek = str(args[0]).strip()
+        if peek and looks_like_url_or_remote_path(peek):
+            return (
+                "错误：path 不能为网页链接，请使用当前会话工作区内的相对路径"
+                "（例如 github-weekly-snapshot.md）。"
+            )
         if kwargs:
             kwargs = _ensure_path_in_session(kwargs, session_id)
         elif args and isinstance(args[0], dict):

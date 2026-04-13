@@ -36,6 +36,24 @@ def strip_llm_junk_from_read_path(path: str) -> str:
     return p
 
 
+def looks_like_url_or_remote_path(path: str) -> bool:
+    """模型常把对话里的 GitHub 链接误当作本地 path；此类输入不应进工作区解析。"""
+    p = (path or "").strip().replace("\\", "/")
+    if not p:
+        return False
+    pl = p.lower()
+    if pl.startswith("//"):
+        return True
+    if "://" in pl:
+        return True
+    # 无协议：整段以常见站点域名开头（如 github.com/org/...）
+    if re.match(r"^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}/", pl):
+        return True
+    if pl.startswith("www."):
+        return True
+    return False
+
+
 def prefer_more_specific_path(user_path: str, model_path: str) -> bool:
     """用户路径与模型路径指向同名文件时，用户是否给出了更具体的子路径（如 note/a.md vs a.md）。"""
     u = (user_path or "").strip().replace("\\", "/")

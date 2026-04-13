@@ -40,6 +40,35 @@ def test_file_ref_resolver_injects_content(temp_user_data_root):
     assert "hello from memory" in out
 
 
+def test_looks_like_url_or_remote_path():
+    from app.agent.read_path_utils import looks_like_url_or_remote_path
+
+    assert looks_like_url_or_remote_path("//github.com/OpenGithubs/x/blob/main/a.md")
+    assert looks_like_url_or_remote_path("https://example.com/a.md")
+    assert not looks_like_url_or_remote_path("github-weekly-snapshot.md")
+    assert not looks_like_url_or_remote_path("memory/facts.md")
+
+
+def test_extract_path_prefers_file_ref_tag():
+    from langchain_core.messages import HumanMessage
+
+    from app.agent import graph as g
+
+    msgs = [HumanMessage(content="请看【文件引用：快照｜github-weekly-snapshot.md】")]
+    assert g._extract_path_from_last_user_for_read(msgs) == "github-weekly-snapshot.md"
+
+
+def test_apply_read_file_replaces_url_with_file_ref_path():
+    from langchain_core.messages import HumanMessage
+
+    from app.agent import graph as g
+
+    args = {"path": "//github.com/OpenGithubs/github-weekly-rank/blob/main/2026/04/20260406.md"}
+    msgs = [HumanMessage(content="【文件引用：github-weekly-snapshot.md｜github-weekly-snapshot.md】")]
+    g._apply_read_file_path_from_user_message(args, msgs)
+    assert args.get("path") == "github-weekly-snapshot.md"
+
+
 def test_file_ref_resolver_blocks_traversal(temp_user_data_root):
     from app.agent.file_ref_resolver import resolve_file_refs_in_text
 

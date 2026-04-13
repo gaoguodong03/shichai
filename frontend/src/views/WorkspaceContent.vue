@@ -2232,10 +2232,6 @@ function cancelEditShortcutPreset() {
   shortcutExpertSearch.value = ''
 }
 
-/** 从场景预设新建会话（不修改当前会话） */
-const pendingScenarioSessionId = ref<string | null>(null)
-const pendingScenarioDiscussionGoal = ref('')
-
 /** 供父组件在导入场景包后拉起新会话（与快捷场景「新建会话」同一套逻辑） */
 async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
   const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x)))
@@ -2267,8 +2263,6 @@ async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<strin
       return null
     }
     const newId = j.data.id
-    pendingScenarioSessionId.value = newId
-    pendingScenarioDiscussionGoal.value = (p.discussion_goal_example || '').trim()
     emit('scenario-new-session', newId)
     return newId
   } catch {
@@ -3100,10 +3094,6 @@ watch(
 watch(
   () => props.selectedGroupSessionId,
   (id) => {
-    if (pendingScenarioSessionId.value && id !== pendingScenarioSessionId.value) {
-      pendingScenarioSessionId.value = null
-      pendingScenarioDiscussionGoal.value = ''
-    }
     groupDiscussionGoal.value = null
     groupNextPrompt.value = ''
     attachedFiles.value = []
@@ -3579,6 +3569,23 @@ function scrollGroupToBottom() {
   })
 }
 
+/** 专家/主持人等 assistant 消息落地后滚入可视区（优先按 message_id 定位，否则滚容器底部） */
+function scrollGroupAssistantMessageIntoView(data: Record<string, unknown>) {
+  const mid = typeof data.message_id === 'string' ? data.message_id.trim() : ''
+  nextTick(() => {
+    const sc = groupMessagesRef.value
+    if (!sc) return
+    if (mid) {
+      const el = sc.querySelector(`[data-message-id="${CSS.escape(mid)}"]`) as HTMLElement | null
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+        return
+      }
+    }
+    sc.scrollTop = sc.scrollHeight
+  })
+}
+
 type GroupMessage = GroupDetail['messages'][number] & { _streaming?: boolean }
 
 /** 成员加入/移出等一行系统提示（不占头像栏、居中灰条） */
@@ -3627,13 +3634,23 @@ const effectiveNextSpeakerName = computed(() => {
 function appendStreamingContent(dhaId: string, text: string) {
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
-  if (last?.role === 'assistant' && last?.agent_id === dhaId && (last as { _streaming?: boolean })._streaming) {
+  const appendToExisting =
+    last?.role === 'assistant' && last?.agent_id === dhaId && (last as { _streaming?: boolean })._streaming
+  if (appendToExisting) {
     const next: GroupDetail['messages'] = [...list.slice(0, -1), { ...last, content: (last.content || '') + text } as GroupMessage]
     groupDisplayMessages.value = next
   } else {
     // 确保同一时间只有一个“正在输出”的占位消息（只影响 UI 指示）
     const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
     groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
+    // 仅在新一条专家回复「刚出现」时滚一次，后续 chunk 不再跟随
+    nextTick(() => {
+      const sc = groupMessagesRef.value
+      if (!sc) return
+      const rows = sc.querySelectorAll('[data-message-id]')
+      const lastRow = rows[rows.length - 1] as HTMLElement | undefined
+      if (lastRow) lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    })
   }
   // markdown v-html 渲染完成后，用 fetch+blob 显示受保护图片
   nextTick(() => scheduleHydrateAuthImages())
@@ -3643,13 +3660,22 @@ function appendStreamingContent(dhaId: string, text: string) {
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
-  if (data.role === 'assistant' && last?.role === 'assistant' && last?.agent_id === data.agent_id && (last as { _streaming?: boolean })._streaming) {
+  const replacedStreamingPlaceholder =
+    data.role === 'assistant' &&
+    last?.role === 'assistant' &&
+    last?.agent_id === data.agent_id &&
+    (last as { _streaming?: boolean })._streaming
+  if (replacedStreamingPlaceholder) {
     const { _streaming: _, ...rest } = data
     groupDisplayMessages.value = [...list.slice(0, -1), rest as GroupMessage]
   } else {
     groupDisplayMessages.value = [...list, data as GroupMessage]
   }
-  nextTick(() => scheduleHydrateAuthImages())
+  nextTick(() => {
+    scheduleHydrateAuthImages()
+    // 流式场景已在首段出现时滚过一次；仅非流式直接落地一条 assistant 时再滚
+    if (!replacedStreamingPlaceholder) scrollGroupAssistantMessageIntoView(data)
+  })
 }
 
 function clearStreamingPlaceholders() {
@@ -3987,13 +4013,6 @@ async function loadGroupDetail() {
     if (props.selectedGroupSessionId !== id) return
     if (parsed) {
       groupDetail.value = parsed
-      const pendId = pendingScenarioSessionId.value
-      const goal = pendingScenarioDiscussionGoal.value
-      if (pendId && id === pendId && goal && !(parsed.messages?.length)) {
-        groupDiscussionGoal.value = goal
-        pendingScenarioSessionId.value = null
-        pendingScenarioDiscussionGoal.value = ''
-      }
     } else {
       groupDetail.value = null
       groupError.value = !r.ok

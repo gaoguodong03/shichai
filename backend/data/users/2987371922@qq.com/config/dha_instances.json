@@ -233,8 +233,9 @@
       "read": true,
       "edit": true,
       "write": true,
-      "delete": true,
-      "rename": true
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
     },
     "url_capability": true
   },
@@ -250,5 +251,110 @@
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": "/expert-avatars/expert-10.png"
+  },
+  {
+    "agent_id": "agent-8f3a2c1d",
+    "name": "周榜情报专家",
+    "role": "抓取 OpenGithubs/github-weekly-rank 当周 README 与榜单要点，写入 github-weekly-snapshot.md。",
+    "system_prompt": "你是周榜情报专家。唯一信源以用户指定的 GitHub 周榜仓库（默认 https://github.com/OpenGithubs/github-weekly-rank ）为主：用抓取工具拉取 README 或当周 md 文件，把排名、仓库名、Star/周增、简介等整理进工作区 github-weekly-snapshot.md。禁止编造数据；失败时说明原因。不负责长篇趋势解读或对外简报（由另两位专家负责）。",
+    "skill_ids": [
+      "github"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-08.png",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
+    },
+    "url_capability": true
+  },
+  {
+    "agent_id": "agent-6e4b9a2f",
+    "name": "开源趋势分析专家",
+    "role": "基于周榜快照做主题聚类、动因与周际对比，产出 opensource-trend-analysis.md。",
+    "system_prompt": "你是开源趋势分析专家。先读工作区 github-weekly-snapshot.md；若有用户提供的多周材料一并参考。按技能输出结构化分析（主题聚类、趋势判断、跟进建议），写入 opensource-trend-analysis.md。不杜撰 Star；站外背景用搜索/抓取并注明来源。不代替简报专家写最终面向读者的合并稿。",
+    "skill_ids": [
+      "skill-f0a09a1933df",
+      "deep-research"
+    ],
+    "mcp_server_ids": [
+      "exa",
+      "linkup",
+      "file-reader"
+    ],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-05.png",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
+    },
+    "url_capability": true
+  },
+  {
+    "agent_id": "agent-7c1d5e8b",
+    "name": "技术简报专家",
+    "role": "将周榜事实与趋势分析合并为可读简报；可按需补充「今日技术大事」摘要。",
+    "system_prompt": "你是技术简报专家。阅读 github-weekly-snapshot.md 与 opensource-trend-analysis.md（若存在），输出一篇结构清晰的 Markdown：含当周榜单精华、趋势解读、可选「今日大事」小节。今日大事须用新闻搜索/抓取工具核实，不得凭空虚构。区分「周榜数据」与「当日要闻」来源。成文可写入工作区如 opensource-weekly-brief.md。",
+    "skill_ids": [
+      "news-summary",
+      "wechat-article-writer",
+      "blog-write"
+    ],
+    "mcp_server_ids": [
+      "linkup",
+      "exa",
+      "file-reader"
+    ],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-03.png",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
+    },
+    "url_capability": true
+  },
+  {
+    "agent_id": "agent-e2a1b3c4",
+    "name": "测试专家甲",
+    "role": "顺序测试场景第一位；仅本地双 skill 行为验证，不访问外链。",
+    "system_prompt": "你是测试专家甲。仅在本测试场景发言。你挂载技能 test-skill-greet-twice 与 test-skill-hello-only：由系统为每轮选择其一；严格按对应 SKILL 正文输出，不抓网页、不编造链接。",
+    "skill_ids": [
+      "skill-a34b0ca04cad",
+      "hello"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-01.png"
+  },
+  {
+    "agent_id": "agent-e2d5e6f7",
+    "name": "测试专家乙",
+    "role": "顺序测试场景第二位；仅本地双 skill 行为验证，不访问外链。",
+    "system_prompt": "你是测试专家乙。仅在本测试场景发言。你挂载技能 test-skill-greet-twice 与 test-skill-hello-only：由系统为每轮选择其一；严格按对应 SKILL 正文输出，不抓网页、不编造链接。",
+    "skill_ids": [
+      "skill-a34b0ca04cad",
+      "hello"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-02.png"
   }
 ]

@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any, Set, Tuple
@@ -25,7 +25,6 @@ from typing import List, Optional, Dict, Any, Set, Tuple
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.host_config import normalize_host_config_dict
 from app.core.session_preset_validate import (
-    extract_presets_from_import_body,
     normalize_preset_dict_for_validation,
     validate_session_preset,
     validation_to_api_dict,
@@ -540,31 +539,6 @@ async def update_session_presets(body: SessionPresetsBody):
     return {"status": "ok", "data": {"presets": normalized}}
 
 
-@router.get("/settings/session-presets/{preset_id}/export")
-async def export_session_preset(preset_id: str):
-    """导出单条场景为 JSON 文件（含 export_version，便于分享与再导入）。"""
-    key = str(preset_id or "").strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="preset_id required")
-    path = _get_session_presets_path()
-    rows = _load_session_preset_rows_from_file(path)
-    match = next((r for r in rows if r.get("id") == key), None)
-    if match is None:
-        raise HTTPException(status_code=404, detail="Session preset not found")
-    payload = {
-        "export_version": 1,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "preset": match,
-    }
-    safe_name = key.replace("..", "").replace("/", "").replace("\\", "") or "scenario"
-    filename = f"scenario-{safe_name}.json"
-    return JSONResponse(
-        content=payload,
-        media_type="application/json; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
 def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[str, Any], str]:
     """构建场景包 ZIP；返回 (zip_bytes, preset_row, safe_name)。"""
     from app.api.dha import load_dha_instances
@@ -782,50 +756,6 @@ async def import_session_preset_bundle(
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
 
-
-@router.post("/settings/session-presets/import")
-async def import_session_presets(request: Request):
-    """导入场景预设。dry_run=true 时仅校验依赖，不写盘。"""
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
-
-    # 缺省 dry_run：避免误 POST 即写盘；显式 dry_run:false 才提交
-    dry_run = True if "dry_run" not in data else bool(data.get("dry_run"))
-    id_conflict = str(data.get("id_conflict") or "new_id").strip().lower()
-    if id_conflict not in ("overwrite", "new_id"):
-        id_conflict = "new_id"
-
-    raw_presets = extract_presets_from_import_body(data)
-    if not raw_presets:
-        raise HTTPException(status_code=400, detail="未识别到场景数据（需要 preset 字段或完整场景对象）")
-
-    results: List[Dict[str, Any]] = []
-    normalized_rows: List[Dict[str, Any]] = []
-
-    for raw in raw_presets:
-        norm = normalize_preset_dict_for_validation(raw)
-        if norm is None:
-            results.append(
-                {
-                    "preset_id": str(raw.get("id") or ""),
-                    "error": "invalid_preset",
-                    "message": "场景需包含非空的 id、name 与 agent_ids",
-                }
-            )
-            continue
-        val = _session_preset_validation_payload(norm)
-        results.append({"preset_id": norm["id"], "name": norm["name"], "validation": val})
-        normalized_rows.append(norm)
-
-    if dry_run:
-        return {"status": "ok", "data": {"dry_run": True, "results": results}}
-
-    merged, imported_ids = _merge_session_presets_into_file(normalized_rows, id_conflict)
-    return {"status": "ok", "data": {"dry_run": False, "imported_ids": imported_ids, "presets": merged, "results": results}}
 
 def save_app_settings(data: Dict[str, Any]):
     """保存应用设置"""

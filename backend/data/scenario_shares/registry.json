@@ -35,6 +35,35 @@
       "created_by": "2987371922@qq.com",
       "filename": "e31301732732.zip",
       "created_at": "2026-04-12T10:42:07.069541+00:00"
+    },
+    "d1230f6e615b": {
+      "preset_name": "开源周榜与趋势",
+      "source_preset_id": "scenario-osweekly-8f3e2a1d",
+      "created_by": "2987371922@qq.com",
+      "filename": "d1230f6e615b.zip",
+      "created_at": "2026-04-12T13:34:46.690837+00:00"
+    },
+    "04459d51ce67": {
+      "preset_name": "开源周榜与趋势",
+      "source_preset_id": "scenario-osweekly-8f3e2a1d",
+      "created_by": "zry@bupt.edu.cn",
+      "filename": "04459d51ce67.zip",
+      "created_at": "2026-04-12T14:23:28.037181+00:00"
+    },
+    "b82ca5395d6d": {
+      "preset_name": "网文创作",
+      "source_preset_id": "scenario-mnrbpjb1",
+      "created_by": "zry@bupt.edu.cn",
+      "filename": "b82ca5395d6d.zip",
+      "created_at": "2026-04-12T14:23:40.105045+00:00"
+    },
+    "9696bceaea77": {
+      "preset_name": "测试·甲乙顺序",
+      "source_preset_id": "scenario-test-seq-ab",
+      "created_by": "2987371922@qq.com",
+      "filename": "9696bceaea77.zip",
+      "created_at": "2026-04-13T11:34:28.503768+00:00",
+      "updated_at": "2026-04-13T11:34:47.325132+00:00"
     }
   }
 }

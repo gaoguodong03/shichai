@@ -1,0 +1,324 @@
+[
+  {
+    "message_id": "msg-8bccb356",
+    "role": "user",
+    "content": "hello",
+    "timestamp": "2026-04-13T11:40:42.232822+00:00"
+  },
+  {
+    "message_id": "msg-7998089d",
+    "role": "host",
+    "content": "根据测试场景规范，首先由专家甲参与讨论。以下为下一步安排：",
+    "timestamp": "2026-04-13T11:40:47.033893+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家甲"
+  },
+  {
+    "message_id": "msg-185bfefe",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "- 确认理解：任务是根据测试场景规范，按照绑定的技能 `测试·固定 hello` 输出结果。\n- 执行动作：直接回复结果。\n\nhello",
+    "timestamp": "2026-04-13T11:40:53.657785+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "- 确认理解：任务是根据测试场景规范，按照绑定的技能 `测试·固定 hello` 输出结果。\n- 执行动作：直接回复结果。\n\nhello"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-19c5eea3",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:41:02.807207+00:00"
+  },
+  {
+    "message_id": "msg-92352157",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "hello",
+    "timestamp": "2026-04-13T11:41:05.642081+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-750ce2f8",
+    "role": "user",
+    "content": "你是谁",
+    "timestamp": "2026-04-13T11:41:11.944319+00:00"
+  },
+  {
+    "message_id": "msg-f12608e5",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "hello",
+    "timestamp": "2026-04-13T11:41:17.001267+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-7aa63b5c",
+    "role": "user",
+    "content": "结束该skill",
+    "timestamp": "2026-04-13T11:41:19.902311+00:00"
+  },
+  {
+    "message_id": "msg-2fa48960",
+    "role": "host",
+    "content": "专家甲已经完成发言，轮到专家乙继续。以下为下一步安排：",
+    "timestamp": "2026-04-13T11:41:23.768261+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家乙"
+  },
+  {
+    "message_id": "msg-48032dea",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "当前任务是根据绑定的技能 `测试·固定 hello` 的规则，直接输出结果。根据技能说明，无论用户输入内容为何，回复固定为小写 `hello`。\n\nhello",
+    "timestamp": "2026-04-13T11:41:32.140366+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "当前任务是根据绑定的技能 `测试·固定 hello` 的规则，直接输出结果。根据技能说明，无论用户输入内容为何，回复固定为小写 `hello`。\n\nhello"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-3c614a8c",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:42:18.370068+00:00"
+  },
+  {
+    "message_id": "msg-a41c500b",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:42:20.351866+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-16963f55",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:42:42.111732+00:00"
+  },
+  {
+    "message_id": "msg-f6e64b0e",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:42:44.500415+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-f0a15e82",
+    "role": "user",
+    "content": "hello",
+    "timestamp": "2026-04-13T11:42:49.738376+00:00"
+  },
+  {
+    "message_id": "msg-8e037313",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:42:51.657101+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-ecc711d1",
+    "role": "user",
+    "content": "你是谁？",
+    "timestamp": "2026-04-13T11:43:01.951586+00:00"
+  },
+  {
+    "message_id": "msg-65dabb30",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "再见",
+    "timestamp": "2026-04-13T11:43:05.021591+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "再见"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-00c9124f",
+    "role": "user",
+    "content": "你是谁？",
+    "timestamp": "2026-04-13T11:43:14.702201+00:00"
+  },
+  {
+    "message_id": "msg-b3b42965",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "再见",
+    "timestamp": "2026-04-13T11:43:18.034150+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "再见"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-cfaf7bfe",
+    "role": "user",
+    "content": "退出该skill",
+    "timestamp": "2026-04-13T11:44:18.867159+00:00"
+  },
+  {
+    "message_id": "msg-5f101f53",
+    "role": "host",
+    "content": "专家甲和专家乙均已完成发言，本轮讨论结束。以下为最终结果：",
+    "timestamp": "2026-04-13T11:44:24.305335+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host"
+  }
+]

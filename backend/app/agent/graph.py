@@ -13,7 +13,11 @@ from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from app.agent.llm_client import QwenLLM
-from app.agent.read_path_utils import prefer_more_specific_path, strip_llm_junk_from_read_path
+from app.agent.read_path_utils import (
+    looks_like_url_or_remote_path,
+    prefer_more_specific_path,
+    strip_llm_junk_from_read_path,
+)
 from app.agent.simple_agent import SimpleAgent
 from app.agent.tools_for_skill import build_skill_script_tool_name
 
@@ -23,6 +27,7 @@ _EXT_RE = re.compile(
     r"([\w./\u4e00-\u9fff\-]+?(?:\.(?:md|txt|json|yaml|yml|csv|html|htm|xml|py|ts|js|vue|css)))\b",
     re.I,
 )
+_FILE_REF_TAG_RE = re.compile(r"【文件引用：([^】]+)】")
 
 def _clean_user_path_candidate(s: str) -> str:
     return (s or "").strip().strip(" \t\r\n\"'""''「」『』")
@@ -64,6 +69,24 @@ def _pick_best_workspace_path(candidates: list[str]) -> str:
         return winners[0]
     winners.sort(key=lambda x: (x.count("/"), len(x)), reverse=True)
     return winners[0]
+
+
+def _paths_from_file_ref_tags(text: str) -> list[str]:
+    """解析用户消息中的【文件引用：显示名｜相对路径】，与前端发送格式一致。"""
+    out: list[str] = []
+    for body in _FILE_REF_TAG_RE.findall(text or ""):
+        body = (body or "").strip()
+        if not body:
+            continue
+        if "\uff5c" in body:
+            p = body.split("\uff5c", 1)[1].strip()
+        elif "|" in body:
+            p = body.split("|", 1)[1].strip()
+        else:
+            p = body
+        if p and not looks_like_url_or_remote_path(p):
+            out.append(p)
+    return out
 
 
 def _collect_paths_from_user_text(text: str) -> list[str]:
@@ -119,6 +142,12 @@ def _extract_path_from_last_user_for_read(messages: Sequence[BaseMessage]) -> st
     if "而不是" in content or "而非" in content:
         head = re.split(r"而不是|而非", content, maxsplit=1)[0]
 
+    ref_paths = _paths_from_file_ref_tags(head)
+    if ref_paths:
+        picked = _pick_best_workspace_path(ref_paths)
+        if picked:
+            return picked
+
     paths_head = _collect_paths_from_user_text(head)
     if paths_head:
         return _pick_best_workspace_path(paths_head)
@@ -160,8 +189,14 @@ def _should_override_read_file_path_with_user(last_user_content: str, model_path
     return False
 
 
+def _tool_is_workspace_plain_read_file(tool_name: str) -> bool:
+    """与 tools_for_skill 中 file-reader MCP 的 read_file 名称一致。"""
+    n = (tool_name or "").strip()
+    return n == "read_file" or n == "file-reader_read_file"
+
+
 def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[BaseMessage]) -> None:
-    """若最近用户消息中有可解析路径，则补全或覆盖 read_file 的 path（原地修改 arguments）。"""
+    """若最近用户消息中有可解析路径，则补全或覆盖 read_file / file-reader_read_file 的 path（原地修改 arguments）。"""
     raw_arg = (arguments.get("path") or arguments.get("__arg1") or "").strip()
     if raw_arg:
         fixed = strip_llm_junk_from_read_path(raw_arg)
@@ -171,15 +206,28 @@ def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[
             arguments.pop("__arg1", None)
 
     auto_path = _extract_path_from_last_user_for_read(messages)
-    if not auto_path:
-        return
     cur = (arguments.get("path") or arguments.get("__arg1") or "").strip()
+
     last_user = None
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             last_user = msg
             break
     last_content = str(getattr(last_user, "content", "") or "") if last_user else ""
+
+    if cur and looks_like_url_or_remote_path(cur):
+        if auto_path:
+            logger.info(
+                "read_file: 模型 path 为网页/远端路径，改用用户消息中的工作区路径: %s -> %s",
+                cur,
+                auto_path,
+            )
+            arguments["path"] = auto_path
+            arguments.pop("__arg1", None)
+        return
+
+    if not auto_path:
+        return
 
     if not cur:
         arguments["path"] = auto_path
@@ -945,7 +993,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     break
             if tool:
                 # read_file：从最近用户消息补全 path，或在模型沿用旧路径时用用户本条消息覆盖
-                if tool_name == "read_file":
+                if _tool_is_workspace_plain_read_file(tool_name):
                     _apply_read_file_path_from_user_message(arguments, messages)
                 # rename_workspace_file 兜底：若缺 path/new_name，则从最近用户消息中提取两个路径
                 if tool_name == "rename_workspace_file":
@@ -1011,7 +1059,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 tool = t
                 break
         if tool:
-            if tool_name == "read_file":
+            if _tool_is_workspace_plain_read_file(tool_name):
                 _apply_read_file_path_from_user_message(arguments, messages)
             if tool_name == "rename_workspace_file":
                 has_src = bool(arguments.get("path"))

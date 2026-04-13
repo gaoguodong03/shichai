@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.security import user_context_dependency
@@ -218,94 +218,6 @@ def _find_dha_row(agent_id: str) -> Optional[Dict[str, Any]]:
         if str(d.get("agent_id") or "").strip() == key:
             return dict(d)
     return None
-
-
-@router.get("/dha/instances/{agent_id}/export")
-async def export_dha_instance(agent_id: str):
-    """导出单条专家为 JSON（含 export_version）。"""
-    row = _find_dha_row(agent_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
-    from app.core.scenario_bundle import strip_dha_row_for_disk
-
-    clean = strip_dha_row_for_disk(row)
-    payload = {
-        "export_version": 1,
-        "exported_at": datetime.now(timezone.utc).isoformat(),
-        "expert": clean,
-    }
-    safe = str(agent_id).replace("..", "").replace("/", "").replace("\\", "") or "expert"
-    filename = f"expert-{safe}.json"
-    return JSONResponse(
-        content=payload,
-        media_type="application/json; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.post("/dha/instances/import")
-async def import_dha_instances(request: Request):
-    """导入专家 JSON。支持 expert / experts / 裸对象；默认 dry_run 为 true。"""
-    from app.core.dha_import_validate import extract_expert_from_import_body
-
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
-
-    dry_run = True if "dry_run" not in data else bool(data.get("dry_run"))
-    id_conflict = str(data.get("id_conflict") or "new_id").strip().lower()
-    if id_conflict not in ("overwrite", "new_id"):
-        id_conflict = "new_id"
-
-    raw_list = extract_expert_from_import_body(data)
-    if not raw_list:
-        raise HTTPException(status_code=400, detail="未识别到专家数据（需要 expert 字段或含 name 的对象）")
-
-    results: List[Dict[str, Any]] = []
-    normalized_rows: List[Dict[str, Any]] = []
-
-    for raw in raw_list:
-        norm = normalize_expert_row_for_import(raw)
-        if norm is None:
-            results.append(
-                {
-                    "agent_id": str(raw.get("agent_id") or raw.get("expert_id") or ""),
-                    "error": "invalid_expert",
-                    "message": "专家 name 不能为空",
-                }
-            )
-            continue
-        val = _dha_validation_payload(norm)
-        aid = str(norm.get("agent_id") or "").strip() or "（将自动生成）"
-        results.append({"agent_id": aid, "name": norm.get("name"), "validation": val})
-        normalized_rows.append(norm)
-
-    if dry_run:
-        return {"status": "ok", "data": {"dry_run": True, "results": results}}
-
-    from app.core.expert_bundle import merge_single_expert_into_instances
-
-    instances = load_dha_instances()
-    imported_ids: List[str] = []
-    for norm in normalized_rows:
-        instances, final_id = merge_single_expert_into_instances(
-            instances, norm, id_conflict=id_conflict
-        )
-        imported_ids.append(final_id)
-    save_dha_instances(instances)
-
-    return {
-        "status": "ok",
-        "data": {
-            "dry_run": False,
-            "imported_ids": imported_ids,
-            "results": results,
-            "instances": await enrich_dha_instances(instances),
-        },
-    }
 
 
 @router.get("/dha/instances/{agent_id}/export-bundle")

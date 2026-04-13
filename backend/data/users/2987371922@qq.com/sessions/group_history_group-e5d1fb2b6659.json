@@ -1,0 +1,415 @@
+[
+  {
+    "message_id": "msg-d5d49447",
+    "role": "user",
+    "content": "我要测试甲乙顺序",
+    "timestamp": "2026-04-13T11:45:39.995219+00:00"
+  },
+  {
+    "message_id": "msg-f56b03be",
+    "role": "host",
+    "content": "你想测试甲乙顺序，推荐邀请以下两位专家参与讨论：测试专家甲和测试专家乙。这两位专家分别对应顺序测试场景的第一位和第二位，适合用于本次测试。",
+    "timestamp": "2026-04-13T11:45:48.488264+00:00",
+    "skill_id": "group-host-general",
+    "suggested_add_agent_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "suggested_add_expert_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ]
+  },
+  {
+    "message_id": "msg-cda7a8a6",
+    "role": "user",
+    "content": "我要测试甲乙顺序",
+    "timestamp": "2026-04-13T11:45:55.813733+00:00"
+  },
+  {
+    "message_id": "msg-a0a635da",
+    "role": "host",
+    "content": "你想测试甲乙顺序，推荐邀请以下两位专家参与讨论：测试专家甲和测试专家乙。这两位专家分别对应顺序测试场景的第一位和第二位，适合用于本次测试。",
+    "timestamp": "2026-04-13T11:46:01.219916+00:00",
+    "skill_id": "group-host-general",
+    "suggested_add_agent_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "suggested_add_expert_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ]
+  },
+  {
+    "message_id": "msg-207d75e5",
+    "role": "user",
+    "content": "我要测试甲乙顺序",
+    "timestamp": "2026-04-13T11:46:06.282886+00:00"
+  },
+  {
+    "message_id": "msg-ce0d3e8d",
+    "role": "host",
+    "content": "为了测试甲乙顺序，我建议邀请测试专家甲和测试专家乙。这两位专家分别对应顺序测试场景的第一位与第二位，能够完全满足你的测试需求。",
+    "timestamp": "2026-04-13T11:46:12.405386+00:00",
+    "skill_id": "group-host-general",
+    "suggested_add_agent_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "suggested_add_expert_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ]
+  },
+  {
+    "message_id": "msg-598842ca",
+    "role": "host",
+    "content": "已邀请“测试专家甲”加入会话",
+    "timestamp": "2026-04-13T11:46:28.735933+00:00",
+    "event_type": "member_joined",
+    "joined_agent_ids": [
+      "agent-e2a1b3c4"
+    ]
+  },
+  {
+    "message_id": "msg-e50f3057",
+    "role": "user",
+    "content": "我想测试“你好”",
+    "timestamp": "2026-04-13T11:46:50.164475+00:00"
+  },
+  {
+    "message_id": "msg-08dc1010",
+    "role": "host",
+    "content": "当前你已邀请“测试专家甲”，但由于目标是测试甲乙顺序，我建议再邀请“测试专家乙”加入会话，以便完整测试两位专家的顺序功能。",
+    "timestamp": "2026-04-13T11:46:58.684036+00:00",
+    "skill_id": "group-host-general",
+    "agent_id": "agent-scene-host"
+  },
+  {
+    "message_id": "msg-fb0834dd",
+    "role": "host",
+    "content": "已邀请“测试专家乙”加入会话",
+    "timestamp": "2026-04-13T11:47:11.179033+00:00",
+    "event_type": "member_joined",
+    "joined_agent_ids": [
+      "agent-e2d5e6f7"
+    ]
+  },
+  {
+    "message_id": "msg-ffcd942f",
+    "role": "user",
+    "content": "我想测试“你好”",
+    "timestamp": "2026-04-13T11:47:16.610829+00:00"
+  },
+  {
+    "message_id": "msg-ec7478f3",
+    "role": "host",
+    "content": "你已经成功邀请了“测试专家甲”和“测试专家乙”参与本次会话，接下来可以按照顺序测试两位专家的功能。\n\n我建议从“测试专家甲”开始，请他就“你好”进行测试发言。随后我们将转给“测试专家乙”，以完成顺序测试。",
+    "timestamp": "2026-04-13T11:47:26.211367+00:00",
+    "skill_id": "group-host-general",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家甲"
+  },
+  {
+    "message_id": "msg-aefa0d83",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "- **确认子任务**：我理解本轮任务是由我（测试专家甲）针对用户输入「你好」进行测试，并直接输出结果。\n- **执行结果**：你好",
+    "timestamp": "2026-04-13T11:47:32.161635+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "- **确认子任务**：我理解本轮任务是由我（测试专家甲）针对用户输入「你好」进行测试，并直接输出结果。\n- **执行结果**：你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-be2cd225",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:47:37.756108+00:00"
+  },
+  {
+    "message_id": "msg-e64d095a",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:47:41.871771+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-1593eeb2",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:47:42.504184+00:00"
+  },
+  {
+    "message_id": "msg-5ab2d5f1",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:47:48.503214+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-1a095e23",
+    "role": "user",
+    "content": "what",
+    "timestamp": "2026-04-13T11:47:53.000525+00:00"
+  },
+  {
+    "message_id": "msg-32e21d3a",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "再见",
+    "timestamp": "2026-04-13T11:48:01.695759+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "再见"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-7d3ebfce",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:48:05.440324+00:00"
+  },
+  {
+    "message_id": "msg-1b72e6d1",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:48:12.151359+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-f722ecce",
+    "role": "user",
+    "content": "你的任务结束了",
+    "timestamp": "2026-04-13T11:48:23.075445+00:00"
+  },
+  {
+    "message_id": "msg-99eda6cd",
+    "role": "host",
+    "content": "测试专家甲的任务已经结束，现在轮到测试专家乙继续参与任务。接下来，我们将让测试专家乙基于当前情况完成后续测试。",
+    "timestamp": "2026-04-13T11:48:30.693458+00:00",
+    "skill_id": "group-host-general",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家乙"
+  },
+  {
+    "message_id": "msg-eafa4a2c",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "我的子任务是基于用户最新输入「你的任务结束了」，确认当前技能是否仍需继续执行，并输出相应结果。\n\n---\n\n再见",
+    "timestamp": "2026-04-13T11:48:35.353893+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "我的子任务是基于用户最新输入「你的任务结束了」，确认当前技能是否仍需继续执行，并输出相应结果。\n\n---\n\n再见"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-47dd02d1",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:48:38.093036+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-1016fb03",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:49:18.446938+00:00"
+  },
+  {
+    "message_id": "msg-e2d2317a",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:49:24.268403+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-155aaf89",
+    "role": "user",
+    "content": "我要切换skill",
+    "timestamp": "2026-04-13T11:49:36.952803+00:00"
+  },
+  {
+    "message_id": "msg-e62ce201",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-13T11:49:40.773061+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-70744d5d",
+    "role": "user",
+    "content": "你的任务结束了",
+    "timestamp": "2026-04-13T11:50:02.233347+00:00"
+  },
+  {
+    "message_id": "msg-accb215d",
+    "role": "host",
+    "content": "测试专家乙的任务已经完成，现在整个甲乙顺序测试也告一段落。如果还有其他测试需求，请告知我继续协调任务安排。如果没有其他需求，我们可以结束当前会话。",
+    "timestamp": "2026-04-13T11:50:10.708210+00:00",
+    "skill_id": "group-host-general",
+    "agent_id": "agent-scene-host"
+  }
+]

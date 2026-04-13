@@ -1,38 +1,30 @@
-# 锁定版本（基于实际安装成功的版本）
-# 如果遇到依赖冲突，可以使用这个文件：pip install -r requirements-lock.txt
+# 后端运行依赖（版本已固定，便于环境与镜像一致）
 
-# Web Framework
+# Web
 fastapi==0.128.0
 uvicorn[standard]==0.40.0
-sse-starlette==3.2.0
 
-# LangChain & LangGraph（已测试的兼容版本）
+# LangChain（群聊/工具/LLM）
 langchain==0.1.20
 langchain-core==0.1.53
-langgraph==0.0.51
 langchain-openai==0.1.7
 
-# MCP SDK
+# MCP SDK（stdio / streamable HTTP 连接远程 MCP）
 mcp==1.25.0
 
-# MCP Servers（wechat-article-writer 等 skill 所需）
-mcp-server-fetch>=1.0.0
-mem0-mcp-server>=0.2.0
-
-# HTTP Client
+# HTTP
 httpx==0.28.1
 
-# 网页正文提取（url-to-blog 等技能抓取 URL 后提取中心文字）
+# 网页正文提取（call_api 等对 HTML 响应抽正文）
 trafilatura>=1.6.0
 
-# Data Validation
+# 配置与校验
 pydantic==2.12.5
 pydantic-settings==2.12.0
-
-# Utilities
 python-dotenv==1.2.1
 pyyaml==6.0.3
-# 文件读取 MCP（read_pdf、read_docx、read_xlsx）
+
+# 文件读取 MCP：read_pdf、read_docx、read_xlsx
 pypdf>=4.0.0
 python-docx>=1.0.0
 openpyxl>=3.1.0
