@@ -87,3 +87,13 @@ def test_end_payload_extra_cannot_override_contract_fields():
     )
     assert payload["phase"] == OrchestrationPhase.AWAITING_USER.value
     assert payload["custom_flag"] is True
+
+
+def test_end_payload_defaults_suggested_to_user_when_waiting_and_omitted():
+    payload = build_end_payload(
+        waiting_for_user=True,
+        suggested_next_speaker=None,
+        phase=OrchestrationPhase.AWAITING_USER,
+        interrupt_reason=InterruptReason.NONE,
+    )
+    assert payload["suggested_next_speaker"] == "user"

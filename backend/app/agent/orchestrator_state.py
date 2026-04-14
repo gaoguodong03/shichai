@@ -147,6 +147,15 @@ def build_end_payload(
             if normalized_phase in (OrchestrationPhase.AWAITING_USER, OrchestrationPhase.RECRUITING):
                 normalized_phase = OrchestrationPhase.EXECUTING
 
+    # 等待用户输入但未显式给出 suggested_next_speaker 时，默认「下一位为用户」，
+    # 避免前端回退到「上一轮专家 id」造成误导（例如主持人刚回复后仍显示某位专家）。
+    if (
+        not normalized_discussion_ended
+        and normalized_waiting
+        and normalized_suggested_next is None
+    ):
+        normalized_suggested_next = "user"
+
     payload: Dict[str, Any] = {
         "type": "end",
         "waiting_for_user": normalized_waiting,

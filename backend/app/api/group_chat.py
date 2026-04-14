@@ -1120,11 +1120,68 @@ def _resolve_dha_skill_id_and_content(
 
 _SKILL_SESSION_END_MARKERS = ("[[SKILL_SESSION_END]]", "【技能会话结束】")
 
+_SKILL_SESSION_STATE_START = "[[SKILL_SESSION_STATE]]"
+_SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
+
+_GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
+
+## Skill 会话是否结束（群聊调度必答）
+
+在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
+
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
+
+若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+"""
+
 
 def skill_session_ended_by_expert_output(content: str) -> bool:
     """专家在正文中声明本段 Skill 会话结束，下一轮应交四九调度（或用户 @ 主持人）。"""
     t = str(content or "")
     return any(m in t for m in _SKILL_SESSION_END_MARKERS)
+
+
+def _strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bool], str]:
+    """移除 [[SKILL_SESSION_STATE]] 块；若块内 JSON 含 over / skill_session_over，取最后一次出现的布尔值。"""
+    s = str(raw or "")
+    last_over: Optional[bool] = None
+    start, end = _SKILL_SESSION_STATE_START, _SKILL_SESSION_STATE_END
+    while True:
+        lo = s.find(start)
+        if lo < 0:
+            break
+        hi = s.find(end, lo)
+        if hi < 0:
+            break
+        inner = s[lo + len(start) : hi].strip()
+        s = (s[:lo] + s[hi + len(end) :]).rstrip()
+        try:
+            obj = json.loads(inner)
+            if isinstance(obj, dict):
+                v = obj.get("over")
+                if v is None:
+                    v = obj.get("skill_session_over")
+                if isinstance(v, bool):
+                    last_over = v
+                elif isinstance(v, (int, float)) and v in (0, 1):
+                    last_over = bool(int(v))
+                elif isinstance(v, str) and v.strip().lower() in ("true", "false"):
+                    last_over = v.strip().lower() == "true"
+        except Exception:
+            pass
+    return last_over, s
+
+
+def _strip_skill_session_end_markers_for_display(text: str) -> str:
+    """从展示用正文中移除旧版结束标记（与 skill_session_ended_by_expert_output 成对使用）。"""
+    t = str(text or "")
+    for m in _SKILL_SESSION_END_MARKERS:
+        t = t.replace(m, "")
+    return t.strip()
 
 
 def _extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
@@ -2934,6 +2991,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if role:
                     skill_content = f"你的角色：{role}\n\n{skill_content}"
                 skill_content += _expert_bound_skills_self_intro(dha)
+                skill_content += _GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 
                 llm_dha = _get_llm_for_dha(dha, app_settings)
                 agent = create_skill_execution_agent(llm_dha, tools, skill_content, extra_system_prompt)
@@ -3048,7 +3106,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     # Fallback must not expose raw tool JSON/stdout/stderr to user-visible content.
                     full_content = "已完成工具执行。"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
-                session_ended_by_marker = skill_session_ended_by_expert_output(full_content)
+                over_explicit, text_after_state_blocks = _strip_skill_session_state_blocks_and_get_over(full_content)
+                if over_explicit is not None:
+                    session_ended_by_marker = bool(over_explicit)
+                else:
+                    session_ended_by_marker = skill_session_ended_by_expert_output(text_after_state_blocks)
+                full_content = _strip_skill_session_end_markers_for_display(text_after_state_blocks)
                 tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = resolved_skill_id if dha else "default"

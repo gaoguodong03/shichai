@@ -295,7 +295,7 @@
               >
                 <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
                 <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
-                <span class="group-chat-speaker-status-sub">下一位：{{ effectiveNextSpeakerName }}</span>
+                <span class="group-chat-speaker-status-sub">下一位：{{ toolbarSpeakerChipName }}</span>
                 <span v-if="orchestrationInterruptHint" class="group-chat-speaker-status-sub">{{ orchestrationInterruptHint }}</span>
               </div>
               <div v-else-if="groupStreaming" class="group-chat-speaker-status-input group-chat-speaker-status-ready">
@@ -488,37 +488,44 @@
                     <button
                       type="button"
                       class="group-chat-next-speaker-trigger"
-                      title="成员管理"
+                      title="当前焦点角色（点击管理成员）"
                       aria-haspopup="dialog"
                       :aria-expanded="showAddMemberModal"
                       @click="showAddMemberModal = true; showMoreMenu = false"
                     >
                       <span
-                        v-if="effectiveNextSpeaker && effectiveNextSpeaker !== 'host'"
-                        class="group-chat-avatar group-chat-avatar-sm"
-                        :style="
-                          expertAvatarUrl(effectiveNextSpeaker)
-                            ? { background: 'transparent', overflow: 'hidden' }
-                            : { backgroundColor: dhaAvatarColor(dhaIndex(effectiveNextSpeaker)) }
-                        "
+                        v-if="toolbarDisplaySpeakerId === 'end'"
+                        class="group-chat-avatar group-chat-avatar-sm group-chat-next-speaker-end-avatar"
+                        aria-hidden="true"
                       >
-                        <img
-                          v-if="expertAvatarUrl(effectiveNextSpeaker)"
-                          :src="expertAvatarUrl(effectiveNextSpeaker)!"
-                          alt=""
-                          class="group-chat-avatar-photo"
-                        />
-                        <template v-else>{{ dhaAvatarChar(effectiveNextSpeaker) }}</template>
+                        终
                       </span>
                       <span
-                        v-else-if="effectiveNextSpeaker === 'host'"
+                        v-else-if="toolbarDisplayShowHostAvatar"
                         class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
                         aria-hidden="true"
                       >
                         <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                       </span>
+                      <span
+                        v-else-if="toolbarDisplaySpeakerId"
+                        class="group-chat-avatar group-chat-avatar-sm"
+                        :style="
+                          expertAvatarUrl(toolbarDisplaySpeakerId)
+                            ? { background: 'transparent', overflow: 'hidden' }
+                            : { backgroundColor: dhaAvatarColor(dhaIndex(toolbarDisplaySpeakerId)) }
+                        "
+                      >
+                        <img
+                          v-if="expertAvatarUrl(toolbarDisplaySpeakerId)"
+                          :src="expertAvatarUrl(toolbarDisplaySpeakerId)!"
+                          alt=""
+                          class="group-chat-avatar-photo"
+                        />
+                        <template v-else>{{ dhaAvatarChar(toolbarDisplaySpeakerId) }}</template>
+                      </span>
                       <span class="group-chat-next-speaker-name">
-                        {{ effectiveNextSpeaker === 'host' ? hostDisplayName : ((groupDetail?.agent_map || {})[effectiveNextSpeaker]?.name || effectiveNextSpeaker || '选择下一发言人') }}
+                        {{ toolbarDisplayLabelText }}
                       </span>
                     </button>
                   </div>
@@ -2820,7 +2827,19 @@ async function ignoreAutoSwitchAndPause() {
   }
 }
 
-/** 当前选中的下一发言人（默认为主持人建议的或第一个 DHA） */
+/** 跳过成员进出场等系统条，取最后一条实质消息（用于无 suggested_next_speaker 时的推断） */
+function lastNonSystemGroupMessageForToolbar(): GroupMessage | null {
+  const list = groupDisplayMessages.value || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i] as GroupMessage & { event_type?: string }
+    const et = m.event_type
+    if (m.role === 'host' && (et === 'member_joined' || et === 'member_left')) continue
+    return m as GroupMessage
+  }
+  return null
+}
+
+/** 最近一条专家 assistant 气泡（用于无「下一位」建议时的弱回退） */
 const latestExpertSpeakerDhaId = computed(() => {
   const ids = orderedMemberIds.value
   const list = groupDisplayMessages.value || []
@@ -2833,17 +2852,88 @@ const latestExpertSpeakerDhaId = computed(() => {
   return ''
 })
 
+/** 输入区旁「发言焦点」：流式中=正在输出者；空闲时=服务端建议的下一位（含 user/host/end），避免误显示上一轮专家或 ids[0] 抖动 */
 const effectiveNextSpeaker = computed(() => {
-  const override = groupNextSpeakerOverride.value
+  const override = (groupNextSpeakerOverride.value || '').trim()
   const suggested = groupSuggestedNextSpeaker.value
   const active = activeStreamingDhaId.value
   const latestExpert = latestExpertSpeakerDhaId.value
   const ids = orderedMemberIds.value
-  if (override && ids.includes(override)) return override
-  if (active && ids.includes(active)) return active
+
+  if (override) {
+    if (override === 'user' || override === 'end') return override
+    if (override === 'host' || ids.includes(override)) return override
+  }
+
+  if (groupStreaming.value) {
+    if (active && (active === 'host' || ids.includes(active))) return active
+    return ''
+  }
+
+  if (suggested != null && String(suggested).trim() !== '') {
+    const s = String(suggested).trim().toLowerCase()
+    if (s === 'user' || s === 'end') return s
+    if (s === 'host') return 'host'
+    if (ids.includes(suggested)) return suggested
+  }
+
+  // 无服务端建议时：根据最后一条可见消息推断（兼容历史会话/旧 end 载荷未带 suggested 的情况）
+  const lastMsg = lastNonSystemGroupMessageForToolbar()
+  if (lastMsg?.role === 'host') {
+    return 'user'
+  }
+  if (lastMsg?.role === 'user' && !groupStreaming.value) {
+    const lid = (leaderDisplayId.value || '').trim()
+    if (lid === 'host' || !lid) return 'host'
+    if (ids.includes(lid)) return lid
+    return 'host'
+  }
+
   if (latestExpert && ids.includes(latestExpert)) return latestExpert
-  if (suggested && ids.includes(suggested)) return suggested
   return ids[0] ?? ''
+})
+
+/**
+ * 工具栏头像/名字专用：调度上下一位若是「用户」，仍展示具体角色——优先待续跑专家，否则群主/主持人（四九）。
+ * 与 effectiveNextSpeaker（可能为 user）分离，避免把「你」当成下一发言人展示。
+ */
+const toolbarSpeakerChipId = computed(() => {
+  const eff = effectiveNextSpeaker.value
+  const ids = orderedMemberIds.value
+  const resume = (groupResumeTargetDhaId.value || '').trim()
+
+  if (eff === 'user') {
+    if (resume && ids.includes(resume)) return resume
+    const lid = (leaderDisplayId.value || '').trim()
+    if (!lid || lid === 'host') return 'host'
+    if (ids.includes(lid)) return lid
+    return 'host'
+  }
+  if (!eff || eff === 'end') return eff
+  return eff
+})
+
+const toolbarSpeakerChipName = computed(() => {
+  const id = toolbarSpeakerChipId.value
+  if (!id) return ''
+  if (id === 'end') return '已结束'
+  const map = groupDetail.value?.agent_map || {}
+  const lid = (leaderDisplayId.value || '').trim()
+  const isLeaderFace = id === 'host' || (Boolean(lid && lid !== 'host' && id === lid))
+  if (isLeaderFace) {
+    const fromProfile = (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim()
+    return fromProfile || map[id]?.name || id
+  }
+  return map[id]?.name || id
+})
+
+/** 主持人（含 leader_agent_id 为场内专家时）：工具栏用四九 Logo，不用姓氏首字占位 */
+const toolbarSpeakerChipShowHostAvatar = computed(() => {
+  const id = toolbarSpeakerChipId.value
+  if (!id || id === 'end') return false
+  if (id === 'host') return true
+  const lid = (leaderDisplayId.value || '').trim()
+  return Boolean(lid && lid !== 'host' && id === lid)
 })
 
 /** @ 提及：输入 @ 后显示的候选（主持人 + 当前群内专家），按输入过滤 */
@@ -3615,19 +3705,53 @@ const activeStreamingSpeakerName = computed(() => {
   return map[id]?.name || id
 })
 
+/** 工具栏展示：流式中优先占位/路由上的发言人，避免空名只剩「发言顺序」 */
+const toolbarDisplaySpeakerId = computed(() => {
+  if (groupStreaming.value) {
+    const a = activeStreamingDhaId.value
+    if (a) return a
+    const rid = (lastRoute.value?.expertId || '').trim()
+    const ids = orderedMemberIds.value
+    if (rid && (rid === 'host' || ids.includes(rid))) return rid
+  }
+  return toolbarSpeakerChipId.value
+})
+
+const toolbarDisplaySpeakerName = computed(() => {
+  if (groupStreaming.value) {
+    const a = activeStreamingDhaId.value
+    if (a) return activeStreamingSpeakerName.value
+    const rid = (lastRoute.value?.expertId || '').trim()
+    if (rid) {
+      if (rid === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
+      const map = groupDetail.value?.agent_map || {}
+      return map[rid]?.name || rid
+    }
+    return ''
+  }
+  return toolbarSpeakerChipName.value.trim()
+})
+
+const toolbarDisplayShowHostAvatar = computed(() => {
+  const id = toolbarDisplaySpeakerId.value
+  if (!id || id === 'end') return false
+  if (id === 'host') return true
+  const lid = (leaderDisplayId.value || '').trim()
+  return Boolean(lid && lid !== 'host' && id === lid)
+})
+
+const toolbarDisplayLabelText = computed(() => {
+  const n = toolbarDisplaySpeakerName.value.trim()
+  if (n) return n
+  if (!groupStreaming.value) return '发言顺序'
+  return ''
+})
+
 /** 流式脉冲点：基于已到达的内容长度滚动切换 */
 const streamingPulse = computed(() => {
   const len = activeStreamingMessage.value?.content?.length || 0
   const bucket = Math.floor(len / 20) % 4
   return ['', '.', '..', '...'][bucket] || ''
-})
-
-const effectiveNextSpeakerName = computed(() => {
-  const id = effectiveNextSpeaker.value
-  if (!id) return ''
-  if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
-  const map = groupDetail.value?.agent_map || {}
-  return map[id]?.name || id
 })
 
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
@@ -5608,10 +5732,40 @@ defineExpose({ refresh: loadGroupDetail, createSessionFromScenarioPreset })
   background: var(--color-border-light);
 }
 .group-chat-next-speaker-name {
-  max-width: 6rem;
+  display: inline-block;
+  min-width: 6em;
+  max-width: min(100%, 18rem);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+.group-chat-next-speaker-prefix {
+  opacity: 0.75;
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+.group-chat-next-speaker-sep {
+  opacity: 0.45;
+  margin: 0 0.15rem 0 0;
+}
+.group-chat-next-speaker-you,
+.group-chat-next-speaker-end-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-accent);
+  border-radius: 999px;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+.group-chat-next-speaker-end-avatar {
+  background: var(--color-text-muted);
 }
 .group-chat-next-speaker-end,
 .group-chat-next-speaker-end-inline {

@@ -95,6 +95,33 @@ def test_skill_session_ended_by_marker():
     assert not group_chat_module.skill_session_ended_by_expert_output("仍在处理中")
 
 
+def test_strip_skill_session_state_blocks_over_true():
+    raw = '说明文字\n\n[[SKILL_SESSION_STATE]]\n{"over": true}\n[[/SKILL_SESSION_STATE]]'
+    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    assert over is True
+    assert "SKILL_SESSION_STATE" not in stripped
+    assert "说明文字" in stripped
+
+
+def test_strip_skill_session_state_blocks_over_false():
+    raw = '还要再问\n[[SKILL_SESSION_STATE]]{"over": false}[[/SKILL_SESSION_STATE]]'
+    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    assert over is False
+    assert stripped.strip() == "还要再问"
+
+
+def test_strip_skill_session_state_blocks_alias_skill_session_over():
+    raw = 'x\n[[SKILL_SESSION_STATE]]\n{"skill_session_over": true}\n[[/SKILL_SESSION_STATE]]'
+    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    assert over is True
+    assert stripped.strip() == "x"
+
+
+def test_strip_end_markers_for_display():
+    t = "好了 [[SKILL_SESSION_END]]"
+    assert "SESSION_END" not in group_chat_module._strip_skill_session_end_markers_for_display(t)
+
+
 def test_user_requests_exit_skill_session_phrases():
     assert user_requests_exit_skill_session("你的任务完成了")
     assert user_requests_exit_skill_session("任务已经完成了，请下一位")

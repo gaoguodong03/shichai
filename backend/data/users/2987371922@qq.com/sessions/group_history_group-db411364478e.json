@@ -320,5 +320,292 @@
     "timestamp": "2026-04-13T11:44:24.305335+00:00",
     "skill_id": "group-host-test-seq-ab",
     "agent_id": "agent-scene-host"
+  },
+  {
+    "message_id": "msg-a656eea2",
+    "role": "user",
+    "content": "@测试专家乙 你好",
+    "timestamp": "2026-04-14T03:08:58.810484+00:00"
+  },
+  {
+    "message_id": "msg-9231108a",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-14T03:09:15.092175+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好\n\n[[SKILL_SESSION_STATE]]\n{\"over\":false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-d6f20316",
+    "role": "user",
+    "content": "你好",
+    "timestamp": "2026-04-14T03:09:20.652859+00:00"
+  },
+  {
+    "message_id": "msg-a82d07e4",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "你好",
+    "timestamp": "2026-04-14T03:09:23.324112+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "你好\n\n[[SKILL_SESSION_STATE]]\n{\"over\":false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-08667886",
+    "role": "user",
+    "content": "你是谁？",
+    "timestamp": "2026-04-14T03:09:24.968045+00:00"
+  },
+  {
+    "message_id": "msg-b2e240b6",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "再见",
+    "timestamp": "2026-04-14T03:09:27.550946+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "再见\n\n[[SKILL_SESSION_STATE]]\n{\"over\": true}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-e9ed867b",
+    "role": "user",
+    "content": "你是谁？",
+    "timestamp": "2026-04-14T03:09:41.592362+00:00"
+  },
+  {
+    "message_id": "msg-1dd8c2f6",
+    "role": "host",
+    "content": "专家乙已经完成发言，本轮讨论结束。以下为最终结果：",
+    "timestamp": "2026-04-14T03:09:46.587201+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host"
+  },
+  {
+    "message_id": "msg-7e2c096b",
+    "role": "user",
+    "content": "你是谁",
+    "timestamp": "2026-04-14T03:17:02.644885+00:00"
+  },
+  {
+    "message_id": "msg-e0e861aa",
+    "role": "host",
+    "content": "专家甲和专家乙均已完成发言，本轮讨论结束。以下为最终结果：",
+    "timestamp": "2026-04-14T03:17:07.759800+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host"
+  },
+  {
+    "message_id": "msg-d28350a6",
+    "role": "user",
+    "content": "你是谁",
+    "timestamp": "2026-04-14T03:27:28.033214+00:00"
+  },
+  {
+    "message_id": "msg-ae4de03e",
+    "role": "host",
+    "content": "专家乙已经完成发言，本轮讨论结束。以下为最终结果：",
+    "timestamp": "2026-04-14T03:27:31.532146+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host"
+  },
+  {
+    "message_id": "msg-4d846dd0",
+    "role": "user",
+    "content": "我要和甲说话",
+    "timestamp": "2026-04-14T03:27:48.298032+00:00"
+  },
+  {
+    "message_id": "msg-d34c3b59",
+    "role": "host",
+    "content": "本轮由用户发起新讨论，按照顺序应轮到专家甲发言。以下为安排说明：",
+    "timestamp": "2026-04-14T03:27:53.160614+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家甲"
+  },
+  {
+    "message_id": "msg-96e1b494",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "hello",
+    "timestamp": "2026-04-14T03:27:57.800152+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello\n\n[[SKILL_SESSION_STATE]]\n{\"over\": false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-fa230787",
+    "role": "user",
+    "content": "hell",
+    "timestamp": "2026-04-14T03:32:33.417935+00:00"
+  },
+  {
+    "message_id": "msg-2b51b980",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "hello",
+    "timestamp": "2026-04-14T03:32:35.899401+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello\n\n[[SKILL_SESSION_STATE]]\n{\"over\": false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-e962c526",
+    "role": "user",
+    "content": "退出",
+    "timestamp": "2026-04-14T03:32:37.622216+00:00"
+  },
+  {
+    "message_id": "msg-db915846",
+    "role": "assistant",
+    "agent_id": "agent-e2a1b3c4",
+    "content": "hello",
+    "timestamp": "2026-04-14T03:32:40.981130+00:00",
+    "skill_id": "hello",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "hello"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello\n\n[[SKILL_SESSION_STATE]]\n{\"over\": false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-540e1a23",
+    "role": "user",
+    "content": "退出该skill",
+    "timestamp": "2026-04-14T03:32:48.007461+00:00"
+  },
+  {
+    "message_id": "msg-e787376f",
+    "role": "host",
+    "content": "本轮由用户发起新讨论，按照顺序应轮到专家乙发言。以下为安排说明：",
+    "timestamp": "2026-04-14T03:32:52.392749+00:00",
+    "skill_id": "group-host-test-seq-ab",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "测试专家乙"
+  },
+  {
+    "message_id": "msg-c1af1859",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "hello",
+    "timestamp": "2026-04-14T03:32:57.426133+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "hello\n\n[[SKILL_SESSION_STATE]]\n{\"over\":false}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
   }
 ]
