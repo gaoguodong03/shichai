@@ -1,29 +1,30 @@
-"""读取引用文件工具 - 支持用户消息中的【文件引用：path】；按会话隔离时仅允许当前会话工作区内路径。"""
+"""读取引用文件工具 - 经 OpenSandbox 挂载的工作区路径读取（不经宿主直读）。"""
 import json
 from pathlib import Path
 from typing import Optional
 
+from langchain_core.tools import StructuredTool
+
 try:
-    from langchain.tools import Tool
-except Exception:
-    class Tool:  # type: ignore
-        def __init__(self, name: str, description: str, func):
-            self.name = name
-            self.description = description
-            self.func = func
+    from langchain_core.pydantic_v1 import BaseModel, Field
+except ImportError:
+    from pydantic.v1 import BaseModel, Field  # type: ignore
 
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
-from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
+from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root, get_workspace_root_path
+
+
+class ReadFileInput(BaseModel):
+    path: str = Field(default="", description="工作区内相对路径，如 notes/report.md")
 
 
 def _normalize_path(path_or_input) -> str:
-    """从多种输入格式提取 path 字符串。兼容 arun(tool_input) 传入的 JSON 字符串。"""
     if path_or_input is None:
         return ""
     s = str(path_or_input).strip()
     if not s:
         return ""
-    # arun 可能传入 JSON 字符串 '{"__arg1": "test.docx"}'，需解析
     if s.startswith("{"):
         try:
             data = json.loads(s)
@@ -33,82 +34,95 @@ def _normalize_path(path_or_input) -> str:
     return s
 
 
-def _read_file_content(path: Optional[str] = None, session_id: Optional[str] = None, **kwargs) -> str:
-    """读取文件。path 为相对当前会话工作区的路径。
-    当 session_id 给定时，仅允许读取该会话工作区内的文件。"""
-    path = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))
-    if path and looks_like_url_or_remote_path(path):
-        return (
+def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str, str | None]:
+    """返回 (相对 workspace 根的路径, 错误信息)。"""
+    raw = (path or "").strip()
+    if not raw:
+        return "", "错误：未提供文件路径。"
+    if looks_like_url_or_remote_path(raw):
+        return "", (
             "错误：read_file 只能读取当前工作区内的相对路径文件，不能使用网页链接。"
             "请使用诸如 github-weekly-snapshot.md 或 memory/facts.md。"
         )
-    if path:
-        cleaned = strip_llm_junk_from_read_path(path)
-        if cleaned:
-            path = cleaned
+    cleaned = strip_llm_junk_from_read_path(raw) or raw
     root = get_agent_outputs_root().resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    normalized = (path or "").strip("/").replace("..", "")
-    if not normalized:
-        return "错误：未提供文件路径。"
-    if session_id:
-        # 按会话隔离：必须落在当前会话工作区下
-        prefix = f"{WORKSPACES_SUBDIR}/{session_id}"
-        if not normalized.startswith(prefix + "/") and normalized != prefix:
-            # 若用户传的是 workspace 内相对路径（如 report.md），补全前缀
-            normalized = f"{prefix}/{normalized}" if normalized else prefix
-        full = (root / normalized).resolve()
-        ws_root = (root / WORKSPACES_SUBDIR / session_id).resolve()
-        if not str(full).startswith(str(ws_root)):
-            return "错误：仅允许读取当前会话工作区内的文件，请使用工作区相对路径（例如 notes/report.md）。"
-    else:
+    normalized = cleaned.lstrip("/").replace("..", "")
+    if not session_id:
+        if not normalized:
+            return "", "错误：未提供文件路径。"
         full = (root / normalized).resolve()
         if not str(full).startswith(str(root)):
-            return f"错误：路径 {path} 不在允许的目录内。"
-    if not full.exists():
-        if session_id:
-            # 提供当前工作区内的相近路径建议，避免仅返回“文件不存在”导致用户无法定位问题
+            return "", f"错误：路径 {path} 不在允许的目录内。"
+        try:
+            rel = str(full.relative_to(root)).replace("\\", "/")
+        except ValueError:
+            return "", f"错误：路径 {path} 不在允许的目录内。"
+        return rel, None
+
+    prefix = f"{WORKSPACES_SUBDIR}/{session_id}"
+    if not normalized.startswith(prefix + "/") and normalized != prefix:
+        normalized = f"{prefix}/{normalized}" if normalized else prefix
+    full = (root / normalized).resolve()
+    ws_root = get_workspace_root_path(session_id).resolve()
+    if not str(full).startswith(str(ws_root)):
+        return "", "错误：仅允许读取当前会话工作区内的文件，请使用工作区相对路径（例如 notes/report.md）。"
+    rel = str(full.relative_to(ws_root)).replace("\\", "/")
+    return rel, None
+
+
+def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
+    """创建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
+
+    async def _read_file(path: str = "", **kwargs) -> str:
+        raw = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))
+        rel, err = _workspace_relative_for_session(session_id=session_id or "", path=raw)
+        if err:
+            return err
+        if not session_id:
+            return "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
+        ws_root = get_workspace_root_path(session_id)
+        svc = get_shared_sandbox_service()
+        try:
+            text = await svc.read_workspace_text(
+                session_id=session_id,
+                workspace_path=ws_root,
+                rel_path=rel,
+                tool_call_id=f"read_file:{rel}",
+            )
+        except FileNotFoundError:
             try:
-                ws_root = (root / WORKSPACES_SUBDIR / session_id).resolve()
-                hints = []
-                target_name = Path(normalized).name.lower()
+                hints: list[str] = []
+                target_name = Path(rel).name.lower()
                 for p in ws_root.rglob("*"):
                     if not p.is_file():
                         continue
-                    rel = str(p.relative_to(ws_root)).replace("\\", "/")
+                    rr = str(p.relative_to(ws_root)).replace("\\", "/")
                     if target_name and p.name.lower() == target_name:
-                        hints.append(rel)
+                        hints.append(rr)
                     elif target_name and target_name in p.name.lower():
-                        hints.append(rel)
+                        hints.append(rr)
                     if len(hints) >= 5:
                         break
                 if hints:
                     return (
-                        f"错误：文件不存在：{path}\n"
-                        "你可能想读取以下路径（均在当前工作区）：\n- "
-                        + "\n- ".join(hints)
+                        f"错误：文件不存在：{raw}\n"
+                        "你可能想读取以下路径（均在当前工作区）：\n- " + "\n- ".join(hints)
                     )
             except Exception:
                 pass
-        return f"错误：文件不存在：{path}"
-    if full.is_dir():
-        return f"错误：{path} 是目录，无法读取。"
-    try:
-        return full.read_text(encoding="utf-8")
-    except Exception as e:
-        return f"错误：读取文件失败 - {e}"
+            return f"错误：文件不存在：{raw}"
+        except UnicodeDecodeError:
+            return f"错误：{raw} 不是 UTF-8 文本。"
+        except Exception as e:
+            return f"错误：读取文件失败 - {e}"
+        return text
 
-
-def create_read_file_tool(session_id: Optional[str] = None):
-    """创建读取引用文件工具。session_id 给定时仅允许读取该会话 workspace 内文件。"""
-    def _func(path: Optional[str] = None, **kwargs) -> str:
-        return _read_file_content(path=path, session_id=session_id, **kwargs)
-
-    return Tool(
+    return StructuredTool.from_function(
         name="read_file",
         description=(
-            "读取用户引用的文件内容。当用户消息中出现【文件引用：path】时，必须先用此工具读取该文件。"
-            "path 为工作区内相对路径（如 report.md 或 notes/report.txt）。仅能读取当前会话工作区内的文件。"
+            "读取用户引用的文件内容。path 为工作区内相对路径（如 report.md 或 notes/report.txt）；"
+            "文件经 OpenSandbox 在挂载的 /workspace 下读取，而非宿主进程直读。"
         ),
-        func=_func,
+        coroutine=_read_file,
+        args_schema=ReadFileInput,
     )

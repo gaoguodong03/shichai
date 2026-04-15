@@ -1,4 +1,6 @@
 """执行 Skill 目录下 scripts/ 中的脚本，作为一等步骤能力。"""
+from __future__ import annotations
+
 import asyncio
 import os
 import subprocess
@@ -7,11 +9,12 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from langchain_core.tools import tool
 
 from app.agent.sandbox_adapter import SandboxPolicy
+from app.agent.sandbox_mount_policy import SandboxMountPolicy
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
@@ -20,7 +23,14 @@ _ALLOWED_SCRIPT_SUFFIX = {".py", ".sh", ".bash", ".ps1", ".cmd", ".bat"}
 # 命令行参数上限（防滥用）；单段长度上限（兼顾长文本与 --input_text）
 _CLI_ARGV_MAX_ITEMS = 64
 _CLI_ARGV_MAX_STRLEN = 32_768
-_SCRIPT_GATEWAY = UnifiedToolGateway()
+_SCRIPT_GATEWAY: Optional[UnifiedToolGateway] = None
+
+
+def _get_script_gateway() -> UnifiedToolGateway:
+    global _SCRIPT_GATEWAY
+    if _SCRIPT_GATEWAY is None:
+        _SCRIPT_GATEWAY = UnifiedToolGateway()
+    return _SCRIPT_GATEWAY
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -433,11 +443,22 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 retry_count=0,
                 policy=SandboxPolicy(
                     fs_root=str(workspace_root),
+                    workspace_host_path=str(workspace_root),
+                    skill_scripts_host_path=str(script_root),
+                    skill_config_host_path=str((skill_home / "config").resolve()),
+                    runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
+                    runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
                     timeout_ms=max(1000, timeout_sec * 1000),
                     tool_allowlist=["run_skill_script", f"run_skill_script_{skill_id}"],
+                    volume_mounts=SandboxMountPolicy.build_mounts(
+                        workspace_host_path=workspace_root,
+                        skill_scripts_host_path=script_root,
+                        skill_config_host_path=(skill_home / "config"),
+                        config_writable=False,
+                    ),
                 ),
             )
-            gw = await _SCRIPT_GATEWAY.execute(
+            gw = await _get_script_gateway().execute(
                 tool_name=f"run_skill_script_{skill_id}",
                 tool_kind="script",
                 payload={"script_path": script_path, "cli_argv": cli_argv or []},

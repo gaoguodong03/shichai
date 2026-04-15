@@ -4,14 +4,16 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from app.agent.orchestrator_state import InterruptReason
 from app.agent.sandbox_adapter import (
-    LocalRuntimeSandboxAdapter,
     SandboxAdapter,
     SandboxPolicy,
 )
+from app.agent.sandbox_service import SandboxExecutionRequest, SandboxService
+from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
 
 ToolExecutor = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
@@ -133,8 +135,14 @@ class UnifiedToolGateway:
         self,
         sandbox_adapter: Optional[SandboxAdapter] = None,
         idempotency_store: Optional[InMemoryIdempotencyStore] = None,
+        sandbox_service: Optional[SandboxService] = None,
     ):
-        self._sandbox = sandbox_adapter or LocalRuntimeSandboxAdapter()
+        if sandbox_service is not None:
+            self._sandbox_service = sandbox_service
+        elif sandbox_adapter is not None:
+            self._sandbox_service = SandboxService(sandbox_adapter=sandbox_adapter)
+        else:
+            self._sandbox_service = get_shared_sandbox_service()
         self._idem = idempotency_store or InMemoryIdempotencyStore()
 
     async def execute(
@@ -151,17 +159,24 @@ class UnifiedToolGateway:
             timeout_ms=max(100, int(context.timeout_ms or 30_000)),
             tool_allowlist=[tool_name],
         )
-        handle = await self._sandbox.create_session_sandbox(context.session_id or "session", policy)
 
         async def _sandboxed_executor(inner_payload: Dict[str, Any]) -> Dict[str, Any]:
-            req = {
-                "tool_name": tool_name,
-                "tool_kind": tool_kind,
-                "payload": inner_payload,
-                "timeout_ms": int(context.timeout_ms or policy.timeout_ms or 30_000),
-                "runner": runner,
-            }
-            return await self._sandbox.run_tool_in_sandbox(handle, req)
+            return await self._sandbox_service.execute(
+                SandboxExecutionRequest(
+                    session_id=context.session_id or "session",
+                    turn_id=context.turn_id or "turn",
+                    tool_call_id=context.tool_call_id or f"{tool_kind}:{tool_name}",
+                    tool_name=tool_name,
+                    tool_kind=tool_kind,
+                    payload=inner_payload,
+                    timeout_ms=int(context.timeout_ms or policy.timeout_ms or 30_000),
+                    runner=runner,
+                    workspace_path=Path(context.workspace_id or context.session_id or "."),
+                    runtime_backend=policy.runtime_backend,
+                    runtime_profile=policy.runtime_profile,
+                    policy=policy,
+                )
+            )
 
         gateway = ToolGateway(executor=_sandboxed_executor, idempotency_store=self._idem)
         req = ToolRequest(
@@ -176,7 +191,4 @@ class UnifiedToolGateway:
             timeout_ms=int(context.timeout_ms or 30_000),
             retry_count=int(context.retry_count if context.retry_count is not None else 1),
         )
-        try:
-            return await gateway.execute(req)
-        finally:
-            await self._sandbox.dispose_sandbox(handle)
+        return await gateway.execute(req)

@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from app.api import settings, files, auth, dha, group_chat, sessions, public_scenario
 from app.mcp.manager import cleanup_all_mcp_runtimes
 from dotenv import load_dotenv
+import logging
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -18,6 +19,21 @@ load_dotenv()  # 仍从 cwd 再加载一次，兼容在 backend 目录下启动
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理。MCP 必须在 lifespan 内初始化与清理，保证 enter/exit 在同一 asyncio 任务，否则 anyio 会报 cancel scope 跨任务错误。"""
+    _lvl_name = (os.getenv("LOG_LEVEL") or "INFO").strip().upper()
+    _lvl = getattr(logging, _lvl_name, logging.INFO)
+    logging.basicConfig(
+        level=_lvl,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,
+    )
+    _log = logging.getLogger("app.main")
+    try:
+        from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+
+        _log.info("sandbox_backend_startup=%s", get_shared_sandbox_service().backend_label())
+    except Exception as e:
+        _log.exception("sandbox_backend_startup_failed: %s", e)
+        raise
     from app.core.init import ensure_mcp_and_skills_initialized
     # 启动时：在 lifespan 任务中初始化 MCP/Skills，与下方 cleanup 同一任务
     await ensure_mcp_and_skills_initialized()

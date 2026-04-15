@@ -50,6 +50,32 @@ def _format_one_audit_line(event_type: str, payload: Dict[str, Any]) -> str:
     if event_type == "user_exit_skill_session":
         pv = _truncate(str(payload.get("preview") or ""), 160)
         return f"- 用户结束技能会话: {pv}" if pv else "- 用户结束技能会话"
+    if event_type == "sandbox_session_created":
+        sid = payload.get("sandbox_id") or ""
+        backend = payload.get("runtime_backend") or ""
+        dep = str(payload.get("dep_hash") or "")[:12]
+        return f"- 沙箱创建: {sid} backend={backend} dep={dep}"
+    if event_type == "sandbox_session_disposed":
+        sid = payload.get("sandbox_id") or ""
+        return f"- 沙箱回收: {sid}"
+    if event_type == "sandbox_command_started":
+        tool = payload.get("tool_name") or ""
+        return f"- 沙箱执行开始: {tool}"
+    if event_type == "sandbox_command_finished":
+        tool = payload.get("tool_name") or ""
+        elapsed = payload.get("elapsed_ms")
+        return f"- 沙箱执行完成: {tool} ({elapsed}ms)"
+    if event_type == "sandbox_command_failed":
+        tool = payload.get("tool_name") or ""
+        err = _truncate(str(payload.get("error") or ""), 100)
+        return f"- 沙箱执行失败: {tool} err={err}"
+    if event_type == "sandbox_command_timeout":
+        tool = payload.get("tool_name") or ""
+        return f"- 沙箱执行超时: {tool}"
+    if event_type == "sandbox_mount_applied":
+        fp = str(payload.get("mount_fingerprint") or "")[:12]
+        n = len(payload.get("mounts") or []) if isinstance(payload.get("mounts"), list) else 0
+        return f"- 沙箱挂载: fp={fp} mounts={n}"
     return f"- {event_type}"
 
 

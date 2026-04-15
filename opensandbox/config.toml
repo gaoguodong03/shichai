@@ -1,0 +1,21 @@
+[server]
+host = "0.0.0.0"
+port = 8090
+log_level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:v1.0.11"
+
+[egress]
+image = "opensandbox/egress:v1.0.4"
+
+[docker]
+network_mode = "bridge"
+# 当 OpenSandbox server 运行在 compose 容器内时，host.docker.internal 可指向宿主机（macOS/Windows 默认可用）
+host_ip = "host.docker.internal"
+pids_limit = 4096
+
+[ingress]
+mode = "direct"
+

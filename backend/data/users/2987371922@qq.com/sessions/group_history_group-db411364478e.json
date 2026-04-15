@@ -607,5 +607,37 @@
       "has_raw_result": false,
       "note": "no_tool_call_detected"
     }
+  },
+  {
+    "message_id": "msg-f14231a8",
+    "role": "user",
+    "content": "你是谁",
+    "timestamp": "2026-04-14T14:36:25.877637+00:00"
+  },
+  {
+    "message_id": "msg-50ef6889",
+    "role": "assistant",
+    "agent_id": "agent-e2d5e6f7",
+    "content": "再见",
+    "timestamp": "2026-04-14T14:36:39.845753+00:00",
+    "skill_id": "skill-a34b0ca04cad",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "skill-a34b0ca04cad"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "再见\n\n[[SKILL_SESSION_STATE]]\n{\"over\": true}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
   }
 ]

@@ -12,6 +12,9 @@ langchain-openai==0.1.7
 # MCP SDK（stdio / streamable HTTP 连接远程 MCP）
 mcp==1.25.0
 
+# OpenSandbox SDK（底层沙箱基础设施，强制启用）
+opensandbox
+
 # HTTP
 httpx==0.28.1
 

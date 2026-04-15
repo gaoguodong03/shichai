@@ -21,7 +21,14 @@ from app.api.files import get_agent_outputs_root
 from app.core.feature_flags import is_feature_enabled
 
 logger = logging.getLogger(__name__)
-_MCP_GATEWAY = UnifiedToolGateway()
+_MCP_GATEWAY: Optional[UnifiedToolGateway] = None
+
+
+def _get_mcp_gateway() -> UnifiedToolGateway:
+    global _MCP_GATEWAY
+    if _MCP_GATEWAY is None:
+        _MCP_GATEWAY = UnifiedToolGateway()
+    return _MCP_GATEWAY
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -107,7 +114,7 @@ async def execute_mcp_call(
             tool_allowlist=[f"{server_id}_{tool_name}", tool_name],
         ),
     )
-    gw = await _MCP_GATEWAY.execute(
+    gw = await _get_mcp_gateway().execute(
         tool_name=f"{server_id}_{tool_name}",
         tool_kind="mcp",
         payload={"kwargs": kwargs},
