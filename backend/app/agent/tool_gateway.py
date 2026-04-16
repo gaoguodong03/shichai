@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -24,6 +25,7 @@ class ToolExecutionContext:
     session_id: str
     workspace_id: str
     agent_id: str
+    user_id: str = ""
     skill_id: str = ""
     task_id: str = ""
     turn_id: str = ""
@@ -31,6 +33,7 @@ class ToolExecutionContext:
     timeout_ms: int = 30_000
     retry_count: int = 1
     policy: Optional[SandboxPolicy] = None
+    sandbox_cwd: str = ""
 
 
 @dataclass
@@ -144,6 +147,20 @@ class UnifiedToolGateway:
         else:
             self._sandbox_service = get_shared_sandbox_service()
         self._idem = idempotency_store or InMemoryIdempotencyStore()
+        self._user_semaphore_lock = asyncio.Lock()
+        self._user_semaphores: Dict[str, asyncio.Semaphore] = {}
+        self._max_concurrent_tasks_per_user = max(
+            1, int(os.getenv("SANDBOX_MAX_CONCURRENT_TASKS_PER_USER", "4"))
+        )
+
+    async def _get_user_semaphore(self, user_id: str) -> asyncio.Semaphore:
+        key = (user_id or "").strip() or "anonymous"
+        async with self._user_semaphore_lock:
+            sem = self._user_semaphores.get(key)
+            if sem is None:
+                sem = asyncio.Semaphore(self._max_concurrent_tasks_per_user)
+                self._user_semaphores[key] = sem
+            return sem
 
     async def execute(
         self,
@@ -161,8 +178,10 @@ class UnifiedToolGateway:
         )
 
         async def _sandboxed_executor(inner_payload: Dict[str, Any]) -> Dict[str, Any]:
+            resolved_user_id = (context.user_id or "").strip() or f"session:{context.session_id or 'session'}"
             return await self._sandbox_service.execute(
                 SandboxExecutionRequest(
+                    user_id=resolved_user_id,
                     session_id=context.session_id or "session",
                     turn_id=context.turn_id or "turn",
                     tool_call_id=context.tool_call_id or f"{tool_kind}:{tool_name}",
@@ -175,6 +194,7 @@ class UnifiedToolGateway:
                     runtime_backend=policy.runtime_backend,
                     runtime_profile=policy.runtime_profile,
                     policy=policy,
+                    cwd=context.sandbox_cwd or "",
                 )
             )
 
@@ -191,4 +211,6 @@ class UnifiedToolGateway:
             timeout_ms=int(context.timeout_ms or 30_000),
             retry_count=int(context.retry_count if context.retry_count is not None else 1),
         )
-        return await gateway.execute(req)
+        user_sem = await self._get_user_semaphore(context.user_id or context.session_id)
+        async with user_sem:
+            return await gateway.execute(req)

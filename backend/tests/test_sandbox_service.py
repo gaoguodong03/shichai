@@ -92,6 +92,7 @@ async def test_session_isolation_one_session_one_sandbox():
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
 
     req_a1 = SandboxExecutionRequest(
+        user_id="u1",
         session_id="s1",
         turn_id="t1",
         tool_call_id="c1",
@@ -103,6 +104,7 @@ async def test_session_isolation_one_session_one_sandbox():
         workspace_path=Path("."),
     )
     req_b1 = SandboxExecutionRequest(
+        user_id="u1",
         session_id="s2",
         turn_id="t1",
         tool_call_id="c2",
@@ -117,15 +119,15 @@ async def test_session_isolation_one_session_one_sandbox():
     await svc.execute(req_b1)
     await svc.execute(req_a1)
 
-    assert len(adapter.created) == 2
-    assert adapter.created[0][0].startswith("s1:")
-    assert adapter.created[1][0].startswith("s2:")
+    assert len(adapter.created) == 1
+    assert adapter.created[0][0].startswith("u1:")
 
 
 async def test_dispose_session_releases_sandbox():
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     req = SandboxExecutionRequest(
+        user_id="u2",
         session_id="s3",
         turn_id="t1",
         tool_call_id="c3",
@@ -137,6 +139,6 @@ async def test_dispose_session_releases_sandbox():
         workspace_path=Path("."),
     )
     await svc.execute(req)
-    await svc.dispose_session("s3", turn_id="t2")
+    await svc.dispose_user("u2", turn_id="t2")
     assert len(adapter.disposed) == 1
-    assert adapter.disposed[0].startswith("s3:")
+    assert adapter.disposed[0].startswith("u2:")

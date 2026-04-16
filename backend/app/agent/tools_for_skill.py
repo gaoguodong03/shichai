@@ -16,7 +16,7 @@ from app.api.files import get_workspace_root
 from app.agent.host_plan import is_host_plan_reserved_path
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
-from app.agent.sandbox_service import to_workspace_inner_path
+from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.tools.call_api import call_api
 from app.tools.read_file import create_read_file_tool
@@ -107,9 +107,13 @@ def _filter_redundant_workspace_mcp_tools(tools: List) -> List:
 
 def _create_builtin_workspace_tools(workspace_id: str) -> List:
     ws_root = get_workspace_root(workspace_id)
+    user_id = get_current_user().username
 
     def _rel_safe(path: str) -> str:
-        normalized = str(path or "").strip("/").replace("..", "")
+        raw = str(path or "").strip().replace("\\", "/")
+        if raw.startswith("/") or ".." in raw:
+            raise ValueError("路径不在当前工作区")
+        normalized = raw.strip("/")
         probe = (ws_root / normalized).resolve()
         if not str(probe).startswith(str(ws_root.resolve())):
             raise ValueError("路径不在当前工作区")
@@ -125,6 +129,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         svc = get_shared_sandbox_service()
         try:
             content = await svc.read_workspace_text(
+                user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
                 rel_path=rel,
@@ -138,6 +143,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             return "错误：未找到要替换的文本。"
         try:
             await svc.write_workspace_text(
+                user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
                 rel_path=rel,
@@ -170,9 +176,14 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         svc = get_shared_sandbox_service()
         try:
             await svc.exec_workspace_shell(
+                user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
-                argv=["mv", to_workspace_inner_path(src_rel), to_workspace_inner_path(dst_rel)],
+                argv=[
+                    "mv",
+                    f"{sandbox_session_dir(workspace_id)}/{src_rel}".rstrip("/"),
+                    f"{sandbox_session_dir(workspace_id)}/{dst_rel}".rstrip("/"),
+                ],
                 tool_call_id=f"mv:{src_rel}->{dst_rel}",
             )
         except Exception as e:
@@ -190,7 +201,13 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         rel = _rel_safe(cleaned)
         svc = get_shared_sandbox_service()
         try:
-            await svc.mkdir_workspace(session_id=workspace_id, workspace_path=ws_root, rel_path=rel, turn_id="mkdir")
+            await svc.mkdir_workspace(
+                user_id=user_id,
+                session_id=workspace_id,
+                workspace_path=ws_root,
+                rel_path=rel,
+                turn_id="mkdir",
+            )
         except Exception as e:
             return f"错误：创建目录失败 - {e}"
         return f"已创建目录：{rel}"
@@ -205,9 +222,10 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         svc = get_shared_sandbox_service()
         try:
             res = await svc.exec_workspace_shell(
+                user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
-                argv=["sh", "-c", f"cd /workspace/{cleaned} && find . -mindepth 1 | sort"],
+                argv=["sh", "-c", f"cd {sandbox_session_dir(workspace_id)}/{cleaned} && find . -mindepth 1 | sort"],
                 tool_call_id="list-find",
             )
         except Exception as e:

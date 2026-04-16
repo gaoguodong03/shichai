@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
 
 from app.agent.sandbox_adapter import SandboxPolicy
+from app.agent.session_workspace_policy import sandbox_sessions_root
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_agent_outputs_root
 from app.core.feature_flags import is_feature_enabled
@@ -62,6 +63,18 @@ except ImportError:
 
 _mcp_user_lock = threading.Lock()
 _mcp_by_user: Dict[str, "MCPToolManager"] = {}
+_mcp_call_locks_guard = threading.Lock()
+_mcp_call_locks: Dict[int, asyncio.Lock] = {}
+
+
+def _get_mcp_call_lock(session: ClientSession) -> asyncio.Lock:
+    key = id(session)
+    with _mcp_call_locks_guard:
+        lock = _mcp_call_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _mcp_call_locks[key] = lock
+        return lock
 
 
 def normalize_mcp_kwargs_for_call(
@@ -88,26 +101,32 @@ async def execute_mcp_call(
     """Execute a single MCP tool call with optional unified gateway."""
     if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
         try:
-            result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+            lock = _get_mcp_call_lock(session)
+            async with lock:
+                result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
             return True, result, ""
         except Exception as e:  # noqa: BLE001
             return False, None, str(e)
 
     outputs_root = str(get_agent_outputs_root().resolve())
     async def _runner() -> Dict[str, Any]:
-        result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+        lock = _get_mcp_call_lock(session)
+        async with lock:
+            result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
         return {"mcp_result": result}
 
     ctx = ToolExecutionContext(
         session_id=f"mcp:{server_id}",
         workspace_id=outputs_root,
         agent_id="mcp-runtime",
+        user_id="mcp-runtime",
         skill_id="",
         task_id=f"mcp:{server_id}",
         turn_id=f"tool-call:{uuid.uuid4().hex}",
         tool_call_id=f"{server_id}:{tool_name}:{uuid.uuid4().hex}",
         timeout_ms=max(1000, int(timeout_sec * 1000)),
         retry_count=1,
+        sandbox_cwd=sandbox_sessions_root(),
         policy=SandboxPolicy(
             fs_root=outputs_root,
             timeout_ms=max(1000, int(timeout_sec * 1000)),

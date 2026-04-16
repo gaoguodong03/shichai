@@ -93,6 +93,12 @@ def _get_session_presets_path() -> Path:
     return (user_ctx.config_dir / "session_presets.json").resolve()
 
 
+def _get_sandbox_requirements_path() -> Path:
+    """当前用户沙箱依赖清单 requirements.txt 路径。"""
+    user_ctx = _require_user_ctx()
+    return (user_ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+
+
 def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
     """解析磁盘 session_presets.json 为与 GET session-presets 一致的行列表。"""
     presets: List[Dict[str, Any]] = []
@@ -820,6 +826,33 @@ class ApiSecretCreate(BaseModel):
 class ApiSecretUpdate(BaseModel):
     label: Optional[str] = None
     api_key: Optional[str] = None  # 传入空字符串表示清除密钥内容
+
+
+class SandboxRequirementsBody(BaseModel):
+    content: str = ""
+
+
+@router.get("/settings/sandbox/requirements")
+async def get_sandbox_requirements():
+    path = _get_sandbox_requirements_path()
+    if not path.exists():
+        return {"status": "ok", "data": {"content": ""}}
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取 requirements.txt 失败: {e}")
+    return {"status": "ok", "data": {"content": content}}
+
+
+@router.put("/settings/sandbox/requirements")
+async def save_sandbox_requirements(body: SandboxRequirementsBody):
+    path = _get_sandbox_requirements_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body.content or "", encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存 requirements.txt 失败: {e}")
+    return {"status": "ok", "data": {"saved": True}}
 
 
 @router.get("/settings/api-secrets")

@@ -1,0 +1,3 @@
+{"ts": "2026-04-15T06:12:27.906244+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}
+{"ts": "2026-04-15T06:13:48.420658+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}
+{"ts": "2026-04-15T06:17:45.061338+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}

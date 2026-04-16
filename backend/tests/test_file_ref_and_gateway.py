@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -119,11 +120,65 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     assert "ok" in str(out.get("stdout") or "")
 
 
+def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
+    from app.tools.filesystem_session_wrapper import _normalize_path_for_session
+
+    # wrapper 要求 agent_outputs 位于 backend 目录内；这里构造一个 backend 下的临时根目录
+    backend_root = Path(__file__).resolve().parents[1]
+    local_user_root = backend_root / ".tmp-test-user-data"
+    local_user_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(local_user_root))
+    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+    # 合法路径会被归一化到当前 session 前缀
+    ok = _normalize_path_for_session("notes/a.md", "sess-a")
+    assert "/workspaces/sess-a/" in ok
+    # 越界路径应被拒绝
+    import pytest
+
+    with pytest.raises(ValueError):
+        _normalize_path_for_session("../sess-b/secrets.txt", "sess-a")
+
+
 @pytest.mark.asyncio
 async def test_execute_mcp_call_via_gateway(temp_user_data_root, monkeypatch):
     from app.mcp.manager import execute_mcp_call
+    from app.agent.sandbox_adapter import SandboxHandle
+    from app.agent.sandbox_service import SandboxService
+    from app.agent.tool_gateway import UnifiedToolGateway
+    import app.mcp.manager as mcp_manager
 
     monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "1")
+
+    class _FakeAdapter:
+        async def create_session_sandbox(self, session_id, policy):
+            return SandboxHandle(
+                runtime="fake",
+                session_id=session_id,
+                root=policy.fs_root,
+                metadata={"sandbox_id": f"sb-{session_id}", "policy": {"tool_allowlist": list(policy.tool_allowlist), "timeout_ms": policy.timeout_ms}},
+            )
+
+        async def run_tool_in_sandbox(self, _handle, tool_request):
+            runner = tool_request["runner"]
+            return await runner()
+
+        async def read_file(self, _handle, _path):
+            return b""
+
+        async def write_file(self, _handle, _path, _data, token_version=0):
+            return {"status": "ok", "token_version": token_version}
+
+        async def list_artifacts(self, _handle, task_id=""):
+            return []
+
+        async def dispose_sandbox(self, _handle):
+            return None
+
+    fake_gateway = UnifiedToolGateway(
+        sandbox_service=SandboxService(sandbox_adapter=_FakeAdapter(), session_ttl_sec=3600)
+    )
+    monkeypatch.setattr(mcp_manager, "_MCP_GATEWAY", fake_gateway)
 
     class _FakeSession:
         def __init__(self):
@@ -157,4 +212,51 @@ async def test_execute_mcp_call_via_gateway(temp_user_data_root, monkeypatch):
     assert err2 == ""
     assert result2 == {"ok": True, "kwargs": {"q": "y"}}
     assert sess.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_mcp_call_serializes_same_session(temp_user_data_root, monkeypatch):
+    from app.mcp.manager import execute_mcp_call
+
+    monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "0")
+
+    class _UnsafeSession:
+        def __init__(self):
+            self.inflight = 0
+            self.max_inflight = 0
+
+        async def call_tool(self, tool_name, kwargs):
+            self.inflight += 1
+            self.max_inflight = max(self.max_inflight, self.inflight)
+            if self.inflight > 1:
+                self.inflight -= 1
+                raise RuntimeError("concurrent call_tool not allowed")
+            try:
+                await asyncio.sleep(0.05)
+                return {"ok": True, "tool": tool_name, "kwargs": kwargs}
+            finally:
+                self.inflight -= 1
+
+    import asyncio
+
+    sess = _UnsafeSession()
+    r1, r2 = await asyncio.gather(
+        execute_mcp_call(
+            server_id="s1",
+            tool_name="echo",
+            kwargs={"q": "a"},
+            session=sess,
+            timeout_sec=2.0,
+        ),
+        execute_mcp_call(
+            server_id="s1",
+            tool_name="echo",
+            kwargs={"q": "b"},
+            session=sess,
+            timeout_sec=2.0,
+        ),
+    )
+
+    assert r1[0] is True and r2[0] is True
+    assert sess.max_inflight == 1
 

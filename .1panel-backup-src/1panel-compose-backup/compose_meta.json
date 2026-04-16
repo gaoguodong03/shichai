@@ -1,0 +1,14 @@
+{
+  "composeName": "st49",
+  "composePath": "",
+  "createdAt": "2026-04-16 16:14:51",
+  "files": [
+    {
+      "originalPath": "docker-compose.1panel.yml",
+      "fileName": "docker-compose.yml",
+      "relativePath": "docker-compose.yml",
+      "backupPath": "compose_files/00_docker-compose.yml"
+    }
+  ],
+  "containers": []
+}

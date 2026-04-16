@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import subprocess
 import json
 import shutil
@@ -15,6 +16,7 @@ from langchain_core.tools import tool
 
 from app.agent.sandbox_adapter import SandboxPolicy
 from app.agent.sandbox_mount_policy import SandboxMountPolicy
+from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
@@ -57,6 +59,15 @@ def skill_has_skill_md(skill_id: str) -> bool:
 
 def _get_workspace_root(workspace_id: str) -> Path:
     return get_workspace_root_path(workspace_id).resolve()
+
+
+def _get_current_user_id() -> str:
+    try:
+        from app.core.security import get_current_user
+
+        return get_current_user().username
+    except Exception:
+        return ""
 
 
 def _list_available_scripts(script_root: Path) -> list[str]:
@@ -207,6 +218,47 @@ def _build_script_command(full: Path, extra_argv: list[str] | None = None) -> li
     raise RuntimeError(f"不支持的脚本后缀: {suffix}")
 
 
+def _build_sandbox_script_command(script_path: str, suffix: str, extra_argv: list[str] | None = None) -> list[str]:
+    """构造在沙箱内执行脚本的命令（不依赖宿主机解释器路径）。"""
+    argv = list(extra_argv or [])
+    if suffix == ".py":
+        # 兼容最小镜像：优先 python3，回退 python
+        return ["sh", "-lc", f'if command -v python3 >/dev/null 2>&1; then exec python3 {shlex.quote(script_path)} {" ".join(shlex.quote(a) for a in argv)}; elif command -v python >/dev/null 2>&1; then exec python {shlex.quote(script_path)} {" ".join(shlex.quote(a) for a in argv)}; else echo "python runtime not found" 1>&2; exit 127; fi']
+    if suffix in (".sh", ".bash"):
+        return ["bash", script_path, *argv]
+    if suffix == ".ps1":
+        return ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_path, *argv]
+    if suffix in (".cmd", ".bat"):
+        return ["cmd.exe", "/c", script_path, *argv]
+    raise RuntimeError(f"不支持的脚本后缀: {suffix}")
+
+
+def _build_sandbox_exec_request(
+    *,
+    workspace_id: str,
+    script_path: str,
+    suffix: str,
+    cli_argv: list[str],
+    input_json: str,
+) -> tuple[list[str], dict[str, str], str]:
+    """
+    返回 (command, env, cwd)：
+    - command 统一走 sh -lc，先确保会话目录存在并 cd
+    - input_json 通过环境变量注入并管道到 stdin
+    """
+    sandbox_workspace_dir = sandbox_session_dir(workspace_id)
+    sandbox_script_path = f"/skill/scripts/{script_path.lstrip('/')}"
+    base_argv = _build_sandbox_script_command(sandbox_script_path, suffix, cli_argv)
+    quoted = " ".join(shlex.quote(str(x)) for x in base_argv)
+    env: dict[str, str] = {}
+    if input_json:
+        env["SKILL_INPUT_JSON"] = input_json
+        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && printf "%s" "$SKILL_INPUT_JSON" | {quoted}'
+    else:
+        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && {quoted}'
+    return ["sh", "-lc", shell_cmd], env, "/workspace"
+
+
 def _execute_script_subprocess(
     *,
     script_full_path: Path,
@@ -218,17 +270,22 @@ def _execute_script_subprocess(
     cli_argv: list[str],
     script_root: Path,
     timeout_sec: int,
+    run_in_sandbox: bool = False,
 ) -> dict[str, Any]:
     workspace_root = _get_workspace_root(workspace_id)
     workspace_root.mkdir(parents=True, exist_ok=True)
+    sandbox_workspace_dir = sandbox_session_dir(workspace_id)
+    script_exec_path = f"/skill/scripts/{script_path.lstrip('/')}" if run_in_sandbox else str(script_full_path)
+    cwd_path = sandbox_workspace_dir if run_in_sandbox else str(workspace_root)
+    workspace_env_root = sandbox_workspace_dir if run_in_sandbox else str(workspace_root)
     try:
-        cmd = _build_script_command(script_full_path, cli_argv)
+        cmd = _build_script_command(Path(script_exec_path), cli_argv)
     except RuntimeError as e:
         return {"ok": False, "code": "runtime_missing", "message": str(e)}
     try:
         proc = subprocess.run(
             cmd,
-            cwd=str(workspace_root),
+            cwd=cwd_path,
             input=input_json if input_json else None,
             capture_output=True,
             text=True,
@@ -238,8 +295,8 @@ def _execute_script_subprocess(
                 "SKILL_ID": skill_id,
                 "SKILL_WRITE_MODE": write_mode,
                 "SKILL_WORKSPACE_ID": workspace_id,
-                "SKILL_WORKSPACE_ROOT": str(workspace_root),
-                "SKILL_SCRIPT_ROOT": str(script_root),
+                "SKILL_WORKSPACE_ROOT": workspace_env_root,
+                "SKILL_SCRIPT_ROOT": "/skill/scripts" if run_in_sandbox else str(script_root),
                 # 确保用户目录中的 skill 脚本也能 import app.*
                 "PYTHONPATH": (
                     str(_BACKEND_ROOT)
@@ -427,23 +484,36 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 cli_argv=cli_argv or [],
                 script_root=script_root,
                 timeout_sec=timeout_sec,
+                run_in_sandbox=is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True),
             )
 
         result_payload: dict[str, Any]
         if is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
+            try:
+                sandbox_command, sandbox_extra_env, sandbox_cwd = _build_sandbox_exec_request(
+                    workspace_id=workspace_id,
+                    script_path=script_path,
+                    suffix=full.suffix.lower(),
+                    cli_argv=cli_argv or [],
+                    input_json=input_json,
+                )
+            except RuntimeError as e:
+                return _json_result(ok=False, code="runtime_missing", message=str(e))
             ctx = ToolExecutionContext(
                 session_id=workspace_id,
                 workspace_id=str(workspace_root),
                 agent_id=f"skill:{skill_id}",
+                user_id=_get_current_user_id(),
                 skill_id=skill_id,
                 task_id=f"skill-script:{skill_id}",
                 turn_id=f"script:{uuid.uuid4().hex}",
                 tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
                 timeout_ms=max(1000, timeout_sec * 1000),
                 retry_count=0,
+                sandbox_cwd=sandbox_cwd,
                 policy=SandboxPolicy(
-                    fs_root=str(workspace_root),
-                    workspace_host_path=str(workspace_root),
+                    fs_root=str(host_sessions_root_from_workspace(workspace_root)),
+                    workspace_host_path=str(host_sessions_root_from_workspace(workspace_root)),
                     skill_scripts_host_path=str(script_root),
                     skill_config_host_path=str((skill_home / "config").resolve()),
                     runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
@@ -451,19 +521,32 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     timeout_ms=max(1000, timeout_sec * 1000),
                     tool_allowlist=["run_skill_script", f"run_skill_script_{skill_id}"],
                     volume_mounts=SandboxMountPolicy.build_mounts(
-                        workspace_host_path=workspace_root,
+                        workspace_host_path=host_sessions_root_from_workspace(workspace_root),
                         skill_scripts_host_path=script_root,
                         skill_config_host_path=(skill_home / "config"),
                         config_writable=False,
+                        workspace_target="/workspace",
                     ),
                 ),
             )
             gw = await _get_script_gateway().execute(
                 tool_name=f"run_skill_script_{skill_id}",
                 tool_kind="script",
-                payload={"script_path": script_path, "cli_argv": cli_argv or []},
+                payload={
+                    "script_path": script_path,
+                    "cli_argv": cli_argv or [],
+                    "__sandbox_command": sandbox_command,
+                    "__sandbox_env": {
+                        "SKILL_ID": skill_id,
+                        "SKILL_WRITE_MODE": write_mode,
+                        "SKILL_WORKSPACE_ID": workspace_id,
+                        "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
+                        "SKILL_SCRIPT_ROOT": "/skill/scripts",
+                        **sandbox_extra_env,
+                    },
+                },
                 context=ctx,
-                runner=_runner,
+                runner=lambda: asyncio.sleep(0, result={}),
             )
             if not gw.ok:
                 return _json_result(
@@ -472,7 +555,30 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     message=gw.error or "统一网关执行失败",
                     gateway_interrupt_reason=getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason)),
                 )
-            result_payload = dict(gw.output or {})
+            out = dict(gw.output or {})
+            exit_code = out.get("exit_code")
+            stdout = str(out.get("stdout") or "").strip()
+            stderr = str(out.get("stderr") or "").strip()
+            if isinstance(exit_code, int) and exit_code != 0:
+                result_payload = {
+                    "ok": False,
+                    "code": "script_exit_nonzero",
+                    "message": f"脚本退出码 {exit_code}",
+                    "returncode": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "script": script_path,
+                }
+            else:
+                result_payload = {
+                    "ok": True,
+                    "code": "script_executed",
+                    "script": script_path,
+                    "returncode": int(exit_code or 0),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "message": "脚本执行成功。",
+                }
         else:
             result_payload = await _runner()
         return _json_result(**result_payload)

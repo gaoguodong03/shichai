@@ -10,6 +10,7 @@ except ImportError:
 from app.agent.host_plan import is_host_plan_reserved_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import get_workspace_root
+from app.core.security import get_current_user
 
 
 class WriteWorkspaceFileInput(BaseModel):
@@ -70,14 +71,22 @@ def create_write_workspace_file_tool(workspace_id: str) -> StructuredTool:
             return (
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
             )
-        normalized = path_value.strip("/").replace("..", "")
+        normalized = path_value.strip("/").replace("\\", "/")
+        # Backward compatibility for old skill prompts:
+        # under user-single-sandbox layout, scripts config lives at session root.
+        if normalized in {"scripts/config.json"} or normalized.endswith("/scripts/config.json"):
+            normalized = "config.json"
+        if ".." in normalized:
+            return "错误：路径不能包含 ..。"
         ws_root = get_workspace_root(workspace_id)
         target = (ws_root / normalized).resolve()
         if not str(target).startswith(str(ws_root.resolve())):
             return f"错误：路径 {path_value} 不在当前工作区内。"
         svc = get_shared_sandbox_service()
         try:
+            user_id = get_current_user().username
             await svc.write_workspace_text(
+                user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
                 rel_path=normalized,

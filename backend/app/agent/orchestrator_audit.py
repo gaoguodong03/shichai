@@ -53,8 +53,9 @@ def _format_one_audit_line(event_type: str, payload: Dict[str, Any]) -> str:
     if event_type == "sandbox_session_created":
         sid = payload.get("sandbox_id") or ""
         backend = payload.get("runtime_backend") or ""
-        dep = str(payload.get("dep_hash") or "")[:12]
-        return f"- 沙箱创建: {sid} backend={backend} dep={dep}"
+        mode = payload.get("sandbox_mode") or ""
+        mode_suffix = f" mode={mode}" if mode else ""
+        return f"- 沙箱创建: {sid} backend={backend}{mode_suffix}"
     if event_type == "sandbox_session_disposed":
         sid = payload.get("sandbox_id") or ""
         return f"- 沙箱回收: {sid}"

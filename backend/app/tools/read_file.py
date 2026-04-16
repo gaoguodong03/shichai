@@ -13,6 +13,7 @@ except ImportError:
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root, get_workspace_root_path
+from app.core.security import get_current_user
 
 
 class ReadFileInput(BaseModel):
@@ -46,7 +47,13 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
         )
     cleaned = strip_llm_junk_from_read_path(raw) or raw
     root = get_agent_outputs_root().resolve()
-    normalized = cleaned.lstrip("/").replace("..", "")
+    normalized = cleaned.lstrip("/")
+    # Backward compatibility for old skill prompts:
+    # under user-single-sandbox layout, scripts config lives at session root.
+    if normalized in {"scripts/config.json"} or normalized.endswith("/scripts/config.json"):
+        normalized = "config.json"
+    if ".." in normalized:
+        return "", "错误：路径不能包含 ..。"
     if not session_id:
         if not normalized:
             return "", "错误：未提供文件路径。"
@@ -83,7 +90,9 @@ def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
         ws_root = get_workspace_root_path(session_id)
         svc = get_shared_sandbox_service()
         try:
+            user_id = get_current_user().username
             text = await svc.read_workspace_text(
+                user_id=user_id,
                 session_id=session_id,
                 workspace_path=ws_root,
                 rel_path=rel,

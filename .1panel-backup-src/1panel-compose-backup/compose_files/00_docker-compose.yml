@@ -1,0 +1,73 @@
+services:
+  opensandbox-server:
+    image: opensandbox/server:latest
+    container_name: opensandbox-server
+    ports:
+      - "${OPENSANDBOX_HOST_PORT:-8091}:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - |
+        printf '%s\n' \
+          '[server]' \
+          'host = "0.0.0.0"' \
+          'port = 8090' \
+          'log_level = "INFO"' \
+          '' \
+          '[runtime]' \
+          'type = "docker"' \
+          'execd_image = "opensandbox/execd:v1.0.11"' \
+          '' \
+          '[egress]' \
+          'image = "opensandbox/egress:v1.0.4"' \
+          '' \
+          '[docker]' \
+          'network_mode = "bridge"' \
+          'host_ip = "host.docker.internal"' \
+          'pids_limit = 4096' \
+          '' \
+          '[ingress]' \
+          'mode = "direct"' > /tmp/sandbox.toml
+        /bin/cat /tmp/sandbox.toml
+        exec /app/.venv/bin/opensandbox-server --config /tmp/sandbox.toml
+    restart: unless-stopped
+
+  st49:
+    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.15.3}"
+    container_name: st49
+    ports:
+      - "${ST49_HOST_PORT:-8100}:8000"
+    env_file:
+      - ./.env
+    environment:
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:8100}
+      - AUTH_SECRET=${AUTH_SECRET:-please_change_to_a_long_random_secret}
+      - OPENSANDBOX_DOMAIN=opensandbox-server:8090
+      - OPENSANDBOX_PROTOCOL=http
+      - UNIFIED_TOOL_GATEWAY_ENABLED=1
+      - OPENSANDBOX_USE_SERVER_PROXY=0
+      - SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      opensandbox-server:
+        condition: service_started
+    volumes:
+      - st49_data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  st49_data:
+    name: st49
+    external: true

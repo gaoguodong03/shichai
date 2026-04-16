@@ -15,6 +15,7 @@ except Exception:
             self.func = func
 
 from app.agent.read_path_utils import looks_like_url_or_remote_path
+from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
 
 
@@ -69,7 +70,13 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
         pass
     else:
         # 仅文件名或子路径，补全为当前会话 workspace
-        path = f"{prefix_ws}/{path}" if path else prefix_ws
+        path = f"{prefix_ws}/{normalize_rel_path(path)}" if path else prefix_ws
+    # 使用 canonical path 防止 ../../ 与符号链接越界
+    root = get_agent_outputs_root().resolve()
+    target = (root / path).resolve()
+    session_root = (root / WORKSPACES_SUBDIR / session_id).resolve()
+    ensure_within_root(target, session_root)
+    path = str(target.relative_to(root)).replace("\\", "/")
     # 供 MCP 解析：相对 backend 的路径
     if not path.startswith(rel_prefix):
         path = f"{rel_prefix}/{path}"

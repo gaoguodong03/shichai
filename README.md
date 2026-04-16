@@ -13,7 +13,7 @@
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 
-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.12.3
+crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.15.3
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -24,3 +24,25 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
 
   cd .\frontend\
   npm run dev
+
+
+
+## 1Panel 最简部署（接近一条命令）
+
+- 文件：`docker-compose.1panel.yml`
+- 环境变量模板：`backend/.env.1panel.example`
+
+### 三步完成
+
+1. 准备环境变量  
+   复制 `backend/.env.1panel.example` 为 `backend/.env`，至少填写 `QWEN_API_KEY`，并修改 `AUTH_SECRET`。
+2. 在 1Panel 创建数据卷  
+   创建名为 `st49_data` 的 Docker 卷（与 compose 内 `external: true` 对应）。
+3. 导入并启动  
+   在 1Panel 导入 `docker-compose.1panel.yml`，点击启动。
+
+### 访问与端口
+
+- 主应用：宿主机 `8100` -> 容器 `8000`
+- OpenSandbox：宿主机 `8091` -> 容器 `8090`
+- 如需调整，可在 1Panel 的环境变量中覆盖：`ST49_HOST_PORT`、`OPENSANDBOX_HOST_PORT`、`ST49_IMAGE`

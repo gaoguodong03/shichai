@@ -1,450 +1,17 @@
 {
-  "group-43923571cedd": {
-    "title": "创作流程与安排",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-guide",
-      "agent-195b8c3a",
-      "agent-c1bf68ba"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-09T11:20:34.884575+00:00",
-    "updated_at": "2026-04-09T14:44:18.645254+00:00",
-    "orchestration_profile": "recruitment"
-  },
-  "group-eec2a5ad1b52": {
-    "title": "cluadecode代码泄露问题",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-teacher-advisor",
-      "agent-seminar-teacher-review",
-      "agent-seminar-ai-peer"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-09T14:55:25.570700+00:00",
-    "updated_at": "2026-04-09T15:03:49.546307+00:00",
-    "orchestration_profile": "recruitment",
-    "skill_session_owner_id": "agent-seminar-ai-peer",
-    "skill_session_skill_id": "seminar-divergence"
-  },
-  "group-c9595655a040": {
-    "title": "cluadecode代码泄露问题",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-teacher-advisor"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-09T15:07:05.478422+00:00",
-    "updated_at": "2026-04-12T07:42:39.604044+00:00",
-    "orchestration_profile": "recruitment",
-    "skill_session_owner_id": "agent-seminar-teacher-advisor",
-    "skill_session_skill_id": "seminar-divergence"
-  },
-  "group-e88b46cfdca2": {
-    "title": "自邮之翼组织与数据库更新",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-ee83c54f"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-10T03:30:29.003871+00:00",
-    "updated_at": "2026-04-10T06:22:06.202959+00:00",
-    "orchestration_profile": "recruitment",
-    "skill_session_owner_id": "agent-ee83c54f",
-    "skill_session_skill_id": "rag-cli-1",
-    "pending_owner_agent_id": "agent-ee83c54f",
-    "pending_skill_id": "rag-cli-1",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
-  "group-27d547ca7d85": {
-    "title": "新对话",
-    "title_auto_generated": true,
-    "agent_ids": [],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T05:38:17.296160+00:00",
-    "updated_at": "2026-04-12T05:38:17.296160+00:00",
-    "orchestration_profile": "recruitment"
-  },
-  "group-ac0b34aad224": {
-    "title": "网文创作",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-web-fetch",
-      "agent-440b26f8",
-      "agent-195b8c3a"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T05:38:22.352104+00:00",
-    "updated_at": "2026-04-12T05:39:28.085561+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-webnovel"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-195b8c3a",
-    "skill_session_skill_id": "wechat-article-writer"
-  },
-  "group-dc98b4cb9ed4": {
-    "title": "cluadecode代码泄露问题讨论",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-seminar-teacher-advisor",
-      "agent-548f5f8d",
-      "agent-c1bf68ba"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T08:04:34.505060+00:00",
-    "updated_at": "2026-04-12T12:27:45.418934+00:00",
-    "orchestration_profile": "recruitment",
-    "skill_session_owner_id": "agent-548f5f8d",
-    "skill_session_skill_id": "requirement-guide"
-  },
-  "group-17062768a97c": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:36:15.569597+00:00",
-    "updated_at": "2026-04-12T13:36:15.569597+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene"
-  },
-  "group-1ce473c9ebaf": {
-    "title": "报告写作",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-d92e733e"
-    ],
-    "leader_agent_id": "agent-d92e733e",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:36:40.955595+00:00",
-    "updated_at": "2026-04-12T13:36:40.955595+00:00",
-    "orchestration_profile": "scene"
-  },
-  "group-ecc0561dea2f": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:36:46.625881+00:00",
-    "updated_at": "2026-04-12T13:36:46.625881+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene"
-  },
-  "group-109b548b56f0": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:37:12.284665+00:00",
-    "updated_at": "2026-04-12T13:38:50.487178+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-8f3a2c1d",
-    "skill_session_skill_id": "github-weekly-rank"
-  },
-  "group-92c4ddf904cd": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:39:23.054300+00:00",
-    "updated_at": "2026-04-12T13:42:31.100396+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-8f3a2c1d",
-    "skill_session_skill_id": "github-weekly-rank"
-  },
-  "group-fc28d2712f8b": {
-    "title": "新对话",
-    "title_auto_generated": true,
-    "agent_ids": [],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:42:59.044074+00:00",
-    "updated_at": "2026-04-12T13:42:59.044074+00:00",
-    "orchestration_profile": "recruitment"
-  },
-  "group-d8f798b16417": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T13:43:01.970660+00:00",
-    "updated_at": "2026-04-12T13:57:30.631248+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-7c1d5e8b",
-    "skill_session_skill_id": "wechat-article-writer"
-  },
-  "group-c6aedf2a6ccc": {
-    "title": "新对话",
-    "title_auto_generated": true,
-    "agent_ids": [],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-12T14:30:48.427130+00:00",
-    "updated_at": "2026-04-12T14:30:48.427130+00:00",
-    "orchestration_profile": "recruitment"
-  },
-  "group-c3333f2875af": {
-    "title": "测试·甲乙顺序",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-e2a1b3c4",
-      "agent-e2d5e6f7"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-13T11:36:47.828025+00:00",
-    "updated_at": "2026-04-13T11:37:36.986983+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-test-seq-ab"
-      ],
-      "system_prompt": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": false
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-e2a1b3c4",
-    "skill_session_skill_id": "skill-a34b0ca04cad"
-  },
-  "group-db411364478e": {
-    "title": "测试·甲乙顺序",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-e2a1b3c4",
-      "agent-e2d5e6f7"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-13T11:40:35.099450+00:00",
-    "updated_at": "2026-04-14T14:36:39.856203+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-test-seq-ab"
-      ],
-      "system_prompt": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": false
-    },
-    "orchestration_profile": "scene"
-  },
-  "group-e5d1fb2b6659": {
-    "title": "切换技能相关讨论",
-    "title_auto_generated": true,
-    "agent_ids": [
-      "agent-e2a1b3c4",
-      "agent-e2d5e6f7"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-13T11:45:26.717071+00:00",
-    "updated_at": "2026-04-13T11:50:10.710220+00:00",
-    "orchestration_profile": "recruitment"
-  },
-  "group-7db58e4ebb64": {
-    "title": "开源周榜与趋势",
-    "title_auto_generated": false,
-    "agent_ids": [
-      "agent-8f3a2c1d",
-      "agent-6e4b9a2f",
-      "agent-7c1d5e8b"
-    ],
-    "leader_agent_id": "agent-scene-host",
-    "speak_mode": "auto",
-    "created_at": "2026-04-14T14:37:03.883631+00:00",
-    "updated_at": "2026-04-15T05:53:10.258883+00:00",
-    "host_config": {
-      "skill_ids": [
-        "group-host",
-        "group-host-github-weekly"
-      ],
-      "system_prompt": null,
-      "llm_provider_id": "",
-      "mcp_server_ids": [],
-      "file_capabilities": {
-        "read": true,
-        "edit": true,
-        "write": true,
-        "rename": true,
-        "mkdir": true,
-        "list_dir": true
-      },
-      "url_capability": true
-    },
-    "orchestration_profile": "scene",
-    "skill_session_owner_id": "agent-8f3a2c1d",
-    "skill_session_skill_id": "github",
-    "pending_owner_agent_id": "agent-8f3a2c1d",
-    "pending_skill_id": "github",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input"
-  },
   "group-857835524692": {
-    "title": "新对话",
+    "title": "修改天气文件及名称",
     "title_auto_generated": true,
-    "agent_ids": [],
+    "agent_ids": [
+      "agent-df1f712a"
+    ],
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-15T05:56:04.244029+00:00",
-    "updated_at": "2026-04-15T05:56:04.244029+00:00",
-    "orchestration_profile": "recruitment"
+    "updated_at": "2026-04-15T06:34:55.326565+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-df1f712a",
+    "skill_session_skill_id": "weather-service"
   },
   "group-adf328f7c52e": {
     "title": "开源周榜与趋势",
@@ -484,5 +51,41 @@
     "pending_handoff_reason": "expert_need_user_input",
     "skill_session_owner_id": "agent-8f3a2c1d",
     "skill_session_skill_id": "github"
+  },
+  "group-27013466da33": {
+    "title": "关于北邮的建校年份",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-ee83c54f"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-15T06:46:44.673219+00:00",
+    "updated_at": "2026-04-15T06:47:28.227327+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-553941e56983": {
+    "title": "存储学校建校信息",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-ee83c54f"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-15T06:58:24.404319+00:00",
+    "updated_at": "2026-04-16T07:40:37.232032+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-ae75757d726e": {
+    "title": "北邮建校年份存储",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-ee83c54f"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T07:40:48.696486+00:00",
+    "updated_at": "2026-04-16T07:42:38.455250+00:00",
+    "orchestration_profile": "recruitment"
   }
 }

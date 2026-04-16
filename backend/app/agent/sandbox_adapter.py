@@ -37,8 +37,6 @@ class SandboxPolicy:
     timeout_ms: int = 30000
     tool_allowlist: List[str] = field(default_factory=list)
     max_artifact_size_mb: int = 50
-    dep_hash: str = ""
-    base_image_ref: str = ""
     environment: Dict[str, str] = field(default_factory=dict)
     volume_mounts: List[SandboxVolumeMount] = field(default_factory=list)
 
@@ -188,15 +186,20 @@ class OpenSandboxAdapter:
                         )
                     if protocol not in {"http", "https"}:
                         protocol = "http"
-                    # 关键：本地/compose 场景下，execd endpoint 可能返回容器内不可解析主机名。
-                    # 统一走 server proxy 可避免 host 解析失败（nodename nor servname provided）。
+                    proxy_raw = (
+                        os.getenv("OPENSANDBOX_USE_SERVER_PROXY")
+                        or os.getenv("OPEN_SANDBOX_USE_SERVER_PROXY")
+                        or "1"
+                    ).strip().lower()
+                    use_server_proxy = proxy_raw in {"1", "true", "yes", "on", "enabled"}
+                    # 默认走 server proxy；若拿到空 endpoint，会在 _ensure_execd 中自动回退直连。
                     self._conn = ConnectionConfig(
                         api_key=api_key,
                         domain=domain,
                         protocol=protocol,
-                        use_server_proxy=True,
+                        use_server_proxy=use_server_proxy,
                     )
-                    logger.info("opensandbox_connection_target=%s://%s proxy=%s", protocol, domain, True)
+                    logger.info("opensandbox_connection_target=%s://%s proxy=%s", protocol, domain, use_server_proxy)
                     self._sandboxes = SandboxesAdapter(self._conn)
                     self._execd_port = int(DEFAULT_EXECD_PORT)
                     self._RunCommandOpts = RunCommandOpts
@@ -211,8 +214,24 @@ class OpenSandboxAdapter:
                     if sandbox_id in self._commands and sandbox_id in self._fs:
                         return self._commands[sandbox_id], self._fs[sandbox_id]
                     endpoint = await self._sandboxes.get_sandbox_endpoint(
-                        sandbox_id=sandbox_id, port=self._execd_port, use_server_proxy=self._conn.use_server_proxy
+                        sandbox_id=sandbox_id,
+                        port=self._execd_port,
+                        use_server_proxy=self._conn.use_server_proxy,
                     )
+                    host = str(getattr(endpoint, "host", "") or "").strip()
+                    port = getattr(endpoint, "port", None)
+                    # 某些部署下 use_server_proxy=True 会返回空 endpoint（host/port 为空），
+                    # 这会导致后续命令调用超时。此时自动回退到直连 endpoint。
+                    if self._conn.use_server_proxy and (not host or not port):
+                        logger.warning(
+                            "opensandbox_execd_endpoint_empty_with_proxy sandbox_id=%s; fallback_to_direct=true",
+                            sandbox_id,
+                        )
+                        endpoint = await self._sandboxes.get_sandbox_endpoint(
+                            sandbox_id=sandbox_id,
+                            port=self._execd_port,
+                            use_server_proxy=False,
+                        )
                     logger.info(
                         "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s:%s proxy=%s",
                         sandbox_id,
@@ -227,7 +246,7 @@ class OpenSandboxAdapter:
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-                    image_ref = (spec.get("base_image_ref") or "").strip() or "ubuntu:22.04"
+                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "python:3.11-slim"
                     mounts = list(spec.get("mounts") or [])
                     volumes = []
                     for i, m in enumerate(mounts):
@@ -356,8 +375,6 @@ class OpenSandboxAdapter:
                 "allow_network": policy.allow_network,
                 "allowed_hosts": list(policy.allowed_hosts or []),
             },
-            "base_image_ref": policy.base_image_ref,
-            "dep_hash": policy.dep_hash,
             "env": dict(policy.environment or {}),
             "mounts": mounts,
             "workspace_root": policy.fs_root,
@@ -376,7 +393,6 @@ class OpenSandboxAdapter:
                 "policy": {"tool_allowlist": list(policy.tool_allowlist), "timeout_ms": int(policy.timeout_ms)},
                 "runtime_backend": policy.runtime_backend,
                 "runtime_profile": policy.runtime_profile,
-                "dep_hash": policy.dep_hash,
             },
         )
 
