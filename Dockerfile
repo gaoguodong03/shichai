@@ -1,9 +1,11 @@
-# syntax=docker/dockerfile:1.7
 # 构建目标平台（默认 linux/amd64；可覆盖：docker build --platform linux/arm64）
 # Node 阶段用 TARGETPLATFORM（与 python 阶段一致）；Windows 上 BUILDPLATFORM 常为 windows/amd64，官方 node 无此平台会 not found。
 ARG TARGETPLATFORM=linux/amd64
+# 可覆写基础镜像（用于无法直连 Docker Hub 的环境）
+ARG NODE_IMAGE=node:20-bookworm-slim
+ARG PYTHON_IMAGE=python:3.12-slim
 # ========== 阶段 1：构建前端（用 Debian 版 Node，便于阶段 2 复用，避免 apt 拉取 node/npm 失败）==========
-FROM --platform=$TARGETPLATFORM node:20-bookworm-slim AS frontend-builder
+FROM --platform=$TARGETPLATFORM ${NODE_IMAGE} AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json* ./
@@ -14,7 +16,7 @@ COPY frontend/ ./
 RUN npx vite build
 
 # ========== 阶段 2：运行后端并托管前端静态 ==========
-FROM --platform=$TARGETPLATFORM python:3.12-slim
+FROM --platform=$TARGETPLATFORM ${PYTHON_IMAGE}
 WORKDIR /app
 
 # 运行期工具：

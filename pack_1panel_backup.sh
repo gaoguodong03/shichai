@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generate 1Panel "compose backup" tarball that contains compose_meta.json.
+# Output: <repo_root>/1panel-compose-backup.tar.gz
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Prefer git to locate repo root (works regardless of script location).
+if command -v git >/dev/null 2>&1; then
+  REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+else
+  REPO_ROOT=""
+fi
+
+# Fallbacks:
+# - if script is in <repo>/scripts/, use parent
+# - if script is in <repo>/, use itself
+if [[ -z "${REPO_ROOT:-}" ]]; then
+  if [[ "$(basename "$SCRIPT_DIR")" == "scripts" ]]; then
+    REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  else
+    REPO_ROOT="$SCRIPT_DIR"
+  fi
+fi
+cd "$REPO_ROOT"
+
+OUT_TGZ="${OUT_TGZ:-1panel-compose-backup.tar.gz}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.1panel.yml}"
+ENV_FILE="${ENV_FILE:-backend/.env}"
+COMPOSE_NAME="${COMPOSE_NAME:-st49}"
+
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  echo "ERROR: missing compose file: $COMPOSE_FILE" >&2
+  exit 2
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "ERROR: missing env file: $ENV_FILE" >&2
+  echo "Hint: copy backend/.env.1panel.example to backend/.env and fill keys." >&2
+  exit 2
+fi
+
+WORK_DIR=".1panel-backup-src"
+BACKUP_DIR="$WORK_DIR/1panel-compose-backup"
+FILES_DIR="$BACKUP_DIR/compose_files"
+
+rm -rf "$WORK_DIR"
+mkdir -p "$FILES_DIR"
+
+cp "$COMPOSE_FILE" "$FILES_DIR/00_docker-compose.yml"
+cp "$ENV_FILE" "$FILES_DIR/.env"
+
+python3 - <<'PY'
+import json, pathlib, datetime, os
+base = pathlib.Path(".1panel-backup-src/1panel-compose-backup")
+compose_name = os.environ.get("COMPOSE_NAME", "st49")
+meta = {
+  "composeName": compose_name,
+  "composePath": "",
+  "createdAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+  "files": [
+    {
+      "originalPath": os.environ.get("COMPOSE_FILE", "docker-compose.1panel.yml"),
+      "fileName": "docker-compose.yml",
+      "relativePath": "docker-compose.yml",
+      "backupPath": "compose_files/00_docker-compose.yml",
+    }
+  ],
+  "containers": []
+}
+(base / "compose_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+
+tar -czf "$OUT_TGZ" -C "$WORK_DIR" 1panel-compose-backup
+
+echo "OK: wrote $OUT_TGZ"
+echo "Contents:"
+tar -tzf "$OUT_TGZ"
+

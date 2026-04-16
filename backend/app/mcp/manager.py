@@ -96,14 +96,48 @@ async def execute_mcp_call(
     tool_name: str,
     kwargs: Dict[str, Any],
     session: ClientSession,
-    timeout_sec: float = 60.0,
+    timeout_sec: Optional[float] = None,
 ) -> tuple[bool, Any, str]:
     """Execute a single MCP tool call with optional unified gateway."""
+    def _resolve_timeout_sec(raw: Optional[float]) -> Optional[float]:
+        """
+        MCP 工具超时：
+        - raw 显式传入时优先
+        - 否则读取环境变量 MCP_TOOL_TIMEOUT_SEC
+          - 未设置或 <=0 表示不启用“工具级”超时（但 gateway 仍需要一个 timeout_ms，见下方 fallback）
+        """
+        if raw is not None:
+            try:
+                v = float(raw)
+            except Exception:
+                return None
+            return None if v <= 0 else v
+        env = (os.getenv("MCP_TOOL_TIMEOUT_SEC") or "").strip()
+        if not env:
+            return None
+        try:
+            v = float(env)
+        except Exception:
+            return None
+        return None if v <= 0 else v
+
+    resolved_timeout_sec = _resolve_timeout_sec(timeout_sec)
+    # gateway/沙箱层必须有 timeout_ms；当未启用工具级超时时，给一个很大的默认值（可用环境变量覆盖）
+    fallback_timeout_ms = int(os.getenv("MCP_TOOL_TIMEOUT_FALLBACK_MS", "3600000"))  # 1h
+    resolved_timeout_ms = (
+        max(1000, int(resolved_timeout_sec * 1000)) if resolved_timeout_sec is not None else fallback_timeout_ms
+    )
+
     if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
         try:
             lock = _get_mcp_call_lock(session)
             async with lock:
-                result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+                if resolved_timeout_sec is None:
+                    result = await session.call_tool(tool_name, kwargs)
+                else:
+                    result = await asyncio.wait_for(
+                        session.call_tool(tool_name, kwargs), timeout=resolved_timeout_sec
+                    )
             return True, result, ""
         except Exception as e:  # noqa: BLE001
             return False, None, str(e)
@@ -112,7 +146,12 @@ async def execute_mcp_call(
     async def _runner() -> Dict[str, Any]:
         lock = _get_mcp_call_lock(session)
         async with lock:
-            result = await asyncio.wait_for(session.call_tool(tool_name, kwargs), timeout=timeout_sec)
+            if resolved_timeout_sec is None:
+                result = await session.call_tool(tool_name, kwargs)
+            else:
+                result = await asyncio.wait_for(
+                    session.call_tool(tool_name, kwargs), timeout=resolved_timeout_sec
+                )
         return {"mcp_result": result}
 
     ctx = ToolExecutionContext(
@@ -124,12 +163,12 @@ async def execute_mcp_call(
         task_id=f"mcp:{server_id}",
         turn_id=f"tool-call:{uuid.uuid4().hex}",
         tool_call_id=f"{server_id}:{tool_name}:{uuid.uuid4().hex}",
-        timeout_ms=max(1000, int(timeout_sec * 1000)),
+        timeout_ms=int(resolved_timeout_ms),
         retry_count=1,
         sandbox_cwd=sandbox_sessions_root(),
         policy=SandboxPolicy(
             fs_root=outputs_root,
-            timeout_ms=max(1000, int(timeout_sec * 1000)),
+            timeout_ms=int(resolved_timeout_ms),
             tool_allowlist=[f"{server_id}_{tool_name}", tool_name],
         ),
     )
@@ -347,7 +386,16 @@ class MCPToolManager:
                 headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
                 http_client = None
                 if headers:
-                    http_client = httpx.AsyncClient(headers=headers, timeout=60.0)
+                    # 不要在这里硬编码 60s；默认不设置 timeout（由底层/调用侧控制），也可用 MCP_HTTP_TIMEOUT_SEC 覆盖。
+                    _http_t = (os.getenv("MCP_HTTP_TIMEOUT_SEC") or "").strip()
+                    if _http_t:
+                        try:
+                            http_timeout = float(_http_t)
+                        except Exception:
+                            http_timeout = None
+                    else:
+                        http_timeout = None
+                    http_client = httpx.AsyncClient(headers=headers, timeout=http_timeout)
                     await self.exit_stack.enter_async_context(http_client)
                 try:
                     streamable_transport = streamable_http_client(url, http_client=http_client, terminate_on_close=True)
@@ -411,7 +459,7 @@ class MCPToolManager:
                     tool_name=original_tool_name,
                     kwargs=call_kwargs,
                     session=session,
-                    timeout_sec=60.0,
+                    timeout_sec=None,
                 )
                 if not ok:
                     return f"Error: {err or 'MCP tool call failed'}"

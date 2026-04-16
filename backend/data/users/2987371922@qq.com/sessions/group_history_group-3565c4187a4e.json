@@ -1,1 +1,152 @@
-[]
+[
+  {
+    "message_id": "msg-374099e9",
+    "role": "user",
+    "content": "抓取https://github.com/OpenGithubs/github-weekly-rank/blob/main/README.md",
+    "timestamp": "2026-04-16T12:02:11.047452+00:00"
+  },
+  {
+    "message_id": "msg-776498e6",
+    "role": "host",
+    "content": "本轮需要抓取 OpenGithubs/github-weekly-rank 的 README 和榜单要点，生成 `github-weekly-snapshot.md`。这属于第一阶段任务，由周榜情报专家负责。",
+    "timestamp": "2026-04-16T12:02:15.704172+00:00",
+    "skill_id": "group-host-github-weekly",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "周榜情报专家"
+  },
+  {
+    "message_id": "msg-a3047e2a",
+    "role": "assistant",
+    "agent_id": "agent-8f3a2c1d",
+    "content": "### 动作与结果\n\n1. **抓取 GitHub 仓库 README 文件**：\n   - 已成功抓取 `https://github.com/OpenGithubs/github-weekly-rank/blob/main/README.md` 的内容。\n   - 内容包含项目描述、开源社区链接以及部分周榜信息。\n\n2. **保存为 `github-weekly-snapshot.md` 文件**：\n   - 将抓取到的 README 内容整理并保存到工作区文件 `github-weekly-snapshot.md`。\n\n### 下一步处理\n- 整理抓取的内容，写入名为 `github-weekly-snapshot.md` 的文件。\n\n### 动作与结果\n\n1. **抓取内容已保存**：\n   - 抓取的内容成功保存到文件 `github-weekly-snapshot.md` 中。\n   - 文件已更新，供后续分析或简报使用。",
+    "timestamp": "2026-04-16T12:02:50.550480+00:00",
+    "skill_id": "github",
+    "skill_route_debug": {
+      "strategy": "single_loaded_skill",
+      "selected_skill_id": "github"
+    },
+    "tool_raw_results": [
+      "{\n  \"markdown\": \"Github开源项目:每周📈飙升榜 top20,每周一早上8点更新. Contribute to OpenGithubs/github-weekly-rank development by creating an account on GitHub.\\n\\n[Skip to content](#start-of-content)  \\n\\nYou signed in with another tab or window. [Reload]() to refresh your session. You signed out in another tab or window. [Reload]() to refresh your session. You switched accounts on another tab or window. [Reload]() to refresh your session. Dismiss alert\\n\\n[OpenGithubs](/OpenGithubs) / **[github-weekly-rank](/OpenGithubs/github-weekly-rank)** Public\\n\\n-   [Notifications](/login?return_to=%2FOpenGithubs%2Fgithub-weekly-rank) You must be signed in to change notification settings\\n-   [Fork 99](/login?return_to=%2FOpenGithubs%2Fgithub-weekly-rank)\\n-   [Star 1.4k](/login?return_to=%2FOpenGithubs%2Fgithub-weekly-rank)\\n    \\n\\n-   [Code](/OpenGithubs/github-weekly-rank)\\n-   [Issues 1](/OpenGithubs/github-weekly-rank/issues)\\n-   [Pull requests 3](/OpenGithubs/github-weekly-rank/pulls)\\n-   [Actions](/OpenGithubs/github-weekly-rank/actions)\\n-   [Projects](/OpenGithubs/github-weekly-rank/projects)\\n-   [Security and quality 0](/OpenGithubs/github-weekly-rank/security)\\n-   [Insights](/OpenGithubs/github-weekly-rank/pulse)\\n\\nAdditional navigation options\\n\\n-   [Code](/OpenGithubs/github-weekly-rank)\\n-   [Issues](/OpenGithubs/github-weekly-rank/issues)\\n-   [Pull requests](/OpenGithubs/github-weekly-rank/pulls)\\n-   [Actions](/OpenGithubs/github-weekly-rank/actions)\\n-   [Projects](/OpenGithubs/github-weekly-rank/projects)\\n-   [Security and quality](/OpenGithubs/github-weekly-rank/security)\\n-   [Insights](/OpenGithubs/github-weekly-rank/pulse)\\n\\n </OpenGithubs/github-weekly-rank>\\n\\n## Collapse file tree\\n\\n## Files\\n\\n main\\n\\nSearch this repository(forward slash) forward slash/\\n\\n-   2024\\n    \\n-   2025\\n    \\n-   2026\\n    \\n-   .gitignore\\n    \\n-   README.md\\n    \\n\\n## Breadcrumbs\\n\\n1.  [github-weekly-rank](/OpenGithubs/github-weekly-rank/tree/main)\\n\\n/\\n\\n# README.md\\n\\nCopy path\\n\\nBlame\\n\\nMore file actions\\n\\nBlame\\n\\nMore file actions\\n\\n## Latest commit\\n\\n[![OpenGithubs](https://avatars.githubusercontent.com/u/116132402?v=4&size=40)](/OpenGithubs)[OpenGithubs](/OpenGithubs/github-weekly-rank/commits?author=OpenGithubs)\\n\\n[2026.04.13周飙升榜](/OpenGithubs/github-weekly-rank/commit/bcc68c14dd4f3bf5c88b7f0059e9249fd4515325)\\n\\nApr 13, 2026\\n\\n[bcc68c1](/OpenGithubs/github-weekly-rank/commit/bcc68c14dd4f3bf5c88b7f0059e9249fd4515325) · Apr 13, 2026\\n\\n## History\\n\\n[History](/OpenGithubs/github-weekly-rank/commits/main/README.md)\\n\\nOpen commit details\\n\\n</OpenGithubs/github-weekly-rank/commits/main/README.md>History\\n\\nexecutable file\\n\\n·\\n\\n249 lines (192 loc) · 22.9 KB\\n\\n## Breadcrumbs\\n\\n1.  [github-weekly-rank](/OpenGithubs/github-weekly-rank/tree/main)\\n\\n/\\n\\n# README.md\\n\\nTop\\n\\n## File metadata and controls\\n\\n-   Preview\\n    \\n-   Code\\n    \\n-   Blame\\n    \\n\\nexecutable file\\n\\n·\\n\\n249 lines (192 loc) · 22.9 KB\\n\\n[Raw](https://github.com/OpenGithubs/github-weekly-rank/raw/refs/heads/main/README.md)\\n\\nCopy raw file\\n\\nDownload raw file\\n\\nOutline\\n\\nEdit and raw actions\\n\\n## 2026.04.12 本周最佳开源项目🔝:hermes-agent\\n\\n<#20260412-本周最佳开源项目hermes-agent>\\n\\n## 关注社区\\n\\n<#关注社区->\\n\\n-   OpenGithub社区：[https://open.itc.cn/](https://open.itc.cn/)\\n-   Github : [https://github.com/OpenGithubs](https://github.com/OpenGithubs)\\n-   微信公众号: >>[搜索开源推荐官](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzUwOTU1MTQ3MQ==&action=getalbum&album_id=4039839316019691542)\\n-   头条社区: >>[搜索开源推荐官](https://www.toutiao.com/c/user/token/MS4wLjABAAAAmvfOws0L3K53LliyFX5JSmIS3b8RmD4dj_uwATFbgu4/)\\n-   知乎社区: >>[搜索Open Github社区](https://www.zhihu.com/people/OpenGithub)\\n-   订阅Github: >> [Github周刊](https://github.com/OpenGithubs/weekly) , [Github月刊](https://github.com/OpenGithubs/monthly)\\n-   **订阅榜单**: >> [Github日榜](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzUwOTU1MTQ3MQ==&action=getalbum&album_id=4065034652468035603#wechat_redirect) , [Github周榜](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzUwOTU1MTQ3MQ==&action=getalbum&album_id=4065034978231238664#wechat_redirect) , [Github月榜](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzUwOTU1MTQ3MQ==&action=getalbum&album_id=4065035174692438029#wechat_redirect)\\n-   **喜欢分享&关注开源, +微信: open\\\\_github**\\n\\n> 🏆2026.04.12周榜最佳项目前3名\\n\\n-   \\\\*\\\\*榜单增长：第1名: NousResearch/hermes-agent \\\\*\\\\*\\n    -   开源地址：[https://github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)\\n    -   📅 开源时间：2025-07-23\\n    -   ⭐ 总星标数量：65495⭐\\n    -   🔺周Star增长量：28432⭐\\n    -   📝 项目描述： The agent that grows with you\\n-   \\\\*\\\\*榜单增长：第2名: forrestchang/andrej-karpathy-skills \\\\*\\\\*\\n    -   开源地址：[https://github.com/forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)\\n    -   📅 开源时间：2026-01-27\\n    -   ⭐ 总星标数量：15725⭐\\n    -   🔺周Star增长量：7747⭐\\n    -   📝 项目描述：\\n-   \\\\*\\\\*榜单增长：第3名: shanraisshan/claude-code-best-practice \\\\*\\\\*\\n    -   开源地址：[https://github.com/shanraisshan/claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice)\\n    -   📅 开源时间：2025-10-31\\n    -   ⭐ 总星标数量：38728⭐\\n    -   🔺周Star增长量：6334⭐\\n    -   📝 项目描述： practice made claude perfect\\n\\n## 2026.04.07-2026.04.12 周榜排行\\n\\n<#20260407-20260412-周榜排行->\\n\\n排名\\n\\n项目名\\n\\nStar⭐\\n\\n上周增长量\\n\\n1\\n\\n[NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)\\n\\n65.5k\\n\\n🔺28432\\n\\n2\\n\\n[forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)\\n\\n15.7k\\n\\n🔺7747\\n\\n3\\n\\n[shanraisshan/claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice)\\n\\n38.7k\\n\\n🔺6334\\n\\n4\\n\\n[msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)\\n\\n78.8k\\n\\n🔺5839\\n\\n5\\n\\n[HKUDS/DeepTutor](https://github.com/HKUDS/DeepTutor)\\n\\n17.2k\\n\\n🔺5155\\n\\n6\\n\\n[siddharthvaddem/openscreen](https://github.com/siddharthvaddem/openscreen)\\n\\n28.7k\\n\\n🔺4956\\n\\n7\\n\\n[opendataloader-project/opendataloader-pdf](https://github.com/opendataloader-project/opendataloader-pdf)\\n\\n16.1k\\n\\n🔺4813\\n\\n8\\n\\n[OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM)\\n\\n11.1k\\n\\n🔺4793\\n\\n9\\n\\n[luongnv89/claude-howto](https://github.com/luongnv89/claude-howto)\\n\\n25.6k\\n\\n🔺4366\\n\\n10\\n\\n[Yeachan-Heo/oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex)\\n\\n21.6k\\n\\n🔺4200\\n\\n11\\n\\n[Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)\\n\\n28k\\n\\n🔺3598\\n\\n12\\n\\n[thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)\\n\\n49.3k\\n\\n🔺3521\\n\\n13\\n\\n[shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos)\\n\\n15.6k\\n\\n🔺3479\\n\\n14\\n\\n[666ghj/MiroFish](https://github.com/666ghj/MiroFish)\\n\\n54.1k\\n\\n🔺3479\\n\\n15\\n\\n[multica-ai/multica](https://github.com/multica-ai/multica)\\n\\n9.2k\\n\\n🔺3273\\n\\n16\\n\\n[shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)\\n\\n52.2k\\n\\n🔺3136\\n\\n17\\n\\n[coleam00/Archon](https://github.com/coleam00/Archon)\\n\\n16.9k\\n\\n🔺3053\\n\\n18\\n\\n[google-ai-edge/gallery](https://github.com/google-ai-edge/gallery)\\n\\n20.6k\\n\\n🔺2903\\n\\n19\\n\\n[rowboatlabs/rowboat](https://github.com/rowboatlabs/rowboat)\\n\\n12.2k\\n\\n🔺2827\\n\\n20\\n\\n[kepano/obsidian-skills](https://github.com/kepano/obsidian-skills)\\n\\n23.1k\\n\\n🔺2782\\n\\n**注**: 数据统计参见github:[https://github.com/OpenGithubs/github-weekly-rank](https://github.com/OpenGithubs/github-weekly-rank)\\n\\n## 2026.04.07-2026.04.12 周榜项目详情\\n\\n<#20260407-20260412-周榜项目详情->\\n\\n### 1\\\\. [https://github.com/NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)\\n\\n<#1--httpsgithubcomnousresearchhermes-agent->\\n\\n-   ⭐ 总星标数量：65.5k\\n-   🔺 上周增长数量：28432⭐\\n-   🔺 上月增长数量：28432⭐\\n-   📅 开源时间：2025-07-23\\n-   📝 项目描述：The agent that grows with you\\n\\n### 2\\\\. [https://github.com/forrestchang/andrej-karpathy-skills](https://github.com/forrestchang/andrej-karpathy-skills)\\n\\n<#2--httpsgithubcomforrestchangandrej-karpathy-skills->\\n\\n-   ⭐ 总星标数量：15.7k\\n-   🔺 上周增长数量：7747⭐\\n-   🔺 上月增长数量：7747⭐\\n-   📅 开源时间：2026-01-27\\n-   📝 项目描述：\\n\\n### 3\\\\. [https://github.com/shanraisshan/claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice)\\n\\n<#3--httpsgithubcomshanraisshanclaude-code-best-practice->\\n\\n-   ⭐ 总星标数量：38.7k\\n-   🔺 上周增长数量：6334⭐\\n-   🔺 上月增长数量：22764⭐\\n-   📅 开源时间：2025-10-31\\n-   📝 项目描述：practice made claude perfect\\n\\n### 4\\\\. [https://github.com/msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)\\n\\n<#4--httpsgithubcommsitarzewskiagency-agents->\\n\\n-   ⭐ 总星标数量：78.8k\\n-   🔺 上周增长数量：5839⭐\\n-   🔺 上月增长数量：35570⭐\\n-   📅 开源时间：2025-10-13\\n-   📝 项目描述：A complete AI agency at your fingertips\\\\*\\\\* - From frontend wizards to Reddit community ninjas, from whimsy injectors to reality checkers. Each agent is a specialized expert with personality, processes, and proven deliverables.\\n\\n### 5\\\\. [https://github.com/HKUDS/DeepTutor](https://github.com/HKUDS/DeepTutor)\\n\\n<#5--httpsgithubcomhkudsdeeptutor->\\n\\n-   ⭐ 总星标数量：17.2k\\n-   🔺 上周增长数量：5155⭐\\n-   🔺 上月增长数量：5155⭐\\n-   📅 开源时间：2025-12-28\\n-   📝 项目描述：\\\"DeepTutor: Agent-Native Personalized Learning Assistant\\\"\\n\\n### 6\\\\. [https://github.com/siddharthvaddem/openscreen](https://github.com/siddharthvaddem/openscreen)\\n\\n<#6--httpsgithubcomsiddharthvaddemopenscreen->\\n\\n-   ⭐ 总星标数量：28.7k\\n-   🔺 上周增长数量：4956⭐\\n-   🔺 上月增长数量：13167⭐\\n-   📅 开源时间：2025-10-10\\n-   📝 项目描述：Create stunning demos for free. Open-source, no subscriptions, no watermarks, and free for commercial use. An alternative to Screen Studio.\\n\\n### 7\\\\. [https://github.com/opendataloader-project/opendataloader-pdf](https://github.com/opendataloader-project/opendataloader-pdf)\\n\\n<#7--httpsgithubcomopendataloader-projectopendataloader-pdf->\\n\\n-   ⭐ 总星标数量：16.1k\\n-   🔺 上周增长数量：4813⭐\\n-   🔺 上月增长数量：10627⭐\\n-   📅 开源时间：2025-05-13\\n-   📝 项目描述：PDF Parser for AI-ready data. Automate PDF accessibility. Open-source.\\n\\n### 8\\\\. [https://github.com/OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM)\\n\\n<#8--httpsgithubcomopenbmbvoxcpm->\\n\\n-   ⭐ 总星标数量：11.1k\\n-   🔺 上周增长数量：4793⭐\\n-   🔺 上月增长数量：4963⭐\\n-   📅 开源时间：2025-09-16\\n-   📝 项目描述：VoxCPM: Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning\\n\\n### 9\\\\. [https://github.com/luongnv89/claude-howto](https://github.com/luongnv89/claude-howto)\\n\\n<#9--httpsgithubcomluongnv89claude-howto->\\n\\n-   ⭐ 总星标数量：25.6k\\n-   🔺 上周增长数量：4366⭐\\n-   🔺 上月增长数量：19339⭐\\n-   📅 开源时间：2025-11-08\\n-   📝 项目描述：A visual, example-driven guide to Claude Code — from basic concepts to advanced agents, with copy-paste templates that bring immediate value.\\n\\n### 10\\\\. [https://github.com/Yeachan-Heo/oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex)\\n\\n<#10--httpsgithubcomyeachan-heooh-my-codex->\\n\\n-   ⭐ 总星标数量：21.6k\\n-   🔺 上周增长数量：4200⭐\\n-   🔺 上月增长数量：10217⭐\\n-   📅 开源时间：2026-02-02\\n-   📝 项目描述：OmX - Oh My codeX: Your codex is not alone. Add hooks, agent teams, HUDs, and so much more.\\n\\n### 11\\\\. [https://github.com/Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)\\n\\n<#11--httpsgithubcomyeachan-heooh-my-claudecode->\\n\\n-   ⭐ 总星标数量：28k\\n-   🔺 上周增长数量：3598⭐\\n-   🔺 上月增长数量：15522⭐\\n-   📅 开源时间：2026-01-09\\n-   📝 项目描述：Teams-first Multi-agent orchestration for Claude Code\\n\\n### 12\\\\. Claude 记忆增强工具 [https://github.com/thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)\\n\\n<#12-claude-记忆增强工具-httpsgithubcomthedotmackclaude-mem->\\n\\n-   ⭐ 总星标数量：49.3k\\n-   🔺 上周增长数量：3521⭐\\n-   🔺 上月增长数量：14470⭐\\n-   📅 开源时间：2025-09-01\\n-   📝 项目描述：Claude-mem 是一个为 Claude 系列模型提供持久化记忆能力的工具，能够记录长期上下文、用户偏好与历史对话，使模型在多轮交互中拥有稳定的个性化记忆。它支持本地与远程存储，可集成多种应用场景，让 AI 助手更智能、更贴近真实助理体验。\\n\\n### 13\\\\. [https://github.com/shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos)\\n\\n<#13--httpsgithubcomshiyu-coderkronos->\\n\\n-   ⭐ 总星标数量：15.6k\\n-   🔺 上周增长数量：3479⭐\\n-   🔺 上月增长数量：3479⭐\\n-   📅 开源时间：2025-07-01\\n-   📝 项目描述：Kronos: A Foundation Model for the Language of Financial Markets\\n\\n### 14\\\\. [https://github.com/666ghj/MiroFish](https://github.com/666ghj/MiroFish)\\n\\n<#14--httpsgithubcom666ghjmirofish->\\n\\n-   ⭐ 总星标数量：54.1k\\n-   🔺 上周增长数量：3479⭐\\n-   🔺 上月增长数量：18368⭐\\n-   📅 开源时间：2025-11-26\\n-   📝 项目描述：A Simple and Universal Swarm Intelligence Engine, Predicting Anything. 简洁通用的群体智能引擎，预测万物\\n\\n### 15\\\\. [https://github.com/multica-ai/multica](https://github.com/multica-ai/multica)\\n\\n<#15--httpsgithubcommultica-aimultica->\\n\\n-   ⭐ 总星标数量：9.2k\\n-   🔺 上周增长数量：3273⭐\\n-   🔺 上月增长数量：3273⭐\\n-   📅 开源时间：2026-01-14\\n-   📝 项目描述：The open-source managed agents platform. Turn coding agents into real teammates — assign tasks, track progress, compound skills.\\n\\n### 16\\\\. Claude 编程学习 [https://github.com/shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code)\\n\\n<#16-claude-编程学习-httpsgithubcomshareai-lablearn-claude-code->\\n\\n-   ⭐ 总星标数量：52.2k\\n-   🔺 上周增长数量：3136⭐\\n-   🔺 上月增长数量：25287⭐\\n-   📅 开源时间：2025-06-29\\n-   📝 项目描述：Learn Claude Code 是一个教学型项目，系统整理了 Claude 在代码生成、理解和调试方面的实践方法，适合希望快速上手 AI 编程的开发者。\\n\\n### 17\\\\. 游戏 AI 框架 [https://github.com/coleam00/Archon](https://github.com/coleam00/Archon)\\n\\n<#17-游戏-ai-框架-httpsgithubcomcoleam00archon->\\n\\n-   ⭐ 总星标数量：16.9k\\n-   🔺 上周增长数量：3053⭐\\n-   🔺 上月增长数量：3173⭐\\n-   📅 开源时间：2025-02-08\\n-   📝 项目描述：支持复杂环境下的游戏 AI 训练与交互。\\n\\n### 18\\\\. [https://github.com/google-ai-edge/gallery](https://github.com/google-ai-edge/gallery)\\n\\n<#18--httpsgithubcomgoogle-ai-edgegallery->\\n\\n-   ⭐ 总星标数量：20.6k\\n-   🔺 上周增长数量：2903⭐\\n-   🔺 上月增长数量：3813⭐\\n-   📅 开源时间：2025-04-01\\n-   📝 项目描述：A gallery that showcases on-device ML/GenAI use cases and allows people to try and use models locally.\\n\\n### 19\\\\. [https://github.com/rowboatlabs/rowboat](https://github.com/rowboatlabs/rowboat)\\n\\n<#19--httpsgithubcomrowboatlabsrowboat->\\n\\n-   ⭐ 总星标数量：12.2k\\n-   🔺 上周增长数量：2827⭐\\n-   🔺 上月增长数量：2957⭐\\n-   📅 开源时间：2025-01-13\\n-   📝 项目描述：Open-source AI coworker, with memory\\n\\n### 20\\\\. [https://github.com/kepano/obsidian-skills](https://github.com/kepano/obsidian-skills)\\n\\n<#20--httpsgithubcomkepanoobsidian-skills->\\n\\n-   ⭐ 总星标数量：23.1k\\n-   🔺 上周增长数量：2782⭐\\n-   🔺 上月增长数量：6870⭐\\n-   📅 开源时间：2026-01-03\\n-   📝 项目描述：Agent skills for Obsidian. Teach your agent to use Markdown, Bases, JSON Canvas, and use the CLI.\\n\\n* * *\\n\\n## 更多Github开源项目,请关注微信&公众号\\n\\n<#更多github开源项目请关注微信公众号>\\n\\n欢迎添加微信好友共同学习进步，微信号：open\\\\_github  \\n▲关注公众号\\\"开源推荐官\\\"，洞察Github开源社区动态  \\n[![](https://camo.githubusercontent.com/09faed1d96acbf832793208ab67ca7240712c660756021ec994cbb3a74b887a8/687474703a2f2f70686f746f63646e2e74762e736f68752e636f6d2f696d672f715f6d696e692f32303235303632302f7069635f6f72675f62623566396431632d383535312d346638652d383731392d6237323961346532653365342e706e67)](https://camo.githubusercontent.com/09faed1d96acbf832793208ab67ca7240712c660756021ec994cbb3a74b887a8/687474703a2f2f70686f746f63646e2e74762e736f68752e636f6d2f696d672f715f6d696e692f32303235303632302f7069635f6f72675f62623566396431632d383535312d346638652d383731392d6237323961346532653365342e706e67) 源时间：2026-01-24 - 📝 项目描述：AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web - then synthesizes a grounded summary\\n\\n* * *\\n\\n## 更多Github开源项目,请关注微信&公众号\\n\\n<#更多github开源项目请关注微信公众号-1>\\n\\n欢迎添加微信好友共同学习进步，微信号：open\\\\_github  \\n▲关注公众号\\\"开源推荐官\\\"，洞察Github开源社区动态  \\n[![](https://camo.githubusercontent.com/09faed1d96acbf832793208ab67ca7240712c660756021ec994cbb3a74b887a8/687474703a2f2f70686f746f63646e2e74762e736f68752e636f6d2f696d672f715f6d696e692f32303235303632302f7069635f6f72675f62623566396431632d383535312d346638652d383731392d6237323961346532653365342e706e67)](https://camo.githubusercontent.com/09faed1d96acbf832793208ab67ca7240712c660756021ec994cbb3a74b887a8/687474703a2f2f70686f746f63646e2e74762e736f68752e636f6d2f696d672f715f6d696e692f32303235303632302f7069635f6f72675f62623566396431632d383535312d346638652d383731392d6237323961346532653365342e706e67)\\n\\n## Footer\\n\\n<https://github.com>© 2026 GitHub, Inc.\\n\\n### Footer navigation\\n\\n-   [Terms](https://docs.github.com/site-policy/github-terms/github-terms-of-service)\\n-   [Privacy](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)\\n-   [Security](https://github.com/security)\\n-   [Status](https://www.githubstatus.com/)\\n-   [Community](https://github.community/)\\n-   [Docs](https://docs.github.com/)\\n-   [Contact](https://support.github.com?tags=dotcom-footer)\\n-   Manage cookies\\n-   Do not share my personal information\\n\\nYou can’t perform that action at this time.\"\n}",
+      "已写入当前 Chat 工作区文件：github-weekly-snapshot.md"
+    ],
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "structured_tool_calls",
+          "count": 1,
+          "matched": true
+        },
+        {
+          "requested_tool": "linkup_linkup-fetch",
+          "resolved_tool": "linkup_linkup-fetch",
+          "matched": true,
+          "available_tools": [
+            "linkup_linkup-search",
+            "linkup_linkup-fetch",
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_github"
+          ]
+        },
+        {
+          "requested_tool": "write_workspace_file",
+          "resolved_tool": "write_workspace_file",
+          "matched": true,
+          "available_tools": [
+            "linkup_linkup-search",
+            "linkup_linkup-fetch",
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_github"
+          ]
+        },
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "### 动作与结果\n\n1. **抓取内容已保存**：\n   - 抓取的内容成功保存到文件 `github-weekly-snapshot.md` 中。\n   - 文件已更新，供后续分析或简报使用。\n\n[[SKILL_SESSION_STATE]]\n{\"over\":true}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 2,
+      "has_tool_call": false,
+      "has_raw_result": true,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-e7f30ae8",
+    "role": "user",
+    "content": "解读本周开源热点相对近期的变化；最后输出一篇合并「周榜 + 趋势（+ 可选今日大事）」的简报。",
+    "timestamp": "2026-04-16T12:03:50.830567+00:00"
+  },
+  {
+    "message_id": "msg-5636551b",
+    "role": "host",
+    "content": "已完成第一阶段任务，接下来进入第二阶段：解读本周开源热点相对近期的变化。由开源趋势分析专家（agent-6e4b9a2f）负责完成。",
+    "timestamp": "2026-04-16T12:03:57.456888+00:00",
+    "skill_id": "group-host-github-weekly",
+    "agent_id": "agent-scene-host",
+    "next_dha_name": "开源趋势分析专家"
+  },
+  {
+    "message_id": "msg-c4a5390f",
+    "role": "assistant",
+    "agent_id": "agent-6e4b9a2f",
+    "content": "抓取的内容已经保存到 `github-weekly-snapshot.md`，下一步是基于该文件内容进行主题聚类、动因分析以及周际对比，并生成 `opensource-trend-analysis.md` 文件。\n\n我将继续处理，请稍等。\n\n文件 `github-weekly-snapshot.md` 的内容描述了抓取的 GitHub 周榜信息，但未具体呈现抓取内容（如项目名称、排名或分类）。因此，我需要明确抓取的实际内容是否包含完整的周榜数据。\n\n请确认：`github-weekly-snapshot.md` 是否包含具体的周榜项目列表及描述？若有，请明确提供实际内容或文件路径。",
+    "timestamp": "2026-04-16T12:04:11.453508+00:00",
+    "skill_id": "skill-f0a09a1933df",
+    "skill_route_debug": {
+      "strategy": "expert_llm_pick",
+      "scores": [],
+      "selected_skill_id": "skill-f0a09a1933df"
+    },
+    "tool_raw_results": [
+      "# Expert Message\n\n- session_id: group-3565c4187a4e\n- agent_id: agent-8f3a2c1d\n- skill_id: github\n- timestamp: 2026-04-16T12:02:50.550480+00:00\n\n## Content\n\n### 动作与结果\n\n1. **抓取 GitHub 仓库 README 文件**：\n   - 已成功抓取 `https://github.com/OpenGithubs/github-weekly-rank/blob/main/README.md` 的内容。\n   - 内容包含项目描述、开源社区链接以及部分周榜信息。\n\n2. **保存为 `github-weekly-snapshot.md` 文件**：\n   - 将抓取到的 README 内容整理并保存到工作区文件 `github-weekly-snapshot.md`。\n\n### 下一步处理\n- 整理抓取的内容，写入名为 `github-weekly-snapshot.md` 的文件。\n\n### 动作与结果\n\n1. **抓取内容已保存**：\n   - 抓取的内容成功保存到文件 `github-weekly-snapshot.md` 中。\n   - 文件已更新，供后续分析或简报使用。\n"
+    ],
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "structured_tool_calls",
+          "count": 1,
+          "matched": true
+        },
+        {
+          "requested_tool": "read_file",
+          "resolved_tool": "read_file",
+          "matched": true,
+          "available_tools": [
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_skill-f0a09a1933df",
+            "run_skill_script_deep-research"
+          ]
+        },
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "文件 `github-weekly-snapshot.md` 的内容描述了抓取的 GitHub 周榜信息，但未具体呈现抓取内容（如项目名称、排名或分类）。因此，我需要明确抓取的实际内容是否包含完整的周榜数据。\n\n请确认：`github-weekly-snapshot.md` 是否包含具体的周榜项目列表及描述？若有，请明确提供实际内容或文件路径。"
+        }
+      ],
+      "raw_result_count": 1,
+      "has_tool_call": false,
+      "has_raw_result": true,
+      "note": "no_tool_call_detected"
+    }
+  }
+]

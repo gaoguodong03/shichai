@@ -2,7 +2,6 @@
 description: 从 OpenGithubs/github-weekly-rank 获取每周飙升榜与 README 榜单正文，落盘供后续分析与简报使用。
 enabled: true
 mcp_server_ids:
-- linkup
 - file-reader
 name: GitHub 开源周榜情报
 source: user

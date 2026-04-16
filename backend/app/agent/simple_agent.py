@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 class SimpleAgent:
     """
     一个不依赖 langgraph 的极简 agent：
-    - 使用 LLM 的 tool_calls（优先）或 content 中的 tool_call JSON（回退）进行工具调用
+    - 仅使用 LLM 的结构化 tool_calls 进行工具调用（删除历史 content-json 回退）
     - 直到模型不再请求工具，返回累计 messages
     """
 
@@ -27,46 +26,6 @@ class SimpleAgent:
     tool_runner: Any  # async (state, tools) -> dict
     timeout_s: float = 180.0
     max_steps: int = 12
-
-    @staticmethod
-    def _extract_tool_intent(content: str) -> dict[str, Any] | None:
-        text = (content or "").strip()
-        if not text:
-            return None
-        json_candidates: list[str] = []
-        if "```json" in text:
-            try:
-                json_candidates.append(text.split("```json", 1)[1].split("```", 1)[0].strip())
-            except Exception:
-                pass
-        elif "```" in text:
-            try:
-                json_candidates.append(text.split("```", 1)[1].split("```", 1)[0].strip())
-            except Exception:
-                pass
-        json_candidates.append(text)
-        for candidate in json_candidates:
-            if not candidate:
-                continue
-            try:
-                obj = json.loads(candidate)
-            except Exception:
-                continue
-            if not isinstance(obj, dict):
-                continue
-            if "tool" in obj:
-                args = obj.get("arguments")
-                if args is None:
-                    args = obj.get("args")
-                if args is None:
-                    args = {}
-                return {
-                    "tool": str(obj.get("tool") or "").strip(),
-                    "arguments": args if isinstance(args, dict) else {},
-                    "action": str(obj.get("action") or "").strip().lower(),
-                    "raw": obj,
-                }
-        return None
 
     async def _call_model(self, client: Any, messages: list[BaseMessage]) -> AIMessage:
         try:
@@ -121,38 +80,7 @@ class SimpleAgent:
                     "tool_attempt_debug": tool_attempt_debug,
                 }
                 continue
-
             content = response.content if isinstance(response.content, str) else str(response.content or "")
-            intent = self._extract_tool_intent(content)
-            if intent and intent.get("tool"):
-                tool_attempt_debug.append(
-                    {
-                        "source": "content_json",
-                        "requested_tool": intent.get("tool"),
-                        "action": intent.get("action") or "",
-                        "matched": False,
-                    }
-                )
-                state = {"messages": messages, "tools": tools}
-                tool_out = await self.tool_runner(state, tools)
-                out_msgs = tool_out.get("messages") or []
-                tad = tool_out.get("tool_attempt_debug")
-                if isinstance(tad, list):
-                    tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
-                tool_calls_trace = tool_out.get("tool_calls") if isinstance(tool_out.get("tool_calls"), list) else []
-                tool_raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out.get("tool_raw_outputs"), list) else []
-                if isinstance(out_msgs, list) and out_msgs:
-                    messages.extend(out_msgs)
-                yield {
-                    "type": "tool_step",
-                    "step": step + 1,
-                    "tool_messages": out_msgs if isinstance(out_msgs, list) else [],
-                    "tool_calls": tool_calls_trace,
-                    "tool_raw_outputs": tool_raw_outputs,
-                    "tool_attempt_debug": tool_attempt_debug,
-                }
-                continue
-
             if content.strip():
                 tool_attempt_debug.append(
                     {
@@ -223,34 +151,8 @@ class SimpleAgent:
                 continue
 
             # 2) 回退：content 中的 tool_call JSON
-            content = response.content if isinstance(response.content, str) else str(response.content or "")
-            intent = self._extract_tool_intent(content)
-            if intent and intent.get("tool"):
-                tool_attempt_debug.append(
-                    {
-                        "source": "content_json",
-                        "requested_tool": intent.get("tool"),
-                        "action": intent.get("action") or "",
-                        "matched": False,
-                    }
-                )
-                state = {"messages": messages, "tools": tools}
-                tool_out = await self.tool_runner(state, tools)
-                out_msgs = tool_out.get("messages") or []
-                tad = tool_out.get("tool_attempt_debug")
-                if isinstance(tad, list):
-                    tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
-                tc = tool_out.get("tool_calls")
-                if isinstance(tc, list):
-                    tool_calls_trace.extend(tc)
-                tro = tool_out.get("tool_raw_outputs")
-                if isinstance(tro, list):
-                    tool_raw_outputs.extend([str(x) for x in tro])
-                if isinstance(out_msgs, list) and out_msgs:
-                    messages.extend(out_msgs)
-                continue
-
             # no tool calls → finish
+            content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():
                 tool_attempt_debug.append(
                     {

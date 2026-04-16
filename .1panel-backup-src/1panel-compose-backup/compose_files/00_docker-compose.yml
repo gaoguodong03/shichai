@@ -52,6 +52,11 @@ services:
       - UNIFIED_TOOL_GATEWAY_ENABLED=1
       - OPENSANDBOX_USE_SERVER_PROXY=0
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data
+      # 允许沙箱内脚本访问公网（注意：开启后请结合 allowed hosts 收紧范围）
+      - SANDBOX_ALLOW_NETWORK=1
+      # 可选：只放行特定域名（逗号分隔）。留空表示不做域名收紧（由 OpenSandbox 网络策略决定）。
+      # 示例（GitHub）：github.com,raw.githubusercontent.com,api.github.com
+      - SANDBOX_ALLOWED_HOSTS=
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

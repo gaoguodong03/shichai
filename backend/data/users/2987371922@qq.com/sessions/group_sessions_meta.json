@@ -109,7 +109,7 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-16T11:53:37.357271+00:00",
-    "updated_at": "2026-04-16T11:53:37.357271+00:00",
+    "updated_at": "2026-04-16T12:04:11.458044+00:00",
     "host_config": {
       "skill_ids": [
         "group-host",
@@ -128,7 +128,14 @@
       },
       "url_capability": true
     },
-    "orchestration_profile": "scene"
+    "orchestration_profile": "scene",
+    "pending_owner_agent_id": "agent-6e4b9a2f",
+    "pending_skill_id": "skill-f0a09a1933df",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input",
+    "skill_session_owner_id": "agent-6e4b9a2f",
+    "skill_session_skill_id": "skill-f0a09a1933df"
   },
   "group-617427f3cea2": {
     "title": "开源周榜与趋势",
@@ -141,7 +148,7 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-16T11:53:39.787040+00:00",
-    "updated_at": "2026-04-16T11:54:08.625777+00:00",
+    "updated_at": "2026-04-16T11:59:16.133833+00:00",
     "host_config": {
       "skill_ids": [
         "group-host",
@@ -162,6 +169,63 @@
     },
     "orchestration_profile": "scene",
     "skill_session_owner_id": "agent-8f3a2c1d",
-    "skill_session_skill_id": "github"
+    "skill_session_skill_id": "github",
+    "pending_owner_agent_id": "agent-8f3a2c1d",
+    "pending_skill_id": "github",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
+  },
+  "group-ed872954ce10": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T12:02:02.247281+00:00",
+    "updated_at": "2026-04-16T12:02:02.247281+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-4f6455a65a6e": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T12:38:59.272009+00:00",
+    "updated_at": "2026-04-16T12:38:59.272009+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-41d149bcc099": {
+    "title": "开源周榜与趋势",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T12:39:22.385383+00:00",
+    "updated_at": "2026-04-16T12:42:42.119046+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-github-weekly"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene"
   }
 }

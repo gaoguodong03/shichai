@@ -3722,12 +3722,25 @@ const activeStreamingMessage = computed<GroupMessage | null>(() => {
 
 const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.agent_id || '')
 
+function displayGroupSpeakerName(agentId: string): string {
+  const id = (agentId || '').trim()
+  if (!id) return ''
+  if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
+  // 1) 资源中心实例列表（最稳定，含中文名）
+  const fromInstances = (props.dhaInstances || []).find((x) => x.agent_id === id)?.name
+  if (fromInstances && fromInstances.trim()) return fromInstances.trim()
+  // 2) 群聊详情 agent_map（后端下发）
+  const fromMap = (groupDetail.value?.agent_map || {})[id]?.name
+  if (fromMap && fromMap.trim()) return fromMap.trim()
+  // 3) 最后兜底：避免直接暴露 agent-xxxx（用户体感像“编号闪烁”）
+  if (/^agent-[0-9a-f]{6,}$/i.test(id)) return '专家'
+  return id
+}
+
 const activeStreamingSpeakerName = computed(() => {
   const id = activeStreamingDhaId.value
   if (!id) return ''
-  if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
-  const map = groupDetail.value?.agent_map || {}
-  return map[id]?.name || id
+  return displayGroupSpeakerName(id)
 })
 
 /** 工具栏展示：流式中优先占位/路由上的发言人，避免空名只剩「发言顺序」 */
@@ -3748,9 +3761,7 @@ const toolbarDisplaySpeakerName = computed(() => {
     if (a) return activeStreamingSpeakerName.value
     const rid = (lastRoute.value?.expertId || '').trim()
     if (rid) {
-      if (rid === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
-      const map = groupDetail.value?.agent_map || {}
-      return map[rid]?.name || rid
+      return displayGroupSpeakerName(rid)
     }
     return ''
   }

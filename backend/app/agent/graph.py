@@ -175,18 +175,8 @@ def _should_override_read_file_path_with_user(last_user_content: str, model_path
     m = (model_path or "").strip().replace("\\", "/")
     if not u or u == m:
         return False
-    # 模型只传了 test.md，用户明确写了 note/test.md
-    if prefer_more_specific_path(u, m):
-        return True
-    lc = last_user_content or ""
-    # 用户明确在读文件 / 新增文件 / 纠正路径
-    if re.search(r"(读取|查看|打开|读一下|看下|浏览|新增[了]?|上传|保存的)", lc):
-        return True
-    if "而不是" in lc or "而非" in lc or "不是" in lc and "而是" in lc:
-        return True
-    if re.search(r"[「『""''`]", lc):
-        return True
-    return False
+    # 仅在“用户路径更具体”时才允许覆盖（避免多轮对话里误把用户上一轮提到的文件强行覆盖到本轮工具调用）。
+    return prefer_more_specific_path(u, m)
 
 
 def _tool_is_workspace_plain_read_file(tool_name: str) -> bool:
@@ -235,8 +225,19 @@ def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[
         return
     if cur.replace("\\", "/").strip() == auto_path.replace("\\", "/").strip():
         return
-    if _should_override_read_file_path_with_user(last_content, cur, auto_path):
-        logger.info("read_file: 使用最近用户消息中的路径覆盖模型参数: %s -> %s", cur, auto_path)
+    # 默认不随意覆盖模型传入的 path，避免“第二次读取”读回用户上一轮提到的文件。
+    # 仅在以下情况才覆盖：
+    # - 模型 path 非工作区相对路径（例如说明性文字/无效值）
+    # - 用户给出了更具体的路径（note/a.md 覆盖 a.md）
+    cur_norm = cur.replace("\\", "/").strip()
+    auto_norm = auto_path.replace("\\", "/").strip()
+    if (not _looks_like_workspace_rel_path(cur_norm)) and _looks_like_workspace_rel_path(auto_norm):
+        logger.info("read_file: 模型 path 非工作区相对路径，改用用户路径: %s -> %s", cur, auto_path)
+        arguments["path"] = auto_path
+        arguments.pop("__arg1", None)
+        return
+    if prefer_more_specific_path(auto_norm, cur_norm):
+        logger.info("read_file: 用户路径更具体，覆盖模型参数: %s -> %s", cur, auto_path)
         arguments["path"] = auto_path
         arguments.pop("__arg1", None)
 
@@ -796,14 +797,8 @@ def create_skill_execution_agent(
 
 """
     system_prompt += """
-当你需要使用工具时，请按照以下格式回复：
-```json
-{
-    "action": "tool_call",
-    "tool": "tool_name",
-    "arguments": {...}
-}
-```
+当你需要使用工具时，**必须**使用模型的结构化工具调用（tool_calls / function calling）来调用工具；
+不要输出任何形如 `{"action":"tool_call", ...}` 的 JSON 作为正文（那是历史兼容格式，已移除）。
 
 当你不需要使用工具时，直接回复用户的问题。
 
@@ -1080,8 +1075,11 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 result = await _execute_tool_safely(tool, arguments)
                 result_for_prompt = _safe_tool_result_for_prompt(result)
                 tool_raw_outputs.append(str(result))
+                # 注意：当模型没有返回结构化 tool_calls（而是通过 content JSON 回退解析）时，
+                # 不能向 OpenAI ChatCompletions 发送 role=tool 的消息（必须紧跟在带 tool_calls 的 assistant 之后）。
+                # 这里将工具输出作为普通 HumanMessage 反馈给模型，确保消息序列合法。
                 return {
-                    "messages": [ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=str(tool_name or 'tool'))],
+                    "messages": [HumanMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}")],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
                     "tool_raw_outputs": tool_raw_outputs,
@@ -1089,7 +1087,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             except Exception as e:
                 tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
                 return {
-                    "messages": [ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=str(tool_name or 'tool'))],
+                    "messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
                     "tool_raw_outputs": tool_raw_outputs,
@@ -1102,20 +1100,20 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         })
         if tool_name == "read_file":
             return {
-                "messages": [ToolMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。", tool_call_id="read_file")],
+                "messages": [HumanMessage(content="工具 read_file 已废弃。请改用 file-reader_read_file 读取工作区文件，path 填工作区内相对路径（如 test.md 或 workspaces/<会话ID>/test.md）。")],
                 "tool_attempt_debug": tool_attempt_debug,
                 "tool_calls": tool_calls_trace,
                 "tool_raw_outputs": tool_raw_outputs,
             }
         return {
-            "messages": [ToolMessage(content=f"工具 {tool_name} 不存在", tool_call_id=str(tool_name or 'tool'))],
+            "messages": [HumanMessage(content=f"工具 {tool_name} 不存在")],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
             "tool_raw_outputs": tool_raw_outputs,
         }
     except Exception as e:
         return {
-            "messages": [ToolMessage(content=f"工具调用解析错误: {str(e)}", tool_call_id="tool_call_parse_error")],
+            "messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
             "tool_raw_outputs": tool_raw_outputs,

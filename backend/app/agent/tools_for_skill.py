@@ -53,18 +53,11 @@ def build_skill_script_tool_name(skill_id: str) -> str:
 
 
 def _resolve_server_ids_with_aliases(server_ids: List[str], available_ids: set[str]) -> List[str]:
-    """将历史 server id 映射到当前可用 id（如 fetch -> linkup）。"""
-    alias = {
-        "fetch": "linkup",
-    }
+    """历史兼容已移除：仅保留当前可用的 server id。"""
     out: List[str] = []
     for sid in server_ids:
         if sid in available_ids:
             out.append(sid)
-            continue
-        mapped = alias.get(sid)
-        if mapped and mapped in available_ids:
-            out.append(mapped)
     return list(dict.fromkeys(out))
 
 
