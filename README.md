@@ -76,7 +76,32 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
    - 根因：OpenSandbox 的 `host_path` 挂载需要“宿主机可见路径”，但技能脚本目录在 `st49` 容器内部（例如 `/app/backend/data/...`），宿主机并没有这个路径。
    - 解决：配置容器路径到宿主路径映射：
      - `SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data`
+   - 补充说明：
+     - 你现在的 1Panel 编排（`docker-compose.1panel.yml`）已经内置该映射。
+     - **只有在本地开发用 bind mount（例如 `./backend/data:/app/backend/data`）时**，才需要关心 Docker Desktop 的 File Sharing 是否包含你的项目目录；1Panel 外部卷场景不需要 Docker Desktop File Sharing。
+
+7. **沙箱内脚本无法访问 GitHub（git clone/curl/pip 等失败）**
+   - 默认：沙箱 **禁网**（更安全），因此沙箱内执行联网命令通常会失败。
+   - 如确需开启（风险自担）：
+     - `SANDBOX_ALLOW_NETWORK=1`
+     - `SANDBOX_ALLOWED_HOSTS=github.com,raw.githubusercontent.com,api.github.com`（可选，逗号分隔）
+   - 位置：
+     - 1Panel：在 `docker-compose.1panel.yml` 的 `st49.environment` 中按需取消注释。
+     - 本地：在 `docker-compose.yml` 的 `dha.environment` 中设置。
 
 7. **改了代码但线上没变**
    - 如果 1Panel 用的是远端镜像（`ST49_IMAGE=...`），你改仓库代码不会自动生效。
    - 必须构建/推送新镜像并更新 tag（例如从 `26.04.15.2` 升到 `26.04.15.3`）。
+
+### 回归验证（建议每次改沙箱/文件工具后跑一遍）
+- **文件读写（会话隔离）**
+  - 在某个会话里写入：`write_workspace_file path="memory/facts.md" content="hello"`
+  - 再读取：`read_file path="memory/facts.md"`
+  - 预期：只在该会话工作区可见（其它会话读不到同名文件）。
+- **列目录（含空格/中文目录名）**
+  - 新建目录：`mkdir_workspace path="中文 目录/子目录"`
+  - 列目录：`list_workspace_directory path="中文 目录"`
+  - 预期：能正常返回 `./子目录` 等相对路径；不会因为空格/中文失败。
+- **GitHub（两条路径分开测）**
+  - `call_api`：对 `https://github.com/<owner>/<repo>/blob/<ref>/<file>` 测一次，预期会自动改写为 raw 并返回文件内容（或至少返回清晰的 HTTP 状态码/错误）。
+  - 沙箱脚本：仅在你开启 `SANDBOX_ALLOW_NETWORK=1` 后，再在技能脚本里 `curl -I https://github.com` 进行验证；不开启时失败是预期行为。

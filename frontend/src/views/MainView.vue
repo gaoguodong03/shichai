@@ -746,33 +746,6 @@
                     </div>
                     <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
                     <p v-else-if="!skills.length" class="text-xs text-muted">当前技能库为空，请先到左侧“技能”中新建或导入 Skill。</p>
-                    <div class="mt-4 pt-4 border-t border-border-light">
-                      <div class="text-xs font-medium text-muted mb-1.5">基础能力（内置）</div>
-                      <div class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3">
-                        <button
-                          v-for="item in scenarioLeaderFileCapabilityItems"
-                          :key="item.key"
-                          type="button"
-                          class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                          :class="item.enabled
-                            ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                            : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                          @click="toggleScenarioLeaderFileCapability(item.key)"
-                        >
-                          {{ item.label }}
-                        </button>
-                        <button
-                          type="button"
-                          class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                          :class="scenarioLeaderUrlCapability
-                            ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                            : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                          @click="toggleScenarioLeaderUrlCapability"
-                        >
-                          获取url数据
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </div>
                 <div>
@@ -1393,17 +1366,6 @@ const filteredScenarioLeaderSkills = computed(() => {
     return hay.includes(q)
   })
 })
-const scenarioLeaderFileCapabilityItems = computed(() => {
-  const caps = scenarioLeaderFileCaps.value
-  return [
-    { key: 'read' as const, label: '文件读取', enabled: !!caps.read },
-    { key: 'edit' as const, label: '文件编辑', enabled: !!caps.edit },
-    { key: 'write' as const, label: '文件写入', enabled: !!caps.write },
-    { key: 'rename' as const, label: '文件重命名', enabled: !!caps.rename },
-    { key: 'mkdir' as const, label: '文件夹新建', enabled: !!caps.mkdir },
-    { key: 'list_dir' as const, label: '列出目录中文件（含子目录）', enabled: !!caps.list_dir },
-  ]
-})
 
 const skills = ref<{ id: string; name: string; description?: string; enabled: boolean }[]>([])
 const skillsLoading = ref(false)
@@ -1743,12 +1705,6 @@ function toggleScenarioLeaderSkill(skillId: string) {
   if (set.has(skillId)) set.delete(skillId)
   else set.add(skillId)
   scenarioLeaderSkillIds.value = Array.from(set)
-}
-function toggleScenarioLeaderFileCapability(key: 'read' | 'edit' | 'write' | 'rename' | 'mkdir' | 'list_dir') {
-  scenarioLeaderFileCaps.value[key] = !scenarioLeaderFileCaps.value[key]
-}
-function toggleScenarioLeaderUrlCapability() {
-  scenarioLeaderUrlCapability.value = !scenarioLeaderUrlCapability.value
 }
 
 function createScenarioPreset() {

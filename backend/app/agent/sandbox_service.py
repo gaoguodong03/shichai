@@ -18,6 +18,23 @@ from app.agent.session_workspace_policy import host_sessions_root_from_workspace
 
 logger = logging.getLogger(__name__)
 
+def _env_truthy(name: str, default: str = "0") -> bool:
+    val = (os.getenv(name) or default).strip().lower()
+    return val in {"1", "true", "yes", "on", "enabled"}
+
+
+def _env_csv(name: str) -> List[str]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return []
+    parts = []
+    for x in raw.split(","):
+        s = x.strip()
+        if s:
+            parts.append(s)
+    # de-dup preserve order
+    return list(dict.fromkeys(parts))
+
 
 @dataclass
 class SandboxExecutionRequest:
@@ -89,6 +106,8 @@ class SandboxService:
             tool_allowlist=[],
             runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
             runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
+            allow_network=_env_truthy("SANDBOX_ALLOW_NETWORK", default="0"),
+            allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
         )
 
     async def _build_policy(self, req: SandboxExecutionRequest) -> SandboxPolicy:
@@ -119,6 +138,8 @@ class SandboxService:
             timeout_ms=max(1000, int(req.timeout_ms)),
             tool_allowlist=[req.tool_name],
             volume_mounts=mounts,
+            allow_network=_env_truthy("SANDBOX_ALLOW_NETWORK", default="0"),
+            allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
         )
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:

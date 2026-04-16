@@ -189,10 +189,11 @@ class OpenSandboxAdapter:
                     proxy_raw = (
                         os.getenv("OPENSANDBOX_USE_SERVER_PROXY")
                         or os.getenv("OPEN_SANDBOX_USE_SERVER_PROXY")
-                        or "1"
+                        or "0"
                     ).strip().lower()
                     use_server_proxy = proxy_raw in {"1", "true", "yes", "on", "enabled"}
-                    # 默认走 server proxy；若拿到空 endpoint，会在 _ensure_execd 中自动回退直连。
+                    # 默认不走 server proxy（更符合本项目在 1Panel 的部署方式）。
+                    # 若开启 proxy 且拿到空 endpoint，会在 _ensure_execd 中自动回退直连。
                     self._conn = ConnectionConfig(
                         api_key=api_key,
                         domain=domain,
@@ -208,41 +209,68 @@ class OpenSandboxAdapter:
                     self._Host = Host
                     self._SandboxEndpoint = SandboxEndpoint
                     self._commands: Dict[str, CommandsAdapter] = {}
-                    self._fs: Dict[str, FilesystemAdapter] = {}
+                    self._fs: Dict[str, Optional[FilesystemAdapter]] = {}
 
-                async def _ensure_execd(self, sandbox_id: str) -> tuple[CommandsAdapter, FilesystemAdapter]:
+                @staticmethod
+                def _is_endpoint_valid(ep) -> bool:
+                    h = str(getattr(ep, "host", "") or "").strip()
+                    p = getattr(ep, "port", None)
+                    return bool(h and h != ":" and p)
+
+                async def _ensure_cmd_and_fs(
+                    self, sandbox_id: str
+                ) -> tuple[CommandsAdapter, Optional[FilesystemAdapter], bool]:
+                    """确保 commands adapter 可用；filesystem adapter 仅在 endpoint 有效时可用。
+
+                    现实情况：部分部署下 OpenSandbox endpoint API 会返回空 host/port（你线上也遇到）。
+                    CommandsAdapter 可通过 server proxy 继续工作；FilesystemAdapter 则依赖有效 endpoint。
+                    """
                     if sandbox_id in self._commands and sandbox_id in self._fs:
-                        return self._commands[sandbox_id], self._fs[sandbox_id]
-                    endpoint = await self._sandboxes.get_sandbox_endpoint(
-                        sandbox_id=sandbox_id,
-                        port=self._execd_port,
-                        use_server_proxy=self._conn.use_server_proxy,
-                    )
-                    host = str(getattr(endpoint, "host", "") or "").strip()
-                    port = getattr(endpoint, "port", None)
-                    # 某些部署下 use_server_proxy=True 会返回空 endpoint（host/port 为空），
-                    # 这会导致后续命令调用超时。此时自动回退到直连 endpoint。
-                    if self._conn.use_server_proxy and (not host or not port):
-                        logger.warning(
-                            "opensandbox_execd_endpoint_empty_with_proxy sandbox_id=%s; fallback_to_direct=true",
-                            sandbox_id,
-                        )
-                        endpoint = await self._sandboxes.get_sandbox_endpoint(
+                        fs = self._fs.get(sandbox_id)
+                        return self._commands[sandbox_id], fs, bool(fs)
+
+                    async def _get_endpoint(use_proxy: bool):
+                        return await self._sandboxes.get_sandbox_endpoint(
                             sandbox_id=sandbox_id,
                             port=self._execd_port,
-                            use_server_proxy=False,
+                            use_server_proxy=use_proxy,
                         )
+
+                    endpoint = await _get_endpoint(bool(self._conn.use_server_proxy))
+                    if not self._is_endpoint_valid(endpoint):
+                        logger.warning(
+                            "opensandbox_execd_endpoint_empty sandbox_id=%s proxy=%s; retry_with_proxy=%s",
+                            sandbox_id,
+                            bool(self._conn.use_server_proxy),
+                            (not bool(self._conn.use_server_proxy)),
+                        )
+                        endpoint = await _get_endpoint(not bool(self._conn.use_server_proxy))
+
+                    endpoint_ok = self._is_endpoint_valid(endpoint)
                     logger.info(
-                        "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s:%s proxy=%s",
+                        "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s:%s proxy=%s endpoint_ok=%s",
                         sandbox_id,
                         getattr(endpoint, "host", ""),
                         getattr(endpoint, "port", ""),
                         self._conn.use_server_proxy,
+                        endpoint_ok,
                     )
                     cmd = CommandsAdapter(self._conn, endpoint)
-                    fs = FilesystemAdapter(self._conn, endpoint)
+                    fs = FilesystemAdapter(self._conn, endpoint) if endpoint_ok else None
                     self._commands[sandbox_id] = cmd
                     self._fs[sandbox_id] = fs
+                    return cmd, fs, endpoint_ok
+
+                async def _ensure_execd(self, sandbox_id: str) -> tuple[CommandsAdapter, FilesystemAdapter]:
+                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
+                    if fs is None or not ok:
+                        raise RuntimeError(
+                            "OpenSandbox execd endpoint 为空（host/port 缺失），FilesystemAdapter 不可用；已启用命令通道兜底。\n"
+                            "排查建议：\n"
+                            "- 若用 docker compose 启动 opensandbox-server：确保容器能解析 host.docker.internal（Linux 常需 extra_hosts: host.docker.internal:host-gateway）。\n"
+                            "- 检查 OpenSandbox 配置 docker.host_ip 是否设置为 host.docker.internal。\n"
+                            "- 如曾设置 OPENSANDBOX_USE_SERVER_PROXY=1，可尝试改为 0。\n"
+                        )
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -284,7 +312,7 @@ class OpenSandboxAdapter:
                     return {"id": getattr(created, "id", None) or str(created)}
 
                 async def execute_command(self, sandbox_id: str, req: Dict[str, Any]) -> Dict[str, Any]:
-                    cmd, _fs = await self._ensure_execd(sandbox_id)
+                    cmd, _fs, _ok = await self._ensure_cmd_and_fs(sandbox_id)
                     argv = req.get("command")
                     if not isinstance(argv, list):
                         raise ValueError("command must be argv list")
@@ -307,33 +335,122 @@ class OpenSandboxAdapter:
                     }
 
                 async def read_file(self, sandbox_id: str, path: str) -> bytes:
-                    _cmd, fs = await self._ensure_execd(sandbox_id)
-                    return await fs.read_bytes(path)
+                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
+                    if fs is not None and ok:
+                        return await fs.read_bytes(path)
+                    # endpoint 为空时：用命令通道兜底读取（base64）
+                    py = (
+                        "import base64,sys\n"
+                        "p=sys.argv[1]\n"
+                        "data=open(p,'rb').read()\n"
+                        "sys.stdout.write(base64.b64encode(data).decode('ascii'))\n"
+                    )
+                    exe = await cmd.run(
+                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path]),
+                        opts=self._RunCommandOpts(
+                            background=False,
+                            working_directory="/workspace",
+                            timeout=timedelta(milliseconds=120_000),
+                            envs={},
+                        ),
+                    )
+                    out = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])]).strip()
+                    if not out:
+                        err = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])]).strip()
+                        raise RuntimeError(err or "read_file fallback failed")
+                    import base64 as _b64
+                    return _b64.b64decode(out.encode("ascii"))
 
                 async def write_file(self, sandbox_id: str, path: str, data: bytes) -> Dict[str, Any]:
-                    _cmd, fs = await self._ensure_execd(sandbox_id)
-                    await fs.write_file(path, data)
+                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
+                    if fs is not None and ok:
+                        await fs.write_file(path, data)
+                        return {"status": "ok", "path": path, "bytes": len(data)}
+                    # endpoint 为空时：用命令通道兜底写入（base64）
+                    import base64 as _b64
+                    b64 = _b64.b64encode(data).decode("ascii")
+                    # 避免命令行参数过大导致失败（主要用于文本工具；大文件应修复 endpoint）。
+                    if len(b64) > 200_000:
+                        raise RuntimeError("fallback write too large; OpenSandbox endpoint is required for large files")
+                    py = (
+                        "import base64,sys,os\n"
+                        "p=sys.argv[1]\n"
+                        "b=sys.argv[2]\n"
+                        "os.makedirs(os.path.dirname(p) or '.', exist_ok=True)\n"
+                        "open(p,'wb').write(base64.b64decode(b.encode('ascii')))\n"
+                    )
+                    exe = await cmd.run(
+                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path, b64]),
+                        opts=self._RunCommandOpts(
+                            background=False,
+                            working_directory="/workspace",
+                            timeout=timedelta(milliseconds=120_000),
+                            envs={},
+                        ),
+                    )
+                    if getattr(exe, "exit_code", 0) not in (0, None):
+                        err = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])]).strip()
+                        raise RuntimeError(err or "write_file fallback failed")
                     return {"status": "ok", "path": path, "bytes": len(data)}
 
                 async def list_files(self, sandbox_id: str, root: str) -> List[Dict[str, Any]]:
-                    _cmd, fs = await self._ensure_execd(sandbox_id)
-                    # Execd 文件系统 API 没有“递归 list”统一接口；这里用 search('*') 近似实现。
-                    try:
-                        from opensandbox.models.filesystem import SearchEntry
+                    cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
+                    if fs is not None and ok:
+                        # Execd 文件系统 API 没有“递归 list”统一接口；这里用 search('*') 近似实现。
+                        try:
+                            from opensandbox.models.filesystem import SearchEntry
 
-                        items = await fs.search(SearchEntry(path=root, pattern="*", recursive=True))
-                        out: List[Dict[str, Any]] = []
-                        for it in items or []:
-                            out.append(
-                                {
-                                    "path": str(getattr(it, "path", "")).replace("\\", "/"),
-                                    "size": getattr(it, "size", None),
-                                    "is_dir": getattr(it, "is_dir", False),
-                                }
-                            )
-                        return out
+                            items = await fs.search(SearchEntry(path=root, pattern="*", recursive=True))
+                            out: List[Dict[str, Any]] = []
+                            for it in items or []:
+                                out.append(
+                                    {
+                                        "path": str(getattr(it, "path", "")).replace("\\", "/"),
+                                        "size": getattr(it, "size", None),
+                                        "is_dir": getattr(it, "is_dir", False),
+                                    }
+                                )
+                            return out
+                        except Exception:
+                            return []
+                    # endpoint 为空时：用命令通道兜底递归列举
+                    py = (
+                        "import os,sys,json\n"
+                        "root=sys.argv[1]\n"
+                        "out=[]\n"
+                        "for dirpath, dirnames, filenames in os.walk(root):\n"
+                        "  for d in dirnames:\n"
+                        "    p=os.path.join(dirpath,d)\n"
+                        "    out.append({'path':p.replace('\\\\\\\\','/'), 'size': None, 'is_dir': True})\n"
+                        "  for f in filenames:\n"
+                        "    p=os.path.join(dirpath,f)\n"
+                        "    try:\n"
+                        "      sz=os.path.getsize(p)\n"
+                        "    except Exception:\n"
+                        "      sz=None\n"
+                        "    out.append({'path':p.replace('\\\\\\\\','/'), 'size': sz, 'is_dir': False})\n"
+                        "print(json.dumps(out, ensure_ascii=False))\n"
+                    )
+                    exe = await cmd.run(
+                        " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, root]),
+                        opts=self._RunCommandOpts(
+                            background=False,
+                            working_directory="/workspace",
+                            timeout=timedelta(milliseconds=120_000),
+                            envs={},
+                        ),
+                    )
+                    raw = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])]).strip()
+                    if not raw:
+                        return []
+                    try:
+                        import json as _json
+                        data = _json.loads(raw)
+                        if isinstance(data, list):
+                            return [x for x in data if isinstance(x, dict)]
                     except Exception:
                         return []
+                    return []
 
                 async def dispose_sandbox(self, sandbox_id: str) -> None:
                     try:

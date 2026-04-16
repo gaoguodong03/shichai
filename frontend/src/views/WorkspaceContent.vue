@@ -327,6 +327,8 @@
                     @input="onAtInput('goal', $event)"
                     @keydown="onAtKeydown('goal', $event)"
                     @keydown.enter.exact.prevent="onGroupInputEnter($event)"
+                    @compositionstart="onGroupCompositionStart"
+                    @compositionend="onGroupCompositionEnd"
                     @blur="closeAtDropdownOnBlur"
                   />
                   <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
@@ -382,6 +384,8 @@
                       @input="onAtInput('goal', $event)"
                       @keydown="onAtKeydown('goal', $event)"
                       @keydown.enter.exact.prevent="onGroupInputEnter($event)"
+                      @compositionstart="onGroupCompositionStart"
+                      @compositionend="onGroupCompositionEnd"
                       @blur="closeAtDropdownOnBlur"
                     />
                     <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
@@ -438,6 +442,8 @@
                       @input="onAtInput('nextPrompt', $event)"
                       @keydown="onAtKeydown('nextPrompt', $event)"
                       @keydown.enter.exact.prevent="onGroupInputEnter($event)"
+                      @compositionstart="onGroupCompositionStart"
+                      @compositionend="onGroupCompositionEnd"
                       @blur="closeAtDropdownOnBlur"
                     />
                     <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
@@ -3034,7 +3040,26 @@ function onAtKeydown(source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
   }
 }
 
-function onGroupInputEnter(_e: KeyboardEvent) {
+const groupInputIsComposing = ref(false)
+
+function onGroupCompositionStart() {
+  groupInputIsComposing.value = true
+}
+
+function onGroupCompositionEnd() {
+  // 某些输入法会在 compositionend 后紧跟一次 enter keydown；
+  // 这里放到下一个 tick 再关闭标记，避免误发送。
+  setTimeout(() => {
+    groupInputIsComposing.value = false
+  }, 0)
+}
+
+function onGroupInputEnter(e: KeyboardEvent) {
+  // 输入法联想/上屏中按回车：不发送
+  // 部分浏览器会在 keydown 上带 isComposing 标志
+  if ((e as any)?.isComposing || groupInputIsComposing.value) {
+    return
+  }
   if (showAtDropdown.value && atMentionOptions.value[atSelectedIndex.value]) {
     selectMention(atMentionOptions.value[atSelectedIndex.value])
     return

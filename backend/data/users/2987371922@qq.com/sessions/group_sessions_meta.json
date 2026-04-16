@@ -87,5 +87,81 @@
     "created_at": "2026-04-16T07:40:48.696486+00:00",
     "updated_at": "2026-04-16T07:42:38.455250+00:00",
     "orchestration_profile": "recruitment"
+  },
+  "group-2264671443e8": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T11:53:34.651704+00:00",
+    "updated_at": "2026-04-16T11:53:34.651704+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-3565c4187a4e": {
+    "title": "开源周榜与趋势",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T11:53:37.357271+00:00",
+    "updated_at": "2026-04-16T11:53:37.357271+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-github-weekly"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene"
+  },
+  "group-617427f3cea2": {
+    "title": "开源周榜与趋势",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T11:53:39.787040+00:00",
+    "updated_at": "2026-04-16T11:54:08.625777+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-github-weekly"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-8f3a2c1d",
+    "skill_session_skill_id": "github"
   }
 }

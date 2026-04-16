@@ -221,20 +221,35 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
                 return "错误：路径不在当前工作区。"
         svc = get_shared_sandbox_service()
         try:
-            res = await svc.exec_workspace_shell(
+            items = await svc.list_workspace_files_flat(
                 user_id=user_id,
                 session_id=workspace_id,
                 workspace_path=ws_root,
-                argv=["sh", "-c", f"cd {sandbox_session_dir(workspace_id)}/{cleaned} && find . -mindepth 1 | sort"],
-                tool_call_id="list-find",
+                rel_prefix=cleaned,
+                turn_id="list",
             )
         except Exception as e:
             return f"错误：列出目录失败 - {e}"
-        stdout = str((res or {}).get("stdout") or (res or {}).get("output") or "").strip()
         prefix = cleaned or "."
-        if not stdout:
+        if not items:
             return f"目录 {prefix} 下：（空）"
-        return f"目录 {prefix} 下的内容（含子目录）：\n{stdout}"
+        root = f"{sandbox_session_dir(workspace_id)}/{cleaned}".rstrip("/")
+        # OpenSandbox filesystem.search 返回的是完整路径；这里转成类似 find 的相对输出。
+        rels: list[str] = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            p = str(it.get("path") or "").replace("\\", "/").rstrip("/")
+            if not p:
+                continue
+            if p == root:
+                continue
+            if p.startswith(root + "/"):
+                rels.append("./" + p[len(root) + 1 :])
+        rels = sorted(set([r for r in rels if r != "./"]))
+        if not rels:
+            return f"目录 {prefix} 下：（空）"
+        return f"目录 {prefix} 下的内容（含子目录）：\n" + "\n".join(rels)
 
     return [
         create_read_file_tool(session_id=workspace_id),
