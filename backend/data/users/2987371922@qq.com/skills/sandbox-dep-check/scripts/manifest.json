@@ -1,0 +1,10 @@
+{
+  "check_pkg_version.py": {
+    "timeout_sec": 60,
+    "input_schema": {
+      "type": "object",
+      "required": []
+    }
+  }
+}
+

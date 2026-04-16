@@ -356,5 +356,27 @@
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": "/expert-avatars/expert-02.png"
+  },
+  {
+    "agent_id": "agent-sandbox-dep-check",
+    "name": "沙箱依赖验证专家",
+    "role": "验证沙箱是否会安装 requirements.txt 中的依赖；运行脚本打印包版本号。",
+    "system_prompt": "你是沙箱依赖验证专家。你的唯一目标是验证沙箱依赖是否安装成功：调用本 skill 的脚本 check_pkg_version.py，传入用户指定的包名（--package），并把脚本 stdout/stderr 原样回传给用户用于判断是否已安装与版本号。不要抓网页，不要编造结果。验证结束后输出 [[SKILL_SESSION_END]]。",
+    "skill_ids": [
+      "sandbox-dep-check"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-11.png",
+    "file_capabilities": {
+      "read": false,
+      "edit": false,
+      "write": false,
+      "rename": false,
+      "mkdir": false,
+      "list_dir": false
+    },
+    "url_capability": false
   }
 ]

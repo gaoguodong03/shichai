@@ -65,7 +65,7 @@
     "orchestration_profile": "recruitment"
   },
   "group-553941e56983": {
-    "title": "存储学校建校信息",
+    "title": "将信息存入数据库",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-ee83c54f"
@@ -73,8 +73,15 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-15T06:58:24.404319+00:00",
-    "updated_at": "2026-04-16T07:40:37.232032+00:00",
-    "orchestration_profile": "recruitment"
+    "updated_at": "2026-04-16T12:45:59.973702+00:00",
+    "orchestration_profile": "recruitment",
+    "pending_owner_agent_id": "agent-ee83c54f",
+    "pending_skill_id": "rag-cli-1",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input",
+    "skill_session_owner_id": "agent-ee83c54f",
+    "skill_session_skill_id": "rag-cli-1"
   },
   "group-ae75757d726e": {
     "title": "北邮建校年份存储",
@@ -227,5 +234,17 @@
       "url_capability": true
     },
     "orchestration_profile": "scene"
+  },
+  "group-b12288bb7a0d": {
+    "title": "沙箱依赖验证脚本运行",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-sandbox-dep-check"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-16T12:50:27.802639+00:00",
+    "updated_at": "2026-04-16T12:51:50.923944+00:00",
+    "orchestration_profile": "recruitment"
   }
 }

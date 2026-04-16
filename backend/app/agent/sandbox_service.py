@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import time
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,7 @@ from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, Sandbo
 from app.agent.sandbox_audit import append_sandbox_event
 from app.agent.sandbox_mount_policy import SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
+from app.core.user_context import get_user_context_for
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +155,16 @@ class SandboxService:
                 handle, touched = existing
                 if now - touched <= self._session_ttl_sec:
                     self._user_handles[key] = (handle, now)
+                    await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
                     return handle
                 await self._adapter.dispose_sandbox(handle)
                 self._user_handles.pop(key, None)
 
             handle = await self._adapter.create_session_sandbox(logical_sid, policy)
             self._user_handles[key] = (handle, now)
+        # 出锁后做安装：避免长时间持锁阻塞其他请求
+        await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
+        async with self._lock:
             logger.info(
                 "sandbox_user_bound user_id=%s session_id=%s cache_key=%s mount_fp=%s backend=%s sandbox_id=%s",
                 user_id,
@@ -198,6 +204,68 @@ class SandboxService:
                 },
             )
             return handle
+
+    def _read_user_sandbox_requirements(self, user_id: str) -> str:
+        """读取当前用户的沙箱 requirements.txt 内容（允许为空）。"""
+        try:
+            ctx = get_user_context_for(user_id)
+        except Exception:
+            return ""
+        path = (ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+        try:
+            if not path.exists():
+                return ""
+            return path.read_text(encoding="utf-8")
+        except Exception:
+            return ""
+
+    async def _maybe_install_user_requirements(
+        self,
+        handle: SandboxHandle,
+        *,
+        user_id: str,
+        policy: SandboxPolicy,
+    ) -> None:
+        """按内容 hash 在沙箱内安装 requirements（变更时才执行一次）。"""
+        if not isinstance(handle.metadata, dict):
+            return
+        content = self._read_user_sandbox_requirements(user_id)
+        normalized = (content or "").strip()
+        dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+        last = str(handle.metadata.get("installed_requirements_hash") or "")
+        if dep_hash == last:
+            return
+        # 空清单：只更新 hash，不执行 pip
+        if not normalized:
+            handle.metadata["installed_requirements_hash"] = dep_hash
+            return
+        # 若禁网，很可能装不成；仍尝试一次并把错误抛出（方便测试验证）。
+        b64 = base64.b64encode(normalized.encode("utf-8")).decode("ascii")
+        cmd = [
+            "sh",
+            "-lc",
+            (
+                "set -euo pipefail; "
+                'REQ_B64="${SANDBOX_REQUIREMENTS_B64:-}"; '
+                'python3 - <<\'PY\'\n'
+                "import base64,os,sys\n"
+                "b=os.environ.get('SANDBOX_REQUIREMENTS_B64','')\n"
+                "data=base64.b64decode(b.encode('ascii')) if b else b''\n"
+                "open('/tmp/requirements.txt','wb').write(data)\n"
+                "print('wrote_requirements_bytes', len(data))\n"
+                "PY\n"
+                "python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt"
+            ),
+        ]
+        env = {"SANDBOX_REQUIREMENTS_B64": b64}
+        try:
+            if hasattr(self._adapter, "exec_command"):
+                await self._adapter.exec_command(handle, cmd, cwd="/workspace", timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)), env=env)  # type: ignore[attr-defined]
+                handle.metadata["installed_requirements_hash"] = dep_hash
+        except Exception as e:
+            # 不更新 hash：下次仍会重试，便于用户修复 requirements 后再次验证
+            logger.warning("sandbox_requirements_install_failed user_id=%s err=%s", user_id, str(e))
+            raise
 
     async def _ensure_workspace_handle(
         self,
