@@ -1,4 +1,7 @@
 """统一会话 API：与群聊共用存储，所有会话均为「带主持人的会话」。详见仓库 README / docs/书童四九.md。"""
+import asyncio
+import json
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -22,6 +25,7 @@ from app.api.group_chat import (
 )
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
+logger = logging.getLogger(__name__)
 
 
 class SessionCreate(BaseModel):
@@ -85,6 +89,73 @@ async def delete_session_message(session_id: str, message_id: str):
 async def session_chat_stream(session_id: str, request: GroupChatRequest):
     """会话流式对话（SSE）"""
     return await group_chat_stream(session_id, request)
+
+
+@router.post("/sessions/{session_id}/chat")
+async def session_chat_once(session_id: str, request: GroupChatRequest):
+    """会话非流式对话（兜底）：内部复用 SSE 逻辑并聚合最终事件。"""
+    stream_resp = await group_chat_stream(session_id, request)
+    body_iter = getattr(stream_resp, "body_iterator", None)
+    if body_iter is None:
+        raise HTTPException(status_code=500, detail="chat fallback unavailable")
+
+    route_event: Optional[Dict[str, Any]] = None
+    content_events: List[Dict[str, Any]] = []
+    message_events: List[Dict[str, Any]] = []
+    end_event: Optional[Dict[str, Any]] = None
+    error_event: Optional[Dict[str, Any]] = None
+
+    buffer = ""
+    interrupted = False
+    try:
+        async for chunk in body_iter:
+            part = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+            buffer += part.replace("\r", "")
+            blocks = buffer.split("\n\n")
+            buffer = blocks.pop() or ""
+            for block_raw in blocks:
+                block = block_raw.strip()
+                if not block.startswith("event: "):
+                    continue
+                event_type = (block.split("\n")[0] or "").replace("event: ", "").strip()
+                data_lines = [line[6:].strip() for line in block.split("\n") if line.startswith("data: ")]
+                data_str = "\n".join(data_lines).strip()
+                if not data_str:
+                    continue
+                try:
+                    payload = json.loads(data_str)
+                except Exception:
+                    continue
+                if event_type == "route":
+                    route_event = payload
+                elif event_type == "content":
+                    content_events.append(payload)
+                elif event_type == "message":
+                    message_events.append(payload)
+                elif event_type == "end":
+                    end_event = payload
+                elif event_type == "error":
+                    error_event = payload
+    except asyncio.CancelledError as e:
+        interrupted = True
+        logger.warning("session_chat_once 聚合流被取消: session=%s err=%s", session_id, e)
+    except Exception as e:
+        interrupted = True
+        logger.exception("session_chat_once 聚合流失败: session=%s err=%s", session_id, e)
+        error_event = error_event or {"error": str(e)}
+
+    return {
+        "status": "ok",
+        "data": {
+            "route": route_event,
+            "contents": content_events,
+            "messages": message_events,
+            "message": message_events[-1] if message_events else None,
+            "end": end_event,
+            "error": error_event,
+            "interrupted": interrupted or (end_event is None),
+        },
+    }
 
 
 @router.post("/sessions/{session_id}/export")

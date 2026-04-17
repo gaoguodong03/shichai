@@ -1,1 +1,153 @@
-[]
+[
+  {
+    "id": "scenario-osweekly-8f3e2a1d",
+    "name": "开源周榜与趋势",
+    "agent_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "expert_ids": [
+      "agent-8f3a2c1d",
+      "agent-6e4b9a2f",
+      "agent-7c1d5e8b"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "围绕 GitHub 开源周榜（OpenGithubs/github-weekly-rank）收集当周榜单，再分析主题与一周趋势，并可按需补充「今日技术圈大事」摘要，最终合成一篇可读简报。",
+    "discussion_goal_example": "请先拉取本周周榜 README，整理 Top 项目要点；再解读本周开源热点相对近期的变化；最后输出一篇合并「周榜 + 趋势（+ 可选今日大事）」的简报。",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-github-weekly"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    }
+  },
+  {
+    "id": "scenario-test-seq-ab",
+    "name": "测试·甲乙顺序",
+    "agent_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "expert_ids": [
+      "agent-e2a1b3c4",
+      "agent-e2d5e6f7"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-test-seq-ab"
+      ],
+      "system_prompt": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": false
+    }
+  },
+  {
+    "id": "scenario-mnrbpjb1",
+    "name": "网文创作",
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "expert_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    }
+  },
+  {
+    "id": "scenario-mn7duusy",
+    "name": "报告写作",
+    "agent_ids": [
+      "agent-d92e733e"
+    ],
+    "expert_ids": [
+      "agent-d92e733e"
+    ],
+    "leader_agent_id": "agent-d92e733e",
+    "description": "工作流程：\n背景收集：了解报告的目标、受众以及内容范围。\n精炼与结构：头脑风暴报告的内容，逐步起草各部分并进行优化。\n读者测试：测试报告是否对目标读者有效，确保内容清晰、易于理解。",
+    "discussion_goal_example": ""
+  },
+  {
+    "id": "scenario-c0e66f5803",
+    "name": "网文创作",
+    "agent_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "expert_ids": [
+      "agent-web-fetch",
+      "agent-440b26f8",
+      "agent-195b8c3a"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "",
+    "discussion_goal_example": "",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-webnovel"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true
+    }
+  }
+]

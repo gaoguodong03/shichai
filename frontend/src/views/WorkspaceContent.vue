@@ -1072,7 +1072,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import hostLogoUrl from '@/assets/49logo.png'
-import { streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
+import { streamSessionChat, chatOnceRequest, type ChatStreamRequestPayload } from '@/api/chat'
 
 /** 与后端群聊虚拟主持人 agent_id 一致 */
 const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
@@ -1192,6 +1192,7 @@ const USER_PREF_UPDATED_EVENT_NAME = 'dha-user-pref-updated'
 /** 与 MainView persistScenarioPresets 成功时派发一致，用于刷新快捷场景列表（工作区组件可能未卸载） */
 const SESSION_PRESETS_UPDATED_EVENT_NAME = 'dha-session-presets-updated'
 const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
+const USER_STORAGE_KEY = 'dha_user'
 const WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_workspace_open_v1'
 const TOC_WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_toc_workspace_open_v1'
 
@@ -1977,7 +1978,18 @@ type ShortcutPreset = {
 }
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const shortcutPresetsLoaded = ref(false)
-const SHORTCUT_STORAGE_KEY = 'dha.group.shortcuts.v1'
+const SHORTCUT_STORAGE_KEY_BASE = 'dha.group.shortcuts.v1'
+function getCurrentUserShortcutStorageKey(): string {
+  try {
+    const username = String(localStorage.getItem(USER_STORAGE_KEY) || '')
+      .trim()
+      .toLowerCase()
+    if (!username) return `${SHORTCUT_STORAGE_KEY_BASE}:anonymous`
+    return `${SHORTCUT_STORAGE_KEY_BASE}:${encodeURIComponent(username)}`
+  } catch {
+    return `${SHORTCUT_STORAGE_KEY_BASE}:anonymous`
+  }
+}
 function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
   if (!Array.isArray(input)) return []
   const out: ShortcutPreset[] = []
@@ -2030,7 +2042,13 @@ async function loadShortcutPresets() {
     return
   }
   try {
-    const raw = localStorage.getItem(SHORTCUT_STORAGE_KEY)
+    const storageKey = getCurrentUserShortcutStorageKey()
+    let raw = localStorage.getItem(storageKey)
+    if (!raw) {
+      // 兼容历史全局 key：首次读取后迁移到当前账号命名空间。
+      raw = localStorage.getItem(SHORTCUT_STORAGE_KEY_BASE)
+      if (raw) localStorage.setItem(storageKey, raw)
+    }
     if (!raw) {
       shortcutPresets.value = defaultShortcutPresets()
       saveShortcutPresets(false)
@@ -2070,7 +2088,7 @@ function saveShortcutPresets(syncRemote = true) {
     return row
   })
   try {
-    localStorage.setItem(SHORTCUT_STORAGE_KEY, JSON.stringify(payload))
+    localStorage.setItem(getCurrentUserShortcutStorageKey(), JSON.stringify(payload))
   } catch {}
   if (!syncRemote) return
   fetch('/api/settings/session-presets', {
@@ -2130,10 +2148,20 @@ function cancelEditShortcutPreset() {
 
 /** 供父组件在导入场景包后拉起新会话（与快捷场景「新建会话」同一套逻辑） */
 async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
-  const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x)))
+  const availableAgentIds = new Set(
+    (props.dhaInstances || [])
+      .map((x) => String(x?.agent_id || '').trim())
+      .filter(Boolean),
+  )
+  const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x))).filter((id) =>
+    availableAgentIds.has(id),
+  )
   if (!targetExperts.length) {
-    window.alert('该场景未配置专家，无法创建会话')
+    window.alert('该场景中的专家在当前账号下不可用，请先编辑场景后重试')
     return null
+  }
+  if (targetExperts.length < (p.agent_ids || []).length) {
+    window.alert('已自动跳过当前账号下不可用的专家')
   }
   const title = (p.name || '').trim() || '新对话'
   const body: Record<string, unknown> = {
@@ -2145,7 +2173,11 @@ async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<strin
     body.leader_agent_id = VIRTUAL_SCENE_HOST_ID
   } else {
     const lid = (p.leader_agent_id || p.agent_ids[0] || '').trim()
-    if (lid) body.leader_agent_id = lid
+    if (lid && availableAgentIds.has(lid)) {
+      body.leader_agent_id = lid
+    } else if (targetExperts[0]) {
+      body.leader_agent_id = targetExperts[0]
+    }
   }
   try {
     const r = await fetch('/api/sessions', {
@@ -3785,31 +3817,59 @@ function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpe
 async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequestPayload, 'session_id'>): Promise<boolean> {
   const state = { sawExpertAssistantMessageThisRun: false }
   let shouldEmitMessageSent = false
-  await streamSessionChat(
-    { ...payload, session_id: sessionId },
-    {
-      onRoute: (data) => {
-        updateAutoSwitchHint(data)
+  let gotEnd = false
+  let streamFailed = false
+  try {
+    await streamSessionChat(
+      { ...payload, session_id: sessionId },
+      {
+        onRoute: (data) => {
+          updateAutoSwitchHint(data)
+        },
+        onContent: (data) => {
+          if (data?.text != null && data?.agent_id) {
+            if (consumeStreamingStatusContent(data)) return
+            appendStreamingContent(data.agent_id, data.text)
+          }
+        },
+        onMessage: (data) => {
+          handleStreamMessageEvent(data, state)
+        },
+        onEnd: (data) => {
+          handleStreamEndEvent(data, state)
+          shouldEmitMessageSent = true
+          gotEnd = true
+        },
+        onError: (error) => {
+          console.error('SSE 事件解析失败', error)
+        },
       },
-      onContent: (data) => {
-        if (data?.text != null && data?.agent_id) {
-          if (consumeStreamingStatusContent(data)) return
-          appendStreamingContent(data.agent_id, data.text)
-        }
-      },
-      onMessage: (data) => {
-        handleStreamMessageEvent(data, state)
-      },
-      onEnd: (data) => {
-        handleStreamEndEvent(data, state)
+      groupStreamAbort.value?.signal,
+    )
+  } catch (error) {
+    streamFailed = true
+    console.error('SSE 请求失败，准备非流式补偿', error)
+  }
+
+  if (!gotEnd || streamFailed) {
+    groupStreamingPhase.value = '连接波动，正在补偿本轮回复…'
+    try {
+      const fallback = await chatOnceRequest({ ...payload, session_id: sessionId })
+      const data = (fallback.data || {}) as {
+        route?: Record<string, unknown> | null
+        message?: Record<string, unknown> | null
+        end?: Record<string, unknown> | null
+      }
+      if (data.route) updateAutoSwitchHint(data.route)
+      if (data.message) handleStreamMessageEvent(data.message, state)
+      if (data.end) {
+        handleStreamEndEvent(data.end, state)
         shouldEmitMessageSent = true
-      },
-      onError: (error) => {
-        console.error('SSE 事件解析失败', error)
-      },
-    },
-    groupStreamAbort.value?.signal,
-  )
+      }
+    } catch (fallbackError) {
+      console.error('非流式补偿失败', fallbackError)
+    }
+  }
   return shouldEmitMessageSent
 }
 

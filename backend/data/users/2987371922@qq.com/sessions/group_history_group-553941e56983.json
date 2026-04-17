@@ -629,5 +629,60 @@
       "has_raw_result": true,
       "note": "no_tool_call_detected"
     }
+  },
+  {
+    "message_id": "msg-c2179cca",
+    "role": "user",
+    "content": "将“四九是北邮学生”存入数据库",
+    "timestamp": "2026-04-17T08:26:07.812067+00:00"
+  },
+  {
+    "message_id": "msg-f3684e1d",
+    "role": "assistant",
+    "agent_id": "agent-ee83c54f",
+    "content": "“四九是北邮学生”已成功存入数据库，存储状态为成功（code=200, message=success）。\n\n如果还有其他需求，请随时告知！",
+    "timestamp": "2026-04-17T08:26:25.040364+00:00",
+    "skill_id": "rag-cli-1",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "rag-cli-1"
+    },
+    "tool_raw_results": [
+      "{\"ok\": true, \"code\": \"script_executed\", \"script\": \"kb_document_store_cli.py\", \"returncode\": 0, \"stdout\": \"存储文档数: 1\\n状态: code=200, message=success\\n存储完成。\\n{\\\"ok\\\": true, \\\"code\\\": \\\"stored\\\", \\\"message\\\": \\\"已调用知识库存储接口。\\\", \\\"data\\\": {\\\"documents_count\\\": 1, \\\"response\\\": {\\\"data\\\": null, \\\"code\\\": 200, \\\"message\\\": \\\"success\\\"}}, \\\"debug\\\": {\\\"cwd\\\": \\\"/workspace/group-553941e56983\\\", \\\"SKILL_WORKSPACE_ID\\\": \\\"group-553941e56983\\\", \\\"SKILL_WORKSPACE_ROOT\\\": \\\"/workspace/group-553941e56983\\\"}}\", \"stderr\": \"\", \"message\": \"脚本执行成功。\"}"
+    ],
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "structured_tool_calls",
+          "count": 1,
+          "matched": true
+        },
+        {
+          "requested_tool": "run_skill_script_rag-cli-1",
+          "resolved_tool": "run_skill_script_rag-cli-1",
+          "matched": true,
+          "available_tools": [
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_rag-cli-1"
+          ]
+        },
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "“四九是北邮学生”已成功存入数据库，存储状态为成功（code=200, message=success）。\n\n如果还有其他需求，请随时告知！ \n\n[[SKILL_SESSION_STATE]]\n{\"over\":true}\n[[/SKILL_SESSION_STATE]]"
+        }
+      ],
+      "raw_result_count": 1,
+      "has_tool_call": false,
+      "has_raw_result": true,
+      "note": "no_tool_call_detected"
+    }
   }
 ]

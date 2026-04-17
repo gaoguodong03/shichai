@@ -21,6 +21,15 @@ export interface StreamChatEventHandlers {
   onError?: (error: unknown) => void
 }
 
+export interface ChatOnceResponseData {
+  route?: Record<string, unknown> | null
+  contents?: Array<{ text?: string; agent_id?: string; meta?: { phase?: string } }>
+  messages?: Record<string, unknown>[]
+  message?: Record<string, unknown> | null
+  end?: Record<string, unknown> | null
+  error?: Record<string, unknown> | null
+}
+
 /** 兼容旧调用：返回原始 Response（建议改用 streamSessionChat） */
 export async function chatStreamRequest(payload: ChatStreamRequestPayload): Promise<Response> {
   const sessionId = encodeURIComponent(payload.session_id || 'default')
@@ -96,6 +105,24 @@ export async function streamSessionChat(
       }
     }
   }
+}
+
+/** POST /api/sessions/:id/chat（非流式兜底） */
+export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promise<ApiResult<ChatOnceResponseData>> {
+  const id = encodeURIComponent(payload.session_id || 'default')
+  return apiFetch(`/sessions/${id}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: payload.message ?? '',
+      skill_ids: payload.skill_ids,
+      override_next_speaker: payload.override_next_speaker,
+      action: payload.action,
+      custom_prompt: payload.custom_prompt,
+      host_takeover_requested: payload.host_takeover_requested,
+      ignore_auto_expert_id: payload.ignore_auto_expert_id,
+      ignore_auto_skill_id: payload.ignore_auto_skill_id,
+    }),
+  })
 }
 
 /** POST /api/sessions/:id/export */

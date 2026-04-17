@@ -70,12 +70,22 @@
     "updated_at": "2026-03-30T14:25:35.866344+00:00"
   },
   "group-8992fc1ce4eb": {
-    "title": "新对话",
+    "title": "张雪峰相关博客创作",
     "title_auto_generated": true,
-    "agent_ids": [],
+    "agent_ids": [
+      "agent-3087c6f3",
+      "agent-e52af5f5"
+    ],
     "leader_agent_id": "",
     "speak_mode": "auto",
     "created_at": "2026-03-30T14:49:24.808988+00:00",
-    "updated_at": "2026-03-30T14:49:24.808988+00:00"
+    "updated_at": "2026-04-17T14:53:16.191625+00:00",
+    "skill_session_owner_id": "agent-e52af5f5",
+    "skill_session_skill_id": "博客写作-1",
+    "pending_owner_agent_id": "agent-e52af5f5",
+    "pending_skill_id": "博客写作-1",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
   }
 }

@@ -64,6 +64,20 @@
       "filename": "9696bceaea77.zip",
       "created_at": "2026-04-13T11:34:28.503768+00:00",
       "updated_at": "2026-04-13T11:34:47.325132+00:00"
+    },
+    "90bf2e0ce09d": {
+      "preset_name": "开源周榜与趋势",
+      "source_preset_id": "scenario-osweekly-8f3e2a1d",
+      "created_by": "13801027172",
+      "filename": "90bf2e0ce09d.zip",
+      "created_at": "2026-04-17T08:29:31.459514+00:00"
+    },
+    "1bcbf796efaa": {
+      "preset_name": "网文创作",
+      "source_preset_id": "scenario-mnrbpjb1",
+      "created_by": "13801027172",
+      "filename": "1bcbf796efaa.zip",
+      "created_at": "2026-04-17T08:29:34.586782+00:00"
     }
   }
 }

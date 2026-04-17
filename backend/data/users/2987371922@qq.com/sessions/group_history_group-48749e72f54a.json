@@ -181,5 +181,121 @@
       "has_raw_result": true,
       "note": "no_tool_call_detected"
     }
+  },
+  {
+    "message_id": "msg-b4a10f8c",
+    "role": "user",
+    "content": "搜“张雪峰个人简介”",
+    "timestamp": "2026-04-17T08:07:13.152207+00:00"
+  },
+  {
+    "message_id": "msg-505ca065",
+    "role": "user",
+    "content": "搜“张雪峰个人简介”",
+    "timestamp": "2026-04-17T08:07:34.937936+00:00"
+  },
+  {
+    "message_id": "msg-4789fa83",
+    "role": "assistant",
+    "agent_id": "agent-web-fetch",
+    "content": "我尝试通过百度搜索“张雪峰个人简介”，但页面要求验证码或登录以继续访问，无法直接抓取内容。\n\n建议提供其他公开网页链接或明确来源，以便深入获取相关信息。例如：\n- 张雪峰的个人官网或博客地址。\n- 相关社交媒体页面的公开简介。\n- 新闻报道的具体链接。\n\n请确认如何继续。",
+    "timestamp": "2026-04-17T08:07:47.435025+00:00",
+    "skill_id": "webnovel-web-crawler",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "webnovel-web-crawler"
+    },
+    "tool_raw_results": [
+      "状态码: 302\n\n【提示】无法从该页得到可用文本（多为仅含脚本的壳页面或需登录）。原始 HTML 前 523 字符供排查（勿依赖其可读性）：\n---\n<a href=\"https://wappass.baidu.com/static/captcha/tuxing_v2.html?&amp;logid=8857144900578818663&amp;ak=c27bbc89afca0463650ac9bde68ebe06&amp;backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3D%25E5%25BC%25A0%25E9%259B%25AA%25E5%25B3%25B0%25E4%25B8%25AA%25E4%25BA%25BA%25E7%25AE%2580%25E4%25BB%258B&amp;ext=x9G9QDmMXq%2FNo87gjGO0P7eGD5FjxaRiTOzseRLXjFGxS4CEhQa12Q7nS%2FbwHL39UgqUK9LXd1cIlztrhMwivzvFX9GEy%2FROEkPPLKW2gYmo0ZnFQZjUDWM0%2FXrTsBGC&amp;signature=23d09424dfbf492e2a8b89cd52bdc643&amp;timestamp=1776413262\">Found</a>.\n\n"
+    ],
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "structured_tool_calls",
+          "count": 1,
+          "matched": true
+        },
+        {
+          "requested_tool": "call_api",
+          "resolved_tool": "call_api",
+          "matched": true,
+          "available_tools": [
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_webnovel-web-crawler"
+          ]
+        },
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "我尝试通过百度搜索“张雪峰个人简介”，但页面要求验证码或登录以继续访问，无法直接抓取内容。\n\n建议提供其他公开网页链接或明确来源，以便深入获取相关信息。例如：\n- 张雪峰的个人官网或博客地址。\n- 相关社交媒体页面的公开简介。\n- 新闻报道的具体链接。\n\n请确认如何继续。"
+        }
+      ],
+      "raw_result_count": 1,
+      "has_tool_call": false,
+      "has_raw_result": true,
+      "note": "no_tool_call_detected"
+    }
+  },
+  {
+    "message_id": "msg-a9d081fc",
+    "role": "user",
+    "content": "https://zh.wikipedia.org/wiki/%E5%BC%A0%E9%9B%AA%E5%B3%B0",
+    "timestamp": "2026-04-17T08:09:06.521870+00:00"
+  },
+  {
+    "message_id": "msg-af3cf1ac",
+    "role": "assistant",
+    "agent_id": "agent-web-fetch",
+    "content": "已成功抓取张雪峰的维基百科页面内容，并存储在以下目录中：\n\n- **URL**: [张雪峰 - 维基百科，自由的百科全书](https://zh.wikipedia.org/wiki/%E5%BC%A0%E9%9B%AA%E5%B3%B0)\n- **存储路径**: `output/pages/20260417T080915Z_9f92b730556a`\n\n存储内容包括：\n- `page.html`: 原始 HTML 页面\n- `text.md`: 提取后的正文文本\n- `meta.json`: 页面元数据（含标题、来源 URL、抓取时间等）\n\n后续可以使用这些文件进行博客创作或深入研究。",
+    "timestamp": "2026-04-17T08:09:23.301800+00:00",
+    "skill_id": "webnovel-web-crawler",
+    "skill_route_debug": {
+      "strategy": "locked_skill_session",
+      "selected_skill_id": "webnovel-web-crawler"
+    },
+    "tool_raw_results": [
+      "{\"ok\": true, \"code\": \"script_executed\", \"script\": \"crawl_and_store.py\", \"returncode\": 0, \"stdout\": \"{\\n  \\\"output_dir\\\": \\\"output/pages\\\",\\n  \\\"results\\\": [\\n    {\\n      \\\"url\\\": \\\"https://zh.wikipedia.org/wiki/%E5%BC%A0%E9%9B%AA%E5%B3%B0\\\",\\n      \\\"ok\\\": true,\\n      \\\"status_code\\\": 200,\\n      \\\"content_type\\\": \\\"text/html; charset=UTF-8\\\",\\n      \\\"title\\\": \\\"张雪峰 - 维基百科，自由的百科全书\\\",\\n      \\\"fetched_at\\\": \\\"2026-04-17T08:09:15.072919+00:00\\\",\\n      \\\"dir\\\": \\\"output/pages/20260417T080915Z_9f92b730556a\\\",\\n      \\\"error\\\": \\\"\\\"\\n    }\\n  ]\\n}\", \"stderr\": \"\", \"message\": \"脚本执行成功。\"}"
+    ],
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "structured_tool_calls",
+          "count": 1,
+          "matched": true
+        },
+        {
+          "requested_tool": "run_skill_script_webnovel-web-crawler",
+          "resolved_tool": "run_skill_script_webnovel-web-crawler",
+          "matched": true,
+          "available_tools": [
+            "read_file",
+            "write_workspace_file",
+            "edit_workspace_file",
+            "rename_workspace_file",
+            "mkdir_workspace",
+            "list_workspace_directory",
+            "call_api",
+            "run_skill_script_webnovel-web-crawler"
+          ]
+        },
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "已成功抓取张雪峰的维基百科页面内容，并存储在以下目录中：\n\n- **URL**: [张雪峰 - 维基百科，自由的百科全书](https://zh.wikipedia.org/wiki/%E5%BC%A0%E9%9B%AA%E5%B3%B0)\n- **存储路径**: `output/pages/20260417T080915Z_9f92b730556a`\n\n存储内容包括：\n- `page.html`: 原始 HTML 页面\n- `text.md`: 提取后的正文文本\n- `me"
+        }
+      ],
+      "raw_result_count": 1,
+      "has_tool_call": false,
+      "has_raw_result": true,
+      "note": "no_tool_call_detected"
+    }
   }
 ]
