@@ -181,7 +181,7 @@
                           <div
                             v-for="(raw, tri) in getToolRawResults(msg)"
                             :key="tri"
-                            :class="['group-chat-tool-tag-wrap', tri > 0 && 'group-chat-tool-tag-wrap-break']"
+                            class="group-chat-tool-tag-wrap"
                             :data-key="`${msg.message_id || i}-${tri}`"
                           >
                             <button
@@ -3492,6 +3492,30 @@ function scrollGroupToBottomIfNear(threshold = 100) {
   })
 }
 
+/** 将目标消息放到容器中下区域，便于持续观察流式输出 */
+function scrollGroupRowToLowerMiddle(row: HTMLElement) {
+  nextTick(() => {
+    const sc = groupMessagesRef.value
+    if (!sc) return
+    const desiredViewportRatio = 0.68
+    const desiredTop = row.offsetTop - sc.clientHeight * desiredViewportRatio + row.clientHeight * 0.5
+    const maxTop = Math.max(0, sc.scrollHeight - sc.clientHeight)
+    const nextTop = Math.max(0, Math.min(desiredTop, maxTop))
+    sc.scrollTo({ top: nextTop, behavior: 'smooth' })
+  })
+}
+
+function scrollLatestAssistantRowToLowerMiddle() {
+  nextTick(() => {
+    const sc = groupMessagesRef.value
+    if (!sc) return
+    const rows = Array.from(sc.querySelectorAll('.group-chat-msg-row-other')) as HTMLElement[]
+    const last = rows[rows.length - 1]
+    if (!last) return
+    scrollGroupRowToLowerMiddle(last)
+  })
+}
+
 /** 专家/主持人等 assistant 消息落地后滚入可视区（优先按 message_id 定位，否则滚容器底部） */
 function scrollGroupAssistantMessageIntoView(data: Record<string, unknown>) {
   const mid = typeof data.message_id === 'string' ? data.message_id.trim() : ''
@@ -3501,11 +3525,11 @@ function scrollGroupAssistantMessageIntoView(data: Record<string, unknown>) {
     if (mid) {
       const el = sc.querySelector(`[data-message-id="${CSS.escape(mid)}"]`) as HTMLElement | null
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+        scrollGroupRowToLowerMiddle(el)
         return
       }
     }
-    sc.scrollTop = sc.scrollHeight
+    scrollLatestAssistantRowToLowerMiddle()
   })
 }
 
@@ -3609,7 +3633,6 @@ const streamingPulse = computed(() => {
 
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
 function appendStreamingContent(dhaId: string, text: string) {
-  const shouldFollow = isNearGroupBottom()
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   const appendToExisting =
@@ -3621,16 +3644,15 @@ function appendStreamingContent(dhaId: string, text: string) {
     // 确保同一时间只有一个“正在输出”的占位消息（只影响 UI 指示）
     const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
     groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
-    scrollGroupToBottomIfNear()
+    scrollLatestAssistantRowToLowerMiddle()
   }
-  if (shouldFollow) scrollGroupToBottomIfNear()
+  scrollLatestAssistantRowToLowerMiddle()
   // markdown v-html 渲染完成后，用 fetch+blob 显示受保护图片
   nextTick(() => scheduleHydrateAuthImages())
 }
 
 /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
-  const shouldFollow = isNearGroupBottom()
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   const replacedStreamingPlaceholder =
@@ -3647,7 +3669,7 @@ function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   nextTick(() => {
     scheduleHydrateAuthImages()
     if (replacedStreamingPlaceholder) {
-      if (shouldFollow) scrollGroupToBottomIfNear()
+      scrollLatestAssistantRowToLowerMiddle()
       return
     }
     scrollGroupAssistantMessageIntoView(data)

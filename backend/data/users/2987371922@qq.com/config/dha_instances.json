@@ -280,14 +280,9 @@
     "role": "基于周榜快照做主题聚类、动因与周际对比，产出 opensource-trend-analysis.md。",
     "system_prompt": "你是开源趋势分析专家。先读工作区 github-weekly-snapshot.md；若有用户提供的多周材料一并参考。按技能输出结构化分析（主题聚类、趋势判断、跟进建议），写入 opensource-trend-analysis.md。不杜撰 Star；站外背景用搜索/抓取并注明来源。不代替简报专家写最终面向读者的合并稿。",
     "skill_ids": [
-      "skill-f0a09a1933df",
-      "deep-research"
+      "skill-f0a09a1933df"
     ],
-    "mcp_server_ids": [
-      "exa",
-      "linkup",
-      "file-reader"
-    ],
+    "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": "/expert-avatars/expert-05.png",
