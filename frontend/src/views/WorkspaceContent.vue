@@ -295,7 +295,7 @@
               >
                 <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
                 <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
-                <span class="group-chat-speaker-status-sub">下一位：{{ toolbarSpeakerChipName }}</span>
+                <span class="group-chat-speaker-status-sub">下一位：{{ nextSpeakerLabelText }}</span>
                 <span v-if="orchestrationInterruptHint" class="group-chat-speaker-status-sub">{{ orchestrationInterruptHint }}</span>
               </div>
               <div v-else-if="groupStreaming" class="group-chat-speaker-status-input group-chat-speaker-status-ready">
@@ -2889,10 +2889,7 @@ const effectiveNextSpeaker = computed(() => {
   return 'host'
 })
 
-/**
- * 工具栏头像/名字专用：调度上下一位若是「用户」，仍展示具体角色——优先待续跑专家，否则群主/主持人（四九）。
- * 与 effectiveNextSpeaker（可能为 user）分离，避免把「你」当成下一发言人展示。
- */
+/** 下一位角色用于暂停态提示；允许展示 user/end。 */
 const toolbarSpeakerChipId = computed(() => {
   const eff = effectiveNextSpeaker.value
   const ids = orderedMemberIds.value
@@ -2909,28 +2906,30 @@ const toolbarSpeakerChipId = computed(() => {
   return eff
 })
 
-const toolbarSpeakerChipName = computed(() => {
-  const id = toolbarSpeakerChipId.value
-  if (!id) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
-  if (id === 'end') return '已结束'
-  const map = groupDetail.value?.agent_map || {}
-  const lid = (leaderDisplayId.value || '').trim()
-  const isLeaderFace = id === 'host' || (Boolean(lid && lid !== 'host' && id === lid))
-  if (isLeaderFace) {
-    const fromProfile = (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim()
-    return fromProfile || map[id]?.name || id
-  }
-  return map[id]?.name || id
+/** 暂停态「下一位」文案：保留 user/end 的语义。 */
+const nextSpeakerLabelText = computed(() => {
+  const eff = effectiveNextSpeaker.value
+  const ids = orderedMemberIds.value
+  if (!eff) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+  if (eff === 'user') return '你'
+  if (eff === 'end') return '已结束'
+  if (eff === 'host') return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+  if (ids.includes(eff)) return displayGroupSpeakerName(eff)
+  return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
 })
 
-/** 主持人（含 leader_agent_id 为场内专家时）：工具栏用四九 Logo，不用姓氏首字占位 */
-const toolbarSpeakerChipShowHostAvatar = computed(() => {
-  const id = toolbarSpeakerChipId.value
-  if (!id || id === 'end') return false
+function isToolbarRoleValid(id: string): boolean {
+  if (!id) return false
   if (id === 'host') return true
+  return orderedMemberIds.value.includes(id)
+}
+
+function toolbarLeaderFallbackId(): string {
   const lid = (leaderDisplayId.value || '').trim()
-  return Boolean(lid && lid !== 'host' && id === lid)
-})
+  if (!lid || lid === 'host') return 'host'
+  if (orderedMemberIds.value.includes(lid)) return lid
+  return 'host'
+}
 
 /** @ 提及：输入 @ 后显示的候选（主持人 + 当前群内专家），按输入过滤 */
 const showAtDropdown = ref(false)
@@ -3733,46 +3732,52 @@ const activeStreamingSpeakerName = computed(() => {
   return displayGroupSpeakerName(id)
 })
 
-/** 工具栏展示：流式中优先占位/路由上的发言人，避免空名只剩「发言顺序」 */
-const toolbarDisplaySpeakerId = computed(() => {
+/**
+ * 工具栏「当前焦点角色」：
+ * - 流式中：当前执行者（active -> lastRoute）
+ * - 空闲中：下一位；若为 user，则显示待续跑专家（无则主持人）
+ */
+const focusRoleForToolbar = computed(() => {
   if (groupStreaming.value) {
     const a = activeStreamingDhaId.value
     if (a) return a
     const rid = (lastRoute.value?.expertId || '').trim()
-    const ids = orderedMemberIds.value
-    if (rid && (rid === 'host' || ids.includes(rid))) return rid
+    if (isToolbarRoleValid(rid)) return rid
+    return 'host'
   }
-  // 这里必须始终能展示一个“专家/主持人”头像：若无可用 id 或已结束，则兜底为主持人（四九）。
-  const id = toolbarSpeakerChipId.value
-  if (!id || id === 'end') return 'host'
-  return id
+
+  const eff = effectiveNextSpeaker.value
+  if (eff === 'user') {
+    const resume = (groupResumeTargetDhaId.value || '').trim()
+    if (isToolbarRoleValid(resume)) return resume
+    return toolbarLeaderFallbackId()
+  }
+  if (isToolbarRoleValid(eff)) return eff
+  return 'host'
 })
 
-const toolbarDisplaySpeakerName = computed(() => {
-  if (groupStreaming.value) {
-    const a = activeStreamingDhaId.value
-    if (a) return activeStreamingSpeakerName.value
-    const rid = (lastRoute.value?.expertId || '').trim()
-    if (rid) {
-      return displayGroupSpeakerName(rid)
-    }
-    return ''
+const focusRoleNameForToolbar = computed(() => {
+  const id = focusRoleForToolbar.value
+  if (id) {
+    const n = displayGroupSpeakerName(id).trim()
+    if (n) return n
   }
-  const n = toolbarSpeakerChipName.value.trim()
-  if (n) return n
   return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
 })
 
-const toolbarDisplayShowHostAvatar = computed(() => {
-  const id = toolbarDisplaySpeakerId.value
+const focusRoleShowHostAvatar = computed(() => {
+  const id = focusRoleForToolbar.value
   if (!id) return true
   if (id === 'host') return true
   const lid = (leaderDisplayId.value || '').trim()
   return Boolean(lid && lid !== 'host' && id === lid)
 })
 
+/** 兼容模板中的既有命名 */
+const toolbarDisplaySpeakerId = computed(() => focusRoleForToolbar.value)
+const toolbarDisplayShowHostAvatar = computed(() => focusRoleShowHostAvatar.value)
 const toolbarDisplayLabelText = computed(() => {
-  const n = toolbarDisplaySpeakerName.value.trim()
+  const n = focusRoleNameForToolbar.value.trim()
   return n || (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
 })
 
