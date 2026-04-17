@@ -214,6 +214,18 @@
                             >
                               {{ formatUserBubbleForDisplay(msg.content || '') }}
                             </p>
+                            <div
+                              v-if="msg.role === 'user' && extractUserFileReferenceNames(msg.content || '').length"
+                              class="group-chat-user-file-ref-wrap"
+                            >
+                              <span
+                                v-for="(fileName, fileIdx) in extractUserFileReferenceNames(msg.content || '')"
+                                :key="`${msg.message_id || i}-file-ref-${fileIdx}`"
+                                class="group-chat-user-file-ref-tag"
+                              >
+                                文件：{{ fileName }}
+                              </span>
+                            </div>
                           </template>
                         </div>
                         <div
@@ -1060,6 +1072,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import hostLogoUrl from '@/assets/49logo.png'
+import { streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
 
 /** 与后端群聊虚拟主持人 agent_id 一致 */
 const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
@@ -1775,131 +1788,8 @@ async function confirmGroupNext(
     if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: abort.signal,
-    })
-    if (!r.ok) throw new Error(r.statusText)
-    emit('message-sent')
-    const reader = r.body?.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let sawExpertAssistantMessageThisRun = false
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
-        buffer = buffer.replace(/\r/g, '')
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() || ''
-        for (const blockRaw of parts) {
-          const block = blockRaw.trim()
-          if (!block.startsWith('event: ')) continue
-          const eventTypeLine = block.split('\n')[0] || ''
-          const eventType = eventTypeLine.replace('event: ', '').trim()
-          const dataLines = block
-            .split('\n')
-            .filter((l) => l.startsWith('data: '))
-            .map((l) => l.slice(6).trim())
-          const dataStr = dataLines.join('\n')
-          if (eventType === 'content' && dataStr) {
-            try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
-              if (data?.text != null && data?.agent_id) {
-                if (consumeStreamingStatusContent(data)) continue
-                appendStreamingContent(data.agent_id, data.text)
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'message' && dataStr) {
-            groupStreamingPhase.value = '正在生成回复…'
-            try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>
-              if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                if (data.role === 'assistant') {
-                  replaceOrPushAssistantMessage(data)
-                  if (isExpertAssistantMessagePayload(data)) {
-                    sawExpertAssistantMessageThisRun = true
-                  }
-                } else {
-                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
-                }
-                if (data.next_prompt) {
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
-                }
-                if (extractAutoInvitedIds(data).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(data)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'route' && dataStr) {
-            try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>
-              updateAutoSwitchHint(data)
-            } catch (_) {}
-          }
-          if (eventType === 'end' && dataStr) {
-            try {
-              const endData = JSON.parse(dataStr)
-              applyOrchestrationEndMeta(endData as Record<string, unknown>)
-              if (endData.waiting_for_user) {
-                groupTurnLimitReached.value = !!endData.turns_limit_reached
-                groupWaitingForUser.value = !!endData.turns_limit_reached
-                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
-                  ? endData.suggested_next_speaker
-                  : null
-                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-                if (endData.next_prompt) {
-                  groupNextPrompt.value = (endData.next_prompt || '').trim()
-                }
-                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
-                  attachedFiles.value = []
-                }
-                if (groupTurnLimitReached.value) {
-                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
-                }
-                if (!endData.turns_limit_reached) {
-                  const suggestedNext = endData.suggested_next_speaker
-                  if (suggestedNext && suggestedNext !== 'user') {
-                    nextTick(() => confirmGroupNext(suggestedNext))
-                  }
-                }
-              }
-              if (endData.discussion_ended) {
-                attachedFiles.value = []
-              }
-              if (sawExpertAssistantMessageThisRun) {
-                autoSwitchHint.value = null
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    }
-    emit('message-sent')
+    const shouldEmitMessageSent = await runGroupStream(id, body)
+    if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('确认下一发言人失败', e)
   } finally {
@@ -2598,116 +2488,8 @@ async function continueGroupStream() {
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: '' }),
-      signal: abort.signal,
-    })
-    if (!r.ok) throw new Error(r.statusText)
-    emit('message-sent')
-    const reader = r.body?.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
-        buffer = buffer.replace(/\r/g, '')
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() || ''
-        for (const blockRaw of parts) {
-          const block = blockRaw.trim()
-          if (!block.startsWith('event: ')) continue
-          const eventTypeLine = block.split('\n')[0] || ''
-          const eventType = eventTypeLine.replace('event: ', '').trim()
-          const dataLines = block
-            .split('\n')
-            .filter((l) => l.startsWith('data: '))
-            .map((l) => l.slice(6).trim())
-          const dataStr = dataLines.join('\n')
-          if (eventType === 'content' && dataStr) {
-            try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
-              if (data?.text != null && data?.agent_id) {
-                if (consumeStreamingStatusContent(data)) continue
-                appendStreamingContent(data.agent_id, data.text)
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'message' && dataStr) {
-            groupStreamingPhase.value = '正在生成回复…'
-            try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>
-              if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                if (data.role === 'assistant') {
-                  replaceOrPushAssistantMessage(data)
-                } else {
-                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
-                }
-                if (data.next_prompt) {
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
-                }
-                if (extractAutoInvitedIds(data).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(data)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'end' && dataStr) {
-            try {
-              const endData = JSON.parse(dataStr)
-              applyOrchestrationEndMeta(endData as Record<string, unknown>)
-              if (endData.waiting_for_user) {
-                groupTurnLimitReached.value = !!endData.turns_limit_reached
-                groupWaitingForUser.value = !!endData.turns_limit_reached
-                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
-                  ? endData.suggested_next_speaker
-                  : null
-                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-                if (endData.next_prompt) {
-                  groupNextPrompt.value = (endData.next_prompt || '').trim()
-                }
-                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
-                  attachedFiles.value = []
-                }
-                if (groupTurnLimitReached.value) {
-                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
-                }
-                if (!endData.turns_limit_reached) {
-                  const suggestedNext = endData.suggested_next_speaker
-                  if (suggestedNext && suggestedNext !== 'user') nextTick(() => confirmGroupNext(suggestedNext))
-                }
-              }
-              if (endData.discussion_ended) {
-                attachedFiles.value = []
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    }
-    emit('message-sent')
+    const shouldEmitMessageSent = await runGroupStream(id, { message: '' })
+    if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('继续任务失败', e)
   } finally {
@@ -3077,6 +2859,7 @@ function stripDiscussionGoalForDisplay(content: string): string {
   const raw = (content ?? '').trim()
   if (!raw) return ''
   const fileRefMatches = Array.from(raw.matchAll(/【文件引用：([^】]+)】/g))
+  const fileExpandedBlockRegex = /(?:^|\n)\[文件:\s*[^\]]+\][\s\S]*?(?=\n【文件引用：|\n【给下一 DHA 的提示】|$)/g
   const prefix = '【讨论目标】'
   const withoutGoalPrefix = raw.startsWith(prefix)
     ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
@@ -3088,8 +2871,8 @@ function stripDiscussionGoalForDisplay(content: string): string {
     .replace(/(?:^|\n)【文件引用：[^】]+】/g, '')
     // 隐藏“文件内容已解析”提示行
     .replace(/(?:^|\n)【文件内容已解析】/g, '')
-    // 隐藏展开痕迹（如：[文件: notes/test.md]）
-    .replace(/(?:^|\n)\[文件:\s*[^\]]+\]/g, '')
+    // 隐藏展开痕迹与展开正文（如：[文件: notes/test.md] + 后续解析内容）
+    .replace(fileExpandedBlockRegex, '')
     // 折叠多余空行
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^\s+|\s+$/g, '')
@@ -3130,6 +2913,22 @@ function isShortSingleLine(text: string): string | null {
   return t.length <= 12 ? 'group-chat-plain-text-nowrap' : null
 }
 
+/** 提取用户消息中的文件引用名（用于标签展示） */
+function extractUserFileReferenceNames(content: string): string[] {
+  if (!content) return []
+  const matches = Array.from(String(content).matchAll(/【文件引用：([^】]+)】/g))
+  const names = matches
+    .map((m) => {
+      const payload = String(m?.[1] || '').trim()
+      if (!payload) return ''
+      const parts = payload.split('｜').map((x) => x.trim()).filter(Boolean)
+      if (!parts.length) return ''
+      return parts[0] || parts[parts.length - 1] || ''
+    })
+    .filter(Boolean)
+  return [...new Set(names)]
+}
+
 /** 从主持人消息正文中解析 dha-xxx id（兜底：后端未带 suggested_add_agent_ids 时仍能显示邀请条） */
 function parseAgentIdsFromHostContent(content: string | null | undefined): string[] {
   if (!content) return []
@@ -3164,9 +2963,13 @@ function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null 
 watch(
   () => groupDetail.value?.messages,
   (messages) => {
+    const shouldFollow = isNearGroupBottom()
     groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
     // 从历史/刷新加载后需重新水合受保护下载地址的图片（仅流式结束回调不够）
-    nextTick(() => scheduleHydrateAuthImages())
+    nextTick(() => {
+      scheduleHydrateAuthImages()
+      if (shouldFollow) scrollGroupToBottomIfNear()
+    })
     // 不再从历史首条用户消息回填输入框，避免发送后又被自动填充回来
     // 0 成员时：若最后一条主持人消息没有 suggested_add_agent_ids，从正文解析 dha-xxx 以显示「同意并邀请」条
     const dhaIds = groupDetail.value?.agent_ids ?? []
@@ -3673,6 +3476,22 @@ function scrollGroupToBottom() {
   })
 }
 
+function isNearGroupBottom(threshold = 100): boolean {
+  const el = groupMessagesRef.value
+  if (!el) return true
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  return distance <= threshold
+}
+
+function scrollGroupToBottomIfNear(threshold = 100) {
+  if (!isNearGroupBottom(threshold)) return
+  nextTick(() => {
+    const el = groupMessagesRef.value
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  })
+}
+
 /** 专家/主持人等 assistant 消息落地后滚入可视区（优先按 message_id 定位，否则滚容器底部） */
 function scrollGroupAssistantMessageIntoView(data: Record<string, unknown>) {
   const mid = typeof data.message_id === 'string' ? data.message_id.trim() : ''
@@ -3790,6 +3609,7 @@ const streamingPulse = computed(() => {
 
 /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
 function appendStreamingContent(dhaId: string, text: string) {
+  const shouldFollow = isNearGroupBottom()
   const list = [...groupDisplayMessages.value]
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   const appendToExisting =
@@ -3801,21 +3621,16 @@ function appendStreamingContent(dhaId: string, text: string) {
     // 确保同一时间只有一个“正在输出”的占位消息（只影响 UI 指示）
     const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
     groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: dhaId, content: text, _streaming: true } as unknown as GroupMessage]
-    // 仅在新一条专家回复「刚出现」时滚一次，后续 chunk 不再跟随
-    nextTick(() => {
-      const sc = groupMessagesRef.value
-      if (!sc) return
-      const rows = sc.querySelectorAll('[data-message-id]')
-      const lastRow = rows[rows.length - 1] as HTMLElement | undefined
-      if (lastRow) lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-    })
+    scrollGroupToBottomIfNear()
   }
+  if (shouldFollow) scrollGroupToBottomIfNear()
   // markdown v-html 渲染完成后，用 fetch+blob 显示受保护图片
   nextTick(() => scheduleHydrateAuthImages())
 }
 
 /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
 function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
+  const shouldFollow = isNearGroupBottom()
   const list = groupDisplayMessages.value
   const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
   const replacedStreamingPlaceholder =
@@ -3831,8 +3646,11 @@ function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
   }
   nextTick(() => {
     scheduleHydrateAuthImages()
-    // 流式场景已在首段出现时滚过一次；仅非流式直接落地一条 assistant 时再滚
-    if (!replacedStreamingPlaceholder) scrollGroupAssistantMessageIntoView(data)
+    if (replacedStreamingPlaceholder) {
+      if (shouldFollow) scrollGroupToBottomIfNear()
+      return
+    }
+    scrollGroupAssistantMessageIntoView(data)
   })
 }
 
@@ -3866,6 +3684,111 @@ function consumeStreamingStatusContent(data: { text?: string; agent_id?: string;
     return true
   }
   return false
+}
+
+function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }) {
+  groupStreamingPhase.value = '正在生成回复…'
+  if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
+    if (data.role === 'assistant') {
+      replaceOrPushAssistantMessage(data)
+      if (isExpertAssistantMessagePayload(data)) {
+        state.sawExpertAssistantMessageThisRun = true
+      }
+    } else {
+      groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+      if (data.role === 'user' && (data as { message_id?: string }).message_id) {
+        nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
+      }
+    }
+    if (data.next_prompt) {
+      groupNextPrompt.value = (data.next_prompt as string || '').trim()
+    }
+    if (extractAutoInvitedIds(data).length) {
+      groupSuggestedAddDhaIds.value = []
+      emit('dha-added')
+      loadGroupDetail()
+    }
+    const suggestedIds = resolveSuggestedIdsFromPayload(data)
+    if (suggestedIds.length) {
+      groupSuggestedAddDhaIds.value = suggestedIds
+      clearStreamingPlaceholders()
+      groupStreamingPhase.value = '等待你确认邀请…'
+    }
+  }
+}
+
+function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }) {
+  applyOrchestrationEndMeta(endData)
+  if (endData.waiting_for_user) {
+    groupTurnLimitReached.value = !!endData.turns_limit_reached
+    groupWaitingForUser.value = !!endData.turns_limit_reached
+    groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
+      ? String(endData.suggested_next_speaker)
+      : null
+    if (extractAutoInvitedIds(endData).length) {
+      groupSuggestedAddDhaIds.value = []
+      emit('dha-added')
+      loadGroupDetail()
+    }
+    const suggestedIds = resolveSuggestedIdsFromPayload(endData)
+    if (suggestedIds.length) {
+      groupSuggestedAddDhaIds.value = suggestedIds
+      clearStreamingPlaceholders()
+      groupStreamingPhase.value = '等待你确认邀请…'
+    }
+    if (endData.next_prompt) {
+      groupNextPrompt.value = String(endData.next_prompt || '').trim()
+    }
+    if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
+      attachedFiles.value = []
+    }
+    if (groupTurnLimitReached.value) {
+      window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
+    }
+    if (!endData.turns_limit_reached) {
+      const suggestedNext = endData.suggested_next_speaker
+      if (suggestedNext && suggestedNext !== 'user') {
+        nextTick(() => confirmGroupNext(String(suggestedNext)))
+      }
+    }
+  }
+  if (endData.discussion_ended) {
+    attachedFiles.value = []
+  }
+  if (state.sawExpertAssistantMessageThisRun) {
+    autoSwitchHint.value = null
+  }
+}
+
+async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequestPayload, 'session_id'>): Promise<boolean> {
+  const state = { sawExpertAssistantMessageThisRun: false }
+  let shouldEmitMessageSent = false
+  await streamSessionChat(
+    { ...payload, session_id: sessionId },
+    {
+      onRoute: (data) => {
+        updateAutoSwitchHint(data)
+      },
+      onContent: (data) => {
+        if (data?.text != null && data?.agent_id) {
+          if (consumeStreamingStatusContent(data)) return
+          appendStreamingContent(data.agent_id, data.text)
+        }
+      },
+      onMessage: (data) => {
+        handleStreamMessageEvent(data, state)
+      },
+      onEnd: (data) => {
+        handleStreamEndEvent(data, state)
+        shouldEmitMessageSent = true
+      },
+      onError: (error) => {
+        console.error('SSE 事件解析失败', error)
+      },
+    },
+    groupStreamAbort.value?.signal,
+  )
+  return shouldEmitMessageSent
 }
 
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
@@ -3926,136 +3849,9 @@ async function sendGroupMessage() {
     groupStreamAbort.value = abort
     const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
     if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
-    const r = await fetch(`/api/sessions/${encodeURIComponent(detail.id)}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: abort.signal,
-    })
-    if (!r.ok) throw new Error(r.statusText)
-    // 不在此时 emit('message-sent')，否则父组件会立即 refresh → loadGroupDetail 用服务端数据覆盖 groupDisplayMessages，导致列表重渲染并滚动回顶部；改为在流式结束后再 emit
-    const reader = r.body?.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let sawExpertAssistantMessageThisRun = false
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        // 兼容 SSE 在某些环境下使用 CRLF：去掉 \r，保证后续用 \n\n 能正确分帧
-        buffer = buffer.replace(/\r/g, '')
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() || ''
-        for (const blockRaw of parts) {
-          const block = blockRaw.trim()
-          if (!block.startsWith('event: ')) continue
-          const eventTypeLine = block.split('\n')[0] || ''
-          const eventType = eventTypeLine.replace('event: ', '').trim()
-          const dataLines = block
-            .split('\n')
-            .filter((l) => l.startsWith('data: '))
-            .map((l) => l.slice(6).trim())
-          const dataStr = dataLines.join('\n')
-          if (eventType === 'content' && dataStr) {
-            try {
-              const data = JSON.parse(dataStr) as { text?: string; agent_id?: string; meta?: { phase?: string } }
-              if (data?.text != null && data?.agent_id) {
-                if (consumeStreamingStatusContent(data)) continue
-                appendStreamingContent(data.agent_id, data.text)
-                // 开始输出内容：视为进入自检（生成最终回复）
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'message' && dataStr) {
-            groupStreamingPhase.value = '正在生成回复…'
-            try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>
-              if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-                if (data.role === 'assistant') {
-                  replaceOrPushAssistantMessage(data)
-                  if (isExpertAssistantMessagePayload(data)) {
-                    sawExpertAssistantMessageThisRun = true
-                  }
-                  // 如果该条 assistant 携带工具结果/查找结果：认为是在“生成草稿/查找内容”
-                } else {
-                  groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
-                  if (data.role === 'user' && (data as { message_id?: string }).message_id) {
-                    nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
-                  }
-                }
-                if (data.next_prompt) {
-                  groupNextPrompt.value = (data.next_prompt as string || '').trim()
-                }
-                if (extractAutoInvitedIds(data).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(data)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-              }
-            } catch (_) {}
-          }
-          if (eventType === 'route' && dataStr) {
-            try {
-              const data = JSON.parse(dataStr) as Record<string, unknown>
-              updateAutoSwitchHint(data)
-            } catch (_) {}
-          }
-          if (eventType === 'end' && dataStr) {
-            try {
-              const endData = JSON.parse(dataStr)
-              applyOrchestrationEndMeta(endData as Record<string, unknown>)
-              if (endData.waiting_for_user) {
-                groupTurnLimitReached.value = !!endData.turns_limit_reached
-                groupWaitingForUser.value = !!endData.turns_limit_reached
-                groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
-                  ? endData.suggested_next_speaker
-                  : null
-                if (extractAutoInvitedIds(endData as Record<string, unknown>).length) {
-                  groupSuggestedAddDhaIds.value = []
-                  emit('dha-added')
-                  loadGroupDetail()
-                }
-                const suggestedIds = resolveSuggestedIdsFromPayload(endData as Record<string, unknown>)
-                if (suggestedIds.length) {
-                  groupSuggestedAddDhaIds.value = suggestedIds
-                  clearStreamingPlaceholders()
-                  groupStreamingPhase.value = '等待你确认邀请…'
-                }
-                if (endData.next_prompt) {
-                  groupNextPrompt.value = (endData.next_prompt || '').trim()
-                }
-                if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
-                  attachedFiles.value = []
-                }
-                if (groupTurnLimitReached.value) {
-                  window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
-                }
-                if (!endData.turns_limit_reached) {
-                  const suggestedNext = endData.suggested_next_speaker
-                  if (suggestedNext && suggestedNext !== 'user') {
-                    nextTick(() => confirmGroupNext(suggestedNext))
-                  }
-                }
-              }
-              if (endData.discussion_ended) {
-                attachedFiles.value = []
-              }
-              if (sawExpertAssistantMessageThisRun) {
-                autoSwitchHint.value = null
-              }
-            } catch (_) {}
-          }
-        }
-      }
-    }
-    emit('message-sent')
+    // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
+    const shouldEmitMessageSent = await runGroupStream(detail.id, body)
+    if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('群聊发送失败', e)
   } finally {
@@ -4994,6 +4790,30 @@ defineExpose({ refresh: loadGroupDetail, createSessionFromScenarioPreset })
 }
 .group-chat-plain-text-nowrap {
   white-space: nowrap;
+}
+.group-chat-user-file-ref-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: rgba(14, 33, 65, 0.9);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.92));
+  border: 1px solid rgba(201, 223, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 2px 6px rgba(3, 24, 79, 0.16);
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+}
+.dark .group-chat-user-file-ref-tag {
+  color: rgba(255, 255, 255, 0.92);
+  background: linear-gradient(135deg, rgba(8, 8, 10, 0.9), rgba(22, 22, 24, 0.82));
+  border-color: rgba(72, 72, 76, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.36);
+}
+.group-chat-user-file-ref-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
 }
 /* 所有直接子块（p/h/ul/ol/pre/blockquote 等）统一：仅下边距 0.12em，首尾无额外留白 */
 .group-chat-markdown :deep(> *) {
