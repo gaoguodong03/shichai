@@ -144,7 +144,12 @@ async function loadDir(path = '') {
   loading.value = true
   error.value = ''
   try {
-    const list = await listDir(path)
+    const list = (await listDir(path)).filter((e) => {
+      const name = String(e?.name || '')
+      if (name === '__pycache__') return false
+      if (/\.(pyc|pyo)$/i.test(name)) return false
+      return true
+    })
     list.sort((a, b) => {
       if (!!a.is_dir !== !!b.is_dir) return a.is_dir ? -1 : 1
       return a.name.localeCompare(b.name)

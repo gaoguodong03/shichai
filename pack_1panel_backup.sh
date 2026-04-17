@@ -77,4 +77,6 @@ tar -czf "$OUT_TGZ" -C "$WORK_DIR" 1panel-compose-backup
 echo "OK: wrote $OUT_TGZ"
 echo "Contents:"
 tar -tzf "$OUT_TGZ"
+echo ""
+echo "Note: compose 内 st49 依赖 OpenSandbox healthcheck；若改了 backend 里网关/沙箱逻辑，需构建并更新 ST49_IMAGE 后远端才生效。"
 

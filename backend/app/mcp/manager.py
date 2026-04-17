@@ -77,6 +77,14 @@ def _get_mcp_call_lock(session: ClientSession) -> asyncio.Lock:
         return lock
 
 
+def _looks_like_closed_resource_error(err: str) -> bool:
+    s = str(err or "").strip()
+    if not s:
+        return False
+    low = s.lower()
+    return ("closedresourceerror" in low) or ("resource closed" in low)
+
+
 def normalize_mcp_kwargs_for_call(
     server_id: Optional[str],
     original_tool_name: str,
@@ -434,6 +442,24 @@ class MCPToolManager:
                 self.tools[tool_name] = langchain_tool
         except Exception as e:
             logger.error(f"Failed to load tools from server {server_id}: {e}", exc_info=True)
+
+    async def _reconnect_server(self, server_id: str) -> bool:
+        """Best-effort reconnect for a specific server when session is closed."""
+        cfg = next((c for c in self.server_configs if c.get("id") == server_id), None)
+        if not cfg or not cfg.get("enabled", True):
+            return False
+        old = self.sessions.pop(server_id, None)
+        if old is not None:
+            try:
+                await old.__aexit__(None, None, None)
+            except Exception:
+                # best effort; manager-level cleanup still handles leftovers
+                pass
+        # 清理该 server 的工具，避免 stale session 继续被调用
+        stale_prefix = f"{server_id}_"
+        for name in [n for n in list(self.tools.keys()) if n.startswith(stale_prefix)]:
+            self.tools.pop(name, None)
+        return await self.connect_server(server_id, cfg)
     
     def _create_langchain_tool(self, mcp_tool, session: ClientSession, server_id: Optional[str] = None) -> Tool:
         """将 MCP 工具转换为 LangChain Tool"""
@@ -454,14 +480,37 @@ class MCPToolManager:
                     server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
                 )
                 logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
+                active_session = self.sessions.get(server_id or "", session)
                 ok, result, err = await execute_mcp_call(
                     server_id=server_id or "",
                     tool_name=original_tool_name,
                     kwargs=call_kwargs,
-                    session=session,
+                    session=active_session,
                     timeout_sec=None,
                 )
+                # 远端 streamable_http 连接被回收时，首次调用可能抛 ClosedResourceError；自动重连后重试一次。
+                if (not ok) and _looks_like_closed_resource_error(err):
+                    sid = server_id or ""
+                    if sid:
+                        logger.warning("MCP 会话已关闭，尝试重连后重试: server=%s tool=%s", sid, original_tool_name)
+                        reconnected = await self._reconnect_server(sid)
+                        if reconnected:
+                            retry_session = self.sessions.get(sid)
+                            if retry_session is not None:
+                                ok, result, err = await execute_mcp_call(
+                                    server_id=sid,
+                                    tool_name=original_tool_name,
+                                    kwargs=call_kwargs,
+                                    session=retry_session,
+                                    timeout_sec=None,
+                                )
                 if not ok:
+                    if _looks_like_closed_resource_error(err):
+                        return (
+                            "Error: MCP session closed by remote server "
+                            f"(server={server_id or ''}, tool={original_tool_name}). "
+                            "Please retry once; if it persists, check upstream MCP service health."
+                        )
                     return f"Error: {err or 'MCP tool call failed'}"
                 if result.content:
                     block = result.content[0]

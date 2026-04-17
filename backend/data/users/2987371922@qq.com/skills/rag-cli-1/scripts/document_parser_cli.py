@@ -11,10 +11,12 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
+from skill_io import emit_result, env_snapshot, explain_common_path_mistakes, resolve_workspace_path
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
 logger = logging.getLogger("document_parser_cli")
+HTTP_TIMEOUT_SEC = 30.0
 
 
 def load_config() -> dict:
@@ -52,7 +54,7 @@ def build_multipart_body(file_path: Path) -> tuple[bytes, str]:
 
 def parse_document_via_http(rag_service_url: str, input_path: Path) -> str:
     if not input_path.exists():
-        raise FileNotFoundError(f"输入文件不存在: {input_path}")
+        raise FileNotFoundError(f"输入文件不存在: {input_path}. {explain_common_path_mistakes(input_path)}")
     if not input_path.is_file():
         raise ValueError(f"输入路径不是文件: {input_path}")
 
@@ -64,7 +66,7 @@ def parse_document_via_http(rag_service_url: str, input_path: Path) -> str:
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
     )
 
-    with request.urlopen(req) as response:
+    with request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as response:
         response_body = response.read().decode("utf-8")
         payload = json.loads(response_body) if response_body.strip() else {}
 
@@ -85,36 +87,56 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    stdin_cfg = read_stdin_json_dict()
-    if stdin_cfg and "input_path" in stdin_cfg and "output_path" in stdin_cfg:
-        args = argparse.Namespace(
-            input_path=str(stdin_cfg["input_path"]),
-            output_path=str(stdin_cfg["output_path"]),
-        )
-    else:
-        if has_cli_argv() or is_interactive_cli():
-            args = build_arg_parser().parse_args()
-        else:
-            logger.error(
-                "非交互且无命令行参数时，请在 stdin 传入 JSON 或使用 cli_args_json 传 "
-                "--input_path / --output_path（路径相对工作区）。"
-            )
-            return 2
-
-    input_path = Path(args.input_path).expanduser().resolve()
-    output_path = Path(args.output_path).expanduser().resolve()
-
     try:
+        stdin_cfg = read_stdin_json_dict()
+        if stdin_cfg and "input_path" in stdin_cfg and "output_path" in stdin_cfg:
+            args = argparse.Namespace(
+                input_path=str(stdin_cfg["input_path"]),
+                output_path=str(stdin_cfg["output_path"]),
+            )
+        else:
+            if has_cli_argv() or is_interactive_cli():
+                args = build_arg_parser().parse_args()
+            else:
+                emit_result(
+                    ok=False,
+                    code="missing_args",
+                    message=(
+                        "非交互且无命令行参数时，请在 stdin 传入 JSON 或用 cli_args_json 传 "
+                        "--input_path / --output_path（相对当前工作目录）。"
+                    ),
+                    debug=env_snapshot(),
+                    to_stderr=True,
+                )
+                return 2
+
+        input_path = resolve_workspace_path(args.input_path)
+        output_path = resolve_workspace_path(args.output_path)
+
         config = load_config()
         content = parse_document_via_http(config["rag_service_url"], input_path)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8", newline="\n")
+        logger.info("已生成文本文件: %s", output_path)
+        emit_result(
+            ok=True,
+            code="parsed",
+            message="文档已解析并写入 txt。",
+            data={"output_path": str(output_path), "chars": len(content)},
+            debug=env_snapshot(),
+        )
+        return 0
     except Exception as exc:
         logger.error("%s", exc)
+        emit_result(
+            ok=False,
+            code="error",
+            message=str(exc),
+            debug=env_snapshot(),
+            to_stderr=True,
+        )
         return 1
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(content, encoding="utf-8", newline="\n")
-    logger.info("已生成文本文件: %s", output_path)
-    return 0
 
 
 if __name__ == "__main__":

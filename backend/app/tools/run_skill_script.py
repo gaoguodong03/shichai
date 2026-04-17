@@ -15,6 +15,7 @@ from typing import Any, Optional
 from langchain_core.tools import tool
 
 from app.agent.sandbox_adapter import SandboxPolicy
+from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_mount_policy import SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
@@ -472,115 +473,135 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             return _json_result(ok=False, code="manifest_validation_failed", message=schema_error, meta=script_meta)
 
         timeout_sec = int(script_meta.get("timeout_sec") or os.getenv("SKILL_SCRIPT_TIMEOUT", "60"))
-        async def _runner() -> dict[str, Any]:
-            return await asyncio.to_thread(
-                _execute_script_subprocess,
-                script_full_path=full,
-                script_path=script_path,
-                skill_id=skill_id,
-                workspace_id=workspace_id,
-                write_mode=write_mode,
-                input_json=input_json,
-                cli_argv=cli_argv or [],
-                script_root=script_root,
-                timeout_sec=timeout_sec,
-                run_in_sandbox=is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True),
-            )
 
-        result_payload: dict[str, Any]
-        if is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
-            try:
-                sandbox_command, sandbox_extra_env, sandbox_cwd = _build_sandbox_exec_request(
-                    workspace_id=workspace_id,
-                    script_path=script_path,
-                    suffix=full.suffix.lower(),
-                    cli_argv=cli_argv or [],
-                    input_json=input_json,
-                )
-            except RuntimeError as e:
-                return _json_result(ok=False, code="runtime_missing", message=str(e))
-            ctx = ToolExecutionContext(
-                session_id=workspace_id,
-                workspace_id=str(workspace_root),
-                agent_id=f"skill:{skill_id}",
-                user_id=_get_current_user_id(),
-                skill_id=skill_id,
-                task_id=f"skill-script:{skill_id}",
-                turn_id=f"script:{uuid.uuid4().hex}",
-                tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
-                timeout_ms=max(1000, timeout_sec * 1000),
-                retry_count=0,
-                sandbox_cwd=sandbox_cwd,
-                policy=SandboxPolicy(
-                    fs_root=str(host_sessions_root_from_workspace(workspace_root)),
-                    workspace_host_path=str(host_sessions_root_from_workspace(workspace_root)),
-                    skill_scripts_host_path=str(script_root),
-                    skill_config_host_path=str((skill_home / "config").resolve()),
-                    runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
-                    runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
-                    timeout_ms=max(1000, timeout_sec * 1000),
-                    tool_allowlist=["run_skill_script", f"run_skill_script_{skill_id}"],
-                    volume_mounts=SandboxMountPolicy.build_mounts(
-                        workspace_host_path=host_sessions_root_from_workspace(workspace_root),
-                        skill_scripts_host_path=script_root,
-                        skill_config_host_path=(skill_home / "config"),
-                        config_writable=False,
-                        workspace_target="/workspace",
-                    ),
+        if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
+            return _json_result(
+                ok=False,
+                code="gateway_required",
+                message=(
+                    "技能脚本已取消宿主机子进程兜底，必须与线上一致走 OpenSandbox 统一网关。"
+                    "请在环境中设置 UNIFIED_TOOL_GATEWAY_ENABLED=1，并配置 OPENSANDBOX_DOMAIN。"
                 ),
             )
-            gw = await _get_script_gateway().execute(
-                tool_name=f"run_skill_script_{skill_id}",
-                tool_kind="script",
-                payload={
-                    "script_path": script_path,
-                    "cli_argv": cli_argv or [],
-                    "__sandbox_command": sandbox_command,
-                    "__sandbox_env": {
-                        "SKILL_ID": skill_id,
-                        "SKILL_WRITE_MODE": write_mode,
-                        "SKILL_WORKSPACE_ID": workspace_id,
-                        "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
-                        "SKILL_SCRIPT_ROOT": "/skill/scripts",
-                        **sandbox_extra_env,
-                    },
-                },
-                context=ctx,
-                runner=lambda: asyncio.sleep(0, result={}),
+        try:
+            sandbox_command, sandbox_extra_env, sandbox_cwd = _build_sandbox_exec_request(
+                workspace_id=workspace_id,
+                script_path=script_path,
+                suffix=full.suffix.lower(),
+                cli_argv=cli_argv or [],
+                input_json=input_json,
             )
-            if not gw.ok:
+        except RuntimeError as e:
+            return _json_result(ok=False, code="runtime_missing", message=str(e))
+        script_tool_name = build_skill_script_tool_name(skill_id)
+        legacy_tool_name = f"run_skill_script_{skill_id}"
+        tool_allow = list(dict.fromkeys(["run_skill_script", legacy_tool_name, script_tool_name]))
+        ctx = ToolExecutionContext(
+            session_id=workspace_id,
+            workspace_id=str(workspace_root),
+            agent_id=f"skill:{skill_id}",
+            user_id=_get_current_user_id(),
+            skill_id=skill_id,
+            task_id=f"skill-script:{skill_id}",
+            turn_id=f"script:{uuid.uuid4().hex}",
+            tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
+            timeout_ms=max(1000, timeout_sec * 1000),
+            retry_count=0,
+            sandbox_cwd=sandbox_cwd,
+            policy=SandboxPolicy(
+                fs_root=str(host_sessions_root_from_workspace(workspace_root)),
+                workspace_host_path=str(host_sessions_root_from_workspace(workspace_root)),
+                skill_scripts_host_path=str(script_root),
+                skill_config_host_path=str((skill_home / "config").resolve()),
+                runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
+                runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
+                timeout_ms=max(1000, timeout_sec * 1000),
+                tool_allowlist=tool_allow,
+                volume_mounts=SandboxMountPolicy.build_mounts(
+                    workspace_host_path=host_sessions_root_from_workspace(workspace_root),
+                    skill_scripts_host_path=script_root,
+                    skill_config_host_path=(skill_home / "config"),
+                    config_writable=False,
+                    workspace_target="/workspace",
+                ),
+            ),
+        )
+        gw = await _get_script_gateway().execute(
+            tool_name=script_tool_name,
+            tool_kind="script",
+            payload={
+                "script_path": script_path,
+                "cli_argv": cli_argv or [],
+                "__sandbox_command": sandbox_command,
+                "__sandbox_env": {
+                    "SKILL_ID": skill_id,
+                    "SKILL_WRITE_MODE": write_mode,
+                    "SKILL_WORKSPACE_ID": workspace_id,
+                    "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
+                    "SKILL_SCRIPT_ROOT": "/skill/scripts",
+                    **sandbox_extra_env,
+                },
+            },
+            context=ctx,
+            runner=lambda: asyncio.sleep(0, result={}),
+        )
+        if not gw.ok:
+            reason = getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason))
+            gateway_error = gw.error or "统一网关执行失败"
+            if str(reason) == "timeout_or_budget_exceeded":
                 return _json_result(
                     ok=False,
-                    code="gateway_execution_error",
-                    message=gw.error or "统一网关执行失败",
-                    gateway_interrupt_reason=getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason)),
+                    code="gateway_timeout",
+                    message=(
+                        "网关等待沙箱执行超时。"
+                        "常见原因：OpenSandbox 冷启动慢、首次安装依赖耗时、脚本本身执行过慢。"
+                    ),
+                    gateway_error=gateway_error,
+                    gateway_interrupt_reason=reason,
+                    gateway_timeout_ms=int(ctx.timeout_ms or 0),
+                    gateway_elapsed_ms=int(gw.elapsed_ms or 0),
                 )
-            out = dict(gw.output or {})
-            exit_code = out.get("exit_code")
-            stdout = str(out.get("stdout") or "").strip()
-            stderr = str(out.get("stderr") or "").strip()
-            if isinstance(exit_code, int) and exit_code != 0:
-                result_payload = {
-                    "ok": False,
-                    "code": "script_exit_nonzero",
-                    "message": f"脚本退出码 {exit_code}",
-                    "returncode": exit_code,
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "script": script_path,
-                }
-            else:
-                result_payload = {
-                    "ok": True,
-                    "code": "script_executed",
-                    "script": script_path,
-                    "returncode": int(exit_code or 0),
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "message": "脚本执行成功。",
-                }
+            if str(reason) == "tool_unavailable":
+                return _json_result(
+                    ok=False,
+                    code="gateway_tool_unavailable",
+                    message="网关执行器不可用（沙箱策略/连通性/运行时异常）。",
+                    gateway_error=gateway_error,
+                    gateway_interrupt_reason=reason,
+                    gateway_elapsed_ms=int(gw.elapsed_ms or 0),
+                )
+            return _json_result(
+                ok=False,
+                code="gateway_execution_error",
+                message="统一网关执行失败。",
+                gateway_error=gateway_error,
+                gateway_interrupt_reason=reason,
+                gateway_elapsed_ms=int(gw.elapsed_ms or 0),
+            )
+        out = dict(gw.output or {})
+        exit_code = out.get("exit_code")
+        stdout = str(out.get("stdout") or "").strip()
+        stderr = str(out.get("stderr") or "").strip()
+        if isinstance(exit_code, int) and exit_code != 0:
+            result_payload = {
+                "ok": False,
+                "code": "script_exit_nonzero",
+                "message": f"脚本退出码 {exit_code}",
+                "returncode": exit_code,
+                "stdout": stdout,
+                "stderr": stderr,
+                "script": script_path,
+            }
         else:
-            result_payload = await _runner()
+            result_payload = {
+                "ok": True,
+                "code": "script_executed",
+                "script": script_path,
+                "returncode": int(exit_code or 0),
+                "stdout": stdout,
+                "stderr": stderr,
+                "message": "脚本执行成功。",
+            }
         return _json_result(**result_payload)
 
     run_skill_script.name = "run_skill_script"

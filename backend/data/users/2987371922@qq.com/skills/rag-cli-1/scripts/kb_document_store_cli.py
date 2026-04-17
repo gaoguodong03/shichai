@@ -8,9 +8,11 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
+from skill_io import emit_result, env_snapshot, explain_common_path_mistakes, resolve_workspace_path
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
+HTTP_TIMEOUT_SEC = 20.0
 
 
 def load_documents(input_text: str | None, input_path: str | None) -> list[str]:
@@ -20,9 +22,9 @@ def load_documents(input_text: str | None, input_path: str | None) -> list[str]:
     if input_path is None:
         raise ValueError("必须提供 --input_text 或 --input_path")
 
-    file_path = Path(input_path).expanduser().resolve()
+    file_path = resolve_workspace_path(input_path)
     if not file_path.exists():
-        raise FileNotFoundError(f"输入文件不存在: {file_path}")
+        raise FileNotFoundError(f"输入文件不存在: {file_path}. {explain_common_path_mistakes(file_path)}")
     if not file_path.is_file():
         raise ValueError(f"输入路径不是文件: {file_path}")
     if file_path.suffix.lower() != ".json":
@@ -88,7 +90,7 @@ def store_documents(
         },
     )
 
-    with request.urlopen(req) as response:
+    with request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as response:
         body = response.read().decode("utf-8")
         if not body.strip():
             return {}
@@ -123,51 +125,91 @@ def print_response(documents: list[str], response: dict) -> None:
 
 
 def main() -> None:
-    stdin_cfg = read_stdin_json_dict()
-    if stdin_cfg:
-        has_text = "input_text" in stdin_cfg and str(stdin_cfg.get("input_text", "")).strip() != ""
-        has_path = "input_path" in stdin_cfg and str(stdin_cfg.get("input_path", "")).strip() != ""
-        if has_text and not has_path:
-            args = argparse.Namespace(input_text=str(stdin_cfg["input_text"]), input_path=None)
-        elif has_path and not has_text:
-            args = argparse.Namespace(input_text=None, input_path=str(stdin_cfg["input_path"]).strip())
-        elif has_text and has_path:
-            args = argparse.Namespace(input_text=str(stdin_cfg["input_text"]), input_path=None)
+    try:
+        stdin_cfg = read_stdin_json_dict()
+        if stdin_cfg:
+            has_text = "input_text" in stdin_cfg and str(stdin_cfg.get("input_text", "")).strip() != ""
+            has_path = "input_path" in stdin_cfg and str(stdin_cfg.get("input_path", "")).strip() != ""
+            if has_text and not has_path:
+                args = argparse.Namespace(input_text=str(stdin_cfg["input_text"]), input_path=None)
+            elif has_path and not has_text:
+                args = argparse.Namespace(input_text=None, input_path=str(stdin_cfg["input_path"]).strip())
+            elif has_text and has_path:
+                args = argparse.Namespace(input_text=str(stdin_cfg["input_text"]), input_path=None)
+            else:
+                if has_cli_argv() or is_interactive_cli():
+                    args = parse_args()
+                else:
+                    emit_result(
+                        ok=False,
+                        code="missing_args",
+                        message=(
+                            "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
+                            '{"input_text":"..."} 或 {"input_path":"chunks.json"}；'
+                            "或用 cli_args_json 传 --input_text / --input_path。"
+                        ),
+                        debug=env_snapshot(),
+                        to_stderr=True,
+                    )
+                    raise SystemExit(2)
         else:
             if has_cli_argv() or is_interactive_cli():
                 args = parse_args()
             else:
-                print(
-                    "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
-                    '{"input_text": "..."} 或 {"input_path": "chunks.json"}；'
-                    "或使用 run_skill_script 的 cli_args_json 传 --input_text / --input_path。",
-                    file=sys.stderr,
+                emit_result(
+                    ok=False,
+                    code="missing_args",
+                    message=(
+                        "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
+                        '{"input_text":"..."} 或 {"input_path":"相对工作区的路径"}；'
+                        "或用 cli_args_json，例如 [\"--input_text\",\"文本\"]。"
+                    ),
+                    debug=env_snapshot(),
+                    to_stderr=True,
                 )
-                sys.exit(2)
-    else:
-        if has_cli_argv() or is_interactive_cli():
-            args = parse_args()
-        else:
-            print(
-                "非交互且无命令行参数时，请在 stdin 传入 JSON，例如 "
-                '{"input_text": "..."} 或 {"input_path": "相对工作区的路径"}；'
-                "或使用 cli_args_json，例如 [\"--input_text\",\"文本\"]。",
-                file=sys.stderr,
+                raise SystemExit(2)
+
+        config = load_config()
+        if not config:
+            emit_result(
+                ok=False,
+                code="missing_config",
+                message="配置文件缺少 api_key/app_id，请让用户提供并写入 config.json 后重试。",
+                debug=env_snapshot(),
+                to_stderr=True,
             )
-            sys.exit(2)
+            return
+        documents = load_documents(args.input_text, args.input_path)
+        response = store_documents(
+            qa_engine_url=config["qa_engine_url"],
+            authorization=config["api_key"],
+            app_id=config["app_id"],
+            documents=documents,
+        )
 
-    config = load_config()
-    if not config:
-        return
-    documents = load_documents(args.input_text, args.input_path)
-    response = store_documents(
-        qa_engine_url=config["qa_engine_url"],
-        authorization=config["api_key"],
-        app_id=config["app_id"],
-        documents=documents,
-    )
-
-    print_response(documents, response)
+        # 保留原有可读输出（方便本地调试）
+        print_response(documents, response)
+        emit_result(
+            ok=True,
+            code="stored",
+            message="已调用知识库存储接口。",
+            data={
+                "documents_count": len(documents),
+                "response": response,
+            },
+            debug=env_snapshot(),
+        )
+    except SystemExit:
+        raise
+    except Exception as e:
+        emit_result(
+            ok=False,
+            code="error",
+            message=str(e),
+            debug=env_snapshot(),
+            to_stderr=True,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

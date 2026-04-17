@@ -7,3 +7,10 @@ backend/data/agent-outputs/workspaces/*/错误文字.md
 
 # 公开分享场景包（体积大，registry.json 可提交）
 backend/data/scenario_shares/*.zip
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

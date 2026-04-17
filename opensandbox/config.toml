@@ -2,6 +2,9 @@
 host = "0.0.0.0"
 port = 8090
 log_level = "INFO"
+# 当 endpoint 需要返回“外部可访问地址”时使用（避免返回空 endpoint）
+# 本地开发（宿主机直连）建议用 127.0.0.1，避免 host.docker.internal 在宿主机侧解析失败
+eip = "127.0.0.1"
 
 [runtime]
 type = "docker"
@@ -11,9 +14,12 @@ execd_image = "opensandbox/execd:v1.0.11"
 image = "opensandbox/egress:v1.0.4"
 
 [docker]
+# macOS Docker Desktop 下 host network 对 Linux 容器不可靠，且会导致沙箱端口不发布到宿主机；
+# 本地开发使用 bridge，让 OpenSandbox 通过端口映射返回宿主机可达的 endpoint。
 network_mode = "bridge"
 # 当 OpenSandbox server 运行在 compose 容器内时，host.docker.internal 可指向宿主机（macOS/Windows 默认可用）
 host_ip = "host.docker.internal"
+api_timeout = 600
 pids_limit = 4096
 
 [ingress]

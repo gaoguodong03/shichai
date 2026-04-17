@@ -5,8 +5,6 @@ build_tools_for_group_chat：按「本轮解析出的 Skill」的 mcp_server_ids
 Linkup/Exa 等 URL 工具。内置工作区工具与 call_api 按专家 dha 的 file_capabilities / url_capability 注入；
 run_skill_script_<skill_id> → wrap。
 """
-import hashlib
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +15,7 @@ from app.agent.host_plan import is_host_plan_reserved_path
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_bootstrapped
 from app.agent.session_workspace_policy import sandbox_session_dir
+from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.tools.call_api import call_api
 from app.tools.read_file import create_read_file_tool
@@ -29,28 +28,6 @@ try:
     from langchain_core.pydantic_v1 import BaseModel, Field
 except ImportError:
     from pydantic.v1 import BaseModel, Field  # type: ignore
-
-_TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
-
-
-def build_skill_script_tool_name(skill_id: str) -> str:
-    """构造符合工具命名约束的 run_skill_script 工具名。
-
-    部分模型供应商要求 function.name 严格匹配 ^[a-zA-Z0-9_\\.-]+$。
-    对包含中文/空格等字符的 skill_id，需要做安全化，否则会在请求阶段被拒绝。
-    """
-    raw = str(skill_id or "").strip()
-    if not raw:
-        return "run_skill_script_default"
-    sanitized = _TOOL_NAME_INVALID_CHARS_RE.sub("_", raw).strip("_.-")
-    if not sanitized:
-        sanitized = "skill"
-    # 仅在发生字符变换时追加哈希，兼顾可读性与唯一性
-    if sanitized != raw:
-        suffix = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
-        sanitized = f"{sanitized}_{suffix}"
-    return f"run_skill_script_{sanitized}"
-
 
 def _resolve_server_ids_with_aliases(server_ids: List[str], available_ids: set[str]) -> List[str]:
     """历史兼容已移除：仅保留当前可用的 server id。"""

@@ -20,6 +20,28 @@ from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 ToolExecutor = Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 
+def _sandbox_base_timeout_ms(context: "ToolExecutionContext", policy: Optional[SandboxPolicy]) -> int:
+    """单次沙箱命令（脚本本体 / OpenSandbox execute）应遵守的上限：取 context 与 policy 较大值。"""
+    ct = int(context.timeout_ms or 0)
+    pt = int(policy.timeout_ms or 0) if policy is not None else 0
+    return max(ct, pt, 30_000)
+
+
+def _sandbox_outer_wait_timeout_ms(
+    context: "ToolExecutionContext", policy: Optional[SandboxPolicy], tool_kind: str
+) -> int:
+    """asyncio.wait_for 包住整段 sandbox_service.execute：含建沙箱、首次 pip、再执行命令；需比单次脚本更长。"""
+    base = _sandbox_base_timeout_ms(context, policy)
+    if (tool_kind or "").strip() != "script":
+        return base
+    raw = (os.getenv("SANDBOX_SCRIPT_GATEWAY_SLACK_MS") or "300000").strip()
+    try:
+        slack = int(raw)
+    except ValueError:
+        slack = 300_000
+    return base + max(0, slack)
+
+
 @dataclass
 class ToolExecutionContext:
     session_id: str
@@ -102,7 +124,11 @@ class ToolGateway:
                 self._idem.set(key, result)
                 return result
             except asyncio.TimeoutError:
-                last_err = "tool timeout"
+                last_err = (
+                    "gateway timeout: "
+                    f"tool={req.tool_name} timeout_ms={int(req.timeout_ms)} "
+                    f"attempt={i + 1}/{retries + 1}"
+                )
                 if i >= retries:
                     result = ToolResult(
                         ok=False,
@@ -114,7 +140,10 @@ class ToolGateway:
                     self._idem.set(key, result)
                     return result
             except Exception as e:  # noqa: BLE001
-                last_err = str(e)
+                last_err = (
+                    "gateway executor error: "
+                    f"tool={req.tool_name} type={e.__class__.__name__} message={str(e)}"
+                )
                 if i >= retries:
                     result = ToolResult(
                         ok=False,
@@ -176,6 +205,8 @@ class UnifiedToolGateway:
             timeout_ms=max(100, int(context.timeout_ms or 30_000)),
             tool_allowlist=[tool_name],
         )
+        inner_timeout_ms = _sandbox_base_timeout_ms(context, policy)
+        outer_timeout_ms = _sandbox_outer_wait_timeout_ms(context, policy, tool_kind)
 
         async def _sandboxed_executor(inner_payload: Dict[str, Any]) -> Dict[str, Any]:
             resolved_user_id = (context.user_id or "").strip() or f"session:{context.session_id or 'session'}"
@@ -188,7 +219,7 @@ class UnifiedToolGateway:
                     tool_name=tool_name,
                     tool_kind=tool_kind,
                     payload=inner_payload,
-                    timeout_ms=int(context.timeout_ms or policy.timeout_ms or 30_000),
+                    timeout_ms=inner_timeout_ms,
                     runner=runner,
                     workspace_path=Path(context.workspace_id or context.session_id or "."),
                     runtime_backend=policy.runtime_backend,
@@ -208,7 +239,7 @@ class UnifiedToolGateway:
             tool_call_id=context.tool_call_id or f"{tool_kind}:{tool_name}",
             agent_id=context.agent_id or "agent",
             skill_id=context.skill_id or "",
-            timeout_ms=int(context.timeout_ms or 30_000),
+            timeout_ms=outer_timeout_ms,
             retry_count=int(context.retry_count if context.retry_count is not None else 1),
         )
         user_sem = await self._get_user_semaphore(context.user_id or context.session_id)

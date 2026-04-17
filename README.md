@@ -13,7 +13,7 @@
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 
-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.15.4
+crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.17.5
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -82,16 +82,44 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
 
 7. **沙箱内脚本无法访问 GitHub（git clone/curl/pip 等失败）**
    - 默认：沙箱 **禁网**（更安全），因此沙箱内执行联网命令通常会失败。
-   - 如确需开启（风险自担）：
-     - `SANDBOX_ALLOW_NETWORK=1`
+   - 推荐做法：按“工具”单独授权出网（更接近权限系统的思路）。
+     - `SANDBOX_ALLOW_NETWORK=0`（全局默认禁网）
+     - `SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script,call_api`（逗号分隔；写 `*` 表示全放开）
      - `SANDBOX_ALLOWED_HOSTS=github.com,raw.githubusercontent.com,api.github.com`（可选，逗号分隔）
+   - 兼容旧行为：`SANDBOX_ALLOW_NETWORK=1` 且未设置 `SANDBOX_NETWORK_TOOL_ALLOWLIST` 时，表示对所有工具放开。
    - 位置：
      - 1Panel：在 `docker-compose.1panel.yml` 的 `st49.environment` 中按需取消注释。
      - 本地：在 `docker-compose.yml` 的 `dha.environment` 中设置。
 
-7. **改了代码但线上没变**
+8. **改了代码但线上没变**
    - 如果 1Panel 用的是远端镜像（`ST49_IMAGE=...`），你改仓库代码不会自动生效。
    - 必须构建/推送新镜像并更新 tag（例如从 `26.04.15.2` 升到 `26.04.15.3`）。
+
+9. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
+   - `gateway_timeout`：网关等待沙箱执行超时，通常发生在“建沙箱 + 首次装依赖 + 跑脚本”整体耗时过长。
+   - `gateway_tool_unavailable`：执行器不可用，优先看 `gateway_error` 中的异常类型（如 `SandboxApiException`、`ClosedResourceError`）。
+   - 推荐同时关注：
+     - `gateway_elapsed_ms`（实际耗时）
+     - `gateway_interrupt_reason`（`timeout_or_budget_exceeded` 或 `tool_unavailable`）
+   - 若经常冷启动超时，可调大：
+     - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 300000ms）
+     - `SKILL_SCRIPT_TIMEOUT`（脚本执行超时）
+
+10. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
+   - 典型日志：
+     - `Failed to run command. Status code: 502`
+     - `Could not connect to the backend sandbox endpoint='172.x.x.x:port'`
+   - 这通常是 OpenSandbox 转发链路问题，不是脚本本身逻辑错误。
+   - 实战经验：在部分 1Panel/宿主网络环境下，`OPENSANDBOX_USE_SERVER_PROXY=1` 会更易触发该问题，改为 `0` 可恢复。
+   - 建议固定检查项：
+     - `st49` 是否已生效 `OPENSANDBOX_USE_SERVER_PROXY=0`
+     - `opensandbox-server` 与 `st49` 是否都健康
+     - `st49` 是否依赖 `opensandbox-server: service_healthy`
+
+11. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
+   - 含义：MCP 长连接被远端服务回收/断开，常见于 `linkup-fetch` 这类远程 streamable-http。
+   - 当前策略：检测到 `ClosedResourceError` 后自动重连对应 MCP server 并重试 1 次。
+   - 若仍失败，再看远端 MCP 服务健康、API Key、上游限流与网络波动。
 
 ### 回归验证（建议每次改沙箱/文件工具后跑一遍）
 - **文件读写（会话隔离）**
@@ -105,3 +133,26 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
 - **GitHub（两条路径分开测）**
   - `call_api`：对 `https://github.com/<owner>/<repo>/blob/<ref>/<file>` 测一次，预期会自动改写为 raw 并返回文件内容（或至少返回清晰的 HTTP 状态码/错误）。
   - 沙箱脚本：仅在你开启 `SANDBOX_ALLOW_NETWORK=1` 后，再在技能脚本里 `curl -I https://github.com` 进行验证；不开启时失败是预期行为。
+  - 沙箱脚本（按工具放行）：若使用 `SANDBOX_NETWORK_TOOL_ALLOWLIST`，则只要把 `run_skill_script` 加入 allowlist 即可；不开启时失败是预期行为。
+
+### 本次 `docker-compose.1panel.yml` 关键改动（务必随镜像一起发布）
+
+1. **`OPENSANDBOX_USE_SERVER_PROXY=0`（原为 1）**
+   - 触发背景：出现 `502` + `Could not connect to backend sandbox endpoint='172.x.x.x:port'`。
+   - 目的：绕过 server-proxy 路径，降低某些宿主网络环境下的转发失败概率。
+   - 现状：已验证可恢复脚本执行。
+
+2. **给 `opensandbox-server` 增加 `healthcheck`**
+   - 目的：避免“容器已启动但服务未就绪”时，`st49` 提前接流量导致网关超时或 5xx。
+   - 检查点：`http://127.0.0.1:8090/health` 返回 200。
+
+3. **`st49.depends_on.opensandbox-server.condition=service_healthy`（原为 `service_started`）**
+   - 目的：确保 `st49` 在 OpenSandbox 真正健康后再启动，减少冷启动竞态问题。
+
+4. **保留并强调 `SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000`**
+   - 目的：给“建沙箱 + 首次装依赖 + 执行脚本”整段流程预留网关等待余量，降低误报 `gateway_timeout`。
+
+5. **脚本网络策略仍保持最小放行**
+   - `SANDBOX_ALLOW_NETWORK=0`
+   - `SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script`
+   - 说明：只放行 `run_skill_script*`，其余工具默认禁网，符合线上最小权限原则。

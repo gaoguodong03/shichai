@@ -2,7 +2,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from app.agent.graph import _call_tool_impl
-from app.agent.tools_for_skill import build_skill_script_tool_name
+from app.agent.skill_tool_naming import build_skill_script_tool_name
 
 
 class _DummyTool:

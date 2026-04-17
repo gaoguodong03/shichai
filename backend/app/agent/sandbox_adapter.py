@@ -189,11 +189,11 @@ class OpenSandboxAdapter:
                     proxy_raw = (
                         os.getenv("OPENSANDBOX_USE_SERVER_PROXY")
                         or os.getenv("OPEN_SANDBOX_USE_SERVER_PROXY")
-                        or "0"
+                        or "1"
                     ).strip().lower()
                     use_server_proxy = proxy_raw in {"1", "true", "yes", "on", "enabled"}
-                    # 默认不走 server proxy（更符合本项目在 1Panel 的部署方式）。
-                    # 若开启 proxy 且拿到空 endpoint，会在 _ensure_execd 中自动回退直连。
+                    # 默认走 server proxy：部分部署下 endpoint 可能为空（host/port 缺失），
+                    # proxy 通道通常更稳；在 _ensure_cmd_and_fs 里会自动在 proxy/直连间回退。
                     self._conn = ConnectionConfig(
                         api_key=api_key,
                         domain=domain,
@@ -213,9 +213,19 @@ class OpenSandboxAdapter:
 
                 @staticmethod
                 def _is_endpoint_valid(ep) -> bool:
+                    # Some OpenSandbox deployments return `{"endpoint":"host:port"}` (string field),
+                    # while some SDK models expose `host`/`port`. Support both.
+                    endpoint_str = str(getattr(ep, "endpoint", "") or "").strip()
+                    if endpoint_str:
+                        return True
                     h = str(getattr(ep, "host", "") or "").strip()
                     p = getattr(ep, "port", None)
                     return bool(h and h != ":" and p)
+
+                @staticmethod
+                def _endpoint_str(ep) -> str:
+                    """Return best-effort endpoint string for logs."""
+                    return str(getattr(ep, "endpoint", "") or "").strip()
 
                 async def _ensure_cmd_and_fs(
                     self, sandbox_id: str
@@ -237,6 +247,7 @@ class OpenSandboxAdapter:
                         )
 
                     endpoint = await _get_endpoint(bool(self._conn.use_server_proxy))
+                    proxy_used = bool(self._conn.use_server_proxy)
                     if not self._is_endpoint_valid(endpoint):
                         logger.warning(
                             "opensandbox_execd_endpoint_empty sandbox_id=%s proxy=%s; retry_with_proxy=%s",
@@ -244,15 +255,21 @@ class OpenSandboxAdapter:
                             bool(self._conn.use_server_proxy),
                             (not bool(self._conn.use_server_proxy)),
                         )
-                        endpoint = await _get_endpoint(not bool(self._conn.use_server_proxy))
+                        proxy_used = not bool(self._conn.use_server_proxy)
+                        endpoint = await _get_endpoint(proxy_used)
+                        # 若切换后拿到有效 endpoint，则后续统一沿用该策略，避免“拿到可用 endpoint 但仍按旧策略执行”。
+                        if self._is_endpoint_valid(endpoint):
+                            try:
+                                self._conn.use_server_proxy = proxy_used
+                            except Exception:
+                                pass
 
                     endpoint_ok = self._is_endpoint_valid(endpoint)
                     logger.info(
-                        "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s:%s proxy=%s endpoint_ok=%s",
+                        "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s proxy=%s endpoint_ok=%s",
                         sandbox_id,
-                        getattr(endpoint, "host", ""),
-                        getattr(endpoint, "port", ""),
-                        self._conn.use_server_proxy,
+                        self._endpoint_str(endpoint),
+                        proxy_used,
                         endpoint_ok,
                     )
                     cmd = CommandsAdapter(self._conn, endpoint)
@@ -274,7 +291,7 @@ class OpenSandboxAdapter:
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "python:3.11-slim"
+                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "python:3.12-slim"
                     mounts = list(spec.get("mounts") or [])
                     volumes = []
                     for i, m in enumerate(mounts):

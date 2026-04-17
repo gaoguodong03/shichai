@@ -19,7 +19,7 @@ from app.agent.read_path_utils import (
     strip_llm_junk_from_read_path,
 )
 from app.agent.simple_agent import SimpleAgent
-from app.agent.tools_for_skill import build_skill_script_tool_name
+from app.agent.skill_tool_naming import build_skill_script_tool_name
 
 logger = logging.getLogger(__name__)
 

@@ -258,7 +258,9 @@ const partMarkdownPreviewMode = ref(true)
 
 const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
-  return parts.value[activeTab.value] || []
+  const list = parts.value[activeTab.value] || []
+  // 统一过滤：避免 UI 不显示但自动选中/自动进入隐藏目录
+  return list.filter((x) => !shouldHideEntryByPath(x.path))
 })
 const partDirPath = ref('')
 
@@ -272,6 +274,15 @@ function dirnameOfPath(path: string) {
   return idx >= 0 ? p.slice(0, idx) : ''
 }
 
+function shouldHideEntryByPath(path: string) {
+  const p = normalizePartPath(path)
+  if (!p) return false
+  const segs = p.split('/').filter(Boolean)
+  if (segs.some((s) => s === '__pycache__')) return true
+  const base = segs[segs.length - 1] || ''
+  return /\.(pyc|pyo)$/i.test(base)
+}
+
 const partFileBrowser = computed(() => {
   const currentDir = normalizePartPath(partDirPath.value)
   const dirsMap = new Map<string, { name: string; path: string }>()
@@ -279,15 +290,18 @@ const partFileBrowser = computed(() => {
   for (const item of currentPartFiles.value) {
     const full = normalizePartPath(item.path)
     if (!full) continue
+    if (shouldHideEntryByPath(full)) continue
     const rel = currentDir ? (full.startsWith(`${currentDir}/`) ? full.slice(currentDir.length + 1) : '') : full
     if (!rel) continue
     const slash = rel.indexOf('/')
     if (slash >= 0) {
       const name = rel.slice(0, slash)
+      if (name === '__pycache__') continue
       if (!dirsMap.has(name)) {
         dirsMap.set(name, { name, path: currentDir ? `${currentDir}/${name}` : name })
       }
     } else {
+      if (shouldHideEntryByPath(rel)) continue
       files.push({ name: rel, path: full })
     }
   }
@@ -683,7 +697,7 @@ watch(
     await loadParts()
     // 若用户在加载途中切换了 tab，则放弃本次自动选中，避免串栏
     if (activeTab.value !== tab) return
-    const files = parts.value[tab] || []
+    const files = (parts.value[tab] || []).filter((x) => !shouldHideEntryByPath(x.path))
     if (files.length > 0) {
       await selectPartFile(tab, files[0].path)
     }
@@ -704,7 +718,7 @@ watch(activeTab, async (tab) => {
   partContent.value = ''
   await loadParts()
   if (activeTab.value !== tab) return
-  const files = parts.value[tab as PartType] || []
+  const files = (parts.value[tab as PartType] || []).filter((x) => !shouldHideEntryByPath(x.path))
   if (files.length > 0) {
     selectPartFile(tab as PartType, files[0].path)
   }

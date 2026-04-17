@@ -515,7 +515,7 @@ def _scheduler_recent_context(group_session_id: str, messages: List[Dict[str, An
 
 
 def _normalize_discussion_goal(raw: str, max_len: int = 200) -> str:
-    """从首条用户消息中提取纯讨论目标，去掉前端的「【讨论目标】」前缀，避免在 prompt 中重复出现。"""
+    """从用户消息中提取纯讨论目标，去掉前端的「【讨论目标】」前缀，避免在 prompt 中重复出现。"""
     if not raw or not isinstance(raw, str):
         return (raw or "").strip()[:max_len] if raw else ""
     s = (raw or "").strip()
@@ -2086,12 +2086,8 @@ async def preview_next_speaker_prompt(group_session_id: str, body: GroupPromptPr
 
     messages = _load_group_history(group_session_id)
 
-    # 讨论目标：取首条用户消息（去掉前端已加的「【讨论目标】」前缀，避免重复）
-    discussion_goal = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            discussion_goal = _normalize_discussion_goal(msg.get("content") or "")
-            break
+    # 讨论目标：优先使用最近一条用户消息，避免会话继续时沿用旧目标导致专家跑偏。
+    discussion_goal = _normalize_discussion_goal(_last_user_message_text(messages))
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
 
@@ -2474,12 +2470,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             last_speaker_agent_id = msg.get("agent_id")
             break
 
-    # 讨论目标：取首条用户消息（去掉前端已加的「【讨论目标】」前缀，避免重复）
-    discussion_goal = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            discussion_goal = _normalize_discussion_goal(msg.get("content") or "")
-            break
+    # 讨论目标：优先使用最近一条用户消息，避免会话继续时沿用旧目标导致专家跑偏。
+    discussion_goal = _normalize_discussion_goal(_last_user_message_text(messages))
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
 

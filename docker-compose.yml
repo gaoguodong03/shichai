@@ -48,12 +48,17 @@ services:
       # 强制 OpenSandbox：容器内通过服务名访问 lifecycle API（8090）
       - OPENSANDBOX_DOMAIN=opensandbox-server:8090
       - OPENSANDBOX_PROTOCOL=http
+      - UNIFIED_TOOL_GATEWAY_ENABLED=1
+      - OPENSANDBOX_USE_SERVER_PROXY=1
+      - SANDBOX_BASE_IMAGE=python:3.12
       # OpenSandbox 的 host_path 挂载需要“宿主机可见路径”。本地用 bind mount 时，/app/backend/data 实际就在当前项目目录下。
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=${PWD}/backend/data,/app/backend/config=${PWD}/backend/config
-      # 允许沙箱内脚本访问公网（注意：开启后请结合 allowed hosts 收紧范围）
-      - SANDBOX_ALLOW_NETWORK=1
-      # 可选：只放行特定域名（逗号分隔）。留空表示不做域名收紧（由 OpenSandbox 网络策略决定）。
+      - SKILL_SCRIPT_TIMEOUT=300
+      # 与 1Panel 编排一致：默认禁网 + 按工具放行（run_skill_script 含全部 run_skill_script_<skill_id>）
+      - SANDBOX_ALLOW_NETWORK=0
+      - SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script
       - SANDBOX_ALLOWED_HOSTS=
+      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000
       # MCP_CONFIG_PATH / APP_SETTINGS_PATH / SESSIONS_DIR / AGENT_OUTPUTS_DIR 使用镜像内 ENV（/app/backend/...）
     depends_on:
       opensandbox-server:

@@ -18,6 +18,7 @@ services:
           'host = "0.0.0.0"' \
           'port = 8090' \
           'log_level = "INFO"' \
+          'eip = "host.docker.internal"' \
           '' \
           '[runtime]' \
           'type = "docker"' \
@@ -28,6 +29,7 @@ services:
           '' \
           '[docker]' \
           'network_mode = "bridge"' \
+          'api_timeout = 600' \
           'host_ip = "host.docker.internal"' \
           'pids_limit = 4096' \
           '' \
@@ -35,10 +37,22 @@ services:
           'mode = "direct"' > /tmp/sandbox.toml
         /bin/cat /tmp/sandbox.toml
         exec /app/.venv/bin/opensandbox-server --config /tmp/sandbox.toml
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2).read(); sys.exit(0)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
     restart: unless-stopped
 
   st49:
-    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.15.3}"
+    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.17.5}"
     container_name: st49
     ports:
       - "${ST49_HOST_PORT:-8100}:8000"
@@ -51,17 +65,23 @@ services:
       - OPENSANDBOX_PROTOCOL=http
       - UNIFIED_TOOL_GATEWAY_ENABLED=1
       - OPENSANDBOX_USE_SERVER_PROXY=0
+      - SANDBOX_BASE_IMAGE=python:3.12
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data
-      # 允许沙箱内脚本访问公网（注意：开启后请结合 allowed hosts 收紧范围）
-      - SANDBOX_ALLOW_NETWORK=1
+      - SKILL_SCRIPT_TIMEOUT=300
+      # 沙箱网络（推荐：默认禁网 + 按工具放行）
+      - SANDBOX_ALLOW_NETWORK=0
+      # 仅允许这些工具的沙箱请求出网（逗号分隔；写 * 表示全放开）。写 run_skill_script 即包含全部 run_skill_script_<skill_id>
+      - SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script
       # 可选：只放行特定域名（逗号分隔）。留空表示不做域名收紧（由 OpenSandbox 网络策略决定）。
       # 示例（GitHub）：github.com,raw.githubusercontent.com,api.github.com
       - SANDBOX_ALLOWED_HOSTS=
+      # 网关 asyncio 等待整段沙箱执行（建容器/首次 pip/跑脚本）；默认在脚本超时基础上 +300s，见 SANDBOX_SCRIPT_GATEWAY_SLACK_MS
+      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       opensandbox-server:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - st49_data:/app/backend/data
     healthcheck:

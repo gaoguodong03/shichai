@@ -490,7 +490,7 @@
               </div>
               <div class="group-chat-input-toolbar">
                 <div class="group-chat-toolbar-left">
-                  <div v-if="orderedMemberIds.length > 0" class="group-chat-next-speaker-picker">
+                  <div class="group-chat-next-speaker-picker">
                     <button
                       type="button"
                       class="group-chat-next-speaker-trigger"
@@ -500,21 +500,14 @@
                       @click="showAddMemberModal = true; showMoreMenu = false"
                     >
                       <span
-                        v-if="toolbarDisplaySpeakerId === 'end'"
-                        class="group-chat-avatar group-chat-avatar-sm group-chat-next-speaker-end-avatar"
-                        aria-hidden="true"
-                      >
-                        终
-                      </span>
-                      <span
-                        v-else-if="toolbarDisplayShowHostAvatar"
+                        v-if="toolbarDisplayShowHostAvatar"
                         class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
                         aria-hidden="true"
                       >
                         <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                       </span>
                       <span
-                        v-else-if="toolbarDisplaySpeakerId"
+                        v-else
                         class="group-chat-avatar group-chat-avatar-sm"
                         :style="
                           expertAvatarUrl(toolbarDisplaySpeakerId)
@@ -2475,11 +2468,6 @@ function updateAutoSwitchHint(payload: Record<string, unknown>) {
   lastRoute.value = { expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
   if (!changedExpert && !changedSkill) return
 
-  // 场景协作（名单固定、主持人编排）：专家/技能路由仍会切换，但不必用横幅打断用户
-  if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') {
-    return
-  }
-
   const map = groupDetail.value?.agent_map || {}
   const finalExpertId = routedExpertId
   const finalSkillId = routedSkillId
@@ -2863,7 +2851,6 @@ const effectiveNextSpeaker = computed(() => {
   const override = (groupNextSpeakerOverride.value || '').trim()
   const suggested = groupSuggestedNextSpeaker.value
   const active = activeStreamingDhaId.value
-  const latestExpert = latestExpertSpeakerDhaId.value
   const ids = orderedMemberIds.value
 
   if (override) {
@@ -2895,8 +2882,11 @@ const effectiveNextSpeaker = computed(() => {
     return 'host'
   }
 
-  if (latestExpert && ids.includes(latestExpert)) return latestExpert
-  return ids[0] ?? ''
+  // 空闲态且无服务端建议：默认回到主持人（四九），避免一直显示上一轮专家造成误导。
+  const lid = (leaderDisplayId.value || '').trim()
+  if (!lid || lid === 'host') return 'host'
+  if (ids.includes(lid)) return lid
+  return 'host'
 })
 
 /**
@@ -2921,7 +2911,7 @@ const toolbarSpeakerChipId = computed(() => {
 
 const toolbarSpeakerChipName = computed(() => {
   const id = toolbarSpeakerChipId.value
-  if (!id) return ''
+  if (!id) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
   if (id === 'end') return '已结束'
   const map = groupDetail.value?.agent_map || {}
   const lid = (leaderDisplayId.value || '').trim()
@@ -3752,7 +3742,10 @@ const toolbarDisplaySpeakerId = computed(() => {
     const ids = orderedMemberIds.value
     if (rid && (rid === 'host' || ids.includes(rid))) return rid
   }
-  return toolbarSpeakerChipId.value
+  // 这里必须始终能展示一个“专家/主持人”头像：若无可用 id 或已结束，则兜底为主持人（四九）。
+  const id = toolbarSpeakerChipId.value
+  if (!id || id === 'end') return 'host'
+  return id
 })
 
 const toolbarDisplaySpeakerName = computed(() => {
@@ -3765,12 +3758,14 @@ const toolbarDisplaySpeakerName = computed(() => {
     }
     return ''
   }
-  return toolbarSpeakerChipName.value.trim()
+  const n = toolbarSpeakerChipName.value.trim()
+  if (n) return n
+  return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
 })
 
 const toolbarDisplayShowHostAvatar = computed(() => {
   const id = toolbarDisplaySpeakerId.value
-  if (!id || id === 'end') return false
+  if (!id) return true
   if (id === 'host') return true
   const lid = (leaderDisplayId.value || '').trim()
   return Boolean(lid && lid !== 'host' && id === lid)
@@ -3778,9 +3773,7 @@ const toolbarDisplayShowHostAvatar = computed(() => {
 
 const toolbarDisplayLabelText = computed(() => {
   const n = toolbarDisplaySpeakerName.value.trim()
-  if (n) return n
-  if (!groupStreaming.value) return '发言顺序'
-  return ''
+  return n || (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
 })
 
 /** 流式脉冲点：基于已到达的内容长度滚动切换 */

@@ -7,7 +7,7 @@ import logging
 import os
 import time
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -36,6 +36,28 @@ def _env_csv(name: str) -> List[str]:
             parts.append(s)
     # de-dup preserve order
     return list(dict.fromkeys(parts))
+
+def _network_allowed_for_tool(tool_name: str) -> bool:
+    """
+    Decide whether sandbox may access network for a given tool.
+
+    - SANDBOX_ALLOW_NETWORK=1 and SANDBOX_NETWORK_TOOL_ALLOWLIST empty => allow for all tools (legacy behavior)
+    - SANDBOX_NETWORK_TOOL_ALLOWLIST non-empty => only allow if tool_name in allowlist (or '*')
+    - 配置里常写 run_skill_script，实际工具名为 run_skill_script_<skill_id>，二者等价放行
+    - SANDBOX_ALLOW_NETWORK=0 => deny unless allowlist is explicitly configured (opt-in)
+    """
+    name = (tool_name or "").strip()
+    allowlist = _env_csv("SANDBOX_NETWORK_TOOL_ALLOWLIST")
+    allow_global = _env_truthy("SANDBOX_ALLOW_NETWORK", default="0")
+    if allowlist:
+        if "*" in allowlist:
+            return True
+        if name in allowlist:
+            return True
+        if name.startswith("run_skill_script_") and "run_skill_script" in allowlist:
+            return True
+        return False
+    return bool(allow_global)
 
 
 @dataclass
@@ -108,12 +130,39 @@ class SandboxService:
             tool_allowlist=[],
             runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
             runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
-            allow_network=_env_truthy("SANDBOX_ALLOW_NETWORK", default="0"),
+            allow_network=False,
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
         )
 
+    @staticmethod
+    def _cached_handle_still_valid(handle: SandboxHandle, policy: SandboxPolicy, tool_name: str) -> bool:
+        """
+        单用户沙箱会复用同一 OpenSandbox 会话。创建时写入的 policy.tool_allowlist 与挂载指纹若与当前请求不一致，
+        必须丢弃缓存，否则会误拦后续工具（例如先跑 A 技能再跑 sandbox-dep-check）。
+        """
+        meta = handle.metadata if isinstance(handle.metadata, dict) else {}
+        old_fp = str(meta.get("mount_fingerprint") or "").strip()
+        new_fp = policy_mount_fingerprint(policy)
+        if not old_fp or old_fp != new_fp:
+            return False
+        old_policy = meta.get("policy")
+        old_allow: list[str] = []
+        if isinstance(old_policy, dict):
+            old_allow = list(old_policy.get("tool_allowlist") or [])
+        tn = (tool_name or "").strip()
+        if old_allow and tn and tn not in old_allow:
+            return False
+        stored_net = meta.get("policy_allow_network")
+        if stored_net is not None and bool(stored_net) != bool(policy.allow_network):
+            return False
+        return True
+
     async def _build_policy(self, req: SandboxExecutionRequest) -> SandboxPolicy:
         if req.policy is not None:
+            env_net = _network_allowed_for_tool(req.tool_name)
+            final_net = bool(env_net or req.policy.allow_network)
+            if final_net != bool(req.policy.allow_network):
+                return replace(req.policy, allow_network=final_net)
             return req.policy
         mounts: list = []
         host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
@@ -140,7 +189,7 @@ class SandboxService:
             timeout_ms=max(1000, int(req.timeout_ms)),
             tool_allowlist=[req.tool_name],
             volume_mounts=mounts,
-            allow_network=_env_truthy("SANDBOX_ALLOW_NETWORK", default="0"),
+            allow_network=_network_allowed_for_tool(req.tool_name),
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
         )
 
@@ -153,7 +202,9 @@ class SandboxService:
             existing = self._user_handles.get(key)
             if existing is not None:
                 handle, touched = existing
-                if now - touched <= self._session_ttl_sec:
+                if now - touched <= self._session_ttl_sec and self._cached_handle_still_valid(
+                    handle, policy, req.tool_name
+                ):
                     self._user_handles[key] = (handle, now)
                     await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
                     return handle
@@ -161,6 +212,9 @@ class SandboxService:
                 self._user_handles.pop(key, None)
 
             handle = await self._adapter.create_session_sandbox(logical_sid, policy)
+            if isinstance(handle.metadata, dict):
+                handle.metadata["mount_fingerprint"] = policy_mount_fingerprint(policy)
+                handle.metadata["policy_allow_network"] = bool(policy.allow_network)
             self._user_handles[key] = (handle, now)
         # 出锁后做安装：避免长时间持锁阻塞其他请求
         await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
@@ -506,3 +560,41 @@ class SandboxService:
             turn_id=turn_id,
             payload={"session_id": session_id, "mode": "user_single_sandbox"},
         )
+
+    async def prewarm_user_sandbox(
+        self,
+        user_id: str,
+        *,
+        reason: str = "manual",
+        timeout_ms: int = 60_000,
+    ) -> Dict[str, Any]:
+        """提前创建并缓存用户级沙箱，减少首次工具调用冷启动延迟。"""
+        uid = (user_id or "").strip()
+        if not uid:
+            raise ValueError("user_id is required")
+        user_ctx = get_user_context_for(uid)
+        workspaces_subdir = (os.getenv("WORKSPACES_SUBDIR") or "workspaces").strip() or "workspaces"
+        workspaces_root = (user_ctx.agent_outputs_dir / workspaces_subdir).resolve()
+        workspaces_root.mkdir(parents=True, exist_ok=True)
+        policy = self._workspace_only_policy(workspaces_root, timeout_ms=timeout_ms)
+        req = SandboxExecutionRequest(
+            user_id=uid,
+            session_id=f"prewarm:{uid}",
+            turn_id=f"prewarm:{reason}",
+            tool_call_id=f"prewarm:{reason}",
+            tool_name="__sandbox_prewarm__",
+            tool_kind="internal",
+            payload={},
+            timeout_ms=policy.timeout_ms,
+            runner=lambda: asyncio.sleep(0),
+            workspace_path=workspaces_root,
+            policy=policy,
+        )
+        handle = await self._ensure_user_handle(req, policy)
+        return {
+            "status": "ok",
+            "user_id": uid,
+            "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
+            "backend": self.backend_label(),
+            "reason": reason,
+        }

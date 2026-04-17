@@ -8,9 +8,11 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from rag_stdin import has_cli_argv, is_interactive_cli, read_stdin_json_dict
+from skill_io import emit_result, env_snapshot
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
+HTTP_TIMEOUT_SEC = 20.0
 
 
 def load_config() -> dict:
@@ -66,7 +68,7 @@ def retrieve_documents(
         },
     )
 
-    with request.urlopen(req) as response:
+    with request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as response:
         body = response.read().decode("utf-8")
         if not body.strip():
             return {}
@@ -107,31 +109,63 @@ def print_response(query: str, response: dict) -> None:
 
 
 def main() -> None:
-    stdin_cfg = read_stdin_json_dict()
-    if stdin_cfg and "query" in stdin_cfg and str(stdin_cfg.get("query", "")).strip():
-        args = argparse.Namespace(query=str(stdin_cfg["query"]).strip())
-    else:
-        if has_cli_argv() or is_interactive_cli():
-            args = parse_args()
+    try:
+        stdin_cfg = read_stdin_json_dict()
+        if stdin_cfg and "query" in stdin_cfg and str(stdin_cfg.get("query", "")).strip():
+            args = argparse.Namespace(query=str(stdin_cfg["query"]).strip())
         else:
-            print(
-                "非交互且无命令行参数时，请在 stdin 传入 JSON："
-                '{"query": "..."}；或使用 cli_args_json：[\"--query\",\"问题\"]。',
-                file=sys.stderr,
+            if has_cli_argv() or is_interactive_cli():
+                args = parse_args()
+            else:
+                emit_result(
+                    ok=False,
+                    code="missing_args",
+                    message=(
+                        "非交互且无命令行参数时，请在 stdin 传入 JSON："
+                        '{"query":"..."}；或用 cli_args_json：[\"--query\",\"问题\"]。'
+                    ),
+                    debug=env_snapshot(),
+                    to_stderr=True,
+                )
+                raise SystemExit(2)
+
+        config = load_config()
+        if not config:
+            emit_result(
+                ok=False,
+                code="missing_config",
+                message="配置文件缺少 api_key/app_id，请让用户提供并写入 config.json 后重试。",
+                debug=env_snapshot(),
+                to_stderr=True,
             )
-            sys.exit(2)
+            return
+        response = retrieve_documents(
+            qa_engine_url=config["qa_engine_url"],
+            authorization=config["api_key"],
+            app_id=config["app_id"],
+            query=args.query,
+        )
 
-    config = load_config()
-    if not config:
-        return
-    response = retrieve_documents(
-        qa_engine_url=config["qa_engine_url"],
-        authorization=config["api_key"],
-        app_id=config["app_id"],
-        query=args.query,
-    )
-
-    print_response(args.query, response)
+        # 保留原有可读输出（方便本地调试）
+        print_response(args.query, response)
+        emit_result(
+            ok=True,
+            code="retrieved",
+            message="已调用知识库检索接口。",
+            data={"query": args.query, "response": response},
+            debug=env_snapshot(),
+        )
+    except SystemExit:
+        raise
+    except Exception as e:
+        emit_result(
+            ok=False,
+            code="error",
+            message=str(e),
+            debug=env_snapshot(),
+            to_stderr=True,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
