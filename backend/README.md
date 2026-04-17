@@ -60,11 +60,18 @@ backend/
 - 脚本目录：`data/users/{username}/skills/{skill_id}/scripts/`
 - 支持后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`
 - Python 脚本使用当前解释器（如 `conda activate sc` 后的 `python`）执行
+- 调用协议：CLI-only（仅 `cli_args_json`），不再支持 `input_json`/stdin JSON
 - 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
 - 内置调试命令：
   - `script_path="__list__"`：列出可执行脚本
   - `script_path="__manifest__"`：查看 `scripts/manifest.json`
   - `script_path="__describe__:<script>"`：查看单脚本元信息
+
+### Skill 协议校验
+
+```bash
+python backend/scripts/validate_skill_cli_contract.py
+```
 
 ## 多用户上线建议（默认体验补丁）
 

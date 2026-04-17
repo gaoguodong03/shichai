@@ -2,6 +2,7 @@
 """
 Simple webpage crawler for web-novel research.
 Stores raw HTML + cleaned text + metadata for each URL.
+CLI-only: pass URLs as positional args.
 """
 
 from __future__ import annotations
@@ -40,7 +41,6 @@ def extract_title(html: str) -> str:
 
 
 def html_unescape(text: str) -> str:
-    # Minimal entity decode without external deps.
     entities = {
         "&nbsp;": " ",
         "&amp;": "&",
@@ -55,21 +55,17 @@ def html_unescape(text: str) -> str:
 
 
 def html_to_text(html: str) -> str:
-    # Remove scripts/styles/comments first.
     text = re.sub(r"<!--.*?-->", " ", html, flags=re.DOTALL)
     text = re.sub(r"<script\b[^>]*>.*?</script>", " ", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
-    # Convert block-like tags to line breaks to improve readability.
     text = re.sub(
         r"</?(p|div|br|li|h[1-6]|article|section|main|tr|td|blockquote)[^>]*>",
         "\n",
         text,
         flags=re.IGNORECASE,
     )
-    # Remove remaining tags.
     text = re.sub(r"<[^>]+>", " ", text)
     text = html_unescape(text)
-    # Normalize whitespace but keep paragraphs.
     text = re.sub(r"[ \t\r\f\v]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     lines = [line.strip() for line in text.split("\n")]
@@ -151,9 +147,10 @@ def append_index(index_path: pathlib.Path, rows: list[dict]) -> None:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch web pages and store html/text/meta for each URL."
+        description="Fetch web pages and store html/text/meta for each URL.",
+        epilog="CLI-only: pass URLs as positional args. --query is not supported.",
     )
-    parser.add_argument("urls", nargs="*", help="One or more target URLs.")
+    parser.add_argument("urls", nargs="+", help="One or more target URLs.")
     parser.add_argument(
         "--out",
         default="output/pages",
@@ -162,49 +159,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _extract_urls_from_stdin_json() -> list[str]:
-    """Support run_skill_script input_json via stdin.
-
-    Accepted formats:
-    - {"url": "..."}
-    - {"urls": ["...", "..."]}
-    - ["...", "..."]
-    - "https://example.com"
-    """
-    if sys.stdin.isatty():
-        return []
-    raw = (sys.stdin.read() or "").strip()
-    if not raw:
-        return []
-    try:
-        data = json.loads(raw)
-    except Exception:
-        return []
-
-    if isinstance(data, str):
-        return [data] if data.strip() else []
-    if isinstance(data, list):
-        return [str(x).strip() for x in data if str(x).strip()]
-    if isinstance(data, dict):
-        if "urls" in data and isinstance(data["urls"], list):
-            return [str(x).strip() for x in data["urls"] if str(x).strip()]
-        if "url" in data and str(data["url"]).strip():
-            return [str(data["url"]).strip()]
-    return []
-
-
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     urls = [u.strip() for u in (args.urls or []) if u and u.strip()]
-    if not urls:
-        urls = _extract_urls_from_stdin_json()
-    if not urls:
-        print(
-            "No URL provided. Pass URLs by CLI args or stdin JSON "
-            '(e.g. {"url":"https://example.com"} or {"urls":[...]}).',
-            file=sys.stderr,
-        )
-        return 2
 
     out_dir = pathlib.Path(args.out)
     ensure_dir(out_dir)

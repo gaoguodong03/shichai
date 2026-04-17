@@ -27,7 +27,7 @@ name: 图片生成
 - **调用链调试字段**：若执行异常，请检查回合日志中的 `Tool Attempt Debug`、`Tool Raw Outputs`、`Sandbox Entry Trace` 三段；它们分别表示工具名解析、工具原始返回、是否进入 sandbox。
 - **参数**：
   - `script_path`：`"generate_image.py"`
-  - `input_json`：JSON 字符串，如 `{"description": "你的图标提示词……", "pic_size": "1024x1024"}`，`pic_size` 可选，默认 `1024x1024`
+  - `cli_args_json`：JSON 数组字符串，如 `["--description","你的图标提示词……","--pic_size","1024x1024"]`，`--pic_size` 可选，默认 `1024x1024`
 - 脚本内部使用 **ChatAnywhere 图像 API**（POST `https://api.chatanywhere.com.cn/v1/images/generations`），读取环境变量 **CHATANYWHERE_IMAGE_API_KEY**（在 `backend/.env` 中配置，格式 `Bearer sk-xxx` 或仅 `sk-xxx`），与 call_api 无关。
 - 工具返回的 stdout 即为图片 URL 或错误信息；你须在最终回复中用 `![图标](URL)` 或可点击链接呈现给用户。
 
@@ -137,3 +137,8 @@ name: 图片生成
 ---
 
 
+
+
+## 调用协议（统一）
+- `run_skill_script` 仅支持 `cli_args_json`（CLI argv）。
+- 不再支持 `input_json`/stdin JSON。

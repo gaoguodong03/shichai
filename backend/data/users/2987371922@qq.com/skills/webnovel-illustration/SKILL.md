@@ -16,7 +16,7 @@ write_mode: workspace_all
 1. **文图绑定**：每一张图的 `description` 必须能对应到**具体情节、对白、人物状态或场景设定**；禁止与正文无关的泛化插画（除非用户明确只要装饰性底图）。
 2. **用户参与**：动笔前用简短清单让用户做选择或确认；用户说「你定」时，列出你的默认假设并请用户一键确认或改一项。
 3. **风格一致**：同一批图共用**一条风格圣经**（时代感、线条、色彩、写实度、是否文字水印等），写在首张提示词前并在后续张中复用关键词。
-4. **工具**：统一使用 **run_skill_script** + `scripts/generate_image.py`（与「图片生成」技能相同），`input_json` 示例：`{"description": "……", "pic_size": "1792x1024"}`。群聊工具名为 `run_skill_script_<skill_id>`，以系统实际为准。
+4. **工具**：统一使用 **run_skill_script** + `scripts/generate_image.py`（与「图片生成」技能相同），`cli_args_json` 示例：`["--description","……","--pic_size","1792x1024"]`。群聊工具名为 `run_skill_script_<skill_id>`，以系统实际为准。
 
 ## 推荐流程（按顺序）
 
@@ -60,3 +60,8 @@ write_mode: workspace_all
 
 - **图标 / 品牌 Logo / 与技术文章无关的纯装饰图**：仍以通用图片生成流程为准。
 - **明确网文、章节、人物、场景叙事**：优先本 skill 的共创与锚定流程。
+
+
+## 调用协议（统一）
+- `run_skill_script` 仅支持 `cli_args_json`（CLI argv）。
+- 不再支持 `input_json`/stdin JSON。

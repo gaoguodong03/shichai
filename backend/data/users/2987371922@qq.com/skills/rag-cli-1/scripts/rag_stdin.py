@@ -1,5 +1,4 @@
-"""run_skill_script 可通过 stdin（JSON）或 CLI（cli_args_json）传参时的公共逻辑。"""
-import json
+"""run_skill_script CLI-only 参数辅助函数。"""
 import sys
 from typing import Any
 
@@ -15,13 +14,5 @@ def has_cli_argv() -> bool:
 
 
 def read_stdin_json_dict() -> dict[str, Any] | None:
-    if sys.stdin.isatty():
-        return None
-    raw = (sys.stdin.read() or "").strip()
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
+    """CLI-only 模式下不再支持 stdin JSON，保留函数签名供旧代码导入。"""
+    return None

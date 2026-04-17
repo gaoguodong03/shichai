@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""从 HTML 中提取正文（供 run_skill_script_url-fetch 调用）。
-
-输入（stdin JSON）:
-{
-  "html": "<html>...</html>",   # 必填，网页 HTML 源码
-  "url": "https://example.com", # 可选，仅用于提示
-  "max_chars": 8000             # 可选，默认 8000
-}
-"""
+"""从 HTML 中提取正文（供 run_skill_script_url-fetch 调用，CLI-only）。"""
 
 from __future__ import annotations
 
-import json
+import argparse
+import pathlib
 import re
 import sys
 from html import unescape
@@ -61,26 +54,35 @@ def _extract_with_bs4(html: str) -> str:
         return ""
 
 
-def main() -> None:
-    raw = sys.stdin.read().strip()
-    if not raw:
-        print("错误：缺少输入。请传入 input_json，至少包含 html 字段。")
-        sys.exit(1)
-    try:
-        data = json.loads(raw)
-    except Exception as e:
-        print(f"错误：input_json 不是合法 JSON: {e}")
-        sys.exit(1)
-    if not isinstance(data, dict):
-        print("错误：input_json 必须是对象。")
-        sys.exit(1)
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Extract main content from HTML.",
+        epilog="CLI-only: provide --html or --html_file.",
+    )
+    parser.add_argument("--html", default="", help="Inline html string")
+    parser.add_argument("--html_file", default="", help="Path to html file")
+    parser.add_argument("--url", default="", help="Optional source URL")
+    parser.add_argument("--max_chars", type=int, default=8000, help="Max chars in output")
+    return parser.parse_args(argv)
 
-    html = str(data.get("html") or "").strip()
-    url = str(data.get("url") or "").strip()
-    max_chars = int(data.get("max_chars") or 8000)
-    if not html:
-        print("错误：html 不能为空。")
-        sys.exit(1)
+
+def _load_html(args: argparse.Namespace) -> str:
+    if (args.html or "").strip():
+        return str(args.html)
+    if (args.html_file or "").strip():
+        p = pathlib.Path(str(args.html_file)).expanduser()
+        if not p.exists() or not p.is_file():
+            print(f"错误：html_file 不存在: {p}")
+            sys.exit(2)
+        return p.read_text(encoding="utf-8", errors="replace")
+    print("错误：请通过 --html 或 --html_file 提供 HTML 输入。")
+    sys.exit(2)
+
+
+def main(argv: list[str]) -> None:
+    args = parse_args(argv)
+    html = _load_html(args).strip()
+    url = str(args.url or "").strip()
 
     text = _extract_with_trafilatura(html)
     method = "trafilatura"
@@ -91,7 +93,7 @@ def main() -> None:
         print("错误：未能从 HTML 提取正文。")
         sys.exit(1)
 
-    cleaned = _cleanup_text(text, max_chars=max_chars)
+    cleaned = _cleanup_text(text, max_chars=int(args.max_chars or 8000))
     lines = []
     if url:
         lines.append(f"URL: {url}")
@@ -102,5 +104,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
-
+    main(sys.argv[1:])

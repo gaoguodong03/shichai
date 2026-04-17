@@ -19,8 +19,8 @@ write_mode: workspace_all
 1. 收集 URL 列表（支持 1 个或多个）。
 2. 运行脚本：
    - 在终端环境可用：`python scripts/crawl_and_store.py "<url1>" "<url2>" ...`
-   - 在群聊工具中优先用 `run_skill_script_<skill_id>` 调用 `crawl_and_store.py`，并通过 `input_json` 传入：
-     - `{"urls":["https://a.com","https://b.com"]}` 或 `{"url":"https://a.com"}`
+   - 在群聊工具中优先用 `run_skill_script_<skill_id>` 调用 `crawl_and_store.py`，并通过 `cli_args_json` 传入（JSON 数组字符串）：
+     - `["https://a.com","https://b.com"]` 或 `["--out","output/pages","https://a.com"]`
 3. 返回每个 URL 的存储结果：
    - 本地目录
    - `page.html`（原始 HTML）
@@ -49,3 +49,8 @@ python scripts/crawl_and_store.py --out "output/pages" "https://a.com" "https://
 - 默认仅做公开网页抓取，不处理需要登录或付费墙内容。
 - 遇到反爬、验证码、403/429 时，返回失败并建议用户更换来源或降低频率。
 - 不绕过网站访问限制，不提供违规抓取方案。
+
+
+## 调用协议（统一）
+- `run_skill_script` 仅支持 `cli_args_json`（CLI argv）。
+- 不再支持 `input_json`/stdin JSON。

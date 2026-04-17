@@ -361,7 +361,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
 
     @tool
     async def run_skill_script(script_path: str, input_json: str = "", cli_args_json: str = "") -> str:
-        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。input_json 可选（stdin）；cli_args_json 可选（argv 数组 JSON）。支持 .py/.sh/.ps1/.cmd/.bat。"""
+        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。仅支持 cli_args_json（argv 数组 JSON）。支持 .py/.sh/.ps1/.cmd/.bat。"""
         if write_mode != "workspace_all":
             return _json_result(
                 ok=False,
@@ -373,6 +373,15 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 ok=False,
                 code="missing_workspace_id",
                 message="缺少 workspace_id，无法安全执行脚本。",
+            )
+        if (input_json or "").strip():
+            return _json_result(
+                ok=False,
+                code="invalid_input_mode",
+                message=(
+                    "run_skill_script 已统一为 CLI-only：不再支持 input_json/stdin。"
+                    "请改用 cli_args_json（JSON 数组字符串）传参。"
+                ),
             )
         workspace_root = _get_workspace_root(workspace_id)
         workspace_root.mkdir(parents=True, exist_ok=True)
@@ -609,11 +618,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         "执行当前技能 scripts 目录下的脚本（如 optimize-prompt.py）。"
         "script_path 填相对该 scripts 目录的路径（如 kb_document_store_cli.py）；"
         "若 SKILL.md 写 scripts/foo.py 而误带上 scripts/ 前缀，会自动剥掉。"
-        "传参两种方式等价支持："
-        "（1）input_json：整段作为进程 stdin，适合读 JSON 的脚本；"
-        "（2）cli_args_json：JSON 数组字符串，每项为一段 argv，与在终端执行 python script.py --foo bar 一致，路径相对工作区根，"
+        "仅支持 cli_args_json：JSON 数组字符串，每项为一段 argv，与在终端执行 python script.py --foo bar 一致，路径相对工作区根，"
         '例如 ["--input_text","你好"] 或 ["--query","问题"]。'
-        "可只用其中一种，或按脚本需要同时使用。"
+        "不再支持 input_json/stdin 传参。"
         "支持命令：__list__（列出脚本）、__manifest__（查看 manifest）、__describe__:<script>。"
         "技能说明或 scripts 中若要求「运行某脚本」时使用本工具。"
     )

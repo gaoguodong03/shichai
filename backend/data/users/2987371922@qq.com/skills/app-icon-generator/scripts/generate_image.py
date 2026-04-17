@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""应用图标图片生成 CLI。供 run_skill_script 调用，使用 Jeniya Gemini 图像生成接口（POST）。
+"""应用图标图片生成 CLI。
 
-stdin：JSON 字符串，如 {"description": "图标描述...", "pic_size": "1024x1024"}，pic_size 可选默认 1024x1024。
-stdout：图片 data URL 或错误信息。环境变量优先 JENIYA_API_KEY（兼容 CHATANYWHERE_IMAGE_API_KEY 回退）。
+CLI-only usage:
+  python generate_image.py --description "图标描述" [--pic_size 1024x1024]
 """
-import json
+import argparse
+import base64
 import os
 import sys
-import base64
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -30,7 +30,6 @@ def _ext_from_mime(mime_type: str) -> str:
 
 
 def _save_data_url_to_workspace(result: str) -> str:
-    """若结果是 data URL 图片，则写入当前会话工作区并返回可读文本。"""
     text = (result or "").strip()
     if not text.startswith("data:image/") or ";base64," not in text:
         return result
@@ -62,21 +61,23 @@ def _save_data_url_to_workspace(result: str) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    raw = sys.stdin.read().strip() or "{}"
-    try:
-        obj = json.loads(raw) if raw else {}
-    except json.JSONDecodeError as e:
-        print(f"错误：input_json 不是合法 JSON: {e}", file=sys.stderr)
-        sys.exit(1)
-    description = (obj.get("description") or "").strip()
-    if not description:
-        print("错误：description 必填。input_json 示例: {\"description\": \"你的提示词\", \"pic_size\": \"1024x1024\"}", file=sys.stderr)
-        sys.exit(1)
-    pic_size = (obj.get("pic_size") or "1024x1024").strip()
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate one image and save it into workspace.",
+        epilog="CLI-only: --description is required; stdin JSON is not supported.",
+    )
+    parser.add_argument("--description", required=True, help="Image prompt/description")
+    parser.add_argument("--pic_size", default="1024x1024", help="Image size, default 1024x1024")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str]) -> None:
+    args = parse_args(argv)
+    description = (args.description or "").strip()
+    pic_size = (args.pic_size or "1024x1024").strip()
     result = generate_image(description=description, pic_size=pic_size)
     print(_save_data_url_to_workspace(result))
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
