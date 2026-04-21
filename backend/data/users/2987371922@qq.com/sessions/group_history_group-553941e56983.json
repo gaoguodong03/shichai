@@ -684,5 +684,37 @@
       "has_raw_result": true,
       "note": "no_tool_call_detected"
     }
+  },
+  {
+    "message_id": "msg-9c305fe6",
+    "role": "user",
+    "content": "@rag 你有什么技能",
+    "timestamp": "2026-04-21T10:01:30.606303+00:00"
+  },
+  {
+    "message_id": "msg-aa992e5e",
+    "role": "assistant",
+    "agent_id": "agent-ee83c54f",
+    "content": "我拥有以下技能，能够支持与用户需求相关的操作：\n\n- **文档解析**：可以将 `.docx`、`.pdf` 等格式的文档转化为干净的 `.txt` 文件，为后续处理提供基础。\n- **文本切分**：能够将 `.txt` 文件切分为 `list[str]` 格式的 JSON 文件，便于存储或检索。\n- **存储**：可以将单条字符串或切分好的文本块存入知识库，支持直接存储用户提供的知识点。\n- **检索**：能够根据用户的查询从知识库中检索相关文档或知识，提供匹配的结果。\n\n当前目标是将“北邮2025年”存入数据库，我可以直接完成这个任务。让我知道是否需要继续操作。",
+    "timestamp": "2026-04-21T10:01:44.030842+00:00",
+    "skill_id": "rag-cli-1",
+    "skill_route_debug": {
+      "strategy": "single_loaded_skill",
+      "selected_skill_id": "rag-cli-1"
+    },
+    "tool_debug": {
+      "tool_calls": [],
+      "tool_attempt_debug": [
+        {
+          "source": "no_tool_detected",
+          "matched": false,
+          "content_preview": "我拥有以下技能，能够支持与用户需求相关的操作：\n\n- **文档解析**：可以将 `.docx`、`.pdf` 等格式的文档转化为干净的 `.txt` 文件，为后续处理提供基础。\n- **文本切分**：能够将 `.txt` 文件切分为 `list[str]` 格式的 JSON 文件，便于存储或检索。\n- **存储**：可以将单条字符串或切分好的文本块存入知识库，支持直接存储用户提供的知识点。\n- **检索**：能够根据用户的查询从知识库中检索相关文档或知识，提供匹配的结果。\n\n"
+        }
+      ],
+      "raw_result_count": 0,
+      "has_tool_call": false,
+      "has_raw_result": false,
+      "note": "no_tool_call_detected"
+    }
   }
 ]

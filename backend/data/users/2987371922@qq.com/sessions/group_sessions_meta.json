@@ -65,7 +65,7 @@
     "orchestration_profile": "recruitment"
   },
   "group-553941e56983": {
-    "title": "学生信息数据存储模块",
+    "title": "将文本数据存入数据库",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-ee83c54f"
@@ -73,8 +73,10 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-15T06:58:24.404319+00:00",
-    "updated_at": "2026-04-17T08:26:25.048216+00:00",
-    "orchestration_profile": "recruitment"
+    "updated_at": "2026-04-21T10:01:44.036334+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-ee83c54f",
+    "skill_session_skill_id": "rag-cli-1"
   },
   "group-ae75757d726e": {
     "title": "北邮建校年份存储",
@@ -473,7 +475,7 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-17T08:23:58.513203+00:00",
-    "updated_at": "2026-04-17T08:24:40.509066+00:00",
+    "updated_at": "2026-04-21T10:02:36.477600+00:00",
     "host_config": {
       "skill_ids": [
         "group-host",

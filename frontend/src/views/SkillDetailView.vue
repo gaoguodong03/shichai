@@ -18,6 +18,15 @@
             新建文件
           </button>
           <button
+            v-if="activeTab !== 'main'"
+            type="button"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="partsLoading"
+            @click="addPartFolder"
+          >
+            新建文件夹
+          </button>
+          <button
             type="button"
             class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
             :disabled="exporting"
@@ -680,6 +689,37 @@ async function addPartFile() {
   } catch (e) {
     console.error(e)
     alert('新建失败')
+  }
+}
+
+async function addPartFolder() {
+  if (activeTab.value === 'main' || !props.skillId) return
+  const name = window.prompt('请输入文件夹名（如 a 或 subdir/a）')?.trim()
+  if (!name) return
+  const path = name.replace(/^\/+/, '').replace(/\/+$/, '')
+  if (!path || path.includes('..')) {
+    alert('路径不能包含 ..，且不能为空')
+    return
+  }
+  try {
+    const r = await fetch(
+      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}/mkdir`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      }
+    )
+    const j = await r.json()
+    if (j.status === 'ok') {
+      await loadParts()
+      partDirPath.value = path
+    } else {
+      alert(j.detail || '新建文件夹失败')
+    }
+  } catch (e) {
+    console.error(e)
+    alert('新建文件夹失败')
   }
 }
 

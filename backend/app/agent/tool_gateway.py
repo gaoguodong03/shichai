@@ -24,7 +24,7 @@ def _sandbox_base_timeout_ms(context: "ToolExecutionContext", policy: Optional[S
     """单次沙箱命令（脚本本体 / OpenSandbox execute）应遵守的上限：取 context 与 policy 较大值。"""
     ct = int(context.timeout_ms or 0)
     pt = int(policy.timeout_ms or 0) if policy is not None else 0
-    return max(ct, pt, 30_000)
+    return max(ct, pt, 60_000)
 
 
 def _sandbox_outer_wait_timeout_ms(
@@ -34,11 +34,11 @@ def _sandbox_outer_wait_timeout_ms(
     base = _sandbox_base_timeout_ms(context, policy)
     if (tool_kind or "").strip() != "script":
         return base
-    raw = (os.getenv("SANDBOX_SCRIPT_GATEWAY_SLACK_MS") or "300000").strip()
+    raw = (os.getenv("SANDBOX_SCRIPT_GATEWAY_SLACK_MS") or "600000").strip()
     try:
         slack = int(raw)
     except ValueError:
-        slack = 300_000
+        slack = 600_000
     return base + max(0, slack)
 
 
@@ -52,7 +52,7 @@ class ToolExecutionContext:
     task_id: str = ""
     turn_id: str = ""
     tool_call_id: str = ""
-    timeout_ms: int = 30_000
+    timeout_ms: int = 60_000
     retry_count: int = 1
     policy: Optional[SandboxPolicy] = None
     sandbox_cwd: str = ""
@@ -69,7 +69,7 @@ class ToolRequest:
     agent_id: str
     skill_id: str
     idempotency_key: Optional[str] = None
-    timeout_ms: int = 30_000
+    timeout_ms: int = 60_000
     retry_count: int = 2
     risk_level: str = "normal"
 
@@ -202,7 +202,7 @@ class UnifiedToolGateway:
     ) -> ToolResult:
         policy = context.policy or SandboxPolicy(
             fs_root=context.workspace_id or context.session_id or ".",
-            timeout_ms=max(100, int(context.timeout_ms or 30_000)),
+            timeout_ms=max(100, int(context.timeout_ms or 60_000)),
             tool_allowlist=[tool_name],
         )
         inner_timeout_ms = _sandbox_base_timeout_ms(context, policy)

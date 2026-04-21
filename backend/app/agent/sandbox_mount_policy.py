@@ -62,6 +62,7 @@ class SandboxMountPolicy:
         *,
         workspace_host_path: Path,
         skill_scripts_host_path: Path,
+        skill_home_host_path: Path | None = None,
         skill_config_host_path: Path | None = None,
         config_writable: bool = False,
         workspace_target: str = "/workspace",
@@ -80,6 +81,15 @@ class SandboxMountPolicy:
                 mount_type=_DEFAULT_MOUNT_TYPE,
             ),
         ]
+        if skill_home_host_path is not None:
+            mounts.append(
+                SandboxVolumeMount(
+                    source=_translate_source_for_sandbox_host(skill_home_host_path),
+                    target="/skill",
+                    read_only=True,
+                    mount_type=_DEFAULT_MOUNT_TYPE,
+                )
+            )
         if skill_config_host_path is not None:
             mounts.append(
                 SandboxVolumeMount(

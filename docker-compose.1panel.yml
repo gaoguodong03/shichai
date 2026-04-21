@@ -1,6 +1,6 @@
 services:
   opensandbox-server:
-    image: opensandbox/server:latest
+    image: "${OPENSANDBOX_SERVER_IMAGE:-opensandbox/server:latest}"
     container_name: opensandbox-server
     ports:
       - "${OPENSANDBOX_HOST_PORT:-8091}:8090"
@@ -13,28 +13,32 @@ services:
       - -lc
     command:
       - |
-        printf '%s\n' \
-          '[server]' \
-          'host = "0.0.0.0"' \
-          'port = 8090' \
-          'log_level = "INFO"' \
-          'eip = "host.docker.internal"' \
-          '' \
-          '[runtime]' \
-          'type = "docker"' \
-          'execd_image = "opensandbox/execd:v1.0.11"' \
-          '' \
-          '[egress]' \
-          'image = "opensandbox/egress:v1.0.4"' \
-          '' \
-          '[docker]' \
-          'network_mode = "bridge"' \
-          'api_timeout = 600' \
-          'host_ip = "host.docker.internal"' \
-          'pids_limit = 4096' \
-          '' \
-          '[ingress]' \
-          'mode = "direct"' > /tmp/sandbox.toml
+        # Compose 会展开单层 ${VAR}；用 $$ 把默认值交给容器内 shell，避免未设置时变成空串导致 unhealthy
+        export OPENSANDBOX_EXECD_IMAGE="$${OPENSANDBOX_EXECD_IMAGE:-opensandbox/execd:v1.0.11}"
+        export OPENSANDBOX_EGRESS_IMAGE="$${OPENSANDBOX_EGRESS_IMAGE:-opensandbox/egress:v1.0.4}"
+        cat > /tmp/sandbox.toml <<EOF
+        [server]
+        host = "0.0.0.0"
+        port = 8090
+        log_level = "INFO"
+        eip = "host.docker.internal"
+
+        [runtime]
+        type = "docker"
+        execd_image = "$${OPENSANDBOX_EXECD_IMAGE}"
+
+        [egress]
+        image = "$${OPENSANDBOX_EGRESS_IMAGE}"
+
+        [docker]
+        network_mode = "bridge"
+        api_timeout = 1200
+        host_ip = "host.docker.internal"
+        pids_limit = 4096
+
+        [ingress]
+        mode = "direct"
+        EOF
         /bin/cat /tmp/sandbox.toml
         exec /app/.venv/bin/opensandbox-server --config /tmp/sandbox.toml
     healthcheck:
@@ -52,7 +56,7 @@ services:
     restart: unless-stopped
 
   st49:
-    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.17.9}"
+    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.19}"
     container_name: st49
     ports:
       - "${ST49_HOST_PORT:-8100}:8000"
@@ -65,9 +69,9 @@ services:
       - OPENSANDBOX_PROTOCOL=http
       - UNIFIED_TOOL_GATEWAY_ENABLED=1
       - OPENSANDBOX_USE_SERVER_PROXY=0
-      - SANDBOX_BASE_IMAGE=python:3.12
+      - SANDBOX_BASE_IMAGE=${SANDBOX_BASE_IMAGE:-python:3.12}
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data
-      - SKILL_SCRIPT_TIMEOUT=300
+      - SKILL_SCRIPT_TIMEOUT=600
       # 沙箱网络（推荐：默认禁网 + 按工具放行）
       - SANDBOX_ALLOW_NETWORK=0
       # 仅允许这些工具的沙箱请求出网（逗号分隔；写 * 表示全放开）。写 run_skill_script 即包含全部 run_skill_script_<skill_id>
@@ -75,8 +79,8 @@ services:
       # 可选：只放行特定域名（逗号分隔）。留空表示不做域名收紧（由 OpenSandbox 网络策略决定）。
       # 示例（GitHub）：github.com,raw.githubusercontent.com,api.github.com
       - SANDBOX_ALLOWED_HOSTS=
-      # 网关 asyncio 等待整段沙箱执行（建容器/首次 pip/跑脚本）；默认在脚本超时基础上 +300s，见 SANDBOX_SCRIPT_GATEWAY_SLACK_MS
-      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000
+      # 网关 asyncio 等待整段沙箱执行（建容器/首次 pip/跑脚本）；默认在脚本超时基础上 +600s，见 SANDBOX_SCRIPT_GATEWAY_SLACK_MS
+      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=600000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

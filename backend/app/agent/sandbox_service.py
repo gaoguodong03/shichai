@@ -120,6 +120,13 @@ class SandboxService:
     def backend_label(self) -> str:
         return self._describe_adapter(self._adapter)
 
+    @staticmethod
+    def _is_sandbox_not_found_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        if "sandbox" not in msg:
+            return False
+        return "not found" in msg or "no such" in msg
+
     def _workspace_only_policy(self, sessions_root_path: Path, *, timeout_ms: int = 60_000) -> SandboxPolicy:
         mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=sessions_root_path)
         return SandboxPolicy(
@@ -173,6 +180,7 @@ class SandboxService:
             mounts = SandboxMountPolicy.build_mounts(
                 workspace_host_path=host_sessions_root,
                 skill_scripts_host_path=scripts_path,
+                skill_home_host_path=req.skill_home,
                 skill_config_host_path=req.skill_config_path,
                 config_writable=False,
                 workspace_target=sandbox_sessions_root(),
@@ -208,7 +216,11 @@ class SandboxService:
                     self._user_handles[key] = (handle, now)
                     await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
                     return handle
-                await self._adapter.dispose_sandbox(handle)
+                try:
+                    await self._adapter.dispose_sandbox(handle)
+                except Exception as e:  # noqa: BLE001
+                    if not self._is_sandbox_not_found_error(e):
+                        logger.warning("sandbox_dispose_stale_failed user_id=%s err=%s", user_id, e)
                 self._user_handles.pop(key, None)
 
             handle = await self._adapter.create_session_sandbox(logical_sid, policy)
@@ -258,6 +270,26 @@ class SandboxService:
                 },
             )
             return handle
+
+    async def _invalidate_user_handle(self, user_id: str, *, expected_handle: Optional[SandboxHandle] = None) -> None:
+        key = handle_cache_key(user_id)
+        target: Optional[SandboxHandle] = None
+        async with self._lock:
+            existing = self._user_handles.get(key)
+            if existing is None:
+                return
+            handle, _ = existing
+            if expected_handle is not None and handle is not expected_handle:
+                return
+            self._user_handles.pop(key, None)
+            target = handle
+        if target is None:
+            return
+        try:
+            await self._adapter.dispose_sandbox(target)
+        except Exception as e:  # noqa: BLE001
+            if not self._is_sandbox_not_found_error(e):
+                logger.warning("sandbox_invalidate_dispose_failed user_id=%s err=%s", user_id, e)
 
     def _read_user_sandbox_requirements(self, user_id: str) -> str:
         """读取当前用户的沙箱 requirements.txt 内容（允许为空）。"""
@@ -471,73 +503,93 @@ class SandboxService:
 
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
         policy = await self._build_policy(req)
-        handle = await self._ensure_user_handle(req, policy)
         cwd = req.cwd or sandbox_session_dir(req.session_id)
         payload = req.payload if isinstance(req.payload, dict) else {}
         command = payload.get("__sandbox_command")
         env = payload.get("__sandbox_env")
         started = time.time()
-        append_sandbox_event(
-            session_id=req.session_id,
-            event_type="sandbox_command_started",
-            turn_id=req.turn_id,
-            payload={
-                "tool_name": req.tool_name,
-                "tool_kind": req.tool_kind,
-                "tool_call_id": req.tool_call_id,
-                "user_id": req.user_id,
-                "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                "cwd": cwd,
-            },
-        )
-        try:
-            result = await self._adapter.run_tool_in_sandbox(
-                handle,
-                {
-                    "tool_name": req.tool_name,
-                    "tool_kind": req.tool_kind,
-                    "payload": payload,
-                    "timeout_ms": req.timeout_ms,
-                    "runner": req.runner,
-                    "cwd": cwd,
-                    "command": command if isinstance(command, list) else None,
-                    "env": env if isinstance(env, dict) else {},
-                },
-            )
+        user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
+        for attempt in range(2):
+            handle = await self._ensure_user_handle(req, policy)
             append_sandbox_event(
                 session_id=req.session_id,
-                event_type="sandbox_command_finished",
+                event_type="sandbox_command_started",
                 turn_id=req.turn_id,
                 payload={
                     "tool_name": req.tool_name,
+                    "tool_kind": req.tool_kind,
                     "tool_call_id": req.tool_call_id,
                     "user_id": req.user_id,
                     "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                    "elapsed_ms": int((time.time() - started) * 1000),
+                    "cwd": cwd,
+                    "attempt": attempt + 1,
                 },
             )
-            return result
-        except TimeoutError:
-            append_sandbox_event(
-                session_id=req.session_id,
-                event_type="sandbox_command_timeout",
-                turn_id=req.turn_id,
-                payload={"tool_name": req.tool_name, "tool_call_id": req.tool_call_id},
-            )
-            raise
-        except Exception as exc:  # noqa: BLE001
-            append_sandbox_event(
-                session_id=req.session_id,
-                event_type="sandbox_command_failed",
-                turn_id=req.turn_id,
-                payload={
-                    "tool_name": req.tool_name,
-                    "tool_call_id": req.tool_call_id,
-                    "user_id": req.user_id,
-                    "error": str(exc),
-                },
-            )
-            raise
+            try:
+                result = await self._adapter.run_tool_in_sandbox(
+                    handle,
+                    {
+                        "tool_name": req.tool_name,
+                        "tool_kind": req.tool_kind,
+                        "payload": payload,
+                        "timeout_ms": req.timeout_ms,
+                        "runner": req.runner,
+                        "cwd": cwd,
+                        "command": command if isinstance(command, list) else None,
+                        "env": env if isinstance(env, dict) else {},
+                    },
+                )
+                append_sandbox_event(
+                    session_id=req.session_id,
+                    event_type="sandbox_command_finished",
+                    turn_id=req.turn_id,
+                    payload={
+                        "tool_name": req.tool_name,
+                        "tool_call_id": req.tool_call_id,
+                        "user_id": req.user_id,
+                        "sandbox_id": handle.metadata.get("sandbox_id", ""),
+                        "elapsed_ms": int((time.time() - started) * 1000),
+                        "attempt": attempt + 1,
+                    },
+                )
+                return result
+            except TimeoutError:
+                append_sandbox_event(
+                    session_id=req.session_id,
+                    event_type="sandbox_command_timeout",
+                    turn_id=req.turn_id,
+                    payload={"tool_name": req.tool_name, "tool_call_id": req.tool_call_id},
+                )
+                raise
+            except Exception as exc:  # noqa: BLE001
+                if attempt == 0 and self._is_sandbox_not_found_error(exc):
+                    await self._invalidate_user_handle(user_id, expected_handle=handle)
+                    append_sandbox_event(
+                        session_id=req.session_id,
+                        event_type="sandbox_session_recreated",
+                        turn_id=req.turn_id,
+                        payload={
+                            "tool_name": req.tool_name,
+                            "tool_call_id": req.tool_call_id,
+                            "user_id": req.user_id,
+                            "reason": "sandbox_not_found",
+                        },
+                    )
+                    continue
+                append_sandbox_event(
+                    session_id=req.session_id,
+                    event_type="sandbox_command_failed",
+                    turn_id=req.turn_id,
+                    payload={
+                        "tool_name": req.tool_name,
+                        "tool_call_id": req.tool_call_id,
+                        "user_id": req.user_id,
+                        "error": str(exc),
+                        "attempt": attempt + 1,
+                    },
+                )
+                raise
+        raise RuntimeError("sandbox execution failed without terminal error")
 
     async def dispose_user(self, user_id: str, *, turn_id: str = "") -> None:
         async with self._lock:
@@ -591,6 +643,20 @@ class SandboxService:
             policy=policy,
         )
         handle = await self._ensure_user_handle(req, policy)
+        if hasattr(self._adapter, "exec_command"):
+            try:
+                await self._adapter.exec_command(  # type: ignore[attr-defined]
+                    handle,
+                    ["sh", "-lc", "true"],
+                    cwd="/workspace",
+                    timeout_ms=min(10_000, int(policy.timeout_ms)),
+                )
+            except Exception as e:  # noqa: BLE001
+                if self._is_sandbox_not_found_error(e):
+                    await self._invalidate_user_handle(uid, expected_handle=handle)
+                    handle = await self._ensure_user_handle(req, policy)
+                else:
+                    raise
         return {
             "status": "ok",
             "user_id": uid,

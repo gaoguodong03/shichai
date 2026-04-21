@@ -14,3 +14,12 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# macOS metadata
+.DS_Store
+
+# Runtime/session artifacts (local only)
+backend/data/users/*/agent-outputs/
+backend/data/users/*/sessions/group_history_*.json
+backend/data/users/*/sessions/group_sessions_meta.json
+backend/logs/llm_trace.log

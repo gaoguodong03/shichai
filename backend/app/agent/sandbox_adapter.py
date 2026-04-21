@@ -34,7 +34,7 @@ class SandboxPolicy:
     allowed_hosts: List[str] = field(default_factory=list)
     cpu_limit: float = 1.0
     memory_limit_mb: int = 512
-    timeout_ms: int = 30000
+    timeout_ms: int = 60000
     tool_allowlist: List[str] = field(default_factory=list)
     max_artifact_size_mb: int = 50
     environment: Dict[str, str] = field(default_factory=dict)
@@ -104,12 +104,12 @@ async def execute_tool_runner_transport(handle: SandboxHandle, tool_request: Dic
             handle.runtime,
             handle.session_id,
             req_name,
-            int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 30000),
+            int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 60000),
             allowlist_hit,
         )
         raise PermissionError(f"tool not allowed by sandbox policy: {req_name}")
 
-    timeout_ms = int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 30000)
+    timeout_ms = int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 60000)
     logger.info(
         "sandbox_tool_enter transport=host_runner runtime=%s session=%s tool=%s timeout_ms=%s allowlist_hit=%s",
         handle.runtime,
@@ -472,6 +472,12 @@ class OpenSandboxAdapter:
                 async def dispose_sandbox(self, sandbox_id: str) -> None:
                     try:
                         await self._sandboxes.kill_sandbox(sandbox_id)
+                    except Exception as e:  # noqa: BLE001
+                        # OpenSandbox 端超时回收后，重复 kill 可能返回 not found。
+                        # 这里按幂等语义处理，避免把“已不存在”放大成上游错误。
+                        msg = str(e).lower()
+                        if "not found" not in msg:
+                            raise
                     finally:
                         self._commands.pop(sandbox_id, None)
                         self._fs.pop(sandbox_id, None)
@@ -536,7 +542,7 @@ class OpenSandboxAdapter:
         allowlist = list((policy or {}).get("tool_allowlist") or [])
         if allowlist and req_name and req_name not in allowlist:
             raise PermissionError(f"tool not allowed by sandbox policy: {req_name}")
-        timeout_ms = int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 30000)
+        timeout_ms = int(tool_request.get("timeout_ms") or (policy or {}).get("timeout_ms") or 60000)
         cmd = tool_request.get("command")
         if cmd is not None:
             payload = tool_request.get("payload") or {}

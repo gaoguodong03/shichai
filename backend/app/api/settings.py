@@ -2320,6 +2320,11 @@ class PartFileUpdate(BaseModel):
     content: str
 
 
+class PartDirCreate(BaseModel):
+    """在 references/assets/scripts/other 下创建目录"""
+    path: str  # 相对该子目录（或 skill 根）的目录路径，如 a 或 subdir/a
+
+
 @router.post("/settings/skills/{skill_id}/parts/{part_type}")
 async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCreate):
     """在 skill 的 references/assets/scripts 下新建文件。path 为相对该子目录的路径，禁止 ..。"""
@@ -2347,6 +2352,38 @@ async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCr
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(body.content or "", encoding="utf-8")
     return {"status": "ok", "data": {"path": path.replace("\\", "/")}}
+
+
+@router.post("/settings/skills/{skill_id}/parts/{part_type}/mkdir")
+async def create_skill_part_dir(skill_id: str, part_type: str, body: PartDirCreate):
+    """在 skill 的 references/assets/scripts/other 下新建目录。"""
+    if part_type not in ALLOWED_PART_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid part type")
+    path = (body.path or "").strip().lstrip("/").rstrip("/")
+    if ".." in path or not path:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    base = _get_skills_dir()
+    skill_dir = base / skill_id
+    if not skill_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    if part_type == "other":
+        full_dir = (skill_dir / path).resolve()
+        base_dir = skill_dir.resolve()
+        if not str(full_dir).startswith(str(base_dir)):
+            raise HTTPException(status_code=400, detail="Path outside skill dir")
+        if str(full_dir.relative_to(base_dir)).replace("\\", "/") == "SKILL.md":
+            raise HTTPException(status_code=400, detail="Cannot create SKILL.md in other")
+    else:
+        full_dir = (skill_dir / part_type / path).resolve()
+        part_dir = (skill_dir / part_type).resolve()
+        if not str(full_dir).startswith(str(part_dir)):
+            raise HTTPException(status_code=400, detail="Path outside part dir")
+    full_dir.mkdir(parents=True, exist_ok=True)
+    # 便于前端目录树立即可见：当前列表接口按文件汇总目录，放一个占位文件。
+    keep = full_dir / ".gitkeep"
+    if not keep.exists():
+        keep.write_text("", encoding="utf-8")
+    return {"status": "ok", "data": {"path": path.replace("\\", "/"), "created": True}}
 
 
 @router.put("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")

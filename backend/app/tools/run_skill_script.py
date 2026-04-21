@@ -529,6 +529,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 volume_mounts=SandboxMountPolicy.build_mounts(
                     workspace_host_path=host_sessions_root_from_workspace(workspace_root),
                     skill_scripts_host_path=script_root,
+                    skill_home_host_path=skill_home,
                     skill_config_host_path=(skill_home / "config"),
                     config_writable=False,
                     workspace_target="/workspace",
@@ -548,6 +549,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     "SKILL_WORKSPACE_ID": workspace_id,
                     "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
                     "SKILL_SCRIPT_ROOT": "/skill/scripts",
+                    "SKILL_HOME": "/skill",
                     **sandbox_extra_env,
                 },
             },

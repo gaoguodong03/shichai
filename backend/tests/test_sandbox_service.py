@@ -83,6 +83,25 @@ class FakeAdapter:
         self.disposed.append(handle.session_id)
 
 
+class FlakyNotFoundAdapter(FakeAdapter):
+    def __init__(self):
+        super().__init__()
+        self._first_run = True
+
+    async def run_tool_in_sandbox(self, handle, tool_request):
+        if self._first_run:
+            self._first_run = False
+            raise RuntimeError(
+                f"Kill sandbox {handle.metadata['sandbox_id']} failed: Sandbox {handle.metadata['sandbox_id']} not found."
+            )
+        return await super().run_tool_in_sandbox(handle, tool_request)
+
+
+class DisposeNotFoundAdapter(FakeAdapter):
+    async def dispose_sandbox(self, handle):
+        raise RuntimeError(f"Sandbox {handle.metadata['sandbox_id']} not found")
+
+
 async def _ok_runner():
     return {"ok": True}
 
@@ -142,3 +161,56 @@ async def test_dispose_session_releases_sandbox():
     await svc.dispose_user("u2", turn_id="t2")
     assert len(adapter.disposed) == 1
     assert adapter.disposed[0].startswith("u2:")
+
+
+async def test_recreate_when_sandbox_not_found_during_execute():
+    adapter = FlakyNotFoundAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="u3",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_x",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    out = await svc.execute(req)
+    assert out.get("ok") is True
+    assert len(adapter.created) == 2
+
+
+async def test_ignore_not_found_when_dispose_stale_handle():
+    adapter = DisposeNotFoundAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req1 = SandboxExecutionRequest(
+        user_id="u4",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    req2 = SandboxExecutionRequest(
+        user_id="u4",
+        session_id="s1",
+        turn_id="t2",
+        tool_call_id="c2",
+        tool_name="tool_b",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    await svc.execute(req1)
+    out = await svc.execute(req2)
+    assert out.get("ok") is True
+    assert len(adapter.created) == 2

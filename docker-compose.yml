@@ -53,12 +53,12 @@ services:
       - SANDBOX_BASE_IMAGE=python:3.12
       # OpenSandbox 的 host_path 挂载需要“宿主机可见路径”。本地用 bind mount 时，/app/backend/data 实际就在当前项目目录下。
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=${PWD}/backend/data,/app/backend/config=${PWD}/backend/config
-      - SKILL_SCRIPT_TIMEOUT=300
+      - SKILL_SCRIPT_TIMEOUT=600
       # 与 1Panel 编排一致：默认禁网 + 按工具放行（run_skill_script 含全部 run_skill_script_<skill_id>）
       - SANDBOX_ALLOW_NETWORK=0
       - SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script
       - SANDBOX_ALLOWED_HOSTS=
-      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000
+      - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=600000
       # MCP_CONFIG_PATH / APP_SETTINGS_PATH / SESSIONS_DIR / AGENT_OUTPUTS_DIR 使用镜像内 ENV（/app/backend/...）
     depends_on:
       opensandbox-server:

@@ -764,6 +764,7 @@ def create_skill_execution_agent(
     tools: list[BaseTool],
     skill_full_content: str,
     extra_system_prompt: str = "",
+    expert_self_awareness: str = "",
     t_request_start: float = None,
 ):
     """
@@ -780,6 +781,8 @@ def create_skill_execution_agent(
 
 """
     system_prompt += skill_full_content
+    if expert_self_awareness and expert_self_awareness.strip():
+        system_prompt += "\n\n---\n\n" + expert_self_awareness.strip()
     system_prompt += """
 
 你可以使用以下工具：
