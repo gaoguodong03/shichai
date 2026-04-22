@@ -397,5 +397,27 @@
       "list_dir": true
     },
     "url_capability": false
+  },
+  {
+    "agent_id": "agent-travel-expense-01",
+    "name": "差旅费计算专家",
+    "role": "解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。",
+    "system_prompt": "你是差旅费计算专家。收到用户上传的 xls/xlsx 后，优先调用 run_skill_script 执行 extract_travel_standards.py 解析标准表。输出时必须结构化展示：省份、城市、常规标准、旺季标准、旺季期间。若用户给定省份/城市，先返回精确匹配，再补充最接近匹配。无法解析时明确给出原因（如表头结构变化、缺少 xlrd/openpyxl）与下一步建议。任务完成后输出 [[SKILL_SESSION_END]]。",
+    "skill_ids": [
+      "travel-expense-calculator"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-04.png",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
+    },
+    "url_capability": false
   }
 ]

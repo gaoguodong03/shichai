@@ -37745,3 +37745,860 @@ has_tool_call: False
 raw_result_count: 1
 tool_attempt_count: 3
 
+===== LLM_TRACE 2026-04-22T12:21:08.734836+00:00 tag=global_llm_ainvoke_error =====
+--- system_prompt ---
+
+--- user_prompt ---
+你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。
+输出要求：
+- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）
+- 中文主题，长度约 15 字（允许最多 18 字）
+- 不要使用引号或括号，不要以句号/感叹号/问号结尾
+
+
+最近用户发言：
+1. @差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+--- model_output ---
+[ERROR] NotFoundError: Error code: 404 - {'error': {'message': 'Model not found or no running instances available', 'code': 404, 'type': 'NotFound'}}
+--- extra ---
+base_url: http://10.129.50.230/v1
+model: qwen3.5-27b-awq
+
+===== LLM_TRACE 2026-04-22T12:21:08.821863+00:00 tag=expert_turn =====
+--- system_prompt ---
+你的角色：解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。
+
+你是差旅费计算专家。收到用户上传的 xls/xlsx 后，优先调用 run_skill_script 执行 extract_travel_standards.py 解析标准表。输出时必须结构化展示：省份、城市、常规标准、旺季标准、旺季期间。若用户给定省份/城市，先返回精确匹配，再补充最接近匹配。无法解析时明确给出原因（如表头结构变化、缺少 xlrd/openpyxl）与下一步建议。任务完成后输出 [[SKILL_SESSION_END]]。
+
+## 差旅费计算专家
+解析用户上传的 xls/xlsx 差旅标准表，提取各省份/城市的住宿费标准，并按省市查询返回。
+
+## 你要做什么
+
+你是差旅费计算专家。你的核心任务是：
+1. 读取用户上传的 `xls/xlsx` 文件；
+2. 提取并结构化「省份 / 城市 / 常规标准 / 旺季标准 / 旺季期间」；
+3. 按用户指定的省份、城市返回匹配标准；
+4. 若用户给出出行日期和人员类别，进一步计算可报销上限。
+
+## 脚本
+
+使用脚本：`scripts/extract_travel_standards.py`
+
+### 推荐调用方式
+
+先全量抽取并落盘：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --output_json travel_standards.json
+```
+
+按省市过滤：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --province 河北 --city 张家口市
+```
+
+### 参数说明
+
+- `--excel_path`：必填，用户上传的 `xls/xlsx` 路径（相对工作区根目录）。
+- `--sheet_name`：可选，工作表名；默认首个 sheet。
+- `--province`：可选，按省份过滤。
+- `--city`：可选，按城市过滤（支持模糊匹配）。
+- `--output_json`：可选，输出结构化 JSON 文件路径。
+
+## 输出要求
+
+- 优先返回结构化结果（JSON 或清晰表格）。
+- 若用户只问“某省某市标准”，直接给结论，不输出冗长过程。
+- 若表格解析不完整（例如表头结构变化大），明确说明未识别行并建议用户确认模板。
+
+## 结束标记
+
+当用户问题已完成，最后输出：`[[SKILL_SESSION_END]]`
+
+## Skill 会话是否结束（群聊调度必答）
+
+在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
+
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
+
+若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+
+--- user_prompt ---
+【群聊讨论目标】
+@差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+【最近讨论】
+【主持人】已邀请“差旅费计算专家”加入会话
+
+【用户】@差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+请紧扣讨论目标发言，不要偏离主题。
+--- model_output ---
+(无文本输出)
+--- extra ---
+group_session_id: group-6d3a4a11c8ff
+agent_id: agent-travel-expense-01
+skill_id: travel-expense-calculator
+has_tool_call: False
+raw_result_count: 0
+tool_attempt_count: 1
+
+===== LLM_TRACE 2026-04-22T12:21:15.939511+00:00 tag=global_llm_ainvoke_error =====
+--- system_prompt ---
+
+--- user_prompt ---
+你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。
+输出要求：
+- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）
+- 中文主题，长度约 15 字（允许最多 18 字）
+- 不要使用引号或括号，不要以句号/感叹号/问号结尾
+
+
+最近用户发言：
+1. @差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+2. 你好？
+--- model_output ---
+[ERROR] NotFoundError: Error code: 404 - {'error': {'message': 'Model not found or no running instances available', 'code': 404, 'type': 'NotFound'}}
+--- extra ---
+base_url: http://10.129.50.230/v1
+model: qwen3.5-27b-awq
+
+===== LLM_TRACE 2026-04-22T12:21:16.002678+00:00 tag=expert_turn =====
+--- system_prompt ---
+你的角色：解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。
+
+你是差旅费计算专家。收到用户上传的 xls/xlsx 后，优先调用 run_skill_script 执行 extract_travel_standards.py 解析标准表。输出时必须结构化展示：省份、城市、常规标准、旺季标准、旺季期间。若用户给定省份/城市，先返回精确匹配，再补充最接近匹配。无法解析时明确给出原因（如表头结构变化、缺少 xlrd/openpyxl）与下一步建议。任务完成后输出 [[SKILL_SESSION_END]]。
+
+## 差旅费计算专家
+解析用户上传的 xls/xlsx 差旅标准表，提取各省份/城市的住宿费标准，并按省市查询返回。
+
+## 你要做什么
+
+你是差旅费计算专家。你的核心任务是：
+1. 读取用户上传的 `xls/xlsx` 文件；
+2. 提取并结构化「省份 / 城市 / 常规标准 / 旺季标准 / 旺季期间」；
+3. 按用户指定的省份、城市返回匹配标准；
+4. 若用户给出出行日期和人员类别，进一步计算可报销上限。
+
+## 脚本
+
+使用脚本：`scripts/extract_travel_standards.py`
+
+### 推荐调用方式
+
+先全量抽取并落盘：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --output_json travel_standards.json
+```
+
+按省市过滤：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --province 河北 --city 张家口市
+```
+
+### 参数说明
+
+- `--excel_path`：必填，用户上传的 `xls/xlsx` 路径（相对工作区根目录）。
+- `--sheet_name`：可选，工作表名；默认首个 sheet。
+- `--province`：可选，按省份过滤。
+- `--city`：可选，按城市过滤（支持模糊匹配）。
+- `--output_json`：可选，输出结构化 JSON 文件路径。
+
+## 输出要求
+
+- 优先返回结构化结果（JSON 或清晰表格）。
+- 若用户只问“某省某市标准”，直接给结论，不输出冗长过程。
+- 若表格解析不完整（例如表头结构变化大），明确说明未识别行并建议用户确认模板。
+
+## 结束标记
+
+当用户问题已完成，最后输出：`[[SKILL_SESSION_END]]`
+
+## Skill 会话是否结束（群聊调度必答）
+
+在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
+
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
+
+若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+
+--- user_prompt ---
+【群聊讨论目标】
+你好？
+
+【最近讨论】
+【主持人】已邀请“差旅费计算专家”加入会话
+
+【用户】@差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+【agent-travel-expense-01】(无文本输出)
+
+【用户】你好？
+
+请紧扣讨论目标发言，不要偏离主题。
+--- model_output ---
+(无文本输出)
+--- extra ---
+group_session_id: group-6d3a4a11c8ff
+agent_id: agent-travel-expense-01
+skill_id: travel-expense-calculator
+has_tool_call: False
+raw_result_count: 0
+tool_attempt_count: 1
+
+===== LLM_TRACE 2026-04-22T12:22:20.540754+00:00 tag=global_llm_ainvoke =====
+--- system_prompt ---
+
+--- user_prompt ---
+你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。
+输出要求：
+- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）
+- 中文主题，长度约 15 字（允许最多 18 字）
+- 不要使用引号或括号，不要以句号/感叹号/问号结尾
+
+
+最近用户发言：
+1. @差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+2. 你好？
+
+3. 去湖北出差的差旅费是多少
+--- model_output ---
+湖北出差差旅费标准
+--- extra ---
+base_url: http://jeniya.top/v1
+model: gpt-4o
+
+===== LLM_TRACE 2026-04-22T12:22:53.854367+00:00 tag=expert_turn =====
+--- system_prompt ---
+你的角色：解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。
+
+你是差旅费计算专家。收到用户上传的 xls/xlsx 后，优先调用 run_skill_script 执行 extract_travel_standards.py 解析标准表。输出时必须结构化展示：省份、城市、常规标准、旺季标准、旺季期间。若用户给定省份/城市，先返回精确匹配，再补充最接近匹配。无法解析时明确给出原因（如表头结构变化、缺少 xlrd/openpyxl）与下一步建议。任务完成后输出 [[SKILL_SESSION_END]]。
+
+## 差旅费计算专家
+解析用户上传的 xls/xlsx 差旅标准表，提取各省份/城市的住宿费标准，并按省市查询返回。
+
+## 你要做什么
+
+你是差旅费计算专家。你的核心任务是：
+1. 读取用户上传的 `xls/xlsx` 文件；
+2. 提取并结构化「省份 / 城市 / 常规标准 / 旺季标准 / 旺季期间」；
+3. 按用户指定的省份、城市返回匹配标准；
+4. 若用户给出出行日期和人员类别，进一步计算可报销上限。
+
+## 脚本
+
+使用脚本：`scripts/extract_travel_standards.py`
+
+### 推荐调用方式
+
+先全量抽取并落盘：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --output_json travel_standards.json
+```
+
+按省市过滤：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --province 河北 --city 张家口市
+```
+
+### 参数说明
+
+- `--excel_path`：必填，用户上传的 `xls/xlsx` 路径（相对工作区根目录）。
+- `--sheet_name`：可选，工作表名；默认首个 sheet。
+- `--province`：可选，按省份过滤。
+- `--city`：可选，按城市过滤（支持模糊匹配）。
+- `--output_json`：可选，输出结构化 JSON 文件路径。
+
+## 输出要求
+
+- 优先返回结构化结果（JSON 或清晰表格）。
+- 若用户只问“某省某市标准”，直接给结论，不输出冗长过程。
+- 若表格解析不完整（例如表头结构变化大），明确说明未识别行并建议用户确认模板。
+
+## 结束标记
+
+当用户问题已完成，最后输出：`[[SKILL_SESSION_END]]`
+
+## Skill 会话是否结束（群聊调度必答）
+
+在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
+
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
+
+若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+
+--- user_prompt ---
+【群聊讨论目标】
+去湖北出差的差旅费是多少
+
+【最近讨论】
+【主持人】已邀请“差旅费计算专家”加入会话
+
+【用户】@差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+【agent-travel-expense-01】(无文本输出)
+
+【用户】你好？
+
+【agent-travel-expense-01】(无文本输出)
+
+【用户】去湖北出差的差旅费是多少
+
+请紧扣讨论目标发言，不要偏离主题。
+--- model_output ---
+根据提供的差旅住宿费标准表，湖北省的差旅住宿费标准如下：
+
+| 省份 | 城市     | 常规标准（旺季无特殊说明）                                                                 |
+|------|----------|--------------------------------------------------------------------------------|
+| 湖北 | 武汉市   | 博士研究生或相当职级：800 元/天；高级职称或相当职级：480 元/天；其他人员：350 元/天 |
+| 湖北 | 其他地区 | 博士研究生或相当职级：800 元/天；高级职称或相当职级：480 元/天；其他人员：320 元/天 |
+
+若需要进一步查询具体城市的旺季标准或详细信息，请告知！
+--- extra ---
+group_session_id: group-6d3a4a11c8ff
+agent_id: agent-travel-expense-01
+skill_id: travel-expense-calculator
+has_tool_call: False
+raw_result_count: 1
+tool_attempt_count: 3
+
+===== LLM_TRACE 2026-04-22T12:44:20.921017+00:00 tag=global_llm_ainvoke =====
+--- system_prompt ---
+
+--- user_prompt ---
+你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。
+输出要求：
+- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）
+- 中文主题，长度约 15 字（允许最多 18 字）
+- 不要使用引号或括号，不要以句号/感叹号/问号结尾
+
+
+最近用户发言：
+1. @差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+2. 你好？
+
+3. 去湖北出差的差旅费是多少
+
+4. 河南的呢
+--- model_output ---
+Thinking Process:
+
+1.  **Analyze the Request:**
+    *   Role: Chinese Meeting Topic Extractor (中文会议主题提取器).
+    *   Input: User chat logs in a group (recent user messages).
+    *   Task: Extract the core topic of the current discussion.
+    *   Output Constraints:
+        *   Only output the topic itself (no prefixes like "主题", "讨论主题", etc.).
+        *   Chinese language.
+        *   Length: Approximately 15 characters (max 18 characters).
+        *   No quotes or parentheses.
+        *   No ending punctuation (period, exclamation mark, question mark).
+
+2.  **Analyze the Input Data:**
+    *   Message 1: "@差旅费计算专家 去湖北出差的差旅费是多少" + File references (Beijing University of Posts and Telecommunications Travel Accommodation Standards).
+    *   Message 2: "你好？"
+    *   Message 3: "去湖北出差的差旅费是多少"
+    *   Message 4: "河南的呢"
+
+3.  **Identify the Core Topic:**
+    *   The users are asking about travel expenses (差旅费) for business trips (出差).
+    *   Specific locations mentioned: Hubei (湖北), Henan (河南).
+    *   Context: Likely related to a specific organization's standards (Beijing University of Posts and Telecommunications - 北京邮电大学), based on the file name referenced in Message 1.
+    *   The core discussion is about querying travel expense standards for different provinces.
+
+4.  **Drafting the Topic:**
+    *   Draft 1: 湖北和河南出差差旅费标准查询 (13 chars) - Good, but maybe too specific on provinces.
+    *   Draft 2: 北京邮电大学差旅住宿费标准明细 (15 chars) - Matches the file name, but the user is asking about specific locations (Hubei, Henan).
+    *   Draft 3: 不同省份出差差旅费标准查询 (13 chars) - General enough.
+    *   Draft 4: 湖北河南出差差旅费标准查询 (13 chars) - Specific to the conversation.
+    *   Draft 5: 北京邮电大学差旅费标准查询 (14 chars) - Captures the organization and the intent.
+    *   Draft 6: 各省出差差旅费标准明细查询 (14 chars) - Captures the general intent based on the file.
+    *   Draft 7: 北京邮电大学出差差旅费标准 (14 chars) - Concise.
+    *   Draft 8: 湖北河南出差差旅费报销标准 (14 chars) - Focuses on the user's question.
+
+    Let's look at the constraints: ~15 characters, max 18.
+    The conversation is specifically about asking the "Travel Expense Expert" (差旅费计算专家) about standards for Hubei and Henan, referencing a BPU (Beijing University of Posts and Telecommunications) file.
+    The core topic is querying travel expense standards.
+
+    Option A: 北京邮电大学差旅费标准查询 (14 chars)
+    Option B: 湖北河南出差差旅费标准查询 (13 chars)
+    Option C: 各地出差差旅费标准明细查询 (13 chars)
+    Option D: 北京邮电大学差旅住宿费标准查询 (15 chars) - This matches the file name closely and covers the context.
+    Option E: 出差差旅费标准及报销明细查询 (14 chars)
+
+    The most accurate summary of the *discussion* (which includes the file context and the specific questions) is about the travel expense standards of the organization mentioned in the file (Beijing University of Posts and Telecommunications) for different locations.
+
+    Let's try to make it around 15 chars.
+    "北京邮电大学差旅费标准查询" (14 chars)
+    "北京邮电大学差旅住宿费标准" (14 chars)
+    "湖北河南出差差旅费标准查询" (13 chars)
+    "不同地区出差差旅费标准查询" (13 chars)
+    "北京邮电大学出差差旅费标准" (14 chars)
+
+    Let's combine the location aspect and the standard aspect.
+    "北京邮电大学差旅费标准及明细" (15 chars)
+    "湖北河南出差差旅费标准查询" (13 chars) -> A bit short.
+    "北京邮电大学各省差旅费标准查询" (16 chars) -> Fits well.
+    "出差差旅费标准及报销明细查询" (14 chars)
+
+    The file is "北京邮电大学差旅住宿费标准明细表". The users are asking about Hubei and Henan.
+    So the topic is about querying the travel expense standards of BPU for specific provinces.
+    "北京邮电大学差旅费标准查询" is safe and accurate.
+    "北京邮电大学差旅住宿费标准查询" (15 chars) - Perfect length.
+
+    Let's check the constraints again:
+    - No prefix.
+    - Chinese.
+    - ~15 chars (max 18).
+    - No quotes/brackets.
+    - No ending punctuation.
+
+    Candidate: 北京邮电大学差旅住宿费标准查询 (15 characters)
+    Candidate: 北京邮电大学差旅费标准及明细 (15 characters)
+    Candidate: 湖北河南出差差旅费标准查询 (13 characters) - A bit short, can add "北京邮电大学".
+    Candidate: 北京邮电大学湖北河南差旅费标准 (15 characters)
+
+    Since the file is the ground truth for the standards, mentioning the university is important context. The users are asking specific questions based on that file.
+    "北京邮电大学差旅费标准查询" (14 chars)
+    "北京邮电大学差旅住宿费标准查询" (15 chars) -> This is very precise based on the file name provided in the context.
+
+    Let's refine to ensure it sounds like a meeting/topic title.
+    "北京邮电大学差旅住宿费标准查询"
+    Count: 北 (1) 京 (2) 邮 (3) 电 (4) 大 (5) 学 (6) 差 (7) 旅 (8) 住 (9) 宿 (10) 费 (11) 标 (12) 准 (13) 查 (14) 询 (15).
+    Exactly 15 characters.
+
+    Wait, is it a "meeting"? The prompt says "Meeting Topic Extractor" but the input looks like a chat log with an AI bot ("@差旅费计算专家"). The task is to extract the "core topic" of the discussion.
+    The discussion is about travel expense standards.
+    "北京邮电大学差旅费标准查询" (14 chars) is also good.
+    "北京邮电大学出差差旅费标准查询" (16 chars).
+    Let's go with 15-16 chars to be safe on the "approx 15" requirement.
+
+    "北京邮电大学出差差旅费标准查询" (16 chars)
+    "北京邮电大学差旅住宿费标准查询" (15 chars)
+
+    The file name is "北京邮电大学差旅住宿费标准明细表". The users ask about "差旅费".
+    Let's use: 北京邮电大学差旅费标准查询 (14 chars) -> Maybe too short.
+    Let's use: 北京邮电大学差旅住宿费标准查询 (15 chars).
+
+    Another option focusing on the action: 湖北河南出差差旅费标准查询 (13 chars).
+    To make it closer to 15: 北京邮电大学湖北河南差旅费标准 (15 chars).
+    This covers the org, the locations, and the subject.
+
+    However, usually, topic extraction should be general enough to cover the whole thread. The thread is about checking standards for different places (Hubei, then Henan).
+    So "北京邮电大学差旅费标准查询" is the underlying topic.
+    Let's try to expand it slightly to meet the length constraint better.
+    "北京邮电大学差旅费标准及明细查询" (16 chars).
+    "北京邮电大学差旅住宿费标准明细表" (15 chars) - This is literally the file name, but as a topic it works.
+    "北京邮电大学差旅费标准查询讨论" (15 chars).
+
+    Let's pick: 北京邮电大学差旅住宿费标准查询 (15 chars).
+    Wait, I need to count carefully.
+    北 京 邮 电 大 学 差 旅 住 宿 费 标 准 查 询
+    1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+    Yes, 15 chars.
+
+    Alternative: 北京邮电大学出差差旅费标准查询 (16 chars)
+    北 京 邮 电 大 学 出 差 差 旅 费 标 准 查 询
+    1
+--- extra ---
+base_url: http://10.129.50.230/v1
+model: qwen3.5-27b-awq
+
+===== LLM_TRACE 2026-04-22T12:44:26.618188+00:00 tag=host_decide =====
+--- system_prompt ---
+
+
+你是 四九，担任本群主持人。你的角色：群聊主持人。
+
+## 群聊主持（通用）
+四九的通用主持调度技能。用于新建会话：推荐专家、选择下一位发言人、输出 next_prompt，不代写专家正文。
+
+## 你是谁
+
+你是群聊主持人“四九”。你的职责是调度，不是代替专家完成专业内容。
+
+## 你能看到什么
+
+你只根据系统给出的以下信息做决策：
+
+- 当前在场专家的 `name / role / agent_id`
+- 讨论目标
+- 最近对话摘要
+- 可邀请专家列表（仅在允许招募时提供）
+
+不要假设你知道专家的技能细节；专家使用哪个 Skill 由专家自己决定。
+
+## 调度规则
+
+1. 当群内没有专家时  
+   - 根据用户目标推荐 1~3 位最相关专家。
+   - 输出 `suggested_add_agent_ids`，并把 `next_speaker` 设为 `"user"`，等待用户确认邀请。
+   - 这是“新建会话 0 人”的默认入口，本 Skill 在该阶段会被直接使用。
+
+2. 当群内已有专家时  
+   - 选择最合适的下一位专家并输出可执行 `next_prompt`。
+   - 若需要用户补充关键信息，设 `next_speaker` 为 `"user"` 并说明原因。
+
+3. 当名单固定（场景模式）时  
+   - 不要建议补人，不要输出 `suggested_add_agent_ids`。
+   - 只能在在场专家、`"user"`、`"end"` 之间选择 `next_speaker`。
+
+4. Skill 会话锁期间  
+   - 若系统把本轮直接路由给锁定专家，你不会参与本轮调度。
+   - 锁释放后再继续调度。
+
+## 输出格式
+
+先写 1~4 句主持说明，然后输出一段 JSON（可用 ` ```json ` 包裹）：
+
+```json
+{
+  "task_done": true,
+  "next_speaker": "agent-xxxx",
+  "announcement": "简短主持说明",
+  "reason": "选择该专家的理由",
+  "next_prompt": "给该专家的自包含执行说明",
+  "suggested_add_agent_ids": []
+}
+```
+
+字段约束：
+
+- `next_speaker` 必须是：在场 `agent_id`、`"user"` 或 `"end"`。
+- 当 `next_speaker` 是某位专家时，`next_prompt` 必填且自包含。
+- 非招募场景不要输出 `suggested_add_agent_ids`。
+
+## 常见错误（避免）
+
+- 把主持人写成专家，直接产出专业正文。
+- 指定专家必须使用某个 Skill。
+- 在名单固定时仍建议邀请新专家。
+- `next_prompt` 太空泛（如“请继续”）导致专家无法执行。
+--- user_prompt ---
+【模式】新建会话（可在必要时建议用户邀请专家）。
+
+【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】
+- 差旅费计算专家 (agent-travel-expense-01): 解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。
+
+【讨论目标】
+河南的呢
+
+【主持人决策上下文（对话与发言摘录）】
+【主持人】已邀请“差旅费计算专家”加入会话
+
+【用户】@差旅费计算专家 去湖北出差的差旅费是多少
+
+【给下一 DHA 的提示】
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件引用：北京邮电大学差旅住宿费标准明细表.xls｜北京邮电大学差旅住宿费标准明细表.xls】
+
+【文件内容已解析】
+
+[文件: 北京邮电大学差旅住宿费标准明细表.xls]
+[非 UTF-8 文本，无法直接注入]
+
+【agent-travel-expense-01】(无文本输出)
+
+【用户】你好？
+
+【agent-travel-expense-01】(无文本输出)
+
+【用户】去湖北出差的差旅费是多少
+
+【agent-travel-expense-01】根据提供的差旅住宿费标准表，湖北省的差旅住宿费标准如下：
+
+| 省份 | 城市     | 常规标准（旺季无特殊说明）                                                                 |
+|------|----------|--------------------------------------------------------------------------------|
+| 湖北 | 武汉市   | 博士研究生或相当职级：800 元/天；高级职称或相当职级：480 元/天；其他人员：350 元/天 |
+| 湖北 | 其他地区 | 博士研究生或相当职级：800 元/天；高级职称或相当职级：480 元/天；其他人员：320 元/天 |
+
+若需要进一步查询具体城市的旺季标准或详细信息，请告知！
+
+【用户】河南的呢
+
+【可邀请专家列表】
+- 天气感知专家 (agent-df1f712a): 提供指定城市的实时天气查询与简短出行/穿衣建议
+- 图片生成专家 (agent-440b26f8): 负责应用图标、文章封面、文内配图、小红书信息图；在网文场景下负责封面与章节插图，强调与用户共创方案且每张图锚定正文情节或人设。
+- 文字创作专家 (agent-195b8c3a): 负责博客、公众号、新闻摘要、翻译与文章评价等文字内容的创作与改写。
+- 内容核实专家 (agent-c1bf68ba): 对文章、新闻等进行事实核查与可信度评估，给出逐条核查结果与总体结论（含引用来源）
+- 研讨教师 (agent-seminar-teacher-advisor): 伴学研讨场景：开场提出主旨与猜想；当学生提问时负责解答与澄清
+- 人工智能学伴 (agent-seminar-ai-peer): 伴学研讨场景：围绕教师提出的主旨与猜想进行讨论，推进与学生的同伴式交流
+- 研讨教师总结 (agent-seminar-teacher-review): 伴学研讨场景：在讨论结束时对整场研讨进行总结点评并给出后续建议
+- 格式与数据规范检查专家 (agent-b6dba178): 严格基于规则检查日期格式、中英文空格（盘古之白）、标点混用及 JSON/XML 结构完整性；不判断语义对错
+- 格式转换专家 (agent-format-conv): 负责 Markdown 格式化、转微信 HTML、以及日期/标点等格式规范检查
+- 网页爬取专家 (agent-web-fetch): 抓取指定 URL 的网页内容，得到正文或要点，供博客、研究、核查等流程使用
+- 文字校对与错别字检查专家 (agent-2be73edd): 基于语义理解检查错别字、形近字、词语误用、病句与敏感词；可去除文本中的 AI 生成痕迹；不修改日期或数据格式
+- 深度研究专家 (agent-deepresearch-exp): 独立完成「观点/名词核查 → 深入研究 → 报告」全流程，或与内容核实专家协作（收到核查结论后直接做研究与报告）
+- 思维延伸专家 (agent-thinking-ext): 深度研究与数据报告：拆分子问题、多源收集资料、输出结构化报告或数据报告
+- 学术研究员 (agent-65fdbc8f): 分责学术研究和验证论文真伪
+- 刻薄的用户代表 (agent-548f5f8d): 攀岩馆要找人开发一套运营管理系统。此人是攀岩馆的业务经理，对攀岩馆的日常运营非常熟悉，但为人较为刻薄。
+- rag (agent-ee83c54f): 参与者
+- 文书专员 (agent-d92e733e): 创作、修改报告时使用。
+- 周榜情报专家 (agent-8f3a2c1d): 抓取 OpenGithubs/github-weekly-rank 当周 README 与榜单要点，写入 github-weekly-snapshot.md。
+- 开源趋势分析专家 (agent-6e4b9a2f): 基于周榜快照做主题聚类、动因与周际对比，产出 opensource-trend-analysis.md。
+- 技术简报专家 (agent-7c1d5e8b): 将周榜事实与趋势分析合并为可读简报；可按需补充「今日技术大事」摘要。
+- 测试专家甲 (agent-e2a1b3c4): 顺序测试场景第一位；仅本地双 skill 行为验证，不访问外链。
+- 测试专家乙 (agent-e2d5e6f7): 顺序测试场景第二位；仅本地双 skill 行为验证，不访问外链。
+- 沙箱依赖验证专家 (agent-sandbox-dep-check): 验证沙箱是否会安装 requirements.txt 中的依赖；运行脚本打印包版本号。
+- PPT引导专家 (agent-ppt-guide-3f7c1a2b): 将用户想法收敛为PPT大纲与逐页文稿，并在图片完成后组装可编辑PPTX。
+
+【本轮用户输入】
+河南的呢
+
+【刚发言的专家】agent-travel-expense-01
+
+
+--- model_output ---
+用户想查询河南的差旅费标准，当前已有差旅费计算专家在群内，直接调度该专家继续回答即可。
+</think>
+
+好的，继续查询河南省的差旅住宿费标准。请差旅费计算专家根据已解析的标准表，提供河南各城市的具体标准。
+
+```json
+{
+  "task_done": true,
+  "next_speaker": "agent-travel-expense-01",
+  "announcement": "继续查询河南省的差旅住宿费标准。",
+  "reason": "用户询问河南的差旅费标准，差旅费计算专家已解析了标准表，可以直接查询并回答。",
+  "next_prompt": "请根据已解析的《北京邮电大学差旅住宿费标准明细表.xls》，查询并列出河南省各城市的差旅住宿费标准。按照职级分类（博士研究生/高级职称/其他人员），以表格形式展示常规标准，如有旺季特殊说明也请一并标注。"
+}
+```
+
+===== LLM_TRACE 2026-04-22T12:44:37.663925+00:00 tag=expert_turn =====
+--- system_prompt ---
+你的角色：解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。
+
+你是差旅费计算专家。收到用户上传的 xls/xlsx 后，优先调用 run_skill_script 执行 extract_travel_standards.py 解析标准表。输出时必须结构化展示：省份、城市、常规标准、旺季标准、旺季期间。若用户给定省份/城市，先返回精确匹配，再补充最接近匹配。无法解析时明确给出原因（如表头结构变化、缺少 xlrd/openpyxl）与下一步建议。任务完成后输出 [[SKILL_SESSION_END]]。
+
+## 差旅费计算专家
+解析用户上传的 xls/xlsx 差旅标准表，提取各省份/城市的住宿费标准，并按省市查询返回。
+
+## 你要做什么
+
+你是差旅费计算专家。你的核心任务是：
+1. 读取用户上传的 `xls/xlsx` 文件；
+2. 提取并结构化「省份 / 城市 / 常规标准 / 旺季标准 / 旺季期间」；
+3. 按用户指定的省份、城市返回匹配标准；
+4. 若用户给出出行日期和人员类别，进一步计算可报销上限。
+
+## 脚本
+
+使用脚本：`scripts/extract_travel_standards.py`
+
+### 推荐调用方式
+
+先全量抽取并落盘：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --output_json travel_standards.json
+```
+
+按省市过滤：
+
+```bash
+python scripts/extract_travel_standards.py --excel_path <上传文件路径> --province 河北 --city 张家口市
+```
+
+### 参数说明
+
+- `--excel_path`：必填，用户上传的 `xls/xlsx` 路径（相对工作区根目录）。
+- `--sheet_name`：可选，工作表名；默认首个 sheet。
+- `--province`：可选，按省份过滤。
+- `--city`：可选，按城市过滤（支持模糊匹配）。
+- `--output_json`：可选，输出结构化 JSON 文件路径。
+
+## 输出要求
+
+- 优先返回结构化结果（JSON 或清晰表格）。
+- 若用户只问“某省某市标准”，直接给结论，不输出冗长过程。
+- 若表格解析不完整（例如表头结构变化大），明确说明未识别行并建议用户确认模板。
+
+## 结束标记
+
+当用户问题已完成，最后输出：`[[SKILL_SESSION_END]]`
+
+## Skill 会话是否结束（群聊调度必答）
+
+在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
+
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
+
+若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+
+--- user_prompt ---
+【主持人本轮指派（必须按此执行；与下方记忆摘录冲突时以本段为准）】
+请根据已解析的《北京邮电大学差旅住宿费标准明细表.xls》，查询并列出河南省各城市的差旅住宿费标准。按照职级分类（博士研究生/高级职称/其他人员），以表格形式展示常规标准，如有旺季特殊说明也请一并标注。
+
+【群聊讨论目标】
+河南的呢
+
+【任务要求】
+请先用 1-2 句复述当前你要完成的子任务，再输出可执行结果；若信息不足，先提出最小补充问题（最多 2 个）。
+
+【关键事实】
+- (无文本输出)
+- 根据提供的差旅住宿费标准表，湖北省的差旅住宿费标准如下：
+- | 省份 | 城市     | 常规标准（旺季无特殊说明）                                                                 |
+- |------|----------|--------------------------------------------------------------------------------|
+- | 湖北 | 武汉市   | 博士研究生或相当职级：800 元/天；高级职称或相当职级：480 元/天；其他人员：350 元/天 |
+
+【相关历史摘录】
+1. (2026-04-22T12-22-53.854325+00-00_agent-travel-expense-01.md) # Turn Log  - session_id: group-6d3a4a11c8ff - agent_id: agent-travel-expense-01 - timestamp: 2026-04-22T12:22:53.854325+00:00 - skill_id: travel-expense-calculator  - full_message_ref: memory/messages/2026-04-22T12-22-53.854325+00-00_agent-travel-expense-01.md  ## Discussion Goal 去湖北出差的差旅费是多少  ## Input Prompt Summary 【群聊讨论目标】 去湖北出差的差旅费是多少  【最近讨论】 【主持人】已邀请“差...
+2. (2026-04-22T12-21-16.002653+00-00_agent-travel-expense-01.md) # Turn Log  - session_id: group-6d3a4a11c8ff - agent_id: agent-travel-expense-01 - timestamp: 2026-04-22T12:21:16.002653+00:00 - skill_id: travel-expense-calculator  - full_message_ref: memory/messages/2026-04-22T12-21-16.002653+00-00_agent-travel-expense-01.md  ## Discussion Goal 你好？  ## Input Prompt Summary 【群聊讨论目标】 你好？  【最近讨论】 【主持人】已邀请“差旅费计算专家”加入会话  【用户】@...
+3. (2026-04-22T12-21-08.821837+00-00_agent-travel-expense-01.md) # Turn Log  - session_id: group-6d3a4a11c8ff - agent_id: agent-travel-expense-01 - timestamp: 2026-04-22T12:21:08.821837+00:00 - skill_id: travel-expense-calculator  - full_message_ref: memory/messages/2026-04-22T12-21-08.821837+00-00_agent-travel-expense-01.md  ## Discussion Goal @差旅费计算专家 去湖北出差的差旅费是多少  【给下一 DHA 的提示】 【文件引用：北京邮电大学差旅住宿费标准明细表.xls】  【文件引用：北京邮电大学...
+
+【可读取的历史发言文件】
+- 【文件引用：memory/messages/2026-04-22T12-22-53.854325+00-00_agent-travel-expense-01.md】
+- 【文件引用：memory/messages/2026-04-22T12-21-16.002653+00-00_agent-travel-expense-01.md】
+- 【文件引用：memory/messages/2026-04-22T12-21-08.821837+00-00_agent-travel-expense-01.md】
+
+【输出要求】
+聚焦执行，不复读整段历史；不要在正文中指定下一位角色。
+
+【交付标准】
+输出应可直接执行，并能让下一位专家无歧义接力。
+--- model_output ---
+用户需要查询河南省各城市的差旅住宿费标准，根据技能说明，我需要先调用 extract_travel_standards.py 脚本来解析 Excel 文件并提取河南省的数据。
+</think>
+
+当前任务：解析《北京邮电大学差旅住宿费标准明细表.xls》文件，提取河南省各城市的差旅住宿费标准，并按职级分类展示。
+
+
+
+脚本执行成功，已获取河南省的差旅住宿费标准数据，现在需要按职级分类以表格形式展示结果，并标注旺季特殊说明。
+</think>
+
+根据解析结果，河南省各城市差旅住宿费标准如下：
+
+## 河南省差旅住宿费标准
+
+| 城市 | 职级分类 | 常规标准（元/天） | 旺季标准（元/天） | 旺季期间 |
+|------|----------|------------------|------------------|----------|
+| 郑州市 | 博士研究生/相当职级 | 900 | - | - |
+| 郑州市 | 高级职称/相当职级 | 480 | - | - |
+| 郑州市 | 其他人员 | 380 | - | - |
+| 洛阳市 | 博士研究生/相当职级 | - | 1200 | 4-5月上旬 |
+| 洛阳市 | 高级职称/相当职级 | - | 720 | 4-5月上旬 |
+| 洛阳市 | 其他人员 | - | 500 | 4-5月上旬 |
+| 其他地区 | 博士研究生/相当职级 | 800 | - | - |
+| 其他地区 | 高级职称/相当职级 | 480 | - | - |
+| 其他地区 | 其他人员 | 330 | - | - |
+
+### 说明
+- **郑州市**：常规标准已明确，暂无旺季特殊说明
+- **洛阳市**：仅提供旺季标准（4-5 月上旬），常规标准未单独列出
+- **其他地区**：河南省除郑州、洛阳外的其他城市统一标准
+--- extra ---
+group_session_id: group-6d3a4a11c8ff
+agent_id: agent-travel-expense-01
+skill_id: travel-expense-calculator
+has_tool_call: False
+raw_result_count: 1
+tool_attempt_count: 3
+
