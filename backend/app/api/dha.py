@@ -255,7 +255,7 @@ async def import_dha_instance_bundle(
     overwrite_skills: bool = Form(True),
     # False=用包内覆盖本地同名 MCP；True=保留本地同名，仅追加缺失 id
     mcp_skip_existing: bool = Form(False),
-    id_conflict: str = Form("new_id"),
+    id_conflict: str = Form("overwrite"),
 ):
     """导入专家包：合并技能、MCP 与专家条目。"""
     from app.api.settings import load_mcp_config, save_mcp_config, _invalidate_mcp_runtime_after_config_change
@@ -275,9 +275,9 @@ async def import_dha_instance_bundle(
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
 
-    conflict = str(id_conflict or "new_id").strip().lower()
-    if conflict not in ("overwrite", "new_id"):
-        conflict = "new_id"
+    conflict = str(id_conflict or "overwrite").strip().lower()
+    if conflict not in ("overwrite", "skip"):
+        conflict = "overwrite"
 
     tmp: Optional[Path] = None
     try:
@@ -312,6 +312,14 @@ async def import_dha_instance_bundle(
             if str(x.get("id") or "").strip()
         ]
 
+        existing_instances = load_dha_instances()
+        same_name_agent_ids = [
+            str(x.get("agent_id") or "")
+            for x in existing_instances
+            if str(x.get("agent_id") or "").strip()
+            and str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
+        ]
+
         if dry_run:
             return {
                 "status": "ok",
@@ -324,6 +332,8 @@ async def import_dha_instance_bundle(
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite,
                         "would_skip_skills": would_skip,
+                        "name_conflict_existing_ids": same_name_agent_ids,
+                        "name_conflict_mode": conflict,
                     },
                     "note": "确认后将写入技能目录并合并专家；依赖校验在提交完成后返回。agent_id 仅可在服务端配置文件中修改。",
                 },
@@ -341,12 +351,14 @@ async def import_dha_instance_bundle(
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
 
-        instances = load_dha_instances()
-        instances, final_id = merge_single_expert_into_instances(
+        instances = existing_instances
+        instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
             instances, norm, id_conflict=conflict
         )
         save_dha_instances(instances)
-        val_after = _dha_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
+        val_after = None
+        if final_id:
+            val_after = _dha_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
 
         return {
             "status": "ok",
@@ -354,6 +366,8 @@ async def import_dha_instance_bundle(
                 "dry_run": False,
                 "summary": {
                     "imported_agent_id": final_id,
+                    "skipped_by_name": skipped_by_name,
+                    "overwritten_agent_ids": overwritten_agent_ids,
                     "skills_imported": imported_skills,
                     "skills_skipped": skipped_skills,
                 },

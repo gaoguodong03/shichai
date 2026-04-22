@@ -65,7 +65,7 @@
     "orchestration_profile": "recruitment"
   },
   "group-553941e56983": {
-    "title": "将文本数据存入数据库",
+    "title": "北邮历史事实数据录入与存储",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-ee83c54f"
@@ -73,10 +73,8 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-15T06:58:24.404319+00:00",
-    "updated_at": "2026-04-21T10:01:44.036334+00:00",
-    "orchestration_profile": "recruitment",
-    "skill_session_owner_id": "agent-ee83c54f",
-    "skill_session_skill_id": "rag-cli-1"
+    "updated_at": "2026-04-22T13:18:51.564689+00:00",
+    "orchestration_profile": "recruitment"
   },
   "group-ae75757d726e": {
     "title": "北邮建校年份存储",
@@ -573,7 +571,7 @@
     "orchestration_profile": "recruitment"
   },
   "group-6d3a4a11c8ff": {
-    "title": "Thinking Process:",
+    "title": "河南南京新疆地区用户情况",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-travel-expense-01"
@@ -581,8 +579,27 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-22T12:19:20.654708+00:00",
-    "updated_at": "2026-04-22T12:44:37.670899+00:00",
+    "updated_at": "2026-04-22T13:16:09.276513+00:00",
     "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-travel-expense-01",
+    "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-ce83961b1706": {
+    "title": "河南与南京的差旅费用标准",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-22T13:21:59.215368+00:00",
+    "updated_at": "2026-04-22T13:23:23.828169+00:00",
+    "orchestration_profile": "recruitment",
+    "pending_owner_agent_id": "agent-travel-expense-01",
+    "pending_skill_id": "travel-expense-calculator",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input",
     "skill_session_owner_id": "agent-travel-expense-01",
     "skill_session_skill_id": "travel-expense-calculator"
   }

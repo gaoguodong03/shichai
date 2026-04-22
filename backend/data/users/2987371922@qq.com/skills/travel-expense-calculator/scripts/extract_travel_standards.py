@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+_DEFAULT_EXCEL_NAME = "北京邮电大学差旅住宿费标准明细表.xls"
+
 
 def _clean_text(v: Any) -> str:
     if v is None:
@@ -132,16 +134,24 @@ def _filter_records(records: list[dict[str, Any]], province: str, city: str) -> 
     return out
 
 
+def _resolve_excel_path(excel_path_arg: str) -> Path:
+    arg = _clean_text(excel_path_arg)
+    if arg:
+        return Path(arg)
+    # 默认读取 skill 根目录内置样例表，便于直接调用。
+    return Path(__file__).resolve().parents[1] / _DEFAULT_EXCEL_NAME
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="从差旅标准表中提取省份/城市住宿费标准")
-    parser.add_argument("--excel_path", required=True, help="xls/xlsx 文件路径")
+    parser.add_argument("--excel_path", default="", help="xls/xlsx 文件路径；不传则读取 skill 内置样例")
     parser.add_argument("--sheet_name", default="", help="可选 sheet 名称")
     parser.add_argument("--province", default="", help="按省份过滤")
     parser.add_argument("--city", default="", help="按城市过滤")
     parser.add_argument("--output_json", default="", help="输出 JSON 文件路径")
     args = parser.parse_args()
 
-    excel_path = Path(args.excel_path)
+    excel_path = _resolve_excel_path(args.excel_path)
     if not excel_path.exists():
         print(json.dumps({"ok": False, "code": "file_not_found", "path": str(excel_path)}, ensure_ascii=False))
         return 2

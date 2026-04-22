@@ -4,7 +4,7 @@ enabled: true
 mcp_server_ids:
 - file-reader
 name: GitHub 开源周榜情报
-source: user
+source: local
 write_mode: workspace_all
 ---
 # GitHub 开源周榜情报

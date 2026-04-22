@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -491,28 +492,56 @@ def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetI
         return None
 
 
+def _normalized_name_key(raw: Any) -> str:
+    return str(raw or "").strip().lower()
+
+
 def _merge_session_presets_into_file(
     normalized_rows: List[Dict[str, Any]], id_conflict: str
-) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """将已规范化的场景行合并写入 session_presets.json；返回 (合并后列表, 本次写入的 preset id 列表)。"""
+) -> Tuple[List[Dict[str, Any]], List[str], List[str], List[str]]:
+    """将已规范化的场景行合并写入 session_presets.json。
+
+    返回 (合并后列表, 本次写入的 preset id 列表, 因同名跳过的名称, 被覆盖的旧 preset id 列表)。
+    """
     path = _get_session_presets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     existing_rows = _load_session_preset_rows_from_file(path)
     by_id: Dict[str, Dict[str, Any]] = {str(r["id"]): dict(r) for r in existing_rows if r.get("id")}
     original_ids = [str(r["id"]) for r in existing_rows if r.get("id")]
+    name_to_existing_ids: Dict[str, List[str]] = {}
+    for r in existing_rows:
+        rid = str(r.get("id") or "").strip()
+        if not rid:
+            continue
+        nk = _normalized_name_key(r.get("name"))
+        if not nk:
+            continue
+        name_to_existing_ids.setdefault(nk, []).append(rid)
 
     imported_ids: List[str] = []
+    skipped_by_name: List[str] = []
+    overwritten_existing_ids: List[str] = []
     for norm in normalized_rows:
         work = dict(norm)
-        pid0 = str(work["id"])
-        if pid0 in by_id and id_conflict == "new_id":
-            work["id"] = f"scenario-{uuid.uuid4().hex[:10]}"
+        incoming_name = str(work.get("name") or "").strip()
+        same_name_ids = [rid for rid in name_to_existing_ids.get(_normalized_name_key(incoming_name), []) if rid in by_id]
+        if same_name_ids:
+            if id_conflict == "skip":
+                skipped_by_name.append(incoming_name or str(work.get("id") or ""))
+                continue
+            for rid in same_name_ids:
+                by_id.pop(rid, None)
+            overwritten_existing_ids.extend(same_name_ids)
         item = _dict_to_session_preset_item(work)
         if item is None:
             continue
         row = _session_preset_item_to_disk_row(item)
         if row is None:
             continue
+        if row["id"] in by_id:
+            row["id"] = f"scenario-{uuid.uuid4().hex[:10]}"
+            while row["id"] in by_id:
+                row["id"] = f"scenario-{uuid.uuid4().hex[:10]}"
         by_id[row["id"]] = row
         imported_ids.append(row["id"])
 
@@ -525,7 +554,7 @@ def _merge_session_presets_into_file(
         if rid not in used:
             merged.append(row)
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-    return merged, imported_ids
+    return merged, imported_ids, skipped_by_name, overwritten_existing_ids
 
 
 @router.put("/settings/session-presets")
@@ -651,7 +680,7 @@ async def import_session_preset_bundle(
     overwrite_skills: bool = Form(True),
     # False=用包内覆盖本地同名 MCP（与前端「同名工具覆盖本地工具配置」勾选一致）；True=保留本地同名，仅追加缺失 id
     mcp_skip_existing: bool = Form(False),
-    preset_id_conflict: str = Form("new_id"),
+    preset_id_conflict: str = Form("overwrite"),
 ):
     """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单与将覆盖的技能提示。"""
     from app.api.dha import load_dha_instances, save_dha_instances
@@ -663,9 +692,10 @@ async def import_session_preset_bundle(
     if not raw:
         raise HTTPException(status_code=400, detail="上传文件为空")
 
-    conflict = str(preset_id_conflict or "new_id").strip().lower()
-    if conflict not in ("overwrite", "new_id"):
-        conflict = "new_id"
+    conflict = str(preset_id_conflict or "overwrite").strip().lower()
+    if conflict not in ("overwrite", "skip"):
+        logging.getLogger(__name__).warning("unknown preset_id_conflict=%s, fallback to overwrite", conflict)
+        conflict = "overwrite"
 
     tmp: Optional[Path] = None
     try:
@@ -698,6 +728,14 @@ async def import_session_preset_bundle(
                 else:
                     would_skip_skills.append(sid)
 
+        existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        preset_name_conflicts = [
+            str(r.get("id") or "")
+            for r in existing_presets
+            if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
+            and str(r.get("id") or "").strip()
+        ]
+
         if dry_run:
             return {
                 "status": "ok",
@@ -711,6 +749,8 @@ async def import_session_preset_bundle(
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite_skills,
                         "would_skip_skills": would_skip_skills,
+                        "name_conflict_existing_ids": preset_name_conflicts,
+                        "name_conflict_mode": conflict,
                     },
                     "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹。界面无法修改专家 agent_id；若需改 id，请在服务端编辑 dha_instances.json。",
                 },
@@ -732,7 +772,7 @@ async def import_session_preset_bundle(
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
 
-        merged_presets, imported_ids = _merge_session_presets_into_file([norm], conflict)
+        merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file([norm], conflict)
         val_after = _session_preset_validation_payload(norm)
 
         return {
@@ -741,6 +781,8 @@ async def import_session_preset_bundle(
                 "dry_run": False,
                 "summary": {
                     "preset_imported_ids": imported_ids,
+                    "skipped_by_name": skipped_by_name,
+                    "overwritten_existing_ids": overwritten_existing_ids,
                     "skills_imported": imported_skills,
                     "skills_skipped": skipped_skills,
                     "experts_total_after": len(merged_dha),
@@ -1922,7 +1964,11 @@ async def create_skill(skill: SkillCreate):
 
 
 @router.post("/settings/skills/import-zip")
-async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(True)):
+async def import_skill_zip(
+    file: UploadFile = File(...),
+    enabled: bool = Form(True),
+    name_conflict: str = Form("overwrite"),
+):
     """通过 ZIP 导入 Skill。要求 ZIP 根目录包含 SKILL.md。"""
     filename = (file.filename or "").strip()
     if not filename.lower().endswith(".zip"):
@@ -1965,6 +2011,11 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
     if not any(len(parts) == 1 and parts[0].lower() == "skill.md" for _, parts in normalized):
         raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
 
+    conflict_mode = str(name_conflict or "overwrite").strip().lower()
+    if conflict_mode not in {"overwrite", "skip"}:
+        logging.getLogger(__name__).warning("unknown skill name_conflict=%s, fallback to overwrite", conflict_mode)
+        conflict_mode = "overwrite"
+
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
     fallback_seed = _slugify(Path(filename).stem or "skill")
@@ -1986,6 +2037,39 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
 
             if not (src_dir / "SKILL.md").is_file():
                 raise HTTPException(status_code=400, detail="ZIP 根目录必须包含 SKILL.md")
+
+            src_fm, _src_body = _read_skill_file(src_dir)
+            incoming_name = str(src_fm.get("name") or "").strip() or fallback_seed
+            incoming_name_key = _normalized_name_key(incoming_name)
+            overwrite_skill_ids: List[str] = []
+            for child in sorted(base.iterdir(), key=lambda p: p.name):
+                if not child.is_dir():
+                    continue
+                try:
+                    fm_existing, _body_existing = _read_skill_file(child)
+                except Exception:
+                    continue
+                existing_name = str(fm_existing.get("name") or "").strip() or child.name
+                if _normalized_name_key(existing_name) != incoming_name_key:
+                    continue
+                overwrite_skill_ids.append(child.name)
+
+            if overwrite_skill_ids and conflict_mode == "skip":
+                return {
+                    "status": "ok",
+                    "data": {
+                        "id": None,
+                        "name": incoming_name,
+                        "skipped_by_name": True,
+                        "overwritten_skill_ids": overwrite_skill_ids,
+                    },
+                }
+
+            for sid in overwrite_skill_ids:
+                old_dir = base / sid
+                if old_dir.is_dir():
+                    shutil.rmtree(old_dir, ignore_errors=True)
+                    _remove_skill_id_from_user_configs(sid)
 
             shutil.copytree(src_dir, skill_dir)
 
@@ -2021,6 +2105,7 @@ async def import_skill_zip(file: UploadFile = File(...), enabled: bool = Form(Tr
                 "source": "local",
                 "path": str(skill_dir),
                 "write_mode": "workspace_all",
+                "skipped_by_name": False,
             },
         }
     except HTTPException:

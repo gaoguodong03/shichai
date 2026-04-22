@@ -258,9 +258,7 @@
     "name": "周榜情报专家",
     "role": "抓取 OpenGithubs/github-weekly-rank 当周 README 与榜单要点，写入 github-weekly-snapshot.md。",
     "system_prompt": "你是周榜情报专家。唯一信源以用户指定的 GitHub 周榜仓库（默认 https://github.com/OpenGithubs/github-weekly-rank ）为主：用抓取工具拉取 README 或当周 md 文件，把排名、仓库名、Star/周增、简介等整理进工作区 github-weekly-snapshot.md。禁止编造数据；失败时说明原因。不负责长篇趋势解读或对外简报（由另两位专家负责）。",
-    "skill_ids": [
-      "github"
-    ],
+    "skill_ids": [],
     "mcp_server_ids": [],
     "is_leader": false,
     "llm_provider_id": "",

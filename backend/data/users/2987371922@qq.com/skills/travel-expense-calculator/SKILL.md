@@ -22,18 +22,20 @@ write_mode: workspace_all
 先全量抽取并落盘：
 
 ```bash
-python scripts/extract_travel_standards.py --excel_path <上传文件路径> --output_json travel_standards.json
+python scripts/extract_travel_standards.py --output_json travel_standards.json
 ```
+
+> 默认读取 skill 根目录中的 `北京邮电大学差旅住宿费标准明细表.xls`。
 
 按省市过滤：
 
 ```bash
-python scripts/extract_travel_standards.py --excel_path <上传文件路径> --province 河北 --city 张家口市
+python scripts/extract_travel_standards.py --province 河北 --city 张家口市
 ```
 
 ### 参数说明
 
-- `--excel_path`：必填，用户上传的 `xls/xlsx` 路径（相对工作区根目录）。
+- `--excel_path`：可选，用户上传的 `xls/xlsx` 路径（相对工作区根目录）；不传则使用内置样例表。
 - `--sheet_name`：可选，工作表名；默认首个 sheet。
 - `--province`：可选，按省份过滤。
 - `--city`：可选，按城市过滤（支持模糊匹配）。

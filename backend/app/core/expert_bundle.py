@@ -20,11 +20,10 @@ def merge_single_expert_into_instances(
     expert_row: Dict[str, Any],
     *,
     id_conflict: str,
-) -> Tuple[List[Dict[str, Any]], str]:
+) -> Tuple[List[Dict[str, Any]], str | None, bool, List[str]]:
     """
-    合并单条专家。id_conflict: new_id | overwrite。
-    若已存在同 agent_id 且 new_id，则分配新 agent_id 并追加。
-    返回 (新列表, 最终 agent_id)。
+    合并单条专家。id_conflict: skip | overwrite（按 name 判冲突）。
+    返回 (新列表, 最终 agent_id, 是否因同名跳过, 被覆盖的旧 agent_id 列表)。
     """
     from app.core.scenario_bundle import strip_dha_row_for_disk
 
@@ -40,21 +39,39 @@ def merge_single_expert_into_instances(
 
     work = strip_dha_row_for_disk(dict(expert_row))
     aid0 = str(work.get("agent_id") or "").strip()
+    incoming_name_key = str(work.get("name") or "").strip().lower()
+    same_name_ids = [
+        aid
+        for aid, row in by_id.items()
+        if str(row.get("name") or "").strip().lower() == incoming_name_key and incoming_name_key
+    ]
+    if same_name_ids and id_conflict == "skip":
+        return [by_id[i] for i in order if i in by_id], None, True, []
+
+    overwritten_agent_ids: List[str] = []
+    if same_name_ids and id_conflict == "overwrite":
+        overwritten_agent_ids.extend(same_name_ids)
+        for aid in same_name_ids:
+            by_id.pop(aid, None)
+        order = [aid for aid in order if aid in by_id]
+
     if not aid0:
         aid0 = f"agent-{uuid.uuid4().hex[:8]}"
         work["agent_id"] = aid0
 
-    if aid0 in by_id and id_conflict == "new_id":
+    if aid0 in by_id:
         nid = f"agent-{uuid.uuid4().hex[:8]}"
+        while nid in by_id:
+            nid = f"agent-{uuid.uuid4().hex[:8]}"
         work["agent_id"] = nid
         by_id[nid] = work
         order.append(nid)
-        return [by_id[i] for i in order if i in by_id], nid
+        return [by_id[i] for i in order if i in by_id], nid, False, overwritten_agent_ids
 
     by_id[aid0] = work
     if aid0 not in order:
         order.append(aid0)
-    return [by_id[i] for i in order if i in by_id], aid0
+    return [by_id[i] for i in order if i in by_id], aid0, False, overwritten_agent_ids
 
 
 def read_expert_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:

@@ -962,18 +962,18 @@
         <template v-if="scenarioBundlePreview?.bundle_preview">
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
-            <div class="text-xs text-muted font-mono">{{ scenarioBundlePreview.bundle_preview.preset_id }}</div>
+            <div class="text-xs text-muted">场景名称：{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
             <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length" class="pt-2">
               <div class="text-xs font-medium text-muted mb-1">包内专家</div>
               <ul class="list-disc pl-4 text-muted space-y-0.5">
                 <li v-for="ex in scenarioBundlePreview.bundle_preview.experts" :key="ex.agent_id">
-                  <span class="font-mono text-primary">{{ ex.agent_id }}</span> {{ ex.name }}
+                  <span class="text-primary">{{ ex.name || ex.agent_id }}</span>
                 </li>
               </ul>
             </div>
             <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内技能目录</div>
-              <p class="font-mono text-xs text-primary">{{ (scenarioBundlePreview.bundle_preview.skills || []).join(', ') }}</p>
+              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
+              <p class="text-xs text-primary">{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || []).join('，') }}</p>
             </div>
             <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
               <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
@@ -983,40 +983,20 @@
                 </li>
               </ul>
             </div>
-            <p v-if="(scenarioBundlePreview.bundle_preview.would_overwrite_skills || []).length" class="text-xs text-amber-700 dark:text-amber-400 pt-2">
-              将覆盖已有技能目录：{{ (scenarioBundlePreview.bundle_preview.would_overwrite_skills || []).join(', ') }}
+            <p v-if="scenarioOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
+              将覆盖已有内容：{{ scenarioOverwriteSummary }}
             </p>
-            <p v-if="(scenarioBundlePreview.bundle_preview.would_skip_skills || []).length" class="text-xs text-muted pt-1">
-              因未勾选覆盖，将跳过已有技能：{{ (scenarioBundlePreview.bundle_preview.would_skip_skills || []).join(', ') }}
-            </p>
-          </div>
-          <div class="space-y-2 mb-4 text-sm">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="scenarioBundleOverwriteExperts" type="checkbox" class="rounded border-input-border" />
-              同名专家覆盖本地配置
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="scenarioBundleOverwriteSkills" type="checkbox" class="rounded border-input-border" />
-              同名技能目录覆盖本地
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="scenarioBundleOverwriteMcp" type="checkbox" class="rounded border-input-border" />
-              同名工具覆盖本地工具配置
-            </label>
           </div>
         </template>
-        <div class="space-y-2 mb-4">
-          <div class="text-xs font-medium text-muted">若与已有场景 id 冲突</div>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input v-model="scenarioImportIdConflict" type="radio" value="new_id" class="rounded border-input-border" />
-            自动生成新 id（推荐）
-          </label>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input v-model="scenarioImportIdConflict" type="radio" value="overwrite" class="rounded border-input-border" />
-            覆盖同名场景
-          </label>
-        </div>
         <div class="flex justify-start gap-2">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+            :disabled="scenarioImportCommitting || !canConfirmScenarioImport"
+            @click="commitScenarioImport"
+          >
+            {{ scenarioImportCommitting ? '导入中…' : hasScenarioNameConflict ? '确认覆盖导入' : '确认导入' }}
+          </button>
           <button
             type="button"
             class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
@@ -1024,14 +1004,6 @@
             @click="closeScenarioImportModal"
           >
             取消
-          </button>
-          <button
-            type="button"
-            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-            :disabled="scenarioImportCommitting || !canConfirmScenarioImport"
-            @click="commitScenarioImport"
-          >
-            {{ scenarioImportCommitting ? '导入中…' : '确认导入' }}
           </button>
         </div>
         </template>
@@ -1086,10 +1058,10 @@
         <template v-if="dhaBundlePreview?.bundle_preview">
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ dhaBundlePreview.bundle_preview.name }}</div>
-            <div class="text-xs text-muted font-mono">{{ dhaBundlePreview.bundle_preview.agent_id }}</div>
+            <div class="text-xs text-muted">专家名称：{{ dhaBundlePreview.bundle_preview.name || '未命名专家' }}</div>
             <div v-if="(dhaBundlePreview.bundle_preview.skills || []).length" class="pt-2">
               <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-              <p class="font-mono text-xs text-primary">{{ (dhaBundlePreview.bundle_preview.skills || []).join(', ') }}</p>
+              <p class="text-xs text-primary">{{ displaySkillNames(dhaBundlePreview.bundle_preview.skills || []).join('，') }}</p>
             </div>
             <div v-if="(dhaBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
               <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
@@ -1099,36 +1071,20 @@
                 </li>
               </ul>
             </div>
-            <p v-if="(dhaBundlePreview.bundle_preview.would_overwrite_skills || []).length" class="text-xs text-amber-700 dark:text-amber-400 pt-2">
-              将覆盖已有技能目录：{{ (dhaBundlePreview.bundle_preview.would_overwrite_skills || []).join(', ') }}
+            <p v-if="dhaOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
+              将覆盖已有内容：{{ dhaOverwriteSummary }}
             </p>
-            <p v-if="(dhaBundlePreview.bundle_preview.would_skip_skills || []).length" class="text-xs text-muted pt-1">
-              将跳过已有技能：{{ (dhaBundlePreview.bundle_preview.would_skip_skills || []).join(', ') }}
-            </p>
-          </div>
-          <div class="space-y-2 mb-4 text-sm">
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="dhaBundleOverwriteSkills" type="checkbox" class="rounded border-input-border" />
-              同名技能目录覆盖本地
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input v-model="dhaBundleOverwriteMcp" type="checkbox" class="rounded border-input-border" />
-              同名工具覆盖本地工具配置
-            </label>
           </div>
         </template>
-        <div class="space-y-2 mb-4">
-          <div class="text-xs font-medium text-muted">若与已有专家 agent_id 冲突</div>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input v-model="dhaImportIdConflict" type="radio" value="new_id" class="rounded border-input-border" />
-            自动生成新 agent_id（推荐）
-          </label>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <input v-model="dhaImportIdConflict" type="radio" value="overwrite" class="rounded border-input-border" />
-            覆盖同名专家
-          </label>
-        </div>
         <div class="flex justify-start gap-2">
+          <button
+            type="button"
+            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+            :disabled="dhaImportCommitting || !canConfirmDhaImport"
+            @click="commitDhaImport"
+          >
+            {{ dhaImportCommitting ? '导入中…' : hasDhaNameConflict ? '确认覆盖导入' : '确认导入' }}
+          </button>
           <button
             type="button"
             class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
@@ -1137,15 +1093,79 @@
           >
             取消
           </button>
-          <button
-            type="button"
-            class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-            :disabled="dhaImportCommitting || !canConfirmDhaImport"
-            @click="commitDhaImport"
-          >
-            {{ dhaImportCommitting ? '导入中…' : '确认导入' }}
-          </button>
         </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- 技能导入 -->
+    <div
+      v-if="skillImportModalOpen"
+      class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      @click.self="onSkillImportBackdropClick"
+    >
+      <div
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
+        @click.stop
+      >
+        <div
+          v-if="skillZipImporting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span
+            class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin"
+            aria-hidden="true"
+          />
+          <p class="text-sm font-medium text-primary">正在导入…</p>
+          <p class="text-xs text-muted px-4 text-center">请勿关闭页面，导入完成后将在此显示结果</p>
+        </div>
+        <template v-if="skillImportResult">
+          <h3 class="text-lg font-semibold mb-3">{{ skillImportResult.ok ? '导入成功' : '导入失败' }}</h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="skillImportResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ skillImportResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeSkillImportModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <h3 class="text-lg font-semibold mb-3">导入技能</h3>
+          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+            <div class="font-medium text-primary">{{ pendingSkillZipFile?.name || '未选择文件' }}</div>
+            <p class="text-xs text-muted">仅支持 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。</p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将执行覆盖导入。</p>
+          </div>
+          <div class="flex justify-start gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              :disabled="skillZipImporting || !pendingSkillZipFile"
+              @click="commitSkillZipImport"
+            >
+              {{ skillZipImporting ? '导入中…' : '确认覆盖导入' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+              :disabled="skillZipImporting"
+              @click="closeSkillImportModal"
+            >
+              取消
+            </button>
+          </div>
         </template>
       </div>
     </div>
@@ -1267,7 +1287,6 @@ const scenarioDraft = ref<ScenarioDraft>({
 
 const scenarioImportFileInputRef = ref<HTMLInputElement | null>(null)
 const scenarioImportModalOpen = ref(false)
-const scenarioImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
 const scenarioImportCommitting = ref(false)
 /** 导入完成后在弹窗内展示结果，用户点「关闭」后再收起（避免先关弹窗再等 alert） */
 const scenarioImportResult = ref<{ ok: boolean; message: string } | null>(null)
@@ -1281,12 +1300,10 @@ const scenarioBundlePreview = ref<{
     mcps: { id: string; name: string }[]
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
+    name_conflict_existing_ids?: string[]
+    name_conflict_mode?: 'skip' | 'overwrite'
   }
 } | null>(null)
-const scenarioBundleOverwriteExperts = ref(true)
-const scenarioBundleOverwriteSkills = ref(true)
-/** true：用包内配置覆盖同名 MCP（对应后端 mcp_skip_existing=false）；false：不覆盖同名，仅追加包里有而本地没有的 */
-const scenarioBundleOverwriteMcp = ref(true)
 const scenarioShareAutoPublishing = ref(false)
 const scenarioShareRouteImportLoading = ref(false)
 const scenarioShareLinkData = ref<{ share_id: string | null }>({ share_id: null })
@@ -1309,7 +1326,6 @@ const scenarioShareOpenInFlight = ref(false)
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
 const pendingDhaBundleFile = ref<File | null>(null)
-const dhaImportIdConflict = ref<'new_id' | 'overwrite'>('new_id')
 const dhaImportCommitting = ref(false)
 const dhaImportResult = ref<{ ok: boolean; message: string } | null>(null)
 const dhaBundlePreview = ref<{
@@ -1320,10 +1336,10 @@ const dhaBundlePreview = ref<{
     mcps: { id: string; name: string }[]
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
+    name_conflict_existing_ids?: string[]
+    name_conflict_mode?: 'skip' | 'overwrite'
   }
 } | null>(null)
-const dhaBundleOverwriteSkills = ref(true)
-const dhaBundleOverwriteMcp = ref(true)
 
 const canConfirmDhaImport = computed(
   () => !!(dhaBundlePreview.value?.bundle_preview && pendingDhaBundleFile.value),
@@ -1332,6 +1348,51 @@ const canConfirmDhaImport = computed(
 const canConfirmScenarioImport = computed(
   () => !!(scenarioBundlePreview.value?.bundle_preview && pendingBundleFile.value),
 )
+const hasScenarioNameConflict = computed(
+  () => (scenarioBundlePreview.value?.bundle_preview?.name_conflict_existing_ids || []).length > 0,
+)
+const hasDhaNameConflict = computed(
+  () => (dhaBundlePreview.value?.bundle_preview?.name_conflict_existing_ids || []).length > 0,
+)
+
+function displaySkillNames(skillIds: string[]): string[] {
+  const byId = new Map((skills.value || []).map((s) => [s.id, s.name || s.id]))
+  return (skillIds || []).map((sid) => byId.get(sid) || sid)
+}
+const scenarioOverwriteSummary = computed(() => {
+  const bp = scenarioBundlePreview.value?.bundle_preview
+  if (!bp) return ''
+  const parts: string[] = []
+  if ((bp.name_conflict_existing_ids || []).length) {
+    parts.push(`场景：${bp.preset_name || bp.preset_id}`)
+  }
+  if ((bp.experts || []).length) {
+    const expertNames = (bp.experts || []).map((x) => x.name || x.agent_id).filter(Boolean)
+    if (expertNames.length) parts.push(`专家：${expertNames.join('，')}`)
+  }
+  const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
+  if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
+  if ((bp.mcps || []).length) {
+    const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
+    if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
+  }
+  return parts.join('\n')
+})
+const dhaOverwriteSummary = computed(() => {
+  const bp = dhaBundlePreview.value?.bundle_preview
+  if (!bp) return ''
+  const parts: string[] = []
+  if ((bp.name_conflict_existing_ids || []).length) {
+    parts.push(`专家：${bp.name || bp.agent_id || '未命名专家'}`)
+  }
+  const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
+  if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
+  if ((bp.mcps || []).length) {
+    const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
+    if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
+  }
+  return parts.join('\n')
+})
 
 const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
 const filteredScenarioPresets = computed(() => {
@@ -1496,6 +1557,9 @@ const dhaInstances = ref<
 const dhaInstancesLoading = ref(false)
 const skillZipInputRef = ref<HTMLInputElement | null>(null)
 const skillZipImporting = ref(false)
+const skillImportModalOpen = ref(false)
+const pendingSkillZipFile = ref<File | null>(null)
+const skillImportResult = ref<{ ok: boolean; message: string } | null>(null)
 
 // 中间列宽度（可拖动调整）
 const middleColumnWidth = ref(240)
@@ -1904,10 +1968,10 @@ async function onScenarioImportFile(ev: Event) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('dry_run', 'true')
-    fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
-    fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
-    fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
-    fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+    fd.append('overwrite_experts', 'true')
+    fd.append('overwrite_skills', 'true')
+    fd.append('mcp_skip_existing', 'false')
+    fd.append('preset_id_conflict', 'overwrite')
     const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
@@ -1918,7 +1982,6 @@ async function onScenarioImportFile(ev: Event) {
       throw new Error(j.detail || '场景包预览失败')
     }
     scenarioBundlePreview.value = j.data || null
-    scenarioImportIdConflict.value = 'new_id'
     scenarioImportModalOpen.value = true
   } catch (e) {
     window.alert((e as Error).message || '无法读取场景包')
@@ -1934,10 +1997,10 @@ async function commitScenarioImport() {
     const fd = new FormData()
     fd.append('file', pendingBundleFile.value)
     fd.append('dry_run', 'false')
-    fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
-    fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
-    fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
-    fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+    fd.append('overwrite_experts', 'true')
+    fd.append('overwrite_skills', 'true')
+    fd.append('mcp_skip_existing', 'false')
+    fd.append('preset_id_conflict', 'overwrite')
     const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
@@ -1947,6 +2010,8 @@ async function commitScenarioImport() {
           preset_imported_ids?: string[]
           skills_imported?: string[]
           skills_skipped?: string[]
+          skipped_by_name?: string[]
+          overwritten_existing_ids?: string[]
           mcp_added?: number
         }
       }
@@ -1956,7 +2021,7 @@ async function commitScenarioImport() {
     }
     const s = j.data?.summary
     const msg = s
-      ? `场景 id：${(s.preset_imported_ids || []).join(', ') || '—'}\n技能写入：${(s.skills_imported || []).length} 个，跳过：${(s.skills_skipped || []).length} 个\n新增 MCP 配置：${s.mcp_added ?? 0} 条`
+      ? `场景 id：${(s.preset_imported_ids || []).join(', ') || '—'}\n场景同名覆盖：${(s.overwritten_existing_ids || []).length} 个，跳过：${(s.skipped_by_name || []).length} 个\n技能写入：${(s.skills_imported || []).length} 个，跳过：${(s.skills_skipped || []).length} 个\n新增 MCP 配置：${s.mcp_added ?? 0} 条`
       : '导入成功'
     await fetchScenarioPresets()
     await fetchDHA()
@@ -2099,10 +2164,10 @@ async function tryOpenScenarioShareFromRoute() {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('dry_run', 'true')
-    fd.append('overwrite_experts', scenarioBundleOverwriteExperts.value ? 'true' : 'false')
-    fd.append('overwrite_skills', scenarioBundleOverwriteSkills.value ? 'true' : 'false')
-    fd.append('mcp_skip_existing', scenarioBundleOverwriteMcp.value ? 'false' : 'true')
-    fd.append('preset_id_conflict', scenarioImportIdConflict.value)
+    fd.append('overwrite_experts', 'true')
+    fd.append('overwrite_skills', 'true')
+    fd.append('mcp_skip_existing', 'false')
+    fd.append('preset_id_conflict', 'overwrite')
     const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
@@ -2113,7 +2178,6 @@ async function tryOpenScenarioShareFromRoute() {
       throw new Error(j.detail || '场景包预览失败')
     }
     scenarioBundlePreview.value = j.data || null
-    scenarioImportIdConflict.value = 'new_id'
     scenarioImportModalOpen.value = true
     scenarioShareRouteHandled.value = id
   } catch (e) {
@@ -2172,9 +2236,9 @@ async function onDhaImportFile(ev: Event) {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('dry_run', 'true')
-    fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
-    fd.append('mcp_skip_existing', dhaBundleOverwriteMcp.value ? 'false' : 'true')
-    fd.append('id_conflict', dhaImportIdConflict.value)
+    fd.append('overwrite_skills', 'true')
+    fd.append('mcp_skip_existing', 'false')
+    fd.append('id_conflict', 'overwrite')
     const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
@@ -2185,7 +2249,6 @@ async function onDhaImportFile(ev: Event) {
       throw new Error(j.detail || '专家包预览失败')
     }
     dhaBundlePreview.value = j.data || null
-    dhaImportIdConflict.value = 'new_id'
     dhaImportModalOpen.value = true
   } catch (e) {
     window.alert((e as Error).message || '无法读取专家包')
@@ -2201,22 +2264,32 @@ async function commitDhaImport() {
     const fd = new FormData()
     fd.append('file', pendingDhaBundleFile.value)
     fd.append('dry_run', 'false')
-    fd.append('overwrite_skills', dhaBundleOverwriteSkills.value ? 'true' : 'false')
-    fd.append('mcp_skip_existing', dhaBundleOverwriteMcp.value ? 'false' : 'true')
-    fd.append('id_conflict', dhaImportIdConflict.value)
+    fd.append('overwrite_skills', 'true')
+    fd.append('mcp_skip_existing', 'false')
+    fd.append('id_conflict', 'overwrite')
     const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
       detail?: string
-      data?: { summary?: { imported_agent_id?: string; skills_imported?: string[] } }
+      data?: {
+        summary?: {
+          imported_agent_id?: string
+          skills_imported?: string[]
+          skipped_by_name?: boolean
+          overwritten_agent_ids?: string[]
+        }
+      }
     }
     if (j?.status !== 'ok') {
       throw new Error(j.detail || '导入失败')
     }
-    const aid = j.data?.summary?.imported_agent_id
-    const msg = aid
-      ? `导入成功，专家 id：${aid}（技能写入 ${(j.data?.summary?.skills_imported || []).length} 个）`
-      : '导入成功'
+    const summary = j.data?.summary
+    const aid = summary?.imported_agent_id
+    const msg = summary?.skipped_by_name
+      ? `未导入：存在同名专家（技能写入 ${(summary.skills_imported || []).length} 个）`
+      : aid
+        ? `导入成功，专家 id：${aid}（同名覆盖 ${(summary?.overwritten_agent_ids || []).length} 个；技能写入 ${(summary?.skills_imported || []).length} 个）`
+        : '导入成功'
     await fetchDHA()
     await fetchSkills()
     await fetchMCP()
@@ -2499,8 +2572,6 @@ async function fetchFileSessions() {
 }
 
 function triggerSkillZipImport() {
-  const ok = window.confirm('仅支持导入 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。确认后请选择 ZIP 文件。')
-  if (!ok) return
   if (skillZipImporting.value) return
   skillZipInputRef.value?.click()
 }
@@ -2512,29 +2583,55 @@ async function onSkillZipSelected(e: Event) {
   if (!file) return
   const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
   if (!isZip) {
-    window.alert('仅支持导入 ZIP 文件')
+    skillImportResult.value = { ok: false, message: '仅支持导入 ZIP 文件' }
+    skillImportModalOpen.value = true
     return
   }
-  if (skillZipImporting.value) return
+  pendingSkillZipFile.value = file
+  skillImportResult.value = null
+  skillImportModalOpen.value = true
+}
+
+function closeSkillImportModal() {
+  skillImportModalOpen.value = false
+  pendingSkillZipFile.value = null
+  skillImportResult.value = null
+}
+
+function onSkillImportBackdropClick() {
+  if (skillZipImporting.value || skillImportResult.value) return
+  closeSkillImportModal()
+}
+
+async function commitSkillZipImport() {
+  if (!pendingSkillZipFile.value || skillZipImporting.value) return
+  skillImportResult.value = null
   skillZipImporting.value = true
   try {
     const fd = new FormData()
-    fd.append('file', file)
+    fd.append('file', pendingSkillZipFile.value)
     fd.append('enabled', 'true')
+    fd.append('name_conflict', 'overwrite')
     const r = await fetch('/api/settings/skills/import-zip', {
       method: 'POST',
       body: fd,
     })
     const j = await r.json().catch(() => ({}))
-    if (j?.status === 'ok' && j?.data?.id) {
+    if (j?.status === 'ok') {
       await fetchSkills()
-      selectedId.value = j.data.id
+      if (j?.data?.id) selectedId.value = j.data.id
+      skillImportResult.value = {
+        ok: true,
+        message: j?.data?.skipped_by_name
+          ? `未导入：存在同名技能 "${j?.data?.name || '未知'}"`
+          : `导入成功：${j?.data?.name || j?.data?.id || '技能'}`,
+      }
     } else {
-      window.alert(j?.detail || '导入技能失败')
+      skillImportResult.value = { ok: false, message: j?.detail || '导入技能失败' }
     }
   } catch (err) {
     console.error(err)
-    window.alert('导入技能失败，请检查网络或 ZIP 格式')
+    skillImportResult.value = { ok: false, message: '导入技能失败，请检查网络或 ZIP 格式' }
   } finally {
     skillZipImporting.value = false
   }

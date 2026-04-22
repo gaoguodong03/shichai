@@ -111,6 +111,7 @@ class QwenLLM:
             openai_api_base=self.base_url,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             streaming=True,
             request_timeout=request_timeout,
             max_retries=max_retries,
