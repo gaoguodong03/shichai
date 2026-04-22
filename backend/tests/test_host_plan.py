@@ -7,6 +7,7 @@ os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
 from pathlib import Path
 
+import asyncio
 import pytest
 
 from app.agent.host_plan import (
@@ -46,5 +47,5 @@ def test_write_workspace_file_rejects_host_plan():
     from app.tools import write_workspace_file as ww
 
     tool = ww.create_write_workspace_file_tool("group-x")
-    out = tool.invoke({"path": "memory/host_plan.md", "content": "x"})
+    out = asyncio.run(tool.ainvoke({"path": "memory/host_plan.md", "content": "x"}))
     assert "禁止" in str(out)

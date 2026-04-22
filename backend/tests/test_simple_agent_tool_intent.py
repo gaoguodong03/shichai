@@ -28,7 +28,16 @@ class _FakeLLM:
 
 @pytest.mark.asyncio
 async def test_simple_agent_calls_tool_runner_for_content_tool_json():
-    response = AIMessage(content='{"tool":"run_skill_script","arguments":{"script_path":"generate_image.py"}}')
+    response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc1",
+                "name": "run_skill_script",
+                "args": {"script_path": "generate_image.py"},
+            }
+        ],
+    )
     called = {"n": 0}
 
     async def _tool_runner(state, tools):

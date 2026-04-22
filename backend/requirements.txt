@@ -32,6 +32,6 @@ pypdf>=4.0.0
 python-docx>=1.0.0
 openpyxl>=3.1.0
 
-# 测试
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
+# 测试（下限对齐 pytest 8 + asyncio 插件；不设上限以便跟随安全修复）
+pytest>=8.2.0,<10
+pytest-asyncio>=0.24.0

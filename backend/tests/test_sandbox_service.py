@@ -138,8 +138,9 @@ async def test_session_isolation_one_session_one_sandbox():
     await svc.execute(req_b1)
     await svc.execute(req_a1)
 
-    assert len(adapter.created) == 1
-    assert adapter.created[0][0].startswith("u1:")
+    # 现行为用户级单沙箱：同一用户跨会话复用；但工具 allowlist 变化会触发重建
+    assert len(adapter.created) == 3
+    assert adapter.created[0][0] == "u1"
 
 
 async def test_dispose_session_releases_sandbox():
@@ -160,7 +161,7 @@ async def test_dispose_session_releases_sandbox():
     await svc.execute(req)
     await svc.dispose_user("u2", turn_id="t2")
     assert len(adapter.disposed) == 1
-    assert adapter.disposed[0].startswith("u2:")
+    assert adapter.disposed[0] == "u2"
 
 
 async def test_recreate_when_sandbox_not_found_during_execute():

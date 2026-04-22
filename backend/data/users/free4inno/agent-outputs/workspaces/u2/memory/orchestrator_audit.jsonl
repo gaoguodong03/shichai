@@ -1,3 +1,9 @@
 {"ts": "2026-04-15T06:12:27.906244+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}
 {"ts": "2026-04-15T06:13:48.420658+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}
 {"ts": "2026-04-15T06:17:45.061338+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2:d300a98126613184", "user_id": "u2"}}
+{"ts": "2026-04-22T01:36:42.020038+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T01:46:54.839745+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T01:55:35.773619+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T01:59:12.835897+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T01:59:53.000074+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T02:01:23.059654+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}

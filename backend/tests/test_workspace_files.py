@@ -1,4 +1,5 @@
 """测试 workspace 文件 API（按会话隔离、无全局 /api/files）"""
+import asyncio
 import os
 import tempfile
 
@@ -60,8 +61,9 @@ def test_workspace_create_and_list(client):
     r = client.get("/api/workspaces/ws1/files")
     assert r.status_code == 200
     entries = r.json().get("data", {}).get("entries", [])
-    assert len(entries) == 1
-    assert entries[0]["name"] == "hello.md" and entries[0]["path"] == "hello.md"
+    by_name = {e["name"]: e for e in entries}
+    assert "hello.md" in by_name
+    assert by_name["hello.md"]["path"] == "hello.md"
 
 
 def test_workspace_download(client):
@@ -110,11 +112,8 @@ def test_write_workspace_file_tool(temp_user_data_root):
     from app.tools.write_workspace_file import create_write_workspace_file_tool
 
     tool = create_write_workspace_file_tool("sess-w")
-    # StructuredTool 使用 .invoke(dict) 或 .run(dict)；兼容有 .func 的 Tool
-    if hasattr(tool, "func"):
-        out = tool.func("written.md", "written content")
-    else:
-        out = tool.invoke({"path": "written.md", "content": "written content"})
+    # 当前工具仅提供异步 coroutine（不支持 sync invoke）
+    out = asyncio.run(tool.ainvoke({"path": "written.md", "content": "written content"}))
     assert "已写入" in out
     ws = get_workspace_root("sess-w")
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"

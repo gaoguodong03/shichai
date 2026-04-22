@@ -91,6 +91,26 @@ def test_extract_explicit_requested_agent_ids_matches_explicit_name_only():
     assert "agent-d92e733e" in out
 
 
+def test_extract_forced_at_mention_agent_id_only_when_prefix_mention():
+    gc = _get_group_chat_module()
+    instances = [
+        {"agent_id": "agent-writer", "name": "文书专员", "role": "写作"},
+        {"agent_id": "agent-research", "name": "研讨教师", "role": "研究"},
+    ]
+    assert gc._extract_forced_at_mention_agent_id("@文书专员 请先写提纲", instances) == "agent-writer"
+    assert gc._extract_forced_at_mention_agent_id("@agent-research 帮我查资料", instances) == "agent-research"
+    # 非开头 @ 不触发强制路由
+    assert gc._extract_forced_at_mention_agent_id("请 @文书专员 接手", instances) is None
+
+
+def test_extract_forced_at_mention_agent_id_handles_unknown_or_punctuation():
+    gc = _get_group_chat_module()
+    instances = [{"agent_id": "agent-writer", "name": "文书专员", "role": "写作"}]
+    assert gc._extract_forced_at_mention_agent_id("@不存在专家 帮忙", instances) is None
+    assert gc._extract_forced_at_mention_agent_id("@ 文书专员 帮忙", instances) is None
+    assert gc._extract_forced_at_mention_agent_id("  @文书专员：请继续", instances) == "agent-writer"
+
+
 def test_prioritize_suggested_add_ids_prefers_user_requested_experts():
     from app.core.recruitment_helpers import prioritize_suggested_add_ids
 
