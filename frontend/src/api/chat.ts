@@ -28,6 +28,7 @@ export interface ChatOnceResponseData {
   message?: Record<string, unknown> | null
   end?: Record<string, unknown> | null
   error?: Record<string, unknown> | null
+  interrupted?: boolean
 }
 
 /** 兼容旧调用：返回原始 Response（建议改用 streamSessionChat） */
@@ -100,6 +101,7 @@ export async function streamSessionChat(
         else if (eventType === 'content') handlers.onContent?.(data as { text?: string; agent_id?: string; meta?: { phase?: string } })
         else if (eventType === 'message') handlers.onMessage?.(data)
         else if (eventType === 'end') handlers.onEnd?.(data)
+        else if (eventType === 'error') handlers.onError?.(data)
       } catch (error) {
         handlers.onError?.(error)
       }

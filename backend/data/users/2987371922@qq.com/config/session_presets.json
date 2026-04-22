@@ -149,5 +149,38 @@
       },
       "url_capability": true
     }
+  },
+  {
+    "id": "scenario-ppt-writing-v1",
+    "name": "编写PPT",
+    "agent_ids": [
+      "agent-ppt-guide-3f7c1a2b",
+      "agent-440b26f8"
+    ],
+    "expert_ids": [
+      "agent-ppt-guide-3f7c1a2b",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "description": "把用户零散想法转成PPT大纲与逐页文稿，再逐页生成统一风格配图，并组装为可编辑PPTX。",
+    "discussion_goal_example": "我有一些关于AI客服降本增效的想法，请你们先帮我梳理目标受众和结构，产出10页左右的大纲与逐页讲稿，再按统一风格生成每页配图，最后给我一个可编辑的final.pptx。",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-ppt-writing"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": false
+    }
   }
 ]

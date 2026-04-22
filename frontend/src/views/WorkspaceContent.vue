@@ -3819,6 +3819,8 @@ async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequest
   let shouldEmitMessageSent = false
   let gotEnd = false
   let streamFailed = false
+  let streamServerErrored = false
+  let failureHint = ''
   try {
     await streamSessionChat(
       { ...payload, session_id: sessionId },
@@ -3841,6 +3843,7 @@ async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequest
           gotEnd = true
         },
         onError: (error) => {
+          streamServerErrored = true
           console.error('SSE 事件解析失败', error)
         },
       },
@@ -3849,26 +3852,66 @@ async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequest
   } catch (error) {
     streamFailed = true
     console.error('SSE 请求失败，准备非流式补偿', error)
+    failureHint = error instanceof Error ? (error.message || '').trim() : ''
   }
 
-  if (!gotEnd || streamFailed) {
+  if (!gotEnd || streamFailed || streamServerErrored) {
     groupStreamingPhase.value = '连接波动，正在补偿本轮回复…'
     try {
       const fallback = await chatOnceRequest({ ...payload, session_id: sessionId })
+      if (fallback.status !== 'ok') {
+        const detail = String(fallback.error?.message || fallback.detail || '').trim()
+        failureHint = detail || failureHint
+        throw new Error(detail || 'chat once fallback failed')
+      }
       const data = (fallback.data || {}) as {
         route?: Record<string, unknown> | null
+        contents?: Array<{ text?: string; agent_id?: string; meta?: { phase?: string } }>
+        messages?: Record<string, unknown>[]
         message?: Record<string, unknown> | null
         end?: Record<string, unknown> | null
+        error?: Record<string, unknown> | null
+        interrupted?: boolean
       }
       if (data.route) updateAutoSwitchHint(data.route)
+      if (Array.isArray(data.contents)) {
+        for (const chunk of data.contents) {
+          if (chunk?.text != null && chunk?.agent_id) {
+            if (consumeStreamingStatusContent(chunk)) continue
+            appendStreamingContent(chunk.agent_id, chunk.text)
+          }
+        }
+      }
+      if (Array.isArray(data.messages)) {
+        for (const msg of data.messages) handleStreamMessageEvent(msg, state)
+      }
       if (data.message) handleStreamMessageEvent(data.message, state)
       if (data.end) {
         handleStreamEndEvent(data.end, state)
         shouldEmitMessageSent = true
       }
+      if (!data.end && (data.error || data.interrupted)) {
+        const errText = String(data.error?.error || data.error?.detail || '').trim()
+        failureHint = errText || failureHint
+        groupStreamingPhase.value = errText
+          ? `本轮执行失败：${errText}`
+          : '本轮执行失败，请重试一次'
+      }
     } catch (fallbackError) {
       console.error('非流式补偿失败', fallbackError)
+      const errText = fallbackError instanceof Error ? (fallbackError.message || '').trim() : ''
+      failureHint = failureHint || errText
+      groupStreamingPhase.value = errText ? `补偿失败：${errText}` : '补偿失败，请重试一次'
     }
+  }
+  if (!shouldEmitMessageSent && !gotEnd) {
+    const visibleError = failureHint
+      ? `系统提示：本轮请求失败（${failureHint}）。请重新登录后重试。`
+      : '系统提示：本轮请求失败。请重新登录后重试。'
+    groupDisplayMessages.value = [
+      ...groupDisplayMessages.value,
+      { message_id: `msg-${Date.now()}`, role: 'host', content: visibleError } as unknown as GroupMessage,
+    ]
   }
   return shouldEmitMessageSent
 }

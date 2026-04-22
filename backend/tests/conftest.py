@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -63,3 +65,49 @@ def _clear_user_context_cache():
     uc._user_ctx_cache.clear()
     yield
     uc._user_ctx_cache.clear()
+
+
+_TEST_USER_DIR_PATTERN = re.compile(r"^u\d+$")
+_TEST_USER_DIR_EXACT = {"alice", "bob"}
+_TEST_USER_DIR_PREFIXES = ("alice_", "bob_")
+
+
+def _is_generated_test_user_dir(name: str) -> bool:
+    if _TEST_USER_DIR_PATTERN.fullmatch(name):
+        return True
+    if name in _TEST_USER_DIR_EXACT:
+        return True
+    return any(name.startswith(p) for p in _TEST_USER_DIR_PREFIXES)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_generated_test_user_dirs():
+    """
+    清理测试期间新增的临时账号目录（例如 u1/u2/...），避免污染真实 users 数据目录。
+    仅删除「本次测试新建 + 命名匹配测试约定」的目录，避免误删已有用户数据。
+    """
+    from app.core.user_context import users_data_root
+
+    root = users_data_root()
+    before: set[str] = set()
+    try:
+        if root.exists():
+            before = {p.name for p in root.iterdir() if p.is_dir()}
+    except Exception:
+        before = set()
+    yield
+    try:
+        if not root.exists():
+            return
+        for p in root.iterdir():
+            if not p.is_dir():
+                continue
+            name = p.name
+            if name in before:
+                continue
+            if not _is_generated_test_user_dir(name):
+                continue
+            shutil.rmtree(p, ignore_errors=True)
+    except Exception:
+        # 清理失败不影响测试结论
+        pass

@@ -2330,6 +2330,13 @@ async def delete_group_message(group_session_id: str, message_id: str):
 
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     """群聊流式对话：用户消息或继续下一轮，支持 override_next_speaker"""
+    logger.warning(
+        "group_chat_stream_enter session=%s override=%r action=%r has_message=%s",
+        group_session_id,
+        request.override_next_speaker,
+        request.action,
+        bool((request.message or "").strip()),
+    )
     await _ensure_initialized()
 
     meta = _load_group_meta()
@@ -2457,6 +2464,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
         meta_item: Dict[str, Any] = meta[group_session_id]
         orch_profile = effective_orchestration_profile(meta_item, agent_ids=agent_ids)
+        logger.warning(
+            "group_chat_event_gen_enter session=%s profile=%s agent_ids=%s pending_owner=%s",
+            group_session_id,
+            orch_profile,
+            ",".join(agent_ids or []),
+            pending_owner_agent_id,
+        )
         available_for_scheduler = available_to_add_for_prompt(available_to_add, orchestration_profile=orch_profile)
         custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
         dha_turns = 0  # 本次流中 DHA 总发言轮次
@@ -2621,6 +2635,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _save_group_meta(meta)
 
             if forced_at_mention_agent_id and forced_at_mention_agent_id in agent_ids:
+                logger.warning("group_chat_route_branch=forced_at_mention session=%s next=%s", group_session_id, forced_at_mention_agent_id)
                 clear_skill_session_lock(meta_item)
                 _save_group_meta(meta)
                 next_speaker = forced_at_mention_agent_id
@@ -2633,7 +2648,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         "ctx": orch_ctx.to_dict(),
                     },
                 )
-            elif explicit_requested_agent_ids:
+            elif explicit_requested_agent_ids and any(aid in agent_ids for aid in explicit_requested_agent_ids):
+                logger.warning("group_chat_route_branch=explicit_requested session=%s ids=%s", group_session_id, ",".join(explicit_requested_agent_ids or []))
                 # 用户显式点名场内专家时优先直达，避免被上一轮 skill 锁误续跑到其他专家。
                 requested_in_room = [aid for aid in explicit_requested_agent_ids if aid in agent_ids]
                 if requested_in_room:
@@ -2650,7 +2666,21 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             "ctx": orch_ctx.to_dict(),
                         },
                     )
+            elif explicit_requested_agent_ids:
+                # 用户点名了不在当前场景成员中的专家（常见于切场景后沿用旧 @专家）。
+                # 记录后继续走主持人调度，不在该分支短路。
+                logger.warning(
+                    "group_chat_explicit_requested_not_in_room session=%s requested=%s room=%s",
+                    group_session_id,
+                    ",".join(explicit_requested_agent_ids or []),
+                    ",".join(agent_ids or []),
+                )
             elif entry_route.skip_host_dispatch and entry_route.direct_expert_id:
+                logger.warning(
+                    "group_chat_route_branch=skip_host_dispatch session=%s next=%s",
+                    group_session_id,
+                    entry_route.direct_expert_id,
+                )
                 next_speaker = entry_route.direct_expert_id
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
                 orch_ctx.owner_agent_id = entry_route.direct_expert_id
@@ -2658,8 +2688,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "fsm_skip_host_dispatch",
                     {"next_speaker": next_speaker, "ctx": orch_ctx.to_dict()},
                 )
-            elif request.override_next_speaker is not None:
-                next_speaker = request.override_next_speaker.strip().lower()
+            elif request.override_next_speaker is not None and str(request.override_next_speaker).strip():
+                logger.warning(
+                    "group_chat_route_branch=override session=%s override=%s",
+                    group_session_id,
+                    str(request.override_next_speaker).strip().lower(),
+                )
+                next_speaker = str(request.override_next_speaker).strip().lower()
                 if next_speaker == "user":
                     orch_ctx.phase = OrchestrationPhase.AWAITING_USER
                     payload = build_end_payload(
@@ -2696,10 +2731,29 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if next_speaker in agent_ids:
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_id = next_speaker
+            elif request.override_next_speaker is not None:
+                # 兼容前端偶发传入空串：应视作“未指定 override”，继续走主持人正常调度，
+                # 而不是让 next_speaker 落成空值导致后续无可执行专家。
+                logger.warning(
+                    "group_chat_stream 忽略空 override_next_speaker: session=%s raw=%r",
+                    group_session_id,
+                    request.override_next_speaker,
+                )
             else:
+                logger.warning("group_chat_route_branch=host_scheduler session=%s", group_session_id)
                 # 唯一调度路径（不再区分 speak_mode manual/auto；流程由 Skill 锁与主持人 JSON 表达）
                 recent = _scheduler_recent_context(group_session_id, messages)
                 decision = None
+                logger.info(
+                    "group_chat_scheduler_enter session=%s profile=%s agent_count=%s has_host=%s pending_owner=%s pending_skill=%s user_msg_len=%s",
+                    group_session_id,
+                    orch_profile,
+                    len(agent_ids or []),
+                    bool(host_dha),
+                    pending_owner_agent_id,
+                    pending_skill_id,
+                    len((user_message or "").strip()),
+                )
                 if leader_agent_id and host_dha:
                     llm_host = _get_llm_for_dha(host_dha, app_settings)
                     decision = await _host_decide_by_dha(
@@ -2720,7 +2774,15 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         orphan_session_agent_ids=orphan_session_agent_ids,
                         orchestration_profile=orch_profile,
                     )
+                    logger.info(
+                        "group_chat_scheduler_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",
+                        group_session_id,
+                        decision is None,
+                        (decision or {}).get("next_speaker") if isinstance(decision, dict) else "",
+                        (decision or {}).get("reason") if isinstance(decision, dict) else "",
+                    )
                 if decision is None:
+                    logger.info("group_chat_scheduler_fallback_to_leader_decide session=%s", group_session_id)
                     llm_default = _get_llm_for_dha(None, app_settings)
                     decision = await leader_decide(
                         llm_default,
@@ -2731,6 +2793,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         available_for_scheduler,
                         orchestration_profile=orch_profile,
                     )
+                    logger.info(
+                        "group_chat_scheduler_leader_decide_done session=%s next_speaker=%s reason=%s",
+                        group_session_id,
+                        (decision or {}).get("next_speaker") if isinstance(decision, dict) else "",
+                        (decision or {}).get("reason") if isinstance(decision, dict) else "",
+                    )
                 decision = finalize_host_scheduler_decision(
                     decision,
                     agent_ids=agent_ids,
@@ -2740,6 +2808,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     user_message=user_message,
                     explicit_requested_agent_ids=explicit_requested_agent_ids,
                     orchestration_profile=orch_profile,
+                )
+                logger.info(
+                    "group_chat_scheduler_decision_finalized session=%s next_speaker=%s interrupt_reason=%s suggested_add=%s required_fields=%s",
+                    group_session_id,
+                    (decision or {}).get("next_speaker") if isinstance(decision, dict) else "",
+                    (decision or {}).get("interrupt_reason") if isinstance(decision, dict) else "",
+                    len(list((decision or {}).get("suggested_add_agent_ids") or [])) if isinstance(decision, dict) else 0,
+                    len(list((decision or {}).get("required_user_fields") or [])) if isinstance(decision, dict) else 0,
                 )
                 _apply_decision_to_ctx(decision)
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
@@ -2822,6 +2898,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     _generic_host = frozenset(
                         {"", "请下一位发言。", "请下一位发言", "请下一位发言。 "}
                     )
+                    if (not _ann or _ann in _generic_host) and next_speaker == "user":
+                        # 兜底：调度返回 user 但未给可见说明时，仍输出一条主持人提示，
+                        # 避免 UI 上呈现为“发送后无任何反馈”。
+                        reason_text = str(decision.get("reason") or "").strip()
+                        if reason_text:
+                            _ann = f"已暂停自动推进：{reason_text}\n\n请补充更具体要求，或直接指定下一位专家继续。"
+                        else:
+                            _ann = "已暂停自动推进，请补充更具体要求，或直接指定下一位专家继续。"
                     if _ann and _ann not in _generic_host:
                         host_msg = {
                             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
@@ -2837,6 +2921,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                     if next_speaker == "user":
                         orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+
+            if not next_speaker:
+                # 兜底：当调度链路未产出 next_speaker 时，写入可见主持人消息，避免 UI 只看到用户自说自话。
+                fallback_host = {
+                    "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                    "role": "host",
+                    "content": "主持人暂未选出下一位专家，已暂停自动推进。请补充更具体要求，或直接指定下一位专家继续。",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "skill_id": _host_bubble_skill_id(),
+                    "meta": {"reason": "next_speaker_missing"},
+                }
+                if leader_agent_id:
+                    fallback_host["agent_id"] = leader_agent_id
+                messages.append(fallback_host)
+                _save_group_history(group_session_id, messages)
+                _save_group_meta(meta)
+                yield f"event: message\ndata: {json_module.dumps(fallback_host, ensure_ascii=False)}\n\n"
 
             while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_ids:
                 # 在自动或手动模式下，单次流中专家发言超过一定轮次（默认 32）时强制停下来，让用户确认是否继续，

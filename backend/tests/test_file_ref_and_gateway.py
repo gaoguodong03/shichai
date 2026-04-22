@@ -120,6 +120,23 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     assert "ok" in str(out.get("stdout") or "")
 
 
+def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
+    from app.tools import run_skill_script as rss
+
+    cmd, env, cwd = rss._build_sandbox_exec_request(
+        skill_id="demo-skill",
+        workspace_id="sess-1",
+        script_path="tools/check.py",
+        suffix=".py",
+        cli_argv=["--x", "1"],
+        input_json="",
+    )
+    shell = " ".join(cmd)
+    assert "/skills/demo-skill/scripts/tools/check.py" in shell
+    assert env == {}
+    assert cwd == "/workspace"
+
+
 def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
     from app.tools.filesystem_session_wrapper import _normalize_path_for_session
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import hashlib
 import logging
 import os
@@ -14,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_audit import append_sandbox_event
-from app.agent.sandbox_mount_policy import SandboxMountPolicy
+from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT, SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
 from app.core.user_context import get_user_context_for, users_data_root
 
@@ -170,6 +171,41 @@ class SandboxService:
             return replace(policy, **updates)
         return policy
 
+    def _build_mounts_for_request(
+        self, req: SandboxExecutionRequest
+    ) -> tuple[Path, Optional[Path], list]:
+        host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
+        skills_root: Optional[Path] = None
+        uid = (req.user_id or "").strip()
+        if uid:
+            try:
+                skills_root = get_user_context_for(uid).skills_dir.resolve()
+            except Exception:
+                skills_root = None
+        if skills_root is not None:
+            mounts = SandboxMountPolicy.workspace_with_all_skills(
+                workspace_sessions_host_path=host_sessions_root,
+                skills_root_host_path=skills_root,
+                workspace_target=sandbox_sessions_root(),
+            )
+        else:
+            mounts = SandboxMountPolicy.workspace_sessions_root_only(
+                workspace_sessions_host_path=host_sessions_root
+            )
+        return host_sessions_root, skills_root, mounts
+
+    @staticmethod
+    def _resolve_cwd(policy: SandboxPolicy, req: SandboxExecutionRequest) -> str:
+        desired = (req.cwd or "").strip() or sandbox_session_dir(req.session_id)
+        targets = {str(m.target or "").strip() for m in (policy.volume_mounts or []) if str(m.target or "").strip()}
+        if desired == "/":
+            return desired
+        if desired.startswith("/workspace"):
+            if "/workspace" in targets:
+                return desired
+            return "/"
+        return desired
+
     def _workspace_only_policy(self, sessions_root_path: Path, *, timeout_ms: int = 60_000) -> SandboxPolicy:
         mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=sessions_root_path)
         return SandboxPolicy(
@@ -182,6 +218,31 @@ class SandboxService:
             runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
             allow_network=False,
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
+        )
+
+    def _workspace_with_skills_policy(
+        self,
+        sessions_root_path: Path,
+        *,
+        skills_root_path: Path,
+        timeout_ms: int = 60_000,
+    ) -> SandboxPolicy:
+        mounts = SandboxMountPolicy.workspace_with_all_skills(
+            workspace_sessions_host_path=sessions_root_path,
+            skills_root_host_path=skills_root_path,
+            workspace_target=SANDBOX_WORKSPACE_ROOT,
+        )
+        return SandboxPolicy(
+            fs_root=str(sessions_root_path.resolve()),
+            workspace_host_path=str(sessions_root_path.resolve()),
+            skill_scripts_host_path=str(skills_root_path.resolve()),
+            timeout_ms=max(1000, int(timeout_ms)),
+            tool_allowlist=[],
+            runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
+            runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
+            allow_network=False,
+            allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
+            volume_mounts=mounts,
         )
 
     @staticmethod
@@ -214,32 +275,28 @@ class SandboxService:
             policy = req.policy
             if final_net != bool(req.policy.allow_network):
                 policy = replace(req.policy, allow_network=final_net)
+            host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
+            updates: Dict[str, Any] = {}
+            if not list(policy.volume_mounts or []):
+                updates["volume_mounts"] = mounts
+            if not (policy.workspace_host_path or "").strip():
+                updates["workspace_host_path"] = str(host_sessions_root.resolve())
+            if skills_root is not None and not (policy.skill_scripts_host_path or "").strip():
+                updates["skill_scripts_host_path"] = str(skills_root.resolve())
+            if updates:
+                policy = replace(policy, **updates)
             return self._apply_fixed_resource_policy(policy)
-        mounts: list = []
-        host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
-        scripts_path = req.skill_scripts_path
-        if scripts_path is None and req.skill_home is not None:
-            scripts_path = req.skill_home / "scripts"
-        if req.skill_home is not None and scripts_path is not None:
-            mounts = SandboxMountPolicy.build_mounts(
-                workspace_host_path=host_sessions_root,
-                skill_scripts_host_path=scripts_path,
-                skill_home_host_path=req.skill_home,
-                skill_config_host_path=req.skill_config_path,
-                config_writable=False,
-                workspace_target=sandbox_sessions_root(),
-            )
-        else:
-            mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=host_sessions_root)
+        host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
         return self._apply_fixed_resource_policy(SandboxPolicy(
             fs_root=str(host_sessions_root.resolve()),
             workspace_host_path=str(host_sessions_root.resolve()),
-            skill_scripts_host_path=str(scripts_path.resolve()) if scripts_path else "",
-            skill_config_host_path=str(req.skill_config_path.resolve()) if req.skill_config_path else "",
+            skill_scripts_host_path=str(skills_root) if skills_root else "",
+            skill_config_host_path="",
             runtime_backend=req.runtime_backend,
             runtime_profile=req.runtime_profile,
             timeout_ms=max(1000, int(req.timeout_ms)),
-            tool_allowlist=[req.tool_name],
+            # 全量挂载模式下，用户级沙箱在同一挂载策略下复用，不按工具名触发重建。
+            tool_allowlist=[],
             volume_mounts=mounts,
             allow_network=_network_allowed_for_tool(req.tool_name),
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
@@ -298,8 +355,18 @@ class SandboxService:
                     "runtime": handle.runtime,
                     "runtime_backend": policy.runtime_backend,
                     "runtime_profile": policy.runtime_profile,
+                    "mount_count": len(policy.volume_mounts or []),
+                    "workspace_root_in_sandbox": SANDBOX_WORKSPACE_ROOT,
+                    "resource_limit": {
+                        "cpu": policy.cpu_limit,
+                        "memory_mb": policy.memory_limit_mb,
+                    },
                 },
             )
+            mounts_payload = [
+                {"source": m.source, "target": m.target, "read_only": m.read_only, "type": m.mount_type}
+                for m in (policy.volume_mounts or [])
+            ]
             append_sandbox_event(
                 session_id=req.session_id,
                 event_type="sandbox_mount_applied",
@@ -308,10 +375,9 @@ class SandboxService:
                     "user_id": user_id,
                     "sandbox_mode": "user_single_sandbox",
                     "mount_fingerprint": policy_mount_fingerprint(policy),
-                    "mounts": [
-                        {"source": m.source, "target": m.target, "read_only": m.read_only, "type": m.mount_type}
-                        for m in (policy.volume_mounts or [])
-                    ],
+                    "mounts": mounts_payload,
+                    "mount_targets": [str(m.get("target") or "") for m in mounts_payload],
+                    "mounts_empty": len(mounts_payload) == 0,
                 },
             )
             return handle
@@ -391,7 +457,13 @@ class SandboxService:
         env = {"SANDBOX_REQUIREMENTS_B64": b64}
         try:
             if hasattr(self._adapter, "exec_command"):
-                await self._adapter.exec_command(handle, cmd, cwd="/workspace", timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)), env=env)  # type: ignore[attr-defined]
+                await self._adapter.exec_command(
+                    handle,
+                    cmd,
+                    cwd="/",
+                    timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)),
+                    env=env,
+                )  # type: ignore[attr-defined]
                 handle.metadata["installed_requirements_hash"] = dep_hash
         except Exception as e:
             # 不更新 hash：下次仍会重试，便于用户修复 requirements 后再次验证
@@ -548,7 +620,8 @@ class SandboxService:
 
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
         policy = await self._build_policy(req)
-        cwd = req.cwd or sandbox_session_dir(req.session_id)
+        cwd = self._resolve_cwd(policy, req)
+        mount_targets = [str(m.target or "") for m in (policy.volume_mounts or []) if str(m.target or "")]
         payload = req.payload if isinstance(req.payload, dict) else {}
         command = payload.get("__sandbox_command")
         env = payload.get("__sandbox_env")
@@ -567,6 +640,8 @@ class SandboxService:
                     "user_id": req.user_id,
                     "sandbox_id": handle.metadata.get("sandbox_id", ""),
                     "cwd": cwd,
+                    "mount_count": len(policy.volume_mounts or []),
+                    "mount_targets": mount_targets,
                     "attempt": attempt + 1,
                 },
             )
@@ -630,10 +705,26 @@ class SandboxService:
                         "tool_call_id": req.tool_call_id,
                         "user_id": req.user_id,
                         "error": str(exc),
+                        "cwd": cwd,
+                        "mount_count": len(policy.volume_mounts or []),
+                        "mount_targets": mount_targets,
                         "attempt": attempt + 1,
                     },
                 )
-                raise
+                diag = {
+                    "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
+                    "sandbox_cwd": cwd,
+                    "mount_count": len(policy.volume_mounts or []),
+                    "mount_targets": mount_targets,
+                    "resource_limit": {
+                        "cpu": policy.cpu_limit,
+                        "memory_mb": policy.memory_limit_mb,
+                    },
+                    "last_sandbox_error_code": "INVALID_REQUEST_BODY"
+                    if "INVALID_REQUEST_BODY" in str(exc)
+                    else ("HTTP_400" if "Status code: 400" in str(exc) else ""),
+                }
+                raise RuntimeError(f"{exc} | sandbox_diag={json.dumps(diag, ensure_ascii=False)}") from exc
         raise RuntimeError("sandbox execution failed without terminal error")
 
     async def dispose_user(self, user_id: str, *, turn_id: str = "") -> None:
@@ -673,7 +764,11 @@ class SandboxService:
         workspaces_subdir = (os.getenv("WORKSPACES_SUBDIR") or "workspaces").strip() or "workspaces"
         workspaces_root = (user_ctx.agent_outputs_dir / workspaces_subdir).resolve()
         workspaces_root.mkdir(parents=True, exist_ok=True)
-        policy = self._workspace_only_policy(workspaces_root, timeout_ms=timeout_ms)
+        policy = self._workspace_with_skills_policy(
+            workspaces_root,
+            skills_root_path=user_ctx.skills_dir.resolve(),
+            timeout_ms=timeout_ms,
+        )
         req = SandboxExecutionRequest(
             user_id=uid,
             session_id=f"prewarm:{uid}",
@@ -693,7 +788,7 @@ class SandboxService:
                 await self._adapter.exec_command(  # type: ignore[attr-defined]
                     handle,
                     ["sh", "-lc", "true"],
-                    cwd="/workspace",
+                    cwd="/",
                     timeout_ms=min(10_000, int(policy.timeout_ms)),
                 )
             except Exception as e:  # noqa: BLE001

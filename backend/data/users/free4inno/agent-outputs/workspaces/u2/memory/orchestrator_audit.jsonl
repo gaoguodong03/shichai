@@ -7,3 +7,5 @@
 {"ts": "2026-04-22T01:59:12.835897+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
 {"ts": "2026-04-22T01:59:53.000074+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
 {"ts": "2026-04-22T02:01:23.059654+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T02:50:49.046212+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-04-22T02:53:17.783269+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}

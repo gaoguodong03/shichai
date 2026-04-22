@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import json
+import re
 import shutil
 import sys
 import uuid
@@ -14,10 +15,9 @@ from typing import Any, Optional
 
 from langchain_core.tools import tool
 
-from app.agent.sandbox_adapter import SandboxPolicy
 from app.agent.skill_tool_naming import build_skill_script_tool_name
-from app.agent.sandbox_mount_policy import SandboxMountPolicy
-from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir
+from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT
+from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
@@ -27,6 +27,12 @@ _ALLOWED_SCRIPT_SUFFIX = {".py", ".sh", ".bash", ".ps1", ".cmd", ".bat"}
 _CLI_ARGV_MAX_ITEMS = 64
 _CLI_ARGV_MAX_STRLEN = 32_768
 _SCRIPT_GATEWAY: Optional[UnifiedToolGateway] = None
+_SANDBOX_ENV_PASSTHROUGH_KEYS = (
+    "JENIYA_API_KEY",
+    "CHATANYWHERE_IMAGE_API_KEY",
+    "JENIYA_IMAGE_BASE_URL",
+    "JENIYA_IMAGE_MODEL",
+)
 
 
 def _get_script_gateway() -> UnifiedToolGateway:
@@ -35,6 +41,16 @@ def _get_script_gateway() -> UnifiedToolGateway:
         _SCRIPT_GATEWAY = UnifiedToolGateway()
     return _SCRIPT_GATEWAY
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _collect_sandbox_passthrough_env() -> dict[str, str]:
+    """将宿主进程中的少量必要变量透传到沙箱命令环境。"""
+    out: dict[str, str] = {}
+    for key in _SANDBOX_ENV_PASSTHROUGH_KEYS:
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            out[key] = val
+    return out
 
 
 def _get_skills_dir() -> Path:
@@ -170,6 +186,19 @@ def _json_result(**kwargs: Any) -> str:
     return json.dumps(kwargs, ensure_ascii=False)
 
 
+def _extract_sandbox_diag(gateway_error: str) -> dict[str, Any]:
+    text = str(gateway_error or "")
+    m = re.search(r"sandbox_diag=(\{.*\})", text)
+    if not m:
+        return {}
+    raw = m.group(1)
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def _normalize_skill_script_path(script_path: str) -> str:
     """
     script_path 约定为相对 skill 的 scripts/ 目录。
@@ -219,23 +248,48 @@ def _build_script_command(full: Path, extra_argv: list[str] | None = None) -> li
     raise RuntimeError(f"不支持的脚本后缀: {suffix}")
 
 
-def _build_sandbox_script_command(script_path: str, suffix: str, extra_argv: list[str] | None = None) -> list[str]:
+def _build_sandbox_script_command(
+    script_path: str,
+    suffix: str,
+    extra_argv: list[str] | None = None,
+    legacy_script_path: str | None = None,
+) -> list[str]:
     """构造在沙箱内执行脚本的命令（不依赖宿主机解释器路径）。"""
     argv = list(extra_argv or [])
+    quoted_argv = " ".join(shlex.quote(a) for a in argv)
+    script_choice = shlex.quote(script_path)
+    if legacy_script_path:
+        script_choice = (
+            f'if [ -f {shlex.quote(script_path)} ]; then echo {shlex.quote(script_path)}; '
+            f'elif [ -f {shlex.quote(legacy_script_path)} ]; then echo {shlex.quote(legacy_script_path)}; '
+            f'else echo {shlex.quote(script_path)}; fi'
+        )
     if suffix == ".py":
         # 兼容最小镜像：优先 python3，回退 python
-        return ["sh", "-lc", f'if command -v python3 >/dev/null 2>&1; then exec python3 {shlex.quote(script_path)} {" ".join(shlex.quote(a) for a in argv)}; elif command -v python >/dev/null 2>&1; then exec python {shlex.quote(script_path)} {" ".join(shlex.quote(a) for a in argv)}; else echo "python runtime not found" 1>&2; exit 127; fi']
+        return [
+            "sh",
+            "-lc",
+            f'SCRIPT_PATH="$({script_choice})"; '
+            f'if command -v python3 >/dev/null 2>&1; then exec python3 "$SCRIPT_PATH" {quoted_argv}; '
+            f'elif command -v python >/dev/null 2>&1; then exec python "$SCRIPT_PATH" {quoted_argv}; '
+            f'else echo "python runtime not found" 1>&2; exit 127; fi',
+        ]
     if suffix in (".sh", ".bash"):
-        return ["bash", script_path, *argv]
+        return ["sh", "-lc", f'SCRIPT_PATH="$({script_choice})"; exec bash "$SCRIPT_PATH" {quoted_argv}']
     if suffix == ".ps1":
-        return ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_path, *argv]
+        return [
+            "sh",
+            "-lc",
+            f'SCRIPT_PATH="$({script_choice})"; exec pwsh -NoProfile -ExecutionPolicy Bypass -File "$SCRIPT_PATH" {quoted_argv}',
+        ]
     if suffix in (".cmd", ".bat"):
-        return ["cmd.exe", "/c", script_path, *argv]
+        return ["sh", "-lc", f'SCRIPT_PATH="$({script_choice})"; exec cmd.exe /c "$SCRIPT_PATH" {quoted_argv}']
     raise RuntimeError(f"不支持的脚本后缀: {suffix}")
 
 
 def _build_sandbox_exec_request(
     *,
+    skill_id: str,
     workspace_id: str,
     script_path: str,
     suffix: str,
@@ -248,8 +302,15 @@ def _build_sandbox_exec_request(
     - input_json 通过环境变量注入并管道到 stdin
     """
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
-    sandbox_script_path = f"/skill/scripts/{script_path.lstrip('/')}"
-    base_argv = _build_sandbox_script_command(sandbox_script_path, suffix, cli_argv)
+    skill_home = f"{SANDBOX_SKILLS_ROOT}/{skill_id}"
+    sandbox_script_path = f"{skill_home}/scripts/{script_path.lstrip('/')}"
+    legacy_sandbox_script_path = f"/skill/scripts/{script_path.lstrip('/')}"
+    base_argv = _build_sandbox_script_command(
+        sandbox_script_path,
+        suffix,
+        cli_argv,
+        legacy_script_path=legacy_sandbox_script_path,
+    )
     quoted = " ".join(shlex.quote(str(x)) for x in base_argv)
     env: dict[str, str] = {}
     if input_json:
@@ -276,7 +337,11 @@ def _execute_script_subprocess(
     workspace_root = _get_workspace_root(workspace_id)
     workspace_root.mkdir(parents=True, exist_ok=True)
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
-    script_exec_path = f"/skill/scripts/{script_path.lstrip('/')}" if run_in_sandbox else str(script_full_path)
+    script_exec_path = (
+        f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts/{script_path.lstrip('/')}"
+        if run_in_sandbox
+        else str(script_full_path)
+    )
     cwd_path = sandbox_workspace_dir if run_in_sandbox else str(workspace_root)
     workspace_env_root = sandbox_workspace_dir if run_in_sandbox else str(workspace_root)
     try:
@@ -297,7 +362,11 @@ def _execute_script_subprocess(
                 "SKILL_WRITE_MODE": write_mode,
                 "SKILL_WORKSPACE_ID": workspace_id,
                 "SKILL_WORKSPACE_ROOT": workspace_env_root,
-                "SKILL_SCRIPT_ROOT": "/skill/scripts" if run_in_sandbox else str(script_root),
+                "SKILL_SCRIPT_ROOT": (
+                    f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts"
+                    if run_in_sandbox
+                    else str(script_root)
+                ),
                 # 确保用户目录中的 skill 脚本也能 import app.*
                 "PYTHONPATH": (
                     str(_BACKEND_ROOT)
@@ -494,6 +563,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             )
         try:
             sandbox_command, sandbox_extra_env, sandbox_cwd = _build_sandbox_exec_request(
+                skill_id=skill_id,
                 workspace_id=workspace_id,
                 script_path=script_path,
                 suffix=full.suffix.lower(),
@@ -503,8 +573,6 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         except RuntimeError as e:
             return _json_result(ok=False, code="runtime_missing", message=str(e))
         script_tool_name = build_skill_script_tool_name(skill_id)
-        legacy_tool_name = f"run_skill_script_{skill_id}"
-        tool_allow = list(dict.fromkeys(["run_skill_script", legacy_tool_name, script_tool_name]))
         ctx = ToolExecutionContext(
             session_id=workspace_id,
             workspace_id=str(workspace_root),
@@ -517,24 +585,6 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             timeout_ms=max(1000, timeout_sec * 1000),
             retry_count=0,
             sandbox_cwd=sandbox_cwd,
-            policy=SandboxPolicy(
-                fs_root=str(host_sessions_root_from_workspace(workspace_root)),
-                workspace_host_path=str(host_sessions_root_from_workspace(workspace_root)),
-                skill_scripts_host_path=str(script_root),
-                skill_config_host_path=str((skill_home / "config").resolve()),
-                runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
-                runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
-                timeout_ms=max(1000, timeout_sec * 1000),
-                tool_allowlist=tool_allow,
-                volume_mounts=SandboxMountPolicy.build_mounts(
-                    workspace_host_path=host_sessions_root_from_workspace(workspace_root),
-                    skill_scripts_host_path=script_root,
-                    skill_home_host_path=skill_home,
-                    skill_config_host_path=(skill_home / "config"),
-                    config_writable=False,
-                    workspace_target="/workspace",
-                ),
-            ),
         )
         gw = await _get_script_gateway().execute(
             tool_name=script_tool_name,
@@ -548,9 +598,10 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     "SKILL_WRITE_MODE": write_mode,
                     "SKILL_WORKSPACE_ID": workspace_id,
                     "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
-                    "SKILL_SCRIPT_ROOT": "/skill/scripts",
-                    "SKILL_HOME": "/skill",
+                    "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts",
+                    "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{skill_id}",
                     **sandbox_extra_env,
+                    **_collect_sandbox_passthrough_env(),
                 },
             },
             context=ctx,
@@ -559,6 +610,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         if not gw.ok:
             reason = getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason))
             gateway_error = gw.error or "统一网关执行失败"
+            sandbox_diag = _extract_sandbox_diag(gateway_error)
             if str(reason) == "timeout_or_budget_exceeded":
                 return _json_result(
                     ok=False,
@@ -571,6 +623,11 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     gateway_interrupt_reason=reason,
                     gateway_timeout_ms=int(ctx.timeout_ms or 0),
                     gateway_elapsed_ms=int(gw.elapsed_ms or 0),
+                    sandbox_id=str(sandbox_diag.get("sandbox_id") or ""),
+                    sandbox_cwd=str(sandbox_diag.get("sandbox_cwd") or ""),
+                    mount_count=int(sandbox_diag.get("mount_count") or 0),
+                    mount_targets=list(sandbox_diag.get("mount_targets") or []),
+                    last_sandbox_error_code=str(sandbox_diag.get("last_sandbox_error_code") or ""),
                 )
             if str(reason) == "tool_unavailable":
                 return _json_result(
@@ -580,6 +637,11 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     gateway_error=gateway_error,
                     gateway_interrupt_reason=reason,
                     gateway_elapsed_ms=int(gw.elapsed_ms or 0),
+                    sandbox_id=str(sandbox_diag.get("sandbox_id") or ""),
+                    sandbox_cwd=str(sandbox_diag.get("sandbox_cwd") or ""),
+                    mount_count=int(sandbox_diag.get("mount_count") or 0),
+                    mount_targets=list(sandbox_diag.get("mount_targets") or []),
+                    last_sandbox_error_code=str(sandbox_diag.get("last_sandbox_error_code") or ""),
                 )
             return _json_result(
                 ok=False,
@@ -588,6 +650,11 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 gateway_error=gateway_error,
                 gateway_interrupt_reason=reason,
                 gateway_elapsed_ms=int(gw.elapsed_ms or 0),
+                sandbox_id=str(sandbox_diag.get("sandbox_id") or ""),
+                sandbox_cwd=str(sandbox_diag.get("sandbox_cwd") or ""),
+                mount_count=int(sandbox_diag.get("mount_count") or 0),
+                mount_targets=list(sandbox_diag.get("mount_targets") or []),
+                last_sandbox_error_code=str(sandbox_diag.get("last_sandbox_error_code") or ""),
             )
         out = dict(gw.output or {})
         exit_code = out.get("exit_code")

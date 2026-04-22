@@ -497,5 +497,79 @@
     "orchestration_profile": "scene",
     "skill_session_owner_id": "agent-8f3a2c1d",
     "skill_session_skill_id": "github"
+  },
+  "group-c2dfad6079ab": {
+    "title": "编写PPT",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-ppt-guide-3f7c1a2b",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-22T02:57:24.999586+00:00",
+    "updated_at": "2026-04-22T03:29:58.845830+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-ppt-writing"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": false
+    },
+    "orchestration_profile": "scene"
+  },
+  "group-7efe4b5b32ed": {
+    "title": "编写PPT",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-ppt-guide-3f7c1a2b",
+      "agent-440b26f8"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-22T03:30:32.438097+00:00",
+    "updated_at": "2026-04-22T10:14:08.444472+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "group-host-ppt-writing"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": false
+    },
+    "orchestration_profile": "scene"
+  },
+  "group-30171d50f660": {
+    "title": "Thinking Process:",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-sandbox-dep-check"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-22T03:45:30.520006+00:00",
+    "updated_at": "2026-04-22T10:23:11.818029+00:00",
+    "orchestration_profile": "recruitment"
   }
 }

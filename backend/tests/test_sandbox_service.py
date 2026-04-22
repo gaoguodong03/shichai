@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.agent.sandbox_adapter import SandboxHandle
+from app.agent.sandbox_adapter import SandboxHandle, SandboxPolicy
+from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT, SANDBOX_WORKSPACE_ROOT
 from app.agent.sandbox_service import SandboxExecutionRequest, SandboxService
 
 
@@ -10,6 +11,7 @@ class FakeAdapter:
     def __init__(self):
         self.created = []
         self.disposed = []
+        self.last_tool_request = None
 
     def _host_file(self, handle: SandboxHandle, inner: str) -> Path:
         rel = inner.replace("/workspace", "").lstrip("/") if inner.startswith("/workspace") else inner.lstrip("/")
@@ -28,6 +30,7 @@ class FakeAdapter:
         )
 
     async def run_tool_in_sandbox(self, handle, tool_request):
+        self.last_tool_request = dict(tool_request or {})
         runner = tool_request["runner"]
         result = await runner()
         result["_sandbox_trace"] = {"sandbox_id": handle.metadata["sandbox_id"]}
@@ -138,8 +141,8 @@ async def test_session_isolation_one_session_one_sandbox():
     await svc.execute(req_b1)
     await svc.execute(req_a1)
 
-    # 现行为用户级单沙箱：同一用户跨会话复用；但工具 allowlist 变化会触发重建
-    assert len(adapter.created) == 3
+    # 全量挂载模式下：同一用户跨会话、跨工具复用同一个沙箱
+    assert len(adapter.created) == 1
     assert adapter.created[0][0] == "u1"
 
 
@@ -214,7 +217,7 @@ async def test_ignore_not_found_when_dispose_stale_handle():
     await svc.execute(req1)
     out = await svc.execute(req2)
     assert out.get("ok") is True
-    assert len(adapter.created) == 2
+    assert len(adapter.created) == 1
 
 
 async def test_always_on_skips_ttl_recycle(monkeypatch):
@@ -280,3 +283,136 @@ async def test_prewarm_all_known_users_scans_user_root(monkeypatch, tmp_path):
     assert out["failed"] == 0
     assert len(adapter.created) == 2
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+    )
+    policy = await svc._build_policy(req)
+    targets = {m.target for m in (policy.volume_mounts or [])}
+    assert SANDBOX_WORKSPACE_ROOT in targets
+    assert SANDBOX_SKILLS_ROOT in targets
+    assert policy.skill_scripts_host_path.endswith("/alice/skills")
+    assert policy.tool_allowlist == []
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    out = await svc.prewarm_user_sandbox("alice", reason="test")
+    assert out["status"] == "ok"
+    _sid, policy = adapter.created[0]
+    targets = {m.target for m in (policy.volume_mounts or [])}
+    assert SANDBOX_WORKSPACE_ROOT in targets
+    assert SANDBOX_SKILLS_ROOT in targets
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_build_policy_fills_mounts_when_req_policy_missing_them(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+        policy=SandboxPolicy(
+            fs_root=str(workspace_root),
+            timeout_ms=1000,
+            tool_allowlist=["run_skill_script_demo"],
+        ),
+    )
+    policy = await svc._build_policy(req)
+    targets = {m.target for m in (policy.volume_mounts or [])}
+    assert SANDBOX_WORKSPACE_ROOT in targets
+    assert SANDBOX_SKILLS_ROOT in targets
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_execute_falls_back_cwd_when_workspace_not_mounted():
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="u7",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+        policy=SandboxPolicy(
+            fs_root=".",
+            timeout_ms=1000,
+            tool_allowlist=["tool_a"],
+            volume_mounts=[],
+        ),
+        cwd="/workspace",
+    )
+    await svc.execute(req)
+    assert adapter.last_tool_request is not None
+    assert adapter.last_tool_request.get("cwd") == "/"
+
+
+async def test_sandbox_events_include_mount_diagnostic_fields(monkeypatch):
+    events = []
+
+    def _capture(*, session_id, event_type, payload, turn_id=""):
+        events.append((event_type, payload))
+
+    monkeypatch.setattr("app.agent.sandbox_service.append_sandbox_event", _capture)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="u8",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    await svc.execute(req)
+    created = next(p for e, p in events if e == "sandbox_session_created")
+    mounted = next(p for e, p in events if e == "sandbox_mount_applied")
+    assert "mount_count" in created
+    assert "resource_limit" in created
+    assert "mount_targets" in mounted
+    assert "mounts_empty" in mounted

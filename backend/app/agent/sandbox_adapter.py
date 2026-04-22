@@ -336,7 +336,7 @@ class OpenSandboxAdapter:
                     command = " ".join(shlex.quote(str(x)) for x in argv)
                     opts = self._RunCommandOpts(
                         background=False,
-                        working_directory=str(req.get("cwd") or "/workspace"),
+                        working_directory=str(req.get("cwd") or "/"),
                         timeout=timedelta(milliseconds=int(req.get("timeout_ms") or 120_000)),
                         envs=dict(req.get("env") or {}),
                     )
@@ -366,7 +366,7 @@ class OpenSandboxAdapter:
                         " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path]),
                         opts=self._RunCommandOpts(
                             background=False,
-                            working_directory="/workspace",
+                            working_directory="/",
                             timeout=timedelta(milliseconds=120_000),
                             envs={},
                         ),
@@ -400,7 +400,7 @@ class OpenSandboxAdapter:
                         " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, path, b64]),
                         opts=self._RunCommandOpts(
                             background=False,
-                            working_directory="/workspace",
+                            working_directory="/",
                             timeout=timedelta(milliseconds=120_000),
                             envs={},
                         ),
@@ -452,7 +452,7 @@ class OpenSandboxAdapter:
                         " ".join(shlex.quote(str(x)) for x in ["python", "-c", py, root]),
                         opts=self._RunCommandOpts(
                             background=False,
-                            working_directory="/workspace",
+                            working_directory="/",
                             timeout=timedelta(milliseconds=120_000),
                             envs={},
                         ),
@@ -551,7 +551,7 @@ class OpenSandboxAdapter:
                 "tool_kind": str(tool_request.get("tool_kind") or "tool"),
                 "payload": payload if isinstance(payload, dict) else {"value": payload},
                 "timeout_ms": timeout_ms,
-                "cwd": str(tool_request.get("cwd") or "/workspace"),
+                "cwd": str(tool_request.get("cwd") or "/"),
                 "command": cmd,
                 "env": tool_request.get("env") or {},
             }
@@ -590,7 +590,7 @@ class OpenSandboxAdapter:
         handle: SandboxHandle,
         argv: List[str],
         *,
-        cwd: str = "/workspace",
+        cwd: str = "/",
         timeout_ms: int = 120_000,
         env: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:

@@ -1,5 +1,5 @@
 {
-  "default_llm": "jeniya",
+  "default_llm": "gpustack",
   "llm_providers": {
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -43,6 +43,13 @@
       "base_url": "http://jeniya.top/v1",
       "model": "moonshot-v1-128k",
       "api_key_env": "JENIYA_API_KEY",
+      "api_key_set": false
+    },
+    "gpustack": {
+      "base_url": "http://10.129.50.230/v1",
+      "model": "qwen3.5-27b-awq",
+      "api_key_env": "JENIYA_API_KEY",
+      "api_key_ref": "gpustack",
       "api_key_set": false
     }
   },

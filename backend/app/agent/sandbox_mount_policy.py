@@ -8,6 +8,8 @@ from typing import List
 from app.agent.sandbox_adapter import SandboxVolumeMount
 
 _DEFAULT_MOUNT_TYPE = os.getenv("SANDBOX_VOLUME_MOUNT_TYPE", "host_path")
+SANDBOX_WORKSPACE_ROOT = "/workspace"
+SANDBOX_SKILLS_ROOT = "/skills"
 
 
 def _translate_source_for_sandbox_host(path: Path) -> str:
@@ -54,8 +56,31 @@ class SandboxMountPolicy:
         """挂载用户 workspaces 根目录到 /workspace（可读写）。"""
         return SandboxMountPolicy.workspace_only(
             workspace_host_path=workspace_sessions_host_path,
-            workspace_target="/workspace",
+            workspace_target=SANDBOX_WORKSPACE_ROOT,
         )
+
+    @staticmethod
+    def workspace_with_all_skills(
+        *,
+        workspace_sessions_host_path: Path,
+        skills_root_host_path: Path,
+        skills_root_target: str = SANDBOX_SKILLS_ROOT,
+        workspace_target: str = SANDBOX_WORKSPACE_ROOT,
+    ) -> List[SandboxVolumeMount]:
+        """挂载用户 workspaces 与全量 skills 根目录。"""
+        mounts = SandboxMountPolicy.workspace_only(
+            workspace_host_path=workspace_sessions_host_path,
+            workspace_target=workspace_target,
+        )
+        mounts.append(
+            SandboxVolumeMount(
+                source=_translate_source_for_sandbox_host(skills_root_host_path),
+                target=skills_root_target,
+                read_only=True,
+                mount_type=_DEFAULT_MOUNT_TYPE,
+            )
+        )
+        return mounts
 
     @staticmethod
     def build_mounts(
