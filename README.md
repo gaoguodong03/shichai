@@ -13,7 +13,7 @@
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 
-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.19
+crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.22.1
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -120,6 +120,17 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
    - 含义：MCP 长连接被远端服务回收/断开，常见于 `linkup-fetch` 这类远程 streamable-http。
    - 当前策略：检测到 `ClosedResourceError` 后自动重连对应 MCP server 并重试 1 次。
    - 若仍失败，再看远端 MCP 服务健康、API Key、上游限流与网络波动。
+
+12. **用户沙箱常驻与统一资源（新增）**
+   - 目标：每个用户一个常驻沙箱，减少首次执行冷启动波动。
+   - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
+     - `SANDBOX_ALWAYS_ON=1`：开启常驻模式（不因空闲 TTL 回收）
+     - `SANDBOX_PREWARM_ALL_USERS=1`：服务启动后扫描已存在用户并批量预热
+     - `SANDBOX_FIXED_CPU=1.0`：统一 CPU 配额
+     - `SANDBOX_FIXED_MEMORY_MB=512`：统一内存配额（MB）
+   - 行为说明：
+     - 登录仍会做单用户预热；启动期会额外尝试全用户预热（失败仅记日志，不阻塞启动）。
+     - 运行时若检测到沙箱失联（not found / invalid），会自动失效旧句柄并重建一次。
 
 ### 回归验证（建议每次改沙箱/文件工具后跑一遍）
 - **文件读写（会话隔离）**

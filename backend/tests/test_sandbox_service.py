@@ -214,3 +214,68 @@ async def test_ignore_not_found_when_dispose_stale_handle():
     out = await svc.execute(req2)
     assert out.get("ok") is True
     assert len(adapter.created) == 2
+
+
+async def test_always_on_skips_ttl_recycle(monkeypatch):
+    monkeypatch.setenv("SANDBOX_ALWAYS_ON", "1")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=60)
+    req = SandboxExecutionRequest(
+        user_id="u5",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    await svc.execute(req)
+    key = "u5"
+    handle, _touched = svc._user_handles[key]
+    svc._user_handles[key] = (handle, 0.0)
+    out = await svc.execute(req)
+    assert out.get("ok") is True
+    assert len(adapter.created) == 1
+    monkeypatch.delenv("SANDBOX_ALWAYS_ON", raising=False)
+
+
+async def test_fixed_resource_env_applies_to_policy(monkeypatch):
+    monkeypatch.setenv("SANDBOX_FIXED_CPU", "2.5")
+    monkeypatch.setenv("SANDBOX_FIXED_MEMORY_MB", "2048")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="u6",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+    )
+    await svc.execute(req)
+    _sid, policy = adapter.created[0]
+    assert float(policy.cpu_limit) == 2.5
+    assert int(policy.memory_limit_mb) == 2048
+    monkeypatch.delenv("SANDBOX_FIXED_CPU", raising=False)
+    monkeypatch.delenv("SANDBOX_FIXED_MEMORY_MB", raising=False)
+
+
+async def test_prewarm_all_known_users_scans_user_root(monkeypatch, tmp_path):
+    (tmp_path / "alice").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "bob").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    out = await svc.prewarm_all_known_users(reason="test")
+    assert out["users_total"] == 2
+    assert out["ok"] == 2
+    assert out["failed"] == 0
+    assert len(adapter.created) == 2
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)

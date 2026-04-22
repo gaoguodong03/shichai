@@ -1,4 +1,5 @@
 """FastAPI 应用入口"""
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -33,10 +34,25 @@ async def lifespan(app: FastAPI):
         force=True,
     )
     _log = logging.getLogger("app.main")
+    prewarm_task: asyncio.Task | None = None
     try:
         from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
-        _log.info("sandbox_backend_startup=%s", get_shared_sandbox_service().backend_label())
+        sandbox_service = get_shared_sandbox_service()
+        _log.info("sandbox_backend_startup=%s", sandbox_service.backend_label())
+        always_on = _is_truthy_env("SANDBOX_ALWAYS_ON", "0")
+        prewarm_enabled = _is_truthy_env("SANDBOX_PREWARM_ALL_USERS", "1" if always_on else "0")
+        if prewarm_enabled:
+            async def _prewarm_all_users() -> None:
+                result = await sandbox_service.prewarm_all_known_users(reason="startup")
+                _log.info(
+                    "sandbox_prewarm_all_users_done users_total=%s ok=%s failed=%s",
+                    result.get("users_total", 0),
+                    result.get("ok", 0),
+                    result.get("failed", 0),
+                )
+
+            prewarm_task = asyncio.create_task(_prewarm_all_users())
     except Exception as e:
         _log.exception("sandbox_backend_startup_failed: %s", e)
         raise
@@ -44,6 +60,8 @@ async def lifespan(app: FastAPI):
     # 启动时：在 lifespan 任务中初始化 MCP/Skills，与下方 cleanup 同一任务
     await ensure_mcp_and_skills_initialized()
     yield
+    if prewarm_task is not None and not prewarm_task.done():
+        prewarm_task.cancel()
     # 关闭时：在同一任务中清理 MCP 连接，避免 RuntimeError: exit cancel scope in a different task
     await cleanup_all_mcp_runtimes()
 

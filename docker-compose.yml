@@ -59,6 +59,11 @@ services:
       - SANDBOX_NETWORK_TOOL_ALLOWLIST=run_skill_script
       - SANDBOX_ALLOWED_HOSTS=
       - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=600000
+      # 沙箱常驻与统一资源：按用户常驻，不因空闲 TTL 回收
+      - SANDBOX_ALWAYS_ON=1
+      - SANDBOX_PREWARM_ALL_USERS=1
+      - SANDBOX_FIXED_CPU=1.0
+      - SANDBOX_FIXED_MEMORY_MB=512
       # MCP_CONFIG_PATH / APP_SETTINGS_PATH / SESSIONS_DIR / AGENT_OUTPUTS_DIR 使用镜像内 ENV（/app/backend/...）
     depends_on:
       opensandbox-server:

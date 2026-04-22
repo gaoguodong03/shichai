@@ -16,7 +16,7 @@ from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, Sandbo
 from app.agent.sandbox_audit import append_sandbox_event
 from app.agent.sandbox_mount_policy import SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
-from app.core.user_context import get_user_context_for
+from app.core.user_context import get_user_context_for, users_data_root
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,36 @@ def _env_csv(name: str) -> List[str]:
             parts.append(s)
     # de-dup preserve order
     return list(dict.fromkeys(parts))
+
+
+def _env_float(name: str) -> Optional[float]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("sandbox_env_invalid_float name=%s value=%s", name, raw)
+        return None
+    if value <= 0:
+        logger.warning("sandbox_env_non_positive_float name=%s value=%s", name, raw)
+        return None
+    return value
+
+
+def _env_int(name: str) -> Optional[int]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("sandbox_env_invalid_int name=%s value=%s", name, raw)
+        return None
+    if value <= 0:
+        logger.warning("sandbox_env_non_positive_int name=%s value=%s", name, raw)
+        return None
+    return value
 
 def _network_allowed_for_tool(tool_name: str) -> bool:
     """
@@ -108,6 +138,9 @@ class SandboxService:
         self._adapter = sandbox_adapter or OpenSandboxAdapter()
         logger.info("sandbox_backend_selected backend=%s", self._describe_adapter(self._adapter))
         self._session_ttl_sec = max(60, int(session_ttl_sec))
+        self._always_on = _env_truthy("SANDBOX_ALWAYS_ON", default="0")
+        self._fixed_cpu = _env_float("SANDBOX_FIXED_CPU")
+        self._fixed_memory_mb = _env_int("SANDBOX_FIXED_MEMORY_MB")
         self._lock = asyncio.Lock()
         self._user_handles: Dict[str, Tuple[SandboxHandle, float]] = {}
 
@@ -125,7 +158,17 @@ class SandboxService:
         msg = str(exc).lower()
         if "sandbox" not in msg:
             return False
-        return "not found" in msg or "no such" in msg
+        return ("not found" in msg) or ("no such" in msg) or ("invalid sandbox" in msg)
+
+    def _apply_fixed_resource_policy(self, policy: SandboxPolicy) -> SandboxPolicy:
+        updates: Dict[str, Any] = {}
+        if self._fixed_cpu is not None and float(policy.cpu_limit) != float(self._fixed_cpu):
+            updates["cpu_limit"] = self._fixed_cpu
+        if self._fixed_memory_mb is not None and int(policy.memory_limit_mb) != int(self._fixed_memory_mb):
+            updates["memory_limit_mb"] = self._fixed_memory_mb
+        if updates:
+            return replace(policy, **updates)
+        return policy
 
     def _workspace_only_policy(self, sessions_root_path: Path, *, timeout_ms: int = 60_000) -> SandboxPolicy:
         mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=sessions_root_path)
@@ -168,9 +211,10 @@ class SandboxService:
         if req.policy is not None:
             env_net = _network_allowed_for_tool(req.tool_name)
             final_net = bool(env_net or req.policy.allow_network)
+            policy = req.policy
             if final_net != bool(req.policy.allow_network):
-                return replace(req.policy, allow_network=final_net)
-            return req.policy
+                policy = replace(req.policy, allow_network=final_net)
+            return self._apply_fixed_resource_policy(policy)
         mounts: list = []
         host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
         scripts_path = req.skill_scripts_path
@@ -187,7 +231,7 @@ class SandboxService:
             )
         else:
             mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=host_sessions_root)
-        return SandboxPolicy(
+        return self._apply_fixed_resource_policy(SandboxPolicy(
             fs_root=str(host_sessions_root.resolve()),
             workspace_host_path=str(host_sessions_root.resolve()),
             skill_scripts_host_path=str(scripts_path.resolve()) if scripts_path else "",
@@ -199,7 +243,7 @@ class SandboxService:
             volume_mounts=mounts,
             allow_network=_network_allowed_for_tool(req.tool_name),
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
-        )
+        ))
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
         now = time.time()
@@ -210,7 +254,8 @@ class SandboxService:
             existing = self._user_handles.get(key)
             if existing is not None:
                 handle, touched = existing
-                if now - touched <= self._session_ttl_sec and self._cached_handle_still_valid(
+                ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
+                if ttl_ok and self._cached_handle_still_valid(
                     handle, policy, req.tool_name
                 ):
                     self._user_handles[key] = (handle, now)
@@ -663,4 +708,31 @@ class SandboxService:
             "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
             "backend": self.backend_label(),
             "reason": reason,
+        }
+
+    async def prewarm_all_known_users(
+        self,
+        *,
+        reason: str = "startup",
+        timeout_ms: int = 60_000,
+    ) -> Dict[str, Any]:
+        root = users_data_root()
+        if not root.exists():
+            return {"status": "ok", "users_total": 0, "ok": 0, "failed": 0, "errors": []}
+        users = sorted([p.name for p in root.iterdir() if p.is_dir() and p.name.strip()])
+        ok_count = 0
+        errors: List[Dict[str, str]] = []
+        for uid in users:
+            try:
+                await self.prewarm_user_sandbox(uid, reason=reason, timeout_ms=timeout_ms)
+                ok_count += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("sandbox_prewarm_known_user_failed user=%s err=%s", uid, exc)
+                errors.append({"user_id": uid, "error": str(exc)})
+        return {
+            "status": "ok",
+            "users_total": len(users),
+            "ok": ok_count,
+            "failed": len(errors),
+            "errors": errors,
         }
