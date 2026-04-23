@@ -85,6 +85,43 @@
       "created_by": "2987371922@qq.com",
       "filename": "f4b3d0b174d3.zip",
       "created_at": "2026-04-22T02:56:32.877281+00:00"
+    },
+    "1f8ba4d87b19": {
+      "object_type": "expert",
+      "source_ref": "agent-ppt-guide-3f7c1a2b",
+      "title": "PPT引导专家",
+      "expert_name": "PPT引导专家",
+      "created_by": "2987371922@qq.com",
+      "summary": {
+        "skill_count": 2,
+        "mcp_count": 0
+      },
+      "filename": "1f8ba4d87b19.zip",
+      "created_at": "2026-04-23T05:49:32.532998+00:00"
+    },
+    "ecbf74de0008": {
+      "object_type": "mcp",
+      "source_ref": "linkup",
+      "title": "Linkup抓取网页",
+      "mcp_name": "Linkup抓取网页",
+      "created_by": "2987371922@qq.com",
+      "summary": {
+        "mcp_count": 1
+      },
+      "filename": "ecbf74de0008.zip",
+      "created_at": "2026-04-23T05:53:25.552093+00:00"
+    },
+    "f476743c0a6c": {
+      "object_type": "skill",
+      "source_ref": "github",
+      "title": "GitHub 开源周榜情报",
+      "skill_name": "GitHub 开源周榜情报",
+      "created_by": "2987371922@qq.com",
+      "summary": {
+        "skill_count": 1
+      },
+      "filename": "f476743c0a6c.zip",
+      "created_at": "2026-04-23T05:58:43.858712+00:00"
     }
   }
 }

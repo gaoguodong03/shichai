@@ -625,7 +625,7 @@ async def export_session_preset_bundle(preset_id: str):
 @router.get("/settings/session-presets/{preset_id}/share-link")
 async def get_session_preset_share_link(preset_id: str):
     """若当前用户已发布过该场景，返回固定 share_id 与路径（未发布则 share_id 为 null）。"""
-    from app.core.scenario_share_store import find_share_id_for_source
+    from app.core.scenario_share_store import find_share_id_for_object
 
     key = str(preset_id or "").strip()
     if not key:
@@ -635,14 +635,14 @@ async def get_session_preset_share_link(preset_id: str):
     if not next((r for r in rows if r.get("id") == key), None):
         raise HTTPException(status_code=404, detail="Session preset not found")
     uid = get_current_username() or ""
-    sid = find_share_id_for_source(uid, key)
+    sid = find_share_id_for_object(uid, "scene", key)
     if not sid:
         return {"status": "ok", "data": {"share_id": None, "open_path": None}}
     return {
         "status": "ok",
         "data": {
             "share_id": sid,
-            "open_path": f"/scenario/run?id={sid}",
+            "open_path": f"/share/run?id={sid}",
         },
     }
 
@@ -656,6 +656,12 @@ async def publish_session_preset_share(preset_id: str):
     share_id = upsert_public_share(
         zip_bytes,
         {
+            "object_type": "scene",
+            "source_ref": str(match.get("id") or ""),
+            "title": str(match.get("name") or ""),
+            "summary": {
+                "agent_count": len(match.get("agent_ids") or []),
+            },
             "preset_name": str(match.get("name") or ""),
             "source_preset_id": str(match.get("id") or ""),
             "created_by": get_current_username() or "",
@@ -665,7 +671,7 @@ async def publish_session_preset_share(preset_id: str):
         "status": "ok",
         "data": {
             "share_id": share_id,
-            "open_path": f"/scenario/run?id={share_id}",
+            "open_path": f"/share/run?id={share_id}",
             "preset_name": str(match.get("name") or ""),
         },
     }
@@ -802,6 +808,224 @@ async def import_session_preset_bundle(
     finally:
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        skill_ids = list_skill_ids_in_bundle_skills_dir(tmp)
+        if not skill_ids:
+            raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
+        sid0 = skill_ids[0]
+        src = tmp / "skills" / sid0
+        fm, body = _read_skill_file(src)
+        incoming_name = str(fm.get("name") or sid0).strip() or sid0
+        incoming_name_key = _normalized_name_key(incoming_name)
+        base = _get_skills_dir()
+        base.mkdir(parents=True, exist_ok=True)
+        overwrite_skill_ids: List[str] = []
+        for child in sorted(base.iterdir(), key=lambda p: p.name):
+            if not child.is_dir():
+                continue
+            try:
+                efm, _ = _read_skill_file(child)
+            except Exception:
+                continue
+            ename = str(efm.get("name") or child.name).strip()
+            if _normalized_name_key(ename) == incoming_name_key:
+                overwrite_skill_ids.append(child.name)
+        if dry_run:
+            return {
+                "object_type": "skill",
+                "title": incoming_name,
+                "preview": {"skill_id": sid0, "name": incoming_name, "overwrite_skill_ids": overwrite_skill_ids},
+            }
+        for old_id in overwrite_skill_ids:
+            old_dir = base / old_id
+            if old_dir.is_dir():
+                shutil.rmtree(old_dir, ignore_errors=True)
+                _remove_skill_id_from_user_configs(old_id)
+        target_id = _next_available_skill_id(base, _slugify(incoming_name))
+        dest = base / target_id
+        shutil.copytree(src, dest)
+        fm2, body2 = _read_skill_file(dest)
+        fm2["name"] = str(fm2.get("name") or incoming_name)
+        fm2["description"] = str(fm2.get("description") or "")
+        _sanitize_skill_frontmatter_for_write(fm2)
+        _write_skill_file(dest, fm2, body2)
+        _refresh_skills_loader()
+        return {"object_type": "skill", "imported_skill_id": target_id, "name": str(fm2.get("name") or target_id)}
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        mcp_path = tmp / "mcp_servers.json"
+        if not mcp_path.is_file():
+            raise HTTPException(status_code=400, detail="分享包中缺少 mcp_servers.json")
+        rows = json.loads(mcp_path.read_text(encoding="utf-8"))
+        mcp_bundle = [x for x in rows if isinstance(x, dict)] if isinstance(rows, list) else []
+        if not mcp_bundle:
+            raise HTTPException(status_code=400, detail="分享包中没有可导入的 MCP 配置")
+        preview = [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle]
+        if dry_run:
+            return {"object_type": "mcp", "preview": {"mcps": preview}}
+        merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+            load_mcp_config(), mcp_bundle, skip_existing=False
+        )
+        save_mcp_config(merged_mcp)
+        await _invalidate_mcp_runtime_after_config_change()
+        return {
+            "object_type": "mcp",
+            "summary": {"mcp_added": mcp_added, "mcp_skipped": mcp_skipped, "mcp_updated": mcp_updated},
+        }
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
+    from app.api.dha import load_dha_instances, normalize_expert_row_for_import, save_dha_instances, _dha_skills_dir
+    from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
+
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        _man, expert_raw = read_expert_bundle_manifest(tmp)
+        norm = normalize_expert_row_for_import(expert_raw)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="专家分享包无效")
+        skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        mcp_path = tmp / "mcp_servers.json"
+        mcp_bundle: List[Dict[str, Any]] = []
+        if mcp_path.is_file():
+            raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
+            if isinstance(raw_m, list):
+                mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
+        same_name_agent_ids = [
+            str(x.get("agent_id") or "")
+            for x in load_dha_instances()
+            if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
+        ]
+        if dry_run:
+            return {
+                "object_type": "expert",
+                "preview": {
+                    "name": norm.get("name"),
+                    "agent_id": str(norm.get("agent_id") or ""),
+                    "skills": skill_ids_in_zip,
+                    "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
+                    "name_conflict_existing_ids": same_name_agent_ids,
+                },
+            }
+        copy_bundle_skills_to_user(tmp, _dha_skills_dir(), overwrite=True)
+        invalidate_skills_cache_for_user(get_current_username() or "")
+        if mcp_bundle:
+            merged_mcp, _a, _s, _u = merge_mcp_servers_for_bundle(load_mcp_config(), mcp_bundle, skip_existing=False)
+            save_mcp_config(merged_mcp)
+            await _invalidate_mcp_runtime_after_config_change()
+        instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
+            load_dha_instances(), norm, id_conflict="overwrite"
+        )
+        save_dha_instances(instances)
+        return {
+            "object_type": "expert",
+            "summary": {
+                "imported_agent_id": final_id,
+                "skipped_by_name": skipped_by_name,
+                "overwritten_agent_ids": overwritten_agent_ids,
+            },
+        }
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
+    from app.api.dha import load_dha_instances, save_dha_instances
+
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        _manifest, preset, dha_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
+        norm = normalize_preset_dict_for_validation(preset)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="场景分享包无效")
+        skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        if dry_run:
+            return {
+                "object_type": "scene",
+                "preview": {
+                    "preset_id": norm["id"],
+                    "preset_name": norm["name"],
+                    "experts": [
+                        {"agent_id": str(x.get("agent_id") or ""), "name": str(x.get("name") or "")}
+                        for x in dha_bundle
+                        if str(x.get("agent_id") or "").strip()
+                    ],
+                    "skills": skill_ids_in_zip,
+                    "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
+                },
+            }
+        copy_bundle_skills_to_user(tmp, _get_skills_dir(), overwrite=True)
+        invalidate_skills_cache_for_user(get_current_username() or "")
+        merged_dha = merge_dha_instances_for_bundle(load_dha_instances(), dha_bundle, overwrite=True)
+        save_dha_instances(merged_dha)
+        merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+            load_mcp_config(), mcp_bundle, skip_existing=False
+        )
+        save_mcp_config(merged_mcp)
+        await _invalidate_mcp_runtime_after_config_change()
+        _merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file(
+            [norm], "overwrite"
+        )
+        return {
+            "object_type": "scene",
+            "summary": {
+                "preset_imported_ids": imported_ids,
+                "skipped_by_name": skipped_by_name,
+                "overwritten_existing_ids": overwritten_existing_ids,
+                "mcp_added": mcp_added,
+                "mcp_skipped": mcp_skipped,
+                "mcp_updated": mcp_updated,
+            },
+        }
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+@router.post("/settings/shares/{share_id}/import")
+async def import_public_share_bundle(share_id: str, dry_run: bool = Form(True)):
+    from app.core.scenario_share_store import bundle_path_for_share, get_share_entry, validate_share_id
+
+    sid = str(share_id or "").strip()
+    if not validate_share_id(sid):
+        raise HTTPException(status_code=404, detail="分享不存在")
+    entry = get_share_entry(sid)
+    if not isinstance(entry, dict):
+        raise HTTPException(status_code=404, detail="分享不存在")
+    p = bundle_path_for_share(sid)
+    if not p:
+        raise HTTPException(status_code=404, detail="分享包不存在")
+    raw = p.read_bytes()
+    obj_type = str(entry.get("object_type") or "scene").strip().lower()
+    if obj_type == "scene":
+        data = await _import_scene_from_bundle_bytes(raw, dry_run=dry_run)
+    elif obj_type == "expert":
+        data = await _import_expert_from_bundle_bytes(raw, dry_run=dry_run)
+    elif obj_type == "skill":
+        data = _import_skill_from_bundle_bytes(raw, dry_run=dry_run)
+    elif obj_type == "mcp":
+        data = await _import_mcp_from_bundle_bytes(raw, dry_run=dry_run)
+    else:
+        raise HTTPException(status_code=400, detail="不支持的分享对象类型")
+    return {"status": "ok", "data": {"share_id": sid, "dry_run": dry_run, **data}}
 
 
 def save_app_settings(data: Dict[str, Any]):
@@ -1023,6 +1247,13 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
 
+
+def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("mcp_servers.json", json.dumps([server], ensure_ascii=False, indent=2) + "\n")
+    return buf.getvalue()
+
 @router.get("/settings/mcp")
 async def get_mcp_servers():
     """获取 MCP Server 列表"""
@@ -1095,6 +1326,51 @@ async def get_mcp_servers():
         "data": {
             "servers": result
         }
+    }
+
+
+@router.get("/settings/mcp/{server_id}/share-link")
+async def get_mcp_share_link(server_id: str):
+    from app.core.scenario_share_store import find_share_id_for_object
+
+    sid = str(server_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="server_id required")
+    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
+    if not hit:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    share_id = find_share_id_for_object(get_current_username() or "", "mcp", sid)
+    if not share_id:
+        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
+    return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
+
+
+@router.post("/settings/mcp/{server_id}/publish-share")
+async def publish_mcp_share(server_id: str):
+    from app.core.scenario_share_store import upsert_public_share
+
+    sid = str(server_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="server_id required")
+    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
+    if not hit:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    zip_bytes = _build_single_mcp_bundle_zip_bytes(dict(hit))
+    name = str(hit.get("name") or sid)
+    share_id = upsert_public_share(
+        zip_bytes,
+        {
+            "object_type": "mcp",
+            "source_ref": sid,
+            "title": name,
+            "mcp_name": name,
+            "created_by": get_current_username() or "",
+            "summary": {"mcp_count": 1},
+        },
+    )
+    return {
+        "status": "ok",
+        "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}", "server_id": sid, "server_name": name},
     }
 
 @router.post("/settings/mcp")
@@ -2026,6 +2302,54 @@ async def export_skill_zip(skill_id: str):
         media_type="application/zip",
         headers={"Content-Disposition": _content_disposition_attachment(filename)},
     )
+
+
+@router.get("/settings/skills/{skill_id}/share-link")
+async def get_skill_share_link(skill_id: str):
+    from app.core.scenario_share_store import find_share_id_for_object
+
+    sid = str(skill_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="skill_id required")
+    base = _get_skills_dir().resolve()
+    sdir = (base / sid).resolve()
+    if not sdir.is_dir() or sdir.parent != base or not (sdir / "SKILL.md").is_file():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    share_id = find_share_id_for_object(get_current_username() or "", "skill", sid)
+    if not share_id:
+        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
+    return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
+
+
+@router.post("/settings/skills/{skill_id}/publish-share")
+async def publish_skill_share(skill_id: str):
+    from app.core.scenario_share_store import upsert_public_share
+
+    sid = str(skill_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="skill_id required")
+    base = _get_skills_dir().resolve()
+    sdir = (base / sid).resolve()
+    if not sdir.is_dir() or sdir.parent != base or not (sdir / "SKILL.md").is_file():
+        raise HTTPException(status_code=404, detail="Skill not found")
+    zip_bytes = _build_skill_zip_bytes(sdir)
+    fm, _body = _read_skill_file(sdir)
+    title = str(fm.get("name") or sid)
+    share_id = upsert_public_share(
+        zip_bytes,
+        {
+            "object_type": "skill",
+            "source_ref": sid,
+            "title": title,
+            "skill_name": title,
+            "created_by": get_current_username() or "",
+            "summary": {"skill_count": 1},
+        },
+    )
+    return {
+        "status": "ok",
+        "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}", "skill_id": sid, "skill_name": title},
+    }
 
 
 def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:

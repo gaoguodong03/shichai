@@ -911,6 +911,91 @@
       </template>
     </main>
 
+    <!-- 通用分享预览与导入 -->
+    <div
+      v-if="sharePreviewModalOpen"
+      class="fixed inset-0 z-[320] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="share-preview-title"
+      @click.self="onSharePreviewBackdropClick"
+    >
+      <div
+        class="max-w-2xl w-full max-h-[88vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
+        @click.stop
+      >
+        <div
+          v-if="sharePreviewCommitting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-hidden="true" />
+          <p class="text-sm font-medium text-primary">正在导入分享内容…</p>
+        </div>
+        <template v-if="sharePreviewResult">
+          <h3 id="share-preview-title" class="text-lg font-semibold mb-3">
+            {{ sharePreviewResult.ok ? '导入成功' : '导入失败' }}
+          </h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="sharePreviewResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ sharePreviewResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeSharePreviewModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <h3 id="share-preview-title" class="text-lg font-semibold mb-3">分享预览</h3>
+          <div class="mb-4 space-y-3 text-sm border border-border-light rounded-lg p-3 bg-page">
+            <div class="flex items-center gap-2">
+              <span class="text-xs px-2 py-0.5 rounded-full bg-accent-subtle text-accent-subtle-text">
+                {{ sharePreviewData?.meta?.object_type || 'unknown' }}
+              </span>
+              <span class="font-medium text-primary truncate">{{ sharePreviewData?.meta?.title || '未命名分享' }}</span>
+            </div>
+            <div class="text-xs text-muted">分享 ID：<span class="font-mono text-primary">{{ sharePreviewData?.share_id || '-' }}</span></div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="rounded-md border border-border-light p-2 bg-card">
+                <div class="text-xs text-muted mb-1">元信息摘要</div>
+                <pre class="text-xs whitespace-pre-wrap break-words text-primary">{{ formatShareJson(sharePreviewData?.meta?.summary || {}) }}</pre>
+              </div>
+              <div class="rounded-md border border-border-light p-2 bg-card">
+                <div class="text-xs text-muted mb-1">导入预览</div>
+                <pre class="text-xs whitespace-pre-wrap break-words text-primary">{{ formatShareJson(sharePreviewData?.preview || {}) }}</pre>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-start gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              :disabled="sharePreviewLoading || sharePreviewCommitting"
+              @click="commitSharePreviewImport"
+            >
+              {{ sharePreviewCommitting ? '导入中…' : '确认导入' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+              :disabled="sharePreviewCommitting"
+              @click="closeSharePreviewModal"
+            >
+              取消
+            </button>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- 场景导入：依赖校验与确认 -->
     <div
       v-if="scenarioImportModalOpen"
@@ -1318,10 +1403,19 @@ function publicAppOriginForShareLink(): string {
 const scenarioShareFullUrl = computed(() => {
   const id = scenarioShareLinkData.value.share_id
   if (!id) return ''
-  return `${publicAppOriginForShareLink()}/scenario/run?id=${encodeURIComponent(id)}`
+  return `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(id)}`
 })
 const scenarioShareRouteHandled = ref('')
 const scenarioShareOpenInFlight = ref(false)
+const sharePreviewModalOpen = ref(false)
+const sharePreviewLoading = ref(false)
+const sharePreviewCommitting = ref(false)
+const sharePreviewData = ref<{
+  share_id: string
+  meta: { object_type: string; title: string; summary?: Record<string, unknown> }
+  preview?: Record<string, unknown>
+} | null>(null)
+const sharePreviewResult = ref<{ ok: boolean; message: string } | null>(null)
 
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
@@ -1358,6 +1452,13 @@ const hasDhaNameConflict = computed(
 function displaySkillNames(skillIds: string[]): string[] {
   const byId = new Map((skills.value || []).map((s) => [s.id, s.name || s.id]))
   return (skillIds || []).map((sid) => byId.get(sid) || sid)
+}
+function formatShareJson(obj: unknown): string {
+  try {
+    return JSON.stringify(obj ?? {}, null, 2)
+  } catch {
+    return String(obj ?? '')
+  }
 }
 const scenarioOverwriteSummary = computed(() => {
   const bp = scenarioBundlePreview.value?.bundle_preview
@@ -1947,6 +2048,46 @@ function closeScenarioImportModal() {
   scenarioImportResult.value = null
 }
 
+function closeSharePreviewModal() {
+  sharePreviewModalOpen.value = false
+  sharePreviewResult.value = null
+  sharePreviewData.value = null
+  if (route.path === '/share/run') {
+    router.replace('/')
+  }
+}
+
+function onSharePreviewBackdropClick() {
+  if (sharePreviewCommitting.value) return
+  closeSharePreviewModal()
+}
+
+async function commitSharePreviewImport() {
+  const d = sharePreviewData.value
+  if (!d?.share_id) return
+  sharePreviewCommitting.value = true
+  sharePreviewResult.value = null
+  try {
+    const fd = new FormData()
+    fd.append('dry_run', 'false')
+    const importR = await fetch(`/api/settings/shares/${encodeURIComponent(d.share_id)}/import`, { method: 'POST', body: fd })
+    const importJ = (await importR.json().catch(() => ({}))) as { status?: string; detail?: string; data?: any }
+    if (importJ?.status !== 'ok') throw new Error(importJ?.detail || '导入失败')
+    await fetchScenarioPresets()
+    await fetchDHA()
+    await fetchSkills()
+    await fetchMCP()
+    window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
+    const summary = importJ?.data?.summary || {}
+    sharePreviewResult.value = { ok: true, message: `导入完成\n${formatShareJson(summary)}` }
+    scenarioShareRouteHandled.value = d.share_id
+  } catch (e) {
+    sharePreviewResult.value = { ok: false, message: (e as Error).message || '导入失败' }
+  } finally {
+    sharePreviewCommitting.value = false
+  }
+}
+
 function onScenarioImportBackdropClick() {
   if (scenarioImportCommitting.value || scenarioImportResult.value) return
   closeScenarioImportModal()
@@ -2132,7 +2273,7 @@ async function fetchScenarioShareLink() {
 }
 
 async function tryOpenScenarioShareFromRoute() {
-  if (route.path !== '/scenario/run') return
+  if (route.path !== '/scenario/run' && route.path !== '/share/run') return
   const raw = route.query.id
   const id = typeof raw === 'string' ? raw.trim() : ''
   if (!id) return
@@ -2141,45 +2282,81 @@ async function tryOpenScenarioShareFromRoute() {
   scenarioShareOpenInFlight.value = true
   scenarioShareRouteImportLoading.value = true
   try {
-    const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
+    if (route.path === '/scenario/run') {
+      // 兼容旧链接：直接走场景分享
+      const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
+      if (!metaR.ok) {
+        window.alert('分享链接无效或已失效')
+        router.replace('/')
+        return
+      }
+      const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
+      if (!bundleR.ok) {
+        window.alert('无法下载场景包')
+        router.replace('/')
+        return
+      }
+      const blob = await bundleR.blob()
+      const file = new File([blob], `scenario-share-${id}.zip`, { type: 'application/zip' })
+      pendingBundleFile.value = file
+      scenarioBundlePreview.value = null
+      currentModule.value = 'resource'
+      resourceSubModule.value = 'scenario'
+      resourceMenuExpanded.value = true
+      ensureMiddleColumnOpen()
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('dry_run', 'true')
+      fd.append('overwrite_experts', 'true')
+      fd.append('overwrite_skills', 'true')
+      fd.append('mcp_skip_existing', 'false')
+      fd.append('preset_id_conflict', 'overwrite')
+      const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: typeof scenarioBundlePreview.value
+      }
+      if (j?.status !== 'ok') throw new Error(j.detail || '场景包预览失败')
+      scenarioBundlePreview.value = j.data || null
+      scenarioImportModalOpen.value = true
+      scenarioShareRouteHandled.value = id
+      return
+    }
+
+    const metaR = await fetch(`/api/public/shares/${encodeURIComponent(id)}/meta`)
     if (!metaR.ok) {
       window.alert('分享链接无效或已失效')
       router.replace('/')
       return
     }
-    const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
-    if (!bundleR.ok) {
-      window.alert('无法下载场景包')
-      router.replace('/')
-      return
+    const mj = (await metaR.json().catch(() => ({}))) as {
+      status?: string
+      data?: { object_type?: string; title?: string; summary?: Record<string, unknown> }
     }
-    const blob = await bundleR.blob()
-    const file = new File([blob], `scenario-share-${id}.zip`, { type: 'application/zip' })
-    pendingBundleFile.value = file
-    scenarioBundlePreview.value = null
-    currentModule.value = 'resource'
-    resourceSubModule.value = 'scenario'
-    resourceMenuExpanded.value = true
-    ensureMiddleColumnOpen()
+    if (mj?.status !== 'ok' || !mj.data?.object_type) {
+      throw new Error('无法读取分享元数据')
+    }
     const fd = new FormData()
-    fd.append('file', file)
     fd.append('dry_run', 'true')
-    fd.append('overwrite_experts', 'true')
-    fd.append('overwrite_skills', 'true')
-    fd.append('mcp_skip_existing', 'false')
-    fd.append('preset_id_conflict', 'overwrite')
-    const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
-    const j = (await r.json().catch(() => ({}))) as {
+    const previewR = await fetch(`/api/settings/shares/${encodeURIComponent(id)}/import`, { method: 'POST', body: fd })
+    const previewJ = (await previewR.json().catch(() => ({}))) as {
       status?: string
       detail?: string
-      data?: typeof scenarioBundlePreview.value
+      data?: Record<string, unknown>
     }
-    if (j?.status !== 'ok') {
-      throw new Error(j.detail || '场景包预览失败')
+    if (previewJ?.status !== 'ok') throw new Error(previewJ?.detail || '预览失败')
+    sharePreviewData.value = {
+      share_id: id,
+      meta: {
+        object_type: String(mj.data.object_type || 'unknown'),
+        title: String(mj.data.title || id),
+        summary: (mj.data.summary || {}) as Record<string, unknown>,
+      },
+      preview: (previewJ.data?.preview || previewJ.data || {}) as Record<string, unknown>,
     }
-    scenarioBundlePreview.value = j.data || null
-    scenarioImportModalOpen.value = true
-    scenarioShareRouteHandled.value = id
+    sharePreviewResult.value = null
+    sharePreviewModalOpen.value = true
   } catch (e) {
     window.alert((e as Error).message || '无法加载分享场景')
     router.replace('/')
@@ -2200,7 +2377,7 @@ watch(
 watch(
   () => route.path,
   (p) => {
-    if (p !== '/scenario/run') scenarioShareRouteHandled.value = ''
+    if (p !== '/scenario/run' && p !== '/share/run') scenarioShareRouteHandled.value = ''
   }
 )
 

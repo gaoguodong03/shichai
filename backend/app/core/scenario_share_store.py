@@ -1,4 +1,4 @@
-"""公开分享场景：ZIP 存于 backend/data/scenario_shares/，registry.json 记录元数据。"""
+"""公开分享对象：ZIP 存于 backend/data/scenario_shares/，registry.json 记录元数据。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 _SHARE_ID_RE = re.compile(r"^[a-f0-9]{12}$")
+_ALLOWED_OBJECT_TYPES = {"scene", "expert", "skill", "mcp"}
 
 
 def scenario_shares_root() -> Path:
@@ -45,20 +46,39 @@ def get_share_entry(share_id: str) -> Optional[Dict[str, Any]]:
     return e if isinstance(e, dict) else None
 
 
-def find_share_id_for_source(created_by: str, source_preset_id: str) -> Optional[str]:
-    """同一发布者 + 场景 id 已存在时返回既有 share_id（链接固定）。"""
+def _entry_source_ref(entry: Dict[str, Any]) -> str:
+    return str(entry.get("source_ref") or entry.get("source_preset_id") or "").strip()
+
+
+def _entry_object_type(entry: Dict[str, Any]) -> str:
+    t = str(entry.get("object_type") or "").strip().lower()
+    return t if t in _ALLOWED_OBJECT_TYPES else "scene"
+
+
+def find_share_id_for_object(created_by: str, object_type: str, source_ref: str) -> Optional[str]:
+    """同一发布者 + 对象类型 + 来源 id 已存在时返回既有 share_id（链接固定）。"""
     u = (created_by or "").strip()
-    sid = (source_preset_id or "").strip()
-    if not u or not sid:
+    otype = (object_type or "").strip().lower()
+    sid = (source_ref or "").strip()
+    if not u or not sid or otype not in _ALLOWED_OBJECT_TYPES:
         return None
     reg = load_registry()
     for share_id, e in reg.get("entries", {}).items():
         if not isinstance(e, dict):
             continue
-        if str(e.get("created_by") or "").strip() == u and str(e.get("source_preset_id") or "").strip() == sid:
+        if (
+            str(e.get("created_by") or "").strip() == u
+            and _entry_object_type(e) == otype
+            and _entry_source_ref(e) == sid
+        ):
             if validate_share_id(str(share_id)):
                 return str(share_id)
     return None
+
+
+def find_share_id_for_source(created_by: str, source_preset_id: str) -> Optional[str]:
+    """兼容旧接口：场景分享按 source_preset_id 查找。"""
+    return find_share_id_for_object(created_by, "scene", source_preset_id)
 
 
 def bundle_path_for_share(share_id: str) -> Optional[Path]:
@@ -97,22 +117,30 @@ def create_public_share(zip_bytes: bytes, meta: Dict[str, Any]) -> str:
     reg = load_registry()
     entries = reg.setdefault("entries", {})
     now = datetime.now(timezone.utc).isoformat()
-    entries[share_id] = {
-        **meta,
-        "filename": f"{share_id}.zip",
-        "created_at": now,
-    }
+    obj_type = str(meta.get("object_type") or "scene").strip().lower()
+    if obj_type not in _ALLOWED_OBJECT_TYPES:
+        obj_type = "scene"
+    source_ref = str(meta.get("source_ref") or meta.get("source_preset_id") or "").strip()
+    payload = dict(meta)
+    payload["object_type"] = obj_type
+    payload["source_ref"] = source_ref
+    if obj_type == "scene" and not payload.get("source_preset_id"):
+        payload["source_preset_id"] = source_ref
+    entries[share_id] = {**payload, "filename": f"{share_id}.zip", "created_at": now}
     save_registry(reg)
     return share_id
 
 
 def upsert_public_share(zip_bytes: bytes, meta: Dict[str, Any]) -> str:
-    """同一发布者 + source_preset_id 复用同一 share_id 并覆盖 ZIP；否则新建。链接对应该场景保持不变。"""
-    source = str(meta.get("source_preset_id") or "").strip()
+    """同一发布者 + object_type + source_ref 复用同一 share_id 并覆盖 ZIP；否则新建。"""
+    source = str(meta.get("source_ref") or meta.get("source_preset_id") or "").strip()
+    obj_type = str(meta.get("object_type") or "scene").strip().lower()
+    if obj_type not in _ALLOWED_OBJECT_TYPES:
+        obj_type = "scene"
     user = str(meta.get("created_by") or "").strip()
     root = scenario_shares_root()
     root.mkdir(parents=True, exist_ok=True)
-    existing = find_share_id_for_source(user, source)
+    existing = find_share_id_for_object(user, obj_type, source)
     reg = load_registry()
     entries = reg.setdefault("entries", {})
     now = datetime.now(timezone.utc).isoformat()
@@ -126,8 +154,10 @@ def upsert_public_share(zip_bytes: bytes, meta: Dict[str, Any]) -> str:
             {
                 **meta,
                 "filename": f"{share_id}.zip",
+                "object_type": obj_type,
+                "source_ref": source,
                 "preset_name": str(meta.get("preset_name") or ""),
-                "source_preset_id": source,
+                "source_preset_id": source if obj_type == "scene" else str(meta.get("source_preset_id") or ""),
                 "created_by": user,
                 "updated_at": now,
             }

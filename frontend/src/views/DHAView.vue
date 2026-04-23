@@ -116,6 +116,14 @@
                 导出
               </button>
               <button
+                v-if="selectedDhaId && selectedDhaId !== '__new__'"
+                type="button"
+                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+                @click="shareDha"
+              >
+                分享
+              </button>
+              <button
                 type="button"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
                 @click="deleteDha"
@@ -299,6 +307,33 @@
       </div>
     </Teleport>
   </div>
+  <div
+    v-if="shareDialog.open"
+    class="fixed inset-0 z-[360] flex items-center justify-center p-4 bg-black/40"
+    role="dialog"
+    aria-modal="true"
+    @click.self="shareDialog.open = false"
+  >
+    <div class="w-full max-w-md rounded-xl border border-border-light bg-card shadow-xl p-4">
+      <h4 class="text-base font-semibold mb-2" :class="shareDialog.ok ? 'text-primary' : 'text-danger'">
+        {{ shareDialog.ok ? '分享成功' : '分享失败' }}
+      </h4>
+      <template v-if="shareDialog.ok">
+        <p class="text-sm text-muted mb-2">分享链接（已复制）</p>
+        <div class="px-3 py-2 rounded border border-border-light bg-page font-mono text-sm break-all">{{ shareDialog.shareUrl }}</div>
+      </template>
+      <p v-else class="text-sm text-danger">{{ shareDialog.message }}</p>
+      <div class="mt-3 flex justify-end">
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm rounded border border-border-light hover:bg-list-hover"
+          @click="shareDialog.open = false"
+        >
+          关闭
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -322,6 +357,13 @@ const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 const showAvatarModal = ref(false)
+const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
+  open: false,
+  ok: true,
+  message: '',
+  shareId: '',
+  shareUrl: '',
+})
 
 const defaultFileCaps = () => ({
   read: true,
@@ -507,6 +549,34 @@ async function exportDhaBundle() {
     URL.revokeObjectURL(url)
   } catch (e) {
     window.alert((e as Error).message || '导出失败')
+  }
+}
+
+function publicAppOriginForShareLink(): string {
+  const raw = import.meta.env.VITE_PUBLIC_APP_ORIGIN
+  if (typeof raw === 'string' && raw.trim()) return raw.trim().replace(/\/$/, '')
+  return window.location.origin
+}
+
+async function shareDha() {
+  const id = props.selectedDhaId
+  if (!id || id === '__new__') return
+  try {
+    let shareId: string | null = null
+    const r0 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/share-link`)
+    const j0 = await r0.json().catch(() => ({}))
+    if (j0?.status === 'ok' && j0?.data?.share_id) shareId = String(j0.data.share_id)
+    if (!shareId) {
+      const r1 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/publish-share`, { method: 'POST' })
+      const j1 = await r1.json().catch(() => ({}))
+      if (j1?.status === 'ok' && j1?.data?.share_id) shareId = String(j1.data.share_id)
+    }
+    if (!shareId) throw new Error('生成分享链接失败')
+    const url = `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId)}`
+    await navigator.clipboard.writeText(url)
+    shareDialog.value = { open: true, ok: true, message: '', shareId, shareUrl: url }
+  } catch (e) {
+    shareDialog.value = { open: true, ok: false, message: (e as Error).message || '分享失败', shareId: '', shareUrl: '' }
   }
 }
 
