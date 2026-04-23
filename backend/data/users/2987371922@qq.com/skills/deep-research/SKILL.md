@@ -1,13 +1,13 @@
 ---
 name: 深度研究
 description: 适用于复杂主题的多阶段深度研究：先和用户对齐研究目标（或先核查用户观点/名词是否正确），再拆分子问题，批量使用搜索/抓取类 MCP 工具收集资料，最后输出结构化研究报告或长文。
-enabled: true
-mcp_server_ids:
+allowed-tools:
+  mcp:
   - exa
   - linkup
   - file-reader
+  python: ''
 ---
-
 # 深度研究 Skill
 
 当用户提出一个**复杂、开放性的问题**，或**先提出一个观点/名词**希望你「检查对不对再深入研究、最后给一份报告」时，使用本 Skill。

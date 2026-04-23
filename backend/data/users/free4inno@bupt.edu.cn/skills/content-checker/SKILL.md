@@ -1,12 +1,12 @@
 ---
 description: 面向互联网上的文章、新闻、博客或公众号内容，进行事实核查与可信度评估。
-enabled: true
-mcp_server_ids:
-- exa
-- linkup
-- file-reader
 name: 新闻内容核实
-write_mode: workspace_all
+allowed-tools:
+  mcp:
+  - exa
+  - linkup
+  - file-reader
+  python: ''
 ---
 # 内容核实 Skill
 

@@ -1,10 +1,9 @@
 ---
 description: 深度检查文本中的错别字、词语误用、语法错误及表达不通顺之处。
-enabled: true
-mcp_server_ids: []
 name: 文字校对与错别字检查器
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 🎯 技能目标
 本技能专注于**内容质量**检查。利用大模型的语义理解能力，识别并修正文字错误，提升文章的可读性和专业性。

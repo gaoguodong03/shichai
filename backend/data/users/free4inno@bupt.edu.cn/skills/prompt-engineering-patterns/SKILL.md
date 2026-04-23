@@ -2,9 +2,10 @@
 description: Master advanced prompt engineering techniques to maximize LLM performance,
   reliability, and controllability in production. Use when optimizing prompts, improving
   LLM outputs, or designing production prompt templates.
-enabled: true
-mcp_server_ids: []
 name: 提示词工程构建
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # Prompt Engineering Patterns
 

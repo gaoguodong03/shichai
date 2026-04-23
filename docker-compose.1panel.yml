@@ -56,7 +56,7 @@ services:
     restart: unless-stopped
 
   st49:
-    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.22.1}"
+    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.22.2}"
     container_name: st49
     ports:
       - "${ST49_HOST_PORT:-8100}:8000"

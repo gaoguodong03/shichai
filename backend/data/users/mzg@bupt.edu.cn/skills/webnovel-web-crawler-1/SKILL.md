@@ -1,10 +1,9 @@
 ---
 description: 用于用户要求抓取网络素材、整理设定参考、保存网页原文证据时触发；会优先调用本技能自带脚本抓取页面并将结果落盘，输出可追溯的本地存档路径。
-enabled: true
-mcp_server_ids: []
 name: webnovel-web-crawler
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 网文写作-网页爬取专家
 

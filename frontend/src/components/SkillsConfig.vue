@@ -37,47 +37,12 @@
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-2">
               <h3 class="text-lg font-semibold text-primary">{{ skill.name }}</h3>
-              <span
-                :class="[
-                  'px-2 py-1 text-xs rounded-full',
-                  skill.enabled
-                    ? 'bg-accent-subtle text-accent-subtle-text'
-                    : 'bg-list-hover text-muted'
-                ]"
-              >
-                {{ skill.enabled ? '已启用' : '已禁用' }}
-              </span>
-              <span
-                :class="[
-                  'px-2 py-1 text-xs rounded-full',
-                  skill.source === 'local'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-purple-100 text-purple-700'
-                ]"
-              >
-                {{ skill.source === 'local' ? '本地' : 'Git' }}
-              </span>
             </div>
             <p v-if="skill.description" class="text-sm text-muted mb-2">
               {{ skill.description }}
             </p>
-            <div class="text-sm text-muted">
-              <span v-if="skill.source === 'local'">路径: {{ skill.path }}</span>
-              <span v-else>URL: {{ skill.url }}</span>
-            </div>
           </div>
           <div class="flex items-center gap-2 ml-4">
-            <button
-              @click="toggleSkill(skill.id, !skill.enabled)"
-              :class="[
-                'px-3 py-1 text-sm rounded',
-                skill.enabled
-                  ? 'bg-list-hover text-primary hover:opacity-90'
-                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-              ]"
-            >
-              {{ skill.enabled ? '禁用' : '启用' }}
-            </button>
             <button
               @click="editSkill(skill)"
               class="px-3 py-1 text-sm bg-list-hover text-primary rounded hover:opacity-90"
@@ -123,59 +88,6 @@
 
             <div>
               <label class="block text-sm font-medium text-primary mb-1">
-                来源 *
-              </label>
-              <select
-                v-model="formData.source"
-                @change="onSourceChange"
-                required
-                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              >
-                <option value="local">本地</option>
-                <option value="git">Git URL</option>
-              </select>
-            </div>
-
-            <!-- 本地路径 -->
-            <div v-if="formData.source === 'local'">
-              <label class="block text-sm font-medium text-primary mb-1">
-                路径 *
-              </label>
-              <input
-                v-model="formData.path"
-                type="text"
-                required
-                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-                placeholder="例如：本机目录或 zip；技能落盘在 data/users/<邮箱>/skills/"
-              />
-            </div>
-
-            <!-- Git URL -->
-            <div v-if="formData.source === 'git'">
-              <label class="block text-sm font-medium text-primary mb-1">
-                URL *
-              </label>
-              <input
-                v-model="formData.url"
-                type="url"
-                required
-                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-                placeholder="例如：https://example.com/skills/data-analysis"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-primary mb-1">写入模式</label>
-              <select
-                v-model="formData.write_mode"
-                class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              >
-                <option value="readonly">readonly（只读）</option>
-                <option value="workspace_all">workspace_all（可改会话工作区）</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-primary mb-1">
                 描述
               </label>
               <textarea
@@ -215,11 +127,6 @@ interface Skill {
   id: string
   name: string
   description?: string
-  enabled: boolean
-  source: 'local' | 'git'
-  path?: string
-  url?: string
-  write_mode?: 'readonly' | 'workspace_all'
 }
 
 const skills = ref<Skill[]>([])
@@ -230,10 +137,6 @@ const editingSkill = ref<Skill | null>(null)
 const formData = ref({
   name: '',
   description: '',
-  source: 'local' as 'local' | 'git',
-  path: '',
-  url: '',
-  write_mode: 'readonly' as 'readonly' | 'workspace_all',
 })
 
 const loadSkills = async () => {
@@ -242,17 +145,12 @@ const loadSkills = async () => {
     const { getSkillsList } = await import('@/api')
     const result = await getSkillsList()
     if (result.status === 'ok') {
-      // 后端返回在类型上可能缺少 enabled/source 等字段；做一次归一化以满足 Skill 类型。
+      // 后端返回字段做一次归一化。
       const raw = (result.data?.skills || []) as any[]
       skills.value = raw.map((s: any): Skill => ({
         id: String(s?.id ?? ''),
         name: String(s?.name ?? s?.id ?? ''),
         description: s?.description,
-        enabled: s?.enabled ?? true,
-        source: s?.source === 'git' ? 'git' : 'local',
-        path: s?.path,
-        url: s?.url,
-        write_mode: s?.write_mode,
       }))
     }
   } catch (error) {
@@ -268,12 +166,8 @@ const saveSkill = async () => {
     const payload: any = {
       name: formData.value.name,
       description: formData.value.description,
-      source: formData.value.source,
-      write_mode: formData.value.write_mode,
       ...(editingSkill.value?.id ? { id: editingSkill.value.id } : {}),
     }
-    if (formData.value.source === 'local') payload.path = formData.value.path
-    else payload.url = formData.value.url
     const result = await apiSaveSkill(payload)
     if (result.status === 'ok') {
       await loadSkills()
@@ -292,10 +186,6 @@ const editSkill = (skill: Skill) => {
   formData.value = {
     name: skill.name,
     description: skill.description || '',
-    source: skill.source,
-    path: skill.path || '',
-    url: skill.url || '',
-    write_mode: skill.write_mode || 'readonly',
   }
   showAddModal.value = true
 }
@@ -313,36 +203,12 @@ const deleteSkill = async (id: string) => {
   }
 }
 
-const toggleSkill = async (id: string, enabled: boolean) => {
-  try {
-    const { toggleSkill: apiToggleSkill } = await import('@/api')
-    const result = await apiToggleSkill(id, enabled)
-    if (result.status === 'ok') await loadSkills()
-    else alert(result.error?.message || '操作失败')
-  } catch (error) {
-    console.error('Failed to toggle skill:', error)
-    alert('操作失败')
-  }
-}
-
 const closeModal = () => {
   showAddModal.value = false
   editingSkill.value = null
   formData.value = {
     name: '',
     description: '',
-    source: 'local',
-    path: '',
-    url: '',
-    write_mode: 'readonly',
-  }
-}
-
-const onSourceChange = () => {
-  if (formData.value.source === 'local') {
-    formData.value.url = ''
-  } else {
-    formData.value.path = ''
   }
 }
 

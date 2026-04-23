@@ -135,7 +135,7 @@ export async function exportSession(sessionId: string): Promise<ApiResult<{ path
 
 /** 兼容旧调用：技能列表来自 settings/skills */
 export async function getSkills(): Promise<
-  ApiResult<{ skills: Array<{ id: string; name: string; description?: string; enabled?: boolean; source?: string; path?: string; url?: string }> }>
+  ApiResult<{ skills: Array<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp?: string[]; python?: string } }> }>
 > {
   return getSkillsList()
 }

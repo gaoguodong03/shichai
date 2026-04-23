@@ -1428,7 +1428,7 @@ const filteredScenarioLeaderSkills = computed(() => {
   })
 })
 
-const skills = ref<{ id: string; name: string; description?: string; enabled: boolean }[]>([])
+const skills = ref<{ id: string; name: string; description?: string }[]>([])
 const skillsLoading = ref(false)
 const mcpServers = ref<{ id: string; name: string; description?: string; metadata?: Record<string, any>; status: string; tool_count: number }[]>([])
 const mcpLoading = ref(false)
@@ -2610,7 +2610,6 @@ async function commitSkillZipImport() {
   try {
     const fd = new FormData()
     fd.append('file', pendingSkillZipFile.value)
-    fd.append('enabled', 'true')
     fd.append('name_conflict', 'overwrite')
     const r = await fetch('/api/settings/skills/import-zip', {
       method: 'POST',
@@ -2645,8 +2644,6 @@ async function createEmptySkill() {
       body: JSON.stringify({
         name: '新 Skill',
         description: '',
-        source: 'local',
-        enabled: true,
       }),
     })
     const j = await r.json()

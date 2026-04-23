@@ -1,11 +1,10 @@
 ---
 description: 面向网文与小说连载的封面、章节插图与人物场景图生成。强调与用户共创画面方向、每张图必须锚定正文情节或人设，并通过 run_skill_script
   调用 generate_image.py 产出。在用户提到网文、小说、章节、连载、封面、配图、立绘、同人、世界观视觉化时触发。
-enabled: true
-mcp_server_ids: []
 name: 网文配图
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 网文配图 Skill
 

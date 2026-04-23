@@ -469,9 +469,11 @@ GET /api/settings/skills
         "id": "skill-1",
         "name": "数据分析",
         "description": "数据分析技能",
-        "enabled": true,
-        "source": "local",
-        "path": "/path/to/skill"
+        "path": "/path/to/skill",
+        "allowed_tools": {
+          "mcp": ["file-reader"],
+          "python": "requests==2.32.3"
+        }
       }
     ]
   },
@@ -490,18 +492,7 @@ Content-Type: application/json
 ```json
 {
   "name": "数据分析",
-  "source": "local",
-  "path": "/path/to/skill"
-}
-```
-
-或远程 URL:
-
-```json
-{
-  "name": "数据分析",
-  "source": "remote",
-  "url": "https://example.com/skills/data-analysis"
+  "description": "用于分析数据并生成报告"
 }
 ```
 
@@ -516,13 +507,6 @@ Content-Type: application/json
 
 ```http
 DELETE /api/settings/skills/{skill_id}
-```
-
-#### 启用/禁用 Skill
-
-```http
-POST /api/settings/skills/{skill_id}/enable
-POST /api/settings/skills/{skill_id}/disable
 ```
 
 ## 错误码

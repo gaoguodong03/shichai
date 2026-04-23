@@ -1,10 +1,11 @@
 ---
 description: 智能新闻搜索和摘要工具，帮你快速获取和分析最新新闻，并生成可交互的 HTML 页面。（HTML 生成不准确）
-enabled: true
-mcp_server_ids:
+name: 新闻搜索摘要
+allowed-tools:
+  mcp:
   - exa
   - linkup
-name: 新闻搜索摘要
+  python: ''
 ---
 # 新闻搜索摘要 Skill
 

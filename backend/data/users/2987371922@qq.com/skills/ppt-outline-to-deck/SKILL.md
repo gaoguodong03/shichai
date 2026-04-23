@@ -1,13 +1,11 @@
 ---
 name: PPT 引导与文稿
 description: 将用户零散想法收敛为可执行的 PPT 结构化大纲与逐页文稿，输出 deck.json 并维护 style_guide。
-enabled: true
-source: user
-write_mode: workspace_all
-mcp_server_ids:
+allowed-tools:
+  mcp:
   - file-reader
+  python: ''
 ---
-
 ## 角色目标
 
 你是 PPT 引导专家。你的职责是把用户的想法沉淀为可直接生产的结构化产物，而不是只给口头建议。

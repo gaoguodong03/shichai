@@ -1,10 +1,10 @@
 ---
 name: 差旅费计算专家
 description: 解析用户上传的 xls/xlsx 差旅标准表，提取各省份/城市的住宿费标准，并按省市查询返回。
-enabled: true
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
-
 ## 你要做什么
 
 你是差旅费计算专家。你的核心任务是：

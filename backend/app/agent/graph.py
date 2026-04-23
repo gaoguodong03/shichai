@@ -242,6 +242,29 @@ def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[
         arguments.pop("__arg1", None)
 
 
+def _tool_name_looks_like_bound_mcp(name: str) -> bool:
+    """区分「本技能声明的 MCP 工具（server_tool）」与工作区 / 脚本 / 包装类工具。"""
+    n = (name or "").strip()
+    if "_" not in n:
+        return False
+    if n.startswith("run_skill_script_"):
+        return False
+    head, _ = n.split("_", 1)
+    if head in ("filesystem",):
+        return False
+    if n in {
+        "read_file",
+        "write_workspace_file",
+        "edit_workspace_file",
+        "rename_workspace_file",
+        "mkdir_workspace",
+        "list_workspace_directory",
+        "call_api",
+    }:
+        return False
+    return True
+
+
 def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
     """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
@@ -289,6 +312,15 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
             "## 外部 HTTP（call_api）\n\n"
             "当需要获取**公开**网页或 HTTP API 的响应时，使用 `call_api`（GET/POST 等），url 须为 http(s)。"
             " 服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
+        )
+    mcp_names = sorted({getattr(t, "name", "") for t in tools if _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))})
+    if mcp_names:
+        parts.append(
+            "## 本技能绑定的 MCP 工具\n\n"
+            "以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，"
+            "**必须优先使用这些 MCP 工具**完成步骤，不要用无关工具替代或仅靠猜测。\n\n"
+            + "\n".join(f"- `{n}`" for n in mcp_names)
+            + "\n\n"
         )
     return "".join(parts)
 

@@ -1,11 +1,12 @@
 ---
-description: 将纯文本或 Markdown 格式化为结构清晰、易读的 Markdown。补充 frontmatter、标题、摘要，优化标题层级、加粗、列表、代码块与引用。当用户要求「格式化 Markdown」「美化文章」「加排版」或改进文章结构时使用。输出为 {原文件名}-formatted.md。灵感来自 baoyu-skills/baoyu-format-markdown。
-enabled: true
-mcp_server_ids:
-  - filesystem
+description: 将纯文本或 Markdown 格式化为结构清晰、易读的 Markdown。补充 frontmatter、标题、摘要，优化标题层级、加粗、列表、代码块与引用。当用户要求「格式化
+  Markdown」「美化文章」「加排版」或改进文章结构时使用。输出为 {原文件名}-formatted.md。灵感来自 baoyu-skills/baoyu-format-markdown。
 name: Markdown 格式化
+allowed-tools:
+  mcp:
+  - filesystem
+  python: ''
 ---
-
 # Markdown 格式化
 
 将纯文本或已有 Markdown 整理成结构清晰、便于扫读的 Markdown。**原则**：只调整排版与明显笔误，不增删、不改写原文内容。

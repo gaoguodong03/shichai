@@ -2,7 +2,7 @@ import { apiFetch, ApiResult } from './base'
 
 /** GET /api/settings/skills */
 export async function getSkillsList(): Promise<
-  ApiResult<{ skills: Array<{ id: string; name: string; description?: string; enabled?: boolean; source?: string; path?: string; url?: string }> }>
+  ApiResult<{ skills: Array<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp?: string[]; python?: string } }> }>
 > {
   return apiFetch('/settings/skills')
 }
@@ -11,10 +11,6 @@ export async function getSkillsList(): Promise<
 export async function saveSkill(payload: {
   name: string
   description?: string
-  source: 'local' | 'git'
-  path?: string
-  url?: string
-  write_mode?: 'readonly' | 'workspace_all'
   id?: string
 }): Promise<ApiResult> {
   const path = payload.id ? `/settings/skills/${payload.id}` : '/settings/skills'
@@ -27,12 +23,6 @@ export async function saveSkill(payload: {
 /** DELETE /api/settings/skills/:id */
 export async function deleteSkill(id: string): Promise<ApiResult> {
   return apiFetch(`/settings/skills/${id}`, { method: 'DELETE' })
-}
-
-/** POST /api/settings/skills/:id/enable 或 disable */
-export async function toggleSkill(id: string, enabled: boolean): Promise<ApiResult> {
-  const endpoint = enabled ? 'enable' : 'disable'
-  return apiFetch(`/settings/skills/${id}/${endpoint}`, { method: 'POST' })
 }
 
 /** GET /api/settings/mcp */

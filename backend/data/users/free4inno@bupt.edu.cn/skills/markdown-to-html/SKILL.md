@@ -1,10 +1,11 @@
 ---
 description: 将 Markdown 转为适合微信公众号等场景的样式化 HTML。支持主题（default/grace/simple/modern）、主色、代码高亮、可选外链转文末引用。当用户要求「markdown
   转 html」「md 转 html」「微信排版」「外链转底部引用」或需要从 Markdown 生成样式 HTML 时使用。
-enabled: true
-mcp_server_ids:
-  - filesystem
 name: Markdown 转 HTML（微信风格）
+allowed-tools:
+  mcp:
+  - filesystem
+  python: ''
 ---
 # Markdown 转 HTML（微信风格）
 

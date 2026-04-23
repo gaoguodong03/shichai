@@ -1,10 +1,10 @@
 ---
 name: Agent工程与框架实践模块
 description: 提供关于现代 Agent 系统工程实现的知识与推理流程，包括 MCP、Skill 体系、LangChain 等框架的设计与落地实践，仅包含工程与架构层面的知识，不包含具体人设或口吻。
-enabled: true
-mcp_server_ids: []
+allowed-tools:
+  mcp: []
+  python: ''
 ---
-
 # Agent 工程与框架实践模块 Skill
 
 ## 模块定位

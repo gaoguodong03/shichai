@@ -1,12 +1,10 @@
 ---
 description: 系统化的论文写作框架，用于哲学及跨学科学术论文，从优化的提纲到可提交的文稿。适用于用户希望：(1) 从详细提纲撰写论文，(2) 在写作过程中确保质量控制，(3)
   保持各章节的一致性，(4) 准备可提交的文稿，或 (5) 系统地执行计划中的论文。当用户使用诸如“根据此提纲撰写论文”、“撰写完整文稿”、“执行提纲”等短语，或已完成战略规划（学术论文策划技能）并准备撰写时触发。输入为优化的提纲，输出为完整的文稿并包含迭代的质量检查。
-enabled: true
-mcp_server_ids: []
 name: 学术论文生成器
-source: git
-url: https://github.com/lishix520/academic-paper-skills/tree/main/composer
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # Academic Paper Composer
 

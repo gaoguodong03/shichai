@@ -1,10 +1,10 @@
 ---
 description: 这是一个RAG的skill，用于解析文档、切分文本、将文本写入知识库、根据查询检索相似内容。当用户有以下需求时，请调用此skill：（1）文档解析：将`.docx`
   `.pdf`等格式的文档解析并转换为干净的`.txt`文件；（2）文本切分：将`.txt`文件切分为`list[str]`格式的JSON文件；（3）存储：将单个字符串或`list[str]`格式的JSON写入知识库；（4）检索：根据查询从知识库中检索相关文档。
-enabled: true
 name: rag-cli
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 ## 各个脚本使用说明
 

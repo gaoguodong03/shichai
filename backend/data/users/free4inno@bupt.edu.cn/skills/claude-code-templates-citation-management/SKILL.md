@@ -1,16 +1,9 @@
 ---
 allowed-tools:
-- Read
-- Write
-- Edit
-- Bash
+  mcp: []
+  python: ''
 description: 全面引用管理，适用于学术研究。在Google Scholar和PubMed中搜索论文，提取准确元数据，验证引用，生成正确格式的BibTeX条目。当您需要查找论文、验证引用信息、将DOI转换为BibTeX或确保科学写作中的参考文献准确性时，应使用此技能。
-enabled: true
-mcp_server_ids: []
 name: 文献管理
-source: git
-url: https://github.com/davila7/claude-code-templates/tree/main/cli-tool/components/skills/scientific/citation-management
-write_mode: workspace_all
 ---
 # Citation Management
 

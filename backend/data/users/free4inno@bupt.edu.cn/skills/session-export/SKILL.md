@@ -1,8 +1,9 @@
 ---
 description: 导出对话、导出为 .md、保存为 markdown。当前产品通过界面或会话 API 导出，不再提供 Agent 内置导出工具。
-enabled: true
-mcp_server_ids: []
 name: 导出对话
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # Session Export
 

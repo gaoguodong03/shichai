@@ -1,10 +1,9 @@
 ---
 description: 纯文本测试：只要走本 skill，对用户输入一律只回复小写 hello。
-enabled: true
-mcp_server_ids: []
 name: 测试·固定 hello
-source: user
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 测试·固定 hello
 

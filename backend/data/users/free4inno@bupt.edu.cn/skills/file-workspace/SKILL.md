@@ -1,9 +1,10 @@
 ---
 description: 使用「文件读取与写入」MCP (file-reader) 在本地文件目录中查找、读取并总结文档，回答与这些文档内容相关的问题。
-enabled: true
-mcp_server_ids:
-- file-reader
 name: 本地文档助手
+allowed-tools:
+  mcp:
+  - file-reader
+  python: ''
 ---
 ## 适用场景
 

@@ -1,6 +1,6 @@
 """按 DHA 组装工具列表的统一入口（统一会话）。
 
-build_tools_for_group_chat：按「本轮解析出的 Skill」的 mcp_server_ids（及内置 fallback）决定可加载的 MCP；
+build_tools_for_group_chat：按「本轮解析出的 Skill」在 SKILL.md frontmatter 中声明的 mcp_server_ids 决定可加载的 MCP（未声明则不调 MCP）；
 专家的 dha.mcp_server_ids 若配置则与上述列表取交集，作为实例级收紧；不再从全局运行时额外注入
 Linkup/Exa 等 URL 工具。内置工作区工具与 call_api 按专家 dha 的 file_capabilities / url_capability 注入；
 run_skill_script_<skill_id> → wrap。
@@ -274,7 +274,7 @@ async def build_tools_for_group_chat(
 ) -> List:
     """
     按「本轮生效的 Skill」组装群聊 MCP 工具。
-    - 仅允许 get_mcp_servers_for_skill(resolved_skill_id) 中的 MCP（含 SKILL  frontmatter 与 fallback）；
+    - 仅允许 get_mcp_servers_for_skill(resolved_skill_id) 中的 MCP（仅 SKILL.md frontmatter 声明）；
     - 若 dha["mcp_server_ids"] 非空，与上式取交集，作为实例级收紧；
     - 不再合并专家上全部 skill_ids 的 MCP，也不从全局运行时额外注入 Linkup/Exa。
     - 内置工作区工具按 dha["file_capabilities"]；call_api 仅当 dha["url_capability"] 为真；

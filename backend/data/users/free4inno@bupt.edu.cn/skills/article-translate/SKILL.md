@@ -1,12 +1,13 @@
 ---
-description: 文章与文档的多语言翻译。支持三种模式：quick（直接翻译）、normal（先分析再翻译）、refined（分析→翻译→审校→润色）。可配合术语表与受众/风格设定。当用户说「翻译」「精翻」「快翻」「翻译成中文/英文」「改成中文」或提供文件/URL 并带翻译意图时使用。灵感来自 baoyu-skills/baoyu-translate。
-enabled: true
-mcp_server_ids:
+description: 文章与文档的多语言翻译。支持三种模式：quick（直接翻译）、normal（先分析再翻译）、refined（分析→翻译→审校→润色）。可配合术语表与受众/风格设定。当用户说「翻译」「精翻」「快翻」「翻译成中文/英文」「改成中文」或提供文件/URL
+  并带翻译意图时使用。灵感来自 baoyu-skills/baoyu-translate。
+name: 文章翻译
+allowed-tools:
+  mcp:
   - linkup
   - file-reader
-name: 文章翻译
+  python: ''
 ---
-
 # 文章翻译
 
 三模式翻译：**quick** 直接翻译；**normal** 先分析再翻译；**refined** 分析→翻译→审校→润色，适合出版级。

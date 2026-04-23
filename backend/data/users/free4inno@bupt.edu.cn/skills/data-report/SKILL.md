@@ -1,13 +1,13 @@
 ---
 name: 数据收集与报告
 description: 从网页搜索、URL 抓取或外部 API 收集数据，整理成结构化内容并生成 Markdown 报告。
-enabled: true
-mcp_server_ids:
+allowed-tools:
+  mcp:
   - exa
   - linkup
   - file-reader
+  python: ''
 ---
-
 # 数据收集与报告 Skill
 
 从用户指定的来源（搜索、网页、API、本地文件）收集数据，整理成结构化内容，并输出 Markdown 格式报告（含表格/列表）。

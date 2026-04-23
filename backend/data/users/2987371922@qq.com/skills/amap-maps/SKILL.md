@@ -1,9 +1,10 @@
 ---
 description: 高德地图位置服务。当用户需要地理编码、逆地理编码、天气查询、路线规划、距离计算、周边/关键词搜索 POI 时，使用 amap-maps 相关工具。
-enabled: true
-mcp_server_ids:
-- amap-maps
 name: 高德地图
+allowed-tools:
+  mcp:
+  - amap-maps
+  python: ''
 ---
 # 高德地图 Skill（只使用 amap-maps MCP）
 

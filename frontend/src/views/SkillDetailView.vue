@@ -114,27 +114,59 @@
                   class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 />
               </div>
-              <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
-                <label class="block text-xs font-medium text-muted mb-2">工具依赖（可选）</label>
-                <div class="flex flex-wrap gap-2">
-                  <label
-                    v-for="srv in mcpServers"
-                    :key="srv.id"
-                    class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-sm cursor-pointer transition-colors"
-                    :class="form.mcp_server_ids.includes(srv.id)
-                      ? 'border-accent bg-accent-subtle text-accent-subtle-text'
-                      : 'border-border bg-card text-muted hover:border-input-border'"
-                  >
-                    <input
-                      type="checkbox"
-                      :value="srv.id"
-                      v-model="form.mcp_server_ids"
-                      class="rounded border-input-border bg-input-bg"
-                    />
-                    {{ srv.name || srv.id }}
-                  </label>
+              <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm space-y-4">
+                <div class="text-xs font-medium text-primary mb-1">技能运行时依赖</div>
+                <div>
+                  <label class="block text-xs font-medium text-muted mb-2">MCP</label>
+                  <div v-if="form.allowed_tools.mcp.length" class="flex flex-wrap gap-2 mb-2">
+                    <span
+                      v-for="id in form.allowed_tools.mcp"
+                      :key="id"
+                      class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-accent bg-accent-subtle text-accent-subtle-text text-sm"
+                    >
+                      {{ mcpLabel(id) }}
+                      <button
+                        type="button"
+                        class="p-0.5 rounded hover:bg-accent/20 text-accent-subtle-text"
+                        title="移除"
+                        @click="removeMcpServer(id)"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </div>
+                  <div v-else class="text-xs text-muted mb-2">未声明 MCP（本技能会话不加载 MCP 工具）。</div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select
+                      class="text-sm border border-input-border rounded-lg bg-input-bg text-primary px-2 py-1.5 min-w-[10rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                      :disabled="!addableMcpServers.length"
+                      @change="onAddMcpSelect"
+                    >
+                      <option value="">添加 MCP…</option>
+                      <option
+                        v-for="srv in addableMcpServers"
+                        :key="srv.id"
+                        :value="srv.id"
+                      >
+                        {{ srv.name || srv.id }}
+                      </option>
+                    </select>
+                  </div>
+                  <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
                 </div>
-                <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
+                <div>
+                  <label class="block text-xs font-medium text-muted mb-2">Python 依赖</label>
+                  <div v-if="pythonDependencies.length" class="flex flex-wrap gap-2">
+                    <span
+                      v-for="dep in pythonDependencies"
+                      :key="dep"
+                      class="inline-flex items-center px-2.5 py-1 rounded-full border border-border bg-input-bg text-primary text-xs font-mono"
+                    >
+                      {{ dep }}
+                    </span>
+                  </div>
+                  <div v-else class="text-xs text-muted">未声明 Python 依赖</div>
+                </div>
               </div>
               <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
@@ -234,8 +266,20 @@ const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'other', label: 'Other' },
 ]
 
-const skill = ref<{ id: string; name: string; description?: string; enabled: boolean; source: string; path?: string; url?: string; write_mode?: 'readonly' | 'workspace_all'; mcp_server_ids?: string[] } | null>(null)
-const skillContent = ref<{ raw: string; name: string; description: string; enabled: boolean; source?: string; url?: string; write_mode?: 'readonly' | 'workspace_all'; body: string; mcp_server_ids?: string[] }>({ raw: '', name: '', description: '', enabled: true, source: 'local', url: '', write_mode: 'readonly', body: '', mcp_server_ids: [] })
+const skill = ref<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp: string[]; python: string } } | null>(null)
+const skillContent = ref<{
+  raw: string
+  name: string
+  description: string
+  body: string
+  allowed_tools: { mcp: string[]; python: string }
+}>({
+  raw: '',
+  name: '',
+  description: '',
+  body: '',
+  allowed_tools: { mcp: [], python: '' },
+})
 const loading = ref(false)
 const contentLoading = ref(false)
 const saving = ref(false)
@@ -243,9 +287,8 @@ const deleting = ref(false)
 const form = ref({
   name: '',
   description: '',
-  enabled: true,
   body: '',
-  mcp_server_ids: [] as string[],
+  allowed_tools: { mcp: [] as string[], python: '' },
 })
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
@@ -264,6 +307,36 @@ const partContentLoading = ref(false)
 const partSaving = ref(false)
 const exporting = ref(false)
 const partMarkdownPreviewMode = ref(true)
+
+const addableMcpServers = computed(() => {
+  const chosen = new Set(form.value.allowed_tools.mcp)
+  return mcpServers.value.filter((s) => s.enabled !== false && !chosen.has(s.id))
+})
+const pythonDependencies = computed(() =>
+  String(form.value.allowed_tools.python || '')
+    .split(/\r?\n/g)
+    .map((x) => x.trim())
+    .filter(Boolean)
+)
+
+function mcpLabel(id: string) {
+  const s = mcpServers.value.find((x) => x.id === id)
+  return s?.name || id
+}
+
+function removeMcpServer(id: string) {
+  form.value.allowed_tools.mcp = form.value.allowed_tools.mcp.filter((x) => x !== id)
+}
+
+function onAddMcpSelect(ev: Event) {
+  const el = ev.target as HTMLSelectElement
+  const v = (el?.value || '').trim()
+  if (!v) return
+  if (!form.value.allowed_tools.mcp.includes(v)) {
+    form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
+  }
+  el.value = ''
+}
 
 const currentPartFiles = computed(() => {
   if (activeTab.value === 'main') return []
@@ -477,9 +550,8 @@ async function load() {
         form.value = {
           name: s.name,
           description: s.description ?? '',
-          enabled: s.enabled ?? true,
           body: '',
-          mcp_server_ids: s.mcp_server_ids ?? [],
+          allowed_tools: { mcp: [...(s.allowed_tools?.mcp ?? [])], python: s.allowed_tools?.python ?? '' },
         }
         await loadContent()
       }
@@ -496,22 +568,23 @@ async function loadContent() {
     const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/content`)
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
+      const at = j.data.allowed_tools
+      const mcp = Array.isArray(at?.mcp) ? at.mcp.map((x: string) => String(x || '').trim()).filter(Boolean) : []
+      const python = typeof at?.python === 'string' ? at.python : ''
       skillContent.value = {
         raw: j.data.raw ?? '',
         name: j.data.name ?? '',
         description: j.data.description ?? '',
-        enabled: j.data.enabled ?? true,
-        source: j.data.source ?? 'local',
-        url: j.data.url ?? '',
-        write_mode: (j.data.write_mode ?? 'readonly') as 'readonly' | 'workspace_all',
         body: j.data.body ?? '',
-        mcp_server_ids: j.data.mcp_server_ids ?? [],
+        allowed_tools: { mcp, python },
       }
       form.value.name = skillContent.value.name
       form.value.description = skillContent.value.description
-      form.value.enabled = skillContent.value.enabled
       form.value.body = skillContent.value.body
-      form.value.mcp_server_ids = skillContent.value.mcp_server_ids ?? []
+      form.value.allowed_tools = {
+        mcp: [...skillContent.value.allowed_tools.mcp],
+        python: skillContent.value.allowed_tools.python,
+      }
     }
   } finally {
     contentLoading.value = false
@@ -571,10 +644,11 @@ async function save() {
       body: JSON.stringify({
         name: form.value.name.trim(),
         description: form.value.description?.trim() ?? '',
-        enabled: form.value.enabled,
-        write_mode: 'workspace_all',
         body: form.value.body ?? '',
-        mcp_server_ids: form.value.mcp_server_ids ?? [],
+        allowed_tools: {
+          mcp: form.value.allowed_tools.mcp ?? [],
+          python: form.value.allowed_tools.python ?? '',
+        },
       }),
     })
     const j = await r.json()

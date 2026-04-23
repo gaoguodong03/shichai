@@ -1,11 +1,11 @@
 ---
 name: 浏览器自动化（Playwright MCP）
 description: 使用 Playwright MCP 控制本机浏览器执行网页导航、点击、输入、表单填写和滚动等操作，适合需要真实浏览器交互的任务。
-enabled: true
-mcp_server_ids:
+allowed-tools:
+  mcp:
   - playwright-mcp
+  python: ''
 ---
-
 ## 适用场景
 
 - 用户希望你在真实浏览器里「操作网页」而不是只读网页内容，例如：

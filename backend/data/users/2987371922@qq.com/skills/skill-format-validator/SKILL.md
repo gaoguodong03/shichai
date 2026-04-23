@@ -1,8 +1,9 @@
 ---
 description: 严格检查文本中的日期格式、中英文空格、标点符号规范及 JSON/XML 数据结构完整性
-enabled: true
-mcp_server_ids: []
 name: 格式与数据规范检查器
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 🎯 技能目标
 本技能专注于**形式规范**检查。它不关心文字内容是否通顺，只关心是否符合预设的排版和数据格式标准。

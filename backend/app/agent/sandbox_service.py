@@ -423,11 +423,11 @@ class SandboxService:
         user_id: str,
         policy: SandboxPolicy,
     ) -> None:
-        """按内容 hash 在沙箱内安装 requirements（变更时才执行一次）。"""
+        """按内容 hash 在沙箱内安装 requirements（变更时才执行一次）。仅用户级 config/sandbox/requirements.txt。"""
         if not isinstance(handle.metadata, dict):
             return
-        content = self._read_user_sandbox_requirements(user_id)
-        normalized = (content or "").strip()
+        user_txt = self._read_user_sandbox_requirements(user_id)
+        normalized = (user_txt or "").strip()
         dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
         last = str(handle.metadata.get("installed_requirements_hash") or "")
         if dep_hash == last:

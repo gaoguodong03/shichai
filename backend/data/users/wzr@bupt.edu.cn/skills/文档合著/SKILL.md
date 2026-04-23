@@ -1,11 +1,10 @@
 ---
 description: 引导用户通过结构化的文档共同编写工作流程。当用户想撰写文档、提案、技术规范、决策文档或类似结构化内容时使用。该工作流程帮助用户高效传递上下文，通过迭代优化内容，并验证文档对读者有效。当用户提到写文档、创建提案、起草规范或类似文档任务时触发。
-enabled: true
-mcp_server_ids:
-- mcp-8286a34f
 name: 文档合著
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp:
+  - mcp-8286a34f
+  python: ''
 ---
 # 文档合著工作流程
 

@@ -1,9 +1,10 @@
 ---
 description: 统一图片生成技能。负责应用图标、文章封面、文内配图、小红书信息图等；由技能决定生成张数与每张的提示词（description）。支持 run_skill_script
   的 generate_image.py 或 volces-icon MCP。
-enabled: true
-mcp_server_ids: []
 name: 图片生成
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 ## 目标与范围
 

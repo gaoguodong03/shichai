@@ -1,8 +1,10 @@
 ---
 name: 沙箱依赖安装验证
 description: 验证沙箱是否会按当前账号的 requirements.txt 自动安装 Python 依赖；通过运行脚本打印指定包的版本号。
+allowed-tools:
+  mcp: []
+  python: ''
 ---
-
 ## 目的
 验证「沙箱环境」里是否已经安装了某个你在 `settings/sandbox/requirements` 里配置的 Python 包。
 

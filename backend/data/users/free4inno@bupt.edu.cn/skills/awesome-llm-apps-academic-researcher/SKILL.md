@@ -2,16 +2,14 @@
 description: '学术研究助理，用于文献综述、论文分析和学术写作。
 
   使用场景：审阅学术论文、进行文献综述、撰写研究摘要、分析方法论、格式化引用，或当用户提及学术研究、学术写作、论文或科学文献时。'
-enabled: true
 license: MIT
-mcp_server_ids: []
 metadata:
   author: awesome-llm-apps
   version: 1.0.0
 name: 学术研究者
-source: git
-url: https://github.com/Shubhamsaboo/awesome-llm-apps/tree/main/awesome_agent_skills/academic-researcher
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # Academic Researcher
 

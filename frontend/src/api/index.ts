@@ -4,7 +4,6 @@ export {
   getSkillsList,
   saveSkill,
   deleteSkill,
-  toggleSkill,
   getMcpServers,
   saveMcpServer,
   deleteMcpServer,

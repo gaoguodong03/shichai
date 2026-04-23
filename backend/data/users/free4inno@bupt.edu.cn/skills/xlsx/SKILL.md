@@ -1,10 +1,11 @@
 ---
 description: Excel 创建、编辑与分析。支持公式、格式、数据分析与可视化（.xlsx/.xlsm/.csv/.tsv）。基于 Anthropic 官方
   document-skills xlsx 规范。（还需要添加保存 xlsl 的 mcp 工具，需改进）
-enabled: true
-mcp_server_ids:
-  - file-reader
 name: XLSX 表格处理
+allowed-tools:
+  mcp:
+  - file-reader
+  python: ''
 ---
 # XLSX 表格处理 Skill
 

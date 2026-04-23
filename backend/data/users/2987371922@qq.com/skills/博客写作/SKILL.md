@@ -1,11 +1,11 @@
 ---
 description: 博客撰写与文章评价。以博客写作师身份聊选题、收集素材后撰写文章；也可对用户指定的文章做深度解读、读后感或评价。
-enabled: true
-mcp_server_ids:
-- exa
-- linkup
 name: 博客写作
-write_mode: workspace_all
+allowed-tools:
+  mcp:
+  - exa
+  - linkup
+  python: ''
 ---
 # 博客写作 Skill
 

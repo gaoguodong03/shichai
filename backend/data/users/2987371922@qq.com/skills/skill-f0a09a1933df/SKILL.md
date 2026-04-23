@@ -1,11 +1,10 @@
 ---
 description: 基于周榜快照与可选多周材料，做主题聚类、增长动因与对比分析，不写最终对外简报成稿。
-enabled: true
-mcp_server_ids:
-- file-reader
 name: 开源周趋势解读
-source: user
-write_mode: workspace_all
+allowed-tools:
+  mcp:
+  - file-reader
+  python: ''
 ---
 # 开源周趋势解读
 

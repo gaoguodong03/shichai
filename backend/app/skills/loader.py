@@ -85,20 +85,16 @@ class SkillsLoader:
         return self.skills
 
     def get_active_skills_instructions(self) -> str:
-        """获取所有启用（enabled）技能的指令"""
+        """获取技能指令（目录存在即启用）。"""
         instructions = []
         for skill in self.skills.values():
-            if not skill.metadata.get("enabled", True):
-                continue
             instructions.append(f"## {skill.name}\n{skill.description}\n\n{skill.get_instruction()}")
         return "\n\n".join(instructions)
 
     def get_active_skills_index(self, skill_ids: Optional[List[str]] = None) -> str:
-        """获取启用技能的索引。skill_ids 为空则全部；否则仅包含指定 id 的技能"""
+        """获取技能索引。skill_ids 为空则全部；否则仅包含指定 id 的技能。"""
         items = []
         for skill in self.skills.values():
-            if not skill.metadata.get("enabled", True):
-                continue
             if skill_ids and skill.skill_id not in skill_ids:
                 continue
             desc = (skill.description or "").strip()
@@ -106,11 +102,9 @@ class SkillsLoader:
         return "\n\n".join(items)
 
     def get_skill_routing_rules(self, skill_ids: Optional[List[str]] = None) -> str:
-        """根据各技能的 description 动态生成技能选择规则。skill_ids 为空则全部"""
+        """根据各技能的 description 动态生成技能选择规则。skill_ids 为空则全部。"""
         rules = []
         for skill in self.skills.values():
-            if not skill.metadata.get("enabled", True):
-                continue
             if skill_ids and skill.skill_id not in skill_ids:
                 continue
             desc = skill.description
@@ -126,8 +120,6 @@ class SkillsLoader:
             return None
         t = message.strip()
         for skill in self.skills.values():
-            if not skill.metadata.get("enabled", True):
-                continue
             desc = skill.description
             if not desc:
                 continue
@@ -206,12 +198,12 @@ class SkillsLoader:
         ranking_kw: List[Dict[str, Any]] = []
         for sid in ids:
             skill = self.skills.get(sid)
-            if not skill or not skill.metadata.get("enabled", True):
+            if not skill:
                 continue
             score = self.relevance_score_for_message(query, skill)
             ranking_kw.append({"skill_id": sid, "score": float(score)})
         if not ranking_kw:
-            debug["strategy"] = "no_enabled_candidates"
+            debug["strategy"] = "no_candidates"
             return debug
         ranking_kw.sort(key=lambda x: (-x["score"], order.get(str(x["skill_id"]), 999)))
         debug["scores"] = ranking_kw[:5]
@@ -246,8 +238,6 @@ class SkillsLoader:
         items = []
         default_item = None
         for skill in self.skills.values():
-            if not skill.metadata.get("enabled", True):
-                continue
             if skill_ids and skill.skill_id not in skill_ids:
                 continue
             d: Dict[str, str] = {"skill_id": skill.skill_id, "name": skill.name}

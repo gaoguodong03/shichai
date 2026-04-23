@@ -1,12 +1,11 @@
 ---
 description: 根据讨论目标提出可讨论角度、子问题或对立面，帮助打开思路。
-enabled: true
-mcp_server_ids:
-- mcp-8858a876
-- mcp-8286a34f
 name: 内容发散
-source: local
-write_mode: workspace_all
+allowed-tools:
+  mcp:
+  - mcp-8858a876
+  - mcp-8286a34f
+  python: ''
 ---
 ## 职责
 

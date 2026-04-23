@@ -1,10 +1,9 @@
 ---
 description: 纯文本测试：在本技能下响应用户输入为“你好”时只答「你好」；其他用户输入只答「再见」并结束本技能的使用。
-enabled: true
-mcp_server_ids: []
 name: 测试·两次问候
-source: user
-write_mode: workspace_all
+allowed-tools:
+  mcp: []
+  python: ''
 ---
 # 测试·两次问候
 

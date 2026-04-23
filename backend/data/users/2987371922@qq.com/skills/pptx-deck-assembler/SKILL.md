@@ -1,12 +1,10 @@
 ---
 name: PPTX 组装器
 description: 将 deck.json 与逐页图片组装为可编辑 final.pptx，面向场景化自动交付。
-enabled: true
-source: user
-write_mode: workspace_all
-mcp_server_ids: []
+allowed-tools:
+  mcp: []
+  python: ''
 ---
-
 ## 目标
 
 读取 `deck.json`（含 `slides[].image_path`），生成可编辑的 `final.pptx`。
