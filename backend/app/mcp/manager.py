@@ -11,6 +11,7 @@ import re
 import logging
 import asyncio
 import threading
+import time
 import uuid
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
@@ -83,6 +84,13 @@ def _looks_like_closed_resource_error(err: str) -> bool:
         return False
     low = s.lower()
     return ("closedresourceerror" in low) or ("resource closed" in low)
+
+
+def _looks_like_protocol_mismatch_error(err: str) -> bool:
+    s = str(err or "").strip().lower()
+    if not s:
+        return False
+    return ("invalid response format" in s) or ("parse error" in s) or ("invalid json-rpc" in s)
 
 
 def normalize_mcp_kwargs_for_call(
@@ -245,6 +253,21 @@ async def ensure_user_mcp_bootstrapped(username: str) -> "MCPToolManager":
         path = _user_mcp_config_path(username)
         await mgr.initialize_all(config_path=path)
         setattr(mgr, "_mcp_boot_done", True)
+        setattr(mgr, "_mcp_config_loaded", True)
+        return mgr
+
+
+async def ensure_user_mcp_config_loaded(username: str) -> "MCPToolManager":
+    """仅加载该用户 mcp_servers.json，不主动连接任何 MCP Server（幂等）。"""
+    mgr = get_mcp_manager_for_user(username)
+    if getattr(mgr, "_mcp_boot_done", False) or getattr(mgr, "_mcp_config_loaded", False):
+        return mgr
+    async with mgr._bootstrap_lock:
+        if getattr(mgr, "_mcp_boot_done", False) or getattr(mgr, "_mcp_config_loaded", False):
+            return mgr
+        path = _user_mcp_config_path(username)
+        await mgr.load_config(config_path=path)
+        setattr(mgr, "_mcp_config_loaded", True)
         return mgr
 
 
@@ -291,6 +314,7 @@ class MCPToolManager:
         self.server_configs: List[Dict[str, Any]] = []
         self.exit_stack = AsyncExitStack()  # 用于管理异步上下文管理器
         self._bootstrap_lock = asyncio.Lock()
+        self._server_retry_not_before: Dict[str, float] = {}
     
     async def load_config(self, config_path: str = None):
         """加载 MCP Server 配置"""
@@ -311,6 +335,12 @@ class MCPToolManager:
     
     async def connect_server(self, server_id: str, config: Dict[str, Any]) -> bool:
         """连接 MCP Server"""
+        now = time.time()
+        blocked_until = float(self._server_retry_not_before.get(server_id, 0.0) or 0.0)
+        if blocked_until > now:
+            remain = blocked_until - now
+            logger.warning("MCP Server %s 处于失败冷却期，跳过重连（剩余 %.1fs）", server_id, remain)
+            return False
         try:
             transport = config.get("transport", {})
             transport_type = transport.get("type", "stdio")
@@ -381,6 +411,7 @@ class MCPToolManager:
                 
                 self.sessions[server_id] = session
                 await self._load_tools_from_server(server_id, session)
+                self._server_retry_not_before.pop(server_id, None)
                 return True
 
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
@@ -392,6 +423,11 @@ class MCPToolManager:
                     return False
                 raw_headers = dict(transport.get("headers") or {})
                 headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
+                auth = headers.get("Authorization")
+                if isinstance(auth, str) and auth.startswith("Bearer") and not auth.startswith("Bearer "):
+                    token = auth[len("Bearer"):].strip()
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
                 http_client = None
                 if headers:
                     # 不要在这里硬编码 60s；默认不设置 timeout（由底层/调用侧控制），也可用 MCP_HTTP_TIMEOUT_SEC 覆盖。
@@ -419,6 +455,7 @@ class MCPToolManager:
                     raise
                 self.sessions[server_id] = session
                 await self._load_tools_from_server(server_id, session)
+                self._server_retry_not_before.pop(server_id, None)
                 return True
 
             else:
@@ -428,6 +465,15 @@ class MCPToolManager:
                     logger.error(f"不支持的传输类型: {transport_type}")
                 return False
         except Exception as e:
+            # 遇到远端协议/返回格式不兼容时，短暂熔断，避免每次请求都重复打满错误日志并拖慢路径
+            cooldown_sec = int(os.getenv("MCP_CONNECT_RETRY_COOLDOWN_SEC", "300"))
+            if cooldown_sec > 0 and _looks_like_protocol_mismatch_error(str(e)):
+                self._server_retry_not_before[server_id] = time.time() + cooldown_sec
+                logger.warning(
+                    "MCP Server %s 连接出现协议不兼容，进入冷却 %ss（可用 MCP_CONNECT_RETRY_COOLDOWN_SEC 调整）",
+                    server_id,
+                    cooldown_sec,
+                )
             logger.error(f"Failed to connect MCP server {server_id}: {e}", exc_info=True)
             return False
     
@@ -573,11 +619,16 @@ class MCPToolManager:
         """确保给定 server_ids 的 MCP 工具已加载（lazy 服务器也会在首次需要时加载）。"""
         if not server_ids:
             return
+        now = time.time()
         for sid in server_ids:
             if not sid:
                 continue
             if sid in self.sessions:
                 # connect_server 成功后会同时 load tools
+                continue
+            blocked_until = float(self._server_retry_not_before.get(sid, 0.0) or 0.0)
+            if blocked_until > now:
+                logger.info("ensure_servers_loaded: MCP server %s 在冷却期内，跳过连接", sid)
                 continue
             cfg = next((c for c in self.server_configs if c.get("id") == sid), None)
             if not cfg:
@@ -608,6 +659,8 @@ class MCPToolManager:
         self.tools.clear()
         self.server_configs = []
         setattr(self, "_mcp_boot_done", False)
+        setattr(self, "_mcp_config_loaded", False)
+        self._server_retry_not_before = {}
         self.exit_stack = AsyncExitStack()
         self._bootstrap_lock = asyncio.Lock()
         logger.info("MCP 连接清理完成")

@@ -122,6 +122,32 @@
       },
       "filename": "f476743c0a6c.zip",
       "created_at": "2026-04-23T05:58:43.858712+00:00"
+    },
+    "98e5126bd5f9": {
+      "object_type": "scene",
+      "source_ref": "scenario-mna6y0ji",
+      "title": "伴学研讨",
+      "summary": {
+        "agent_count": 2
+      },
+      "preset_name": "伴学研讨",
+      "source_preset_id": "scenario-mna6y0ji",
+      "created_by": "wzr@bupt.edu.cn",
+      "filename": "98e5126bd5f9.zip",
+      "created_at": "2026-04-24T08:44:34.911467+00:00"
+    },
+    "f067f9c7c1c8": {
+      "object_type": "scene",
+      "source_ref": "scenario-mofrhjuv",
+      "title": "实习僧网页爬取",
+      "summary": {
+        "agent_count": 2
+      },
+      "preset_name": "实习僧网页爬取",
+      "source_preset_id": "scenario-mofrhjuv",
+      "created_by": "2987371922@qq.com",
+      "filename": "f067f9c7c1c8.zip",
+      "created_at": "2026-04-26T12:49:08.853475+00:00"
     }
   }
 }

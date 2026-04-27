@@ -54,6 +54,18 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
         normalized = "config.json"
     if ".." in normalized:
         return "", "错误：路径不能包含 ..。"
+    pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
+    if normalized.strip("/") in pseudo_names:
+        return "", (
+            f"错误：{normalized} 是工具返回字段，不是工作区文件。"
+            "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_file。"
+        )
+    if normalized.startswith("scripts/"):
+        return "", (
+            f"错误：{normalized} 看起来是技能脚本路径，不是工作区文件。"
+            "技能脚本位于 /skills/<skill_id>/scripts，仅可通过 run_skill_script_<skill_id> 执行；"
+            "脚本执行结果中的 stdout/stderr 已在工具返回中，不需要再读取。"
+        )
     if not session_id:
         if not normalized:
             return "", "错误：未提供文件路径。"
@@ -101,11 +113,13 @@ def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
         except FileNotFoundError:
             try:
                 hints: list[str] = []
+                all_files: list[str] = []
                 target_name = Path(rel).name.lower()
                 for p in ws_root.rglob("*"):
                     if not p.is_file():
                         continue
                     rr = str(p.relative_to(ws_root)).replace("\\", "/")
+                    all_files.append(rr)
                     if target_name and p.name.lower() == target_name:
                         hints.append(rr)
                     elif target_name and target_name in p.name.lower():
@@ -117,9 +131,15 @@ def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
                         f"错误：文件不存在：{raw}\n"
                         "你可能想读取以下路径（均在当前工作区）：\n- " + "\n- ".join(hints)
                     )
+                if all_files:
+                    preview = sorted(set(all_files))[:20]
+                    return (
+                        f"错误：文件不存在：{raw}\n"
+                        "不要继续猜测文件名；请改用以下当前工作区真实路径之一：\n- " + "\n- ".join(preview)
+                    )
             except Exception:
                 pass
-            return f"错误：文件不存在：{raw}"
+            return f"错误：文件不存在：{raw}。不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。"
         except UnicodeDecodeError:
             return f"错误：{raw} 不是 UTF-8 文本。"
         except Exception as e:

@@ -27,6 +27,7 @@ LAYER1_CORE_MODULES: frozenset[str] = frozenset(
         "test_file_ref_and_gateway",
         "test_graph_tool_resolution",
         "test_group_chat_group_memory",
+        "test_group_chat_skill_script_cli_flow",
         "test_group_chat_stream_protocol",
         "test_group_memory_store",
         "test_group_orchestration_fsm",

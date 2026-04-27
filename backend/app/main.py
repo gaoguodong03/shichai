@@ -23,6 +23,29 @@ _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_env_path)
 load_dotenv()  # 仍从 cwd 再加载一次，兼容在 backend 目录下启动
 
+
+def _apply_runtime_env_defaults() -> None:
+    """填充本地/默认部署所需环境变量；显式环境变量与 .env 优先。"""
+    defaults = {
+        "OPENSANDBOX_DOMAIN": "127.0.0.1:8091",
+        "OPENSANDBOX_PROTOCOL": "http",
+        "OPENSANDBOX_USE_SERVER_PROXY": "0",
+        "OPENSANDBOX_REQUEST_TIMEOUT_SEC": "900",
+        "UNIFIED_TOOL_GATEWAY_ENABLED": "1",
+        "SANDBOX_BASE_IMAGE": "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04",
+        "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+        "SANDBOX_FIXED_MEMORY_MB": "2048",
+        "SANDBOX_ALLOW_NETWORK": "0",
+        "SANDBOX_NETWORK_TOOL_ALLOWLIST": "run_skill_script",
+        "SKILL_SCRIPT_TIMEOUT": "600",
+        "SANDBOX_SCRIPT_GATEWAY_SLACK_MS": "600000",
+    }
+    for key, value in defaults.items():
+        os.environ.setdefault(key, value)
+
+
+_apply_runtime_env_defaults()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理。MCP 必须在 lifespan 内初始化与清理，保证 enter/exit 在同一 asyncio 任务，否则 anyio 会报 cancel scope 跨任务错误。"""
@@ -160,11 +183,21 @@ def _auto_bootstrap_opensandbox() -> None:
         return
 
     backend_root = Path(__file__).resolve().parent.parent
-    print(f"[startup] OpenSandbox 不可达 {host}:{port}，尝试自动启动 docker compose ...")
+    repo_root = backend_root.parent
+    compose_file = (os.getenv("OPENSANDBOX_COMPOSE_FILE") or "").strip()
+    if compose_file:
+        compose_path = Path(compose_file).expanduser()
+        if not compose_path.is_absolute():
+            compose_path = (repo_root / compose_path).resolve()
+    else:
+        candidates = [repo_root / "docker-compose.yml", repo_root / "docker-compose.1panel.yml"]
+        compose_path = next((p for p in candidates if p.exists()), candidates[-1])
+
+    print(f"[startup] OpenSandbox 不可达 {host}:{port}，尝试自动启动 docker compose: {compose_path} ...")
     try:
         proc = subprocess.run(
-            ["docker", "compose", "up", "-d", "opensandbox-server"],
-            cwd=str(backend_root),
+            ["docker", "compose", "-f", str(compose_path), "up", "-d", "opensandbox-server"],
+            cwd=str(repo_root),
             capture_output=True,
             text=True,
             check=False,

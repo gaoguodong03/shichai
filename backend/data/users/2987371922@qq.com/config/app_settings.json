@@ -1,5 +1,5 @@
 {
-  "default_llm": "gpustack",
+  "default_llm": "claude",
   "llm_providers": {
     "qwen": {
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -9,45 +9,45 @@
       "api_key_ref": "QWEN_API_KEY"
     },
     "jeniya": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "gpt-4o",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false,
       "api_key_ref": "JENIYA_API_KEY"
     },
     "gemini": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "gemini-3-pro-preview",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
     "claude": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "claude-sonnet-4-6",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
     "glm": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "glm-4.7",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
     "deepseek": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "deepseek-chat",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
     "kimi": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "moonshot-v1-128k",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
     "gpustack": {
       "base_url": "http://10.129.50.230/v1",
-      "model": "qwen3.5-27b-awq",
+      "model": "qwen3.6-35b-a3b-awq",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_ref": "gpustack",
       "api_key_set": false

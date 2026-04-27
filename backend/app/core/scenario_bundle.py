@@ -208,6 +208,10 @@ def strip_dha_row_for_disk(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _name_key(raw: Any) -> str:
+    return str(raw or "").strip().lower()
+
+
 def merge_dha_instances_for_bundle(
     user_instances: List[Dict[str, Any]],
     bundle_instances: List[Dict[str, Any]],
@@ -227,9 +231,24 @@ def merge_dha_instances_for_bundle(
         if not aid:
             continue
         cleaned = strip_dha_row_for_disk(dict(row))
+        incoming_name_key = _name_key(cleaned.get("name"))
+        conflict_ids = []
         if aid in by_id:
+            conflict_ids.append(aid)
+        if incoming_name_key:
+            conflict_ids.extend(
+                old_id
+                for old_id, old_row in by_id.items()
+                if old_id != aid and _name_key(old_row.get("name")) == incoming_name_key
+            )
+        conflict_ids = list(dict.fromkeys(conflict_ids))
+        if conflict_ids:
             if overwrite:
+                for old_id in conflict_ids:
+                    by_id.pop(old_id, None)
+                order = [old_id for old_id in order if old_id in by_id]
                 by_id[aid] = cleaned
+                order.append(aid)
         else:
             by_id[aid] = cleaned
             order.append(aid)
@@ -241,7 +260,7 @@ def merge_mcp_servers_for_bundle(
     bundle_servers: List[Dict[str, Any]],
     *,
     skip_existing: bool,
-) -> Tuple[List[Dict[str, Any]], int, int]:
+) -> Tuple[List[Dict[str, Any]], int, int, int]:
     by_id: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     for s in user_servers:
@@ -257,11 +276,26 @@ def merge_mcp_servers_for_bundle(
         sid = str(s.get("id") or "").strip()
         if not sid:
             continue
+        incoming_name_key = _name_key(s.get("name"))
+        conflict_ids = []
         if sid in by_id:
+            conflict_ids.append(sid)
+        if incoming_name_key:
+            conflict_ids.extend(
+                old_id
+                for old_id, old_row in by_id.items()
+                if old_id != sid and _name_key(old_row.get("name")) == incoming_name_key
+            )
+        conflict_ids = list(dict.fromkeys(conflict_ids))
+        if conflict_ids:
             if skip_existing:
                 skipped += 1
                 continue
+            for old_id in conflict_ids:
+                by_id.pop(old_id, None)
+            order = [old_id for old_id in order if old_id in by_id]
             by_id[sid] = dict(s)
+            order.append(sid)
             updated += 1
         else:
             by_id[sid] = dict(s)

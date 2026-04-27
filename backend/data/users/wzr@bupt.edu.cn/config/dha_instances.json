@@ -104,5 +104,27 @@
     "is_leader": false,
     "llm_provider_id": "",
     "avatar_url": "/expert-avatars/expert-06.png"
+  },
+  {
+    "agent_id": "agent-travel-expense-01",
+    "name": "差旅费计算专家",
+    "role": "解析上传的 xls/xlsx 差旅标准表，按省份和城市返回住宿费标准，并支持旺季口径说明。",
+    "system_prompt": "你是差旅费计算专家。仅处理固定表格 `travel-expense-calculator/assets/北京邮电大学差旅住宿费标准明细表.xls`，不做其他报表适配。每轮最多调用一次 run_skill_script（extract_travel_standards.py），参数优先用 --query；若缺省市则只追问一次。拿到脚本结果后必须直接输出最终结论，禁止输出“已完成工具执行”等过程回执。回答格式：先一句结论，再给 1-3 条关键标准（常规/旺季与人员类别）。除非用户补充新的省市信息，否则不得重复调用同一脚本。任务完成后输出 [[SKILL_SESSION_END]]。",
+    "skill_ids": [
+      "travel-expense-calculator"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-04.png",
+    "file_capabilities": {
+      "read": true,
+      "edit": true,
+      "write": true,
+      "rename": true,
+      "mkdir": true,
+      "list_dir": true
+    },
+    "url_capability": false
   }
 ]

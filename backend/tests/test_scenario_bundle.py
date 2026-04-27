@@ -22,6 +22,16 @@ def test_merge_dha_upsert_and_append():
     assert by["a2"] == "B"
 
 
+def test_merge_dha_overwrites_same_name_with_new_id():
+    user = [{"agent_id": "local-a", "name": "Expert A"}, {"agent_id": "keep", "name": "Keep"}]
+    bundle = [{"agent_id": "shared-a", "name": "Expert A"}]
+    out = merge_dha_instances_for_bundle(user, bundle, overwrite=True)
+    by = {r["agent_id"]: r["name"] for r in out}
+    assert "local-a" not in by
+    assert by["shared-a"] == "Expert A"
+    assert by["keep"] == "Keep"
+
+
 def test_merge_dha_skip_overwrite():
     user = [{"agent_id": "a1", "name": "Keep"}]
     bundle = [{"agent_id": "a1", "name": "New"}]
@@ -37,6 +47,17 @@ def test_merge_mcp_skip_existing():
     assert ids["m1"] == "U"
     assert ids["m2"] == "N"
     assert added == 1 and skipped == 1 and updated == 0
+
+
+def test_merge_mcp_overwrites_same_name_with_new_id():
+    user = [{"id": "local-m", "name": "Tool A"}, {"id": "keep", "name": "Keep"}]
+    bundle = [{"id": "shared-m", "name": "Tool A"}]
+    merged, added, skipped, updated = merge_mcp_servers_for_bundle(user, bundle, skip_existing=False)
+    by = {r["id"]: r["name"] for r in merged}
+    assert "local-m" not in by
+    assert by["shared-m"] == "Tool A"
+    assert by["keep"] == "Keep"
+    assert added == 0 and skipped == 0 and updated == 1
 
 
 def test_roundtrip_zip_manifest():

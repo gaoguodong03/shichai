@@ -1,9 +1,15 @@
 ---
-name: PPT 逐页配图
-description: 根据 deck.json 的 slides 与 style_guide 逐页生成图片，先样张确认再批量出图，并回写 image_path。
 allowed-tools:
   mcp: []
-  python: ''
+  python: 'python-pptx==1.0.2
+
+    httpx
+
+    typing_extensions
+
+    '
+description: 根据 deck.json 的 slides 与 style_guide 逐页生成图片，先样张确认再批量出图，并回写 image_path。
+name: PPT 逐页配图
 ---
 ## 角色目标
 

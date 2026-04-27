@@ -69,5 +69,34 @@
     "speak_mode": "auto",
     "created_at": "2026-03-30T01:08:59.110203+00:00",
     "updated_at": "2026-03-30T13:28:12.418994+00:00"
+  },
+  "group-f4913c1ef779": {
+    "title": "差旅费用计算问题",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-24T08:44:51.653305+00:00",
+    "updated_at": "2026-04-26T06:21:22.277716+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-e69256b75e1d": {
+    "title": "广东地区出差费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-26T06:31:48.832084+00:00",
+    "updated_at": "2026-04-26T06:33:21.712558+00:00",
+    "orchestration_profile": "recruitment",
+    "pending_owner_agent_id": "agent-travel-expense-01",
+    "pending_skill_id": "travel-expense-calculator",
+    "pending_phase": "awaiting_user",
+    "pending_required_user_fields": [],
+    "pending_handoff_reason": "expert_need_user_input"
   }
 }

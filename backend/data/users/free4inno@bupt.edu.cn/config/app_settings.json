@@ -7,32 +7,32 @@
       "api_key_env": "QWEN_API_KEY"
     },
     "jeniya": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "gpt-4o",
       "api_key_env": "JENIYA_API_KEY"
     },
     "gemini": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "gemini-3-pro-preview",
       "api_key_env": "JENIYA_API_KEY"
     },
     "claude": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "claude-sonnet-4-6",
       "api_key_env": "JENIYA_API_KEY"
     },
     "glm": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "glm-4.7",
       "api_key_env": "JENIYA_API_KEY"
     },
     "deepseek": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "deepseek-chat",
       "api_key_env": "JENIYA_API_KEY"
     },
     "kimi": {
-      "base_url": "http://jeniya.top/v1",
+      "base_url": "https://jeniya.top/v1",
       "model": "moonshot-v1-128k",
       "api_key_env": "JENIYA_API_KEY"
     }

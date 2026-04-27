@@ -43,6 +43,7 @@ from app.core.scenario_bundle import (
 from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user, invalidate_skills_cache_for_user
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import user_context_dependency
+from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -226,7 +227,7 @@ class AppSettingsBody(BaseModel):
     llm_providers: Optional[Dict[str, Dict[str, Any]]] = None  # provider_id -> {base_url, model, api_key_env}
 
 # 默认 llm_providers（无配置文件时使用）；jeniya 系共用 JENIYA_API_KEY + base_url，模型见 https://jeniya.top/pricing
-_JENIYA_BASE = "http://jeniya.top/v1"
+_JENIYA_BASE = "https://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS = {
     "qwen": {
@@ -556,6 +557,195 @@ def _merge_session_presets_into_file(
     return merged, imported_ids, skipped_by_name, overwritten_existing_ids
 
 
+def _remap_id_list(values: Any, id_map: Dict[str, str]) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+    for raw in values or []:
+        item = str(raw).strip()
+        if not item:
+            continue
+        item = id_map.get(item, item)
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _remap_bundle_references(
+    preset: Dict[str, Any],
+    experts: List[Dict[str, Any]],
+    *,
+    skill_id_map: Dict[str, str],
+    mcp_id_map: Dict[str, str],
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    preset_out = dict(preset)
+    hc_raw = preset_out.get("host_config")
+    if isinstance(hc_raw, dict):
+        hc = dict(hc_raw)
+        hc["skill_ids"] = _remap_id_list(hc.get("skill_ids"), skill_id_map)
+        hc["mcp_server_ids"] = _remap_id_list(hc.get("mcp_server_ids"), mcp_id_map)
+        preset_out["host_config"] = hc
+    experts_out: List[Dict[str, Any]] = []
+    for row in experts:
+        work = dict(row)
+        work["skill_ids"] = _remap_id_list(work.get("skill_ids"), skill_id_map)
+        work["mcp_server_ids"] = _remap_id_list(work.get("mcp_server_ids"), mcp_id_map)
+        experts_out.append(work)
+    return preset_out, experts_out
+
+
+def _mcp_conflict_id_map(existing_servers: List[Dict[str, Any]], bundle_servers: List[Dict[str, Any]]) -> Dict[str, str]:
+    by_id = {str(s.get("id") or "").strip(): s for s in existing_servers if str(s.get("id") or "").strip()}
+    id_map: Dict[str, str] = {}
+    for incoming in bundle_servers:
+        incoming_id = str(incoming.get("id") or "").strip()
+        incoming_name = _normalized_name_key(incoming.get("name"))
+        if not incoming_id:
+            continue
+        for old_id, old in by_id.items():
+            if old_id == incoming_id:
+                continue
+            if incoming_name and _normalized_name_key(old.get("name")) == incoming_name:
+                id_map[old_id] = incoming_id
+    return id_map
+
+
+def _skill_conflict_id_map(bundle_dir: Path, user_skills_dir: Path, skill_ids: List[str]) -> Dict[str, str]:
+    id_map: Dict[str, str] = {}
+    user_skills_dir.mkdir(parents=True, exist_ok=True)
+    existing_by_id: Dict[str, str] = {}
+    existing_name_to_ids: Dict[str, List[str]] = {}
+    for child in sorted(user_skills_dir.iterdir(), key=lambda p: p.name):
+        if not child.is_dir():
+            continue
+        try:
+            fm, _ = _read_skill_file(child)
+        except Exception:
+            continue
+        sid = child.name
+        existing_by_id[sid] = _normalized_name_key(fm.get("name") or sid)
+        if existing_by_id[sid]:
+            existing_name_to_ids.setdefault(existing_by_id[sid], []).append(sid)
+
+    for incoming_id in skill_ids:
+        src = bundle_dir / "skills" / incoming_id
+        if not src.is_dir() or not (src / "SKILL.md").is_file():
+            continue
+        try:
+            fm, _ = _read_skill_file(src)
+        except Exception:
+            continue
+        incoming_name_key = _normalized_name_key(fm.get("name") or incoming_id)
+        conflict_ids: List[str] = []
+        if incoming_id in existing_by_id:
+            conflict_ids.append(incoming_id)
+        if incoming_name_key:
+            conflict_ids.extend(old_id for old_id in existing_name_to_ids.get(incoming_name_key, []) if old_id != incoming_id)
+        for old_id in dict.fromkeys(conflict_ids):
+            id_map[old_id] = incoming_id
+    return id_map
+
+
+def _copy_bundle_skills_to_user_by_name(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
+    skill_ids = list_skill_ids_in_bundle_skills_dir(bundle_dir)
+    id_map = _skill_conflict_id_map(bundle_dir, user_skills_dir, skill_ids)
+    overwritten = sorted(id_map.keys())
+    user_skills_dir.mkdir(parents=True, exist_ok=True)
+    for old_id in overwritten:
+        old_dir = user_skills_dir / old_id
+        if old_dir.is_dir():
+            shutil.rmtree(old_dir, ignore_errors=True)
+    imported, skipped = copy_bundle_skills_to_user(bundle_dir, user_skills_dir, overwrite=True)
+    for old_id, new_id in id_map.items():
+        _replace_skill_id_in_user_configs(old_id, new_id)
+    return imported, overwritten, id_map
+
+
+def _requirement_key(line: str) -> str:
+    item = (line or "").strip()
+    if not item or item.startswith("#"):
+        return ""
+    if item.startswith(("-", "git+", "http://", "https://")):
+        return item.lower()
+    item = item.split("#", 1)[0].strip()
+    item = item.split(";", 1)[0].strip()
+    m = re.match(r"^\s*([A-Za-z0-9_.-]+)", item)
+    return (m.group(1) if m else item).lower().replace("_", "-")
+
+
+def _python_requirements_from_skill_dir(skill_dir: Path) -> List[str]:
+    try:
+        fm, _ = _read_skill_file(skill_dir)
+    except Exception:
+        return []
+    raw = _python_doc_from_allowed_tools(fm)
+    out: List[str] = []
+    seen: Set[str] = set()
+    for line in str(raw or "").splitlines():
+        item = line.strip()
+        key = _requirement_key(item)
+        if not item or item.startswith("#") or not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _merge_sandbox_requirements_lines(incoming: List[str]) -> Tuple[List[str], str]:
+    path = _get_sandbox_requirements_path()
+    current = ""
+    if path.is_file():
+        current = path.read_text(encoding="utf-8")
+    existing_keys = {_requirement_key(line) for line in current.splitlines()}
+    existing_keys.discard("")
+    added: List[str] = []
+    for line in incoming:
+        key = _requirement_key(line)
+        if not key or key in existing_keys:
+            continue
+        existing_keys.add(key)
+        added.append(line.strip())
+    if not added:
+        return [], current
+    prefix = current.rstrip("\n")
+    merged = (prefix + "\n" if prefix else "") + "\n".join(added) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(merged, encoding="utf-8")
+    return added, merged
+
+
+async def _merge_imported_skill_requirements_and_prewarm(skill_ids: List[str], skills_root: Path) -> Dict[str, Any]:
+    incoming: List[str] = []
+    for sid in skill_ids:
+        safe_id = str(sid or "").strip()
+        if not safe_id or ".." in safe_id or "/" in safe_id or "\\" in safe_id:
+            continue
+        incoming.extend(_python_requirements_from_skill_dir(skills_root / safe_id))
+    added, _merged = _merge_sandbox_requirements_lines(incoming)
+    result: Dict[str, Any] = {"requirements_added": added, "requirements_validated": False}
+    if not added:
+        result["requirements_validated"] = True
+        return result
+    username = (get_current_username() or "").strip()
+    if not username:
+        return result
+    try:
+        timeout_ms = int(os.getenv("SANDBOX_REQUIREMENTS_VALIDATE_TIMEOUT_MS", "600000") or "600000")
+    except Exception:
+        timeout_ms = 600_000
+    try:
+        await get_shared_sandbox_service().prewarm_user_sandbox(
+            username,
+            reason="skill_requirements_imported",
+            timeout_ms=max(120_000, timeout_ms),
+        )
+        result["requirements_validated"] = True
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("sandbox_requirements_import_install_failed user=%s err=%s", username, e)
+        result["requirements_error"] = str(e)
+    return result
+
+
 @router.put("/settings/session-presets")
 async def update_session_presets(body: SessionPresetsBody):
     """保存会话快捷预设（用于前端快捷按钮）。"""
@@ -765,6 +955,7 @@ async def import_session_preset_bundle(
             tmp, user_skills, overwrite=overwrite_skills
         )
         invalidate_skills_cache_for_user(get_current_username() or "")
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
 
         merged_dha = merge_dha_instances_for_bundle(
             load_dha_instances(), dha_bundle, overwrite=overwrite_experts
@@ -790,6 +981,7 @@ async def import_session_preset_bundle(
                     "overwritten_existing_ids": overwritten_existing_ids,
                     "skills_imported": imported_skills,
                     "skills_skipped": skipped_skills,
+                    **requirements_result,
                     "experts_total_after": len(merged_dha),
                     "mcp_added": mcp_added,
                     "mcp_skipped": mcp_skipped,
@@ -810,7 +1002,7 @@ async def import_session_preset_bundle(
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
+async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
@@ -836,10 +1028,16 @@ def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, A
             if _normalized_name_key(ename) == incoming_name_key:
                 overwrite_skill_ids.append(child.name)
         if dry_run:
+            req_preview = _python_requirements_from_skill_dir(src)
             return {
                 "object_type": "skill",
                 "title": incoming_name,
-                "preview": {"skill_id": sid0, "name": incoming_name, "overwrite_skill_ids": overwrite_skill_ids},
+                "preview": {
+                    "skill_id": sid0,
+                    "name": incoming_name,
+                    "overwrite_skill_ids": overwrite_skill_ids,
+                    "python_requirements": req_preview,
+                },
             }
         for old_id in overwrite_skill_ids:
             old_dir = base / old_id
@@ -855,7 +1053,13 @@ def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, A
         _sanitize_skill_frontmatter_for_write(fm2)
         _write_skill_file(dest, fm2, body2)
         _refresh_skills_loader()
-        return {"object_type": "skill", "imported_skill_id": target_id, "name": str(fm2.get("name") or target_id)}
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm([target_id], base)
+        return {
+            "object_type": "skill",
+            "imported_skill_id": target_id,
+            "name": str(fm2.get("name") or target_id),
+            **requirements_result,
+        }
     finally:
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -907,6 +1111,16 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
             if isinstance(raw_m, list):
                 mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
+        user_skills = _dha_skills_dir()
+        skill_id_map = _skill_conflict_id_map(tmp, user_skills, skill_ids_in_zip)
+        mcp_id_map = _mcp_conflict_id_map(load_mcp_config(), mcp_bundle)
+        _unused_preset, remapped_experts = _remap_bundle_references(
+            {},
+            [norm],
+            skill_id_map=skill_id_map,
+            mcp_id_map=mcp_id_map,
+        )
+        norm = remapped_experts[0] if remapped_experts else norm
         same_name_agent_ids = [
             str(x.get("agent_id") or "")
             for x in load_dha_instances()
@@ -921,14 +1135,20 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                     "skills": skill_ids_in_zip,
                     "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_ids": same_name_agent_ids,
+                    "would_overwrite_skills": sorted(skill_id_map.keys()),
+                    "would_remap_skill_ids": skill_id_map,
+                    "would_remap_mcp_server_ids": mcp_id_map,
                 },
             }
-        copy_bundle_skills_to_user(tmp, _dha_skills_dir(), overwrite=True)
+        imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
+        for old_id, new_id in mcp_id_map.items():
+            _replace_mcp_server_id_in_user_configs(old_id, new_id)
         if mcp_bundle:
             merged_mcp, _a, _s, _u = merge_mcp_servers_for_bundle(load_mcp_config(), mcp_bundle, skip_existing=False)
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
         instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
             load_dha_instances(), norm, id_conflict="overwrite"
         )
@@ -939,6 +1159,11 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                 "imported_agent_id": final_id,
                 "skipped_by_name": skipped_by_name,
                 "overwritten_agent_ids": overwritten_agent_ids,
+                "skills_imported": imported_skills,
+                "skills_overwritten": overwritten_skills,
+                "skill_id_map": skill_id_map,
+                "mcp_id_map": mcp_id_map,
+                **requirements_result,
             },
         }
     finally:
@@ -957,6 +1182,42 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        user_skills = _get_skills_dir()
+        skill_id_map = _skill_conflict_id_map(tmp, user_skills, skill_ids_in_zip)
+        mcp_id_map = _mcp_conflict_id_map(load_mcp_config(), mcp_bundle)
+        remapped_preset, remapped_dha_bundle = _remap_bundle_references(
+            norm,
+            dha_bundle,
+            skill_id_map=skill_id_map,
+            mcp_id_map=mcp_id_map,
+        )
+        norm = normalize_preset_dict_for_validation(remapped_preset)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="场景分享包无效")
+        dha_bundle = remapped_dha_bundle
+        existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        preset_name_conflicts = [
+            str(r.get("id") or "")
+            for r in existing_presets
+            if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
+            and str(r.get("id") or "").strip()
+        ]
+        existing_experts = load_dha_instances()
+        expert_conflicts: Dict[str, List[str]] = {}
+        for incoming in dha_bundle:
+            incoming_id = str(incoming.get("agent_id") or "").strip()
+            incoming_name_key = _normalized_name_key(incoming.get("name"))
+            conflicts = [
+                str(old.get("agent_id") or "")
+                for old in existing_experts
+                if str(old.get("agent_id") or "").strip()
+                and (
+                    str(old.get("agent_id") or "").strip() == incoming_id
+                    or (incoming_name_key and _normalized_name_key(old.get("name")) == incoming_name_key)
+                )
+            ]
+            if conflicts:
+                expert_conflicts[incoming_id or str(incoming.get("name") or "")] = list(dict.fromkeys(conflicts))
         if dry_run:
             return {
                 "object_type": "scene",
@@ -970,10 +1231,17 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     ],
                     "skills": skill_ids_in_zip,
                     "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
+                    "name_conflict_existing_ids": preset_name_conflicts,
+                    "would_overwrite_skills": sorted(skill_id_map.keys()),
+                    "would_remap_skill_ids": skill_id_map,
+                    "would_remap_mcp_server_ids": mcp_id_map,
+                    "would_overwrite_experts": expert_conflicts,
                 },
             }
-        copy_bundle_skills_to_user(tmp, _get_skills_dir(), overwrite=True)
+        imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
+        for old_id, new_id in mcp_id_map.items():
+            _replace_mcp_server_id_in_user_configs(old_id, new_id)
         merged_dha = merge_dha_instances_for_bundle(load_dha_instances(), dha_bundle, overwrite=True)
         save_dha_instances(merged_dha)
         merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
@@ -981,6 +1249,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         )
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
         _merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file(
             [norm], "overwrite"
         )
@@ -990,6 +1259,11 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "preset_imported_ids": imported_ids,
                 "skipped_by_name": skipped_by_name,
                 "overwritten_existing_ids": overwritten_existing_ids,
+                "skills_imported": imported_skills,
+                "skills_overwritten": overwritten_skills,
+                "skill_id_map": skill_id_map,
+                "mcp_id_map": mcp_id_map,
+                **requirements_result,
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
@@ -1020,7 +1294,7 @@ async def import_public_share_bundle(share_id: str, dry_run: bool = Form(True)):
     elif obj_type == "expert":
         data = await _import_expert_from_bundle_bytes(raw, dry_run=dry_run)
     elif obj_type == "skill":
-        data = _import_skill_from_bundle_bytes(raw, dry_run=dry_run)
+        data = await _import_skill_from_bundle_bytes(raw, dry_run=dry_run)
     elif obj_type == "mcp":
         data = await _import_mcp_from_bundle_bytes(raw, dry_run=dry_run)
     else:
@@ -1097,6 +1371,11 @@ class SandboxRequirementsBody(BaseModel):
     content: str = ""
 
 
+def _sandbox_requirements_error_detail(exc: Exception) -> str:
+    msg = str(exc).strip() or exc.__class__.__name__
+    return f"已保存 requirements.txt，但沙箱依赖安装验证失败：{msg}"
+
+
 @router.get("/settings/sandbox/requirements")
 async def get_sandbox_requirements():
     path = _get_sandbox_requirements_path()
@@ -1117,7 +1396,31 @@ async def save_sandbox_requirements(body: SandboxRequirementsBody):
         path.write_text(body.content or "", encoding="utf-8")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存 requirements.txt 失败: {e}")
-    return {"status": "ok", "data": {"saved": True}}
+    username = (get_current_username() or "").strip()
+    if not username:
+        return {"status": "ok", "data": {"saved": True, "validated": False}}
+    try:
+        timeout_ms = int(os.getenv("SANDBOX_REQUIREMENTS_VALIDATE_TIMEOUT_MS", "600000") or "600000")
+    except Exception:
+        timeout_ms = 600_000
+    try:
+        await get_shared_sandbox_service().prewarm_user_sandbox(
+            username,
+            reason="requirements_saved",
+            timeout_ms=max(120_000, timeout_ms),
+        )
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("sandbox_requirements_validate_failed user=%s err=%s", username, e)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "code": "sandbox_requirements_install_failed",
+                "detail": _sandbox_requirements_error_detail(e),
+                "data": {"saved": True, "validated": False, "error": str(e)},
+            },
+        )
+    return {"status": "ok", "data": {"saved": True, "validated": True}}
 
 
 @router.get("/settings/api-secrets")
@@ -1767,11 +2070,12 @@ class SkillUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     body: Optional[str] = None  # SKILL.md frontmatter 之后的正文
-    allowed_tools: Optional[Dict[str, Any]] = None  # allowed-tools：mcp 为运行时声明；python 为文档说明（不驱动 pip）
+    allowed_tools: Optional[Dict[str, Any]] = None  # allowed-tools：mcp 为运行时声明；python 会同步到沙箱 requirements
 
 
 # SKILL.md frontmatter 标准键：与 YAML 中 `allowed-tools` 一致
 ALLOWED_TOOLS_FM_KEY = "allowed-tools"
+AUTO_TOOLS_FM_KEY = "auto-tools"
 
 
 def _refresh_skills_loader():
@@ -1827,13 +2131,18 @@ def _mcp_ids_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
 
 def _python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
-    if not isinstance(at, dict):
-        return ""
-    py = at.get("python")
+    auto = fm.get(AUTO_TOOLS_FM_KEY)
+    py: Any = ""
+    if isinstance(at, dict):
+        py = at.get("python")
+    if (py is None or py == "") and isinstance(auto, dict):
+        py = auto.get("python")
     if isinstance(py, str):
         return py
     if py is None:
         return ""
+    if isinstance(py, list):
+        return "\n".join(str(x).strip() for x in py if str(x).strip())
     return str(py)
 
 
@@ -1991,7 +2300,7 @@ def _slugify(name: str) -> str:
 
 
 def _replace_skill_id_in_user_configs(old_id: str, new_id: str) -> None:
-    """技能目录重命名后，同步当前用户 dha_instances.json 里各专家的 skill_ids，避免仍指向旧目录、触发空壳 scripts/。"""
+    """技能 id 变化后，同步当前用户专家与场景主持人配置里的 skill_ids。"""
     if not old_id or not new_id or old_id == new_id:
         return
     user_ctx = get_current_user_context(default_fallback=False)
@@ -2029,6 +2338,75 @@ def _replace_skill_id_in_user_configs(old_id: str, new_id: str) -> None:
             path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         except Exception:
             pass
+    preset_path = (user_ctx.config_dir / "session_presets.json").resolve()
+    if not preset_path.is_file():
+        return
+    try:
+        presets = json.loads(preset_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(presets, list):
+        return
+    changed = False
+    for preset in presets:
+        if not isinstance(preset, dict) or not isinstance(preset.get("host_config"), dict):
+            continue
+        hc = preset["host_config"]
+        sids = hc.get("skill_ids")
+        if not isinstance(sids, list):
+            continue
+        orig = [str(x).strip() for x in sids if str(x).strip()]
+        out = _remap_id_list(orig, {old_id: new_id})
+        if out != orig:
+            hc["skill_ids"] = out
+            changed = True
+    if changed:
+        try:
+            preset_path.write_text(json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+
+def _replace_mcp_server_id_in_user_configs(old_id: str, new_id: str) -> None:
+    if not old_id or not new_id or old_id == new_id:
+        return
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return
+    paths = [
+        (user_ctx.config_dir / "dha_instances.json").resolve(),
+        (user_ctx.config_dir / "session_presets.json").resolve(),
+    ]
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(raw, list):
+            continue
+        changed = False
+        for row in raw:
+            if not isinstance(row, dict):
+                continue
+            targets = [row]
+            if isinstance(row.get("host_config"), dict):
+                targets.append(row["host_config"])
+            for target in targets:
+                mids = target.get("mcp_server_ids")
+                if not isinstance(mids, list):
+                    continue
+                orig = [str(x).strip() for x in mids if str(x).strip()]
+                out = _remap_id_list(orig, {old_id: new_id})
+                if out != orig:
+                    target["mcp_server_ids"] = out
+                    changed = True
+        if changed:
+            try:
+                path.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            except Exception:
+                pass
 
 
 def _remove_skill_id_from_user_configs(skill_id: str) -> None:
@@ -2234,6 +2612,7 @@ async def import_skill_zip(
         _sanitize_skill_frontmatter_for_write(fm)
         _write_skill_file(skill_dir, fm, body)
         _refresh_skills_loader()
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm([skill_id], base)
 
         return {
             "status": "ok",
@@ -2244,6 +2623,7 @@ async def import_skill_zip(
                 "path": str(skill_dir),
                 "allowed_tools": _normalized_allowed_tools_dict(fm),
                 "skipped_by_name": False,
+                **requirements_result,
             },
         }
     except HTTPException:

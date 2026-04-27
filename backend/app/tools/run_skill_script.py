@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shlex
 import subprocess
@@ -22,6 +23,8 @@ from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
 
+logger = logging.getLogger(__name__)
+
 _ALLOWED_SCRIPT_SUFFIX = {".py", ".sh", ".bash", ".ps1", ".cmd", ".bat"}
 # 命令行参数上限（防滥用）；单段长度上限（兼顾长文本与 --input_text）
 _CLI_ARGV_MAX_ITEMS = 64
@@ -32,7 +35,9 @@ _SANDBOX_ENV_PASSTHROUGH_KEYS = (
     "CHATANYWHERE_IMAGE_API_KEY",
     "JENIYA_IMAGE_BASE_URL",
     "JENIYA_IMAGE_MODEL",
+    "PLAYWRIGHT_BROWSERS_PATH",
 )
+_DEFAULT_PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
 
 
 def _get_script_gateway() -> UnifiedToolGateway:
@@ -50,6 +55,7 @@ def _collect_sandbox_passthrough_env() -> dict[str, str]:
         val = (os.environ.get(key) or "").strip()
         if val:
             out[key] = val
+    out.setdefault("PLAYWRIGHT_BROWSERS_PATH", _DEFAULT_PLAYWRIGHT_BROWSERS_PATH)
     return out
 
 
@@ -583,8 +589,18 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             turn_id=f"script:{uuid.uuid4().hex}",
             tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
             timeout_ms=max(1000, timeout_sec * 1000),
-            retry_count=0,
+            retry_count=1,
             sandbox_cwd=sandbox_cwd,
+        )
+        logger.info(
+            "sandbox_script_execute_start skill_id=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s",
+            skill_id,
+            script_tool_name,
+            workspace_id,
+            script_path,
+            len(cli_argv or []),
+            int(ctx.timeout_ms or 0),
+            sandbox_cwd,
         )
         gw = await _get_script_gateway().execute(
             tool_name=script_tool_name,
@@ -611,6 +627,18 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             reason = getattr(gw.interrupt_reason, "value", str(gw.interrupt_reason))
             gateway_error = gw.error or "统一网关执行失败"
             sandbox_diag = _extract_sandbox_diag(gateway_error)
+            logger.warning(
+                "sandbox_script_execute_failed skill_id=%s tool=%s workspace_id=%s script=%s reason=%s elapsed_ms=%s sandbox_id=%s cwd=%s err=%s",
+                skill_id,
+                script_tool_name,
+                workspace_id,
+                script_path,
+                reason,
+                int(gw.elapsed_ms or 0),
+                str(sandbox_diag.get("sandbox_id") or ""),
+                str(sandbox_diag.get("sandbox_cwd") or sandbox_cwd or ""),
+                gateway_error[:500],
+            )
             if str(reason) == "timeout_or_budget_exceeded":
                 return _json_result(
                     ok=False,
@@ -670,6 +698,17 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "stderr": stderr,
                 "script": script_path,
             }
+            logger.warning(
+                "sandbox_script_execute_nonzero skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s",
+                skill_id,
+                script_tool_name,
+                workspace_id,
+                script_path,
+                exit_code,
+                int(gw.elapsed_ms or 0),
+                len(stdout),
+                len(stderr),
+            )
         else:
             result_payload = {
                 "ok": True,
@@ -680,6 +719,17 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "stderr": stderr,
                 "message": "脚本执行成功。",
             }
+            logger.info(
+                "sandbox_script_execute_done skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s",
+                skill_id,
+                script_tool_name,
+                workspace_id,
+                script_path,
+                int(exit_code or 0),
+                int(gw.elapsed_ms or 0),
+                len(stdout),
+                len(stderr),
+            )
         return _json_result(**result_payload)
 
     run_skill_script.name = "run_skill_script"

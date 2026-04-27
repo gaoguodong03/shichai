@@ -361,7 +361,7 @@ async def test_build_policy_fills_mounts_when_req_policy_missing_them(monkeypatc
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
-async def test_execute_falls_back_cwd_when_workspace_not_mounted():
+async def test_execute_uses_workspace_cwd_after_policy_fills_mounts():
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     req = SandboxExecutionRequest(
@@ -385,7 +385,32 @@ async def test_execute_falls_back_cwd_when_workspace_not_mounted():
     )
     await svc.execute(req)
     assert adapter.last_tool_request is not None
-    assert adapter.last_tool_request.get("cwd") == "/"
+    assert adapter.last_tool_request.get("cwd") == "/workspace"
+
+
+def test_resolve_cwd_falls_back_when_workspace_not_mounted():
+    req = SandboxExecutionRequest(
+        user_id="u7",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=Path("."),
+        policy=SandboxPolicy(
+            fs_root=".",
+            timeout_ms=1000,
+            tool_allowlist=["tool_a"],
+            volume_mounts=[],
+        ),
+        cwd="/workspace",
+    )
+    policy = req.policy
+    assert policy is not None
+    assert SandboxService._resolve_cwd(policy, req) == "/"
 
 
 async def test_sandbox_events_include_mount_diagnostic_fields(monkeypatch):

@@ -13,7 +13,7 @@ from app.api.dha import merge_file_capabilities
 from app.api.files import get_workspace_root
 from app.agent.host_plan import is_host_plan_reserved_path
 from app.core.security import get_current_user
-from app.mcp.manager import ensure_user_mcp_bootstrapped
+from app.mcp.manager import ensure_user_mcp_config_loaded
 from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
@@ -293,14 +293,17 @@ async def build_tools_for_group_chat(
 
     mgr = None
     all_tools = []
-    try:
-        mgr = await ensure_user_mcp_bootstrapped(get_current_user().username)
-        all_tools = mgr.get_tools()
-    except Exception:
-        mgr = None
-        all_tools = []
+    # 仅当本轮技能声明了 MCP 依赖时才加载用户 MCP 配置并连接对应 server；
+    # 避免纯脚本类技能被 Linkup/Exa 等远程 MCP 冷启动拖慢。
+    if server_ids:
+        try:
+            mgr = await ensure_user_mcp_config_loaded(get_current_user().username)
+            all_tools = mgr.get_tools()
+        except Exception:
+            mgr = None
+            all_tools = []
 
-    # 需要时才连接懒加载的 MCP server
+    # 需要时才连接 MCP server
     if server_ids and mgr is not None:
         available_server_ids = {
             str(c.get("id")).strip()

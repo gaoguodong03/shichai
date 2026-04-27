@@ -6,6 +6,7 @@
 
 import asyncio
 import logging
+import os
 import shutil
 import re
 from pathlib import Path
@@ -66,7 +67,15 @@ def _move_user_data_dir(old_username: str, new_username: str) -> tuple[bool, Pat
 async def _prewarm_user_sandbox_after_login(username: str) -> None:
     try:
         svc = get_shared_sandbox_service()
-        await svc.prewarm_user_sandbox(username, reason="login")
+        try:
+            timeout_ms = int(os.getenv("SANDBOX_LOGIN_PREWARM_TIMEOUT_MS", "600000") or "600000")
+        except Exception:
+            timeout_ms = 600_000
+        await svc.prewarm_user_sandbox(
+            username,
+            reason="login",
+            timeout_ms=max(120_000, timeout_ms),
+        )
     except Exception as e:  # noqa: BLE001
         # 预热失败不影响登录，只记录日志供排查。
         logger.warning("sandbox_prewarm_after_login_failed user=%s err=%s", username, e)

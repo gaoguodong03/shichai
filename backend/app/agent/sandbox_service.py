@@ -39,6 +39,15 @@ def _env_csv(name: str) -> List[str]:
     return list(dict.fromkeys(parts))
 
 
+def _sandbox_default_environment() -> Dict[str, str]:
+    """默认注入到沙箱的运行环境。"""
+    browsers_path = (os.getenv("PLAYWRIGHT_BROWSERS_PATH") or "/ms-playwright").strip()
+    env: Dict[str, str] = {}
+    if browsers_path:
+        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+    return env
+
+
 def _env_float(name: str) -> Optional[float]:
     raw = (os.getenv(name) or "").strip()
     if not raw:
@@ -140,10 +149,23 @@ class SandboxService:
         logger.info("sandbox_backend_selected backend=%s", self._describe_adapter(self._adapter))
         self._session_ttl_sec = max(60, int(session_ttl_sec))
         self._always_on = _env_truthy("SANDBOX_ALWAYS_ON", default="0")
+        # 默认启用：仅在首次创建或 requirements 变更时重建用户级沙箱。
+        self._restart_only_on_requirements_update = _env_truthy(
+            "SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE", default="1"
+        )
         self._fixed_cpu = _env_float("SANDBOX_FIXED_CPU")
         self._fixed_memory_mb = _env_int("SANDBOX_FIXED_MEMORY_MB")
         self._lock = asyncio.Lock()
         self._user_handles: Dict[str, Tuple[SandboxHandle, float]] = {}
+        self._user_ensure_locks: Dict[str, asyncio.Lock] = {}
+
+    async def _ensure_lock_for_key(self, key: str) -> asyncio.Lock:
+        async with self._lock:
+            lock = self._user_ensure_locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._user_ensure_locks[key] = lock
+            return lock
 
     @staticmethod
     def _describe_adapter(adapter: SandboxAdapter) -> str:
@@ -167,6 +189,10 @@ class SandboxService:
             updates["cpu_limit"] = self._fixed_cpu
         if self._fixed_memory_mb is not None and int(policy.memory_limit_mb) != int(self._fixed_memory_mb):
             updates["memory_limit_mb"] = self._fixed_memory_mb
+        default_env = _sandbox_default_environment()
+        merged_env = {**default_env, **dict(policy.environment or {})}
+        if merged_env != dict(policy.environment or {}):
+            updates["environment"] = merged_env
         if updates:
             return replace(policy, **updates)
         return policy
@@ -268,6 +294,17 @@ class SandboxService:
             return False
         return True
 
+    def _requirements_hash_for_user(self, user_id: str) -> str:
+        txt = self._read_user_sandbox_requirements(user_id)
+        normalized = (txt or "").strip()
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def _installed_requirements_hash(handle: SandboxHandle) -> str:
+        if not isinstance(handle.metadata, dict):
+            return ""
+        return str(handle.metadata.get("installed_requirements_hash") or "").strip()
+
     async def _build_policy(self, req: SandboxExecutionRequest) -> SandboxPolicy:
         if req.policy is not None:
             env_net = _network_allowed_for_tool(req.tool_name)
@@ -277,6 +314,9 @@ class SandboxService:
                 policy = replace(req.policy, allow_network=final_net)
             host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
             updates: Dict[str, Any] = {}
+            # 用户级单沙箱复用模式：不按工具名做 allowlist 限制，避免跨工具调用被旧策略误拦截。
+            if list(policy.tool_allowlist or []):
+                updates["tool_allowlist"] = []
             if not list(policy.volume_mounts or []):
                 updates["volume_mounts"] = mounts
             if not (policy.workspace_host_path or "").strip():
@@ -303,21 +343,48 @@ class SandboxService:
         ))
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
-        now = time.time()
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
         key = handle_cache_key(user_id)
+        user_lock = await self._ensure_lock_for_key(key)
+        async with user_lock:
+            return await self._ensure_user_handle_locked(req, policy, user_id=user_id, key=key)
+
+    async def _ensure_user_handle_locked(
+        self,
+        req: SandboxExecutionRequest,
+        policy: SandboxPolicy,
+        *,
+        user_id: str,
+        key: str,
+    ) -> SandboxHandle:
+        now = time.time()
+        ensure_started_at = time.perf_counter()
         logical_sid = user_id
         async with self._lock:
             existing = self._user_handles.get(key)
             if existing is not None:
                 handle, touched = existing
-                ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
-                if ttl_ok and self._cached_handle_still_valid(
-                    handle, policy, req.tool_name
-                ):
-                    self._user_handles[key] = (handle, now)
-                    await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
-                    return handle
+                if self._restart_only_on_requirements_update:
+                    current_req_hash = self._requirements_hash_for_user(user_id)
+                    installed_req_hash = self._installed_requirements_hash(handle)
+                    if current_req_hash == installed_req_hash:
+                        self._user_handles[key] = (handle, now)
+                        return handle
+                    logger.info(
+                        "sandbox_recreate_reason=user_requirements_updated user_id=%s session_id=%s old_hash=%s new_hash=%s",
+                        user_id,
+                        req.session_id,
+                        installed_req_hash,
+                        current_req_hash,
+                    )
+                else:
+                    ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
+                    if ttl_ok and self._cached_handle_still_valid(
+                        handle, policy, req.tool_name
+                    ):
+                        self._user_handles[key] = (handle, now)
+                        await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
+                        return handle
                 try:
                     await self._adapter.dispose_sandbox(handle)
                 except Exception as e:  # noqa: BLE001
@@ -332,15 +399,17 @@ class SandboxService:
             self._user_handles[key] = (handle, now)
         # 出锁后做安装：避免长时间持锁阻塞其他请求
         await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
+        ensure_elapsed_ms = int((time.perf_counter() - ensure_started_at) * 1000)
         async with self._lock:
             logger.info(
-                "sandbox_user_bound user_id=%s session_id=%s cache_key=%s mount_fp=%s backend=%s sandbox_id=%s",
+                "sandbox_user_bound user_id=%s session_id=%s cache_key=%s mount_fp=%s backend=%s sandbox_id=%s elapsed_ms=%s",
                 user_id,
                 req.session_id,
                 key,
                 policy_mount_fingerprint(policy),
                 self._describe_adapter(self._adapter),
                 handle.metadata.get("sandbox_id", ""),
+                ensure_elapsed_ms,
             )
             append_sandbox_event(
                 session_id=req.session_id,
@@ -424,17 +493,28 @@ class SandboxService:
         policy: SandboxPolicy,
     ) -> None:
         """按内容 hash 在沙箱内安装 requirements（变更时才执行一次）。仅用户级 config/sandbox/requirements.txt。"""
+        started_at = time.perf_counter()
         if not isinstance(handle.metadata, dict):
+            logger.info("sandbox_requirements_skip reason=metadata_not_dict user_id=%s", user_id)
             return
         user_txt = self._read_user_sandbox_requirements(user_id)
         normalized = (user_txt or "").strip()
         dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
         last = str(handle.metadata.get("installed_requirements_hash") or "")
+        logger.info(
+            "sandbox_requirements_check user_id=%s dep_hash=%s last_hash=%s has_requirements=%s",
+            user_id,
+            dep_hash,
+            last,
+            bool(normalized),
+        )
         if dep_hash == last:
+            logger.info("sandbox_requirements_skip reason=hash_unchanged user_id=%s dep_hash=%s", user_id, dep_hash)
             return
         # 空清单：只更新 hash，不执行 pip
         if not normalized:
             handle.metadata["installed_requirements_hash"] = dep_hash
+            logger.info("sandbox_requirements_skip reason=empty_requirements user_id=%s dep_hash=%s", user_id, dep_hash)
             return
         # 若禁网，很可能装不成；仍尝试一次并把错误抛出（方便测试验证）。
         b64 = base64.b64encode(normalized.encode("utf-8")).decode("ascii")
@@ -442,7 +522,7 @@ class SandboxService:
             "sh",
             "-lc",
             (
-                "set -euo pipefail; "
+                "set -eu; "
                 'REQ_B64="${SANDBOX_REQUIREMENTS_B64:-}"; '
                 'python3 - <<\'PY\'\n'
                 "import base64,os,sys\n"
@@ -451,23 +531,53 @@ class SandboxService:
                 "open('/tmp/requirements.txt','wb').write(data)\n"
                 "print('wrote_requirements_bytes', len(data))\n"
                 "PY\n"
-                "python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt"
+                "python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt\n"
+                "if grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
+                "  if python3 -m patchright --help >/dev/null 2>&1; then\n"
+                "    python3 -m patchright install chromium || python3 -m playwright install chromium\n"
+                "  else\n"
+                "    python3 -m playwright install chromium\n"
+                "  fi\n"
+                "fi"
             ),
         ]
-        env = {"SANDBOX_REQUIREMENTS_B64": b64}
+        env = {**_sandbox_default_environment(), "SANDBOX_REQUIREMENTS_B64": b64}
+        logger.info("sandbox_requirements_install_start user_id=%s dep_hash=%s", user_id, dep_hash)
         try:
             if hasattr(self._adapter, "exec_command"):
-                await self._adapter.exec_command(
+                install_result = await self._adapter.exec_command(
                     handle,
                     cmd,
                     cwd="/",
                     timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)),
                     env=env,
                 )  # type: ignore[attr-defined]
+                exit_code = install_result.get("exit_code") if isinstance(install_result, dict) else None
+                if isinstance(exit_code, int) and exit_code != 0:
+                    stdout = str(install_result.get("stdout") or "") if isinstance(install_result, dict) else ""
+                    stderr = str(install_result.get("stderr") or "") if isinstance(install_result, dict) else ""
+                    raise RuntimeError(
+                        "沙箱 requirements 安装失败"
+                        f"（exit_code={exit_code}）。stdout={stdout[-1000:]} stderr={stderr[-1000:]}"
+                    )
                 handle.metadata["installed_requirements_hash"] = dep_hash
+                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+                logger.info(
+                    "sandbox_requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s",
+                    user_id,
+                    dep_hash,
+                    elapsed_ms,
+                )
         except Exception as e:
             # 不更新 hash：下次仍会重试，便于用户修复 requirements 后再次验证
-            logger.warning("sandbox_requirements_install_failed user_id=%s err=%s", user_id, str(e))
+            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+            logger.warning(
+                "sandbox_requirements_install_failed user_id=%s dep_hash=%s elapsed_ms=%s err=%s",
+                user_id,
+                dep_hash,
+                elapsed_ms,
+                str(e),
+            )
             raise
 
     async def _ensure_workspace_handle(
@@ -507,6 +617,7 @@ class SandboxService:
         turn_id: str = "workspace-fs",
         tool_call_id: str = "read",
     ) -> str:
+        started_at = time.perf_counter()
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -517,8 +628,35 @@ class SandboxService:
         )
         session_rel = normalize_rel_path(rel_path)
         inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
-        data = await self._adapter.read_file(handle, inner)
-        return data.decode("utf-8")
+        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
+        try:
+            data = await self._adapter.read_file(handle, inner)
+            text = data.decode("utf-8")
+            logger.info(
+                "sandbox_workspace_read_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s",
+                user_id,
+                session_id,
+                session_rel,
+                len(data),
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+            )
+            return text
+        except Exception as e:
+            status = "not_found" if "404" in str(e) or "not found" in str(e).lower() else "error"
+            logger.warning(
+                "sandbox_workspace_read_failed status=%s user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
+                status,
+                user_id,
+                session_id,
+                session_rel,
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+                str(e)[:500],
+            )
+            if status == "not_found":
+                raise FileNotFoundError(session_rel) from e
+            raise
 
     async def write_workspace_text(
         self,
@@ -531,6 +669,7 @@ class SandboxService:
         turn_id: str = "workspace-fs",
         tool_call_id: str = "write",
     ) -> None:
+        started_at = time.perf_counter()
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -541,7 +680,31 @@ class SandboxService:
         )
         session_rel = normalize_rel_path(rel_path)
         inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
-        await self._adapter.write_file(handle, inner, content.encode("utf-8"))
+        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
+        data = content.encode("utf-8")
+        try:
+            await self._adapter.write_file(handle, inner, data)
+            logger.info(
+                "sandbox_workspace_write_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s",
+                user_id,
+                session_id,
+                session_rel,
+                len(data),
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "sandbox_workspace_write_failed user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s err=%s",
+                user_id,
+                session_id,
+                session_rel,
+                len(data),
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+                str(e)[:500],
+            )
+            raise
 
     async def mkdir_workspace(
         self,
@@ -552,6 +715,7 @@ class SandboxService:
         rel_path: str,
         turn_id: str = "workspace-fs",
     ) -> None:
+        started_at = time.perf_counter()
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -562,8 +726,29 @@ class SandboxService:
         )
         session_rel = normalize_rel_path(rel_path)
         inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
+        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
         if hasattr(self._adapter, "exec_command"):
-            await self._adapter.exec_command(handle, ["mkdir", "-p", inner])  # type: ignore[attr-defined]
+            try:
+                await self._adapter.exec_command(handle, ["mkdir", "-p", inner])  # type: ignore[attr-defined]
+                logger.info(
+                    "sandbox_workspace_mkdir_done user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s",
+                    user_id,
+                    session_id,
+                    session_rel,
+                    int((time.perf_counter() - started_at) * 1000),
+                    sandbox_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "sandbox_workspace_mkdir_failed user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
+                    user_id,
+                    session_id,
+                    session_rel,
+                    int((time.perf_counter() - started_at) * 1000),
+                    sandbox_id,
+                    str(e)[:500],
+                )
+                raise
             return
         # Tests / minimal fakes: create on host workspace root (same bind mount as /workspace)
         p = ensure_within_root(workspace_path / session_rel, workspace_path)
@@ -578,6 +763,7 @@ class SandboxService:
         rel_prefix: str = "",
         turn_id: str = "workspace-fs",
     ) -> List[Dict[str, Any]]:
+        started_at = time.perf_counter()
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -588,7 +774,30 @@ class SandboxService:
         )
         root_rel = normalize_rel_path(rel_prefix)
         root = f"{sandbox_session_dir(session_id)}/{root_rel}".rstrip("/")
-        return await self._adapter.list_artifacts(handle, task_id=root)
+        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
+        try:
+            items = await self._adapter.list_artifacts(handle, task_id=root)
+            logger.info(
+                "sandbox_workspace_list_done user_id=%s session_id=%s path=%s count=%s elapsed_ms=%s sandbox_id=%s",
+                user_id,
+                session_id,
+                root_rel or ".",
+                len(items or []),
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+            )
+            return items
+        except Exception as e:
+            logger.warning(
+                "sandbox_workspace_list_failed user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
+                user_id,
+                session_id,
+                root_rel or ".",
+                int((time.perf_counter() - started_at) * 1000),
+                sandbox_id,
+                str(e)[:500],
+            )
+            raise
 
     async def exec_workspace_shell(
         self,
@@ -601,6 +810,7 @@ class SandboxService:
         tool_call_id: str = "exec",
         timeout_ms: int = 120_000,
     ) -> Dict[str, Any]:
+        started_at = time.perf_counter()
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -610,12 +820,37 @@ class SandboxService:
             timeout_ms=timeout_ms,
         )
         if hasattr(self._adapter, "exec_command"):
-            return await self._adapter.exec_command(
-                handle,
-                argv,
-                cwd=sandbox_session_dir(session_id),
-                timeout_ms=timeout_ms,
-            )  # type: ignore[attr-defined]
+            sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
+            try:
+                result = await self._adapter.exec_command(
+                    handle,
+                    argv,
+                    cwd=sandbox_session_dir(session_id),
+                    timeout_ms=timeout_ms,
+                )  # type: ignore[attr-defined]
+                logger.info(
+                    "sandbox_workspace_exec_done user_id=%s session_id=%s argv0=%s argc=%s exit_code=%s elapsed_ms=%s sandbox_id=%s",
+                    user_id,
+                    session_id,
+                    str(argv[0] if argv else ""),
+                    len(argv or []),
+                    result.get("exit_code") if isinstance(result, dict) else "",
+                    int((time.perf_counter() - started_at) * 1000),
+                    sandbox_id,
+                )
+                return result
+            except Exception as e:
+                logger.warning(
+                    "sandbox_workspace_exec_failed user_id=%s session_id=%s argv0=%s argc=%s elapsed_ms=%s sandbox_id=%s err=%s",
+                    user_id,
+                    session_id,
+                    str(argv[0] if argv else ""),
+                    len(argv or []),
+                    int((time.perf_counter() - started_at) * 1000),
+                    sandbox_id,
+                    str(e)[:500],
+                )
+                raise
         raise RuntimeError("当前沙箱适配器不支持 exec_command，无法执行目录/重命名等 shell 操作。")
 
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
@@ -628,24 +863,25 @@ class SandboxService:
         started = time.time()
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
         for attempt in range(2):
-            handle = await self._ensure_user_handle(req, policy)
-            append_sandbox_event(
-                session_id=req.session_id,
-                event_type="sandbox_command_started",
-                turn_id=req.turn_id,
-                payload={
-                    "tool_name": req.tool_name,
-                    "tool_kind": req.tool_kind,
-                    "tool_call_id": req.tool_call_id,
-                    "user_id": req.user_id,
-                    "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                    "cwd": cwd,
-                    "mount_count": len(policy.volume_mounts or []),
-                    "mount_targets": mount_targets,
-                    "attempt": attempt + 1,
-                },
-            )
+            handle: Optional[SandboxHandle] = None
             try:
+                handle = await self._ensure_user_handle(req, policy)
+                append_sandbox_event(
+                    session_id=req.session_id,
+                    event_type="sandbox_command_started",
+                    turn_id=req.turn_id,
+                    payload={
+                        "tool_name": req.tool_name,
+                        "tool_kind": req.tool_kind,
+                        "tool_call_id": req.tool_call_id,
+                        "user_id": req.user_id,
+                        "sandbox_id": handle.metadata.get("sandbox_id", ""),
+                        "cwd": cwd,
+                        "mount_count": len(policy.volume_mounts or []),
+                        "mount_targets": mount_targets,
+                        "attempt": attempt + 1,
+                    },
+                )
                 result = await self._adapter.run_tool_in_sandbox(
                     handle,
                     {
@@ -696,6 +932,34 @@ class SandboxService:
                         },
                     )
                     continue
+                if attempt == 0 and "all connection attempts failed" in str(exc).lower():
+                    await self._invalidate_user_handle(user_id, expected_handle=handle)
+                    append_sandbox_event(
+                        session_id=req.session_id,
+                        event_type="sandbox_session_recreated",
+                        turn_id=req.turn_id,
+                        payload={
+                            "tool_name": req.tool_name,
+                            "tool_call_id": req.tool_call_id,
+                            "user_id": req.user_id,
+                            "reason": "sandbox_connectivity_error",
+                        },
+                    )
+                    continue
+                if attempt == 0 and "tool not allowed by sandbox policy" in str(exc).lower():
+                    await self._invalidate_user_handle(user_id, expected_handle=handle)
+                    append_sandbox_event(
+                        session_id=req.session_id,
+                        event_type="sandbox_session_recreated",
+                        turn_id=req.turn_id,
+                        payload={
+                            "tool_name": req.tool_name,
+                            "tool_call_id": req.tool_call_id,
+                            "user_id": req.user_id,
+                            "reason": "sandbox_tool_policy_mismatch",
+                        },
+                    )
+                    continue
                 append_sandbox_event(
                     session_id=req.session_id,
                     event_type="sandbox_command_failed",
@@ -712,7 +976,7 @@ class SandboxService:
                     },
                 )
                 diag = {
-                    "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
+                    "sandbox_id": str(((handle.metadata if handle is not None else {}) or {}).get("sandbox_id") or ""),
                     "sandbox_cwd": cwd,
                     "mount_count": len(policy.volume_mounts or []),
                     "mount_targets": mount_targets,

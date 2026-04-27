@@ -106,10 +106,29 @@ def test_workspace_path_traversal_blocked(client):
     assert r.status_code in (400, 404)
 
 
-def test_write_workspace_file_tool(temp_user_data_root):
+def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     """write_workspace_file 写入当前 workspace"""
     from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
     from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+            tool_call_id,
+            turn_id="workspace-fs",
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
 
     tool = create_write_workspace_file_tool("sess-w")
     # 当前工具仅提供异步 coroutine（不支持 sync invoke）

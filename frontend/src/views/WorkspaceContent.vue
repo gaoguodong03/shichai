@@ -189,12 +189,12 @@
                               :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
                               @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
                             >
-                              {{ parseToolRawResult(raw).toolName }}
+                              {{ toolRawMeta(raw).toolName }}
                               <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
                               <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
-                              <pre class="group-chat-tool-popover-pre">{{ tryFormatJson(parseToolRawResult(raw).rawReturn) }}</pre>
+                              <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
                             </div>
                           </div>
                           <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
@@ -1521,6 +1521,28 @@ function parseToolRawResult(raw: string): { toolName: string; rawReturn: string 
   return { toolName: 'sandbox', rawReturn: raw }
 }
 
+const _toolRawMetaCache = new Map<string, { toolName: string; rawReturn: string }>()
+const _TOOL_POPOVER_MAX_LEN = 4000
+
+function toolRawMeta(raw: string): { toolName: string; rawReturn: string } {
+  const key = String(raw || '')
+  const hit = _toolRawMetaCache.get(key)
+  if (hit) return hit
+  const parsed = parseToolRawResult(key)
+  _toolRawMetaCache.set(key, parsed)
+  if (_toolRawMetaCache.size > 500) {
+    const firstKey = _toolRawMetaCache.keys().next().value
+    if (firstKey) _toolRawMetaCache.delete(firstKey)
+  }
+  return parsed
+}
+
+function formatToolPopover(raw: string): string {
+  const formatted = tryFormatJson(toolRawMeta(raw).rawReturn)
+  if (formatted.length <= _TOOL_POPOVER_MAX_LEN) return formatted
+  return `${formatted.slice(0, _TOOL_POPOVER_MAX_LEN)}\n\n...（内容过长，已截断展示）`
+}
+
 function extractToolCallBlocks(content: string): string[] {
   const text = content || ''
   if (!text.trim()) return []
@@ -1762,6 +1784,7 @@ async function confirmGroupNext(
   const id = detail?.id
   if (!detail || !id || groupStreaming.value) return
   autoSwitchHint.value = null
+  const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
@@ -1789,14 +1812,17 @@ async function confirmGroupNext(
     if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const shouldEmitMessageSent = await runGroupStream(id, body)
+    const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
     if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('确认下一发言人失败', e)
   } finally {
-    clearStreamingPlaceholders()
-    groupStreaming.value = false
-    groupStreamingPhase.value = ''
+    if (groupStreamRunToken.value === runToken) {
+      clearStreamingPlaceholders()
+      groupStreaming.value = false
+      groupStreamingPhase.value = ''
+      groupStreamAbort.value = null
+    }
   }
 }
 
@@ -2285,6 +2311,7 @@ const groupInterruptReason = ref('')
 const groupResumeTargetDhaId = ref<string | null>(null)
 const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
 const groupNextSpeakerOverride = ref<string>('')
+const groupStreamRunToken = ref(0)
 const showAddMember = ref(false)
 const showAddMemberModal = ref(false)
 const showMoreMenu = ref(false)
@@ -2515,19 +2542,23 @@ async function continueGroupStream() {
   const detail = groupDetail.value
   const id = detail?.id
   if (!detail || !id || groupStreaming.value) return
+  const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
   groupStreamingPhase.value = '正在继续…'
   try {
     const abort = new AbortController()
     groupStreamAbort.value = abort
-    const shouldEmitMessageSent = await runGroupStream(id, { message: '' })
+    const shouldEmitMessageSent = await runGroupStream(id, { message: '' }, abort.signal)
     if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('继续任务失败', e)
   } finally {
-    clearStreamingPlaceholders()
-    groupStreaming.value = false
-    groupStreamingPhase.value = ''
+    if (groupStreamRunToken.value === runToken) {
+      clearStreamingPlaceholders()
+      groupStreaming.value = false
+      groupStreamingPhase.value = ''
+      groupStreamAbort.value = null
+    }
   }
 }
 
@@ -2611,6 +2642,7 @@ async function ignoreAutoSwitchAndPause() {
   autoSwitchIgnoreLoading.value = true
   try {
     try {
+      groupStreamRunToken.value += 1
       groupStreamAbort.value?.abort()
     } catch (_) {}
     groupStreaming.value = false
@@ -3814,7 +3846,11 @@ function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpe
   }
 }
 
-async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequestPayload, 'session_id'>): Promise<boolean> {
+async function runGroupStream(
+  sessionId: string,
+  payload: Omit<ChatStreamRequestPayload, 'session_id'>,
+  signal?: AbortSignal,
+): Promise<boolean> {
   const state = { sawExpertAssistantMessageThisRun: false }
   let shouldEmitMessageSent = false
   let gotEnd = false
@@ -3847,13 +3883,18 @@ async function runGroupStream(sessionId: string, payload: Omit<ChatStreamRequest
           console.error('SSE 事件解析失败', error)
         },
       },
-      groupStreamAbort.value?.signal,
+      signal,
     )
   } catch (error) {
+    if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+      return false
+    }
     streamFailed = true
     console.error('SSE 请求失败，准备非流式补偿', error)
     failureHint = error instanceof Error ? (error.message || '').trim() : ''
   }
+
+  if (signal?.aborted) return false
 
   if (!gotEnd || streamFailed || streamServerErrored) {
     groupStreamingPhase.value = '连接波动，正在补偿本轮回复…'
@@ -3962,6 +4003,7 @@ async function sendGroupMessage() {
   // 发送后输入框必须清空：前端不保留历史内容
   groupDiscussionGoal.value = ''
   groupNextPrompt.value = ''
+  const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
   groupStreamingPhase.value = '正在准备…'
   try {
@@ -3975,15 +4017,18 @@ async function sendGroupMessage() {
     const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
     if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
     // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
-    const shouldEmitMessageSent = await runGroupStream(detail.id, body)
+    const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
     if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('群聊发送失败', e)
   } finally {
-    groupStreaming.value = false
-    clearStreamingPlaceholders()
-    groupStreamingPhase.value = ''
-    groupNextSpeakerOverride.value = ''
+    if (groupStreamRunToken.value === runToken) {
+      groupStreaming.value = false
+      clearStreamingPlaceholders()
+      groupStreamingPhase.value = ''
+      groupNextSpeakerOverride.value = ''
+      groupStreamAbort.value = null
+    }
   }
 }
 
@@ -4031,6 +4076,7 @@ function detectHostTakeoverIntent(raw: string): boolean {
 }
 
 function stopGroupStream() {
+  groupStreamRunToken.value += 1
   if (groupStreamAbort.value) {
     try {
       groupStreamAbort.value.abort()
@@ -4038,6 +4084,7 @@ function stopGroupStream() {
       // ignore
     }
   }
+  groupStreamAbort.value = null
   clearStreamingPlaceholders()
   groupStreaming.value = false
   groupStreamingPhase.value = '已停止'

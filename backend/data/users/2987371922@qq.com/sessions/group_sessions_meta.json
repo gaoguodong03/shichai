@@ -559,7 +559,7 @@
     "orchestration_profile": "scene"
   },
   "group-30171d50f660": {
-    "title": "Thinking Process:",
+    "title": "运行脚本验证软件包版本",
     "title_auto_generated": true,
     "agent_ids": [
       "agent-sandbox-dep-check"
@@ -567,7 +567,7 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-22T03:45:30.520006+00:00",
-    "updated_at": "2026-04-22T10:23:11.818029+00:00",
+    "updated_at": "2026-04-24T08:18:19.961946+00:00",
     "orchestration_profile": "recruitment"
   },
   "group-6d3a4a11c8ff": {
@@ -593,14 +593,203 @@
     "leader_agent_id": "agent-scene-host",
     "speak_mode": "auto",
     "created_at": "2026-04-22T13:21:59.215368+00:00",
-    "updated_at": "2026-04-22T13:23:23.828169+00:00",
+    "updated_at": "2026-04-23T15:16:10.566127+00:00",
     "orchestration_profile": "recruitment",
-    "pending_owner_agent_id": "agent-travel-expense-01",
-    "pending_skill_id": "travel-expense-calculator",
-    "pending_phase": "awaiting_user",
-    "pending_required_user_fields": [],
-    "pending_handoff_reason": "expert_need_user_input",
     "skill_session_owner_id": "agent-travel-expense-01",
     "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-513da18f139f": {
+    "title": "河南地区差旅费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-23T15:16:31.658778+00:00",
+    "updated_at": "2026-04-23T15:25:46.717573+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-travel-expense-01",
+    "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-176e865f78e3": {
+    "title": "河南差旅费计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-23T15:26:09.892349+00:00",
+    "updated_at": "2026-04-23T15:31:02.690464+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-travel-expense-01",
+    "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-d2981c5b27e0": {
+    "title": "河南的差旅费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-23T15:37:29.658163+00:00",
+    "updated_at": "2026-04-23T15:42:31.149357+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-travel-expense-01",
+    "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-d8e2a4ce1fd3": {
+    "title": "差旅费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-23T15:44:35.561263+00:00",
+    "updated_at": "2026-04-24T06:12:32.235047+00:00",
+    "orchestration_profile": "recruitment",
+    "skill_session_owner_id": "agent-travel-expense-01",
+    "skill_session_skill_id": "travel-expense-calculator"
+  },
+  "group-e80a37caf284": {
+    "title": "南京差旅费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-24T06:12:11.448828+00:00",
+    "updated_at": "2026-04-24T06:41:33.753688+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-61bb1f65109f": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-24T06:12:16.423878+00:00",
+    "updated_at": "2026-04-24T06:12:16.423878+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-5648b1bfa9f4": {
+    "title": "差旅费计算南京费用",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-24T06:45:00.871691+00:00",
+    "updated_at": "2026-04-24T06:46:06.666557+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-117e4b561408": {
+    "title": "南京差旅费用计算",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-travel-expense-01"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-24T07:18:37.777881+00:00",
+    "updated_at": "2026-04-27T01:08:02.272523+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-627f429d3c2d": {
+    "title": "沙箱环境中pendulum包版本验证",
+    "title_auto_generated": true,
+    "agent_ids": [
+      "agent-sandbox-dep-check"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-26T08:03:30.056888+00:00",
+    "updated_at": "2026-04-27T08:49:32.440788+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-1376144e1d69": {
+    "title": "实习僧网页爬取",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-sandbox-dep-check",
+      "agent-eee20032"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-26T12:49:28.141528+00:00",
+    "updated_at": "2026-04-26T12:50:41.601071+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "shixiseng_dedicated_crawler",
+        "skill-fcb54da34be9",
+        "sandbox-dep-check"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true,
+      "display_name": "四九"
+    },
+    "orchestration_profile": "scene",
+    "skill_session_owner_id": "agent-eee20032",
+    "skill_session_skill_id": "shixiseng_dedicated_crawler"
+  },
+  "group-b7e1064b37bf": {
+    "title": "新对话",
+    "title_auto_generated": true,
+    "agent_ids": [],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-26T12:52:06.893397+00:00",
+    "updated_at": "2026-04-26T12:52:06.893397+00:00",
+    "orchestration_profile": "recruitment"
+  },
+  "group-d1adfc297067": {
+    "title": "实习僧网页爬取",
+    "title_auto_generated": false,
+    "agent_ids": [
+      "agent-sandbox-dep-check",
+      "agent-eee20032"
+    ],
+    "leader_agent_id": "agent-scene-host",
+    "speak_mode": "auto",
+    "created_at": "2026-04-26T12:52:11.795577+00:00",
+    "updated_at": "2026-04-26T13:42:13.325203+00:00",
+    "host_config": {
+      "skill_ids": [
+        "group-host",
+        "shixiseng_dedicated_crawler",
+        "skill-fcb54da34be9",
+        "sandbox-dep-check"
+      ],
+      "system_prompt": null,
+      "llm_provider_id": "",
+      "mcp_server_ids": [],
+      "file_capabilities": {
+        "read": true,
+        "edit": true,
+        "write": true,
+        "rename": true,
+        "mkdir": true,
+        "list_dir": true
+      },
+      "url_capability": true,
+      "display_name": "四九"
+    },
+    "orchestration_profile": "scene"
   }
 }

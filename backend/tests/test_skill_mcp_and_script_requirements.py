@@ -69,3 +69,35 @@ def test_validate_skill_mcp_server_ids_unknown():
         with pytest.raises(HTTPException) as ei:
             _validate_skill_mcp_server_ids(["nope"])
         assert ei.value.status_code == 400
+
+
+def test_python_requirements_from_allowed_and_auto_tools(tmp_path: Path):
+    from app.api.settings import _python_requirements_from_skill_dir
+
+    skill_dir = tmp_path / "skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: T\n"
+        "auto-tools:\n"
+        "  python:\n"
+        "    - requests>=2\n"
+        "    - pandas==2.2.0\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+    assert _python_requirements_from_skill_dir(skill_dir) == ["requests>=2", "pandas==2.2.0"]
+
+
+def test_merge_sandbox_requirements_lines_dedupes_by_package(tmp_path: Path, monkeypatch):
+    from app.api.settings import _merge_sandbox_requirements_lines
+
+    req_path = tmp_path / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True)
+    req_path.write_text("requests==2.31.0\n", encoding="utf-8")
+    monkeypatch.setattr(settings_mod, "_get_sandbox_requirements_path", lambda: req_path)
+
+    added, merged = _merge_sandbox_requirements_lines(["requests>=2", "pandas==2.2.0"])
+    assert added == ["pandas==2.2.0"]
+    assert merged == "requests==2.31.0\npandas==2.2.0\n"
+    assert req_path.read_text(encoding="utf-8") == merged

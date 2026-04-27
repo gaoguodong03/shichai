@@ -12,8 +12,9 @@
 - 程序如何启动、与专家对话时前后端如何协作（框架说明）：见 [docs/技术架构详解.md](docs/技术架构详解.md)
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
+docker build --platform linux/amd64 -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.26.3 .
 
-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.22.2
+docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.26.3
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -21,6 +22,9 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
   cd .\backend\
   conda activate sc
   python -m app.main
+
+  # 本地启动说明：`python -m app.main` 会自动填充 OpenSandbox/Playwright 沙箱默认环境变量；
+  # 如需覆盖，再写入 backend/.env 或当前 shell 环境即可。
 
   cd .\frontend\
   npm run dev
@@ -102,7 +106,7 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
      - `gateway_elapsed_ms`（实际耗时）
      - `gateway_interrupt_reason`（`timeout_or_budget_exceeded` 或 `tool_unavailable`）
    - 若经常冷启动超时，可调大：
-     - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 300000ms）
+     - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 600000ms）
      - `SKILL_SCRIPT_TIMEOUT`（脚本执行超时）
 
 10. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
@@ -126,11 +130,15 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
    - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
      - `SANDBOX_ALWAYS_ON=1`：开启常驻模式（不因空闲 TTL 回收）
      - `SANDBOX_PREWARM_ALL_USERS=1`：服务启动后扫描已存在用户并批量预热
+     - `OPENSANDBOX_REQUEST_TIMEOUT_SEC=900`：给首次拉取大镜像/创建沙箱预留管理 API 超时
+     - `SANDBOX_BASE_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04`：固定带 Chromium 的 Playwright Python 沙箱镜像
+     - `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`：让 Playwright/Patchright 使用镜像内置浏览器目录
      - `SANDBOX_FIXED_CPU=1.0`：统一 CPU 配额
-     - `SANDBOX_FIXED_MEMORY_MB=512`：统一内存配额（MB）
+     - `SANDBOX_FIXED_MEMORY_MB=2048`：统一内存配额（MB），适配 Chromium 爬虫
    - 行为说明：
      - 登录仍会做单用户预热；启动期会额外尝试全用户预热（失败仅记日志，不阻塞启动）。
      - 运行时若检测到沙箱失联（not found / invalid），会自动失效旧句柄并重建一次。
+     - 本地首次使用 Playwright 沙箱镜像较大，建议先执行 `docker pull crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04`，避免创建沙箱时等待拉镜像。
 
 ### 回归验证（建议每次改沙箱/文件工具后跑一遍）
 - **文件读写（会话隔离）**
@@ -160,7 +168,7 @@ crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025
 3. **`st49.depends_on.opensandbox-server.condition=service_healthy`（原为 `service_started`）**
    - 目的：确保 `st49` 在 OpenSandbox 真正健康后再启动，减少冷启动竞态问题。
 
-4. **保留并强调 `SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000`**
+4. **保留并强调 `SANDBOX_SCRIPT_GATEWAY_SLACK_MS=600000`**
    - 目的：给“建沙箱 + 首次装依赖 + 执行脚本”整段流程预留网关等待余量，降低误报 `gateway_timeout`。
 
 5. **脚本网络策略仍保持最小放行**

@@ -2464,13 +2464,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
         meta_item: Dict[str, Any] = meta[group_session_id]
         orch_profile = effective_orchestration_profile(meta_item, agent_ids=agent_ids)
-        logger.warning(
-            "group_chat_event_gen_enter session=%s profile=%s agent_ids=%s pending_owner=%s",
-            group_session_id,
-            orch_profile,
-            ",".join(agent_ids or []),
-            pending_owner_agent_id,
-        )
         available_for_scheduler = available_to_add_for_prompt(available_to_add, orchestration_profile=orch_profile)
         custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
         dha_turns = 0  # 本次流中 DHA 总发言轮次
@@ -3170,10 +3163,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     tool_attempt_debug.append({"source": "stream_error", "matched": False, "error": str(stream_err)})
 
                 # 多轮 agent_step（含工具前后多段 AIMessage）用空行拼接，避免「…sandbox…」后直接续写无换行
-                full_content = "\n\n".join(str(x) for x in accumulated if str(x).strip()) if accumulated else "(无文本输出)"
-                if (not accumulated) and accumulated_raw_tool_results:
-                    # Fallback must not expose raw tool JSON/stdout/stderr to user-visible content.
-                    full_content = "已完成工具执行。"
+                full_content = "\n\n".join(str(x) for x in accumulated if str(x).strip()) if accumulated else ""
+                if (not full_content.strip()) and accumulated_raw_tool_results:
+                    full_content = "工具已执行完成，但模型没有返回可展示的文字总结。请查看本轮工具结果，或继续追问让我基于结果整理。"
+                if not full_content.strip():
+                    full_content = "模型没有返回可展示的文字内容，请稍后重试或换一个模型。"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
                 over_explicit, text_after_state_blocks = _strip_skill_session_state_blocks_and_get_over(full_content)
                 if over_explicit is not None:

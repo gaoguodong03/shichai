@@ -35,8 +35,11 @@
             重新加载
           </button>
           <span v-if="saved" class="text-sm text-accent">已保存</span>
-          <span v-if="error" class="text-sm text-red-500">{{ error }}</span>
         </div>
+        <div
+          v-if="error"
+          class="mt-3 whitespace-pre-wrap break-words rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >{{ error }}</div>
       </div>
     </div>
   </div>
@@ -50,6 +53,14 @@ const saving = ref(false)
 const saved = ref(false)
 const error = ref('')
 const content = ref('')
+
+function formatSaveError(j: Record<string, unknown>, fallback: string) {
+  const detail = String(j?.detail || j?.message || fallback)
+  const data = (j?.data || {}) as Record<string, unknown>
+  const rawError = String(data?.error || '')
+  if (!rawError || detail.includes(rawError)) return detail
+  return `${detail}\n\n${rawError}`
+}
 
 async function load() {
   loading.value = true
@@ -85,7 +96,7 @@ async function save() {
       saved.value = true
       setTimeout(() => { saved.value = false }, 2000)
     } else {
-      error.value = String(j?.detail || '保存失败')
+      error.value = formatSaveError(j as Record<string, unknown>, '保存失败')
     }
   } catch (e) {
     error.value = String(e || '保存失败')

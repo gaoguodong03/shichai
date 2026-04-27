@@ -12,7 +12,7 @@ import time
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from app.agent.llm_client import QwenLLM
+from app.agent.llm_client import QwenLLM, bind_tools_compat
 from app.agent.read_path_utils import (
     looks_like_url_or_remote_path,
     prefer_more_specific_path,
@@ -310,15 +310,30 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
     if "call_api" in names:
         parts.append(
             "## 外部 HTTP（call_api）\n\n"
-            "当需要获取**公开**网页或 HTTP API 的响应时，使用 `call_api`（GET/POST 等），url 须为 http(s)。"
-            " 服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
+            "当需要获取**公开**网页或 HTTP API 的响应时，使用 `call_api`。参数为 "
+            "`url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。"
+            "服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
+        )
+    script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
+    if script_names:
+        parts.append(
+            "## 技能脚本工具\n\n"
+            "以下工具在 OpenSandbox 中执行当前技能 `scripts/` 目录下的脚本。调用时使用结构化参数："
+            "`script_path` 为相对 scripts/ 的路径；`cli_args_json` 必须是 JSON 数组字符串；"
+            "不要使用 `input_json`，也不要把宿主机绝对路径、`/workspace` 或 `workspaces/<会话ID>` 前缀传给脚本。"
+            "脚本当前目录就是当前会话工作区，可直接读写工作区相对路径。"
+            "脚本文件本身不在工作区内，不要用 `read_file` 读取 `scripts/...`；"
+            "脚本输出里的 `stdout`/`stderr` 是工具返回字段，不是文件路径，不要读取名为 stdout/stderr 的文件。\n\n"
+            + "\n".join(f"- `{n}`" for n in script_names)
+            + "\n\n"
         )
     mcp_names = sorted({getattr(t, "name", "") for t in tools if _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))})
     if mcp_names:
         parts.append(
             "## 本技能绑定的 MCP 工具\n\n"
             "以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，"
-            "**必须优先使用这些 MCP 工具**完成步骤，不要用无关工具替代或仅靠猜测。\n\n"
+            "**必须优先使用这些 MCP 工具**完成步骤，不要用无关工具替代或仅靠猜测。"
+            "参数以该工具 schema 为准，不要把所有参数塞进 `__arg1`，除非该工具本身只接受单字符串参数。\n\n"
             + "\n".join(f"- `{n}`" for n in mcp_names)
             + "\n\n"
         )
@@ -395,6 +410,10 @@ def _extract_description_from_content(content: str, tool_name: str) -> str | Non
 
 # 可通过 LLM_AGENT_TIMEOUT 调整（秒），默认 180。多轮工具调用时上下文较长，需更长时间
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
+_SKILL_AGENT_MAX_STEPS = max(2, int(os.getenv("SKILL_AGENT_MAX_STEPS", "6")))
+_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
+    1, int(os.getenv("SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS", "1"))
+)
 
 
 def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | None:
@@ -477,14 +496,7 @@ def create_react_agent(
 
 """
     system_prompt += """
-当你需要使用工具时，请按照以下格式回复：
-```json
-{
-    "action": "tool_call",
-    "tool": "tool_name",
-    "arguments": {...}
-}
-```
+当你需要使用工具时，必须使用模型的结构化工具调用（tool_calls / function calling），不要把工具调用 JSON 写进正文。
 
 当你不需要使用工具时，直接回复用户的问题。
 
@@ -583,7 +595,7 @@ def create_react_agent(
         # 使用 bind_tools 让 LLM 返回结构化工具调用
         client = llm.get_client()
         if tools:
-            client = client.bind_tools(tools)
+            client = bind_tools_compat(client, tools)
         
         # 日志：本次输入大模型的提示词概览
         msg_summary = []
@@ -788,6 +800,8 @@ def create_react_agent(
         system_prompt=system_prompt,
         tool_runner=_tool_runner,
         timeout_s=float(_LLM_AGENT_TIMEOUT),
+        max_steps=_SKILL_AGENT_MAX_STEPS,
+        max_repeated_tool_rounds=_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS,
     )
 
 
@@ -847,7 +861,7 @@ def create_skill_execution_agent(
 
         client = llm.get_client()
         if tools:
-            client = client.bind_tools(tools)
+            client = bind_tools_compat(client, tools)
         msg_summary = []
         for i, m in enumerate(messages):
             role = getattr(m, "type", type(m).__name__.replace("Message", "").lower())
@@ -920,6 +934,8 @@ def create_skill_execution_agent(
         system_prompt=system_prompt,
         tool_runner=_tool_runner,
         timeout_s=float(_LLM_AGENT_TIMEOUT),
+        max_steps=_SKILL_AGENT_MAX_STEPS,
+        max_repeated_tool_rounds=_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS,
     )
 
 
@@ -932,6 +948,28 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
     tool_calls_trace: list[dict] = []
     tool_raw_outputs: list[str] = []
     max_tool_result_chars = 4000
+    tool_result_cache = state.get("tool_result_cache") if isinstance(state, dict) else None
+    if not isinstance(tool_result_cache, dict):
+        tool_result_cache = {}
+
+    def _cache_key_for_tool(tool_name: str, arguments: dict) -> str:
+        try:
+            args_key = json.dumps(arguments or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            args_key = str(arguments or {})
+        return f"{tool_name}:{args_key}"
+
+    def _script_done_instruction(*, cached: bool = False) -> str:
+        prefix = "已复用同一轮内相同参数的脚本执行结果。" if cached else "脚本已执行完成。"
+        return (
+            f"\n\n{prefix}请直接基于上方工具结果中的 stdout/stderr/returncode 生成最终答复。"
+            "stdout/stderr 是返回字段，不是工作区文件；不要调用 read_file 读取 stdout、stderr 或 scripts/<脚本名>，"
+            "也不要再次调用同一个脚本和相同参数。"
+        )
+
+    def _tool_message_content(tool_name: str, result_for_prompt: str, *, cached: bool = False) -> str:
+        suffix = _script_done_instruction(cached=cached) if tool_name.startswith("run_skill_script_") else ""
+        return f"工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}"
 
     def _safe_tool_result_for_prompt(result: object) -> str:
         """限制工具结果进入模型上下文的长度，避免超长内容（如 base64 图片）撑爆 token。"""
@@ -1043,10 +1081,37 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 try:
                     t_tool = time.perf_counter()
                     tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
-                    result = await _execute_tool_safely(tool, arguments)
-                    result_for_prompt = _safe_tool_result_for_prompt(result)
-                    tool_results.append(ToolMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}", tool_call_id=tool_call_id))
-                    tool_raw_outputs.append(str(result))
+                    cache_key = _cache_key_for_tool(tool_name, arguments)
+                    cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
+                    if isinstance(cached_entry, dict):
+                        result = cached_entry.get("raw", "")
+                        result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result))
+                        logger.info(
+                            "sandbox_script_cache_hit tool=%s args_hash=%s raw_len=%s",
+                            tool_name,
+                            str(abs(hash(cache_key))),
+                            len(str(result)),
+                        )
+                        tool_attempt_debug.append({
+                            "source": "run_skill_script_cache_hit",
+                            "tool": tool_name,
+                            "matched": True,
+                        })
+                        tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=True), tool_call_id=tool_call_id))
+                        tool_raw_outputs.append(str(result))
+                    else:
+                        result = await _execute_tool_safely(tool, arguments)
+                        result_for_prompt = _safe_tool_result_for_prompt(result)
+                        if tool_name.startswith("run_skill_script_"):
+                            tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
+                            logger.info(
+                                "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
+                                tool_name,
+                                str(abs(hash(cache_key))),
+                                len(str(result)),
+                            )
+                        tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt), tool_call_id=tool_call_id))
+                        tool_raw_outputs.append(str(result))
                 except Exception as e:
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
                     tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
@@ -1107,14 +1172,39 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             })
             try:
                 tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
-                result = await _execute_tool_safely(tool, arguments)
-                result_for_prompt = _safe_tool_result_for_prompt(result)
+                cache_key = _cache_key_for_tool(tool_name, arguments)
+                cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
+                if isinstance(cached_entry, dict):
+                    result = cached_entry.get("raw", "")
+                    result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result))
+                    logger.info(
+                        "sandbox_script_cache_hit tool=%s args_hash=%s raw_len=%s",
+                        tool_name,
+                        str(abs(hash(cache_key))),
+                        len(str(result)),
+                    )
+                    tool_attempt_debug.append({
+                        "source": "run_skill_script_cache_hit",
+                        "tool": tool_name,
+                        "matched": True,
+                    })
+                else:
+                    result = await _execute_tool_safely(tool, arguments)
+                    result_for_prompt = _safe_tool_result_for_prompt(result)
+                    if tool_name.startswith("run_skill_script_"):
+                        tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
+                        logger.info(
+                            "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
+                            tool_name,
+                            str(abs(hash(cache_key))),
+                            len(str(result)),
+                        )
                 tool_raw_outputs.append(str(result))
                 # 注意：当模型没有返回结构化 tool_calls（而是通过 content JSON 回退解析）时，
                 # 不能向 OpenAI ChatCompletions 发送 role=tool 的消息（必须紧跟在带 tool_calls 的 assistant 之后）。
                 # 这里将工具输出作为普通 HumanMessage 反馈给模型，确保消息序列合法。
                 return {
-                    "messages": [HumanMessage(content=f"工具 {tool_name} 的执行结果: {result_for_prompt}")],
+                    "messages": [HumanMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=isinstance(cached_entry, dict)))],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
                     "tool_raw_outputs": tool_raw_outputs,

@@ -180,6 +180,9 @@ class OpenSandboxAdapter:
                     domain = self._normalize_domain(raw_domain)
                     api_key = (os.getenv("OPENSANDBOX_API_KEY") or os.getenv("OPEN_SANDBOX_API_KEY") or "").strip() or None
                     protocol = (os.getenv("OPENSANDBOX_PROTOCOL") or os.getenv("OPEN_SANDBOX_PROTOCOL") or "http").strip()
+                    request_timeout_sec = int(
+                        (os.getenv("OPENSANDBOX_REQUEST_TIMEOUT_SEC") or "900").strip() or "900"
+                    )
                     if not domain:
                         raise RuntimeError(
                             "缺少 OpenSandbox domain：请设置 OPENSANDBOX_DOMAIN（或 OPEN_SANDBOX_DOMAIN）。"
@@ -198,8 +201,13 @@ class OpenSandboxAdapter:
                         api_key=api_key,
                         domain=domain,
                         protocol=protocol,
+                        request_timeout=timedelta(seconds=max(30, request_timeout_sec)),
                         use_server_proxy=use_server_proxy,
                     )
+                    self._api_key = api_key
+                    self._domain = domain
+                    self._protocol = protocol
+                    self._request_timeout_sec = max(30, request_timeout_sec)
                     logger.info("opensandbox_connection_target=%s://%s proxy=%s", protocol, domain, use_server_proxy)
                     self._sandboxes = SandboxesAdapter(self._conn)
                     self._execd_port = int(DEFAULT_EXECD_PORT)
@@ -210,6 +218,52 @@ class OpenSandboxAdapter:
                     self._SandboxEndpoint = SandboxEndpoint
                     self._commands: Dict[str, CommandsAdapter] = {}
                     self._fs: Dict[str, Optional[FilesystemAdapter]] = {}
+
+                def _lifecycle_fallback_domains(self) -> list[str]:
+                    raw = (os.getenv("OPENSANDBOX_FALLBACK_DOMAINS") or "").strip()
+                    out = [self._normalize_domain(x) for x in raw.split(",") if self._normalize_domain(x)]
+                    domain = self._normalize_domain(str(getattr(self, "_domain", "") or ""))
+                    fallback_port = domain.rsplit(":", 1)[-1] if ":" in domain else (os.getenv("OPENSANDBOX_HOST_PORT") or "8091")
+                    if domain.startswith("host.docker.internal:") and not Path("/.dockerenv").exists():
+                        out.append("127.0.0.1:" + fallback_port)
+                    if domain.startswith("127.0.0.1:") or domain.startswith("localhost:"):
+                        out.append("host.docker.internal:" + fallback_port)
+                    if not domain.startswith(("127.0.0.1:", "localhost:", "host.docker.internal:")):
+                        out.extend(["127.0.0.1:" + fallback_port, "host.docker.internal:" + fallback_port])
+                    return list(dict.fromkeys([d for d in out if d and d != domain]))
+
+                @staticmethod
+                def _is_lifecycle_connect_error(err: Exception) -> bool:
+                    msg = str(err or "").lower()
+                    return (
+                        "connecterror" in msg
+                        or "all connection attempts failed" in msg
+                        or "connection refused" in msg
+                        or "nodename nor servname provided" in msg
+                        or "name or service not known" in msg
+                        or "temporary failure in name resolution" in msg
+                        or "no address associated with hostname" in msg
+                    )
+
+                def _switch_lifecycle_domain(self, domain: str) -> None:
+                    domain = self._normalize_domain(domain)
+                    self._conn = ConnectionConfig(
+                        api_key=getattr(self, "_api_key", None),
+                        domain=domain,
+                        protocol=getattr(self, "_protocol", "http") or "http",
+                        request_timeout=timedelta(seconds=int(getattr(self, "_request_timeout_sec", 900) or 900)),
+                        use_server_proxy=bool(self._conn.use_server_proxy),
+                    )
+                    self._domain = domain
+                    self._sandboxes = SandboxesAdapter(self._conn)
+                    self._commands.clear()
+                    self._fs.clear()
+                    logger.warning(
+                        "opensandbox_lifecycle_domain_switched target=%s://%s proxy=%s",
+                        getattr(self, "_protocol", "http") or "http",
+                        domain,
+                        bool(self._conn.use_server_proxy),
+                    )
 
                 @staticmethod
                 def _is_endpoint_valid(ep) -> bool:
@@ -226,6 +280,72 @@ class OpenSandboxAdapter:
                 def _endpoint_str(ep) -> str:
                     """Return best-effort endpoint string for logs."""
                     return str(getattr(ep, "endpoint", "") or "").strip()
+
+                @staticmethod
+                def _rewrite_endpoint_for_local_host(ep):
+                    """本地后端运行在宿主机时，Docker 专用域名可能不可解析，改用 127.0.0.1。"""
+                    if Path("/.dockerenv").exists():
+                        return ep
+                    enabled = (os.getenv("OPENSANDBOX_REWRITE_HOST_DOCKER_INTERNAL") or "1").strip().lower()
+                    if enabled not in {"1", "true", "yes", "on", "enabled"}:
+                        return ep
+                    replacement = (os.getenv("OPENSANDBOX_LOCAL_ENDPOINT_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+                    endpoint_str = str(getattr(ep, "endpoint", "") or "").strip()
+                    if endpoint_str.startswith("host.docker.internal:"):
+                        rewritten = replacement + ":" + endpoint_str.rsplit(":", 1)[-1]
+                        try:
+                            setattr(ep, "endpoint", rewritten)
+                        except Exception:
+                            try:
+                                object.__setattr__(ep, "endpoint", rewritten)
+                            except Exception:
+                                pass
+                    host = str(getattr(ep, "host", "") or "").strip()
+                    if host == "host.docker.internal":
+                        try:
+                            setattr(ep, "host", replacement)
+                        except Exception:
+                            try:
+                                object.__setattr__(ep, "host", replacement)
+                            except Exception:
+                                pass
+                    return ep
+
+                @staticmethod
+                def _is_retryable_stream_error(err: Exception) -> bool:
+                    s = str(err or "").lower()
+                    return (
+                        "remoteprotocolerror" in s
+                        or "incomplete chunked read" in s
+                        or "peer closed connection without sending complete message body" in s
+                    )
+
+                @staticmethod
+                def _is_retryable_connect_error(err: Exception) -> bool:
+                    s = str(err or "").lower()
+                    return (
+                        "connecterror" in s
+                        or "all connection attempts failed" in s
+                        or "connection refused" in s
+                        or "could not connect to the backend sandbox endpoint" in s
+                        or "nodename nor servname provided" in s
+                        or "temporary failure in name resolution" in s
+                    )
+
+                def _switch_command_proxy_mode(self, sandbox_id: str) -> bool:
+                    try:
+                        current = bool(self._conn.use_server_proxy)
+                        self._conn.use_server_proxy = not current
+                    except Exception:
+                        return False
+                    self._commands.pop(sandbox_id, None)
+                    self._fs.pop(sandbox_id, None)
+                    logger.warning(
+                        "opensandbox_command_proxy_switched sandbox_id=%s proxy=%s",
+                        sandbox_id,
+                        bool(self._conn.use_server_proxy),
+                    )
+                    return True
 
                 async def _ensure_cmd_and_fs(
                     self, sandbox_id: str
@@ -264,6 +384,7 @@ class OpenSandboxAdapter:
                             except Exception:
                                 pass
 
+                    endpoint = self._rewrite_endpoint_for_local_host(endpoint)
                     endpoint_ok = self._is_endpoint_valid(endpoint)
                     logger.info(
                         "opensandbox_execd_endpoint sandbox_id=%s endpoint=%s proxy=%s endpoint_ok=%s",
@@ -291,7 +412,7 @@ class OpenSandboxAdapter:
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "python:3.12-slim"
+                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04"
                     mounts = list(spec.get("mounts") or [])
                     volumes = []
                     for i, m in enumerate(mounts):
@@ -314,22 +435,54 @@ class OpenSandboxAdapter:
                     # 这里使用稳定的长驻命令，后续命令执行通过 execd 完成。
                     entrypoint = ["/bin/sh", "-lc", "while true; do sleep 3600; done"]
                     timeout_s = int(spec.get("timeout_s") or 3600)
-                    created = await self._sandboxes.create_sandbox(
-                        spec=self._SandboxImageSpec(image=image_ref),
-                        entrypoint=entrypoint,
-                        env=dict(spec.get("env") or {}),
-                        metadata={},
-                        timeout=timedelta(seconds=max(60, timeout_s)),
-                        resource={"cpu": str(spec.get("resource_limit", {}).get("cpu") or "1000m"),
-                                  "memory": str(spec.get("resource_limit", {}).get("memory_mb") or "1024") + "Mi"},
-                        network_policy=None,
-                        extensions={},
-                        volumes=volumes or None,
-                    )
+                    async def _do_create():
+                        return await self._sandboxes.create_sandbox(
+                            spec=self._SandboxImageSpec(image=image_ref),
+                            entrypoint=entrypoint,
+                            env=dict(spec.get("env") or {}),
+                            metadata={},
+                            timeout=timedelta(seconds=max(60, timeout_s)),
+                            resource={"cpu": str(spec.get("resource_limit", {}).get("cpu") or "1000m"),
+                                      "memory": str(spec.get("resource_limit", {}).get("memory_mb") or "1024") + "Mi"},
+                            network_policy=None,
+                            extensions={},
+                            volumes=volumes or None,
+                        )
+                    try:
+                        created = await _do_create()
+                    except Exception as e:
+                        if not self._is_lifecycle_connect_error(e):
+                            raise
+                        fallback_domains = self._lifecycle_fallback_domains()
+                        logger.warning(
+                            "opensandbox_lifecycle_connect_failed target=%s://%s fallbacks=%s err=%s",
+                            getattr(self, "_protocol", "http") or "http",
+                            getattr(self, "_domain", ""),
+                            fallback_domains,
+                            str(e)[:500],
+                        )
+                        last_exc: Exception = e
+                        for fallback_domain in fallback_domains:
+                            try:
+                                self._switch_lifecycle_domain(fallback_domain)
+                                created = await _do_create()
+                                break
+                            except Exception as retry_exc:  # noqa: BLE001
+                                last_exc = retry_exc
+                                logger.warning(
+                                    "opensandbox_lifecycle_fallback_failed target=%s://%s err=%s",
+                                    getattr(self, "_protocol", "http") or "http",
+                                    fallback_domain,
+                                    str(retry_exc)[:500],
+                                )
+                        else:
+                            raise RuntimeError(
+                                "OpenSandbox lifecycle API 连接失败；请检查 OPENSANDBOX_DOMAIN/OPENSANDBOX_HOST_PORT、"
+                                "opensandbox-server 是否启动，以及当前进程是在宿主机还是容器内。"
+                            ) from last_exc
                     return {"id": getattr(created, "id", None) or str(created)}
 
                 async def execute_command(self, sandbox_id: str, req: Dict[str, Any]) -> Dict[str, Any]:
-                    cmd, _fs, _ok = await self._ensure_cmd_and_fs(sandbox_id)
                     argv = req.get("command")
                     if not isinstance(argv, list):
                         raise ValueError("command must be argv list")
@@ -340,16 +493,51 @@ class OpenSandboxAdapter:
                         timeout=timedelta(milliseconds=int(req.get("timeout_ms") or 120_000)),
                         envs=dict(req.get("env") or {}),
                     )
-                    exe = await cmd.run(command, opts=opts)
-                    stdout = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])])
-                    stderr = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])])
-                    return {
-                        "exit_code": getattr(exe, "exit_code", None),
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "id": getattr(exe, "id", None),
-                        "complete": bool(getattr(exe, "complete", None)),
-                    }
+                    last_error: Exception | None = None
+                    switched_proxy = False
+                    for attempt in (1, 2, 3):
+                        try:
+                            cmd, _fs, _ok = await self._ensure_cmd_and_fs(sandbox_id)
+                            exe = await cmd.run(command, opts=opts)
+                            stdout = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stdout", None) or [])])
+                            stderr = "\n".join([m.text for m in (getattr(getattr(exe, "logs", None), "stderr", None) or [])])
+                            return {
+                                "exit_code": getattr(exe, "exit_code", None),
+                                "stdout": stdout,
+                                "stderr": stderr,
+                                "id": getattr(exe, "id", None),
+                                "complete": bool(getattr(exe, "complete", None)),
+                            }
+                        except Exception as e:
+                            last_error = e
+                            if (
+                                not switched_proxy
+                                and self._is_retryable_connect_error(e)
+                                and self._switch_command_proxy_mode(sandbox_id)
+                            ):
+                                switched_proxy = True
+                                logger.warning(
+                                    "opensandbox_command_connect_failed_retry_with_proxy_toggle sandbox_id=%s err=%s",
+                                    sandbox_id,
+                                    str(e)[:500],
+                                )
+                                await asyncio.sleep(0.2)
+                                continue
+                            if attempt < 3 and self._is_retryable_stream_error(e):
+                                logger.warning(
+                                    "opensandbox_command_stream_interrupted sandbox_id=%s; retry_once=true err=%s",
+                                    sandbox_id,
+                                    e,
+                                )
+                                # 失效连接下的 adapter 可能已不可复用；清理后重建再重试一次。
+                                self._commands.pop(sandbox_id, None)
+                                self._fs.pop(sandbox_id, None)
+                                await asyncio.sleep(0.2)
+                                continue
+                            raise
+                    if last_error is not None:
+                        raise last_error
+                    raise RuntimeError("execute_command failed with unknown error")
 
                 async def read_file(self, sandbox_id: str, path: str) -> bytes:
                     cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
@@ -413,6 +601,27 @@ class OpenSandboxAdapter:
                 async def list_files(self, sandbox_id: str, root: str) -> List[Dict[str, Any]]:
                     cmd, fs, ok = await self._ensure_cmd_and_fs(sandbox_id)
                     if fs is not None and ok:
+                        # 先判定目录是否存在，避免 OpenSandbox 在不存在目录上 search 产生日志级错误。
+                        try:
+                            probe_py = "import os,sys; print('1' if os.path.isdir(sys.argv[1]) else '0')"
+                            probe = await cmd.run(
+                                " ".join(shlex.quote(str(x)) for x in ["python", "-c", probe_py, root]),
+                                opts=self._RunCommandOpts(
+                                    background=False,
+                                    working_directory="/",
+                                    timeout=timedelta(milliseconds=30_000),
+                                    envs={},
+                                ),
+                            )
+                            probe_out = "\n".join(
+                                [m.text for m in (getattr(getattr(probe, "logs", None), "stdout", None) or [])]
+                            ).strip()
+                            if probe_out != "1":
+                                return []
+                        except Exception:
+                            # 目录探测失败时继续走原有 search 流程，保持兼容。
+                            pass
+
                         # Execd 文件系统 API 没有“递归 list”统一接口；这里用 search('*') 近似实现。
                         try:
                             from opensandbox.models.filesystem import SearchEntry

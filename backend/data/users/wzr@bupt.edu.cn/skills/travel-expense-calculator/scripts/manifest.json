@@ -1,0 +1,6 @@
+{
+  "extract_travel_standards.py": {
+    "description": "解析 xls/xlsx 差旅标准表，提取省份/城市及常规/旺季住宿费标准。",
+    "timeout_sec": 120
+  }
+}

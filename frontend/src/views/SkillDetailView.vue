@@ -45,7 +45,15 @@
           <button
             type="button"
             class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="saving || deleting"
+            :disabled="saving || deleting || contentLoading"
+            @click="toggleEditMode"
+          >
+            {{ editMode ? '取消编辑' : '编辑' }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+            :disabled="saving || deleting || !editMode"
             @click="save"
           >
             {{ saving ? '保存中...' : '保存' }}
@@ -110,6 +118,7 @@
                   type="text"
                   required
                   placeholder="技能名称"
+                  :disabled="!editMode"
                   class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 />
               </div>
@@ -119,6 +128,7 @@
                   v-model="form.description"
                   rows="3"
                   placeholder="简短描述，用于技能选择"
+                  :disabled="!editMode"
                   class="w-full px-3 py-2 text-sm border border-input-border rounded-lg bg-input-bg text-primary resize-y min-h-[4rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                 />
               </div>
@@ -134,6 +144,7 @@
                     >
                       {{ mcpLabel(id) }}
                       <button
+                        v-if="editMode"
                         type="button"
                         class="p-0.5 rounded hover:bg-accent/20 text-accent-subtle-text"
                         title="移除"
@@ -144,7 +155,7 @@
                     </span>
                   </div>
                   <div v-else class="text-xs text-muted mb-2">未声明 MCP（本技能会话不加载 MCP 工具）。</div>
-                  <div class="flex flex-wrap items-center gap-2">
+                  <div v-if="editMode" class="flex flex-wrap items-center gap-2">
                     <select
                       class="text-sm border border-input-border rounded-lg bg-input-bg text-primary px-2 py-1.5 min-w-[10rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                       :disabled="!addableMcpServers.length"
@@ -164,7 +175,14 @@
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-muted mb-2">Python 依赖</label>
-                  <div v-if="pythonDependencies.length" class="flex flex-wrap gap-2">
+                  <textarea
+                    v-if="editMode"
+                    v-model="form.allowed_tools.python"
+                    rows="4"
+                    class="w-full px-3 py-2 text-xs font-mono border border-input-border rounded-lg bg-input-bg text-primary resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+                    placeholder="每行一个 Python 依赖，例如：requests>=2.31"
+                  />
+                  <div v-else-if="pythonDependencies.length" class="flex flex-wrap gap-2">
                     <span
                       v-for="dep in pythonDependencies"
                       :key="dep"
@@ -179,16 +197,10 @@
               <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                 <div class="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
                   <label class="block text-xs font-medium text-muted">正文（Markdown）</label>
-                  <button
-                    type="button"
-                    class="px-2 py-1 text-xs rounded-md border border-input-border text-primary hover:bg-list-hover"
-                    @click="markdownPreviewMode = !markdownPreviewMode"
-                  >
-                    {{ markdownPreviewMode ? '编辑源文件' : '预览渲染' }}
-                  </button>
+                  <span class="text-xs text-muted">{{ editMode ? '编辑中' : '预览' }}</span>
                 </div>
                 <div
-                  v-if="markdownPreviewMode"
+                  v-if="!editMode"
                   class="skill-markdown-preview themed-scrollbar px-4 py-3 text-sm text-primary max-h-[24rem] overflow-auto"
                   v-html="renderMarkdown(form.body || '')"
                 />
@@ -327,7 +339,7 @@ const form = ref({
 })
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
-const markdownPreviewMode = ref(true)
+const editMode = ref(false)
 
 const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[]; other: { name: string; path: string }[] }>({
   references: [],
@@ -379,6 +391,26 @@ function onAddMcpSelect(ev: Event) {
     form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
   }
   el.value = ''
+}
+
+function resetFormFromLoadedContent() {
+  form.value.name = skillContent.value.name
+  form.value.description = skillContent.value.description
+  form.value.body = skillContent.value.body
+  form.value.allowed_tools = {
+    mcp: [...skillContent.value.allowed_tools.mcp],
+    python: skillContent.value.allowed_tools.python,
+  }
+}
+
+function toggleEditMode() {
+  if (editMode.value) {
+    resetFormFromLoadedContent()
+    editMode.value = false
+    return
+  }
+  activeTab.value = 'main'
+  editMode.value = true
 }
 
 const currentPartFiles = computed(() => {
@@ -651,13 +683,8 @@ async function loadContent() {
         body: j.data.body ?? '',
         allowed_tools: { mcp, python },
       }
-      form.value.name = skillContent.value.name
-      form.value.description = skillContent.value.description
-      form.value.body = skillContent.value.body
-      form.value.allowed_tools = {
-        mcp: [...skillContent.value.allowed_tools.mcp],
-        python: skillContent.value.allowed_tools.python,
-      }
+      resetFormFromLoadedContent()
+      editMode.value = false
     }
   } finally {
     contentLoading.value = false
@@ -708,7 +735,7 @@ async function selectPartFile(type: PartType, path: string) {
 }
 
 async function save() {
-  if (!skill.value) return
+  if (!skill.value || !editMode.value) return
   saving.value = true
   try {
     const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}`, {
@@ -726,6 +753,7 @@ async function save() {
     })
     const j = await r.json()
     if (j.status === 'ok') {
+      editMode.value = false
       const newId =
         j.data && typeof j.data === 'object' && typeof (j.data as { id?: string }).id === 'string'
           ? (j.data as { id: string }).id
@@ -877,7 +905,7 @@ watch(
     selectedPartFile.value = null
     partDirPath.value = ''
     partContent.value = ''
-    markdownPreviewMode.value = true
+    editMode.value = false
     await load()
     if (activeTab.value === 'main') return
     const tab = activeTab.value as PartType
@@ -893,7 +921,6 @@ watch(
 )
 watch(activeTab, async (tab) => {
   if (tab === 'main') {
-    markdownPreviewMode.value = true
     selectedPartFile.value = null
     partContent.value = ''
     partMarkdownPreviewMode.value = true

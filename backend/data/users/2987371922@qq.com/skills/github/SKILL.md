@@ -1,9 +1,9 @@
 ---
-description: 从 OpenGithubs/github-weekly-rank 获取每周飙升榜与 README 榜单正文，落盘供后续分析与简报使用。
-name: GitHub 开源周榜情报
 allowed-tools:
   mcp: []
   python: ''
+description: 从 OpenGithubs/github-weekly-rank 获取每周飙升榜与 README 榜单正文，落盘供后续分析与简报使用。
+name: GitHub 开源周榜情报
 ---
 # GitHub 开源周榜情报
 
