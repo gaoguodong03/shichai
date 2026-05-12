@@ -54,6 +54,16 @@ backend/
 
 - 适用场景：一个专家绑定多个 `skill_ids` 时，后端按讨论目标与最近用户消息，用 `SkillsLoader` 基于名称/描述关键词等相关度选出 skill；多 skill 且未锁定时也可由专家模型择一，失败则回退上述逻辑。
 - 路由入口：`app/skills/loader.py` 的 `pick_best_skill_id_for_message` / `pick_best_skill_with_debug`。
+- Skill 会话锁：群聊中专家执行 skill 后，后端会把 `skill_session_owner_id` 与 `skill_session_skill_id` 写入会话 meta；后续用户继续回复时，若未点名、未要求主持人接管、未覆盖 `next_speaker`，会跳过主持人并继续交给同一专家/skill。
+
+### Skill 会话退出协议
+
+- 固定字段：专家回复末尾可输出状态块 `[[SKILL_SESSION_STATE]]`，块内 JSON 使用布尔字段 `over` 表示本段 skill 会话是否结束。
+- 推荐格式：在完整回复正文之后另起一段输出 `[[SKILL_SESSION_STATE]]`、`{"over": true}` 或 `{"over": false}`、`[[/SKILL_SESSION_STATE]]`；状态块会被后端解析并从展示正文中移除。
+- 字段含义：`over: true` 表示当前 skill 流程已完成，应清除会话锁并交回主持人（四九）重新调度；`over: false` 表示继续保持当前专家/skill 锁，下一轮用户消息仍优先进入同一 skill 会话。
+- 兼容字段：解析器也接受 `skill_session_over` 作为 `over` 的别名，且接受 `true/false` 字符串或 `0/1` 数值。
+- 旧版标记：如果没有状态块，后端回退识别正文中的 `[[SKILL_SESSION_END]]` 或 `【技能会话结束】`，命中后同样清除 skill 会话锁；这些标记也会从展示正文中移除。
+- 用户侧退出：用户消息命中「你的任务完成了」「任务结束」「不用继续了」「到此为止」「交/还给主持人」「请主持人」「换/叫/请其他专家」「下一个专家」「退出/结束 skill/技能」等表达时，会清除当前 skill 会话锁，本轮重新进入主持人调度。
 
 ## Skill 脚本执行（run_skill_script）
 

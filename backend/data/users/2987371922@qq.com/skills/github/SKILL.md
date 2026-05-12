@@ -1,7 +1,10 @@
 ---
-allowed-tools:
+allowed-tools: &id001
   mcp: []
-  python: ''
+  python: '
+
+    '
+auto-tools: *id001
 description: 从 OpenGithubs/github-weekly-rank 获取每周飙升榜与 README 榜单正文，落盘供后续分析与简报使用。
 name: GitHub 开源周榜情报
 ---

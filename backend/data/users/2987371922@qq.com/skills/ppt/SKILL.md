@@ -1,13 +1,19 @@
 ---
-allowed-tools:
-  mcp: []
+allowed-tools: &id001
+  mcp:
+  - linkup
   python: 'python-pptx==1.0.2
 
     httpx
 
     typing_extensions
 
+    pytest
+
+    intenthub
+
     '
+auto-tools: *id001
 description: 根据 deck.json 的 slides 与 style_guide 逐页生成图片，先样张确认再批量出图，并回写 image_path。
 name: PPT 逐页配图
 ---

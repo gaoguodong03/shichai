@@ -1,10 +1,21 @@
 services:
   opensandbox-server:
-    image: "${OPENSANDBOX_SERVER_IMAGE:-opensandbox/server:latest}"
+    image: "${OPENSANDBOX_SERVER_IMAGE:-opensandbox/server:v0.1.13}"
     container_name: opensandbox-server
     network_mode: bridge
     ports:
       - "${OPENSANDBOX_HOST_PORT:-8091}:8090"
+    env_file:
+      - path: ./.env
+        required: false
+      - path: ./backend/.env
+        required: false
+    environment:
+      # OpenSandbox 新版本要求显式配置 api_key，或在内网/本机部署时显式确认无 key 风险。
+      # 生产环境建议在 .env 中设置 OPENSANDBOX_API_KEY；未设置时用该开关避免服务启动被阻断。
+      - OPENSANDBOX_INSECURE_SERVER=${OPENSANDBOX_INSECURE_SERVER:-YES}
+      # OpenSandbox 新版本默认拒绝所有 host bind mounts；这里放行工作区/技能所在数据根目录。
+      - OPENSANDBOX_ALLOWED_HOST_PATHS=${OPENSANDBOX_ALLOWED_HOST_PATHS:-/Users/ggd/project/shichai/backend/data,/var/lib/docker/volumes/st49/_data}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -15,14 +26,30 @@ services:
     command:
       - |
         # Compose 会展开单层环境变量；用 $$ 把默认值交给容器内 shell，避免未设置时变成空串导致 unhealthy
-        export OPENSANDBOX_EXECD_IMAGE="$${OPENSANDBOX_EXECD_IMAGE:-opensandbox/execd:v1.0.11}"
-        export OPENSANDBOX_EGRESS_IMAGE="$${OPENSANDBOX_EGRESS_IMAGE:-opensandbox/egress:v1.0.4}"
+        export OPENSANDBOX_EXECD_IMAGE="$${OPENSANDBOX_EXECD_IMAGE:-opensandbox/execd:v1.0.15}"
+        export OPENSANDBOX_EGRESS_IMAGE="$${OPENSANDBOX_EGRESS_IMAGE:-opensandbox/egress:v1.0.10}"
+        export OPENSANDBOX_ALLOWED_HOST_PATHS="$${OPENSANDBOX_ALLOWED_HOST_PATHS:-/Users/ggd/project/shichai/backend/data,/var/lib/docker/volumes/st49/_data}"
+        allowed_host_paths=""
+        old_ifs="$$IFS"
+        IFS=,
+        for p in $$OPENSANDBOX_ALLOWED_HOST_PATHS; do
+          p="$$(printf '%s' "$$p" | sed 's/^ *//;s/ *$$//')"
+          [ -z "$$p" ] && continue
+          p="$$(printf '%s' "$$p" | sed 's/\\/\\\\/g;s/"/\\"/g')"
+          if [ -z "$$allowed_host_paths" ]; then
+            allowed_host_paths="\"$$p\""
+          else
+            allowed_host_paths="$$allowed_host_paths, \"$$p\""
+          fi
+        done
+        IFS="$$old_ifs"
         cat > /tmp/sandbox.toml <<EOF
         [server]
         host = "0.0.0.0"
         port = 8090
         log_level = "INFO"
         eip = "host.docker.internal"
+        api_key = "$${OPENSANDBOX_API_KEY:-}"
 
         [runtime]
         type = "docker"
@@ -30,6 +57,9 @@ services:
 
         [egress]
         image = "$${OPENSANDBOX_EGRESS_IMAGE}"
+
+        [storage]
+        allowed_host_paths = [$$allowed_host_paths]
 
         [docker]
         network_mode = "bridge"
@@ -57,7 +87,7 @@ services:
     restart: unless-stopped
 
   st49:
-    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.26.3}"
+    image: "${ST49_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.10}"
     container_name: st49
     ports:
       - "${ST49_HOST_PORT:-8100}:8000"
@@ -73,7 +103,11 @@ services:
       - UNIFIED_TOOL_GATEWAY_ENABLED=1
       - OPENSANDBOX_USE_SERVER_PROXY=0
       - OPENSANDBOX_REQUEST_TIMEOUT_SEC=${OPENSANDBOX_REQUEST_TIMEOUT_SEC:-900}
-      - SANDBOX_BASE_IMAGE=${SANDBOX_BASE_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04}
+      - SANDBOX_BASE_IMAGE=${SANDBOX_BASE_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1}
+      # 音频转写 Skill：OpenAI-compatible 多模态服务；密钥请在 backend/.env / 1Panel 环境变量中配置，勿写入仓库。
+      - QWEN_AUDIO_BASE_URL=${QWEN_AUDIO_BASE_URL:-http://10.129.50.230/v1}
+      - QWEN_AUDIO_MODEL=${QWEN_AUDIO_MODEL:-qwen3-asr-1.7b}
+      - QWEN_AUDIO_REQUEST_MODE=${QWEN_AUDIO_REQUEST_MODE:-input_audio}
       - PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}
       - SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data
       - SKILL_SCRIPT_TIMEOUT=600

@@ -2684,8 +2684,14 @@ async function fetchLLM() {
     if (j?.status === 'ok' && j?.data) {
       llmDefault.value = j.data.default_llm || 'qwen'
       llmProviders.value = { ...(j.data.llm_providers || {}) }
-      if (resourceSubModule.value === 'llm' && !selectedId.value) {
-        selectedId.value = llmDefault.value
+      if (resourceSubModule.value === 'llm') {
+        const ids = Object.keys(llmProviders.value)
+        if (selectedId.value === '__new__') return
+        if (selectedId.value && !ids.includes(selectedId.value)) {
+          selectedId.value = ids.includes(llmDefault.value) ? llmDefault.value : (ids[0] || null)
+        } else if (!selectedId.value && ids.length > 0) {
+          selectedId.value = ids.includes(llmDefault.value) ? llmDefault.value : ids[0]
+        }
       }
     } else {
       llmDefault.value = 'qwen'

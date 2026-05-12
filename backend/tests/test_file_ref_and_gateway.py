@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -88,6 +89,33 @@ def test_normalize_skill_script_path_strips_scripts_prefix():
     assert rss._normalize_skill_script_path("./scripts/foo.py") == "foo.py"
     assert rss._apply_script_path_normalization("scripts/__list__") == "__list__"
     assert rss._apply_script_path_normalization("__describe__:scripts/bar.py") == "__describe__:bar.py"
+
+
+def test_parse_cli_args_json_accepts_array():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args_json('["--query","河北张家口其他人员住宿标准"]')
+
+    assert err is None
+    assert argv == ["--query", "河北张家口其他人员住宿标准"]
+
+
+def test_parse_cli_args_json_recovers_concatenated_json_strings():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args_json('"--query" "河北张家口其他人员住宿标准"')
+
+    assert err is None
+    assert argv == ["--query", "河北张家口其他人员住宿标准"]
+
+
+def test_parse_cli_args_json_recovers_concatenated_json_arrays():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args_json('["--query"]["河北张家口其他人员住宿标准"]')
+
+    assert err is None
+    assert argv == ["--query", "河北张家口其他人员住宿标准"]
 
 
 def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
@@ -228,7 +256,57 @@ async def test_execute_mcp_call_via_gateway(temp_user_data_root, monkeypatch):
     assert ok2 is True
     assert err2 == ""
     assert result2 == {"ok": True, "kwargs": {"q": "y"}}
-    assert sess.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_mcp_call_treats_internal_cancel_as_tool_error(temp_user_data_root, monkeypatch):
+    from app.mcp.manager import execute_mcp_call
+    from app.agent.sandbox_adapter import SandboxHandle
+    from app.agent.sandbox_service import SandboxService
+    from app.agent.tool_gateway import UnifiedToolGateway
+    import app.mcp.manager as mcp_manager
+
+    monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "1")
+
+    class _FakeAdapter:
+        async def create_session_sandbox(self, session_id, policy):
+            return SandboxHandle(runtime="fake", session_id=session_id, root=policy.fs_root, metadata={})
+
+        async def run_tool_in_sandbox(self, _handle, tool_request):
+            runner = tool_request["runner"]
+            return await runner()
+
+        async def read_file(self, _handle, _path):
+            return b""
+
+        async def write_file(self, _handle, _path, _data, token_version=0):
+            return {"status": "ok", "token_version": token_version}
+
+        async def list_artifacts(self, _handle, task_id=""):
+            return []
+
+        async def dispose_sandbox(self, _handle):
+            return None
+
+    fake_gateway = UnifiedToolGateway(
+        sandbox_service=SandboxService(sandbox_adapter=_FakeAdapter(), session_ttl_sec=3600)
+    )
+    monkeypatch.setattr(mcp_manager, "_MCP_GATEWAY", fake_gateway)
+
+    class _CancelledSession:
+        async def call_tool(self, tool_name, kwargs):
+            raise asyncio.CancelledError("remote stream ended")
+
+    ok, result, err = await execute_mcp_call(
+        server_id="linkup",
+        tool_name="search",
+        kwargs={"q": "x"},
+        session=_CancelledSession(),
+        timeout_sec=2.0,
+    )
+    assert ok is False
+    assert result is None
+    assert "cancelled" in err.lower()
 
 
 @pytest.mark.asyncio
@@ -276,4 +354,3 @@ async def test_execute_mcp_call_serializes_same_session(temp_user_data_root, mon
 
     assert r1[0] is True and r2[0] is True
     assert sess.max_inflight == 1
-

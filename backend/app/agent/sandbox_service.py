@@ -532,7 +532,7 @@ class SandboxService:
                 "print('wrote_requirements_bytes', len(data))\n"
                 "PY\n"
                 "python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt\n"
-                "if grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
+                "if [ \"${SANDBOX_AUTO_INSTALL_BROWSERS:-0}\" = \"1\" ] && grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
                 "  if python3 -m patchright --help >/dev/null 2>&1; then\n"
                 "    python3 -m patchright install chromium || python3 -m playwright install chromium\n"
                 "  else\n"

@@ -179,3 +179,191 @@ def test_get_client_skips_qwen_chat_template_kwargs_for_other_models(monkeypatch
     QwenLLM(api_key="test-key", base_url="https://jeniya.top/v1", model="gpt-4o").get_client()
 
     assert "model_kwargs" not in captured
+
+
+def _capture_chat_kwargs(monkeypatch, llm):
+    captured = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.bound_calls = []
+
+        def bind_tools(self, tools, **kwargs):
+            self.bound_calls.append(kwargs)
+            return kwargs
+
+    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
+    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+    client = llm.get_client()
+    return captured, client
+
+
+def test_get_client_common_whitelisted_params(monkeypatch):
+    """通用官网参数会被传给 ChatOpenAI，且不会开放任意 kwargs。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://jeniya.top/v1",
+            model="gpt-4o",
+            provider_config={
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "max_tokens": 32,
+                "presence_penalty": 0.1,
+                "frequency_penalty": 0.2,
+                "seed": 42,
+                "client_kwargs": {"danger": True},
+                "disabled_params": ["max_tokens"],
+            },
+        ),
+    )
+
+    assert captured["temperature"] == 0.2
+    assert captured["top_p"] == 0.8
+    assert captured["max_tokens"] == 32
+    assert captured["presence_penalty"] == 0.1
+    assert captured["frequency_penalty"] == 0.2
+    assert captured["seed"] == 42
+    assert "danger" not in captured
+    assert captured["max_tokens"] == 32
+
+
+def test_get_client_default_omits_max_tokens(monkeypatch):
+    """默认不主动传 max_tokens，交给具体模型/网关默认值处理。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+    )
+
+    assert "max_tokens" not in captured
+
+
+def test_traced_client_preserves_wrapper_after_bind_tools(monkeypatch):
+    """工具绑定后仍保留 trace/thinking 包装。"""
+    from app.agent.llm_client import QwenLLM
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
+    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+    client = QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="gpt-4o").get_client()
+    bound = client.bind_tools([object()])
+
+    assert hasattr(bound, "_raw_client")
+
+
+def test_get_client_qwen_thinking_params_and_tool_choice(monkeypatch):
+    """Qwen thinking 开启时走 extra_body，工具绑定不传 required。"""
+    from app.agent.llm_client import QwenLLM, bind_tools_compat
+
+    captured, client = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen3-max",
+            provider_config={"enable_thinking": True, "thinking_budget": 64},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"enable_thinking": True, "thinking_budget": 64}}
+    assert bind_tools_compat(client, [object()]) == {}
+
+
+def test_get_client_qwen_thinking_disabled_keeps_required_tools(monkeypatch):
+    """Qwen thinking 显式关闭时仍允许 required tool_choice。"""
+    from app.agent.llm_client import QwenLLM, bind_tools_compat
+
+    captured, client = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen3-max",
+            provider_config={"enable_thinking": False},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"enable_thinking": False}}
+    assert bind_tools_compat(client, [object()]) == {"tool_choice": "required"}
+
+
+def test_get_client_gemini_params(monkeypatch):
+    """Gemini 专属 topK/thinkingConfig 映射到请求体扩展。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+            model="gemini-2.5-flash",
+            provider_config={"top_k": 20, "gemini_thinking_level": "low"},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"topK": 20, "thinkingConfig": {"thinkingLevel": "low"}}}
+
+
+def test_get_client_claude_top_k(monkeypatch):
+    """Claude 专属 top_k 映射到请求体扩展。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://api.anthropic.com/v1",
+            model="claude-sonnet-4-6",
+            provider_config={"top_k": 30},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"top_k": 30}}
+
+
+def test_get_client_glm_params(monkeypatch):
+    """GLM thinking/do_sample 映射到请求体扩展。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://open.bigmodel.cn/api/paas/v4",
+            model="glm-4.7",
+            provider_config={"thinking": False, "do_sample": False},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "disabled"}, "do_sample": False}}
+
+
+def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatch):
+    """DeepSeek thinking 开启时同样不强制 required tool_choice。"""
+    from app.agent.llm_client import QwenLLM, bind_tools_compat
+
+    captured, client = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-reasoner",
+            provider_config={"thinking": True},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "enabled"}}}
+    assert bind_tools_compat(client, [object()]) == {}

@@ -1,13 +1,6 @@
 {
-  "default_llm": "claude",
+  "default_llm": "gpustack",
   "llm_providers": {
-    "qwen": {
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max",
-      "api_key_env": "QWEN_API_KEY",
-      "api_key_set": false,
-      "api_key_ref": "QWEN_API_KEY"
-    },
     "jeniya": {
       "base_url": "https://jeniya.top/v1",
       "model": "gpt-4o",
@@ -45,9 +38,17 @@
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
+    "qwen": {
+      "enable_thinking": true,
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max",
+      "api_key_env": "QWEN_API_KEY",
+      "api_key_ref": "QWEN_API_KEY",
+      "api_key_set": false
+    },
     "gpustack": {
       "base_url": "http://10.129.50.230/v1",
-      "model": "qwen3.6-35b-a3b-awq",
+      "model": "qwen3.5-27b-awq",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_ref": "gpustack",
       "api_key_set": false

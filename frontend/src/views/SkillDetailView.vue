@@ -182,16 +182,37 @@
                     class="w-full px-3 py-2 text-xs font-mono border border-input-border rounded-lg bg-input-bg text-primary resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                     placeholder="每行一个 Python 依赖，例如：requests>=2.31"
                   />
-                  <div v-else-if="pythonDependencies.length" class="flex flex-wrap gap-2">
-                    <span
-                      v-for="dep in pythonDependencies"
-                      :key="dep"
-                      class="inline-flex items-center px-2.5 py-1 rounded-full border border-border bg-input-bg text-primary text-xs font-mono"
+                  <div v-else-if="pythonDependencies.length" class="space-y-2">
+                    <div class="flex flex-wrap gap-2">
+                      <span
+                        v-for="dep in pythonDependencies"
+                        :key="dep"
+                        class="inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-mono transition-colors"
+                        :class="isPythonDependencyMissing(dep)
+                          ? 'border-red-300 bg-red-50 text-red-700'
+                          : 'border-border bg-input-bg text-primary'"
+                        :title="isPythonDependencyMissing(dep) ? '沙箱 requirements.txt 中缺失' : '已存在于沙箱 requirements.txt'"
+                      >
+                        {{ dep }}
+                      </span>
+                    </div>
+                    <button
+                      v-if="missingPythonDependencies.length"
+                      type="button"
+                      class="inline-flex items-center px-3 py-1.5 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-medium hover:bg-red-100 disabled:opacity-60"
+                      :disabled="addingPythonDependencies"
+                      @click="addMissingPythonDependenciesToSandbox"
                     >
-                      {{ dep }}
-                    </span>
+                      {{ addingPythonDependencies ? '添加并安装中…' : `一键添加全部缺失依赖（${missingPythonDependencies.length}）` }}
+                    </button>
                   </div>
                   <div v-else class="text-xs text-muted">未声明 Python 依赖</div>
+                  <p v-if="!editMode && missingPythonDependencies.length" class="mt-2 text-xs text-red-600">
+                    红色依赖未加入设置-沙箱-requirements.txt，可一键添加全部并等待安装完成。
+                  </p>
+                  <p v-if="sandboxDependencyMessage" class="mt-2 text-xs" :class="sandboxDependencyError ? 'text-red-600' : 'text-accent'">
+                    {{ sandboxDependencyMessage }}
+                  </p>
                 </div>
               </div>
               <div class="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -354,6 +375,10 @@ const partContentLoading = ref(false)
 const partSaving = ref(false)
 const exporting = ref(false)
 const sharing = ref(false)
+const sandboxRequirementsContent = ref('')
+const addingPythonDependencies = ref(false)
+const sandboxDependencyMessage = ref('')
+const sandboxDependencyError = ref(false)
 const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
   open: false,
   ok: true,
@@ -373,6 +398,36 @@ const pythonDependencies = computed(() =>
     .map((x) => x.trim())
     .filter(Boolean)
 )
+const sandboxRequirementKeys = computed(() => {
+  const keys = new Set<string>()
+  for (const line of String(sandboxRequirementsContent.value || '').split(/\r?\n/g)) {
+    const key = requirementKey(line)
+    if (key) keys.add(key)
+  }
+  return keys
+})
+const missingPythonDependencies = computed(() =>
+  pythonDependencies.value.filter((dep) => {
+    const key = requirementKey(dep)
+    return key && !sandboxRequirementKeys.value.has(key)
+  })
+)
+
+function requirementKey(line: string) {
+  let item = String(line || '').trim()
+  if (!item || item.startsWith('#')) return ''
+  if (item.startsWith('-') || item.startsWith('git+') || item.startsWith('http://') || item.startsWith('https://')) {
+    return item.toLowerCase()
+  }
+  item = item.split('#', 1)[0].trim().split(';', 1)[0].trim()
+  const matched = item.match(/^\s*([A-Za-z0-9_.-]+)/)
+  return (matched?.[1] || item).toLowerCase().replace(/_/g, '-')
+}
+
+function isPythonDependencyMissing(dep: string) {
+  const key = requirementKey(dep)
+  return Boolean(key && !sandboxRequirementKeys.value.has(key))
+}
 
 function mcpLabel(id: string) {
   const s = mcpServers.value.find((x) => x.id === id)
@@ -583,6 +638,53 @@ async function loadMcpServers() {
   }
 }
 
+async function loadSandboxRequirements() {
+  try {
+    const r = await fetch('/api/settings/sandbox/requirements')
+    const j = await r.json().catch(() => ({}))
+    if (j?.status === 'ok') {
+      sandboxRequirementsContent.value = String(j?.data?.content ?? '')
+    }
+  } catch {
+    sandboxRequirementsContent.value = ''
+  }
+}
+
+async function addMissingPythonDependenciesToSandbox() {
+  const requirements = missingPythonDependencies.value.map((x) => String(x || '').trim()).filter(Boolean)
+  if (!requirements.length || addingPythonDependencies.value) return
+  addingPythonDependencies.value = true
+  sandboxDependencyMessage.value = ''
+  sandboxDependencyError.value = false
+  try {
+    const r = await fetch('/api/settings/sandbox/requirements/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requirements }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.data?.content != null) {
+      sandboxRequirementsContent.value = String(j.data.content)
+    } else {
+      await loadSandboxRequirements()
+    }
+    if (j?.status === 'ok') {
+      const added = Array.isArray(j?.data?.added) ? j.data.added.length : 0
+      sandboxDependencyMessage.value = added ? `已添加 ${added} 个依赖到设置-沙箱，并安装完成。` : '依赖已存在于设置-沙箱。'
+      setTimeout(() => { sandboxDependencyMessage.value = '' }, 3000)
+    } else {
+      sandboxDependencyError.value = true
+      sandboxDependencyMessage.value = String(j?.detail || '依赖已写入，但重新加载失败，请到设置-沙箱查看。')
+    }
+  } catch (e) {
+    sandboxDependencyError.value = true
+    sandboxDependencyMessage.value = String(e || '添加依赖失败')
+    await loadSandboxRequirements()
+  } finally {
+    addingPythonDependencies.value = false
+  }
+}
+
 async function exportZip() {
   if (!props.skillId || !skill.value) return
   exporting.value = true
@@ -645,7 +747,7 @@ async function load() {
   if (!props.skillId) return
   loading.value = true
   try {
-    await loadMcpServers()
+    await Promise.all([loadMcpServers(), loadSandboxRequirements()])
     const r = await fetch('/api/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {

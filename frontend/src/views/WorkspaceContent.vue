@@ -3401,7 +3401,6 @@ async function loadInsertFileEntries() {
         path: e.path,
         is_dir: !!e.is_dir,
       }))
-      .filter((e) => e.is_dir || isTextFile(e.name))
     mapped.sort((a, b) => {
       if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
       return a.name.localeCompare(b.name)

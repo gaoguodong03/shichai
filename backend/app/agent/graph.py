@@ -269,11 +269,12 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
     """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
     parts: List[str] = []
-    parts.append(
-        "## 多步任务规则\n"
-        "若用户请求需要多步工具调用才能完成（例如路线规划：地理编码×2 + 路线查询），**必须连续完成所有步骤**，"
-        "不要在某一步后停下询问用户「需要什么」「接下来做什么」。只有在任务完全完成后才可回复。\n\n"
-    )
+    script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
+    if not script_names:
+        parts.append(
+            "## 多步任务规则\n"
+            "需要多步工具调用时，连续完成所有必要步骤；任务完成后再回复。\n\n"
+        )
     file_lines: List[str] = []
     if "read_file" in names:
         file_lines.append("- read_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
@@ -314,16 +315,12 @@ def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
             "`url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。"
             "服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
         )
-    script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
     if script_names:
         parts.append(
             "## 技能脚本工具\n\n"
-            "以下工具在 OpenSandbox 中执行当前技能 `scripts/` 目录下的脚本。调用时使用结构化参数："
-            "`script_path` 为相对 scripts/ 的路径；`cli_args_json` 必须是 JSON 数组字符串；"
-            "不要使用 `input_json`，也不要把宿主机绝对路径、`/workspace` 或 `workspaces/<会话ID>` 前缀传给脚本。"
-            "脚本当前目录就是当前会话工作区，可直接读写工作区相对路径。"
-            "脚本文件本身不在工作区内，不要用 `read_file` 读取 `scripts/...`；"
-            "脚本输出里的 `stdout`/`stderr` 是工具返回字段，不是文件路径，不要读取名为 stdout/stderr 的文件。\n\n"
+            "用结构化工具调用执行当前技能脚本：`script_path` 填 scripts/ 下相对路径，"
+            "`cli_args_json` 填 JSON 数组字符串（如 `[\"--query\",\"用户原话\"]`）。"
+            "不要用 `input_json`，不要传宿主机绝对路径。\n\n"
             + "\n".join(f"- `{n}`" for n in script_names)
             + "\n\n"
         )

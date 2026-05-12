@@ -35,6 +35,11 @@ _SANDBOX_ENV_PASSTHROUGH_KEYS = (
     "CHATANYWHERE_IMAGE_API_KEY",
     "JENIYA_IMAGE_BASE_URL",
     "JENIYA_IMAGE_MODEL",
+    "QWEN_AUDIO_BASE_URL",
+    "QWEN_AUDIO_API_KEY",
+    "QWEN_AUDIO_MODEL",
+    "QWEN_AUDIO_TRANSCRIBE_ENDPOINT",
+    "QWEN_AUDIO_REQUEST_MODE",
     "PLAYWRIGHT_BROWSERS_PATH",
 )
 _DEFAULT_PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
@@ -154,7 +159,10 @@ def _parse_cli_args_json(cli_args_json: str) -> tuple[list[str] | None, str | No
     try:
         data = json.loads(raw)
     except Exception as e:
-        return None, f"cli_args_json 不是合法 JSON: {e}"
+        recovered = _recover_concatenated_cli_args_json(raw)
+        if recovered is None:
+            return None, f"cli_args_json 不是合法 JSON: {e}"
+        data = recovered
     if not isinstance(data, list):
         return None, "cli_args_json 必须是 JSON 数组（每项为字符串，对应 argv 片段）"
     if len(data) > _CLI_ARGV_MAX_ITEMS:
@@ -169,6 +177,36 @@ def _parse_cli_args_json(cli_args_json: str) -> tuple[list[str] | None, str | No
             return None, f"cli_args_json[{i}] 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
         out.append(item)
     return out, None
+
+
+def _recover_concatenated_cli_args_json(raw: str) -> list[Any] | None:
+    """容错 LLM 把多个 JSON 字符串/数组片段拼到 cli_args_json 的常见错误。"""
+    decoder = json.JSONDecoder()
+    pos = 0
+    parts: list[Any] = []
+    length = len(raw)
+    try:
+        while pos < length:
+            while pos < length and raw[pos].isspace():
+                pos += 1
+            if pos >= length:
+                break
+            value, end = decoder.raw_decode(raw, pos)
+            parts.append(value)
+            pos = end
+    except Exception:
+        return None
+    if len(parts) <= 1:
+        return None
+    out: list[Any] = []
+    for part in parts:
+        if isinstance(part, list):
+            out.extend(part)
+        elif isinstance(part, str):
+            out.append(part)
+        else:
+            return None
+    return out
 
 
 def _validate_against_manifest(script_path: str, script_meta: dict[str, Any], parsed_input: Any) -> str | None:
@@ -734,13 +772,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
 
     run_skill_script.name = "run_skill_script"
     run_skill_script.description = (
-        "执行当前技能 scripts 目录下的脚本（如 optimize-prompt.py）。"
-        "script_path 填相对该 scripts 目录的路径（如 kb_document_store_cli.py）；"
-        "若 SKILL.md 写 scripts/foo.py 而误带上 scripts/ 前缀，会自动剥掉。"
-        "仅支持 cli_args_json：JSON 数组字符串，每项为一段 argv，与在终端执行 python script.py --foo bar 一致，路径相对工作区根，"
-        '例如 ["--input_text","你好"] 或 ["--query","问题"]。'
-        "不再支持 input_json/stdin 传参。"
-        "支持命令：__list__（列出脚本）、__manifest__（查看 manifest）、__describe__:<script>。"
-        "技能说明或 scripts 中若要求「运行某脚本」时使用本工具。"
+        "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
+        "cli_args_json 填 JSON 数组字符串，如 [\"--query\",\"问题\"]。"
+        "不要使用 input_json/stdin；可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
     )
     return run_skill_script

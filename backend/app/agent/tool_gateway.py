@@ -139,6 +139,27 @@ class ToolGateway:
                     )
                     self._idem.set(key, result)
                     return result
+            except asyncio.CancelledError as e:
+                # 远端 MCP/streamable-http SDK 可能把上游流中断表现为 CancelledError。
+                # 若当前请求本身没有被 ASGI/客户端取消，则降级为工具不可用，避免整条 SSE 响应未完成。
+                task = asyncio.current_task()
+                if task is not None and task.cancelling():
+                    raise
+                last_err = (
+                    "gateway executor cancelled: "
+                    f"tool={req.tool_name} type={e.__class__.__name__} message={str(e)}"
+                )
+                if i >= retries:
+                    result = ToolResult(
+                        ok=False,
+                        error=last_err,
+                        interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
+                        elapsed_ms=int((time.time() - started) * 1000),
+                        retries_used=i,
+                    )
+                    self._idem.set(key, result)
+                    return result
+                await asyncio.sleep(0.3 * (2**i))
             except Exception as e:  # noqa: BLE001
                 last_err = (
                     "gateway executor error: "

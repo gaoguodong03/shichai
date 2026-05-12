@@ -509,6 +509,56 @@ def _messages_to_context(
     return context
 
 
+def _is_group_context_noise(content: str) -> bool:
+    """过滤不应再次喂给专家模型的技术错误回执，避免错误历史自我放大撑爆上下文。"""
+    s = (content or "").strip()
+    if not s:
+        return False
+    noise_markers = (
+        "抱歉，模型响应失败",
+        "Error code: 400",
+        "Error code: 404",
+        "Error code: 500",
+        "context length is only",
+        "input_tokens",
+        "gateway_tool_unavailable",
+        "gateway executor error",
+        "Model not found or no running instances available",
+        "EngineCore encountered an issue",
+        "技术原因导致",
+        "工具暂时不可用",
+        "系统暂时无法查询",
+    )
+    return any(marker in s for marker in noise_markers)
+
+
+def _messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
+    """专家执行上下文：保留最近有效业务信息，剔除技术错误回执，并控制 4k 小模型预算。"""
+    filtered: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    skipped = 0
+    for m in messages or []:
+        content = (m.get("content") or "").strip() if isinstance(m, dict) else ""
+        if _is_group_context_noise(content):
+            skipped += 1
+            continue
+        key = (str(m.get("role") or ""), str(m.get("agent_id") or ""), content)
+        if key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
+        filtered.append(m)
+    context = _messages_to_context(
+        filtered,
+        max_turns=3,
+        max_chars=700,
+        max_chars_per_message=240,
+    )
+    if skipped:
+        logger.info("group_expert_context_noise_filtered skipped=%s kept=%s", skipped, len(filtered))
+    return context
+
+
 def _scheduler_recent_context(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
     """主持人调度上下文：仅使用最近对话摘录。"""
     _ = group_session_id
@@ -1095,17 +1145,12 @@ _SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
 
 _GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
 
-## Skill 会话是否结束（群聊调度必答）
-
-在你**本轮对用户展示的完整回复**末尾，在全部正文之后**另起一段**，输出且仅输出以下两段标签及其间一行 JSON（勿把 JSON 写进正文段落、勿加额外说明）：
-
+## Skill 会话状态
+本轮回复末尾追加：
 [[SKILL_SESSION_STATE]]
-{"over": false}
+{"over": true}
 [[/SKILL_SESSION_STATE]]
-
-字段说明：布尔字段 `over` 为 **true** 表示你认为当前技能在本群聊中的整体流程已执行完成，应交回主持人（四九）重新调度；为 **false** 表示仍需在同一技能会话内继续（可能包括：多轮与用户对话、后续再次调用工具、或等待用户补充信息后再继续）。请根据技能说明与当前轮实际进度判断，不要机械地每轮都写 true。
-
-若你未输出上述块，系统会回退为仅识别正文中的 `[[SKILL_SESSION_END]]` / 「技能会话结束」以及用户口头「交给主持人」等表达。
+`over=true` 表示任务已完成并交回主持人；仍需用户补充或继续处理时用 `false`。
 """
 
 
@@ -3057,7 +3102,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     extra_system_prompt,
                     expert_self_awareness=expert_self_awareness,
                 )
-                context = _messages_to_context(messages)
+                context = _messages_to_expert_context(messages)
                 if not custom_prompt_used and custom_prompt:
                     user_content = custom_prompt
                     custom_prompt_used = True
@@ -3431,6 +3476,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         except Exception as e:
             logger.exception("群聊流式输出异常")
             yield f"event: error\ndata: {json_module.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            try:
+                payload = build_end_payload(
+                    waiting_for_user=True,
+                    phase=OrchestrationPhase.AWAITING_USER,
+                    interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
+                    handoff_reason="stream_error",
+                    extra={"error": str(e)},
+                )
+                yield f"event: end\ndata: {json_module.dumps(payload, ensure_ascii=False)}\n\n"
+            except Exception:
+                logger.exception("群聊流式异常 end 事件生成失败")
 
     return StreamingResponse(
         event_gen(),

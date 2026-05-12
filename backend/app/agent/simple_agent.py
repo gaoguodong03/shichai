@@ -14,7 +14,6 @@ from app.agent.llm_client import bind_tools_compat
 
 logger = logging.getLogger(__name__)
 
-
 def _extract_text_content(message: BaseMessage) -> str:
     content = getattr(message, "content", "")
     if isinstance(content, str):
@@ -30,6 +29,49 @@ def _has_visible_ai_text(messages: list[BaseMessage]) -> bool:
         if text and not (getattr(msg, "tool_calls", None) or []):
             return True
     return False
+
+
+def _ai_response_hit_output_limit(message: BaseMessage) -> bool:
+    """Best-effort detection for provider-side max_tokens truncation."""
+    values: list[Any] = []
+    for attr in ("response_metadata", "additional_kwargs"):
+        meta = getattr(message, attr, None)
+        if isinstance(meta, dict):
+            values.extend(
+                meta.get(k)
+                for k in (
+                    "finish_reason",
+                    "stop_reason",
+                    "finishReason",
+                    "stopReason",
+                    "termination_reason",
+                    "terminationReason",
+                )
+            )
+            choices = meta.get("choices")
+            if isinstance(choices, list):
+                for choice in choices:
+                    if isinstance(choice, dict):
+                        values.append(choice.get("finish_reason"))
+    normalized = {str(v or "").strip().lower() for v in values if v is not None}
+    return bool(normalized & {"length", "max_tokens", "max_completion_tokens", "token_limit", "output_limit"})
+
+
+def _continuation_instruction() -> HumanMessage:
+    return HumanMessage(
+        content=(
+            "上一条回复因为输出长度限制中断了。请从中断处无缝续写，直接继续正文；"
+            "不要重写前文，不要道歉，不要输出新的标题。"
+        )
+    )
+
+
+def _max_output_continuations() -> int:
+    raw = (os.getenv("LLM_OUTPUT_CONTINUATION_MAX_ROUNDS") or "2").strip()
+    try:
+        return max(0, min(5, int(raw)))
+    except Exception:
+        return 2
 
 
 def _tool_call_id(tool_call: Any, idx: int) -> str:
@@ -150,6 +192,61 @@ def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -
     return HumanMessage(content="\n\n".join(parts))
 
 
+def _raw_tool_outputs_summary(raw_outputs: list[str], *, limit: int = 2000) -> str:
+    """Build a compact, user-visible fallback from raw tool outputs."""
+    snippets: list[str] = []
+    for raw in raw_outputs or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        payload = _json_loads_maybe(text)
+        if isinstance(payload, dict):
+            for key in ("summary", "answer", "content", "text", "result", "results", "output", "stdout", "message"):
+                value = payload.get(key)
+                if value in (None, ""):
+                    continue
+                if isinstance(value, str):
+                    nested = _json_loads_maybe(value)
+                    if isinstance(nested, (dict, list)):
+                        value = nested
+                if isinstance(value, (dict, list)):
+                    text = json.dumps(value, ensure_ascii=False, indent=2)
+                else:
+                    text = str(value)
+                break
+            else:
+                text = json.dumps(payload, ensure_ascii=False, indent=2)
+        elif isinstance(payload, list):
+            text = json.dumps(payload, ensure_ascii=False, indent=2)
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if lines:
+            snippets.append("\n".join(lines[:12]))
+        if sum(len(s) for s in snippets) >= limit:
+            break
+    summary = "\n\n".join(snippets).strip()
+    return summary[:limit].rstrip()
+
+
+def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
+    parts = [
+        "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
+        "不要再次调用任何工具；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
+    ]
+    summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
+    if summary:
+        parts.append(f"工具返回摘要：\n{summary}")
+    return HumanMessage(content="\n\n".join(parts))
+
+
+def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
+    summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
+    if summary:
+        content = f"工具已执行完成，但模型没有生成最终文字总结。以下是本轮工具返回摘要：\n\n{summary}"
+    else:
+        content = "工具已执行完成，但模型没有生成最终文字总结；本轮没有捕获到可展示的工具返回内容。"
+    return AIMessage(content=content)
+
+
 @dataclass
 class SimpleAgent:
     """
@@ -190,8 +287,10 @@ class SimpleAgent:
 
         tool_attempt_debug: list[dict[str, Any]] = []
         tool_result_cache: dict[str, dict[str, Any]] = {}
+        all_tool_raw_outputs: list[str] = []
         last_tool_signature = ""
         repeated_tool_rounds = 0
+        output_continuations = 0
         for step in range(self.max_steps):
             response = await self._call_model(client, messages)
             messages.append(response)
@@ -255,6 +354,7 @@ class SimpleAgent:
                     tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
                 tool_calls_trace = tool_out.get("tool_calls") if isinstance(tool_out.get("tool_calls"), list) else []
                 tool_raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out.get("tool_raw_outputs"), list) else []
+                all_tool_raw_outputs.extend([str(x) for x in tool_raw_outputs if str(x or "")])
                 if isinstance(out_msgs, list) and out_msgs:
                     messages.extend(out_msgs)
                 missing_tool_msgs = _missing_tool_response_messages(
@@ -301,6 +401,17 @@ class SimpleAgent:
                         "content_preview": content.strip()[:240],
                     }
                 )
+                if _ai_response_hit_output_limit(response) and output_continuations < _max_output_continuations():
+                    output_continuations += 1
+                    tool_attempt_debug.append(
+                        {
+                            "source": "output_limit_continuation",
+                            "matched": True,
+                            "round": output_continuations,
+                        }
+                    )
+                    messages.append(_continuation_instruction())
+                    continue
                 yield {
                     "type": "tool_step",
                     "step": step + 1,
@@ -316,7 +427,10 @@ class SimpleAgent:
         # Some models may stop after tool calls without producing a natural language response.
         if tools and not _has_visible_ai_text(messages):
             synthesis_client = self.llm.get_client()
+            messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages)
+            if not _extract_text_content(synthesis_response).strip():
+                synthesis_response = _deterministic_tool_fallback_message(all_tool_raw_outputs)
             messages.append(synthesis_response)
             yield {"type": "agent_step", "step": self.max_steps + 1, "message": synthesis_response}
             synthesis_text = _extract_text_content(synthesis_response).strip()
@@ -349,6 +463,7 @@ class SimpleAgent:
         tool_result_cache: dict[str, dict[str, Any]] = {}
         last_tool_signature = ""
         repeated_tool_rounds = 0
+        output_continuations = 0
         for step in range(self.max_steps):
             t0 = time.perf_counter()
             response = await self._call_model(client, messages)
@@ -449,11 +564,25 @@ class SimpleAgent:
                         "content_preview": content.strip()[:240],
                     }
                 )
+                if _ai_response_hit_output_limit(response) and output_continuations < _max_output_continuations():
+                    output_continuations += 1
+                    tool_attempt_debug.append(
+                        {
+                            "source": "output_limit_continuation",
+                            "matched": True,
+                            "round": output_continuations,
+                        }
+                    )
+                    messages.append(_continuation_instruction())
+                    continue
             break
 
         if tools and not _has_visible_ai_text(messages):
             synthesis_client = self.llm.get_client()
+            messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages)
+            if not _extract_text_content(synthesis_response).strip():
+                synthesis_response = _deterministic_tool_fallback_message(tool_raw_outputs)
             messages.append(synthesis_response)
             synthesis_text = _extract_text_content(synthesis_response).strip()
             if synthesis_text:

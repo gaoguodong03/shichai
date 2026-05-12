@@ -13,6 +13,10 @@ execd_image = "opensandbox/execd:v1.0.11"
 [egress]
 image = "opensandbox/egress:v1.0.4"
 
+[storage]
+# OpenSandbox 新版本默认拒绝 host bind mounts；本地开发需放行工作区/技能所在数据根目录。
+allowed_host_paths = ["/Users/ggd/project/shichai/backend/data", "/var/lib/docker/volumes/st49/_data"]
+
 [docker]
 # macOS Docker Desktop 下 host network 对 Linux 容器不可靠，且会导致沙箱端口不发布到宿主机；
 # 本地开发使用 bridge，让 OpenSandbox 通过端口映射返回宿主机可达的 endpoint。
@@ -24,4 +28,3 @@ pids_limit = 4096
 
 [ingress]
 mode = "direct"
-

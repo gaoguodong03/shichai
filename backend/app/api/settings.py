@@ -314,9 +314,16 @@ def load_app_settings() -> Dict[str, Any]:
                 data.update(loaded)
                 data.pop("router_tfidf", None)
                 providers = data.get("llm_providers") or {}
+                deleted = {
+                    str(x).strip()
+                    for x in (data.get("_deleted_llm_providers") or [])
+                    if str(x).strip()
+                }
                 for k, v in _DEFAULT_LLM_PROVIDERS.items():
-                    if k not in providers:
+                    if k not in providers and k not in deleted:
                         providers[k] = v
+                for k in deleted:
+                    providers.pop(k, None)
                 data["llm_providers"] = providers
                 return data
         except Exception:
@@ -337,6 +344,7 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
             m.pop("api_key", None)
             safe_providers[pid] = m
         safe["llm_providers"] = safe_providers
+    safe.pop("_deleted_llm_providers", None)
     return safe
 
 
@@ -1309,31 +1317,33 @@ def save_app_settings(data: Dict[str, Any]):
     current = load_app_settings()
     patch = {k: v for k, v in data.items() if v is not None}
 
-    # llm_providers 需要“保留密钥”的合并语义：
-    # - GET 返回会隐藏 api_key，前端通常不会回传；若直接覆盖会导致已保存的 key 被清空。
-    # - 支持通过传入 api_key 显式更新；传入空字符串表示删除。
+    # llm_providers 使用 PUT 替换语义，同时保留密钥：
+    # - GET 返回会隐藏 api_key，前端通常不会回传；保存时需要从旧配置补回。
+    # - 前端删除 provider 后不会再出现在 incoming 中；不能用旧配置合并回来。
+    # - 默认 provider 被删除时记录 tombstone，避免 load_app_settings 再自动补回。
     if "llm_providers" in patch and isinstance(patch["llm_providers"], dict):
-        # 以现有配置为底，增量覆盖 incoming，避免只传部分 provider 时丢失其他项
         existing = (current.get("llm_providers") or {}) if isinstance(current.get("llm_providers"), dict) else {}
-        merged: Dict[str, Dict[str, Any]] = {
-            pid: (dict(meta) if isinstance(meta, dict) else {}) for pid, meta in (existing or {}).items()
-        }
+        merged: Dict[str, Dict[str, Any]] = {}
         incoming = patch["llm_providers"]
         for pid, meta in incoming.items():
-            base: Dict[str, Any] = dict(existing.get(pid) or {})
-            if isinstance(meta, dict):
-                base.update(meta)
-                if "api_key" not in meta and "api_key" in existing.get(pid, {}):
-                    # 前端未传 api_key 时，保留旧值
-                    base["api_key"] = existing[pid].get("api_key")
-                if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
-                    # 显式清空
-                    base.pop("api_key", None)
-                if "api_key_ref" not in meta and "api_key_ref" in existing.get(pid, {}):
-                    base["api_key_ref"] = existing[pid].get("api_key_ref")
-                if isinstance(meta.get("api_key_ref"), str) and not (meta.get("api_key_ref") or "").strip():
-                    base.pop("api_key_ref", None)
-            merged[pid] = base
+            if not isinstance(meta, dict):
+                continue
+            base: Dict[str, Any] = dict(meta)
+            old = existing.get(pid, {}) if isinstance(existing.get(pid), dict) else {}
+            if "api_key" not in meta and "api_key" in old:
+                base["api_key"] = old.get("api_key")
+            if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
+                base.pop("api_key", None)
+            if "api_key_ref" not in meta and "api_key_ref" in old:
+                base["api_key_ref"] = old.get("api_key_ref")
+            if isinstance(meta.get("api_key_ref"), str) and not (meta.get("api_key_ref") or "").strip():
+                base.pop("api_key_ref", None)
+            merged[str(pid)] = base
+        deleted_defaults = sorted(k for k in _DEFAULT_LLM_PROVIDERS if k not in merged)
+        if deleted_defaults:
+            patch["_deleted_llm_providers"] = deleted_defaults
+        else:
+            current.pop("_deleted_llm_providers", None)
         patch["llm_providers"] = merged
 
     current.update(patch)
@@ -1369,6 +1379,10 @@ class ApiSecretUpdate(BaseModel):
 
 class SandboxRequirementsBody(BaseModel):
     content: str = ""
+
+
+class SandboxRequirementsMergeBody(BaseModel):
+    requirements: List[str] = []
 
 
 def _sandbox_requirements_error_detail(exc: Exception) -> str:
@@ -1421,6 +1435,39 @@ async def save_sandbox_requirements(body: SandboxRequirementsBody):
             },
         )
     return {"status": "ok", "data": {"saved": True, "validated": True}}
+
+
+@router.post("/settings/sandbox/requirements/merge")
+async def merge_sandbox_requirements(body: SandboxRequirementsMergeBody):
+    incoming = [str(x or "").strip() for x in (body.requirements or []) if str(x or "").strip()]
+    added, merged = _merge_sandbox_requirements_lines(incoming)
+    if not added:
+        return {"status": "ok", "data": {"added": [], "content": merged, "saved": True, "validated": True}}
+    username = (get_current_username() or "").strip()
+    if not username:
+        return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": False}}
+    try:
+        timeout_ms = int(os.getenv("SANDBOX_REQUIREMENTS_VALIDATE_TIMEOUT_MS", "600000") or "600000")
+    except Exception:
+        timeout_ms = 600_000
+    try:
+        await get_shared_sandbox_service().prewarm_user_sandbox(
+            username,
+            reason="requirements_merged",
+            timeout_ms=max(120_000, timeout_ms),
+        )
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger(__name__).warning("sandbox_requirements_merge_validate_failed user=%s err=%s", username, e)
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "error",
+                "code": "sandbox_requirements_install_failed",
+                "detail": _sandbox_requirements_error_detail(e),
+                "data": {"added": added, "content": merged, "saved": True, "validated": False, "error": str(e)},
+            },
+        )
+    return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": True}}
 
 
 @router.get("/settings/api-secrets")
@@ -2117,6 +2164,12 @@ def _parse_frontmatter_lenient(frontmatter_text: str) -> Dict[str, Any]:
 
 
 def _mcp_ids_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
+    auto = fm.get(AUTO_TOOLS_FM_KEY)
+    if isinstance(auto, dict) and "mcp" in auto:
+        m = auto.get("mcp")
+        if isinstance(m, list):
+            return list(dict.fromkeys(str(x).strip() for x in m if str(x).strip()))
+        return []
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
     if isinstance(at, dict) and "mcp" in at:
         m = at.get("mcp")
@@ -2133,10 +2186,10 @@ def _python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
     auto = fm.get(AUTO_TOOLS_FM_KEY)
     py: Any = ""
-    if isinstance(at, dict):
-        py = at.get("python")
-    if (py is None or py == "") and isinstance(auto, dict):
+    if isinstance(auto, dict):
         py = auto.get("python")
+    if (py is None or py == "") and isinstance(at, dict):
+        py = at.get("python")
     if isinstance(py, str):
         return py
     if py is None:
@@ -2164,8 +2217,10 @@ def _normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _sanitize_skill_frontmatter_for_write(fm: Dict[str, Any]) -> None:
-    """写入前：保证 allowed-tools 存在并剥离已废弃键。"""
-    fm[ALLOWED_TOOLS_FM_KEY] = _normalized_allowed_tools_dict(fm)
+    """写入前：保证 auto-tools/allowed-tools 存在并剥离已废弃键。"""
+    normalized = _normalized_allowed_tools_dict(fm)
+    fm[AUTO_TOOLS_FM_KEY] = normalized
+    fm[ALLOWED_TOOLS_FM_KEY] = normalized
     for k in ("enabled", "write_mode", "mcp_server_ids", "source", "url"):
         fm.pop(k, None)
 
@@ -2469,6 +2524,7 @@ async def create_skill(skill: SkillCreate):
     frontmatter = {
         "name": (skill.name or "").strip(),
         "description": skill.description or "",
+        AUTO_TOOLS_FM_KEY: {"mcp": [], "python": ""},
         ALLOWED_TOOLS_FM_KEY: {"mcp": [], "python": ""},
     }
     content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
@@ -2768,7 +2824,9 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
     if skill_update.allowed_tools is not None:
         if not isinstance(skill_update.allowed_tools, dict):
             raise HTTPException(status_code=400, detail="allowed_tools must be an object")
-        fm[ALLOWED_TOOLS_FM_KEY] = _normalize_allowed_tools_payload(skill_update.allowed_tools)
+        normalized_tools = _normalize_allowed_tools_payload(skill_update.allowed_tools)
+        fm[AUTO_TOOLS_FM_KEY] = normalized_tools
+        fm[ALLOWED_TOOLS_FM_KEY] = normalized_tools
     if skill_update.body is not None:
         body = skill_update.body
     _sanitize_skill_frontmatter_for_write(fm)

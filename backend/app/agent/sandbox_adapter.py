@@ -224,12 +224,17 @@ class OpenSandboxAdapter:
                     out = [self._normalize_domain(x) for x in raw.split(",") if self._normalize_domain(x)]
                     domain = self._normalize_domain(str(getattr(self, "_domain", "") or ""))
                     fallback_port = domain.rsplit(":", 1)[-1] if ":" in domain else (os.getenv("OPENSANDBOX_HOST_PORT") or "8091")
+                    in_container = Path("/.dockerenv").exists()
                     if domain.startswith("host.docker.internal:") and not Path("/.dockerenv").exists():
                         out.append("127.0.0.1:" + fallback_port)
-                    if domain.startswith("127.0.0.1:") or domain.startswith("localhost:"):
+                    if in_container and (domain.startswith("127.0.0.1:") or domain.startswith("localhost:")):
                         out.append("host.docker.internal:" + fallback_port)
                     if not domain.startswith(("127.0.0.1:", "localhost:", "host.docker.internal:")):
-                        out.extend(["127.0.0.1:" + fallback_port, "host.docker.internal:" + fallback_port])
+                        out.append("127.0.0.1:" + fallback_port)
+                        if in_container:
+                            out.append("host.docker.internal:" + fallback_port)
+                    if not in_container:
+                        out = [d for d in out if not d.startswith("host.docker.internal:")]
                     return list(dict.fromkeys([d for d in out if d and d != domain]))
 
                 @staticmethod
@@ -412,7 +417,7 @@ class OpenSandboxAdapter:
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04"
+                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1"
                     mounts = list(spec.get("mounts") or [])
                     volumes = []
                     for i, m in enumerate(mounts):

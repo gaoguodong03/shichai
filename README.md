@@ -12,9 +12,21 @@
 - 程序如何启动、与专家对话时前后端如何协作（框架说明）：见 [docs/技术架构详解.md](docs/技术架构详解.md)
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/项目工作清单.md](docs/项目工作清单.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
-docker build --platform linux/amd64 -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.26.3 .
+- 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/上线前模块化测试操作手册.md](docs/上线前模块化测试操作手册.md)
+docker buildx build --platform linux/amd64 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.11 \
+  -f Dockerfile \
+  --push .
 
-docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04.26.3
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1 \
+  -f docker/skill-sandbox/Dockerfile \
+  --push .
+
+# 本地 Apple Silicon / arm64 调试：若远端 sandbox tag 还没有 arm64 manifest，先构建本地镜像并覆盖环境变量。
+docker build -f docker/skill-sandbox/Dockerfile -t st49-skill-sandbox:local .
+export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local
+
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
@@ -22,9 +34,6 @@ docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-
   cd .\backend\
   conda activate sc
   python -m app.main
-
-  # 本地启动说明：`python -m app.main` 会自动填充 OpenSandbox/Playwright 沙箱默认环境变量；
-  # 如需覆盖，再写入 backend/.env 或当前 shell 环境即可。
 
   cd .\frontend\
   npm run dev
@@ -93,23 +102,34 @@ docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-
    - 兼容旧行为：`SANDBOX_ALLOW_NETWORK=1` 且未设置 `SANDBOX_NETWORK_TOOL_ALLOWLIST` 时，表示对所有工具放开。
    - 位置：
      - 1Panel：在 `docker-compose.1panel.yml` 的 `st49.environment` 中按需取消注释。
-     - 本地：在 `docker-compose.yml` 的 `dha.environment` 中设置。
+   - 本地：在 `docker-compose.yml` 的 `dha.environment` 中设置。
 
-8. **改了代码但线上没变**
+8. **Skill 脚本缺少基础命令或运行时（不止 bash）**
+   - 镜像职责分离：`ST49_IMAGE` 仅后端容器；`SANDBOX_BASE_IMAGE` 仅 Skill 沙箱容器，二者不要混用。
+   - 当前 1Panel 默认沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1`；独立镜像模板定义在 `docker/skill-sandbox/Dockerfile`。
+   - OpenSandbox 控制面不要使用 `opensandbox/server:latest`，否则上游镜像漂移可能导致 SDK、server、execd 接口不匹配，表现为 `Status code: 404` / `gateway_tool_unavailable`。1Panel 编排已固定为 `server:v0.1.13`、`execd:v1.0.15`、`egress:v1.0.10`。
+   - 本地 Apple Silicon / arm64 若出现 `no matching manifest for linux/arm64`，说明 `SANDBOX_BASE_IMAGE` 指向的远端 tag 没有 arm64 镜像。解决：要么按上方命令发布 `linux/amd64,linux/arm64` 多架构 sandbox 镜像，要么本地执行 `docker build -f docker/skill-sandbox/Dockerfile -t st49-skill-sandbox:local .` 并在启动后端前设置 `SANDBOX_BASE_IMAGE=st49-skill-sandbox:local`。
+   - 已内置常用命令/运行时：`bash`、`curl`、`wget`、`git`、`jq`、`rg`、`tree`、`zip/unzip`、`python3/pip`、`node/npm/pnpm/yarn/tsx`，以及 `ffmpeg`、`imagemagick`、`poppler-utils`、`tesseract-ocr` 等文档/图片处理工具。
+   - 已支持脚本后缀：`.py`、`.sh`、`.bash`、`.js`、`.mjs`、`.cjs`、`.ts`、`.tsx`；其中 TypeScript 通过 `tsx` 执行。
+   - 如需增加系统命令，优先改 `docker/skill-sandbox/Dockerfile` 并发布新 `SANDBOX_BASE_IMAGE`；仅后端依赖再改主 `Dockerfile` 并发布 `ST49_IMAGE`。
+   - 架构建议：线上 Linux 虚拟机通常是 `linux/amd64`，但请以实际节点为准；发布前务必执行 `docker manifest inspect <镜像:tag>`，确认包含目标平台（`amd64` 或 `arm64`）。
+   - 如需增加某个用户自己的 Python 包，使用 `data/users/<用户名>/config/sandbox/requirements.txt`，内容变更后会触发该用户沙箱重建/重装。
+
+9. **改了代码但线上没变**
    - 如果 1Panel 用的是远端镜像（`ST49_IMAGE=...`），你改仓库代码不会自动生效。
    - 必须构建/推送新镜像并更新 tag（例如从 `26.04.15.2` 升到 `26.04.15.3`）。
 
-9. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
+10. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
    - `gateway_timeout`：网关等待沙箱执行超时，通常发生在“建沙箱 + 首次装依赖 + 跑脚本”整体耗时过长。
    - `gateway_tool_unavailable`：执行器不可用，优先看 `gateway_error` 中的异常类型（如 `SandboxApiException`、`ClosedResourceError`）。
    - 推荐同时关注：
      - `gateway_elapsed_ms`（实际耗时）
      - `gateway_interrupt_reason`（`timeout_or_budget_exceeded` 或 `tool_unavailable`）
    - 若经常冷启动超时，可调大：
-     - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 600000ms）
+     - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 300000ms）
      - `SKILL_SCRIPT_TIMEOUT`（脚本执行超时）
 
-10. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
+11. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
    - 典型日志：
      - `Failed to run command. Status code: 502`
      - `Could not connect to the backend sandbox endpoint='172.x.x.x:port'`
@@ -120,7 +140,7 @@ docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-
      - `opensandbox-server` 与 `st49` 是否都健康
      - `st49` 是否依赖 `opensandbox-server: service_healthy`
 
-11. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
+12. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
    - 含义：MCP 长连接被远端服务回收/断开，常见于 `linkup-fetch` 这类远程 streamable-http。
    - 当前策略：检测到 `ClosedResourceError` 后自动重连对应 MCP server 并重试 1 次。
    - 若仍失败，再看远端 MCP 服务健康、API Key、上游限流与网络波动。
@@ -130,15 +150,11 @@ docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-
    - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
      - `SANDBOX_ALWAYS_ON=1`：开启常驻模式（不因空闲 TTL 回收）
      - `SANDBOX_PREWARM_ALL_USERS=1`：服务启动后扫描已存在用户并批量预热
-     - `OPENSANDBOX_REQUEST_TIMEOUT_SEC=900`：给首次拉取大镜像/创建沙箱预留管理 API 超时
-     - `SANDBOX_BASE_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04`：固定带 Chromium 的 Playwright Python 沙箱镜像
-     - `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`：让 Playwright/Patchright 使用镜像内置浏览器目录
      - `SANDBOX_FIXED_CPU=1.0`：统一 CPU 配额
-     - `SANDBOX_FIXED_MEMORY_MB=2048`：统一内存配额（MB），适配 Chromium 爬虫
+     - `SANDBOX_FIXED_MEMORY_MB=512`：统一内存配额（MB）
    - 行为说明：
      - 登录仍会做单用户预热；启动期会额外尝试全用户预热（失败仅记日志，不阻塞启动）。
      - 运行时若检测到沙箱失联（not found / invalid），会自动失效旧句柄并重建一次。
-     - 本地首次使用 Playwright 沙箱镜像较大，建议先执行 `docker pull crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.04`，避免创建沙箱时等待拉镜像。
 
 ### 回归验证（建议每次改沙箱/文件工具后跑一遍）
 - **文件读写（会话隔离）**
@@ -168,7 +184,7 @@ docker push crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-
 3. **`st49.depends_on.opensandbox-server.condition=service_healthy`（原为 `service_started`）**
    - 目的：确保 `st49` 在 OpenSandbox 真正健康后再启动，减少冷启动竞态问题。
 
-4. **保留并强调 `SANDBOX_SCRIPT_GATEWAY_SLACK_MS=600000`**
+4. **保留并强调 `SANDBOX_SCRIPT_GATEWAY_SLACK_MS=300000`**
    - 目的：给“建沙箱 + 首次装依赖 + 执行脚本”整段流程预留网关等待余量，降低误报 `gateway_timeout`。
 
 5. **脚本网络策略仍保持最小放行**

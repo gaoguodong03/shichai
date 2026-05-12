@@ -19,15 +19,16 @@ RUN npx vite build
 FROM --platform=$TARGETPLATFORM ${PYTHON_IMAGE}
 WORKDIR /app
 
-# 运行期工具：
+# 运行期/Skill 沙箱基础工具：
 # - curl: 健康检查
-# - git: skill git 导入（clone/fetch/pull）
-# - bash: run_skill_script 执行 .sh/.bash
-# - ca-certificates: git https 证书链
-# - openssh-client: 支持 git+ssh 导入
+# - git/openssh-client/ca-certificates: skill git 导入（clone/fetch/pull）
+# - bash 与常用 coreutils/jq/rg/tree/zip 等：run_skill_script 执行 .sh/.bash 与通用脚本
+# - ffmpeg/imagemagick/poppler/tesseract/fonts: 文档、图片与 OCR 类 Skill 的基础能力
 # Node/npm 从 frontend-builder 复制，避免 apt 拉取大量 node-* 包导致网络超时/失败
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git bash ca-certificates openssh-client \
+    bash ca-certificates coreutils curl dnsutils file findutils gawk git gnupg grep gzip jq less make nano \
+    openssh-client patch procps ripgrep sed tar tini tree unzip vim-tiny wget xz-utils zip \
+    ffmpeg imagemagick poppler-utils tesseract-ocr fonts-noto-cjk fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # 从构建阶段复制 Node/npm/npx 及完整 lib（npx 依赖 ../lib/cli.js 等，须复制整份 /usr/local/lib）
@@ -39,13 +40,16 @@ COPY --from=frontend-builder /usr/local/lib /usr/local/lib
 ENV NODE_PATH=/usr/local/lib/node_modules:/usr/local/lib/node_modules/npm/node_modules
 # node:20-bookworm-slim 中 npx 依赖 ../lib/cli.js 与 ./npm-cli.js（相对 /usr/local/bin），补符号链接
 RUN ln -sf /usr/local/lib/node_modules/npm/lib/cli.js /usr/local/lib/cli.js \
-    && ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm-cli.js
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm-cli.js \
+    && npm install -g yarn pnpm typescript tsx
 
 # 后端依赖与代码（保持 backend 目录结构，便于与本地一致）
 # 把 requirements 单独拎出来，避免改业务代码就重装全部依赖
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r backend/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install beautifulsoup4 lxml markdown matplotlib numpy pandas pillow pymupdf python-pptx requests rich tqdm
 COPY backend/ ./backend/
 
 # 前端构建产物

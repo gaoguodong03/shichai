@@ -1,0 +1,10 @@
+{
+  "transcribe_audio.py": {
+    "description": "把当前工作区内的音频文件发送到 OpenAI-compatible 多模态模型并返回转写文本。",
+    "input_schema": {
+      "type": "object",
+      "required": []
+    },
+    "timeout_sec": 180
+  }
+}

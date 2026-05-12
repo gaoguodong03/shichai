@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.api import settings as settings_mod
 from app.api.settings import (
     ALLOWED_TOOLS_FM_KEY,
+    AUTO_TOOLS_FM_KEY,
     _mcp_ids_from_frontmatter,
     _normalized_allowed_tools_dict,
     get_mcp_servers_for_skill,
@@ -29,6 +30,14 @@ def test_mcp_ids_legacy_mcp_server_ids():
 def test_mcp_ids_allowed_tools_wins_over_legacy():
     fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": ["x"]}, "mcp_server_ids": ["y"]}
     assert _mcp_ids_from_frontmatter(fm) == ["x"]
+
+
+def test_mcp_ids_auto_tools_wins_over_allowed_tools():
+    fm = {
+        AUTO_TOOLS_FM_KEY: {"mcp": ["auto"]},
+        ALLOWED_TOOLS_FM_KEY: {"mcp": ["allowed"]},
+    }
+    assert _mcp_ids_from_frontmatter(fm) == ["auto"]
 
 
 def test_normalized_allowed_tools_from_legacy_only():
