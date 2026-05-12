@@ -23,3 +23,15 @@ backend/data/users/*/agent-outputs/
 backend/data/users/*/sessions/group_history_*.json
 backend/data/users/*/sessions/group_sessions_meta.json
 backend/logs/llm_trace.log
+
+# Generated local tooling/deployment artifacts
+/.1panel-backup-src/
+/.artifacts/
+/.claude/
+/audit.json
+/package-lock.json
+
+# Runtime backup snapshots
+backend/config/*.bak.*
+backend/data/users/*/config/*.bak.*
+backend/data/users/*/sessions/*.bak.*

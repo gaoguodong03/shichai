@@ -440,17 +440,24 @@ class SessionPresetsBody(BaseModel):
     presets: List[SessionPresetItem]
 
 
-def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
-    """与 update_session_presets 落盘格式一致；无效项返回 None。"""
+def _load_valid_dha_ids_for_session_preset_normalization() -> Set[str]:
+    """有用户上下文时返回已有 DHA id；无上下文的纯 helper 测试回退为空集合。"""
+    if get_current_user_context(default_fallback=False) is None:
+        return set()
     from app.api.dha import load_dha_instances
 
+    return {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
+
+
+def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
+    """与 update_session_presets 落盘格式一致；无效项返回 None。"""
     pid = str(item.id or "").strip()
     name = str(item.name or "").strip()
     agent_ids = [str(x).strip() for x in (item.agent_ids or []) if str(x).strip()]
     if not pid or not name or not agent_ids:
         return None
     hc_norm: Optional[Dict[str, Any]] = None
-    valid_dha_ids = {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
+    valid_dha_ids = _load_valid_dha_ids_for_session_preset_normalization()
     if item.host_config is not None:
         hc_norm = normalize_host_config_dict(item.host_config)
         lid = VIRTUAL_SCENE_HOST_ID
