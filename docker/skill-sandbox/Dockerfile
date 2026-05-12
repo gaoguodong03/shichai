@@ -63,6 +63,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
     numpy \
     openpyxl \
     pandas \
+    xlrd>=2.0.1 \
     pillow \
     pydantic \
     pymupdf \

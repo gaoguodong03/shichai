@@ -106,13 +106,10 @@ services:
       - OPENSANDBOX_USE_SERVER_PROXY=0
       - OPENSANDBOX_REQUEST_TIMEOUT_SEC=${OPENSANDBOX_REQUEST_TIMEOUT_SEC:-900}
       # 沙箱镜像：用户可在“设置 → 沙箱”选择普通版或 Playwright 版；未单独配置时沿用 SANDBOX_BASE_IMAGE。
-      - SANDBOX_BASE_IMAGE=${SANDBOX_BASE_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard}
-      - SANDBOX_STANDARD_IMAGE=${SANDBOX_STANDARD_IMAGE:-${SANDBOX_BASE_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard}}
-      - SANDBOX_PLAYWRIGHT_IMAGE=${SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_BASE_IMAGE_PLAYWRIGHT:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright}}
-      # 音频转写 Skill：OpenAI-compatible 多模态服务；密钥请在 backend/.env / 1Panel 环境变量中配置，勿写入仓库。
-      - QWEN_AUDIO_BASE_URL=${QWEN_AUDIO_BASE_URL:-http://10.129.50.230/v1}
-      - QWEN_AUDIO_MODEL=${QWEN_AUDIO_MODEL:-qwen3-asr-1.7b}
-      - QWEN_AUDIO_REQUEST_MODE=${QWEN_AUDIO_REQUEST_MODE:-transcriptions}
+      - SANDBOX_BASE_IMAGE=${ST49_SANDBOX_STANDARD_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard}
+      - SANDBOX_STANDARD_IMAGE=${ST49_SANDBOX_STANDARD_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard}
+      - SANDBOX_PLAYWRIGHT_IMAGE=${ST49_SANDBOX_PLAYWRIGHT_IMAGE:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright}
+      # 音频转写 Skill：服务地址、模型和 API Key 固定在技能脚本内；这里只控制长音频切片与超时。
       - QWEN_AUDIO_CHUNK_SECONDS=${QWEN_AUDIO_CHUNK_SECONDS:-120}
       - QWEN_AUDIO_REQUEST_TIMEOUT_SEC=${QWEN_AUDIO_REQUEST_TIMEOUT_SEC:-0}
       - PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}

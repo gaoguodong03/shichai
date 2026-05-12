@@ -5,7 +5,7 @@ set -euo pipefail
 # Optional: pass an ST49 image tag to build/push ST49 image before packaging.
 # Usage:
 #   bash pack_1panel_backup.sh                 # only generate backup tarball
-#   bash pack_1panel_backup.sh 26.05.12.5      # docker build + push, then package
+#   bash pack_1panel_backup.sh 26.05.12.6      # docker build + push, then package
 # Output: <repo_root>/1panel-compose-backup.tar.gz
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,14 +36,34 @@ if [[ $# -gt 1 ]]; then
   exit 2
 fi
 
-ST49_VERSION="${ST49_VERSION:-26.05.12.5}"
+ST49_VERSION="${ST49_VERSION:-26.05.12.6}"
+# Sandbox image is intentionally versioned independently from ST49.
+# Do not derive it from IMAGE_TAG by default: otherwise a normal app release like
+# `bash pack_1panel_backup.sh 26.05.12.23` would make 1Panel point to
+# `sandbox:26.05.12.23-standard` even when that sandbox image was never built/pushed.
 SANDBOX_VERSION="${SANDBOX_VERSION:-26.05.12.1}"
 IMAGE_REPO="${IMAGE_REPO:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha}"
 SANDBOX_IMAGE_REPO="${SANDBOX_IMAGE_REPO:-crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox}"
+NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm-slim}"
+PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
+SANDBOX_PYTHON_IMAGE="${SANDBOX_PYTHON_IMAGE:-python:3.12-bookworm}"
 ST49_IMAGE="${ST49_IMAGE:-${IMAGE_REPO}:${IMAGE_TAG:-$ST49_VERSION}}"
-SANDBOX_STANDARD_IMAGE="${SANDBOX_STANDARD_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-standard}"
-SANDBOX_PLAYWRIGHT_IMAGE="${SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-playwright}"
+SANDBOX_STANDARD_IMAGE="${ST49_SANDBOX_STANDARD_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-standard}"
+SANDBOX_PLAYWRIGHT_IMAGE="${ST49_SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-playwright}"
 IMAGE=""
+if [[ "${BUILD_SANDBOX_IMAGES:-0}" == "1" ]]; then
+  echo "==> Building sandbox standard image: $SANDBOX_STANDARD_IMAGE"
+  docker build --platform linux/amd64 \
+    -f docker/skill-sandbox/Dockerfile \
+    --build-arg "PYTHON_IMAGE=$SANDBOX_PYTHON_IMAGE" \
+    -t "$SANDBOX_STANDARD_IMAGE" .
+  if [[ "${SKIP_PUSH:-0}" == "1" ]]; then
+    echo "==> SKIP_PUSH=1, not pushing sandbox image: $SANDBOX_STANDARD_IMAGE"
+  else
+    echo "==> Pushing sandbox image: $SANDBOX_STANDARD_IMAGE"
+    docker push "$SANDBOX_STANDARD_IMAGE"
+  fi
+fi
 if [[ -n "$IMAGE_TAG" ]]; then
   if [[ "$IMAGE_TAG" == *":"* || "$IMAGE_TAG" == *"/"* ]]; then
     echo "ERROR: image_tag should be a tag only, for example: 26.04.27" >&2
@@ -51,9 +71,17 @@ if [[ -n "$IMAGE_TAG" ]]; then
   fi
   IMAGE="$ST49_IMAGE"
   echo "==> Building image: $IMAGE"
-  docker build --platform linux/amd64 -t "$IMAGE" .
-  echo "==> Pushing image: $IMAGE"
-  docker push "$IMAGE"
+  echo "==> Base images: NODE_IMAGE=$NODE_IMAGE PYTHON_IMAGE=$PYTHON_IMAGE"
+  docker build --platform linux/amd64 \
+    --build-arg "NODE_IMAGE=$NODE_IMAGE" \
+    --build-arg "PYTHON_IMAGE=$PYTHON_IMAGE" \
+    -t "$IMAGE" .
+  if [[ "${SKIP_PUSH:-0}" == "1" ]]; then
+    echo "==> SKIP_PUSH=1, not pushing image: $IMAGE"
+  else
+    echo "==> Pushing image: $IMAGE"
+    docker push "$IMAGE"
+  fi
 fi
 
 OUT_TGZ="${OUT_TGZ:-1panel-compose-backup.tar.gz}"
@@ -87,9 +115,8 @@ cp "$ENV_FILE" "$FILES_DIR/.env"
   echo "ST49_VERSION=$ST49_VERSION"
   echo "SANDBOX_VERSION=$SANDBOX_VERSION"
   echo "ST49_IMAGE=$ST49_IMAGE"
-  echo "SANDBOX_BASE_IMAGE=$SANDBOX_STANDARD_IMAGE"
-  echo "SANDBOX_STANDARD_IMAGE=$SANDBOX_STANDARD_IMAGE"
-  echo "SANDBOX_PLAYWRIGHT_IMAGE=$SANDBOX_PLAYWRIGHT_IMAGE"
+  echo "ST49_SANDBOX_STANDARD_IMAGE=$SANDBOX_STANDARD_IMAGE"
+  echo "ST49_SANDBOX_PLAYWRIGHT_IMAGE=$SANDBOX_PLAYWRIGHT_IMAGE"
   echo "QWEN_AUDIO_CHUNK_SECONDS=${QWEN_AUDIO_CHUNK_SECONDS:-120}"
 } >> "$FILES_DIR/.env"
 

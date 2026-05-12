@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
 import os
 import shlex
@@ -36,11 +37,6 @@ _SANDBOX_ENV_PASSTHROUGH_KEYS = (
     "CHATANYWHERE_IMAGE_API_KEY",
     "JENIYA_IMAGE_BASE_URL",
     "JENIYA_IMAGE_MODEL",
-    "QWEN_AUDIO_BASE_URL",
-    "QWEN_AUDIO_API_KEY",
-    "QWEN_AUDIO_MODEL",
-    "QWEN_AUDIO_TRANSCRIBE_ENDPOINT",
-    "QWEN_AUDIO_REQUEST_MODE",
     "QWEN_AUDIO_CHUNK_SECONDS",
     "QWEN_AUDIO_REQUEST_TIMEOUT_SEC",
     "PLAYWRIGHT_BROWSERS_PATH",
@@ -60,11 +56,19 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 def _collect_sandbox_passthrough_env() -> dict[str, str]:
     """将宿主进程中的少量必要变量透传到沙箱命令环境。"""
     out: dict[str, str] = {}
+    missing_keys: list[str] = []
     for key in _SANDBOX_ENV_PASSTHROUGH_KEYS:
         val = (os.environ.get(key) or "").strip()
         if val:
             out[key] = val
+        else:
+            missing_keys.append(key)
     out.setdefault("PLAYWRIGHT_BROWSERS_PATH", _DEFAULT_PLAYWRIGHT_BROWSERS_PATH)
+    logger.info(
+        "st49_skill_env_passthrough code=skill_env_passthrough present_keys=%s missing_keys=%s",
+        sorted(out.keys()),
+        sorted(missing_keys),
+    )
     return out
 
 
@@ -95,9 +99,10 @@ def _get_workspace_root(workspace_id: str) -> Path:
 
 def _get_current_user_id() -> str:
     try:
-        from app.core.security import get_current_user
+        from app.core.user_context import get_current_user_context
 
-        return get_current_user().username
+        user_ctx = get_current_user_context(default_fallback=False)
+        return user_ctx.username if user_ctx is not None else ""
     except Exception:
         return ""
 
@@ -106,12 +111,10 @@ def _current_user_requirements_b64(user_id: str = "") -> str:
     try:
         from app.core.user_context import get_current_user_context, get_user_context_for
 
-        user_ctx = get_current_user_context(default_fallback=False)
+        uid = (user_id or "").strip()
+        user_ctx = get_user_context_for(uid) if uid else get_current_user_context(default_fallback=False)
         if user_ctx is None:
-            uid = (user_id or "").strip() or _get_current_user_id()
-            if not uid:
-                return ""
-            user_ctx = get_user_context_for(uid)
+            return ""
         path = (user_ctx.config_dir / "sandbox" / "requirements.txt").resolve()
         if not path.exists():
             return ""
@@ -121,6 +124,17 @@ def _current_user_requirements_b64(user_id: str = "") -> str:
         return base64.b64encode(content.encode("utf-8")).decode("ascii")
     except Exception:
         return ""
+
+
+def _requirements_hash_from_b64(requirements_b64: str) -> str:
+    raw = (requirements_b64 or "").strip()
+    if not raw:
+        return hashlib.sha256(b"").hexdigest()[:16]
+    try:
+        decoded = base64.b64decode(raw.encode("ascii"))
+    except Exception:
+        decoded = b""
+    return hashlib.sha256(decoded.strip()).hexdigest()[:16]
 
 
 def _list_available_scripts(script_root: Path) -> list[str]:
@@ -345,7 +359,7 @@ def _build_sandbox_script_command(
     """构造在沙箱内执行脚本的命令（不依赖宿主机解释器路径）。"""
     argv = list(extra_argv or [])
     quoted_argv = " ".join(shlex.quote(a) for a in argv)
-    script_choice = shlex.quote(script_path)
+    script_choice = f'echo {shlex.quote(script_path)}'
     if legacy_script_path:
         script_choice = (
             f'if [ -f {shlex.quote(script_path)} ]; then echo {shlex.quote(script_path)}; '
@@ -357,32 +371,55 @@ def _build_sandbox_script_command(
         write_requirements = (
             "import base64, os, pathlib; "
             "raw=os.environ.get('SKILL_REQUIREMENTS_B64',''); "
+            "expected=os.environ.get('SKILL_REQUIREMENTS_HASH','').strip(); "
             "path=pathlib.Path('/tmp/requirements.txt'); "
             "path.write_bytes(base64.b64decode(raw.encode('ascii'))) if raw else None; "
-            "print('skill_python_requirements_bytes='+str(path.stat().st_size if path.exists() else 0), file=__import__('sys').stderr)"
+            "size=path.stat().st_size if path.exists() else 0; "
+            "print('skill_python_requirements_bytes='+str(size), file=__import__('sys').stderr); "
+            "print('skill_python_requirements_hash='+expected, file=__import__('sys').stderr) if expected else None; "
+            "print('skill_python_requirements_env_missing expected_hash='+expected, file=__import__('sys').stderr) if expected and not raw else None"
         )
         preflight = (
-            "import importlib, importlib.metadata as md, pathlib, sys; "
+            "import importlib, importlib.metadata as md, pathlib, re, sys; "
             "req=pathlib.Path('/tmp/requirements.txt'); "
-            "mods={'xlrd':'2.0.1','pandas':None,'openpyxl':None}; "
-            "ok=True; "
-            "from packaging.version import Version; "
+            "import_names={'xlrd':['xlrd'],'pandas':['pandas'],'openpyxl':['openpyxl']}; "
+            "min_versions={'xlrd':(2,0,1)}; ok=True; names=[]; "
             "\nif req.exists():\n"
-            "    for name, minimum in mods.items():\n"
+            "    for raw in req.read_text(encoding='utf-8').splitlines():\n"
+            "        line=raw.strip()\n"
+            "        if not line or line.startswith('#') or line.startswith(('-', 'git+', 'http:', 'https:')): continue\n"
+            "        name=line.split(';',1)[0].split('[',1)[0].strip()\n"
+            "        name=re.split(r'===|==|>=|<=|~=|!=|>|<', name, 1)[0].strip().lower()\n"
+            "        if name and name not in names: names.append(name)\n"
+            "    for name in names:\n"
             "        try:\n"
-            "            version=md.version(name); importlib.import_module(name)\n"
-            "            if minimum and Version(version) < Version(minimum):\n"
-            "                print(f'skill_python_preflight version_too_low {name}=={version} < {minimum}', file=sys.stderr); ok=False\n"
+            "            version=md.version(name)\n"
+            "            for mod in import_names.get(name, []): importlib.import_module(mod)\n"
+            "            minimum=min_versions.get(name)\n"
+            "            if minimum:\n"
+            "                parsed=tuple(int(x) for x in re.findall(r'\\d+', version)[:3])\n"
+            "                if parsed < minimum:\n"
+            "                    print(f'skill_python_preflight version_too_low {name}=={version} < {minimum[0]}.{minimum[1]}.{minimum[2]}', file=sys.stderr); ok=False\n"
             "        except Exception as exc:\n"
             "            print(f'skill_python_preflight missing_or_broken {name}: {exc}', file=sys.stderr); ok=False\n"
             "sys.exit(0 if ok else 42)\n"
         )
         probe = (
-            "import importlib, importlib.metadata as md, sys; "
-            "mods=['pandas','xlrd','openpyxl']; "
-            "print('skill_python_probe executable='+sys.executable, file=sys.stderr); "
-            "[print('skill_python_probe '+m+'='+md.version(m)+' import=ok', file=sys.stderr) "
-            "if (lambda name: (importlib.import_module(name), True)[1])(m) else None for m in mods]"
+            "import importlib, importlib.metadata as md, pathlib, re, sys; "
+            "req=pathlib.Path('/tmp/requirements.txt'); mods=[]; "
+            "\nif req.exists():\n"
+            "    for raw in req.read_text(encoding='utf-8').splitlines():\n"
+            "        line=raw.strip()\n"
+            "        if not line or line.startswith('#') or line.startswith(('-', 'git+', 'http:', 'https:')): continue\n"
+            "        name=line.split(';',1)[0].split('[',1)[0].strip()\n"
+            "        name=re.split(r'===|==|>=|<=|~=|!=|>|<', name, 1)[0].strip().lower()\n"
+            "        if name in {'pandas','xlrd','openpyxl'} and name not in mods: mods.append(name)\n"
+            "print('skill_python_probe executable='+sys.executable, file=sys.stderr)\n"
+            "for m in mods:\n"
+            "    try:\n"
+            "        importlib.import_module(m); print('skill_python_probe '+m+'='+md.version(m)+' import=ok', file=sys.stderr)\n"
+            "    except Exception as exc:\n"
+            "        print('skill_python_probe '+m+' import=failed '+str(exc), file=sys.stderr)\n"
         )
         return [
             "sh",
@@ -440,11 +477,24 @@ def _build_sandbox_exec_request(
     quoted = " ".join(shlex.quote(str(x)) for x in base_argv)
     env: dict[str, str] = {}
     if input_json:
-        env["SKILL_INPUT_JSON"] = input_json
-        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && printf "%s" "$SKILL_INPUT_JSON" | {quoted}'
+        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && printf "%s" {shlex.quote(input_json)} | {quoted}'
     else:
         shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && {quoted}'
     return ["sh", "-lc", shell_cmd], env, "/workspace"
+
+
+def _inline_shell_env(command: list[str], env: dict[str, str]) -> list[str]:
+    """Inline critical env vars because some OpenSandbox command envs are not propagated."""
+    if len(command) < 3 or command[0] != "sh" or command[1] != "-lc":
+        return command
+    exports = []
+    for key, value in env.items():
+        if not key or not key.replace("_", "").isalnum():
+            continue
+        exports.append(f"{key}={shlex.quote(str(value))}; export {key};")
+    if not exports:
+        return command
+    return [command[0], command[1], " ".join(exports) + " " + command[2]]
 
 
 def _resolve_script_timeout_sec(script_meta: dict[str, Any]) -> int:
@@ -561,6 +611,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
     """
     skills_dir = _get_skills_dir()
+    owner_user_id = _get_current_user_id()
     skill_home = (skills_dir / skill_id).resolve()
     script_root = (skill_home / "scripts").resolve()
     # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 DHA）生成空壳目录
@@ -712,7 +763,21 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         except RuntimeError as e:
             return _json_result(ok=False, code="runtime_missing", message=str(e))
         script_tool_name = build_skill_script_tool_name(skill_id)
-        current_user_id = _get_current_user_id()
+        current_user_id = owner_user_id
+        if not current_user_id:
+            logger.warning(
+                "st49_skill_script_blocked code=missing_user_context skill_id=%s workspace_id=%s script=%s",
+                skill_id,
+                workspace_id,
+                script_path,
+            )
+            return _json_result(
+                ok=False,
+                code="missing_user_context",
+                message="缺少用户上下文，无法选择用户沙箱与 requirements.txt。",
+            )
+        requirements_b64 = _current_user_requirements_b64(current_user_id)
+        requirements_hash = _requirements_hash_from_b64(requirements_b64)
         ctx = ToolExecutionContext(
             session_id=workspace_id,
             workspace_id=str(workspace_root),
@@ -727,7 +792,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             sandbox_cwd=sandbox_cwd,
         )
         logger.info(
-            "sandbox_script_execute_start skill_id=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s",
+            "st49_skill_script_execute_start code=skill_script_start user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s requirements_hash=%s requirements_present=%s",
+            current_user_id,
             skill_id,
             script_tool_name,
             workspace_id,
@@ -735,7 +801,22 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             len(cli_argv or []),
             int(ctx.timeout_ms or 0),
             sandbox_cwd,
+            requirements_hash,
+            bool(requirements_b64),
         )
+        sandbox_env = {
+            "SKILL_ID": skill_id,
+            "SKILL_WRITE_MODE": write_mode,
+            "SKILL_WORKSPACE_ID": workspace_id,
+            "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
+            "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts",
+            "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{skill_id}",
+            "SKILL_REQUIREMENTS_B64": requirements_b64,
+            "SKILL_REQUIREMENTS_HASH": requirements_hash if requirements_b64 else "",
+            **sandbox_extra_env,
+            **_collect_sandbox_passthrough_env(),
+        }
+        sandbox_command = _inline_shell_env(sandbox_command, sandbox_env)
         gw = await _get_script_gateway().execute(
             tool_name=script_tool_name,
             tool_kind="script",
@@ -743,17 +824,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "script_path": script_path,
                 "cli_argv": cli_argv or [],
                 "__sandbox_command": sandbox_command,
-                "__sandbox_env": {
-                    "SKILL_ID": skill_id,
-                    "SKILL_WRITE_MODE": write_mode,
-                    "SKILL_WORKSPACE_ID": workspace_id,
-                    "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
-                    "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts",
-                    "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{skill_id}",
-                    "SKILL_REQUIREMENTS_B64": _current_user_requirements_b64(current_user_id),
-                    **sandbox_extra_env,
-                    **_collect_sandbox_passthrough_env(),
-                },
+                "__sandbox_env": sandbox_env,
             },
             context=ctx,
             runner=lambda: asyncio.sleep(0, result={}),
@@ -763,7 +834,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             gateway_error = gw.error or "统一网关执行失败"
             sandbox_diag = _extract_sandbox_diag(gateway_error)
             logger.warning(
-                "sandbox_script_execute_failed skill_id=%s tool=%s workspace_id=%s script=%s reason=%s elapsed_ms=%s sandbox_id=%s cwd=%s err=%s",
+                "st49_skill_script_execute_failed code=skill_script_gateway_failed user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s reason=%s elapsed_ms=%s sandbox_id=%s cwd=%s requirements_hash=%s err=%s",
+                current_user_id,
                 skill_id,
                 script_tool_name,
                 workspace_id,
@@ -772,6 +844,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 int(gw.elapsed_ms or 0),
                 str(sandbox_diag.get("sandbox_id") or ""),
                 str(sandbox_diag.get("sandbox_cwd") or sandbox_cwd or ""),
+                requirements_hash,
                 gateway_error[:500],
             )
             if str(reason) == "timeout_or_budget_exceeded":
@@ -836,7 +909,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "sandbox_trace": sandbox_trace,
             }
             logger.warning(
-                "sandbox_script_execute_nonzero skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s",
+                "st49_skill_script_execute_nonzero code=skill_script_nonzero user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
+                current_user_id,
                 skill_id,
                 script_tool_name,
                 workspace_id,
@@ -845,6 +919,10 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 int(gw.elapsed_ms or 0),
                 len(stdout),
                 len(stderr),
+                str(sandbox_trace.get("sandbox_id") or ""),
+                requirements_hash,
+                str(sandbox_trace.get("installed_requirements_hash") or ""),
+                str(sandbox_trace.get("verified_requirements_hash") or ""),
             )
         else:
             result_payload = {
@@ -858,7 +936,8 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "message": "脚本执行成功。",
             }
             logger.info(
-                "sandbox_script_execute_done skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s",
+                "st49_skill_script_execute_done code=skill_script_done user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
+                current_user_id,
                 skill_id,
                 script_tool_name,
                 workspace_id,
@@ -867,6 +946,10 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 int(gw.elapsed_ms or 0),
                 len(stdout),
                 len(stderr),
+                str(sandbox_trace.get("sandbox_id") or ""),
+                requirements_hash,
+                str(sandbox_trace.get("installed_requirements_hash") or ""),
+                str(sandbox_trace.get("verified_requirements_hash") or ""),
             )
         return _json_result(**result_payload)
 

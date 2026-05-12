@@ -108,6 +108,54 @@ class DisposeNotFoundAdapter(FakeAdapter):
         raise RuntimeError(f"Sandbox {handle.metadata['sandbox_id']} not found")
 
 
+class MissingPackageAfterMetadataHitAdapter(FakeAdapter):
+    async def exec_command(self, handle, argv, *, cwd="/workspace", timeout_ms=120_000, env=None):
+        self.exec_commands.append({"argv": list(argv or []), "cwd": cwd, "timeout_ms": timeout_ms, "env": dict(env or {})})
+        command_text = " ".join(str(x) for x in (argv or []))
+        if "SANDBOX_REQUIREMENTS_TEXT" in dict(env or {}):
+            return {
+                "exit_code": 1,
+                "stdout": "requirements_verify_start\nrequirements_verify_end",
+                "stderr": "missing packages after metadata hit: xlrd",
+            }
+        if "SANDBOX_REQUIREMENTS_B64" in dict(env or {}):
+            return {
+                "exit_code": 0,
+                "stdout": "requirements_verify_start\nimport_ok:xlrd\nxlrd==2.0.2\nrequirements_verify_end",
+                "stderr": "",
+            }
+        if "requirements_verify_start" in command_text:
+            return {
+                "exit_code": 1,
+                "stdout": "requirements_verify_start\nrequirements_verify_end",
+                "stderr": "missing packages after metadata hit: xlrd",
+            }
+        return await super().exec_command(handle, argv, cwd=cwd, timeout_ms=timeout_ms, env=env)
+
+
+class EnvDroppingAdapter(FakeAdapter):
+    async def exec_command(self, handle, argv, *, cwd="/workspace", timeout_ms=120_000, env=None):
+        self.exec_commands.append({"argv": list(argv or []), "cwd": cwd, "timeout_ms": timeout_ms, "env": dict(env or {})})
+        command_text = " ".join(str(x) for x in (argv or []))
+        if "requirements install received empty requirements payload" in command_text:
+            if "SANDBOX_REQUIREMENTS_B64=" not in command_text:
+                return {"exit_code": 1, "stdout": "wrote_requirements_bytes 0", "stderr": "empty env"}
+            return {
+                "exit_code": 0,
+                "stdout": "wrote_requirements_bytes 5\nrequirements_verify_start\nimport_ok:xlrd\nxlrd==2.0.2\nrequirements_verify_end",
+                "stderr": "",
+            }
+        if "requirements verify received empty requirements text" in command_text:
+            if "SANDBOX_REQUIREMENTS_TEXT=" not in command_text:
+                return {"exit_code": 1, "stdout": "", "stderr": "empty env"}
+            return {
+                "exit_code": 0,
+                "stdout": "requirements_verify_start\nimport_ok:xlrd\nxlrd==2.0.2\nrequirements_verify_end",
+                "stderr": "",
+            }
+        return await super().exec_command(handle, argv, cwd=cwd, timeout_ms=timeout_ms, env={})
+
+
 async def _ok_runner():
     return {"ok": True}
 
@@ -346,6 +394,16 @@ async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tm
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
+async def test_default_sandbox_requirements_hash_regression(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    from app.core.user_context import get_user_context_for
+
+    ctx = get_user_context_for("alice")
+    content = (ctx.config_dir / "sandbox" / "requirements.txt").read_text(encoding="utf-8").strip()
+    assert hashlib.sha256(content.encode("utf-8")).hexdigest()[:16] == "5817ace3254dfe26"
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
 async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
@@ -359,6 +417,58 @@ async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_
     _sid, policy = adapter.created[0]
     assert policy.allow_network is True
     assert any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in adapter.exec_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
+    adapter = EnvDroppingAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+
+    current_handle, _ = svc._user_handles["alice"]
+    assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
+    install_commands = [" ".join(cmd["argv"]) for cmd in adapter.exec_commands]
+    assert any("SANDBOX_REQUIREMENTS_B64=" in command for command in install_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_execute_injects_user_requirements_env_when_payload_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("pendulum==3.0.0\n", encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="s1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={"__sandbox_command": ["sh", "-lc", "true"], "__sandbox_env": {}},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=tmp_path / "alice" / "agent-outputs" / "workspaces" / "s1",
+    )
+
+    await svc.execute(req)
+
+    env = adapter.last_tool_request.get("env") or {}
+    assert env.get("SKILL_REQUIREMENTS_B64")
+    import base64
+
+    assert base64.b64decode(env["SKILL_REQUIREMENTS_B64"]).decode("utf-8") == "pendulum==3.0.0"
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
@@ -382,6 +492,75 @@ async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
     assert len(adapter.exec_commands) > before
     current_handle, _ = svc._user_handles["alice"]
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
+    adapter = MissingPackageAfterMetadataHitAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+    handle, touched = svc._user_handles["alice"]
+    handle.metadata["installed_requirements_hash"] = dep_hash
+    handle.metadata["verified_requirements_hash"] = dep_hash
+    handle.metadata["requirements_verifier_version"] = "import-v2"
+    svc._user_handles["alice"] = (handle, touched)
+
+    before = len(adapter.exec_commands)
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+    after_commands = adapter.exec_commands[before:]
+
+    assert any("SANDBOX_REQUIREMENTS_TEXT" in cmd["env"] for cmd in after_commands)
+    assert any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in after_commands)
+    current_handle, _ = svc._user_handles["alice"]
+    assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    base = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="tool_a",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+        policy=SandboxPolicy(
+            fs_root=str(workspace_root),
+            timeout_ms=1000,
+            allow_network=False,
+        ),
+    )
+    await svc.execute(base)
+    with_network = SandboxExecutionRequest(
+        **{**base.__dict__, "tool_call_id": "c2", "policy": SandboxPolicy(
+            fs_root=str(workspace_root),
+            timeout_ms=1000,
+            allow_network=True,
+        )}
+    )
+    await svc.execute(with_network)
+    assert len(adapter.created) == 2
+    assert adapter.created[0][1].allow_network is False
+    assert adapter.created[1][1].allow_network is True
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 

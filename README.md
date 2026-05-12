@@ -14,7 +14,7 @@
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 - 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/上线前模块化测试操作手册.md](docs/上线前模块化测试操作手册.md)
 docker buildx build --platform linux/amd64 \
-  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.12.5 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.12.6 \
   -f Dockerfile \
   --push .
 
@@ -132,18 +132,29 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
    - 如需增加系统命令，优先改 `docker/skill-sandbox/Dockerfile` 并发布新 `SANDBOX_BASE_IMAGE`；仅后端依赖再改主 `Dockerfile` 并发布 `ST49_IMAGE`。
    - 架构建议：线上 Linux 虚拟机通常是 `linux/amd64`，但请以实际节点为准；发布前务必执行 `docker manifest inspect <镜像:tag>`，确认包含目标平台（`amd64` 或 `arm64`）。
    - 如需增加某个用户自己的 Python 包，使用 `data/users/<用户名>/config/sandbox/requirements.txt`，内容变更后会触发该用户沙箱重建/重装。
+   - 经验教训：`ST49_IMAGE` 与 sandbox 镜像必须独立发布。普通应用版本号（如 `26.05.12.25`）不代表存在 `sandbox:26.05.12.25-standard`；1Panel 包默认应继续指向已发布的固定 sandbox 镜像，除非显式构建/推送新的 sandbox 镜像。
+   - 1Panel 变量隔离：线上曾出现旧 `SANDBOX_STANDARD_IMAGE=sandbox:<应用版本>-standard` 残留，导致 OpenSandbox 拉取不存在的 sandbox tag 并报 `manifest unknown`。当前编排使用 `ST49_SANDBOX_STANDARD_IMAGE` / `ST49_SANDBOX_PLAYWRIGHT_IMAGE` 作为 1Panel 包内变量，避免被旧环境变量污染。
+   - Docker Hub 不稳定时，主镜像构建可临时覆盖 `NODE_IMAGE` 为已有的内部镜像；网络正常时直接 `bash pack_1panel_backup.sh <tag>` 即可。
 
-9. **改了代码但线上没变**
+9. **沙箱 Python requirements 假安装 / `xlrd` 缺失**
+   - 典型现象：脚本返回 `excel_read_failed`，提示 ``Import xlrd` failed`；但 `_sandbox_trace` 中 `installed_requirements_hash` / `verified_requirements_hash` 已等于当前 requirements hash。
+   - 关键判据：脚本 stderr 若出现 `skill_python_requirements_bytes=0`，说明脚本命令没有拿到 `SKILL_REQUIREMENTS_B64`；安装日志若出现 `REQ_B64=` 或 `wrote_requirements_bytes 0`，说明 OpenSandbox 命令环境变量没有传入安装命令。
+   - 根因复盘：部分 OpenSandbox command 路径中 `envs` 未进入实际 shell 进程，旧安装脚本会把空 requirements 写入 `/tmp/requirements.txt`，`pip install -r 空文件` 返回 0，随后错误地把 metadata 标为 verified。
+   - 修复策略：requirements 安装与脚本执行都把关键环境变量内联进 shell 命令；非空 requirements 若解码后为空会直接失败，不再写入 verified metadata；metadata 命中时还会做真实 import 校验。
+   - 正常验证：stderr 应包含 `skill_python_requirements_bytes=79`、`skill_python_requirements_hash=5817ace3254dfe26`，并看到 `skill_python_probe xlrd=2.0.x import=ok`。
+   - 回归命令：更新 ST49 后端代码后，重新构建/推送 `ST49_IMAGE` 并重启 1Panel；无需为这类后端逻辑修复发布新的 sandbox 镜像。
+
+10. **改了代码但线上没变**
    - 如果 1Panel 用的是远端镜像（`ST49_IMAGE=...`），你改仓库代码不会自动生效。
    - 必须构建/推送新镜像并更新 tag（例如从 `26.04.15.2` 升到 `26.04.15.3`）。
 
-10. **长音频转写报 `encoder cache size 2048`**
+11. **长音频转写报 `encoder cache size 2048`**
    - 根因：上游 ASR 服务单次音频输入超过 vLLM 多模态缓存限制（错误里会提示 `--limit-mm-per-prompt`）。
    - 应用侧规避：`docker-compose.1panel.yml` 默认设置 `QWEN_AUDIO_CHUNK_SECONDS=120`，音频转写 Skill 会自动切成约 2 分钟片段后合并结果。
    - 线上快速修复：如果暂时不发新镜像，可在 1Panel 的 `st49` 环境变量中手动加入 `QWEN_AUDIO_CHUNK_SECONDS=120` 并重建/重启容器。
    - 服务侧优化：如果希望不切片，需要在上游 ASR/vLLM 启动参数中调大 `--limit-mm-per-prompt`，同时评估显存占用。
 
-11. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
+12. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
    - `gateway_timeout`：网关等待沙箱执行超时，通常发生在“建沙箱 + 首次装依赖 + 跑脚本”整体耗时过长。
    - `gateway_tool_unavailable`：执行器不可用，优先看 `gateway_error` 中的异常类型（如 `SandboxApiException`、`ClosedResourceError`）。
    - 推荐同时关注：
@@ -152,8 +163,9 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
    - 若经常冷启动超时，可调大：
      - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 300000ms）
      - `SKILL_SCRIPT_TIMEOUT`（脚本执行超时）
+   - 若 `gateway_error` 包含 `Failed to pull image ... sandbox:<tag>-standard ... manifest unknown`，优先检查 1Panel 包里的 `ST49_SANDBOX_STANDARD_IMAGE` 是否指向已发布的 sandbox 镜像。不要把应用 tag 当作 sandbox tag。
 
-12. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
+13. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
    - 典型日志：
      - `Failed to run command. Status code: 502`
      - `Could not connect to the backend sandbox endpoint='172.x.x.x:port'`
@@ -164,12 +176,12 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
      - `opensandbox-server` 与 `st49` 是否都健康
      - `st49` 是否依赖 `opensandbox-server: service_healthy`
 
-12. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
+14. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
    - 含义：MCP 长连接被远端服务回收/断开，常见于 `linkup-fetch` 这类远程 streamable-http。
    - 当前策略：检测到 `ClosedResourceError` 后自动重连对应 MCP server 并重试 1 次。
    - 若仍失败，再看远端 MCP 服务健康、API Key、上游限流与网络波动。
 
-12. **用户沙箱常驻与统一资源（新增）**
+15. **用户沙箱常驻与统一资源（新增）**
    - 目标：每个用户一个常驻沙箱，减少首次执行冷启动波动。
    - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
      - `SANDBOX_ALWAYS_ON=1`：开启常驻模式（不因空闲 TTL 回收）

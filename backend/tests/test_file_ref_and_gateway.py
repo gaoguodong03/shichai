@@ -127,6 +127,23 @@ def test_parse_cli_args_json_recovers_embedded_json_array():
     assert argv == ["--query", "广西南宁的差旅标准是什么"]
 
 
+def test_requirements_b64_uses_explicit_user_without_context(monkeypatch, tmp_path):
+    from app.tools import run_skill_script as rss
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("pendulum==3.0.0\n", encoding="utf-8")
+
+    encoded = rss._current_user_requirements_b64("alice")
+
+    assert encoded
+    import base64
+
+    assert base64.b64decode(encoded).decode("utf-8") == "pendulum==3.0.0"
+
+
 def test_parse_cli_args_json_recovers_comma_separated_json_strings():
     from app.tools import run_skill_script as rss
 
@@ -181,6 +198,24 @@ def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
     assert "/skills/demo-skill/scripts/tools/check.py" in shell
     assert env == {}
     assert cwd == "/workspace"
+
+
+def test_inline_shell_env_embeds_requirements_for_opensandbox_env_drop():
+    from app.tools import run_skill_script as rss
+
+    command = ["sh", "-lc", "python3 -c 'print(1)'"]
+    out = rss._inline_shell_env(
+        command,
+        {
+            "SKILL_REQUIREMENTS_B64": "eGxyZA==",
+            "SKILL_REQUIREMENTS_HASH": "6baab75838f232a5",
+        },
+    )
+
+    assert out[:2] == ["sh", "-lc"]
+    assert "SKILL_REQUIREMENTS_B64=eGxyZA==" in out[2]
+    assert "SKILL_REQUIREMENTS_HASH=6baab75838f232a5" in out[2]
+    assert "python3 -c" in out[2]
 
 
 def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
