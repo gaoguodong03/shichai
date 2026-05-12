@@ -31,3 +31,16 @@
 {"ts": "2026-05-12T12:40:37.632484+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
 {"ts": "2026-05-12T12:46:45.458341+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
 {"ts": "2026-05-12T12:52:41.188459+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T13:28:09.074134+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T13:28:44.244485+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T13:39:55.370859+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T13:50:55.511655+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:07:53.266966+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:10:05.519894+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:15:27.812642+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:17:37.903564+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:25:35.771988+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:32:20.892898+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T14:34:44.540572+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T15:12:58.157704+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}
+{"ts": "2026-05-12T15:27:40.771103+00:00", "event_type": "sandbox_session_disposed", "turn_id": "t2", "payload": {"sandbox_id": "sb-u2", "user_id": "u2"}}

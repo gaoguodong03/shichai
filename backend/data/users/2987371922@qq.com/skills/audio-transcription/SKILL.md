@@ -28,7 +28,7 @@ allowed-tools:
 2. 调用 `run_skill_script_audio-transcription`：
    - `script_path`: `transcribe_audio.py`
    - `cli_args_json`: `["--file", "<工作区相对路径>"]`
-   - 脚本默认走 `/v1/audio/transcriptions` 专用 STT 接口，并按 `QWEN_AUDIO_CHUNK_SECONDS` 自动切片以规避上游单次音频长度限制。
+   - 脚本内置音频服务地址、模型和 API Key，默认走 `/v1/audio/transcriptions` 专用 STT 接口，并按 `QWEN_AUDIO_CHUNK_SECONDS` 自动切片以规避上游单次音频长度限制。
 3. 如果用户指定语言或额外要求，可追加：
    - `--language <语言>`，例如 `zh`、`en`。
    - `--prompt <转写要求>`，例如 `请保留说话人的关键停顿并输出中文。`

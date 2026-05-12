@@ -21,6 +21,7 @@ from typing import Any
 DEFAULT_BASE_URL = "http://10.129.50.230/v1"
 DEFAULT_MODEL = "qwen3-asr-1.7b"
 DEFAULT_API_KEY = "gpustack_f5292152476df868_af0b124cdd6d9e84f329edbb7863d812"
+DEFAULT_REQUEST_MODE = "transcriptions"
 SUPPORTED_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".amr"}
 DEFAULT_CHUNK_SECONDS = 120
 LENGTH_LIMIT_ERROR_MARKERS = (
@@ -65,9 +66,6 @@ def _resolve_workspace_file(rel_path: str) -> Path:
 
 
 def _endpoint(base_url: str, mode: str) -> str:
-    explicit = (os.getenv("QWEN_AUDIO_TRANSCRIBE_ENDPOINT") or "").strip()
-    if explicit:
-        return explicit
     if mode == "transcriptions":
         return base_url.rstrip("/") + "/audio/transcriptions"
     return base_url.rstrip("/") + "/chat/completions"
@@ -343,7 +341,7 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         choices=["transcriptions", "input_audio", "audio_url"],
-        default=os.getenv("QWEN_AUDIO_REQUEST_MODE", "transcriptions"),
+        default=DEFAULT_REQUEST_MODE,
     )
     parser.add_argument(
         "--chunk-seconds",
@@ -353,11 +351,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    base_url = (os.getenv("QWEN_AUDIO_BASE_URL") or DEFAULT_BASE_URL).strip().rstrip("/")
-    api_key = (os.getenv("QWEN_AUDIO_API_KEY") or DEFAULT_API_KEY).strip()
-    model = (os.getenv("QWEN_AUDIO_MODEL") or DEFAULT_MODEL).strip()
-    if not api_key:
-        _json_print({"ok": False, "code": "missing_api_key", "message": "缺少 QWEN_AUDIO_API_KEY 环境变量。"}, code=2)
+    base_url = DEFAULT_BASE_URL.rstrip("/")
+    api_key = DEFAULT_API_KEY
+    model = DEFAULT_MODEL
 
     try:
         audio_path = _resolve_workspace_file(args.file)
