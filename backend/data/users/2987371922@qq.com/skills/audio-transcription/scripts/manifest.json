@@ -5,6 +5,6 @@
       "type": "object",
       "required": []
     },
-    "timeout_sec": 180
+    "timeout_sec": 0
   }
 }

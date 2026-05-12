@@ -25,6 +25,7 @@ class SandboxVolumeMount:
 @dataclass
 class SandboxPolicy:
     fs_root: str
+    image_ref: str = ""
     workspace_host_path: str = ""
     skill_scripts_host_path: str = ""
     skill_config_host_path: str = ""
@@ -417,7 +418,11 @@ class OpenSandboxAdapter:
                     return cmd, fs
 
                 async def create_sandbox(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-                    image_ref = (os.getenv("SANDBOX_BASE_IMAGE") or "").strip() or "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1"
+                    image_ref = (
+                        str(spec.get("image_ref") or "").strip()
+                        or (os.getenv("SANDBOX_BASE_IMAGE") or "").strip()
+                        or "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1"
+                    )
                     mounts = list(spec.get("mounts") or [])
                     volumes = []
                     for i, m in enumerate(mounts):
@@ -730,6 +735,7 @@ class OpenSandboxAdapter:
                 "allowed_hosts": list(policy.allowed_hosts or []),
             },
             "env": dict(policy.environment or {}),
+            "image_ref": policy.image_ref,
             "mounts": mounts,
             "workspace_root": policy.fs_root,
         }
@@ -747,6 +753,7 @@ class OpenSandboxAdapter:
                 "policy": {"tool_allowlist": list(policy.tool_allowlist), "timeout_ms": int(policy.timeout_ms)},
                 "runtime_backend": policy.runtime_backend,
                 "runtime_profile": policy.runtime_profile,
+                "image_ref": policy.image_ref,
             },
         )
 

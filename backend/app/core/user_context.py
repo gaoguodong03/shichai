@@ -50,6 +50,32 @@ class UserContext:
 _user_ctx_cache: Dict[str, UserContext] = {}
 
 
+DEFAULT_SANDBOX_REQUIREMENTS = """pendulum==3.2.0
+python-pptx==1.0.2
+httpx
+typing_extensions
+pandas
+openpyxl
+xlrd
+"""
+
+
+def ensure_default_sandbox_requirements(username: str) -> None:
+    """Ensure each user has a sandbox requirements.txt file without overwriting edits."""
+    name = (username or "").strip()
+    if not name:
+        return
+    base = users_data_root() / name
+    path = (base / "config" / "sandbox" / "requirements.txt").resolve()
+    try:
+        if path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(DEFAULT_SANDBOX_REQUIREMENTS, encoding="utf-8")
+    except Exception:
+        pass
+
+
 def set_current_username(username: str) -> object:
     """在当前请求上下文中设置用户名，返回 token 以便恢复。"""
     username = (username or "").strip() or "free4inno"
@@ -92,6 +118,7 @@ def _build_user_context(username: str) -> UserContext:
         ctx.agent_outputs_dir.mkdir(parents=True, exist_ok=True)
         ctx.config_dir.mkdir(parents=True, exist_ok=True)
         ctx.skills_dir.mkdir(parents=True, exist_ok=True)
+        ensure_default_sandbox_requirements(username)
     except Exception:
         pass
 
@@ -130,4 +157,3 @@ def ensure_empty_session_presets(username: str) -> None:
         path.write_text("[]", encoding="utf-8")
     except Exception:
         pass
-

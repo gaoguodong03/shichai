@@ -118,6 +118,24 @@ def test_parse_cli_args_json_recovers_concatenated_json_arrays():
     assert argv == ["--query", "河北张家口其他人员住宿标准"]
 
 
+def test_parse_cli_args_json_recovers_embedded_json_array():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args_json('cli_args_json: ["--query","广西南宁的差旅标准是什么"]')
+
+    assert err is None
+    assert argv == ["--query", "广西南宁的差旅标准是什么"]
+
+
+def test_parse_cli_args_json_recovers_comma_separated_json_strings():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args_json('"--query", "广西南宁的差旅标准是什么"')
+
+    assert err is None
+    assert argv == ["--query", "广西南宁的差旅标准是什么"]
+
+
 def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     from app.tools import run_skill_script as rss
 

@@ -8,8 +8,7 @@ FROM ${PYTHON_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONUNBUFFERED=1 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PYTHONUNBUFFERED=1
 
 # Common CLI/runtime dependencies for Skill scripts.
 # Keep this list conservative: broadly useful, non-interactive, and safe for a shared sandbox base.
@@ -74,7 +73,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
     rich \
     tqdm
 
-# Basic JS tooling used by browser/file-processing skills.
+# Basic JS tooling used by file-processing skills.
 RUN npm install -g yarn pnpm typescript tsx
 
 WORKDIR /workspace

@@ -14,18 +14,33 @@
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/15分钟技术介绍讲稿.md](docs/15分钟技术介绍讲稿.md)
 - 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/上线前模块化测试操作手册.md](docs/上线前模块化测试操作手册.md)
 docker buildx build --platform linux/amd64 \
-  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.11 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.12.5 \
   -f Dockerfile \
   --push .
 
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard \
   -f docker/skill-sandbox/Dockerfile \
   --push .
 
-# 本地 Apple Silicon / arm64 调试：若远端 sandbox tag 还没有 arm64 manifest，先构建本地镜像并覆盖环境变量。
-docker build -f docker/skill-sandbox/Dockerfile -t st49-skill-sandbox:local .
-export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local
+# Playwright/Chromium 大体积沙箱镜像：仅给设置中选择“Playwright 版”的用户使用，额外包含 sqlite3/aiosqlite。
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright \
+  -f docker/skill-sandbox/Dockerfile.playwright \
+  --push .
+
+沙箱镜像版本映射（同一仓库 `crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox`）：
+
+| 标签 | 对应版本 | Dockerfile | 说明 |
+| --- | --- | --- | --- |
+| `26.05.12.1-standard` | 普通版 | `docker/skill-sandbox/Dockerfile` | 轻量沙箱，不内置 Playwright/Chromium |
+| `26.05.12.1-playwright` | Playwright 版 | `docker/skill-sandbox/Dockerfile.playwright` | 内置 Playwright/Chromium，额外包含 `sqlite3` 与 `aiosqlite` |
+
+# 本地 Apple Silicon / arm64 调试：默认会拉取上方远端多架构 tag；若要使用本地镜像，需先构建到当前 Docker daemon 并覆盖环境变量。
+docker build -f docker/skill-sandbox/Dockerfile -t st49-skill-sandbox:local-standard .
+export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local-standard
+docker build -f docker/skill-sandbox/Dockerfile.playwright -t st49-skill-sandbox:local-playwright .
+export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 
   python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
   python manage_accounts.py delete --username 13800138000 --yes
@@ -106,9 +121,12 @@ export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local
 
 8. **Skill 脚本缺少基础命令或运行时（不止 bash）**
    - 镜像职责分离：`ST49_IMAGE` 仅后端容器；`SANDBOX_BASE_IMAGE` 仅 Skill 沙箱容器，二者不要混用。
-   - 当前 1Panel 默认沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1`；独立镜像模板定义在 `docker/skill-sandbox/Dockerfile`。
+   - 当前 1Panel 默认普通沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard`；独立镜像模板定义在 `docker/skill-sandbox/Dockerfile`。
+   - Playwright 沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright`；模板定义在 `docker/skill-sandbox/Dockerfile.playwright`，额外安装 Chromium、Playwright、`sqlite3` 与 `aiosqlite`。
+   - 用户可在“设置 → 沙箱”选择“普通版”或“Playwright 版”。部署侧用 `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE` 分别配置两个镜像。
    - OpenSandbox 控制面不要使用 `opensandbox/server:latest`，否则上游镜像漂移可能导致 SDK、server、execd 接口不匹配，表现为 `Status code: 404` / `gateway_tool_unavailable`。1Panel 编排已固定为 `server:v0.1.13`、`execd:v1.0.15`、`egress:v1.0.10`。
-   - 本地 Apple Silicon / arm64 若出现 `no matching manifest for linux/arm64`，说明 `SANDBOX_BASE_IMAGE` 指向的远端 tag 没有 arm64 镜像。解决：要么按上方命令发布 `linux/amd64,linux/arm64` 多架构 sandbox 镜像，要么本地执行 `docker build -f docker/skill-sandbox/Dockerfile -t st49-skill-sandbox:local .` 并在启动后端前设置 `SANDBOX_BASE_IMAGE=st49-skill-sandbox:local`。
+   - 本地若出现 `pull access denied for st49-skill-sandbox`，说明环境变量指向了本地 tag，但该镜像没有构建到当前 Docker daemon；解决：取消本地覆盖改用远端 tag，或执行上方 `docker build ... -t st49-skill-sandbox:local-* .`。
+   - 本地 Apple Silicon / arm64 若出现 `no matching manifest for linux/arm64`，说明沙箱镜像指向的远端 tag 没有 arm64 镜像。解决：要么按上方命令发布 `linux/amd64,linux/arm64` 多架构 sandbox 镜像，要么本地构建 `st49-skill-sandbox:local-standard` / `st49-skill-sandbox:local-playwright` 并覆盖对应环境变量。
    - 已内置常用命令/运行时：`bash`、`curl`、`wget`、`git`、`jq`、`rg`、`tree`、`zip/unzip`、`python3/pip`、`node/npm/pnpm/yarn/tsx`，以及 `ffmpeg`、`imagemagick`、`poppler-utils`、`tesseract-ocr` 等文档/图片处理工具。
    - 已支持脚本后缀：`.py`、`.sh`、`.bash`、`.js`、`.mjs`、`.cjs`、`.ts`、`.tsx`；其中 TypeScript 通过 `tsx` 执行。
    - 如需增加系统命令，优先改 `docker/skill-sandbox/Dockerfile` 并发布新 `SANDBOX_BASE_IMAGE`；仅后端依赖再改主 `Dockerfile` 并发布 `ST49_IMAGE`。
@@ -119,7 +137,13 @@ export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local
    - 如果 1Panel 用的是远端镜像（`ST49_IMAGE=...`），你改仓库代码不会自动生效。
    - 必须构建/推送新镜像并更新 tag（例如从 `26.04.15.2` 升到 `26.04.15.3`）。
 
-10. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
+10. **长音频转写报 `encoder cache size 2048`**
+   - 根因：上游 ASR 服务单次音频输入超过 vLLM 多模态缓存限制（错误里会提示 `--limit-mm-per-prompt`）。
+   - 应用侧规避：`docker-compose.1panel.yml` 默认设置 `QWEN_AUDIO_CHUNK_SECONDS=120`，音频转写 Skill 会自动切成约 2 分钟片段后合并结果。
+   - 线上快速修复：如果暂时不发新镜像，可在 1Panel 的 `st49` 环境变量中手动加入 `QWEN_AUDIO_CHUNK_SECONDS=120` 并重建/重启容器。
+   - 服务侧优化：如果希望不切片，需要在上游 ASR/vLLM 启动参数中调大 `--limit-mm-per-prompt`，同时评估显存占用。
+
+11. **`gateway_timeout` / `gateway_tool_unavailable` 如何快速判读**
    - `gateway_timeout`：网关等待沙箱执行超时，通常发生在“建沙箱 + 首次装依赖 + 跑脚本”整体耗时过长。
    - `gateway_tool_unavailable`：执行器不可用，优先看 `gateway_error` 中的异常类型（如 `SandboxApiException`、`ClosedResourceError`）。
    - 推荐同时关注：
@@ -129,7 +153,7 @@ export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local
      - `SANDBOX_SCRIPT_GATEWAY_SLACK_MS`（网关整体等待余量，默认 300000ms）
      - `SKILL_SCRIPT_TIMEOUT`（脚本执行超时）
 
-11. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
+12. **OpenSandbox 502（`Could not connect to backend sandbox endpoint`）**
    - 典型日志：
      - `Failed to run command. Status code: 502`
      - `Could not connect to the backend sandbox endpoint='172.x.x.x:port'`

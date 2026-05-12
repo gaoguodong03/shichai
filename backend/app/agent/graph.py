@@ -956,6 +956,23 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
             args_key = str(arguments or {})
         return f"{tool_name}:{args_key}"
 
+    def _cacheable_script_result(result: object) -> bool:
+        try:
+            parsed = json.loads(str(result or ""))
+        except Exception:
+            return True
+        if isinstance(parsed, dict) and parsed.get("ok") is False:
+            return False
+        stdout = parsed.get("stdout") if isinstance(parsed, dict) else None
+        if isinstance(stdout, str) and stdout.strip().startswith("{"):
+            try:
+                stdout_payload = json.loads(stdout)
+            except Exception:
+                stdout_payload = None
+            if isinstance(stdout_payload, dict) and stdout_payload.get("ok") is False:
+                return False
+        return True
+
     def _script_done_instruction(*, cached: bool = False) -> str:
         prefix = "已复用同一轮内相同参数的脚本执行结果。" if cached else "脚本已执行完成。"
         return (
@@ -968,8 +985,40 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         suffix = _script_done_instruction(cached=cached) if tool_name.startswith("run_skill_script_") else ""
         return f"工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}"
 
-    def _safe_tool_result_for_prompt(result: object) -> str:
+    def _audio_transcription_text_for_prompt(tool_name: str, result: object) -> str | None:
+        if not tool_name.startswith("run_skill_script_audio-transcription"):
+            return None
+        text = str(result) if not isinstance(result, str) else result
+        try:
+            outer = json.loads(text)
+        except Exception:
+            return None
+        stdout = outer.get("stdout") if isinstance(outer, dict) else None
+        if not isinstance(stdout, str) or not stdout.strip():
+            return None
+        try:
+            payload = json.loads(stdout.strip())
+        except Exception:
+            return stdout.strip()
+        if not isinstance(payload, dict):
+            return stdout.strip()
+        transcript = payload.get("text")
+        if not isinstance(transcript, str) or not transcript.strip():
+            return stdout.strip()
+        segment_count = payload.get("segment_count")
+        chunk_seconds = payload.get("chunk_seconds")
+        header_parts = ["音频转写完成，以下为完整转写文本，请不要截断。"]
+        if segment_count:
+            header_parts.append(f"分段数：{segment_count}")
+        if chunk_seconds:
+            header_parts.append(f"分段秒数：{chunk_seconds}")
+        return "\n".join(header_parts) + "\n\n" + transcript.strip()
+
+    def _safe_tool_result_for_prompt(result: object, tool_name: str = "") -> str:
         """限制工具结果进入模型上下文的长度，避免超长内容（如 base64 图片）撑爆 token。"""
+        audio_transcription_text = _audio_transcription_text_for_prompt(tool_name, result)
+        if audio_transcription_text is not None:
+            return audio_transcription_text
         text = str(result) if not isinstance(result, str) else result
         stripped = text.strip()
         if stripped.startswith("data:image/"):
@@ -1082,7 +1131,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
                     if isinstance(cached_entry, dict):
                         result = cached_entry.get("raw", "")
-                        result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result))
+                        result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result, tool_name))
                         logger.info(
                             "sandbox_script_cache_hit tool=%s args_hash=%s raw_len=%s",
                             tool_name,
@@ -1098,8 +1147,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                         tool_raw_outputs.append(str(result))
                     else:
                         result = await _execute_tool_safely(tool, arguments)
-                        result_for_prompt = _safe_tool_result_for_prompt(result)
-                        if tool_name.startswith("run_skill_script_"):
+                        result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
+                        if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                             tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
                             logger.info(
                                 "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
@@ -1173,7 +1222,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
                 if isinstance(cached_entry, dict):
                     result = cached_entry.get("raw", "")
-                    result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result))
+                    result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result, tool_name))
                     logger.info(
                         "sandbox_script_cache_hit tool=%s args_hash=%s raw_len=%s",
                         tool_name,
@@ -1187,8 +1236,8 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                     })
                 else:
                     result = await _execute_tool_safely(tool, arguments)
-                    result_for_prompt = _safe_tool_result_for_prompt(result)
-                    if tool_name.startswith("run_skill_script_"):
+                    result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
+                    if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                         tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
                         logger.info(
                             "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",

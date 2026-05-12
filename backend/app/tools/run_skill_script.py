@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import shlex
@@ -40,9 +41,12 @@ _SANDBOX_ENV_PASSTHROUGH_KEYS = (
     "QWEN_AUDIO_MODEL",
     "QWEN_AUDIO_TRANSCRIBE_ENDPOINT",
     "QWEN_AUDIO_REQUEST_MODE",
+    "QWEN_AUDIO_CHUNK_SECONDS",
+    "QWEN_AUDIO_REQUEST_TIMEOUT_SEC",
     "PLAYWRIGHT_BROWSERS_PATH",
 )
 _DEFAULT_PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
+_EFFECTIVELY_UNLIMITED_SCRIPT_TIMEOUT_SEC = 24 * 60 * 60
 
 
 def _get_script_gateway() -> UnifiedToolGateway:
@@ -94,6 +98,27 @@ def _get_current_user_id() -> str:
         from app.core.security import get_current_user
 
         return get_current_user().username
+    except Exception:
+        return ""
+
+
+def _current_user_requirements_b64(user_id: str = "") -> str:
+    try:
+        from app.core.user_context import get_current_user_context, get_user_context_for
+
+        user_ctx = get_current_user_context(default_fallback=False)
+        if user_ctx is None:
+            uid = (user_id or "").strip() or _get_current_user_id()
+            if not uid:
+                return ""
+            user_ctx = get_user_context_for(uid)
+        path = (user_ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+        if not path.exists():
+            return ""
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return ""
+        return base64.b64encode(content.encode("utf-8")).decode("ascii")
     except Exception:
         return ""
 
@@ -159,7 +184,7 @@ def _parse_cli_args_json(cli_args_json: str) -> tuple[list[str] | None, str | No
     try:
         data = json.loads(raw)
     except Exception as e:
-        recovered = _recover_concatenated_cli_args_json(raw)
+        recovered = _recover_concatenated_cli_args_json(raw) or _recover_embedded_cli_args_json(raw)
         if recovered is None:
             return None, f"cli_args_json 不是合法 JSON: {e}"
         data = recovered
@@ -207,6 +232,25 @@ def _recover_concatenated_cli_args_json(raw: str) -> list[Any] | None:
         else:
             return None
     return out
+
+
+def _recover_embedded_cli_args_json(raw: str) -> list[Any] | None:
+    """容错从混入说明文字的 cli_args_json 中提取第一个 JSON 数组。"""
+    decoder = json.JSONDecoder()
+    for pos, ch in enumerate(raw):
+        if ch != "[":
+            continue
+        try:
+            value, _end = decoder.raw_decode(raw, pos)
+        except Exception:
+            continue
+        if isinstance(value, list):
+            return value
+    try:
+        value = json.loads(f"[{raw}]")
+    except Exception:
+        return None
+    return value if isinstance(value, list) else None
 
 
 def _validate_against_manifest(script_path: str, script_meta: dict[str, Any], parsed_input: Any) -> str | None:
@@ -310,12 +354,50 @@ def _build_sandbox_script_command(
         )
     if suffix == ".py":
         # 兼容最小镜像：优先 python3，回退 python
+        write_requirements = (
+            "import base64, os, pathlib; "
+            "raw=os.environ.get('SKILL_REQUIREMENTS_B64',''); "
+            "path=pathlib.Path('/tmp/requirements.txt'); "
+            "path.write_bytes(base64.b64decode(raw.encode('ascii'))) if raw else None; "
+            "print('skill_python_requirements_bytes='+str(path.stat().st_size if path.exists() else 0), file=__import__('sys').stderr)"
+        )
+        preflight = (
+            "import importlib, importlib.metadata as md, pathlib, sys; "
+            "req=pathlib.Path('/tmp/requirements.txt'); "
+            "mods={'xlrd':'2.0.1','pandas':None,'openpyxl':None}; "
+            "ok=True; "
+            "from packaging.version import Version; "
+            "\nif req.exists():\n"
+            "    for name, minimum in mods.items():\n"
+            "        try:\n"
+            "            version=md.version(name); importlib.import_module(name)\n"
+            "            if minimum and Version(version) < Version(minimum):\n"
+            "                print(f'skill_python_preflight version_too_low {name}=={version} < {minimum}', file=sys.stderr); ok=False\n"
+            "        except Exception as exc:\n"
+            "            print(f'skill_python_preflight missing_or_broken {name}: {exc}', file=sys.stderr); ok=False\n"
+            "sys.exit(0 if ok else 42)\n"
+        )
+        probe = (
+            "import importlib, importlib.metadata as md, sys; "
+            "mods=['pandas','xlrd','openpyxl']; "
+            "print('skill_python_probe executable='+sys.executable, file=sys.stderr); "
+            "[print('skill_python_probe '+m+'='+md.version(m)+' import=ok', file=sys.stderr) "
+            "if (lambda name: (importlib.import_module(name), True)[1])(m) else None for m in mods]"
+        )
         return [
             "sh",
             "-lc",
-            f'SCRIPT_PATH="$({script_choice})"; '
-            f'if command -v python3 >/dev/null 2>&1; then exec python3 "$SCRIPT_PATH" {quoted_argv}; '
-            f'elif command -v python >/dev/null 2>&1; then exec python "$SCRIPT_PATH" {quoted_argv}; '
+            f'set -e; SCRIPT_PATH="$({script_choice})"; '
+            f'if command -v python3 >/dev/null 2>&1; then '
+            f'python3 -c {shlex.quote(write_requirements)}; '
+            f'python3 -c {shlex.quote(preflight)} || {{ if [ -s /tmp/requirements.txt ]; then python3 -m pip install --disable-pip-version-check --no-input --upgrade -r /tmp/requirements.txt; else echo "skill_python_preflight empty /tmp/requirements.txt" 1>&2; exit 42; fi; }}; '
+            f'python3 -c {shlex.quote(preflight)}; '
+            f'python3 -c {shlex.quote(probe)} || true; exec python3 "$SCRIPT_PATH" {quoted_argv}; '
+            f'elif command -v python >/dev/null 2>&1; then '
+            f'python -c {shlex.quote(write_requirements)}; '
+            f'python -c {shlex.quote(preflight)} || {{ if [ -s /tmp/requirements.txt ]; then python -m pip install --disable-pip-version-check --no-input --upgrade -r /tmp/requirements.txt; else echo "skill_python_preflight empty /tmp/requirements.txt" 1>&2; exit 42; fi; }}; '
+            f'python -c {shlex.quote(preflight)}; '
+            f'python -c {shlex.quote(probe)} || true; exec python "$SCRIPT_PATH" {quoted_argv}; '
             f'else echo "python runtime not found" 1>&2; exit 127; fi',
         ]
     if suffix in (".sh", ".bash"):
@@ -363,6 +445,19 @@ def _build_sandbox_exec_request(
     else:
         shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && {quoted}'
     return ["sh", "-lc", shell_cmd], env, "/workspace"
+
+
+def _resolve_script_timeout_sec(script_meta: dict[str, Any]) -> int:
+    raw = script_meta.get("timeout_sec")
+    if raw is None or raw == "":
+        raw = os.getenv("SKILL_SCRIPT_TIMEOUT", "60")
+    try:
+        timeout_sec = int(raw)
+    except (TypeError, ValueError):
+        timeout_sec = 60
+    if timeout_sec <= 0:
+        return int(os.getenv("SKILL_SCRIPT_UNLIMITED_TIMEOUT_SEC", str(_EFFECTIVELY_UNLIMITED_SCRIPT_TIMEOUT_SEC)))
+    return timeout_sec
 
 
 def _execute_script_subprocess(
@@ -594,7 +689,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         if schema_error:
             return _json_result(ok=False, code="manifest_validation_failed", message=schema_error, meta=script_meta)
 
-        timeout_sec = int(script_meta.get("timeout_sec") or os.getenv("SKILL_SCRIPT_TIMEOUT", "60"))
+        timeout_sec = _resolve_script_timeout_sec(script_meta)
 
         if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
             return _json_result(
@@ -617,11 +712,12 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         except RuntimeError as e:
             return _json_result(ok=False, code="runtime_missing", message=str(e))
         script_tool_name = build_skill_script_tool_name(skill_id)
+        current_user_id = _get_current_user_id()
         ctx = ToolExecutionContext(
             session_id=workspace_id,
             workspace_id=str(workspace_root),
             agent_id=f"skill:{skill_id}",
-            user_id=_get_current_user_id(),
+            user_id=current_user_id,
             skill_id=skill_id,
             task_id=f"skill-script:{skill_id}",
             turn_id=f"script:{uuid.uuid4().hex}",
@@ -654,6 +750,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                     "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
                     "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts",
                     "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{skill_id}",
+                    "SKILL_REQUIREMENTS_B64": _current_user_requirements_b64(current_user_id),
                     **sandbox_extra_env,
                     **_collect_sandbox_passthrough_env(),
                 },
@@ -726,6 +823,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         exit_code = out.get("exit_code")
         stdout = str(out.get("stdout") or "").strip()
         stderr = str(out.get("stderr") or "").strip()
+        sandbox_trace = out.get("_sandbox_trace") if isinstance(out.get("_sandbox_trace"), dict) else {}
         if isinstance(exit_code, int) and exit_code != 0:
             result_payload = {
                 "ok": False,
@@ -735,6 +833,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "stdout": stdout,
                 "stderr": stderr,
                 "script": script_path,
+                "sandbox_trace": sandbox_trace,
             }
             logger.warning(
                 "sandbox_script_execute_nonzero skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s",
@@ -755,6 +854,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "returncode": int(exit_code or 0),
                 "stdout": stdout,
                 "stderr": stderr,
+                "sandbox_trace": sandbox_trace,
                 "message": "脚本执行成功。",
             }
             logger.info(

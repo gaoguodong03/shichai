@@ -15,11 +15,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_audit import append_sandbox_event
+from app.agent.sandbox_image_policy import image_for_variant, read_sandbox_variant
 from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT, SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
 from app.core.user_context import get_user_context_for, users_data_root
 
 logger = logging.getLogger(__name__)
+
+_REQUIREMENTS_VERIFIER_VERSION = "import-v2"
 
 def _env_truthy(name: str, default: str = "0") -> bool:
     val = (os.getenv(name) or default).strip().lower()
@@ -37,6 +40,30 @@ def _env_csv(name: str) -> List[str]:
             parts.append(s)
     # de-dup preserve order
     return list(dict.fromkeys(parts))
+
+
+def _command_exit_code(result: Any) -> Optional[int]:
+    if not isinstance(result, dict):
+        return None
+    for key in ("exit_code", "returncode", "return_code", "code"):
+        value = result.get(key)
+        if isinstance(value, int):
+            return value
+    ok = result.get("ok")
+    if ok is False:
+        return 1
+    return None
+
+
+def _command_output(result: Any) -> tuple[str, str]:
+    if not isinstance(result, dict):
+        return "", ""
+    return str(result.get("stdout") or ""), str(result.get("stderr") or "")
+
+
+def _tail(text: str, limit: int = 4000) -> str:
+    value = str(text or "")
+    return value[-limit:] if len(value) > limit else value
 
 
 def _sandbox_default_environment() -> Dict[str, str]:
@@ -137,6 +164,18 @@ def to_workspace_inner_path(rel: str) -> str:
     return f"/workspace/{r}" if r else "/workspace"
 
 
+def _sandbox_image_for_user(user_id: str) -> tuple[str, str]:
+    uid = (user_id or "").strip()
+    if uid:
+        try:
+            variant = read_sandbox_variant(get_user_context_for(uid).config_dir)
+        except Exception:
+            variant = "standard"
+    else:
+        variant = "standard"
+    return variant, image_for_variant(variant)
+
+
 class SandboxService:
     """Manage user sandbox lifecycle and OpenSandbox request mapping."""
 
@@ -196,6 +235,13 @@ class SandboxService:
         if updates:
             return replace(policy, **updates)
         return policy
+
+    def _apply_user_image_policy(self, policy: SandboxPolicy, user_id: str) -> SandboxPolicy:
+        variant, image_ref = _sandbox_image_for_user(user_id)
+        if policy.image_ref == image_ref:
+            return policy
+        env = {**dict(policy.environment or {}), "SANDBOX_IMAGE_VARIANT": variant}
+        return replace(policy, image_ref=image_ref, environment=env)
 
     def _build_mounts_for_request(
         self, req: SandboxExecutionRequest
@@ -282,6 +328,10 @@ class SandboxService:
         new_fp = policy_mount_fingerprint(policy)
         if not old_fp or old_fp != new_fp:
             return False
+        old_image_ref = str(meta.get("image_ref") or "").strip()
+        new_image_ref = str(policy.image_ref or "").strip()
+        if old_image_ref != new_image_ref:
+            return False
         old_policy = meta.get("policy")
         old_allow: list[str] = []
         if isinstance(old_policy, dict):
@@ -298,6 +348,10 @@ class SandboxService:
         txt = self._read_user_sandbox_requirements(user_id)
         normalized = (txt or "").strip()
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+    def requirements_hash_for_user(self, user_id: str) -> str:
+        """Public diagnostic wrapper for the current user's sandbox requirements hash."""
+        return self._requirements_hash_for_user(user_id)
 
     @staticmethod
     def _installed_requirements_hash(handle: SandboxHandle) -> str:
@@ -325,9 +379,9 @@ class SandboxService:
                 updates["skill_scripts_host_path"] = str(skills_root.resolve())
             if updates:
                 policy = replace(policy, **updates)
-            return self._apply_fixed_resource_policy(policy)
+            return self._apply_user_image_policy(self._apply_fixed_resource_policy(policy), req.user_id)
         host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
-        return self._apply_fixed_resource_policy(SandboxPolicy(
+        return self._apply_user_image_policy(self._apply_fixed_resource_policy(SandboxPolicy(
             fs_root=str(host_sessions_root.resolve()),
             workspace_host_path=str(host_sessions_root.resolve()),
             skill_scripts_host_path=str(skills_root) if skills_root else "",
@@ -340,7 +394,7 @@ class SandboxService:
             volume_mounts=mounts,
             allow_network=_network_allowed_for_tool(req.tool_name),
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
-        ))
+        )), req.user_id)
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
@@ -367,16 +421,34 @@ class SandboxService:
                 if self._restart_only_on_requirements_update:
                     current_req_hash = self._requirements_hash_for_user(user_id)
                     installed_req_hash = self._installed_requirements_hash(handle)
-                    if current_req_hash == installed_req_hash:
+                    verified_req_hash = str((handle.metadata or {}).get("verified_requirements_hash") or "").strip()
+                    verifier_version = str((handle.metadata or {}).get("requirements_verifier_version") or "").strip()
+                    old_image_ref = str((handle.metadata or {}).get("image_ref") or "").strip()
+                    new_image_ref = str(policy.image_ref or "").strip()
+                    if (
+                        current_req_hash == installed_req_hash
+                        and current_req_hash == verified_req_hash
+                        and verifier_version == _REQUIREMENTS_VERIFIER_VERSION
+                        and old_image_ref == new_image_ref
+                    ):
                         self._user_handles[key] = (handle, now)
                         return handle
-                    logger.info(
-                        "sandbox_recreate_reason=user_requirements_updated user_id=%s session_id=%s old_hash=%s new_hash=%s",
-                        user_id,
-                        req.session_id,
-                        installed_req_hash,
-                        current_req_hash,
-                    )
+                    if old_image_ref != new_image_ref:
+                        logger.info(
+                            "sandbox_recreate_reason=user_image_updated user_id=%s session_id=%s old_image=%s new_image=%s",
+                            user_id,
+                            req.session_id,
+                            old_image_ref,
+                            new_image_ref,
+                        )
+                    else:
+                        logger.info(
+                            "sandbox_recreate_reason=user_requirements_updated user_id=%s session_id=%s old_hash=%s new_hash=%s",
+                            user_id,
+                            req.session_id,
+                            installed_req_hash,
+                            current_req_hash,
+                        )
                 else:
                     ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
                     if ttl_ok and self._cached_handle_still_valid(
@@ -396,6 +468,7 @@ class SandboxService:
             if isinstance(handle.metadata, dict):
                 handle.metadata["mount_fingerprint"] = policy_mount_fingerprint(policy)
                 handle.metadata["policy_allow_network"] = bool(policy.allow_network)
+                handle.metadata["image_ref"] = policy.image_ref
             self._user_handles[key] = (handle, now)
         # 出锁后做安装：避免长时间持锁阻塞其他请求
         await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
@@ -424,6 +497,7 @@ class SandboxService:
                     "runtime": handle.runtime,
                     "runtime_backend": policy.runtime_backend,
                     "runtime_profile": policy.runtime_profile,
+                    "image_ref": policy.image_ref,
                     "mount_count": len(policy.volume_mounts or []),
                     "workspace_root_in_sandbox": SANDBOX_WORKSPACE_ROOT,
                     "resource_limit": {
@@ -501,15 +575,25 @@ class SandboxService:
         normalized = (user_txt or "").strip()
         dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
         last = str(handle.metadata.get("installed_requirements_hash") or "")
+        verified = str(handle.metadata.get("verified_requirements_hash") or "")
+        verifier_version = str(handle.metadata.get("requirements_verifier_version") or "")
         logger.info(
-            "sandbox_requirements_check user_id=%s dep_hash=%s last_hash=%s has_requirements=%s",
+            "sandbox_requirements_check user_id=%s dep_hash=%s last_hash=%s verified_hash=%s verifier_version=%s required_verifier=%s has_requirements=%s req_bytes=%s sandbox_id=%s image_ref=%s allow_network=%s timeout_ms=%s",
             user_id,
             dep_hash,
             last,
+            verified,
+            verifier_version,
+            _REQUIREMENTS_VERIFIER_VERSION,
             bool(normalized),
+            len(normalized.encode("utf-8")),
+            str((handle.metadata or {}).get("sandbox_id") or ""),
+            str((handle.metadata or {}).get("image_ref") or ""),
+            bool(policy.allow_network),
+            int(policy.timeout_ms or 0),
         )
-        if dep_hash == last:
-            logger.info("sandbox_requirements_skip reason=hash_unchanged user_id=%s dep_hash=%s", user_id, dep_hash)
+        if dep_hash == last and dep_hash == verified and verifier_version == _REQUIREMENTS_VERIFIER_VERSION:
+            logger.info("sandbox_requirements_skip reason=hash_verified user_id=%s dep_hash=%s", user_id, dep_hash)
             return
         # 空清单：只更新 hash，不执行 pip
         if not normalized:
@@ -522,7 +606,11 @@ class SandboxService:
             "sh",
             "-lc",
             (
-                "set -eu; "
+                "set -eux; "
+                "echo '=== sandbox requirements diagnostics ==='; "
+                "echo python3_path=$(command -v python3 || true); "
+                "python3 -V; "
+                "python3 -m pip --version; "
                 'REQ_B64="${SANDBOX_REQUIREMENTS_B64:-}"; '
                 'python3 - <<\'PY\'\n'
                 "import base64,os,sys\n"
@@ -530,8 +618,57 @@ class SandboxService:
                 "data=base64.b64decode(b.encode('ascii')) if b else b''\n"
                 "open('/tmp/requirements.txt','wb').write(data)\n"
                 "print('wrote_requirements_bytes', len(data))\n"
+                "print('requirements_preview_start')\n"
+                "for line in data.decode('utf-8', 'replace').splitlines():\n"
+                "    text=line.strip()\n"
+                "    if text and not text.startswith('#'):\n"
+                "        print(text)\n"
+                "print('requirements_preview_end')\n"
                 "PY\n"
-                "python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt\n"
+                "python3 -m pip install --disable-pip-version-check --no-input --upgrade -r /tmp/requirements.txt\n"
+                "python3 - <<'PY'\n"
+                "import importlib, importlib.metadata as md\n"
+                "from packaging.version import Version\n"
+                "print('requirements_verify_start')\n"
+                "missing=[]\n"
+                "import_missing=[]\n"
+                "version_too_low=[]\n"
+                "seen=[]\n"
+                "import_names={'xlrd':['xlrd'], 'openpyxl':['openpyxl'], 'pandas':['pandas']}\n"
+                "min_versions={'xlrd':'2.0.1'}\n"
+                "for raw in open('/tmp/requirements.txt', encoding='utf-8'):\n"
+                "    line=raw.strip()\n"
+                "    if not line or line.startswith('#') or line.startswith(('-', '--')) or '://' in line or line.startswith(('git+', 'http:')):\n"
+                "        continue\n"
+                "    name=line.split(';',1)[0].split('[',1)[0].strip()\n"
+                "    for sep in ('===','==','>=','<=','~=','!=','>','<'):\n"
+                "        name=name.split(sep,1)[0].strip()\n"
+                "    if not name:\n"
+                "        continue\n"
+                "    try:\n"
+                "        version=md.version(name)\n"
+                "        seen.append(f'{name}=={version}')\n"
+                "        minimum=min_versions.get(name.lower())\n"
+                "        if minimum and Version(version) < Version(minimum):\n"
+                "            version_too_low.append(f'{name}=={version} < {minimum}')\n"
+                "        for mod in import_names.get(name.lower(), []):\n"
+                "            try:\n"
+                "                importlib.import_module(mod)\n"
+                "                print(f'import_ok:{mod}')\n"
+                "            except Exception as exc:\n"
+                "                import_missing.append(f'{mod}: {exc}')\n"
+                "    except md.PackageNotFoundError:\n"
+                "        missing.append(name)\n"
+                "for item in seen:\n"
+                "    print(item)\n"
+                "print('requirements_verify_end')\n"
+                "if missing:\n"
+                "    raise SystemExit('missing packages after pip install: ' + ', '.join(missing))\n"
+                "if version_too_low:\n"
+                "    raise SystemExit('packages installed but version too low: ' + '; '.join(version_too_low))\n"
+                "if import_missing:\n"
+                "    raise SystemExit('packages installed but import failed: ' + '; '.join(import_missing))\n"
+                "PY\n"
                 "if [ \"${SANDBOX_AUTO_INSTALL_BROWSERS:-0}\" = \"1\" ] && grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
                 "  if python3 -m patchright --help >/dev/null 2>&1; then\n"
                 "    python3 -m patchright install chromium || python3 -m playwright install chromium\n"
@@ -552,30 +689,53 @@ class SandboxService:
                     timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)),
                     env=env,
                 )  # type: ignore[attr-defined]
-                exit_code = install_result.get("exit_code") if isinstance(install_result, dict) else None
+                exit_code = _command_exit_code(install_result)
+                stdout, stderr = _command_output(install_result)
                 if isinstance(exit_code, int) and exit_code != 0:
-                    stdout = str(install_result.get("stdout") or "") if isinstance(install_result, dict) else ""
-                    stderr = str(install_result.get("stderr") or "") if isinstance(install_result, dict) else ""
+                    logger.warning(
+                        "sandbox_requirements_install_nonzero user_id=%s dep_hash=%s exit_code=%s stdout_tail=%r stderr_tail=%r",
+                        user_id,
+                        dep_hash,
+                        exit_code,
+                        _tail(stdout),
+                        _tail(stderr),
+                    )
                     raise RuntimeError(
                         "沙箱 requirements 安装失败"
-                        f"（exit_code={exit_code}）。stdout={stdout[-1000:]} stderr={stderr[-1000:]}"
+                        f"（exit_code={exit_code}）。stdout_tail={_tail(stdout)} stderr_tail={_tail(stderr)}"
                     )
                 handle.metadata["installed_requirements_hash"] = dep_hash
+                handle.metadata["verified_requirements_hash"] = dep_hash
+                handle.metadata["requirements_verifier_version"] = _REQUIREMENTS_VERIFIER_VERSION
                 elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                 logger.info(
-                    "sandbox_requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s",
+                    "sandbox_requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s stdout_tail=%r stderr_tail=%r",
                     user_id,
                     dep_hash,
                     elapsed_ms,
+                    str((handle.metadata or {}).get("sandbox_id") or ""),
+                    str((handle.metadata or {}).get("image_ref") or ""),
+                    _tail(stdout, 2000),
+                    _tail(stderr, 2000),
+                )
+            else:
+                logger.warning(
+                    "sandbox_requirements_install_skipped reason=adapter_no_exec_command user_id=%s dep_hash=%s sandbox_id=%s image_ref=%s",
+                    user_id,
+                    dep_hash,
+                    str((handle.metadata or {}).get("sandbox_id") or ""),
+                    str((handle.metadata or {}).get("image_ref") or ""),
                 )
         except Exception as e:
             # 不更新 hash：下次仍会重试，便于用户修复 requirements 后再次验证
             elapsed_ms = int((time.perf_counter() - started_at) * 1000)
             logger.warning(
-                "sandbox_requirements_install_failed user_id=%s dep_hash=%s elapsed_ms=%s err=%s",
+                "sandbox_requirements_install_failed user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s err=%s",
                 user_id,
                 dep_hash,
                 elapsed_ms,
+                str((handle.metadata or {}).get("sandbox_id") or ""),
+                str((handle.metadata or {}).get("image_ref") or ""),
                 str(e),
             )
             raise
@@ -895,6 +1055,25 @@ class SandboxService:
                         "env": env if isinstance(env, dict) else {},
                     },
                 )
+                if isinstance(result, dict):
+                    trace = result.get("_sandbox_trace")
+                    if not isinstance(trace, dict):
+                        trace = {}
+                    trace.setdefault("sandbox_id", str((handle.metadata or {}).get("sandbox_id") or ""))
+                    trace.setdefault("image_ref", str((handle.metadata or {}).get("image_ref") or ""))
+                    trace.setdefault(
+                        "installed_requirements_hash",
+                        str((handle.metadata or {}).get("installed_requirements_hash") or ""),
+                    )
+                    trace.setdefault(
+                        "verified_requirements_hash",
+                        str((handle.metadata or {}).get("verified_requirements_hash") or ""),
+                    )
+                    trace.setdefault(
+                        "requirements_verifier_version",
+                        str((handle.metadata or {}).get("requirements_verifier_version") or ""),
+                    )
+                    result["_sandbox_trace"] = trace
                 append_sandbox_event(
                     session_id=req.session_id,
                     event_type="sandbox_command_finished",
@@ -1033,6 +1212,9 @@ class SandboxService:
             skills_root_path=user_ctx.skills_dir.resolve(),
             timeout_ms=timeout_ms,
         )
+        policy = self._apply_user_image_policy(self._apply_fixed_resource_policy(policy), uid)
+        if (self._read_user_sandbox_requirements(uid) or "").strip() and not policy.allow_network:
+            policy = replace(policy, allow_network=True)
         req = SandboxExecutionRequest(
             user_id=uid,
             session_id=f"prewarm:{uid}",
@@ -1065,6 +1247,11 @@ class SandboxService:
             "status": "ok",
             "user_id": uid,
             "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
+            "image_ref": str((handle.metadata or {}).get("image_ref") or ""),
+            "requirements_hash": self._requirements_hash_for_user(uid),
+            "installed_requirements_hash": str((handle.metadata or {}).get("installed_requirements_hash") or ""),
+            "verified_requirements_hash": str((handle.metadata or {}).get("verified_requirements_hash") or ""),
+            "requirements_verifier_version": str((handle.metadata or {}).get("requirements_verifier_version") or ""),
             "backend": self.backend_label(),
             "reason": reason,
         }

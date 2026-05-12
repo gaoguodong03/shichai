@@ -44,6 +44,13 @@ from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import user_context_dependency
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.agent.sandbox_image_policy import (
+    image_for_variant,
+    normalize_sandbox_variant,
+    read_sandbox_variant,
+    sandbox_image_options,
+    write_sandbox_variant,
+)
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -98,6 +105,11 @@ def _get_sandbox_requirements_path() -> Path:
     """当前用户沙箱依赖清单 requirements.txt 路径。"""
     user_ctx = _require_user_ctx()
     return (user_ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+
+
+def _get_sandbox_config_dir() -> Path:
+    """当前用户沙箱配置目录。"""
+    return (_require_user_ctx().config_dir / "sandbox").resolve()
 
 
 def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
@@ -1381,6 +1393,10 @@ class SandboxRequirementsBody(BaseModel):
     content: str = ""
 
 
+class SandboxSettingsBody(BaseModel):
+    image_variant: str = "standard"
+
+
 class SandboxRequirementsMergeBody(BaseModel):
     requirements: List[str] = []
 
@@ -1388,6 +1404,68 @@ class SandboxRequirementsMergeBody(BaseModel):
 def _sandbox_requirements_error_detail(exc: Exception) -> str:
     msg = str(exc).strip() or exc.__class__.__name__
     return f"已保存 requirements.txt，但沙箱依赖安装验证失败：{msg}"
+
+
+@router.get("/settings/sandbox")
+async def get_sandbox_settings():
+    variant = read_sandbox_variant(_get_sandbox_config_dir())
+    return {
+        "status": "ok",
+        "data": {
+            "image_variant": variant,
+            "image": image_for_variant(variant),
+            "options": sandbox_image_options(),
+        },
+    }
+
+
+@router.put("/settings/sandbox")
+async def save_sandbox_settings(body: SandboxSettingsBody):
+    variant = normalize_sandbox_variant(body.image_variant)
+    try:
+        saved_variant = write_sandbox_variant(_get_sandbox_config_dir(), variant)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存沙箱设置失败: {e}")
+    username = (get_current_username() or "").strip()
+    prewarm: Dict[str, Any] = {"validated": False}
+    if username:
+        try:
+            timeout_ms = int(os.getenv("SANDBOX_SETTINGS_VALIDATE_TIMEOUT_MS", "120000") or "120000")
+        except Exception:
+            timeout_ms = 120_000
+        try:
+            result = await get_shared_sandbox_service().prewarm_user_sandbox(
+                username,
+                reason="sandbox_image_saved",
+                timeout_ms=max(60_000, timeout_ms),
+            )
+            prewarm = {"validated": True, **result}
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger(__name__).warning("sandbox_settings_validate_failed user=%s err=%s", username, e)
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "status": "error",
+                    "code": "sandbox_image_switch_failed",
+                    "detail": f"已保存沙箱设置，但切换/预热沙箱失败：{e}",
+                    "data": {
+                        "saved": True,
+                        "image_variant": saved_variant,
+                        "image": image_for_variant(saved_variant),
+                        "validated": False,
+                        "error": str(e),
+                    },
+                },
+            )
+    return {
+        "status": "ok",
+        "data": {
+            "saved": True,
+            "image_variant": saved_variant,
+            "image": image_for_variant(saved_variant),
+            **prewarm,
+        },
+    }
 
 
 @router.get("/settings/sandbox/requirements")
@@ -1418,7 +1496,7 @@ async def save_sandbox_requirements(body: SandboxRequirementsBody):
     except Exception:
         timeout_ms = 600_000
     try:
-        await get_shared_sandbox_service().prewarm_user_sandbox(
+        prewarm = await get_shared_sandbox_service().prewarm_user_sandbox(
             username,
             reason="requirements_saved",
             timeout_ms=max(120_000, timeout_ms),
@@ -1434,7 +1512,7 @@ async def save_sandbox_requirements(body: SandboxRequirementsBody):
                 "data": {"saved": True, "validated": False, "error": str(e)},
             },
         )
-    return {"status": "ok", "data": {"saved": True, "validated": True}}
+    return {"status": "ok", "data": {"saved": True, "validated": True, **prewarm}}
 
 
 @router.post("/settings/sandbox/requirements/merge")
@@ -1451,7 +1529,7 @@ async def merge_sandbox_requirements(body: SandboxRequirementsMergeBody):
     except Exception:
         timeout_ms = 600_000
     try:
-        await get_shared_sandbox_service().prewarm_user_sandbox(
+        prewarm = await get_shared_sandbox_service().prewarm_user_sandbox(
             username,
             reason="requirements_merged",
             timeout_ms=max(120_000, timeout_ms),
@@ -1467,7 +1545,7 @@ async def merge_sandbox_requirements(body: SandboxRequirementsMergeBody):
                 "data": {"added": added, "content": merged, "saved": True, "validated": False, "error": str(e)},
             },
         )
-    return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": True}}
+    return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": True, **prewarm}}
 
 
 @router.get("/settings/api-secrets")

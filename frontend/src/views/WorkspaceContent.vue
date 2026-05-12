@@ -1522,8 +1522,6 @@ function parseToolRawResult(raw: string): { toolName: string; rawReturn: string 
 }
 
 const _toolRawMetaCache = new Map<string, { toolName: string; rawReturn: string }>()
-const _TOOL_POPOVER_MAX_LEN = 4000
-
 function toolRawMeta(raw: string): { toolName: string; rawReturn: string } {
   const key = String(raw || '')
   const hit = _toolRawMetaCache.get(key)
@@ -1538,9 +1536,7 @@ function toolRawMeta(raw: string): { toolName: string; rawReturn: string } {
 }
 
 function formatToolPopover(raw: string): string {
-  const formatted = tryFormatJson(toolRawMeta(raw).rawReturn)
-  if (formatted.length <= _TOOL_POPOVER_MAX_LEN) return formatted
-  return `${formatted.slice(0, _TOOL_POPOVER_MAX_LEN)}\n\n...（内容过长，已截断展示）`
+  return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
 function extractToolCallBlocks(content: string): string[] {

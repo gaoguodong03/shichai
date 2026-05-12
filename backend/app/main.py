@@ -9,7 +9,6 @@ from app.mcp.manager import cleanup_all_mcp_runtimes
 from dotenv import load_dotenv
 import logging
 import os
-import platform
 import socket
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 from contextlib import asynccontextmanager
+from app.agent.sandbox_image_policy import default_playwright_image, default_standard_image
 
 # 显式加载 backend/.env（__file__ 为 app/main.py，parent.parent 为 backend）
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -27,9 +27,7 @@ load_dotenv()  # 仍从 cwd 再加载一次，兼容在 backend 目录下启动
 
 def _apply_runtime_env_defaults() -> None:
     """填充本地/默认部署所需环境变量；显式环境变量与 .env 优先。"""
-    default_sandbox_image = "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.11.1"
-    if platform.machine().lower() in {"arm64", "aarch64"}:
-        default_sandbox_image = "st49-skill-sandbox:local"
+    default_sandbox_image = default_standard_image()
     defaults = {
         "OPENSANDBOX_DOMAIN": "127.0.0.1:8091",
         "OPENSANDBOX_PROTOCOL": "http",
@@ -37,6 +35,8 @@ def _apply_runtime_env_defaults() -> None:
         "OPENSANDBOX_REQUEST_TIMEOUT_SEC": "900",
         "UNIFIED_TOOL_GATEWAY_ENABLED": "1",
         "SANDBOX_BASE_IMAGE": default_sandbox_image,
+        "SANDBOX_STANDARD_IMAGE": default_sandbox_image,
+        "SANDBOX_PLAYWRIGHT_IMAGE": default_playwright_image(),
         "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
         "SANDBOX_FIXED_MEMORY_MB": "2048",
         "SANDBOX_ALLOW_NETWORK": "0",
@@ -67,6 +67,12 @@ async def lifespan(app: FastAPI):
 
         sandbox_service = get_shared_sandbox_service()
         _log.info("sandbox_backend_startup=%s", sandbox_service.backend_label())
+        _log.info(
+            "sandbox_images_config standard=%s playwright=%s base=%s",
+            os.getenv("SANDBOX_STANDARD_IMAGE", ""),
+            os.getenv("SANDBOX_PLAYWRIGHT_IMAGE", ""),
+            os.getenv("SANDBOX_BASE_IMAGE", ""),
+        )
         always_on = _is_truthy_env("SANDBOX_ALWAYS_ON", "0")
         prewarm_enabled = _is_truthy_env("SANDBOX_PREWARM_ALL_USERS", "1" if always_on else "0")
         if prewarm_enabled:

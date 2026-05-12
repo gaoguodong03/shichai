@@ -1,0 +1,88 @@
+# Skill script sandbox image with Playwright/Chromium.
+# Build example:
+#   docker build -f docker/skill-sandbox/Dockerfile.playwright -t st49-skill-sandbox:local-playwright .
+# Then set SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright for the backend container.
+ARG PYTHON_IMAGE=python:3.12-bookworm
+FROM ${PYTHON_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+# Common CLI/runtime dependencies for Skill scripts plus sqlite for browser-crawler state storage.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    coreutils \
+    curl \
+    dnsutils \
+    file \
+    findutils \
+    gawk \
+    git \
+    gnupg \
+    grep \
+    gzip \
+    jq \
+    less \
+    make \
+    nano \
+    openssh-client \
+    patch \
+    procps \
+    ripgrep \
+    sed \
+    sqlite3 \
+    libsqlite3-dev \
+    tar \
+    tini \
+    tree \
+    unzip \
+    vim-tiny \
+    wget \
+    xz-utils \
+    zip \
+    nodejs \
+    npm \
+    ffmpeg \
+    imagemagick \
+    poppler-utils \
+    tesseract-ocr \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Frequently used Python libraries for file, data, web, image and document-processing skills.
+RUN python3 -m pip install --upgrade pip setuptools wheel \
+    && python3 -m pip install \
+    aiosqlite \
+    beautifulsoup4 \
+    httpx \
+    lxml \
+    markdown \
+    matplotlib \
+    numpy \
+    openpyxl \
+    pandas \
+    pillow \
+    playwright \
+    pydantic \
+    pymupdf \
+    python-docx \
+    python-pptx \
+    pyyaml \
+    requests \
+    rich \
+    tqdm
+
+# Browser tooling and Chromium runtime. install-deps is intentionally only in this large image.
+# Python playwright already provides /usr/local/bin/playwright; do not install npm playwright globally.
+RUN npm install -g yarn pnpm@10 typescript tsx \
+    && python3 -m playwright install-deps chromium \
+    && python3 -m playwright install chromium
+
+WORKDIR /workspace
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/bin/sh", "-lc", "while true; do sleep 3600; done"]

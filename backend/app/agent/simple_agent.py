@@ -74,6 +74,47 @@ def _max_output_continuations() -> int:
         return 2
 
 
+def _audio_transcription_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    """Return a deterministic full transcript message for audio-transcription scripts.
+
+    Long transcripts should not be sent back through the LLM for restatement, because
+    provider max output limits can truncate the user-visible answer. The script already
+    returns the final transcript in stdout JSON, so surface that text directly.
+    """
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list) or not any(
+        str(call.get("tool") or call.get("name") or "").startswith("run_skill_script_audio-transcription")
+        for call in calls
+        if isinstance(call, dict)
+    ):
+        return None
+
+    raw_outputs = tool_out.get("tool_raw_outputs")
+    if not isinstance(raw_outputs, list):
+        return None
+    for raw in raw_outputs:
+        try:
+            outer = json.loads(str(raw or ""))
+        except Exception:
+            continue
+        if not isinstance(outer, dict):
+            continue
+        stdout = outer.get("stdout")
+        if not isinstance(stdout, str) or not stdout.strip():
+            continue
+        try:
+            payload = json.loads(stdout.strip())
+        except Exception:
+            continue
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            continue
+        transcript = payload.get("text")
+        if not isinstance(transcript, str) or not transcript.strip():
+            continue
+        return AIMessage(content=transcript.strip())
+    return None
+
+
 def _tool_call_id(tool_call: Any, idx: int) -> str:
     if isinstance(tool_call, dict):
         return str(tool_call.get("id") or tool_call.get("tool_call_id") or f"tool-{idx}")
@@ -144,6 +185,14 @@ def _payload_requests_final(payload: dict[str, Any]) -> bool:
             return True
         if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on", "done", "final"}:
             return True
+    stdout_payload = _json_loads_maybe(payload.get("stdout"))
+    if isinstance(stdout_payload, dict):
+        for key in ("final", "done", "skill_session_end", "session_end"):
+            value = stdout_payload.get(key)
+            if value is True:
+                return True
+            if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on", "done", "final"}:
+                return True
     return False
 
 
@@ -378,6 +427,18 @@ class SimpleAgent:
                     "tool_raw_outputs": tool_raw_outputs,
                     "tool_attempt_debug": tool_attempt_debug,
                 }
+                audio_final_message = _audio_transcription_final_message(tool_out)
+                if audio_final_message is not None:
+                    messages.append(audio_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "audio_transcription_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(audio_final_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": audio_final_message}
+                    break
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages)
@@ -539,6 +600,17 @@ class SimpleAgent:
                         len(missing_tool_msgs),
                     )
                     messages.extend(missing_tool_msgs)
+                audio_final_message = _audio_transcription_final_message(tool_out)
+                if audio_final_message is not None:
+                    messages.append(audio_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "audio_transcription_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(audio_final_message)[:240],
+                        }
+                    )
+                    break
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from app.agent.sandbox_adapter import SandboxHandle, SandboxPolicy
@@ -11,6 +12,7 @@ class FakeAdapter:
     def __init__(self):
         self.created = []
         self.disposed = []
+        self.exec_commands = []
         self.last_tool_request = None
 
     def _host_file(self, handle: SandboxHandle, inner: str) -> Path:
@@ -59,6 +61,7 @@ class FakeAdapter:
         return out
 
     async def exec_command(self, handle, argv, *, cwd="/workspace", timeout_ms=120_000, env=None):
+        self.exec_commands.append({"argv": list(argv or []), "cwd": cwd, "timeout_ms": timeout_ms, "env": dict(env or {})})
         if len(argv) >= 3 and argv[0] == "mkdir" and argv[1] == "-p":
             self._host_file(handle, argv[2]).mkdir(parents=True, exist_ok=True)
             return {"exit_code": 0, "stdout": "", "stderr": ""}
@@ -326,6 +329,59 @@ async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     targets = {m.target for m in (policy.volume_mounts or [])}
     assert SANDBOX_WORKSPACE_ROOT in targets
     assert SANDBOX_SKILLS_ROOT in targets
+    assert policy.image_ref.endswith("-standard")
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    from app.core.user_context import get_user_context_for
+
+    ctx = get_user_context_for("alice")
+    req_path = ctx.config_dir / "sandbox" / "requirements.txt"
+    content = req_path.read_text(encoding="utf-8")
+    assert "pandas" in content
+    assert "openpyxl" in content
+    assert "xlrd" in content
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+    _sid, policy = adapter.created[0]
+    assert policy.allow_network is True
+    assert any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in adapter.exec_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+    handle, touched = svc._user_handles["alice"]
+    handle.metadata.pop("verified_requirements_hash", None)
+    handle.metadata["installed_requirements_hash"] = dep_hash
+    svc._user_handles["alice"] = (handle, touched)
+    before = len(adapter.exec_commands)
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+    assert len(adapter.exec_commands) > before
+    current_handle, _ = svc._user_handles["alice"]
+    assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
