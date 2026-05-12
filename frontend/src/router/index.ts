@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainView from '@/views/MainView.vue'
-import LoginView from '@/views/LoginView.vue'
+import LoginView from '@/features/auth/LoginView.vue'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 
