@@ -70,6 +70,8 @@ def _frontend_flow_env(tmp_path, monkeypatch):
     scripts_dir = skill_dir / "scripts"
     config_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "sandbox").mkdir(parents=True, exist_ok=True)
+    (config_dir / "sandbox" / "requirements.txt").write_text("pendulum==3.0.0\n", encoding="utf-8")
 
     (config_dir / "dha_instances.json").write_text(
         json.dumps(
@@ -180,6 +182,8 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assert call["payload"]["script_path"] == "check_pkg_version.py"
     assert call["payload"]["cli_argv"] == ["--package", "pendulum"]
     assert call["tool_name"].startswith("run_skill_script_")
+    assert call["context"].user_id == user
+    assert call["payload"]["__sandbox_env"]["SKILL_REQUIREMENTS_B64"]
 
     raw_results = assistant_msg.get("tool_raw_results") or []
     assert raw_results

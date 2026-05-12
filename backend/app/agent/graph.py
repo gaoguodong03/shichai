@@ -1005,14 +1005,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         transcript = payload.get("text")
         if not isinstance(transcript, str) or not transcript.strip():
             return stdout.strip()
-        segment_count = payload.get("segment_count")
-        chunk_seconds = payload.get("chunk_seconds")
-        header_parts = ["音频转写完成，以下为完整转写文本，请不要截断。"]
-        if segment_count:
-            header_parts.append(f"分段数：{segment_count}")
-        if chunk_seconds:
-            header_parts.append(f"分段秒数：{chunk_seconds}")
-        return "\n".join(header_parts) + "\n\n" + transcript.strip()
+        return transcript.strip()
 
     def _safe_tool_result_for_prompt(result: object, tool_name: str = "") -> str:
         """限制工具结果进入模型上下文的长度，避免超长内容（如 base64 图片）撑爆 token。"""

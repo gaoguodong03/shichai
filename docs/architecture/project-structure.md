@@ -10,10 +10,10 @@
 DHA/
 ├── backend/                 # Python 后端
 │   ├── app/
-│   │   ├── main.py          # FastAPI 入口
-│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha
+│   │   ├── main.py          # FastAPI 入口组装（create_app / health / 启动）
+│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha、public_scenario
 │   │   ├── agent/           # ReAct 工作流、工具组装、技能选择、LLM 客户端
-│   │   ├── core/            # 用户上下文、安全、用户存储
+│   │   ├── core/            # 生命周期、运行环境、静态挂载、用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化
 │   │   ├── skills/          # Skills 加载（SKILL.md 扫描与内容获取）
 │   │   └── tools/           # 内置工具：export_session、run_skill_script、call_api、filesystem 包装等
@@ -23,7 +23,8 @@ DHA/
 │   └── .env / .env.example
 ├── frontend/                 # Vue 3 前端
 │   ├── src/
-│   │   ├── views/           # 页面：MainView、WorkspaceContent、DHAView、Skill/MCP/设置 等
+│   │   ├── views/           # 顶层壳页面：MainView
+│   │   ├── features/        # 业务域页面：auth、workspace、resources、settings
 │   │   ├── components/     # MCPConfig、SkillsConfig、LLMConfig
 │   │   ├── composables/    # useEventSource、useTheme
 │   │   ├── router/
@@ -104,7 +105,8 @@ DHA/
 
 ### `frontend/src/`
 
-- **views/**：MainView、WorkspaceContent、DHAView、SkillDetailView、MCPDetailView、MCPAddView、各 Settings 子视图、LoginView、WorkspaceFilesView、FileDetailView 等。
+- **views/**：顶层布局壳，目前保留 `MainView.vue` 与对应样式。
+- **features/**：按业务域组织页面，包含 `auth/`、`workspace/`、`resources/`、`settings/`。
 - **components/**：MCPConfig、SkillsConfig、LLMConfig。
 - **api/**：统一 API 层。`base.ts` 提供 `apiBase`（默认 `/api`）、`apiUrl`、`apiFetch`；`chat.ts`（流式请求、导出、技能列表）、`settings.ts`（Skills/MCP CRUD）、`files.ts`（工作区文件列表、下载链接）。视图与组件通过 `@/api` 调用，便于代理与生产同源。
 - **composables/**：useEventSource（SSE）、useTheme。
@@ -120,9 +122,12 @@ DHA/
 ## 命名与组织原则
 
 - **后端**：文件/函数 `snake_case`，类 `PascalCase`，常量 `UPPER_SNAKE_CASE`。
-- **单一职责**：主流程在 api/agent，工具与归一化在 tools/mcp；文档与实现保持一致，过时描述及时修正。
+- **前端**：`views/` 仅保留顶层布局壳；业务页面放入 `features/<domain>/`，公共能力放入 `api/`、`components/`、`composables/`。
+- **单一职责**：主流程在 api/agent，启动横切逻辑在 core，工具与归一化在 tools/mcp；文档与实现保持一致，过时描述及时修正。
 
 ## 相关文档
 
 - [运行流程](runtime-flow.md)：两阶段、单聊主流程、初始化、流式。
 - [步骤类型与工具](step-types-and-tools.md)：MCP / script / service / export / 只读文件等执行路径。
+- [镜像与依赖边界](images-and-dependencies.md)：主应用、OpenSandbox、技能沙箱与用户依赖的职责划分。
+- [需求说明与验收测试](../需求说明与验收测试.md)：产品需求、模块验收点与回归测试建议。
