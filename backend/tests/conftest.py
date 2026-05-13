@@ -34,6 +34,7 @@ LAYER1_CORE_MODULES: frozenset[str] = frozenset(
         "test_host_plan",
         "test_host_takeover",
         "test_llm_config",
+        "test_lifespan",
         "test_orchestration_contracts",
         "test_orchestrator_audit",
         "test_public_scenario_api",

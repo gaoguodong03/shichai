@@ -1,5 +1,5 @@
 {
-  "default_llm": "qwen",
+  "default_llm": "jeniya",
   "llm_providers": {
     "jeniya": {
       "base_url": "https://jeniya.top/v1",
@@ -38,19 +38,20 @@
       "api_key_env": "JENIYA_API_KEY",
       "api_key_set": false
     },
+    "qwen": {
+      "enable_thinking": false,
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "model": "qwen3-max",
+      "api_key_env": "QWEN_API_KEY",
+      "api_key_ref": "QWEN_API_KEY",
+      "api_key_set": false
+    },
     "gpustack": {
       "base_url": "http://10.129.50.230/v1",
       "model": "qwen3.5-27b-awq",
       "api_key_env": "JENIYA_API_KEY",
       "api_key_ref": "gpustack",
       "api_key_set": false
-    },
-    "qwen": {
-      "enable_thinking": false,
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max",
-      "api_key_env": "QWEN_API_KEY",
-      "api_key_ref": "QWEN_API_KEY"
     }
   },
   "host_profile": {

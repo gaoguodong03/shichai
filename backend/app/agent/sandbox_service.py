@@ -24,6 +24,7 @@ from app.core.user_context import get_user_context_for, users_data_root
 logger = logging.getLogger(__name__)
 
 _REQUIREMENTS_VERIFIER_VERSION = "import-v2"
+_REQUIREMENTS_REAL_VERIFIED_AT_KEY = "requirements_real_verified_at"
 
 def _env_truthy(name: str, default: str = "0") -> bool:
     val = (os.getenv(name) or default).strip().lower()
@@ -200,6 +201,18 @@ class SandboxService:
         self._restart_only_on_requirements_update = _env_truthy(
             "SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE", default="1"
         )
+        try:
+            self._requirements_real_verify_ttl_sec = max(
+                0,
+                int(os.getenv("SANDBOX_REQUIREMENTS_REAL_VERIFY_TTL_SEC", "300") or "300"),
+            )
+        except ValueError:
+            logger.warning(
+                "sandbox_env_invalid_int name=%s value=%s",
+                "SANDBOX_REQUIREMENTS_REAL_VERIFY_TTL_SEC",
+                os.getenv("SANDBOX_REQUIREMENTS_REAL_VERIFY_TTL_SEC"),
+            )
+            self._requirements_real_verify_ttl_sec = 300
         self._fixed_cpu = _env_float("SANDBOX_FIXED_CPU")
         self._fixed_memory_mb = _env_int("SANDBOX_FIXED_MEMORY_MB")
         self._lock = asyncio.Lock()
@@ -360,6 +373,28 @@ class SandboxService:
     def _requirements_b64_for_user(self, user_id: str) -> str:
         return _requirements_b64(self._read_user_sandbox_requirements(user_id))
 
+    def _requirements_real_verify_is_fresh(
+        self,
+        handle: SandboxHandle,
+        *,
+        dep_hash: str,
+        now: float,
+    ) -> bool:
+        if self._requirements_real_verify_ttl_sec <= 0:
+            return True
+        if not isinstance(handle.metadata, dict):
+            return False
+        if dep_hash and str(handle.metadata.get("verified_requirements_hash") or "").strip() != dep_hash:
+            return False
+        verified_at_raw = handle.metadata.get(_REQUIREMENTS_REAL_VERIFIED_AT_KEY)
+        try:
+            verified_at = float(verified_at_raw)
+        except (TypeError, ValueError):
+            return False
+        if verified_at <= 0:
+            return False
+        return (now - verified_at) <= self._requirements_real_verify_ttl_sec
+
     async def _verify_installed_user_requirements(
         self,
         handle: SandboxHandle,
@@ -444,6 +479,8 @@ class SandboxService:
             exit_code = _command_exit_code(verify_result)
             stdout, stderr = _command_output(verify_result)
             if isinstance(exit_code, int) and exit_code == 0:
+                if isinstance(handle.metadata, dict):
+                    handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
                 logger.info(
                     "st49_sandbox_requirements_verify_done code=requirements_real_verify_done user_id=%s dep_hash=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
                     user_id,
@@ -482,7 +519,7 @@ class SandboxService:
         current_b64 = (env.get("SKILL_REQUIREMENTS_B64") or "").strip()
         if req_b64 and not current_b64:
             env["SKILL_REQUIREMENTS_B64"] = req_b64
-            logger.info(
+            logger.debug(
                 "st49_sandbox_command_env_injected code=requirements_env_injected user_id=%s session_id=%s tool_name=%s requirements_hash=%s",
                 user_id,
                 req.session_id,
@@ -490,7 +527,7 @@ class SandboxService:
                 self._requirements_hash_for_user(user_id),
             )
         elif req_b64 and current_b64:
-            logger.info(
+            logger.debug(
                 "st49_sandbox_command_env_present code=requirements_env_present user_id=%s session_id=%s tool_name=%s requirements_hash=%s",
                 user_id,
                 req.session_id,
@@ -498,7 +535,7 @@ class SandboxService:
                 self._requirements_hash_for_user(user_id),
             )
         else:
-            logger.info(
+            logger.debug(
                 "st49_sandbox_command_env_empty code=requirements_env_empty user_id=%s session_id=%s tool_name=%s requirements_hash=%s",
                 user_id,
                 req.session_id,
@@ -530,6 +567,7 @@ class SandboxService:
             if list(policy.tool_allowlist or []):
                 updates["tool_allowlist"] = []
             if not list(policy.volume_mounts or []):
+                updates["fs_root"] = str(host_sessions_root.resolve())
                 updates["volume_mounts"] = mounts
             if not (policy.workspace_host_path or "").strip():
                 updates["workspace_host_path"] = str(host_sessions_root.resolve())
@@ -596,6 +634,16 @@ class SandboxService:
                         and network_policy_matches
                     ):
                         self._user_handles[key] = (handle, now)
+                        if self._requirements_real_verify_is_fresh(handle, dep_hash=current_req_hash, now=now):
+                            logger.info(
+                                "st49_sandbox_requirements_skip code=requirements_real_verify_ttl_hit user_id=%s session_id=%s dep_hash=%s sandbox_id=%s ttl_sec=%s",
+                                user_id,
+                                req.session_id,
+                                current_req_hash,
+                                str((handle.metadata or {}).get("sandbox_id") or ""),
+                                self._requirements_real_verify_ttl_sec,
+                            )
+                            return handle
                         real_verified = await self._verify_installed_user_requirements(
                             handle,
                             user_id=user_id,
@@ -607,6 +655,7 @@ class SandboxService:
                             handle.metadata.pop("installed_requirements_hash", None)
                             handle.metadata.pop("verified_requirements_hash", None)
                             handle.metadata.pop("requirements_verifier_version", None)
+                            handle.metadata.pop(_REQUIREMENTS_REAL_VERIFIED_AT_KEY, None)
                         logger.info(
                             "st49_sandbox_reinstall code=user_requirements_real_verify_failed user_id=%s session_id=%s dep_hash=%s sandbox_id=%s",
                             user_id,
@@ -767,7 +816,7 @@ class SandboxService:
                 )
                 return ""
             content = path.read_text(encoding="utf-8")
-            logger.info(
+            logger.debug(
                 "st49_sandbox_requirements_loaded code=requirements_file_loaded user_id=%s path=%s bytes=%s non_comment_lines=%s",
                 user_id,
                 str(path),
@@ -802,7 +851,7 @@ class SandboxService:
         last = str(handle.metadata.get("installed_requirements_hash") or "")
         verified = str(handle.metadata.get("verified_requirements_hash") or "")
         verifier_version = str(handle.metadata.get("requirements_verifier_version") or "")
-        logger.info(
+        logger.debug(
             "st49_sandbox_requirements_check code=requirements_check user_id=%s dep_hash=%s installed_hash=%s verified_hash=%s verifier_version=%s required_verifier=%s has_requirements=%s req_bytes=%s sandbox_id=%s image_ref=%s allow_network=%s timeout_ms=%s",
             user_id,
             dep_hash,
@@ -818,6 +867,7 @@ class SandboxService:
             int(policy.timeout_ms or 0),
         )
         if dep_hash == last and dep_hash == verified and verifier_version == _REQUIREMENTS_VERIFIER_VERSION:
+            handle.metadata.setdefault(_REQUIREMENTS_REAL_VERIFIED_AT_KEY, time.time())
             logger.info(
                 "st49_sandbox_requirements_skip code=requirements_hash_verified user_id=%s dep_hash=%s sandbox_id=%s",
                 user_id,
@@ -830,6 +880,7 @@ class SandboxService:
             handle.metadata["installed_requirements_hash"] = dep_hash
             handle.metadata["verified_requirements_hash"] = dep_hash
             handle.metadata["requirements_verifier_version"] = _REQUIREMENTS_VERIFIER_VERSION
+            handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
             logger.info(
                 "st49_sandbox_requirements_skip code=requirements_empty user_id=%s dep_hash=%s sandbox_id=%s",
                 user_id,
@@ -956,14 +1007,21 @@ class SandboxService:
                 handle.metadata["installed_requirements_hash"] = dep_hash
                 handle.metadata["verified_requirements_hash"] = dep_hash
                 handle.metadata["requirements_verifier_version"] = _REQUIREMENTS_VERIFIER_VERSION
+                handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
                 elapsed_ms = int((time.perf_counter() - started_at) * 1000)
                 logger.info(
-                    "st49_sandbox_requirements_install_done code=requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s stdout_tail=%r stderr_tail=%r",
+                    "st49_sandbox_requirements_install_done code=requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s",
                     user_id,
                     dep_hash,
                     elapsed_ms,
                     str((handle.metadata or {}).get("sandbox_id") or ""),
                     str((handle.metadata or {}).get("image_ref") or ""),
+                )
+                logger.debug(
+                    "st49_sandbox_requirements_install_output code=requirements_install_output user_id=%s dep_hash=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
+                    user_id,
+                    dep_hash,
+                    str((handle.metadata or {}).get("sandbox_id") or ""),
                     _tail(stdout, 2000),
                     _tail(stderr, 2000),
                 )
@@ -1501,6 +1559,7 @@ class SandboxService:
             "installed_requirements_hash": str((handle.metadata or {}).get("installed_requirements_hash") or ""),
             "verified_requirements_hash": str((handle.metadata or {}).get("verified_requirements_hash") or ""),
             "requirements_verifier_version": str((handle.metadata or {}).get("requirements_verifier_version") or ""),
+            "requirements_real_verified_at": float((handle.metadata or {}).get(_REQUIREMENTS_REAL_VERIFIED_AT_KEY) or 0),
             "backend": self.backend_label(),
             "reason": reason,
         }

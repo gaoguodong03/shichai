@@ -63,7 +63,7 @@ def _collect_sandbox_passthrough_env() -> dict[str, str]:
         else:
             missing_keys.append(key)
     out.setdefault("PLAYWRIGHT_BROWSERS_PATH", _DEFAULT_PLAYWRIGHT_BROWSERS_PATH)
-    logger.info(
+    logger.debug(
         "st49_skill_env_passthrough code=skill_env_passthrough present_keys=%s missing_keys=%s",
         sorted(out.keys()),
         sorted(missing_keys),

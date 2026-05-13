@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import xlrd
 
 _DEFAULT_EXCEL_NAME = "北京邮电大学差旅住宿费标准明细表.xls"
 _DEFAULT_EXCEL_DIR = "assets"
@@ -61,18 +61,24 @@ def _strip_place_suffix(name: str) -> str:
     return s
 
 
-def _find_header_row(df: pd.DataFrame) -> int:
-    for i in range(min(len(df), 80)):
-        row = [_clean_text(x) for x in df.iloc[i].tolist()]
+def _read_excel_rows(excel_path: Path) -> list[list[Any]]:
+    workbook = xlrd.open_workbook(str(excel_path))
+    sheet = workbook.sheet_by_index(0)
+    return [sheet.row_values(i) for i in range(sheet.nrows)]
+
+
+def _find_header_row(rows: list[list[Any]]) -> int:
+    for i in range(min(len(rows), 80)):
+        row = [_clean_text(x) for x in rows[i]]
         joined = " ".join(row)
         if "序号" in joined and "地区" in joined:
             return i
     return 0
 
 
-def _extract_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    header_row = _find_header_row(df)
-    start_row = min(header_row + 1, len(df))
+def _extract_records(rows: list[list[Any]]) -> list[dict[str, Any]]:
+    header_row = _find_header_row(rows)
+    start_row = min(header_row + 1, len(rows))
 
     serial_idx = 0
     province_idx = 1
@@ -85,8 +91,8 @@ def _extract_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     current_province = ""
 
-    for i in range(start_row, len(df)):
-        row = df.iloc[i].tolist()
+    for i in range(start_row, len(rows)):
+        row = list(rows[i])
         if len(row) < 6:
             continue
         row = row + [""] * max(0, peak_start + 3 - len(row))
@@ -377,7 +383,7 @@ def main() -> int:
         return 2
 
     try:
-        df = pd.read_excel(excel_path, header=None, dtype=str)
+        rows = _read_excel_rows(excel_path)
     except Exception as e:
         print(
             json.dumps(
@@ -392,7 +398,7 @@ def main() -> int:
         )
         return 3
 
-    records = _extract_records(df)
+    records = _extract_records(rows)
     keywords = _extract_keywords(args.query)
     explicit_province = _clean_text(args.province)
     explicit_city = _clean_text(args.city)

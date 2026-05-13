@@ -71,10 +71,25 @@ async def _prewarm_user_sandbox_after_login(username: str) -> None:
             timeout_ms = int(os.getenv("SANDBOX_LOGIN_PREWARM_TIMEOUT_MS", "600000") or "600000")
         except Exception:
             timeout_ms = 600_000
-        await svc.prewarm_user_sandbox(
+        effective_timeout_ms = max(120_000, timeout_ms)
+        logger.info(
+            "sandbox_login_prewarm_start user=%s timeout_ms=%s",
+            username,
+            effective_timeout_ms,
+        )
+        result = await svc.prewarm_user_sandbox(
             username,
             reason="login",
-            timeout_ms=max(120_000, timeout_ms),
+            timeout_ms=effective_timeout_ms,
+        )
+        logger.info(
+            "sandbox_login_prewarm_done user=%s sandbox_id=%s requirements_hash=%s installed_hash=%s verified_hash=%s verifier=%s",
+            username,
+            result.get("sandbox_id", ""),
+            result.get("requirements_hash", ""),
+            result.get("installed_requirements_hash", ""),
+            result.get("verified_requirements_hash", ""),
+            result.get("requirements_verifier_version", ""),
         )
     except Exception as e:  # noqa: BLE001
         # 预热失败不影响登录，只记录日志供排查。

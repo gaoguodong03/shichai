@@ -511,6 +511,7 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
     handle.metadata["installed_requirements_hash"] = dep_hash
     handle.metadata["verified_requirements_hash"] = dep_hash
     handle.metadata["requirements_verifier_version"] = "import-v2"
+    handle.metadata["requirements_real_verified_at"] = 1
     svc._user_handles["alice"] = (handle, touched)
 
     before = len(adapter.exec_commands)
@@ -522,6 +523,66 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
     current_handle, _ = svc._user_handles["alice"]
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_fresh_prewarm_skips_repeated_real_requirements_verify(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    adapter = MissingPackageAfterMetadataHitAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="login")
+    before = len(adapter.exec_commands)
+    await svc.prewarm_user_sandbox("alice", reason="hot_request")
+    after_commands = adapter.exec_commands[before:]
+
+    assert after_commands
+    assert not any("SANDBOX_REQUIREMENTS_TEXT" in cmd["env"] for cmd in after_commands)
+    assert not any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in after_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="request")
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+        policy=SandboxPolicy(
+            fs_root=str(workspace_root.resolve()),
+            timeout_ms=1000,
+            tool_allowlist=["run_skill_script_demo"],
+        ),
+    )
+    await svc.execute(req)
+
+    assert len(adapter.created) == 1
+    assert adapter.disposed == []
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+    monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
 
 
 async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeypatch, tmp_path):

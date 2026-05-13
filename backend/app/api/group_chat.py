@@ -9,6 +9,7 @@ import shutil
 import time
 import uuid
 import difflib
+import asyncio
 from urllib.parse import parse_qs, unquote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
@@ -515,7 +516,7 @@ def _messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
         max_chars_per_message=240,
     )
     if skipped:
-        logger.info("group_expert_context_noise_filtered skipped=%s kept=%s", skipped, len(filtered))
+        logger.debug("group_expert_context_noise_filtered skipped=%s kept=%s", skipped, len(filtered))
     return context
 
 
@@ -601,6 +602,79 @@ async def _ai_title_from_recent_user_messages(
     except Exception as e:
         logger.error(f"AI 生成群聊主题失败: {e}", exc_info=True)
         return ""
+
+
+def _schedule_group_title_refresh(
+    group_session_id: str,
+    messages_snapshot: List[Dict[str, Any]],
+    *,
+    max_chars: int = 18,
+    max_user_messages: int = 6,
+) -> None:
+    """后台刷新群聊标题，避免标题 LLM 阻塞主对话链路。"""
+    session_id = (group_session_id or "").strip()
+    if not session_id:
+        return
+
+    async def _runner() -> None:
+        started = time.perf_counter()
+        try:
+            app_settings = load_app_settings()
+            llm_provider_id = app_settings.get("default_llm", "qwen")
+            secrets = load_api_secret_values()
+            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"), secrets)
+            ai_title = await _ai_title_from_recent_user_messages(
+                llm,
+                messages_snapshot,
+                max_chars=max_chars,
+                max_user_messages=max_user_messages,
+            )
+            if not ai_title:
+                logger.info(
+                    "group_chat_title_background_skip session=%s reason=empty elapsed_ms=%s",
+                    session_id,
+                    int((time.perf_counter() - started) * 1000),
+                )
+                return
+            latest_meta = _load_group_meta()
+            meta_item = latest_meta.get(session_id)
+            if not isinstance(meta_item, dict):
+                return
+            current_title = (meta_item.get("title") or "").strip()
+            placeholder_titles = ("新对话", "新群聊", "")
+            is_template_title = current_title.startswith("多Agent协作 ·")
+            title_auto_generated = meta_item.get("title_auto_generated")
+            if title_auto_generated is None:
+                title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
+            if not (title_auto_generated or current_title in placeholder_titles or is_template_title):
+                logger.info(
+                    "group_chat_title_background_skip session=%s reason=manual_title title=%r",
+                    session_id,
+                    current_title,
+                )
+                return
+            meta_item["title"] = ai_title
+            meta_item["title_auto_generated"] = True
+            _save_group_meta(latest_meta)
+            logger.debug(
+                "group_chat_title_background_done session=%s title=%r elapsed_ms=%s",
+                session_id,
+                ai_title,
+                int((time.perf_counter() - started) * 1000),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("group_chat_title_background_failed session=%s err=%s", session_id, e)
+
+    asyncio.create_task(_runner())
+
+
+def _title_refresh_every_user_message() -> bool:
+    return (os.getenv("GROUP_CHAT_TITLE_REFRESH_EVERY_MESSAGE") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
@@ -2146,7 +2220,7 @@ async def delete_group_message(group_session_id: str, message_id: str):
 
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     """群聊流式对话：用户消息或继续下一轮，支持 override_next_speaker"""
-    logger.warning(
+    logger.debug(
         "group_chat_stream_enter session=%s override=%r action=%r has_message=%s",
         group_session_id,
         request.override_next_speaker,
@@ -2239,22 +2313,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             # 兼容历史：若标题较短或仍是占位符，则视为“自动生成的标题”，允许覆盖更新
             title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
 
-        if title_auto_generated or current_title in placeholder_titles or is_template_title:
-            llm_provider_id = app_settings.get("default_llm", "qwen")
-            secrets = load_api_secret_values()
-            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"), secrets)
-            # 基于最近用户发言生成“当前主题”，避免讨论发散后标题仍停留在旧主题
-            ai_title = await _ai_title_from_recent_user_messages(llm, messages, max_chars=18, max_user_messages=6)
-            if ai_title:
-                meta[group_session_id]["title"] = ai_title
-                meta[group_session_id]["title_auto_generated"] = True
-            elif first_user_message and current_title in placeholder_titles:
-                # AI 失败时的回退：截取首条用户消息（较短，保证可用）
+        # 标题精修会额外占用一次 LLM。默认只在首条/占位标题时跑，避免每轮消息和专家主流程抢模型延迟。
+        should_refresh_title = bool(
+            current_title in placeholder_titles
+            or is_template_title
+            or (first_user_message and title_auto_generated)
+            or (title_auto_generated and _title_refresh_every_user_message())
+        )
+        if should_refresh_title:
+            if first_user_message and (current_title in placeholder_titles or is_template_title):
+                # 热路径只做本地兜底标题；AI 精修在后台完成，不阻塞 @专家 路由。
                 auto_title = _title_from_first_message(user_message, max_chars=10)
                 if auto_title:
                     meta[group_session_id]["title"] = auto_title
                     meta[group_session_id]["title_auto_generated"] = True
         _save_group_meta(meta)
+        if should_refresh_title:
+            _schedule_group_title_refresh(
+                group_session_id,
+                list(messages),
+                max_chars=18,
+                max_user_messages=6,
+            )
 
     # 上一发言人（用于主持人/领导人判断 task_done；排除主持人本人，只计参与讨论的 DHA）
     last_speaker_agent_id = None
@@ -2450,7 +2530,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _save_group_meta(meta)
 
             if forced_at_mention_agent_id and forced_at_mention_agent_id in agent_ids:
-                logger.warning("group_chat_route_branch=forced_at_mention session=%s next=%s", group_session_id, forced_at_mention_agent_id)
+                logger.debug("group_chat_route_branch=forced_at_mention session=%s next=%s", group_session_id, forced_at_mention_agent_id)
                 clear_skill_session_lock(meta_item)
                 _save_group_meta(meta)
                 next_speaker = forced_at_mention_agent_id
@@ -2464,7 +2544,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     },
                 )
             elif explicit_requested_agent_ids and any(aid in agent_ids for aid in explicit_requested_agent_ids):
-                logger.warning("group_chat_route_branch=explicit_requested session=%s ids=%s", group_session_id, ",".join(explicit_requested_agent_ids or []))
+                logger.debug("group_chat_route_branch=explicit_requested session=%s ids=%s", group_session_id, ",".join(explicit_requested_agent_ids or []))
                 # 用户显式点名场内专家时优先直达，避免被上一轮 skill 锁误续跑到其他专家。
                 requested_in_room = [aid for aid in explicit_requested_agent_ids if aid in agent_ids]
                 if requested_in_room:
@@ -2484,14 +2564,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             elif explicit_requested_agent_ids:
                 # 用户点名了不在当前场景成员中的专家（常见于切场景后沿用旧 @专家）。
                 # 记录后继续走主持人调度，不在该分支短路。
-                logger.warning(
+                logger.debug(
                     "group_chat_explicit_requested_not_in_room session=%s requested=%s room=%s",
                     group_session_id,
                     ",".join(explicit_requested_agent_ids or []),
                     ",".join(agent_ids or []),
                 )
             elif entry_route.skip_host_dispatch and entry_route.direct_expert_id:
-                logger.warning(
+                logger.debug(
                     "group_chat_route_branch=skip_host_dispatch session=%s next=%s",
                     group_session_id,
                     entry_route.direct_expert_id,
@@ -2504,7 +2584,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     {"next_speaker": next_speaker, "ctx": orch_ctx.to_dict()},
                 )
             elif request.override_next_speaker is not None and str(request.override_next_speaker).strip():
-                logger.warning(
+                logger.debug(
                     "group_chat_route_branch=override session=%s override=%s",
                     group_session_id,
                     str(request.override_next_speaker).strip().lower(),
@@ -2549,13 +2629,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             elif request.override_next_speaker is not None:
                 # 兼容前端偶发传入空串：应视作“未指定 override”，继续走主持人正常调度，
                 # 而不是让 next_speaker 落成空值导致后续无可执行专家。
-                logger.warning(
+                logger.debug(
                     "group_chat_stream 忽略空 override_next_speaker: session=%s raw=%r",
                     group_session_id,
                     request.override_next_speaker,
                 )
             else:
-                logger.warning("group_chat_route_branch=host_scheduler session=%s", group_session_id)
+                logger.debug("group_chat_route_branch=host_scheduler session=%s", group_session_id)
                 # 唯一调度路径（不再区分 speak_mode manual/auto；流程由 Skill 锁与主持人 JSON 表达）
                 recent = _scheduler_recent_context(group_session_id, messages)
                 decision = None

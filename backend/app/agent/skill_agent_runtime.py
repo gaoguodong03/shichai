@@ -811,7 +811,7 @@ def create_skill_execution_agent(
     系统提示词 = 用户设置 + 选中技能的完整内容 + 工具列表。
     按 skill 步骤执行，某一步需要时调用 MCP 工具。
     """
-    logger.info(f"创建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
+    logger.debug(f"创建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
 
     system_prompt = ""
     if extra_system_prompt and extra_system_prompt.strip():
@@ -829,7 +829,7 @@ def create_skill_execution_agent(
     for tool in tools:
         system_prompt += f"- {tool.name}: {tool.description}\n"
     if tools:
-        logger.info("已添加工具指令到系统提示词")
+        logger.debug("已添加工具指令到系统提示词")
     # 若包含 Exa 工具，注入 Exa MCP 使用说明（仅调用 exa 时生效）
     if any(t.name == "exa_web_search_exa" for t in tools):
         system_prompt += """
@@ -865,10 +865,10 @@ def create_skill_execution_agent(
             else:
                 preview = (s[:150] + "…") if len(s) > 150 else s
                 msg_summary.append(f"  [{i+1}] {role}: {preview}")
-        logger.info("输入大模型的提示词（技能执行）:\n" + "\n".join(msg_summary))
+        logger.debug("输入大模型的提示词（技能执行）:\n" + "\n".join(msg_summary))
         t0 = time.perf_counter()
         elapsed = (t0 - t_request_start) if t_request_start else 0
-        logger.info(f"call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
+        logger.debug(f"call_model: 开始调用 LLM (流程已耗时 {elapsed:.2f}s)")
         try:
             # 优先 astream：token 级流式，供 stream_mode="messages" 推送；传入 config 以支持 tracer（Python < 3.11 需显式传递）
             invoke_kw = {"config": config} if config is not None else {}
@@ -888,7 +888,7 @@ def create_skill_execution_agent(
                 response = await asyncio.wait_for(
                     client.ainvoke(messages, **invoke_kw), timeout=float(_LLM_AGENT_TIMEOUT)
                 )
-            logger.info(f"call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
+            logger.debug(f"call_model LLM 完成: {time.perf_counter() - t0:.2f}s")
         except asyncio.TimeoutError:
             logger.error(f"call_model: LLM 调用超时（{_LLM_AGENT_TIMEOUT}秒）")
             response = AIMessage(content="抱歉，模型响应超时，请稍后重试。")
@@ -1139,7 +1139,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
                         if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                             tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
-                            logger.info(
+                            logger.debug(
                                 "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
                                 tool_name,
                                 str(abs(hash(cache_key))),
@@ -1228,7 +1228,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
                     if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                         tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
-                        logger.info(
+                        logger.debug(
                             "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
                             tool_name,
                             str(abs(hash(cache_key))),

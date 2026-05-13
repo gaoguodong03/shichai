@@ -54,8 +54,9 @@ if __name__ == "__main__":
 
     host = os.getenv("APP_HOST", "0.0.0.0")
     port = int(os.getenv("APP_PORT", "8000"))
+    access_log = (os.getenv("APP_ACCESS_LOG") or "0").strip().lower() in ("1", "true", "yes", "on")
     probe_host = "127.0.0.1" if host == "0.0.0.0" else host
     if reuse_existing_backend(probe_host, port):
         sys.exit(0)
     auto_bootstrap_opensandbox()
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, access_log=access_log)
