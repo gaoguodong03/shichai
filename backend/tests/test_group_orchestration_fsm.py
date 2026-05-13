@@ -9,7 +9,7 @@ from app.agent.group_orchestration_fsm import (
     resolve_group_entry_route,
     user_requests_exit_skill_session,
 )
-from app.api import group_chat as group_chat_module
+from app.agent import skill_session_contract
 
 
 def test_effective_profile_explicit():
@@ -90,14 +90,14 @@ def test_locked_skill_id_for_expert_wrong_owner():
 
 
 def test_skill_session_ended_by_marker():
-    assert group_chat_module.skill_session_ended_by_expert_output("完成 [[SKILL_SESSION_END]]")
-    assert group_chat_module.skill_session_ended_by_expert_output("【技能会话结束】")
-    assert not group_chat_module.skill_session_ended_by_expert_output("仍在处理中")
+    assert skill_session_contract.skill_session_ended_by_expert_output("完成 [[SKILL_SESSION_END]]")
+    assert skill_session_contract.skill_session_ended_by_expert_output("【技能会话结束】")
+    assert not skill_session_contract.skill_session_ended_by_expert_output("仍在处理中")
 
 
 def test_strip_skill_session_state_blocks_over_true():
     raw = '说明文字\n\n[[SKILL_SESSION_STATE]]\n{"over": true}\n[[/SKILL_SESSION_STATE]]'
-    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
     assert over is True
     assert "SKILL_SESSION_STATE" not in stripped
     assert "说明文字" in stripped
@@ -105,21 +105,76 @@ def test_strip_skill_session_state_blocks_over_true():
 
 def test_strip_skill_session_state_blocks_over_false():
     raw = '还要再问\n[[SKILL_SESSION_STATE]]{"over": false}[[/SKILL_SESSION_STATE]]'
-    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
     assert over is False
     assert stripped.strip() == "还要再问"
 
 
 def test_strip_skill_session_state_blocks_alias_skill_session_over():
     raw = 'x\n[[SKILL_SESSION_STATE]]\n{"skill_session_over": true}\n[[/SKILL_SESSION_STATE]]'
-    over, stripped = group_chat_module._strip_skill_session_state_blocks_and_get_over(raw)
+    over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
     assert over is True
     assert stripped.strip() == "x"
 
 
 def test_strip_end_markers_for_display():
     t = "好了 [[SKILL_SESSION_END]]"
-    assert "SESSION_END" not in group_chat_module._strip_skill_session_end_markers_for_display(t)
+    assert "SESSION_END" not in skill_session_contract.strip_skill_session_end_markers_for_display(t)
+
+
+def test_resolve_skill_session_state_reads_script_stdout_over():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "已转写完成",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_audio_transcription"],
+    )
+    assert resolved.over is True
+    assert resolved.source == "script_stdout"
+    assert resolved.display_content == "已转写完成"
+
+
+def test_resolve_skill_session_state_ignores_done_final_for_session_lock():
+    raw_tool_outputs = ['{"ok": true, "stdout": "{\\"ok\\": true, \\"done\\": true, \\"final\\": true}"}']
+    resolved = skill_session_contract.resolve_skill_session_state("脚本完成", raw_tool_outputs)
+    assert resolved.over is None
+    assert resolved.source == "none"
+
+
+def test_resolve_skill_session_state_ignores_non_script_tool_over_when_named():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "API 返回完成",
+        raw_tool_outputs,
+        tool_names=["call_api"],
+    )
+    assert resolved.over is None
+    assert resolved.source == "none"
+
+
+def test_resolve_skill_session_state_prefers_assistant_block_over_script_stdout():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
+    ]
+    raw = '还需要你确认\n[[SKILL_SESSION_STATE]]{"over": false}[[/SKILL_SESSION_STATE]]'
+    resolved = skill_session_contract.resolve_skill_session_state(raw, raw_tool_outputs)
+    assert resolved.over is False
+    assert resolved.source == "assistant_state_block"
+    assert resolved.display_content == "还需要你确认"
+
+
+def test_resolve_skill_session_state_legacy_marker_beats_script_stdout():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": false}"}'
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state("完成 [[SKILL_SESSION_END]]", raw_tool_outputs)
+    assert resolved.over is True
+    assert resolved.source == "legacy_end_marker"
+    assert "SKILL_SESSION_END" not in resolved.display_content
 
 
 def test_user_requests_exit_skill_session_phrases():

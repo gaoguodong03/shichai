@@ -108,6 +108,20 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 - 文档中若写 `scripts/foo.py`，系统会尽量纠正，但规范写法仍是 `foo.py`。
 - 脚本参数必须是 argv 数组 JSON，例如 `["--name", "value"]`。
 - 脚本必须把结构化结果写到 stdout，错误写到 stderr，并使用退出码表达成功或失败。
+- stdout JSON 推荐包含 `ok`、`code`、`message`、`result/text/output` 等业务字段；若脚本能确定当前 Skill 会话是否结束，必须使用 `skill_session_over: true|false` 表达。兼容 `over`，但新脚本优先写 `skill_session_over`。
+- `done`、`final` 只表示工具循环可以收束，不等价于释放群聊 Skill 会话锁。
+
+成功且应结束 Skill 会话的 stdout 示例：
+
+```json
+{
+  "ok": true,
+  "code": "completed",
+  "message": "已生成结果文件。",
+  "output": "outputs/result.txt",
+  "skill_session_over": true
+}
+```
 
 ### 5.2 `scripts/manifest.json`
 
@@ -123,6 +137,169 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
     }
   }
 }
+```
+
+### 5.3 给 Skill 作者的脚本函数调用建议
+
+面向用户编写 Skill 时，建议把“模型如何调脚本”和“脚本如何返回结果”都写成固定合同，不让模型猜。
+
+#### 5.3.1 在 `SKILL.md` 中写清楚工具调用
+
+在执行步骤里写明实际工具名、脚本名和 argv 数组：
+
+```text
+调用 run_skill_script_<skill_id>：
+- script_path: transcribe_audio.py
+- cli_args_json: ["--file", "<工作区相对路径>", "--language", "zh"]
+```
+
+约定：
+
+- `script_path` 只写 `scripts/` 下的文件名，不写 `scripts/foo.py`、工作区路径或宿主机绝对路径。
+- `cli_args_json` 必须是 JSON 数组字符串，对应 Python `argparse` 的命令行参数。
+- 所有用户文件路径都用工作区相对路径，例如 `uploads/audio.wav`、`outputs/result.json`。
+- 多参数脚本要在 `scripts/manifest.json` 里写 `input_schema.required`，让系统能提前发现缺参。
+
+#### 5.3.2 沙箱依赖怎么声明和导入
+
+Python 包不要在脚本里临时 `pip install`。按下面顺序处理：
+
+1. 在 `SKILL.md` frontmatter 的 `allowed-tools.python` 中声明依赖，每行一个包：
+
+```yaml
+---
+name: 示例技能
+description: 当用户需要处理表格并生成统计结果时使用。
+allowed-tools:
+  mcp: []
+  python: |
+    pandas>=2.2
+    openpyxl>=3.1
+---
+```
+
+2. 用户导入 Skill 时，系统会把这些依赖合并到当前账号的 `config/sandbox/requirements.txt` 并预热沙箱。
+3. 已存在的 Skill，可在资源中心的 Skill 详情页查看 Python 依赖；红色依赖表示尚未加入“设置 - 沙箱 - requirements.txt”，可一键添加并等待安装完成。
+4. 脚本里按普通 Python 方式 `import pandas` 即可；如果依赖缺失，要返回结构化错误，而不是输出 traceback 给用户。
+
+推荐缺依赖写法：
+
+```python
+try:
+    import pandas as pd
+except ImportError:
+    print(json.dumps({
+        "ok": False,
+        "code": "missing_dependency",
+        "message": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。",
+        "missing_dependencies": ["pandas>=2.2"],
+        "skill_session_over": False
+    }, ensure_ascii=False))
+    raise SystemExit(2)
+```
+
+系统命令、浏览器、Playwright 这类不是普通 Python 包的能力，不要写进后端 `requirements.txt`；应选择合适沙箱版本或由管理员维护沙箱镜像。
+
+#### 5.3.3 stdout 字段怎么写
+
+脚本 stdout 推荐只输出一个 JSON 对象，字段分三层：
+
+| 字段 | 建议 | 说明 |
+| --- | --- | --- |
+| `ok` | 必填 | `true` 表示脚本执行成功，`false` 表示业务失败或缺条件。 |
+| `code` | 必填 | 稳定机器码，如 `completed`、`missing_dependency`、`file_not_found`。 |
+| `message` | 推荐 | 给模型/用户看的短说明。 |
+| `text` / `result` / `output` | 按需 | 主要结果。长文本用 `text`，文件路径用 `output` 或 `files`。 |
+| `*_count` | 按需 | 计数类结果，如 `segment_count`、`chunk_count`、`row_count`、`page_count`。 |
+| `segments` / `items` / `files` | 按需 | 明细数组；每项包含 `index`、`path`、`text` 等稳定字段。 |
+| `skill_session_over` | 推荐 | `true` 表示当前 Skill 可结束，`false` 表示还需要用户补充或继续处理。 |
+| `done` / `final` | 可选 | 只表示工具循环可以收束，不等价于释放 Skill 会话锁。 |
+
+如果你说的“短接数”是音频/视频切片或分段数，字段建议命名为 `segment_count` 或 `chunk_count`，并同时给出 `segments` 明细：
+
+```json
+{
+  "ok": true,
+  "code": "transcribed",
+  "message": "转写完成。",
+  "text": "完整转写文本……",
+  "chunk_seconds": 120,
+  "segment_count": 3,
+  "segments": [
+    {"index": 1, "total": 3, "text": "第一段……"},
+    {"index": 2, "total": 3, "text": "第二段……"},
+    {"index": 3, "total": 3, "text": "第三段……"}
+  ],
+  "skill_session_over": true
+}
+```
+
+计数字段要遵守：
+
+- 用整数，不要写成“3段”“共三段”。
+- 名称稳定，避免同一个脚本有时叫 `count`，有时叫 `num`。
+- 如果有明细数组，`segment_count` 应等于 `len(segments)`。
+- 失败时也可以给 `processed_count`、`failed_count`，方便模型说明完成了多少、哪里失败。
+
+#### 5.3.4 Python 脚本最小模板
+
+```python
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+
+def emit(payload: dict, code: int = 0) -> None:
+    print(json.dumps(payload, ensure_ascii=False))
+    raise SystemExit(code)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", default="outputs/result.json")
+    args = parser.parse_args()
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        emit({
+            "ok": False,
+            "code": "file_not_found",
+            "message": f"找不到输入文件：{args.input}",
+            "skill_session_over": False
+        }, code=2)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result = {"source": args.input}
+    output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    emit({
+        "ok": True,
+        "code": "completed",
+        "message": "处理完成。",
+        "output": str(output_path),
+        "result": result,
+        "skill_session_over": True
+    })
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        emit({
+            "ok": False,
+            "code": "script_error",
+            "message": str(exc),
+            "skill_session_over": False
+        }, code=1)
 ```
 
 ## 6. Skill 会话锁
@@ -161,7 +338,14 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 - 状态块必须放在全部正文之后，不能混入正文解释。
 - 状态块只给系统使用，展示给用户时会被剥离。
 
-兼容规则：如果未输出状态块，系统会回退识别 `[[SKILL_SESSION_END]]` 或“技能会话结束”等旧标记，但新 Skill 必须使用状态块。
+状态优先级：
+
+1. 专家最终回复中的 `[[SKILL_SESSION_STATE]]` 状态块；
+2. 专家最终回复中的旧标记 `[[SKILL_SESSION_END]]` / `【技能会话结束】`；
+3. 脚本 stdout JSON 中的 `skill_session_over` / `over`；
+4. 都没有时默认保留当前 Skill 会话锁。
+
+兼容规则：如果未输出状态块，系统会按上面优先级回退识别旧标记或脚本字段，但新 Skill 必须使用状态块；脚本型 Skill 应同时输出 `skill_session_over` 作为确定性兜底。
 
 ### 7.2 `over=true` 的判定
 

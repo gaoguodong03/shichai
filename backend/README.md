@@ -63,6 +63,8 @@ backend/
 - 字段含义：`over: true` 表示当前 skill 流程已完成，应清除会话锁并交回主持人（四九）重新调度；`over: false` 表示继续保持当前专家/skill 锁，下一轮用户消息仍优先进入同一 skill 会话。
 - 兼容字段：解析器也接受 `skill_session_over` 作为 `over` 的别名，且接受 `true/false` 字符串或 `0/1` 数值。
 - 旧版标记：如果没有状态块，后端回退识别正文中的 `[[SKILL_SESSION_END]]` 或 `【技能会话结束】`，命中后同样清除 skill 会话锁；这些标记也会从展示正文中移除。
+- 脚本辅助字段：脚本型 Skill 可在 stdout JSON 中输出 `skill_session_over: true|false`（兼容 `over`）让后端确定性处理会话锁；专家最终回复中的状态块和旧版正文标记优先级更高。
+- 注意：脚本 stdout 中的 `done` / `final` 只表示“本轮工具循环可以收束并生成最终答复”，不会直接释放群聊 Skill 会话锁。
 - 用户侧退出：用户消息命中「你的任务完成了」「任务结束」「不用继续了」「到此为止」「交/还给主持人」「请主持人」「换/叫/请其他专家」「下一个专家」「退出/结束 skill/技能」等表达时，会清除当前 skill 会话锁，本轮重新进入主持人调度。
 
 ## Skill 脚本执行（run_skill_script）
@@ -72,6 +74,7 @@ backend/
 - Python 脚本使用当前解释器（如 `conda activate sc` 后的 `python`）执行
 - 调用协议：CLI-only（仅 `cli_args_json`），不再支持 `input_json`/stdin JSON
 - 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
+- 推荐 stdout JSON 字段：`ok`、`code`、`message`、`result/text/output`，以及可选 `skill_session_over`。成功完成且不需要同一 Skill 继续处理时设 `skill_session_over: true`；仍需用户补充或确认时设 `false`。
 - 内置调试命令：
   - `script_path="__list__"`：列出可执行脚本
   - `script_path="__manifest__"`：查看 `scripts/manifest.json`

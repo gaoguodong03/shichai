@@ -68,6 +68,10 @@ from app.agent.group_orchestration_fsm import (
     resolve_group_entry_route,
     user_requests_exit_skill_session,
 )
+from app.agent.skill_session_contract import (
+    GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION,
+    resolve_skill_session_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1136,67 +1140,6 @@ def _resolve_dha_skill_id_and_content(
     debug_info["strategy"] = f"{debug_info.get('strategy') or 'unknown'}_fallback_default_content"
     debug_info["selected_skill_id"] = skill_ids[0] if skill_ids else "default"
     return (skill_ids[0] if skill_ids else "default"), c, debug_info
-
-
-_SKILL_SESSION_END_MARKERS = ("[[SKILL_SESSION_END]]", "【技能会话结束】")
-
-_SKILL_SESSION_STATE_START = "[[SKILL_SESSION_STATE]]"
-_SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
-
-_GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
-
-## Skill 会话状态
-本轮回复末尾追加：
-[[SKILL_SESSION_STATE]]
-{"over": true}
-[[/SKILL_SESSION_STATE]]
-`over=true` 表示任务已完成并交回主持人；仍需用户补充或继续处理时用 `false`。
-"""
-
-
-def skill_session_ended_by_expert_output(content: str) -> bool:
-    """专家在正文中声明本段 Skill 会话结束，下一轮应交四九调度（或用户 @ 主持人）。"""
-    t = str(content or "")
-    return any(m in t for m in _SKILL_SESSION_END_MARKERS)
-
-
-def _strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bool], str]:
-    """移除 [[SKILL_SESSION_STATE]] 块；若块内 JSON 含 over / skill_session_over，取最后一次出现的布尔值。"""
-    s = str(raw or "")
-    last_over: Optional[bool] = None
-    start, end = _SKILL_SESSION_STATE_START, _SKILL_SESSION_STATE_END
-    while True:
-        lo = s.find(start)
-        if lo < 0:
-            break
-        hi = s.find(end, lo)
-        if hi < 0:
-            break
-        inner = s[lo + len(start) : hi].strip()
-        s = (s[:lo] + s[hi + len(end) :]).rstrip()
-        try:
-            obj = json.loads(inner)
-            if isinstance(obj, dict):
-                v = obj.get("over")
-                if v is None:
-                    v = obj.get("skill_session_over")
-                if isinstance(v, bool):
-                    last_over = v
-                elif isinstance(v, (int, float)) and v in (0, 1):
-                    last_over = bool(int(v))
-                elif isinstance(v, str) and v.strip().lower() in ("true", "false"):
-                    last_over = v.strip().lower() == "true"
-        except Exception:
-            pass
-    return last_over, s
-
-
-def _strip_skill_session_end_markers_for_display(text: str) -> str:
-    """从展示用正文中移除旧版结束标记（与 skill_session_ended_by_expert_output 成对使用）。"""
-    t = str(text or "")
-    for m in _SKILL_SESSION_END_MARKERS:
-        t = t.replace(m, "")
-    return t.strip()
 
 
 def _extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
@@ -3092,7 +3035,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if role:
                     skill_content = f"你的角色：{role}\n\n{skill_content}"
                 expert_self_awareness = build_expert_self_awareness_block(dha, _request_skills_loader())
-                skill_content += _GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
+                skill_content += GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 
                 llm_dha = _get_llm_for_dha(dha, app_settings)
                 agent = create_skill_execution_agent(
@@ -3138,6 +3081,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 accumulated = []
                 accumulated_raw_tool_results: List[str] = []
+                accumulated_tool_calls_trace: List[Dict[str, Any]] = []
                 tool_attempt_debug: List[Dict[str, Any]] = []
                 # 模型一旦发出 tool_calls，后续会同步执行脚本/API（如生图），可能数十秒无 token；
                 # 在此之前推送一行提示，避免用户误以为「专家无响应」。
@@ -3189,6 +3133,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             tool_msgs = stream_item.get("tool_messages")
                             if isinstance(tool_msgs, list):
                                 pass
+                            tcalls = stream_item.get("tool_calls")
+                            if isinstance(tcalls, list):
+                                for call in tcalls:
+                                    if isinstance(call, dict) and call not in accumulated_tool_calls_trace:
+                                        accumulated_tool_calls_trace.append(call)
                             tro = stream_item.get("tool_raw_outputs")
                             if isinstance(tro, list):
                                 for raw_str in tro:
@@ -3214,13 +3163,20 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 if not full_content.strip():
                     full_content = "模型没有返回可展示的文字内容，请稍后重试或换一个模型。"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
-                over_explicit, text_after_state_blocks = _strip_skill_session_state_blocks_and_get_over(full_content)
-                if over_explicit is not None:
-                    session_ended_by_marker = bool(over_explicit)
-                else:
-                    session_ended_by_marker = skill_session_ended_by_expert_output(text_after_state_blocks)
-                full_content = _strip_skill_session_end_markers_for_display(text_after_state_blocks)
-                tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
+                content_tool_calls_trace = _extract_tool_calls_from_accumulated(accumulated)
+                tool_calls_trace = accumulated_tool_calls_trace or content_tool_calls_trace
+                skill_session_tool_names = [
+                    str(call.get("tool") or call.get("name") or "")
+                    for call in (accumulated_tool_calls_trace or [])
+                    if isinstance(call, dict)
+                ]
+                skill_session_state = resolve_skill_session_state(
+                    full_content,
+                    accumulated_raw_tool_results,
+                    tool_names=skill_session_tool_names or None,
+                )
+                skill_session_completed = skill_session_state.over is True
+                full_content = skill_session_state.display_content
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = resolved_skill_id if dha else "default"
                 current_skill_id_for_pending = skill_id
@@ -3247,6 +3203,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "raw_result_count": len(accumulated_raw_tool_results or []),
                     "has_tool_call": bool(tool_calls_trace),
                     "has_raw_result": bool(accumulated_raw_tool_results),
+                    "skill_session_state": {
+                        "over": skill_session_state.over,
+                        "source": skill_session_state.source,
+                    },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
                 try:
@@ -3330,7 +3290,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         handoff_reason=latest_handoff_reason,
                     )
                     _persist_pending_state(end_data)
-                    persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
+                    if skill_session_completed:
+                        clear_skill_session_lock(meta_item)
+                    else:
+                        persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
                     _save_group_meta(meta)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
@@ -3368,7 +3331,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         handoff_reason=hook_output.message or latest_handoff_reason,
                     )
                     _persist_pending_state(end_data)
-                    if session_ended_by_marker:
+                    if skill_session_completed:
                         clear_skill_session_lock(meta_item)
                     else:
                         persist_skill_session_lock(meta_item, owner_agent_id=resume_target_agent_id or next_speaker, skill_id=skill_id)
@@ -3407,7 +3370,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         extra={"soft_stop": True, "soft_stop_reason": soft_stop_reason},
                     )
                     _persist_pending_state(end_data)
-                    if session_ended_by_marker:
+                    if skill_session_completed:
                         clear_skill_session_lock(meta_item)
                     else:
                         persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
@@ -3416,7 +3379,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     return
 
                 last_speaker_agent_id = next_speaker
-                if session_ended_by_marker:
+                if skill_session_completed:
                     clear_skill_session_lock(meta_item)
                 else:
                     persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)

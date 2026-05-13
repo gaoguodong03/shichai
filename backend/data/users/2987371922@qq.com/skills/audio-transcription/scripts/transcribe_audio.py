@@ -399,6 +399,7 @@ def main() -> None:
                 "code": "transcribed",
                 "done": True,
                 "final": True,
+                "skill_session_over": True,
                 "file": args.file,
                 "model": model,
                 "chunk_seconds": effective_chunk_seconds,
