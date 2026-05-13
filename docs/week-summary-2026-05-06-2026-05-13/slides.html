@@ -1,0 +1,450 @@
+<section class="slide accent" data-layout="SWISS-COVER-ASCII" data-animate="hero">
+  <div class="canvas-card">
+    <canvas class="ascii-bg" aria-hidden="true"></canvas>
+    <div class="chrome-min">
+      <div class="l">SHICHAl · WEEKLY ENGINEERING SUMMARY</div>
+      <div class="r">2026.05.06-05.13 · 01 / 11</div>
+    </div>
+
+    <div style="flex:1;padding:0;display:grid;grid-template-rows:auto 1fr auto;gap:2.6vh">
+      <div data-anim="kicker" class="t-meta" style="color:rgba(255,255,255,.78);letter-spacing:.22em">FIELD NOTE / RELEASE SYSTEM</div>
+      <h1 data-anim="title" style="align-self:center;font-family:var(--sans),var(--sans-zh);font-weight:200;font-size:min(10.6vw,18vh);line-height:.94;letter-spacing:-.025em;color:#fff">把技能做成<br/>可交付的<span style="font-style:italic;font-weight:300">产品单元</span></h1>
+      <div data-anim="bottom" style="display:grid;grid-template-rows:auto auto;gap:1.6vh;border-top:1px solid rgba(255,255,255,.22);padding-top:2vh">
+        <div data-anim="lead" class="lead" style="max-width:58ch;color:rgba(255,255,255,.88);font-weight:300">本周主线：Skill 协议、OpenSandbox 运行时、音频转写、多模态入口与发布交付流程，从“能跑”推进到“可验证、可迁移、可上线”。</div>
+        <div style="display:flex;justify-content:space-between;align-items:end">
+          <div class="t-meta" style="color:rgba(255,255,255,.62)">书童四九 · shichai</div>
+          <div class="t-meta" style="color:rgba(255,255,255,.62)">SWIPE / ARROW KEYS</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide grey" data-layout="S01" data-animate="hero">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">INDEX / THREE THREADS</div>
+      <div class="r">02 / 11</div>
+    </div>
+
+    <div style="flex:1;display:grid;grid-template-rows:repeat(3,1fr);gap:0;border-top:1px solid var(--grey-2);border-bottom:1px solid var(--grey-2)">
+      <div class="cover-row" data-anim="row" style="display:grid;grid-template-columns:18vw 1fr;align-items:center;border-bottom:1px solid var(--grey-2)">
+        <div class="num-mega">01</div>
+        <div>
+          <div class="t-meta" style="margin-bottom:1.2vh">PRODUCT UNIT</div>
+          <div class="name-mega" style="font-size:min(7vw,12vh)">Skill 产品化</div>
+        </div>
+      </div>
+      <div class="cover-row" data-anim="row" style="display:grid;grid-template-columns:18vw 1fr;align-items:center;border-bottom:1px solid var(--grey-2)">
+        <div class="num-mega">02</div>
+        <div>
+          <div class="t-meta" style="margin-bottom:1.2vh">RUNTIME SUBSTRATE</div>
+          <div class="name-mega" style="font-size:min(7vw,12vh)">沙箱运行时</div>
+        </div>
+      </div>
+      <div class="cover-row" data-anim="row" style="display:grid;grid-template-columns:18vw 1fr;align-items:center">
+        <div class="num-mega">03</div>
+        <div>
+          <div class="t-meta" style="margin-bottom:1.2vh">DELIVERY LOOP</div>
+          <div class="name-mega" style="font-size:min(7vw,12vh)">发布与验证</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-layout="S02" data-animate="progression">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">TIMELINE / WHAT CHANGED</div>
+      <div class="r">03 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">2026.05.10-05.13</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.6vw,10vh)">一周内形成了四个稳定增量</h2>
+    </div>
+
+    <div class="timeline-v" style="margin-top:3.4vh">
+      <div class="tl-node">
+        <div class="dot"></div>
+        <div class="yr">05.10</div>
+        <div class="multi">协议</div>
+        <div class="t-body-sm">沉淀 Skill 结束点、CLI 合同、上线前模块化测试与镜像打包规则。</div>
+      </div>
+      <div class="tl-node accent">
+        <div class="dot"></div>
+        <div class="yr">05.11</div>
+        <div class="multi">沙箱</div>
+        <div class="t-body-sm">修复 `cli_args_json` 参数面、OpenSandbox allowlist、arm64 镜像与 host 访问路径。</div>
+      </div>
+      <div class="tl-node accent">
+        <div class="dot"></div>
+        <div class="yr">05.12</div>
+        <div class="multi">音频</div>
+        <div class="t-body-sm">上线用户私有 audio-transcription，接入 `qwen3-asr-1.7b`，补齐长音频与 finality。</div>
+      </div>
+      <div class="tl-node">
+        <div class="dot"></div>
+        <div class="yr">05.13</div>
+        <div class="multi">结构</div>
+        <div class="t-body-sm">前端 feature 目录、后端 settings 模块拆分，并补充 agent docs 与 Claude skills。</div>
+      </div>
+    </div>
+
+    <div class="kpi-row-4" style="margin-top:auto">
+      <div class="kpi-cell"><div class="lbl">COMMITS</div><div class="nb">9</div><div class="note">当前分支最近 7 天可见提交。</div></div>
+      <div class="kpi-cell"><div class="lbl">WORKSTREAMS</div><div class="nb">5</div><div class="note">Skill、沙箱、音频、发布、模块化。</div></div>
+      <div class="kpi-cell"><div class="lbl">USER SKILL</div><div class="nb">1</div><div class="note">audio-transcription 私有落地。</div></div>
+      <div class="kpi-cell"><div class="lbl">THEME</div><div class="nb">IKB</div><div class="note">瑞士风技术周报。</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide split" data-layout="S03" data-animate="split-statement">
+  <div class="canvas-card">
+    <div class="split-half">
+      <div class="half b-ink" style="padding:5.6vh 3.6vw 4.4vh;justify-content:space-between">
+        <div class="chrome-min" style="margin-bottom:0">
+          <div class="l">PRODUCT UNIT</div>
+          <div class="r">04 / 11</div>
+        </div>
+        <div data-anim="statement">
+          <div class="t-meta" style="margin-bottom:2vh">AUDIO TRANSCRIPTION</div>
+          <div class="kpi-thin" style="font-size:min(13vw,22vh);color:var(--paper)">ASR</div>
+          <div class="lead" style="max-width:34ch;color:rgba(255,255,255,.82);font-weight:300;margin-top:2vh">用户私有 Skill 不再只是脚本目录，而是可被工作区文件、沙箱环境、模型配置共同托举的产品单元。</div>
+        </div>
+        <div class="t-meta" style="color:rgba(255,255,255,.62)">qwen3-asr-1.7b · media file picker</div>
+      </div>
+
+      <div class="half b-grey" style="padding:5.6vh 3.6vw 4.4vh;justify-content:space-between">
+        <div class="chrome-min">
+          <div class="l">WHAT LANDED</div>
+          <div class="r">USER SCOPE</div>
+        </div>
+        <ul class="takeaway-list" data-anim="rules" style="list-style:none;display:flex;flex-direction:column;gap:0">
+          <li style="padding:2.5vh 0;border-top:1px solid var(--grey-2)">
+            <div class="t-meta accent">01 / PRIVATE SKILL</div>
+            <h3 class="t-h-prod" style="font-size:max(20px,2vw);margin-top:1vh">放在 `2987371922@qq.com` 用户目录下</h3>
+            <p class="t-body-sm" style="margin-top:1vh">符合当前灰度策略，避免过早内置到 builtin 范围。</p>
+          </li>
+          <li style="padding:2.5vh 0;border-top:1px solid var(--grey-2)">
+            <div class="t-meta accent">02 / FILE REFERENCE</div>
+            <h3 class="t-h-prod" style="font-size:max(20px,2vw);margin-top:1vh">工作区文件选择器开放音频/视频</h3>
+            <p class="t-body-sm" style="margin-top:1vh">把“文本文件白名单”放宽成面向未来媒体类型的入口。</p>
+          </li>
+          <li style="padding:2.5vh 0;border-top:1px solid var(--grey-2);border-bottom:2px solid var(--accent)">
+            <div class="t-meta accent">03 / FINALITY</div>
+            <h3 class="t-h-prod" style="font-size:max(20px,2vw);margin-top:1vh;color:var(--accent)">长音频不再被 timeout 和重复调用拖住</h3>
+            <p class="t-body-sm" style="margin-top:1vh">manifest 支持不限时路径，并用结束状态标记让 agent 停在正确位置。</p>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-layout="S08" data-animate="duo-mirror">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">BEFORE / AFTER</div>
+      <div class="r">05 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">FROM ONE-OFF FIX TO CONTRACT</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.4vw,9.8vh)">沙箱问题被收束到可验证合同</h2>
+    </div>
+
+    <div class="duo-compare">
+      <div class="col">
+        <div class="col-tag"><span class="num">A</span> 之前的故障面</div>
+        <div class="col-ttl">看起来是脚本错</div>
+        <p class="col-desc">实际经常卡在参数形状、OpenSandbox 配置、宿主路径 allowlist 或镜像架构上。</p>
+        <ul class="col-list">
+          <li>`cli_args_json` 拼接出 Extra data。</li>
+          <li>容器健康但 `/tmp/sandbox.toml` 不符合预期。</li>
+          <li>arm64 主机拉到不匹配的 sandbox 镜像。</li>
+        </ul>
+      </div>
+      <div class="vrule"></div>
+      <div class="col accent">
+        <div class="col-tag"><span class="num">B</span> 本周的稳定面</div>
+        <div class="col-ttl">先验合同 + 实证探针</div>
+        <p class="col-desc">从入口参数、compose 配置、沙箱创建删除到 Skill 最终态，每层都能被单独验证。</p>
+        <ul class="col-list">
+          <li>`run_skill_script_*` 统一走 CLI 数组 JSON。</li>
+          <li>真实 sandbox create/delete 取代只看 health。</li>
+          <li>架构与 host 访问路径有明确 fallback。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-layout="S17" data-animate="system-diagram">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">SYSTEM VIEW</div>
+      <div class="r">06 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">SKILL EXECUTION PATH</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.2vw,9.2vh)">从用户文件到可结束会话</h2>
+      <p class="t-body-sm" style="max-width:58ch">本周的关键不是单点能力，而是把文件引用、运行时隔离、模型服务和会话结束点串成一条可解释链路。</p>
+    </div>
+
+    <div data-anim="diagram" style="flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.2vw;align-items:center;margin-top:4vh">
+      <div class="card-fill" style="height:34vh;padding:3vh 2vw;display:flex;flex-direction:column;justify-content:space-between">
+        <div class="t-meta">01 / INPUT</div>
+        <div style="font-size:min(5.2vw,9vh);font-weight:200;line-height:.9">文件</div>
+        <div class="t-body-sm">workspace audio/video reference · traversal guard</div>
+      </div>
+      <div class="card-accent" style="height:42vh;padding:3vh 2vw;display:flex;flex-direction:column;justify-content:space-between">
+        <div class="t-meta" style="color:rgba(255,255,255,.74)">02 / RUNTIME</div>
+        <div style="font-size:min(5.4vw,9.5vh);font-weight:200;line-height:.9">沙箱</div>
+        <div class="t-body-sm" style="color:rgba(255,255,255,.86)">OpenSandbox · env passthrough · allowed host paths</div>
+      </div>
+      <div class="card-fill" style="height:34vh;padding:3vh 2vw;display:flex;flex-direction:column;justify-content:space-between">
+        <div class="t-meta">03 / OUTPUT</div>
+        <div style="font-size:min(5.2vw,9vh);font-weight:200;line-height:.9">结束点</div>
+        <div class="t-body-sm">transcript · `[[SKILL_SESSION_STATE]]` · over=true</div>
+      </div>
+    </div>
+
+    <div data-anim="foot" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1.2vw;border-top:1px solid var(--grey-2);padding-top:2vh">
+      <div class="t-body-sm"><span class="t-body-emp">脚本合同</span><br/>manifest 与 `cli_args_json` 对齐。</div>
+      <div class="t-body-sm"><span class="t-body-emp">运行时合同</span><br/>compose/env/image/allowlist 对齐。</div>
+      <div class="t-body-sm"><span class="t-body-emp">会话合同</span><br/>结束判断写进规范和验证。</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide grey" data-layout="S16" data-animate="grid-reveal">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">WORKSTREAMS / DELIVERY BOARD</div>
+      <div class="r">07 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">SIX BLOCKS</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.2vw,9.2vh)">本周交付面被拆成六块</h2>
+    </div>
+
+    <div class="sub-grid-3-2" style="margin-top:3.2vh">
+      <div class="sub-card accent">
+        <div class="nb-corner">01</div>
+        <div class="ttl">音频转写 Skill</div>
+        <div class="desc">私有目录、ASR 环境、工作区媒体文件和长音频超时策略。</div>
+      </div>
+      <div class="sub-card">
+        <div class="nb-corner">02</div>
+        <div class="ttl">OpenSandbox</div>
+        <div class="desc">server 配置、allowlist、镜像架构和真实 create/delete 探针。</div>
+      </div>
+      <div class="sub-card">
+        <div class="nb-corner">03</div>
+        <div class="ttl">Skill 规范</div>
+        <div class="desc">结束点、CLI 参数合同、脚本验收与上线前模块化测试。</div>
+      </div>
+      <div class="sub-card">
+        <div class="nb-corner">04</div>
+        <div class="ttl">镜像发布</div>
+        <div class="desc">区分 `ST49_IMAGE` 与 `SANDBOX_BASE_IMAGE`，记录 `.env` 覆盖风险。</div>
+      </div>
+      <div class="sub-card">
+        <div class="nb-corner">05</div>
+        <div class="ttl">前后端模块化</div>
+        <div class="desc">settings API 拆分、frontend features 迁移、workspace utils 独立。</div>
+      </div>
+      <div class="sub-card ink">
+        <div class="nb-corner">06</div>
+        <div class="ttl">协作资料</div>
+        <div class="desc">新增 agent 文档、需求验收文档与 `.claude/skills` 资源。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-layout="S14" data-animate="loop-form">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">OPERATING LOOP</div>
+      <div class="r">08 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">HOW THE WEEK WAS DEBUGGED</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.2vw,9.2vh)">形成了一个可复用排障闭环</h2>
+    </div>
+
+    <div data-anim="loop" style="flex:1;display:grid;grid-template-columns:38vw 1fr;gap:5vw;align-items:center;margin-top:2vh">
+      <div style="display:flex;flex-direction:column;border-top:1px solid var(--grey-2)">
+        <div style="display:grid;grid-template-columns:5vw 1fr;gap:1.4vw;padding:2.2vh 0;border-bottom:1px solid var(--grey-2)">
+          <div class="t-meta accent">01</div>
+          <div><div class="t-h-prod">定位真实边界</div><div class="t-body-sm">从用户贴出的精确错误面开始，而不是跳到大而全猜测。</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:5vw 1fr;gap:1.4vw;padding:2.2vh 0;border-bottom:1px solid var(--grey-2)">
+          <div class="t-meta accent">02</div>
+          <div><div class="t-h-prod">读配置真相</div><div class="t-body-sm">compose、`.env`、`/tmp/sandbox.toml`、manifest 各自对齐。</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:5vw 1fr;gap:1.4vw;padding:2.2vh 0;border-bottom:1px solid var(--grey-2)">
+          <div class="t-meta accent">03</div>
+          <div><div class="t-h-prod">跑最小探针</div><div class="t-body-sm">pytest、compose config、sandbox create/delete、真实 vendor 请求。</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:5vw 1fr;gap:1.4vw;padding:2.2vh 0;border-bottom:1px solid var(--grey-2)">
+          <div class="t-meta accent">04</div>
+          <div><div class="t-h-prod">写入文档与交付</div><div class="t-body-sm">把固定字段、踩坑和上线前测试路径沉淀下来。</div></div>
+        </div>
+      </div>
+
+      <div style="position:relative;height:48vh;border:1px solid var(--grey-2);display:grid;place-items:center;background:var(--grey-1)">
+        <div class="ring-mat lg" style="position:absolute;inset:2vw;color:var(--accent);opacity:.16"></div>
+        <div style="width:28vh;height:28vh;border:2px solid var(--accent);display:grid;place-items:center;transform:rotate(45deg);background:var(--paper)">
+          <div style="transform:rotate(-45deg);text-align:center">
+            <div class="t-meta accent">LOOP</div>
+            <div style="font-size:min(3.8vw,7vh);font-weight:200;line-height:1">verify<br/>ship</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-layout="S11" data-animate="timeline-walk">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">GIT / COMMIT RHYTHM</div>
+      <div class="r">09 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:grid;grid-template-columns:auto 1fr;gap:2vw;align-items:end">
+      <div class="t-meta">9 COMMITS</div>
+      <h2 class="h-xl-zh" style="font-size:min(5vw,9vh)">提交节奏集中在产品化与收口</h2>
+    </div>
+
+    <div class="timeline-h" style="margin-top:8vh;height:44vh">
+      <div class="tl-row">
+        <div class="th-node up accent" style="left:4%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">98cb45a</div><div class="name">Audio Skill</div><div class="desc">技能与沙箱更新</div></div>
+        </div>
+        <div class="th-node down" style="left:19%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">cd755dd</div><div class="name">Multimodal</div><div class="desc">多模态接口</div></div>
+        </div>
+        <div class="th-node up" style="left:34%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">4ebb8a1</div><div class="name">Sandbox Deploy</div><div class="desc">requirements 发布</div></div>
+        </div>
+        <div class="th-node down" style="left:52%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">fd747d7</div><div class="name">Backend Split</div><div class="desc">settings 模块拆分</div></div>
+        </div>
+        <div class="th-node up accent" style="left:70%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">624c38f</div><div class="name">Frontend Feature</div><div class="desc">视图目录重组</div></div>
+        </div>
+        <div class="th-node down" style="left:88%">
+          <div class="dot"></div>
+          <div class="label"><div class="yr">5484d54</div><div class="name">Agent Docs</div><div class="desc">技能文档资源</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="t-helper" style="border-top:1px solid var(--grey-2);padding-top:2vh">另外包含生成物清理、audio-transcription 数据更新等收口提交；大体节奏是先补能力，再修运行时，最后整理工程结构。</div>
+  </div>
+</section>
+
+<section class="slide dark" data-layout="S19" data-animate="four-cards">
+  <div class="canvas-card">
+    <div class="chrome-min">
+      <div class="l">RISKS CLOSED</div>
+      <div class="r">10 / 11</div>
+    </div>
+
+    <div data-anim="head" style="display:flex;flex-direction:column;gap:1.4vh">
+      <div class="t-meta">WHY IT MATTERS</div>
+      <h2 class="h-xl-zh" style="font-size:min(5.2vw,9.2vh);color:var(--paper)">本周实际关掉的是上线风险</h2>
+    </div>
+
+    <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1.2vw;align-items:stretch;margin-top:5vh">
+      <div class="card-fill" style="padding:3vh 1.6vw;display:flex;flex-direction:column;background:rgba(255,255,255,.08);color:var(--paper)">
+        <div class="t-meta">01 / ARGS</div>
+        <div style="font-size:min(3.4vw,6vh);font-weight:200;line-height:1;margin:2vh 0">参数形状</div>
+        <div class="t-body-sm" style="color:rgba(255,255,255,.78);margin-top:auto">避免模型输出拼接 JSON 时把工具入口打坏。</div>
+      </div>
+      <div class="card-fill" style="padding:3vh 1.6vw;display:flex;flex-direction:column;background:rgba(255,255,255,.08);color:var(--paper)">
+        <div class="t-meta">02 / MOUNT</div>
+        <div style="font-size:min(3.4vw,6vh);font-weight:200;line-height:1;margin:2vh 0">挂载策略</div>
+        <div class="t-body-sm" style="color:rgba(255,255,255,.78);margin-top:auto">健康检查之外，确认 allowlist 与真实沙箱生命周期。</div>
+      </div>
+      <div class="card-accent" style="padding:3vh 1.6vw;display:flex;flex-direction:column;color:var(--accent-on)">
+        <div class="t-meta" style="color:rgba(255,255,255,.78)">03 / IMAGE</div>
+        <div style="font-size:min(3.4vw,6vh);font-weight:200;line-height:1;margin:2vh 0">镜像变量</div>
+        <div class="t-body-sm" style="color:rgba(255,255,255,.86);margin-top:auto">区分应用镜像与沙箱镜像，避免 `.env` 覆盖 compose 默认。</div>
+      </div>
+      <div class="card-fill" style="padding:3vh 1.6vw;display:flex;flex-direction:column;background:rgba(255,255,255,.08);color:var(--paper)">
+        <div class="t-meta">04 / FINISH</div>
+        <div style="font-size:min(3.4vw,6vh);font-weight:200;line-height:1;margin:2vh 0">结束判断</div>
+        <div class="t-body-sm" style="color:rgba(255,255,255,.78);margin-top:auto">用固定字段让 Skill 会话知道何时真正完成。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide split" data-layout="SWISS-CLOSING-ASCII" data-animate="split-statement">
+  <div class="canvas-card">
+    <div class="split-half">
+      <div class="half b-accent" style="padding:5.6vh 3.6vw 4.4vh;justify-content:space-between;position:relative;overflow:hidden">
+        <canvas class="ascii-bg" aria-hidden="true"></canvas>
+        <div class="chrome-min" style="margin-bottom:0;position:relative;z-index:1">
+          <div class="l">11 / 11</div>
+          <div class="r">NEXT WEEK</div>
+        </div>
+        <div data-anim="manifesto" style="display:flex;flex-direction:column;gap:2vh;position:relative;z-index:1">
+          <div class="t-meta" style="color:rgba(255,255,255,.78);letter-spacing:.22em;margin-bottom:1.6vh">CLOSING</div>
+          <h2 style="font-family:var(--sans),var(--sans-zh);font-size:min(8vw,14vh);line-height:.94;letter-spacing:-.025em;font-weight:200;color:#fff">少一点<br/>临场修补</h2>
+          <div style="font-family:var(--sans),var(--sans-zh);font-size:max(13px,1vw);line-height:1.6;color:rgba(255,255,255,.84);font-weight:300;max-width:36ch;margin-top:1.4vh">把每次排障的经验沉到合同、测试和部署文档里，系统就会自己变稳。</div>
+        </div>
+        <div data-anim="signature" style="display:flex;justify-content:space-between;align-items:end;border-top:1px solid rgba(255,255,255,.22);padding-top:2vh;position:relative;z-index:1">
+          <div class="t-meta" style="color:rgba(255,255,255,.62)">shichai weekly</div>
+          <div class="t-meta" style="color:rgba(255,255,255,.62)">2026.05.13</div>
+        </div>
+      </div>
+
+      <div class="half" style="padding:5.6vh 3.6vw 4.4vh;justify-content:space-between">
+        <div class="chrome-min">
+          <div class="l">PRIORITIES</div>
+          <div class="r">03 RULES</div>
+        </div>
+        <div data-anim="rules" style="display:flex;flex-direction:column;gap:0">
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:2vw;align-items:start;padding:2.6vh 0;border-top:1px solid var(--border-subtle)">
+            <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">01</div>
+            <div>
+              <h3 style="font-family:var(--sans),var(--sans-zh);font-weight:400;font-size:max(18px,1.8vw);line-height:1.2;letter-spacing:-.015em;color:var(--text-primary);margin-bottom:1vh">把 release gate 自动化</h3>
+              <p style="font-family:var(--sans),var(--sans-zh);font-size:max(12px,.92vw);line-height:1.6;color:var(--text-secondary);font-weight:300">把 `test-layer1`、compose config、sandbox round-trip 放进上线前固定流程。</p>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:2vw;align-items:start;padding:2.6vh 0;border-top:1px solid var(--border-subtle)">
+            <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--text-primary)">02</div>
+            <div>
+              <h3 style="font-family:var(--sans),var(--sans-zh);font-weight:400;font-size:max(18px,1.8vw);line-height:1.2;letter-spacing:-.015em;color:var(--text-primary);margin-bottom:1vh">把沙箱镜像版本策略收紧</h3>
+              <p style="font-family:var(--sans),var(--sans-zh);font-size:max(12px,.92vw);line-height:1.6;color:var(--text-secondary);font-weight:300">统一默认值、发布标签和部署环境覆写，避免“看起来更新，实际没更新”。</p>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:2vw;align-items:start;padding:2.6vh 0;border-top:1px solid var(--border-subtle);border-bottom:2px solid var(--accent)">
+            <div style="font-family:var(--sans);font-weight:200;font-size:min(4.4vw,7.8vh);line-height:.9;color:var(--accent)">03</div>
+            <div>
+              <h3 style="font-family:var(--sans),var(--sans-zh);font-weight:400;font-size:max(18px,1.8vw);line-height:1.2;letter-spacing:-.015em;color:var(--accent);margin-bottom:1vh">把媒体工作流推到用户可见层</h3>
+              <p style="font-family:var(--sans),var(--sans-zh);font-size:max(12px,.92vw);line-height:1.6;color:var(--text-secondary);font-weight:300">音频/视频文件选择、转写状态、结果回填和错误解释可以成为下一轮产品体验重点。</p>
+            </div>
+          </div>
+        </div>
+        <div data-anim="foot" class="t-meta" style="color:var(--text-helper);text-align:right">END OF WEEKLY FIELD NOTE</div>
+      </div>
+    </div>
+  </div>
+</section>

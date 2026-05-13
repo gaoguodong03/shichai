@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-默认开发地址：`http://localhost:5173`（API 由 Vite 代理到后端，见 `vite.config.ts`）。
+默认开发地址：`http://localhost:5173`（API 由 Vite 代理到 `http://127.0.0.1:8000` 的后端，见 `vite.config.ts`）。
 
 ## 构建
 
