@@ -97,6 +97,20 @@ def test_workspace_upload_and_rename(client):
     assert r.text == "uploaded"
 
 
+def test_workspace_upload_large_file(client):
+    """大文件上传应分块落盘并保持内容完整"""
+    payload = (b"audio-data-" * 130000) + b"tail"
+    r = client.post(
+        "/api/workspaces/ws-large/files/upload",
+        files={"file": ("recording.wav", payload)},
+    )
+    assert r.status_code == 200
+    assert r.json().get("data", {}).get("path") == "recording.wav"
+    r = client.get("/api/workspaces/ws-large/files/download", params={"path": "recording.wav"})
+    assert r.status_code == 200
+    assert r.content == payload
+
+
 def test_workspace_path_traversal_blocked(client):
     """禁止 path 穿越到 workspace 外"""
     r = client.get(

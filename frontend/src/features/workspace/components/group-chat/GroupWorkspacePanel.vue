@@ -107,7 +107,9 @@
             </div>
             <div v-if="groupWorkspaceUploading" class="group-chat-uploading-notice group-chat-workspace-uploading-notice" role="status" aria-live="polite">
               <span class="group-chat-uploading-spinner" aria-hidden="true" />
-              <span>正在上传 {{ groupWorkspaceUploadingName || '本地文件' }}，上传完成前请勿继续操作。</span>
+              <span>
+                正在上传 {{ groupWorkspaceUploadingName || '本地文件' }}{{ groupWorkspaceUploadProgress !== null ? `（${groupWorkspaceUploadProgress}%）` : '' }}，上传完成前请勿继续操作。
+              </span>
             </div>
             <div class="group-chat-workspace-body" :class="{ 'group-chat-workspace-body-busy': groupWorkspaceUploading }">
               <div
@@ -245,6 +247,7 @@ const {
   groupWorkspaceUploadInputRef,
   groupWorkspaceUploading,
   groupWorkspaceUploadingName,
+  groupWorkspaceUploadProgress,
   onGroupWorkspaceUpload,
   groupWorkspacePreviewCollapsed,
   toggleWorkspacePreview,

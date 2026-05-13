@@ -13,6 +13,7 @@ router = APIRouter(tags=["files"])
 
 # 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{username}/agent-outputs
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
+UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
 
 
 def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:
@@ -355,10 +356,20 @@ async def upload_workspace_file(
     if not str(target).startswith(str(ws_root)):
         raise HTTPException(status_code=400, detail="Invalid path")
     try:
-        content = await file.read()
-        target.write_bytes(content)
-    except OSError as e:
+        with target.open("wb") as out:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE_BYTES)
+                if not chunk:
+                    break
+                out.write(chunk)
+    except Exception as e:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
+    finally:
+        await file.close()
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
     return {"status": "ok", "data": {"path": rel}}
 

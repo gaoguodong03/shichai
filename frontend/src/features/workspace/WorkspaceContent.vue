@@ -62,6 +62,7 @@ import GroupChatComposer from './components/group-chat/GroupChatComposer.vue'
 import GroupWorkspacePanel from './components/group-chat/GroupWorkspacePanel.vue'
 import { provideGroupChatWorkspaceContext } from './components/group-chat/groupChatWorkspaceContext'
 import { createGroupChatStreamRunner } from './composables/useGroupChatStreamRunner'
+import { uploadWorkspaceFile } from './workspaceUpload'
 import {
   dhaBodyContent,
   escapeHtml,
@@ -142,6 +143,7 @@ const groupWorkspacePreviewEditContent = ref('')
 const groupWorkspaceUploadInputRef = ref<HTMLInputElement | null>(null)
 const groupWorkspaceUploading = ref(false)
 const groupWorkspaceUploadingName = ref('')
+const groupWorkspaceUploadProgress = ref<number | null>(null)
 const groupWorkspaceWidth = ref(360)
 const groupWorkspaceListWidth = ref(192)
 // 工作区预览区默认收起，初始总宽度略窄，仅文件列表为主
@@ -661,6 +663,7 @@ async function removeMember(dhaId: string) {
 const insertLocalFileInputRef = ref<HTMLInputElement | null>(null)
 const insertLocalFileUploading = ref(false)
 const insertLocalFileUploadingName = ref('')
+const insertLocalFileUploadProgress = ref<number | null>(null)
 function triggerInsertLocalFile() {
   if (insertLocalFileUploading.value) return
   insertLocalFileInputRef.value?.click()
@@ -670,17 +673,13 @@ async function onInsertLocalFile(ev: Event) {
   const id = groupDetail.value?.id
   if (!id || !input.files?.length || insertLocalFileUploading.value) return
   const file = input.files[0]
-  const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
   insertLocalFileUploading.value = true
   insertLocalFileUploadingName.value = file.name || '本地文件'
+  insertLocalFileUploadProgress.value = null
   try {
-    const form = new FormData()
-    form.append('file', file)
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${pathParam}`, {
-      method: 'POST',
-      body: form,
+    const j = await uploadWorkspaceFile(id, file, groupWorkspacePath.value, ({ percent }) => {
+      insertLocalFileUploadProgress.value = percent
     })
-    const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data?.path) {
       await loadGroupWorkspace()
       const relPath = j.data.path as string
@@ -688,18 +687,17 @@ async function onInsertLocalFile(ev: Event) {
       if (!attachedFiles.value.find((f) => f.path === relPath)) {
         attachedFiles.value.push({ name, path: relPath })
       }
-      const block = `\n【文件引用：${name}】\n`
-      groupNextPrompt.value = (groupNextPrompt.value || '').trim() + (groupNextPrompt.value?.trim() ? '\n\n' : '') + block
       showInsertFile.value = false
       showInsertFileModal.value = false
     } else {
       alert((j as { detail?: string })?.detail || '上传失败')
     }
-  } catch {
-    alert('上传失败，请检查网络或后端')
+  } catch (e) {
+    alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
   } finally {
     insertLocalFileUploading.value = false
     insertLocalFileUploadingName.value = ''
+    insertLocalFileUploadProgress.value = null
     input.value = ''
   }
 }
@@ -1142,7 +1140,8 @@ const insertFileRef = ref<HTMLElement | null>(null)
 const insertFileBrowsePath = ref('')
 const insertFileEntries = ref<{ name: string; path: string; is_dir: boolean }[]>([])
 const insertFileLoading = ref(false)
-const attachedFiles = ref<{ name: string; path: string }[]>([])
+type AttachedFile = { name: string; path: string }
+const attachedFiles = ref<AttachedFile[]>([])
 
 function toAgentStyleId(raw: string | null | undefined): string {
   const sid = String(raw || '').trim()
@@ -1258,8 +1257,32 @@ const orchestrationInterruptHint = computed(() => {
   return `中断原因：${reason}`
 })
 
+function removePromptFileReference(file: AttachedFile) {
+  const targets = new Set(
+    [file.name, file.path, file.path.split('/').pop()]
+      .map((x) => String(x || '').trim())
+      .filter(Boolean),
+  )
+  if (!targets.size || !groupNextPrompt.value) return
+  const lines = String(groupNextPrompt.value).split(/\r?\n/)
+  let changed = false
+  const kept = lines.filter((line) => {
+    const match = line.trim().match(/^【文件引用：(.+)】$/)
+    if (!match) return true
+    const parts = match[1].split('｜').map((x) => x.trim()).filter(Boolean)
+    if (!parts.some((part) => targets.has(part))) return true
+    changed = true
+    return false
+  })
+  if (changed) {
+    groupNextPrompt.value = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  }
+}
+
 function removeAttachedFile(path: string) {
+  const removed = attachedFiles.value.find((f) => f.path === path)
   attachedFiles.value = attachedFiles.value.filter((f) => f.path !== path)
+  if (removed) removePromptFileReference(removed)
 }
 const addMemberRef = ref<HTMLElement | null>(null)
 
@@ -2029,25 +2052,22 @@ async function onGroupWorkspaceUpload(ev: Event) {
   const file = input.files[0]
   groupWorkspaceUploading.value = true
   groupWorkspaceUploadingName.value = file.name || '本地文件'
+  groupWorkspaceUploadProgress.value = null
   try {
-    const form = new FormData()
-    form.append('file', file)
-    const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${pathParam}`, {
-      method: 'POST',
-      body: form,
+    const j = await uploadWorkspaceFile(id, file, groupWorkspacePath.value, ({ percent }) => {
+      groupWorkspaceUploadProgress.value = percent
     })
-    const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok') {
       await loadGroupWorkspace()
     } else {
       alert((j as { detail?: string }).detail || '上传失败')
     }
-  } catch {
-    alert('上传失败，请检查网络或后端')
+  } catch (e) {
+    alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
   } finally {
     groupWorkspaceUploading.value = false
     groupWorkspaceUploadingName.value = ''
+    groupWorkspaceUploadProgress.value = null
     input.value = ''
   }
 }
@@ -2985,6 +3005,7 @@ provideGroupChatWorkspaceContext({
   triggerInsertLocalFile,
   insertLocalFileUploading,
   insertLocalFileUploadingName,
+  insertLocalFileUploadProgress,
   showShortcutEditor,
   showShortcutEditorModal,
   shortcutEditorRef,
@@ -3030,6 +3051,7 @@ provideGroupChatWorkspaceContext({
   groupWorkspaceUploadInputRef,
   groupWorkspaceUploading,
   groupWorkspaceUploadingName,
+  groupWorkspaceUploadProgress,
   onGroupWorkspaceUpload,
   groupWorkspacePreviewCollapsed,
   toggleWorkspacePreview,

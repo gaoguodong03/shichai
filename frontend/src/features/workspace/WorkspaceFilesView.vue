@@ -34,13 +34,16 @@
           type="button"
           class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="uploadInputRef?.click()"
-          :disabled="loading || !sessionId"
+          :disabled="loading || uploading || !sessionId"
         >
-          上传文件
+          {{ uploading ? '上传中…' : '上传文件' }}
         </button>
         <input ref="uploadInputRef" type="file" class="hidden" @change="onUpload" />
       </div>
     </header>
+    <div v-if="uploading" class="px-4 py-2 border-b border-border bg-card text-xs text-muted truncate">
+      正在上传 {{ uploadingName || '本地文件' }}{{ uploadProgressText }}
+    </div>
 
     <div v-if="!sessionId" class="flex-1 flex items-center justify-center text-sm text-muted">
       请选择左侧会话
@@ -109,8 +112,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import FileDetailView from './FileDetailView.vue'
+import { uploadWorkspaceFile } from './workspaceUpload'
 
 type Entry = { name: string; path: string; is_dir?: boolean }
 
@@ -125,6 +129,10 @@ const entries = ref<Entry[]>([])
 const selectedPath = ref('')
 const currentDir = ref('')
 const uploadInputRef = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+const uploadingName = ref('')
+const uploadProgress = ref<number | null>(null)
+const uploadProgressText = computed(() => (uploadProgress.value === null ? '' : `（${uploadProgress.value}%）`))
 
 async function listDir(path: string): Promise<Entry[]> {
   const id = props.sessionId
@@ -224,23 +232,27 @@ async function createFolder() {
 async function onUpload(ev: Event) {
   const id = props.sessionId
   const input = ev.target as HTMLInputElement
-  if (!id || !input.files?.length) return
-  const fd = new FormData()
-  fd.append('file', input.files[0])
+  if (!id || !input.files?.length || uploading.value) return
+  const file = input.files[0]
+  uploading.value = true
+  uploadingName.value = file.name || '本地文件'
+  uploadProgress.value = null
   try {
-    const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
-    const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/upload${query}`, {
-      method: 'POST',
-      body: fd,
+    const j = await uploadWorkspaceFile(id, file, currentDir.value, ({ percent }) => {
+      uploadProgress.value = percent
     })
-    const j = await r.json()
     if (j?.status !== 'ok') {
       alert(j?.detail || '上传失败')
       return
     }
     await loadDir(currentDir.value)
     if (j?.data?.path) selectedPath.value = j.data.path
+  } catch (e) {
+    alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
   } finally {
+    uploading.value = false
+    uploadingName.value = ''
+    uploadProgress.value = null
     input.value = ''
   }
 }

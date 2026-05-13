@@ -358,7 +358,9 @@
                         </button>
                         <div v-if="insertLocalFileUploading" class="group-chat-uploading-notice" role="status" aria-live="polite">
                           <span class="group-chat-uploading-spinner" aria-hidden="true" />
-                          <span>正在上传 {{ insertLocalFileUploadingName || '本地文件' }}，上传完成前请勿关闭或继续操作。</span>
+                          <span>
+                            正在上传 {{ insertLocalFileUploadingName || '本地文件' }}{{ insertLocalFileUploadProgress !== null ? `（${insertLocalFileUploadProgress}%）` : '' }}，上传完成前请勿关闭或继续操作。
+                          </span>
                         </div>
                         <div class="group-chat-insert-file-nav">
                           <button
@@ -595,6 +597,7 @@ const {
   triggerInsertLocalFile,
   insertLocalFileUploading,
   insertLocalFileUploadingName,
+  insertLocalFileUploadProgress,
   showShortcutEditor,
   showShortcutEditorModal,
   shortcutEditorRef,
