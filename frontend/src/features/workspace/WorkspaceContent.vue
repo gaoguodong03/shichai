@@ -3,1033 +3,17 @@
     <!-- 会话（带主持人，可选专家）：讨论目标/提示词、skill/系统调用展示、主题变量 -->
     <div v-if="groupDetail" class="workspace-right-inner workspace-group-root group-chat-theme">
       <div :key="'group-' + (groupDetail?.id ?? '')" class="workspace-group-wrap flex flex-col min-h-0">
-        <header class="group-chat-header">
-          <div class="group-chat-header-left">
-            <div
-              :class="['group-chat-archive-anchor', props.middleColumnOpen === false ? 'group-chat-archive-anchor-collapse' : '']"
-            >
-              <button
-                type="button"
-                class="group-chat-header-btn group-chat-header-btn-icononly"
-                title="会话列表"
-                :aria-label="props.middleColumnOpen === false ? '展开会话列表列' : '收起会话列表列'"
-                @click="emit('middle-column-toggle')"
-              >
-                <svg
-                  class="group-chat-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M8 6h13M8 12h13M8 18h13" />
-                  <circle cx="4" cy="6" r="1.25" fill="currentColor" stroke="none" />
-                  <circle cx="4" cy="12" r="1.25" fill="currentColor" stroke="none" />
-                  <circle cx="4" cy="18" r="1.25" fill="currentColor" stroke="none" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="group-chat-title-wrap">
-            <h1 class="group-chat-title">{{ groupDetail.title || '未命名' }}</h1>
-            <div ref="sessionMetaPopoverRootRef" class="group-chat-title-actions-wrap">
-              <button
-                type="button"
-                class="group-chat-header-btn group-chat-header-btn-icononly"
-                :class="[sessionMetaPopoverOpen && 'group-chat-header-btn-active']"
-                title="会话标题与主题"
-                aria-haspopup="dialog"
-                :aria-expanded="sessionMetaPopoverOpen"
-                @click.stop="toggleSessionMetaPopover"
-              >
-                <svg
-                  class="group-chat-svg-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 6h16M4 12h16M4 18h10" />
-                </svg>
-              </button>
-              <div
-                v-if="sessionMetaPopoverOpen"
-                class="group-chat-session-meta-popover"
-                role="dialog"
-                aria-label="会话标题与主题"
-                @click.stop
-              >
-                <div class="group-chat-meta-section">
-                  <div class="group-chat-meta-label">会话标题</div>
-                  <div class="group-chat-meta-title-row">
-                    <input
-                      v-model="sessionTitleDraft"
-                      type="text"
-                      class="group-chat-meta-input"
-                      placeholder="输入标题"
-                      maxlength="120"
-                      @keydown.enter.prevent="saveSessionTitle"
-                    />
-                    <button
-                      type="button"
-                      class="group-chat-meta-save-btn"
-                      :disabled="titleSaving || !(sessionTitleDraft || '').trim()"
-                      @click="saveSessionTitle"
-                    >
-                      {{ titleSaving ? '保存中…' : '保存' }}
-                    </button>
-                  </div>
-                </div>
-                <div class="group-chat-meta-section group-chat-meta-section-topics">
-                  <div class="group-chat-meta-label">专家发言</div>
-                  <div v-if="!archiveItems.length" class="group-chat-meta-empty">暂无专家发言</div>
-                  <div v-else class="group-chat-meta-topic-list">
-                    <button
-                      v-for="it in archiveItems"
-                      :key="it.key"
-                      type="button"
-                      class="group-chat-meta-topic-item"
-                      :class="[tocActiveKey === it.key && 'group-chat-meta-topic-item-active']"
-                      @click="jumpToSessionTopic(it.message_id)"
-                    >
-                      <span class="group-chat-meta-topic-name">{{ it.name }}</span>
-                      <div class="group-chat-meta-topic-snippet" v-html="renderSnippetMarkdown(it.snippet)" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="group-chat-header-right">
-            <button
-              type="button"
-              :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
-              @click="toggleGroupWorkspaceOpen"
-            >
-              <svg class="group-chat-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              文件
-            </button>
-          </div>
-        </header>
+        <GroupChatHeader />
         <div class="flex-1 min-h-0 flex overflow-visible">
           <div class="group-chat-main flex-1 min-h-0 flex flex-col overflow-visible">
             <div class="group-chat-main-row">
               <div class="group-chat-main-right">
-                <div ref="groupMessagesRef" class="group-chat-messages">
-                  <template v-for="(msg, i) in groupDisplayMessages" :key="msg.message_id || i">
-                    <div
-                      :class="[
-                        'group-chat-msg-row',
-                        isMemberJoinedMessage(msg)
-                          ? 'group-chat-msg-row-system'
-                          : (msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other')
-                      ]"
-                      :data-message-id="msg.message_id || `idx-${i}`"
-                    >
-                      <template v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)">
-                        <span
-                          v-if="!isHostBubbleMessage(msg)"
-                          class="group-chat-avatar"
-                          :style="
-                            expertAvatarUrl(msg.agent_id)
-                              ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: dhaAvatarColor(dhaIndex(msg.agent_id)) }
-                          "
-                        >
-                          <img
-                            v-if="expertAvatarUrl(msg.agent_id)"
-                            :src="expertAvatarUrl(msg.agent_id)!"
-                            alt=""
-                            class="group-chat-avatar-photo"
-                          />
-                          <template v-else>{{ dhaAvatarChar(msg.agent_id) }}</template>
-                        </span>
-                        <div
-                          v-else
-                          class="group-chat-avatar group-chat-avatar-host group-chat-avatar-host-logo"
-                          aria-hidden="true"
-                        >
-                          <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                        </div>
-                      </template>
-                      <div
-                        :class="[
-                          'group-chat-bubble',
-                          isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
-                          msg.role === 'user' && 'group-chat-bubble-user',
-                          msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-dha',
-                        ]"
-                      >
-                        <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
-                          <span class="group-chat-bubble-name">{{ bubbleDisplayName(msg) }}</span>
-                      <span
-                        v-if="(msg as GroupMessage)._streaming"
-                        class="group-chat-bubble-streaming-indicator"
-                        :title="`正在输出：${activeStreamingSpeakerName}`"
-                      >
-                        正在输出{{ streamingPulse }}
-                      </span>
-                          <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
-                          <div
-                            v-for="(raw, tri) in getToolRawResults(msg)"
-                            :key="tri"
-                            class="group-chat-tool-tag-wrap"
-                            :data-key="`${msg.message_id || i}-${tri}`"
-                          >
-                            <button
-                              type="button"
-                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
-                              @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
-                            >
-                              {{ toolRawMeta(raw).toolName }}
-                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
-                            <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
-                              <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
-                              <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
-                            </div>
-                          </div>
-                          <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
-                        </div>
-                        <div class="group-chat-bubble-body">
-                          <template v-if="isMemberJoinedMessage(msg)">
-                            <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
-                          </template>
-                          <template v-else-if="msg.role !== 'user'">
-                            <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
-                          </template>
-                          <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
-                          <template v-else>
-                            <p
-                              class="group-chat-plain-text"
-                              :class="msg.role === 'user' && isShortSingleLine(formatUserBubbleForDisplay(msg.content || ''))"
-                            >
-                              {{ formatUserBubbleForDisplay(msg.content || '') }}
-                            </p>
-                            <div
-                              v-if="msg.role === 'user' && extractUserFileReferenceNames(msg.content || '').length"
-                              class="group-chat-user-file-ref-wrap"
-                            >
-                              <span
-                                v-for="(fileName, fileIdx) in extractUserFileReferenceNames(msg.content || '')"
-                                :key="`${msg.message_id || i}-file-ref-${fileIdx}`"
-                                class="group-chat-user-file-ref-tag"
-                              >
-                                文件：{{ fileName }}
-                              </span>
-                            </div>
-                          </template>
-                        </div>
-                        <div
-                          v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg) && (msg.content || '').trim()"
-                          class="group-chat-bubble-actions"
-                        >
-                          <button
-                            v-if="msg.message_id"
-                            type="button"
-                            class="group-chat-delete-msg-btn"
-                            title="从会话中彻底删除该条发言，避免污染下一轮专家上下文"
-                            @click="deleteGroupMessage(msg)"
-                          >
-                            删除该条发言
-                          </button>
-                          <button
-                            type="button"
-                            class="group-chat-save-file-btn"
-                            @click="saveDhaMessageToFile(msg)"
-                          >
-                            保存为文件
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </template>
-                  <p v-if="!groupDisplayMessages.length" class="group-chat-empty-hint">暂无消息，在下方输入并发送。</p>
-                </div>
-                <div class="group-chat-input-wrap">
-              <div class="group-chat-input-inner">
-              <div v-if="pendingSuggestedAddDhaIds.length && !groupStreaming" class="group-chat-suggested-invite-bar">
-                <span class="group-chat-suggested-invite-text">
-                  {{ hostDisplayName }} 建议邀请
-                  <template v-for="(id, idx) in pendingSuggestedAddDhaIds" :key="id">
-                    <button
-                      type="button"
-                      class="group-chat-invite-inline-btn"
-                      :disabled="suggestedInviteLoading"
-                      @click="inviteOneSuggestedDha(id)"
-                    >
-                      {{ suggestedDhaDisplayName(id) }}
-                    </button>
-                    <span v-if="idx < pendingSuggestedAddDhaIds.length - 1" class="group-chat-suggested-sep">、</span>
-                  </template>
-                  加入讨论
-                </span>
-                <button
-                  type="button"
-                  class="group-chat-invite-suggested-btn"
-                  :disabled="suggestedInviteLoading"
-                  @click="inviteSuggestedDha"
-                >
-                  全部邀请
-                </button>
-                <button type="button" class="group-chat-dismiss-suggested-btn" @click="groupSuggestedAddDhaIds = []">忽略</button>
-              </div>
-              <div v-if="autoSwitchHint" class="group-chat-suggested-invite-bar">
-                <span class="group-chat-suggested-invite-text">
-                  {{ autoSwitchHintText }}
-                </span>
-                <button
-                  type="button"
-                  class="group-chat-dismiss-suggested-btn"
-                  :disabled="autoSwitchIgnoreLoading"
-                  @click="ignoreAutoSwitchAndPause"
-                >
-                  {{ autoSwitchIgnoreLoading ? '暂停中…' : '忽略' }}
-                </button>
-              </div>
-              <div v-if="activeStreamingMessage" class="group-chat-speaker-status-input">
-                <span class="group-chat-speaker-status-dot" aria-hidden="true" />
-                <span class="group-chat-speaker-status-text">
-                  正在运行：{{ activeStreamingSpeakerName }}{{ streamingPulse }}
-                </span>
-              </div>
-              <div
-                v-else-if="groupWaitingForUser"
-                class="group-chat-speaker-status-input group-chat-speaker-status-paused"
-              >
-                <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
-                <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
-                <span class="group-chat-speaker-status-sub">下一位：{{ nextSpeakerLabelText }}</span>
-                <span v-if="orchestrationInterruptHint" class="group-chat-speaker-status-sub">{{ orchestrationInterruptHint }}</span>
-              </div>
-              <div v-else-if="groupStreaming" class="group-chat-speaker-status-input group-chat-speaker-status-ready">
-                <span class="group-chat-speaker-status-dot" aria-hidden="true" />
-                <span class="group-chat-speaker-status-text">{{ groupStreamingPhase || '正在运行' }}</span>
-              </div>
-              <div class="group-chat-input-blocks">
-                <div v-if="attachedFiles.length" class="group-chat-file-tags">
-                  <button
-                    v-for="f in attachedFiles"
-                    :key="f.path"
-                    type="button"
-                    class="group-chat-file-tag"
-                    :title="f.path"
-                    @click="removeAttachedFile(f.path)"
-                  >
-                    <span>【文件引用：{{ f.name }}】</span>
-                    <span class="group-chat-file-tag-close">×</span>
-                  </button>
-                </div>
-                <!-- 单框模式：仅讨论目标（未勾选「提示词框」时） -->
-                <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
-                  <textarea
-                    ref="goalTextareaRef"
-                    v-model="groupDiscussionGoal"
-                    class="group-chat-input-block-textarea"
-                    placeholder="输入 @ 可提及主持人或专家"
-                    rows="3"
-                    @input="onAtInput('goal', $event)"
-                    @keydown="onAtKeydown('goal', $event)"
-                    @keydown.enter.exact.prevent="onGroupInputEnter($event)"
-                    @compositionstart="onGroupCompositionStart"
-                    @compositionend="onGroupCompositionEnd"
-                    @blur="closeAtDropdownOnBlur"
-                  />
-                  <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
-                    <ul class="group-chat-members-list">
-                      <li
-                        v-for="(opt, idx) in atMentionOptions"
-                        :key="opt.id"
-                        class="group-chat-members-item group-chat-members-item-clickable"
-                        :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
-                        @mousedown.prevent
-                        @click="selectMention(opt)"
-                      >
-                        <span
-                          v-if="opt.type === 'host'"
-                          class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
-                          aria-hidden="true"
-                        >
-                          <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                        </span>
-                        <span
-                          v-else
-                          class="group-chat-avatar group-chat-avatar-sm"
-                          :style="
-                            expertAvatarUrl(opt.id)
-                              ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
-                          "
-                        >
-                          <img
-                            v-if="expertAvatarUrl(opt.id)"
-                            :src="expertAvatarUrl(opt.id)!"
-                            alt=""
-                            class="group-chat-avatar-photo"
-                          />
-                          <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
-                        </span>
-                        <span class="group-chat-at-label">{{ opt.label }}</span>
-                      </li>
-                    </ul>
-                    <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
-                  </div>
-                </div>
-                <!-- 双框模式：勾选「提示词框」时显示 -->
-                <template v-else>
-                  <div class="group-chat-input-block group-chat-input-block-at">
-                    <label class="group-chat-input-block-label">输入消息</label>
-                    <textarea
-                      ref="goalTextareaRef"
-                      v-model="groupDiscussionGoal"
-                      class="group-chat-input-block-textarea"
-                      placeholder="输入 @ 可提及主持人或专家"
-                      rows="3"
-                      @input="onAtInput('goal', $event)"
-                      @keydown="onAtKeydown('goal', $event)"
-                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
-                      @compositionstart="onGroupCompositionStart"
-                      @compositionend="onGroupCompositionEnd"
-                      @blur="closeAtDropdownOnBlur"
-                    />
-                    <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
-                      <ul class="group-chat-members-list">
-                        <li
-                          v-for="(opt, idx) in atMentionOptions"
-                          :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
-                          @mousedown.prevent
-                          @click="selectMention(opt)"
-                        >
-                          <span
-                            v-if="opt.type === 'host'"
-                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
-                            aria-hidden="true"
-                          >
-                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                          </span>
-                          <span
-                            v-else
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="
-                              expertAvatarUrl(opt.id)
-                                ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
-                            "
-                          >
-                            <img
-                              v-if="expertAvatarUrl(opt.id)"
-                              :src="expertAvatarUrl(opt.id)!"
-                              alt=""
-                              class="group-chat-avatar-photo"
-                            />
-                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
-                          </span>
-                          <span class="group-chat-at-label">{{ opt.label }}</span>
-                        </li>
-                      </ul>
-                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
-                    </div>
-                  </div>
-                  <div class="group-chat-input-block group-chat-input-block-at">
-                    <label class="group-chat-input-block-label">
-                      下一专家提示词
-                      <span v-if="groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
-                    </label>
-                    <textarea
-                      ref="nextPromptTextareaRef"
-                      v-model="groupNextPrompt"
-                      class="group-chat-input-block-textarea"
-                      placeholder="给下一个专家的提示词（可留空由主持人自动生成），输入 @ 可提及主持人或专家"
-                      rows="3"
-                      @input="onAtInput('nextPrompt', $event)"
-                      @keydown="onAtKeydown('nextPrompt', $event)"
-                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
-                      @compositionstart="onGroupCompositionStart"
-                      @compositionend="onGroupCompositionEnd"
-                      @blur="closeAtDropdownOnBlur"
-                    />
-                    <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
-                      <ul class="group-chat-members-list">
-                        <li
-                          v-for="(opt, idx) in atMentionOptions"
-                          :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
-                          @mousedown.prevent
-                          @click="selectMention(opt)"
-                        >
-                          <span
-                            v-if="opt.type === 'host'"
-                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
-                            aria-hidden="true"
-                          >
-                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                          </span>
-                          <span
-                            v-else
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="
-                              expertAvatarUrl(opt.id)
-                                ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
-                            "
-                          >
-                            <img
-                              v-if="expertAvatarUrl(opt.id)"
-                              :src="expertAvatarUrl(opt.id)!"
-                              alt=""
-                              class="group-chat-avatar-photo"
-                            />
-                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
-                          </span>
-                          <span class="group-chat-at-label">{{ opt.label }}</span>
-                        </li>
-                      </ul>
-                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
-                    </div>
-                  </div>
-                </template>
-              </div>
-              <div class="group-chat-input-toolbar">
-                <div class="group-chat-toolbar-left">
-                  <div class="group-chat-next-speaker-picker">
-                    <button
-                      type="button"
-                      class="group-chat-next-speaker-trigger"
-                      title="当前焦点角色（点击管理成员）"
-                      aria-haspopup="dialog"
-                      :aria-expanded="showAddMemberModal"
-                      @click="showAddMemberModal = true; showMoreMenu = false"
-                    >
-                      <span
-                        v-if="toolbarDisplayShowHostAvatar"
-                        class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
-                        aria-hidden="true"
-                      >
-                        <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                      </span>
-                      <span
-                        v-else
-                        class="group-chat-avatar group-chat-avatar-sm"
-                        :style="
-                          expertAvatarUrl(toolbarDisplaySpeakerId)
-                            ? { background: 'transparent', overflow: 'hidden' }
-                            : { backgroundColor: dhaAvatarColor(dhaIndex(toolbarDisplaySpeakerId)) }
-                        "
-                      >
-                        <img
-                          v-if="expertAvatarUrl(toolbarDisplaySpeakerId)"
-                          :src="expertAvatarUrl(toolbarDisplaySpeakerId)!"
-                          alt=""
-                          class="group-chat-avatar-photo"
-                        />
-                        <template v-else>{{ dhaAvatarChar(toolbarDisplaySpeakerId) }}</template>
-                      </span>
-                      <span class="group-chat-next-speaker-name">
-                        {{ toolbarDisplayLabelText }}
-                      </span>
-                    </button>
-                  </div>
-                  <div ref="insertFileRef" class="group-chat-add-member-wrap">
-                    <button
-                      type="button"
-                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
-                      @click="openInsertFileModal"
-                    >
-                      <svg
-                        class="group-chat-toolbar-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <path d="M12 13v4" />
-                        <path d="M10 15h4" />
-                      </svg>
-                      <span>文件</span>
-                    </button>
-                  </div>
-                  <div ref="shortcutEditorRef" class="group-chat-add-member-wrap">
-                    <button
-                      type="button"
-                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon group-chat-toolbar-btn-scenario"
-                      title="场景"
-                      @click="showShortcutEditorModal = true"
-                    >
-                      <svg
-                        class="group-chat-toolbar-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <rect x="4" y="4" width="7" height="7" rx="1.3" />
-                        <rect x="13" y="4" width="7" height="7" rx="1.3" />
-                        <rect x="4" y="13" width="7" height="7" rx="1.3" />
-                        <rect x="13" y="13" width="7" height="7" rx="1.3" />
-                      </svg>
-                      <span>场景</span>
-                    </button>
-                  </div>
-                  <div ref="moreMenuRef" class="group-chat-add-member-wrap">
-                    <button
-                      type="button"
-                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
-                      @click="showMoreMenu = !showMoreMenu"
-                    >
-                      <svg
-                        class="group-chat-toolbar-icon"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <circle cx="5" cy="12" r="1.5" />
-                        <circle cx="12" cy="12" r="1.5" />
-                        <circle cx="19" cy="12" r="1.5" />
-                      </svg>
-                    </button>
-                    <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
-                      <div class="group-chat-more-row group-chat-more-toggle-row">
-                        <button
-                          type="button"
-                          class="group-chat-toggle-pill"
-                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField }"
-                          @click="onShowNextPromptFieldChangeByClick"
-                        >
-                          <svg
-                            class="group-chat-toggle-pill-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <rect x="4" y="5" width="16" height="14" rx="2" />
-                            <path d="M8 9h8" />
-                            <path d="M8 13h5" />
-                          </svg>
-                          <span>提示词框</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <!-- 居中弹窗：文件 -->
-                  <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="showInsertFileModal = false">
-                    <div class="group-chat-modal group-chat-modal-compact">
-                      <div class="group-chat-modal-header">
-                        <span class="group-chat-modal-title">文件</span>
-                        <button type="button" class="group-chat-modal-close" @click="showInsertFileModal = false">×</button>
-                      </div>
-                      <div class="group-chat-modal-body">
-                        <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
-                        <div class="group-chat-insert-file-nav">
-                          <button
-                            v-if="insertFileBrowsePath"
-                            type="button"
-                            class="group-chat-insert-file-up"
-                            @click="insertFileGoUp"
-                          >
-                            上级
-                          </button>
-                          <span class="group-chat-insert-file-path truncate" :title="insertFileBrowsePath || '根目录'">{{
-                            insertFileBrowsePath || '根目录'
-                          }}</span>
-                        </div>
-                        <ul v-if="insertFileEntries.length" class="group-chat-members-list">
-                          <li
-                            v-for="e in insertFileEntries"
-                            :key="e.path"
-                            class="group-chat-members-item"
-                            :class="e.is_dir ? 'group-chat-members-item-dir' : 'group-chat-members-item-clickable'"
-                            @click="e.is_dir ? insertFileEnterDir(e) : insertFileContent(e)"
-                          >
-                            <span class="truncate">{{ e.is_dir ? `${e.name}/` : e.name }}</span>
-                          </li>
-                        </ul>
-                        <p v-else-if="insertFileLoading" class="group-chat-add-member-empty">加载中…</p>
-                        <p v-else class="group-chat-add-member-empty">暂无文件（请先打开工作区或从本地上传）</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 居中弹窗：协作组合（+） -->
-                  <div v-if="showShortcutEditorModal" class="group-chat-modal-overlay" @click.self="showShortcutEditorModal = false">
-                    <div class="group-chat-modal group-chat-modal-compact">
-                      <div class="group-chat-modal-header">
-                        <span class="group-chat-modal-title">场景</span>
-                        <button type="button" class="group-chat-modal-close" @click="showShortcutEditorModal = false">×</button>
-                      </div>
-                      <div class="group-chat-modal-body">
-                        <input
-                          v-model="shortcutPresetSearch"
-                          class="group-chat-shortcut-name-input"
-                          placeholder="搜索场景（名称/专家）"
-                        />
-                        <ul v-if="filteredShortcutPresets.length" class="group-chat-members-list">
-                          <li v-for="p in filteredShortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
-                            <button
-                              type="button"
-                              class="group-chat-shortcut-pill"
-                              :title="`${p.name}：${shortcutPresetExpertNamesText(p)}`"
-                              @click="applyShortcutPreset(p.id)"
-                            >
-                              <span class="group-chat-shortcut-name">{{ p.name }}</span>
-                              <span class="group-chat-shortcut-experts">{{ shortcutPresetExpertNamesText(p) }}</span>
-                            </button>
-                          </li>
-                        </ul>
-                        <p v-else class="group-chat-add-member-empty">{{ shortcutPresets.length ? '未找到匹配场景' : '暂无场景' }}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 居中弹窗：成员（专家） -->
-                  <div v-if="showAddMemberModal" class="group-chat-modal-overlay" @click.self="showAddMemberModal = false">
-                    <div class="group-chat-modal group-chat-modal-compact">
-                      <div class="group-chat-modal-header">
-                        <span class="group-chat-modal-title">成员管理</span>
-                        <button type="button" class="group-chat-modal-close" @click="showAddMemberModal = false">×</button>
-                      </div>
-                      <div class="group-chat-modal-body">
-                        <section class="group-chat-add-remove-section">
-                          <p class="group-chat-members-dropdown-title">当前成员</p>
-                          <ul v-if="orderedMemberIds.length > 0" class="group-chat-members-list">
-                            <li v-for="id in orderedMemberIds" :key="id" class="group-chat-members-item group-chat-member-skill-row">
-                              <span
-                                v-if="id !== 'host' && id !== VIRTUAL_SCENE_HOST_ID"
-                                class="group-chat-avatar group-chat-avatar-sm"
-                                :style="
-                                  expertAvatarUrl(id)
-                                    ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: dhaAvatarColor(dhaIndex(id)) }
-                                "
-                              >
-                                <img
-                                  v-if="expertAvatarUrl(id)"
-                                  :src="expertAvatarUrl(id)!"
-                                  alt=""
-                                  class="group-chat-avatar-photo"
-                                />
-                                <template v-else>{{ dhaAvatarChar(id) }}</template>
-                              </span>
-                              <span
-                                v-else
-                                class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
-                                aria-hidden="true"
-                              >
-                                <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                              </span>
-                              <span class="group-chat-member-skill-name">
-                                <span class="group-chat-member-skill-name-text">
-                                  {{
-                                    id === 'host' || id === VIRTUAL_SCENE_HOST_ID
-                                      ? hostDisplayName
-                                      : ((groupDetail?.agent_map || {})[id]?.name || id)
-                                  }}
-                                </span>
-                                <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
-                              </span>
-                              <button v-if="id !== leaderDisplayId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
-                            </li>
-                          </ul>
-                          <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
-                        </section>
-                        <section class="group-chat-add-remove-section">
-                          <p class="group-chat-members-dropdown-title">可邀请的专家</p>
-                          <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                            <li v-for="d in invitableDhas" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
-                              <span
-                                class="group-chat-avatar group-chat-avatar-sm"
-                                :style="
-                                  expertAvatarUrl(d.agent_id)
-                                    ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: dhaAvatarColor(dhaIndex(d.agent_id)) }
-                                "
-                              >
-                                <img
-                                  v-if="expertAvatarUrl(d.agent_id)"
-                                  :src="expertAvatarUrl(d.agent_id)!"
-                                  alt=""
-                                  class="group-chat-avatar-photo"
-                                />
-                                <template v-else>{{ (d.name || d.agent_id || '?').trim().slice(0, 1).toUpperCase() }}</template>
-                              </span>
-                              <span class="group-chat-add-member-label">{{ d.name || d.agent_id }}</span>
-                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_id)">邀请</button>
-                            </li>
-                          </ul>
-                          <p v-else class="group-chat-add-member-empty">暂无可邀请的专家</p>
-                        </section>
-                      </div>
-                    </div>
-                  </div>
-                  <input
-                    ref="insertLocalFileInputRef"
-                    type="file"
-                    class="hidden"
-                    @change="onInsertLocalFile"
-                  />
-                </div>
-                <div class="group-chat-toolbar-right group-chat-send-row">
-                  <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
-                    已自动暂停（已运行 32 轮）。如需继续，请检查并编辑「下一专家提示词」，然后点击「确认并继续」。
-                  </span>
-                  <button
-                    v-if="groupStreaming"
-                    type="button"
-                    class="group-chat-stop-btn"
-                    @click="stopGroupStream"
-                  >
-                    停止
-                  </button>
-                  <button
-                    type="button"
-                    :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
-                    :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
-                    @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
-                  >
-                    {{ groupStreaming ? '发送中…' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送') }}
-                  </button>
-                </div>
-              </div>
-                </div>
+                <GroupChatMessages />
+                <GroupChatComposer />
               </div>
             </div>
           </div>
-          </div>
-          <div
-            v-if="showGroupWorkspace"
-            class="group-chat-resizer"
-            @mousedown="onGroupWorkspaceResizeMouseDown"
-          />
-          <aside
-            v-if="showGroupWorkspace"
-            class="group-chat-workspace"
-            :style="{ width: groupWorkspaceWidth + 'px', minWidth: groupWorkspaceWidth + 'px' }"
-          >
-            <div class="group-chat-workspace-toolbar">
-              <span class="group-chat-workspace-title">工作区</span>
-              <div class="group-chat-workspace-toolbar-actions">
-                <button
-                  v-if="groupWorkspacePath"
-                  type="button"
-                  class="group-chat-workspace-back"
-                  @click="goGroupWorkspaceUp"
-                >
-                  上一级
-                </button>
-                <button
-                  v-if="groupWorkspacePath"
-                  type="button"
-                  class="group-chat-workspace-back"
-                  @click="groupWorkspaceGoRoot"
-                >
-                  根目录
-                </button>
-                <button
-                  type="button"
-                  class="group-chat-workspace-toolbar-sm"
-                  title="新建文件夹"
-                  aria-label="新建文件夹"
-                  @click="createGroupWorkspaceDir"
-                >
-                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 7h4l2 3h10v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
-                    <path d="M12 11v6" />
-                    <path d="M9 14h6" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="group-chat-workspace-toolbar-sm"
-                  title="新建文件"
-                  aria-label="新建文件"
-                  @click="createGroupWorkspaceFile"
-                >
-                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <path d="M12 12v4" />
-                    <path d="M10 14h4" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="group-chat-workspace-toolbar-sm"
-                  title="上传文件"
-                  aria-label="上传文件"
-                  @click="groupWorkspaceUploadInputRef?.click()"
-                >
-                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 16V4" />
-                    <path d="M8 8l4-4 4 4" />
-                    <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  class="group-chat-workspace-toolbar-sm"
-                  :title="groupWorkspacePreviewCollapsed ? '展开预览' : '收起预览'"
-                  aria-label="切换预览"
-                  @click="toggleWorkspacePreview()"
-                >
-                  <svg
-                    class="group-chat-workspace-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <rect x="3" y="4" width="18" height="16" rx="2" />
-                    <path v-if="!groupWorkspacePreviewCollapsed" d="M11 8l-3 4 3 4" />
-                    <path v-else d="M13 8l3 4-3 4" />
-                    <path d="M12 4v16" />
-                  </svg>
-                </button>
-                <input
-                  ref="groupWorkspaceUploadInputRef"
-                  type="file"
-                  class="hidden"
-                  @change="onGroupWorkspaceUpload"
-                />
-              </div>
-            </div>
-            <div class="group-chat-workspace-body">
-              <div
-                class="group-chat-workspace-list-col"
-                :style="{
-                  flex: groupWorkspacePreviewCollapsed ? '1 1 0%' : undefined,
-                  flexBasis: groupWorkspacePreviewCollapsed ? 'auto' : groupWorkspaceListWidth + 'px',
-                  maxWidth: groupWorkspacePreviewCollapsed ? '100%' : undefined,
-                  borderRight: groupWorkspacePreviewCollapsed ? 'none' : undefined
-                }"
-              >
-                <p v-if="groupWorkspacePath" class="group-chat-workspace-path-hint" :title="groupWorkspacePath">当前：{{ groupWorkspacePath }}</p>
-                <p v-if="groupWorkspaceLoading" class="group-chat-workspace-muted">加载中…</p>
-                <p v-else-if="groupWorkspaceError" class="group-chat-workspace-error">{{ groupWorkspaceError }}</p>
-                <ul v-else class="group-chat-workspace-list">
-                  <li v-for="e in groupWorkspaceEntries" :key="e.path" class="group-chat-workspace-item group-chat-workspace-item-row">
-                    <button
-                      v-if="e.is_dir"
-                      type="button"
-                      class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
-                      @click="groupWorkspaceEnterDir(e)"
-                    >
-                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                      <span class="truncate">{{ e.name }}</span>
-                    </button>
-                    <button
-                      v-else
-                      type="button"
-                      class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
-                      :class="{ 'group-chat-workspace-item-selected': groupWorkspacePreviewPath === e.path }"
-                      @click="previewWorkspaceFile(e)"
-                    >
-                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                      <span class="truncate">{{ e.name }}</span>
-                    </button>
-                    <div class="group-chat-workspace-item-actions">
-                      <button
-                        v-if="!e.is_dir"
-                        type="button"
-                        class="group-chat-workspace-item-action"
-                        title="下载"
-                        @click.stop="downloadGroupWorkspaceFile(e)"
-                      >↓</button>
-                      <button
-                        v-if="!e.is_dir"
-                        type="button"
-                        class="group-chat-workspace-item-action"
-                        title="重命名"
-                        @click.stop="renameGroupWorkspaceEntry(e)"
-                      >R</button>
-                      <button
-                        type="button"
-                        class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
-                        :title="e.is_dir ? '删除空目录' : '删除文件'"
-                        @click.stop="deleteGroupWorkspaceEntry(e)"
-                      >×</button>
-                    </div>
-                  </li>
-                  <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
-                </ul>
-              </div>
-              <div
-                v-if="!groupWorkspacePreviewCollapsed"
-                class="group-chat-workspace-resizer"
-                @mousedown="onWorkspaceInnerResizeMouseDown"
-              />
-              <div
-                v-if="!groupWorkspacePreviewCollapsed"
-                class="group-chat-workspace-preview-col"
-              >
-              <div v-if="groupWorkspacePreviewPath" class="group-chat-workspace-preview">
-                <div class="group-chat-workspace-preview-header">
-                  <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
-                  <div class="group-chat-workspace-preview-actions">
-                    <template v-if="isTextFile(groupWorkspacePreviewName) && !groupWorkspacePreviewLoading">
-                      <template v-if="!groupWorkspacePreviewEditing">
-                        <button
-                          type="button"
-                          class="group-chat-workspace-preview-edit-btn"
-                          @click="downloadGroupWorkspaceFile({ name: groupWorkspacePreviewName, path: groupWorkspacePreviewPath })"
-                        >
-                          下载
-                        </button>
-                        <button type="button" class="group-chat-workspace-preview-edit-btn" @click="startWorkspacePreviewEdit">编辑</button>
-                      </template>
-                      <template v-else>
-                        <button type="button" class="group-chat-workspace-preview-save-btn" @click="saveWorkspacePreviewEdit">保存</button>
-                        <button type="button" class="group-chat-workspace-toolbar-sm" @click="cancelWorkspacePreviewEdit">取消</button>
-                      </template>
-                    </template>
-                  </div>
-                </div>
-                <div v-if="groupWorkspacePreviewLoading" class="group-chat-workspace-preview-loading">加载中…</div>
-                <textarea
-                  v-else-if="groupWorkspacePreviewEditing"
-                  v-model="groupWorkspacePreviewEditContent"
-                  class="group-chat-workspace-preview-textarea"
-                  spellcheck="false"
-                />
-                <div v-else-if="groupWorkspacePreviewIsImage" class="group-chat-workspace-preview-image-wrap">
-                  <img
-                    v-if="groupWorkspacePreviewImageUrl"
-                    :src="groupWorkspacePreviewImageUrl"
-                    :alt="groupWorkspacePreviewName || '图片预览'"
-                    class="group-chat-workspace-preview-image"
-                  />
-                  <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
-                </div>
-                <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
-              </div>
-              <div v-else class="group-chat-workspace-preview-placeholder">选择左侧文件以预览</div>
-              </div>
-            </div>
-          </aside>
+          <GroupWorkspacePanel />
         </div>
       </div>
     </div>
@@ -1072,7 +56,12 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import hostLogoUrl from '@/assets/49logo.png'
-import { streamSessionChat, chatOnceRequest, type ChatStreamRequestPayload } from '@/api/chat'
+import GroupChatHeader from './components/group-chat/GroupChatHeader.vue'
+import GroupChatMessages from './components/group-chat/GroupChatMessages.vue'
+import GroupChatComposer from './components/group-chat/GroupChatComposer.vue'
+import GroupWorkspacePanel from './components/group-chat/GroupWorkspacePanel.vue'
+import { provideGroupChatWorkspaceContext } from './components/group-chat/groupChatWorkspaceContext'
+import { createGroupChatStreamRunner } from './composables/useGroupChatStreamRunner'
 import {
   dhaBodyContent,
   escapeHtml,
@@ -1579,6 +568,7 @@ async function confirmGroupNext(
   autoSwitchHint.value = null
   const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
+  groupStreamingSessionId.value = id
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
   groupStreamingPhase.value = '正在确认…'
@@ -1613,6 +603,7 @@ async function confirmGroupNext(
     if (groupStreamRunToken.value === runToken) {
       clearStreamingPlaceholders()
       groupStreaming.value = false
+      groupStreamingSessionId.value = null
       groupStreamingPhase.value = ''
       groupStreamAbort.value = null
     }
@@ -2086,18 +1077,27 @@ const groupWaitingForUser = ref(false)
 const groupSuggestedNextSpeaker = ref<string | null>(null)
 const groupSuggestedAddDhaIds = ref<string[]>([]) // 主持人推荐的待邀请 DHA（0 成员时，可一位或多位）
 const suggestedInviteLoading = ref(false)
-const autoSwitchHint = ref<{ expertId?: string; expertName?: string; skillId?: string; skillName?: string } | null>(null)
+const autoSwitchHint = ref<{ sessionId: string; expertId?: string; expertName?: string; skillId?: string; skillName?: string } | null>(null)
 const autoSwitchIgnoreLoading = ref(false)
 const lastSentDraft = ref<{ goal: string; nextPrompt: string; files: { name: string; path: string }[] } | null>(null)
-const lastRoute = ref<{ expertId: string; skillId: string } | null>(null)
-const autoSwitchHintText = computed(() => {
+const lastRoute = ref<{ sessionId: string; expertId: string; skillId: string } | null>(null)
+const currentAutoSwitchHint = computed(() => {
   const h = autoSwitchHint.value
+  if (!h) return null
+  return h.sessionId === props.selectedGroupSessionId ? h : null
+})
+const autoSwitchHintText = computed(() => {
+  const h = currentAutoSwitchHint.value
   if (!h) return ''
   const expert = (h.expertName || '').trim()
   if (!expert) return ''
   return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换专家：${expert}`
 })
 const groupStreamAbort = ref<AbortController | null>(null)
+const groupStreamingSessionId = ref<string | null>(null)
+const currentGroupStreaming = computed(() => Boolean(groupStreaming.value && groupStreamingSessionId.value === props.selectedGroupSessionId))
+const otherSessionStreaming = computed(() => Boolean(groupStreaming.value && groupStreamingSessionId.value && groupStreamingSessionId.value !== props.selectedGroupSessionId))
+const currentGroupStreamingPhase = computed(() => currentGroupStreaming.value ? groupStreamingPhase.value : '')
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
 const groupOrchestrationPhase = ref('')
 const groupInterruptReason = ref('')
@@ -2179,8 +1179,8 @@ function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null
   return Boolean(agentId && skillId)
 }
 
-function updateAutoSwitchHint(payload: Record<string, unknown>) {
-  if (!payload) return
+function updateAutoSwitchHint(payload: Record<string, unknown>, sessionId = props.selectedGroupSessionId || '') {
+  if (!payload || !sessionId) return
   const expertDebug = (payload.expert_route_debug || {}) as Record<string, unknown>
   const skillDebug = (payload.skill_route_debug || {}) as Record<string, unknown>
   const routedExpertId = String(payload.agent_id || '').trim()
@@ -2198,16 +1198,17 @@ function updateAutoSwitchHint(payload: Record<string, unknown>) {
     }
     return null
   })()
-  const prev = lastRoute.value || prevFromMessages
+  const routeInThisSession = lastRoute.value?.sessionId === sessionId ? lastRoute.value : null
+  const prev = routeInThisSession || prevFromMessages
   const changedExpert = Boolean(routedExpertId && prev?.expertId && routedExpertId !== prev.expertId)
   const changedSkill = Boolean(routedSkillId && prev?.skillId && routedSkillId !== prev.skillId)
   // 若完全没有基线，则只记录不提示；否则只要发生切换就提示。
   if (!prev) {
-    lastRoute.value = { expertId: routedExpertId, skillId: routedSkillId }
+    lastRoute.value = { sessionId, expertId: routedExpertId, skillId: routedSkillId }
     autoSwitchHint.value = null
     return
   }
-  lastRoute.value = { expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
+  lastRoute.value = { sessionId, expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
   if (!changedExpert && !changedSkill) return
 
   const map = groupDetail.value?.agent_map || {}
@@ -2216,6 +1217,7 @@ function updateAutoSwitchHint(payload: Record<string, unknown>) {
   const expertName = finalExpertId ? (map[finalExpertId]?.name || finalExpertId) : ''
   const skillName = finalSkillId ? formatSkillId(finalSkillId) : ''
   autoSwitchHint.value = {
+    sessionId,
     expertId: changedExpert ? finalExpertId : '',
     expertName: changedExpert ? expertName : '',
     skillId: changedSkill ? finalSkillId : '',
@@ -2290,6 +1292,10 @@ const pendingSuggestedAddDhaIds = computed(() => {
     .filter(Boolean)
   return [...new Set(normalized)].filter((id) => !inGroup.has(toAgentStyleId(id)))
 })
+
+const pendingSuggestedDhaItems = computed(() =>
+  pendingSuggestedAddDhaIds.value.map((id) => ({ id, name: suggestedDhaDisplayName(id) })),
+)
 
 function suggestedDhaDisplayName(id: string): string {
   const aliasMap = buildExpertAliasMap()
@@ -2414,7 +1420,7 @@ async function inviteOneSuggestedDha(dhaId: string) {
 }
 
 async function ignoreAutoSwitchAndRedo() {
-  const hint = autoSwitchHint.value
+  const hint = currentAutoSwitchHint.value
   if (!hint || groupStreaming.value) return
   autoSwitchIgnoreLoading.value = true
   try {
@@ -2431,7 +1437,7 @@ async function ignoreAutoSwitchAndRedo() {
 }
 
 async function ignoreAutoSwitchAndPause() {
-  if (!autoSwitchHint.value) return
+  if (!currentAutoSwitchHint.value) return
   autoSwitchIgnoreLoading.value = true
   try {
     try {
@@ -2439,6 +1445,7 @@ async function ignoreAutoSwitchAndPause() {
       groupStreamAbort.value?.abort()
     } catch (_) {}
     groupStreaming.value = false
+    groupStreamingSessionId.value = null
     groupStreamingPhase.value = '已暂停：请编辑后重新发送'
     groupWaitingForUser.value = false
     groupSuggestedNextSpeaker.value = null
@@ -2514,7 +1521,7 @@ const effectiveNextSpeaker = computed(() => {
   if (lastMsg?.role === 'host') {
     return 'user'
   }
-  if (lastMsg?.role === 'user' && !groupStreaming.value) {
+  if (lastMsg?.role === 'user' && !currentGroupStreaming.value) {
     const lid = (leaderDisplayId.value || '').trim()
     if (lid === 'host' || !lid) return 'host'
     if (ids.includes(lid)) return lid
@@ -3408,7 +2415,8 @@ const activeStreamingMessage = computed<GroupMessage | null>(() => {
   return null
 })
 
-const activeStreamingDhaId = computed(() => activeStreamingMessage.value?.agent_id || '')
+const currentActiveStreamingMessage = computed<GroupMessage | null>(() => currentGroupStreaming.value ? activeStreamingMessage.value : null)
+const activeStreamingDhaId = computed(() => currentActiveStreamingMessage.value?.agent_id || '')
 
 function displayGroupSpeakerName(agentId: string): string {
   const id = (agentId || '').trim()
@@ -3440,7 +2448,7 @@ const focusRoleForToolbar = computed(() => {
   if (groupStreaming.value) {
     const a = activeStreamingDhaId.value
     if (a) return a
-    const rid = (lastRoute.value?.expertId || '').trim()
+    const rid = (lastRoute.value?.sessionId === props.selectedGroupSessionId ? lastRoute.value?.expertId || '' : '').trim()
     if (isToolbarRoleValid(rid)) return rid
     return 'host'
   }
@@ -3482,7 +2490,7 @@ const toolbarDisplayLabelText = computed(() => {
 
 /** 流式脉冲点：基于已到达的内容长度滚动切换 */
 const streamingPulse = computed(() => {
-  const len = activeStreamingMessage.value?.content?.length || 0
+  const len = currentActiveStreamingMessage.value?.content?.length || 0
   const bucket = Math.floor(len / 20) % 4
   return ['', '.', '..', '...'][bucket] || ''
 })
@@ -3564,7 +2572,8 @@ function consumeStreamingStatusContent(data: { text?: string; agent_id?: string;
   return false
 }
 
-function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }) {
+function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }, sessionId = props.selectedGroupSessionId || '') {
+  if (sessionId && props.selectedGroupSessionId !== sessionId) return
   groupStreamingPhase.value = '正在生成回复…'
   if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
     if (data.role === 'assistant') {
@@ -3595,7 +2604,8 @@ function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExp
   }
 }
 
-function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }) {
+function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }, sessionId = props.selectedGroupSessionId || '') {
+  if (sessionId && props.selectedGroupSessionId !== sessionId) return
   applyOrchestrationEndMeta(endData)
   if (endData.waiting_for_user) {
     groupTurnLimitReached.value = !!endData.turns_limit_reached
@@ -3638,116 +2648,21 @@ function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpe
   }
 }
 
-async function runGroupStream(
-  sessionId: string,
-  payload: Omit<ChatStreamRequestPayload, 'session_id'>,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  const state = { sawExpertAssistantMessageThisRun: false }
-  let shouldEmitMessageSent = false
-  let gotEnd = false
-  let streamFailed = false
-  let streamServerErrored = false
-  let failureHint = ''
-  try {
-    await streamSessionChat(
-      { ...payload, session_id: sessionId },
-      {
-        onRoute: (data) => {
-          updateAutoSwitchHint(data)
-        },
-        onContent: (data) => {
-          if (data?.text != null && data?.agent_id) {
-            if (consumeStreamingStatusContent(data)) return
-            appendStreamingContent(data.agent_id, data.text)
-          }
-        },
-        onMessage: (data) => {
-          handleStreamMessageEvent(data, state)
-        },
-        onEnd: (data) => {
-          handleStreamEndEvent(data, state)
-          shouldEmitMessageSent = true
-          gotEnd = true
-        },
-        onError: (error) => {
-          streamServerErrored = true
-          console.error('SSE 事件解析失败', error)
-        },
-      },
-      signal,
-    )
-  } catch (error) {
-    if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
-      return false
-    }
-    streamFailed = true
-    console.error('SSE 请求失败，准备非流式补偿', error)
-    failureHint = error instanceof Error ? (error.message || '').trim() : ''
-  }
-
-  if (signal?.aborted) return false
-
-  if (!gotEnd || streamFailed || streamServerErrored) {
-    groupStreamingPhase.value = '连接波动，正在补偿本轮回复…'
-    try {
-      const fallback = await chatOnceRequest({ ...payload, session_id: sessionId })
-      if (fallback.status !== 'ok') {
-        const detail = String(fallback.error?.message || fallback.detail || '').trim()
-        failureHint = detail || failureHint
-        throw new Error(detail || 'chat once fallback failed')
-      }
-      const data = (fallback.data || {}) as {
-        route?: Record<string, unknown> | null
-        contents?: Array<{ text?: string; agent_id?: string; meta?: { phase?: string } }>
-        messages?: Record<string, unknown>[]
-        message?: Record<string, unknown> | null
-        end?: Record<string, unknown> | null
-        error?: Record<string, unknown> | null
-        interrupted?: boolean
-      }
-      if (data.route) updateAutoSwitchHint(data.route)
-      if (Array.isArray(data.contents)) {
-        for (const chunk of data.contents) {
-          if (chunk?.text != null && chunk?.agent_id) {
-            if (consumeStreamingStatusContent(chunk)) continue
-            appendStreamingContent(chunk.agent_id, chunk.text)
-          }
-        }
-      }
-      if (Array.isArray(data.messages)) {
-        for (const msg of data.messages) handleStreamMessageEvent(msg, state)
-      }
-      if (data.message) handleStreamMessageEvent(data.message, state)
-      if (data.end) {
-        handleStreamEndEvent(data.end, state)
-        shouldEmitMessageSent = true
-      }
-      if (!data.end && (data.error || data.interrupted)) {
-        const errText = String(data.error?.error || data.error?.detail || '').trim()
-        failureHint = errText || failureHint
-        groupStreamingPhase.value = errText
-          ? `本轮执行失败：${errText}`
-          : '本轮执行失败，请重试一次'
-      }
-    } catch (fallbackError) {
-      console.error('非流式补偿失败', fallbackError)
-      const errText = fallbackError instanceof Error ? (fallbackError.message || '').trim() : ''
-      failureHint = failureHint || errText
-      groupStreamingPhase.value = errText ? `补偿失败：${errText}` : '补偿失败，请重试一次'
-    }
-  }
-  if (!shouldEmitMessageSent && !gotEnd) {
-    const visibleError = failureHint
-      ? `系统提示：本轮请求失败（${failureHint}）。请重新登录后重试。`
-      : '系统提示：本轮请求失败。请重新登录后重试。'
+const runGroupStream = createGroupChatStreamRunner({
+  isSelectedSession: (sessionId) => props.selectedGroupSessionId === sessionId,
+  setStreamingPhase: (text) => { groupStreamingPhase.value = text },
+  appendHostError: (content) => {
     groupDisplayMessages.value = [
       ...groupDisplayMessages.value,
-      { message_id: `msg-${Date.now()}`, role: 'host', content: visibleError } as unknown as GroupMessage,
+      { message_id: `msg-${Date.now()}`, role: 'host', content } as unknown as GroupMessage,
     ]
-  }
-  return shouldEmitMessageSent
-}
+  },
+  updateAutoSwitchHint,
+  consumeStreamingStatusContent,
+  appendStreamingContent,
+  handleStreamMessageEvent,
+  handleStreamEndEvent,
+})
 
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
@@ -3797,6 +2712,7 @@ async function sendGroupMessage() {
   groupNextPrompt.value = ''
   const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
+  groupStreamingSessionId.value = detail.id
   groupStreamingPhase.value = '正在准备…'
   try {
     const msg = await buildMessageWithFiles(detail, base)
@@ -3879,6 +2795,7 @@ function stopGroupStream() {
   groupStreamAbort.value = null
   clearStreamingPlaceholders()
   groupStreaming.value = false
+  groupStreamingSessionId.value = null
   groupStreamingPhase.value = '已停止'
 }
 
@@ -3964,8 +2881,166 @@ watch(
 )
 
 
+provideGroupChatWorkspaceContext({
+  props,
+  emit,
+  groupDetail,
+  sessionMetaPopoverRootRef,
+  sessionMetaPopoverOpen,
+  toggleSessionMetaPopover,
+  sessionTitleDraft,
+  saveSessionTitle,
+  titleSaving,
+  archiveItems,
+  tocActiveKey,
+  jumpToSessionTopic,
+  renderSnippetMarkdown,
+  showGroupWorkspace,
+  toggleGroupWorkspaceOpen,
+  groupMessagesRef,
+  groupDisplayMessages,
+  isMemberJoinedMessage,
+  isHostBubbleMessage,
+  expertAvatarUrl,
+  dhaAvatarColor,
+  dhaIndex,
+  hostLogoUrl,
+  dhaAvatarChar,
+  bubbleDisplayName,
+  activeStreamingSpeakerName,
+  streamingPulse,
+  formatSkillId,
+  getToolRawResults,
+  expandedToolKey,
+  toolRawMeta,
+  formatToolPopover,
+  formatGroupMsgTime,
+  renderMarkdown,
+  dhaBodyContent,
+  isShortSingleLine,
+  formatUserBubbleForDisplay,
+  extractUserFileReferenceNames,
+  deleteGroupMessage,
+  saveDhaMessageToFile,
+  pendingSuggestedDhaItems,
+  hostDisplayName,
+  suggestedInviteLoading,
+  currentAutoSwitchHint,
+  autoSwitchHintText,
+  autoSwitchIgnoreLoading,
+  currentActiveStreamingMessage,
+  groupWaitingForUser,
+  nextSpeakerLabelText,
+  orchestrationInterruptHint,
+  currentGroupStreaming,
+  currentGroupStreamingPhase,
+  inviteOneSuggestedDha,
+  inviteSuggestedDha,
+  groupSuggestedAddDhaIds,
+  ignoreAutoSwitchAndPause,
+  attachedFiles,
+  removeAttachedFile,
+  showNextPromptField,
+  groupDiscussionGoal,
+  goalTextareaRef,
+  onAtInput,
+  onAtKeydown,
+  onGroupInputEnter,
+  onGroupCompositionStart,
+  onGroupCompositionEnd,
+  closeAtDropdownOnBlur,
+  showAtDropdown,
+  atSource,
+  atMentionOptions,
+  atSelectedIndex,
+  selectMention,
+  groupNextPrompt,
+  filteredShortcutExperts,
+  showMoreMenu,
+  moreMenuRef,
+  onShowNextPromptFieldChangeByClick,
+  openInsertFileModal,
+  showInsertFileModal,
+  insertFileRef,
+  insertFileLoading,
+  groupFileCapabilitySummary,
+  insertFileEntries,
+  insertFileBrowsePath,
+  insertFileGoUp,
+  insertFileEnterDir,
+  insertFileContent,
+  triggerInsertLocalFile,
+  showShortcutEditor,
+  showShortcutEditorModal,
+  shortcutEditorRef,
+  shortcutPresetSearch,
+  shortcutPresets,
+  filteredShortcutPresets,
+  applyShortcutPreset,
+  shortcutPresetExpertNamesText,
+  deleteShortcutPreset,
+  showAddMember,
+  addMemberRef,
+  orderedMemberIds,
+  displayGroupSpeakerName,
+  leaderDhaId,
+  leaderDisplayId,
+  removeMember,
+  invitableDhas,
+  inviteSingleMember,
+  insertLocalFileInputRef,
+  onInsertLocalFile,
+  groupTurnLimitReached,
+  effectiveNextSpeaker,
+  canSend,
+  groupStreaming,
+  otherSessionStreaming,
+  stopGroupStream,
+  confirmGroupNext,
+  sendGroupMessage,
+  toolbarDisplayShowHostAvatar,
+  toolbarDisplayLabelText,
+  toolbarDisplaySpeakerId,
+  focusRoleNameForToolbar,
+  showAddMemberModal,
+  createSessionFromScenarioPreset,
+  VIRTUAL_SCENE_HOST_ID,
+  onGroupWorkspaceResizeMouseDown,
+  groupWorkspaceWidth,
+  groupWorkspacePath,
+  goGroupWorkspaceUp,
+  groupWorkspaceGoRoot,
+  createGroupWorkspaceDir,
+  createGroupWorkspaceFile,
+  groupWorkspaceUploadInputRef,
+  onGroupWorkspaceUpload,
+  groupWorkspacePreviewCollapsed,
+  toggleWorkspacePreview,
+  groupWorkspaceLoading,
+  groupWorkspaceError,
+  groupWorkspaceEntries,
+  groupWorkspaceEnterDir,
+  groupWorkspacePreviewPath,
+  previewWorkspaceFile,
+  downloadGroupWorkspaceFile,
+  renameGroupWorkspaceEntry,
+  deleteGroupWorkspaceEntry,
+  onWorkspaceInnerResizeMouseDown,
+  groupWorkspaceListWidth,
+  groupWorkspacePreviewName,
+  isTextFile,
+  groupWorkspacePreviewLoading,
+  groupWorkspacePreviewEditing,
+  startWorkspacePreviewEdit,
+  saveWorkspacePreviewEdit,
+  cancelWorkspacePreviewEdit,
+  groupWorkspacePreviewEditContent,
+  groupWorkspacePreviewIsImage,
+  groupWorkspacePreviewImageUrl,
+  groupWorkspacePreviewContent,
+})
+
 defineExpose({ refresh: loadGroupDetail, createSessionFromScenarioPreset })
 </script>
 
-<style scoped src="./WorkspaceContent.css"></style>
-
+<style src="./WorkspaceContent.css"></style>
