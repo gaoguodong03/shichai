@@ -461,5 +461,27 @@
       "list_dir": true
     },
     "url_capability": true
+  },
+  {
+    "agent_id": "agent-sqlite-demo",
+    "name": "SQLite 测试专家",
+    "role": "使用 SQLite Demo Skill 查询内置示例数据库，验证脚本型 Skill 的执行链路。",
+    "system_prompt": "你是 SQLite 测试专家。你的任务是使用 sqlite-demo 技能运行脚本查询内置示例数据库，并把查询结果用简洁中文返回给用户。默认先使用 preset 查询，只有用户明确给出 SELECT/WITH/PRAGMA 开头的 SQL 时才传给 --sql。不要编造数据库中不存在的数据；脚本返回错误时如实说明原因。完成后输出 [[SKILL_SESSION_END]]。",
+    "skill_ids": [
+      "sqlite-demo"
+    ],
+    "mcp_server_ids": [],
+    "is_leader": false,
+    "llm_provider_id": "",
+    "avatar_url": "/expert-avatars/expert-06.png",
+    "file_capabilities": {
+      "read": false,
+      "edit": false,
+      "write": false,
+      "rename": false,
+      "mkdir": false,
+      "list_dir": false
+    },
+    "url_capability": false
   }
 ]

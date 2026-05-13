@@ -1,0 +1,19 @@
+{
+  "sqlite_demo.py": {
+    "description": "创建内置 SQLite 示例数据库并执行只读 preset 或 SQL 查询。",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": ["overview", "customers", "orders", "top_customer"]
+        },
+        "sql": {
+          "type": "string",
+          "description": "只读 SQL，仅允许 SELECT/WITH/PRAGMA。"
+        }
+      }
+    },
+    "timeout_sec": 30
+  }
+}
