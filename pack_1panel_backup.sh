@@ -36,7 +36,7 @@ if [[ $# -gt 1 ]]; then
   exit 2
 fi
 
-ST49_VERSION="${ST49_VERSION:-26.05.12.6}"
+ST49_VERSION="${ST49_VERSION:-26.05.13}"
 # Sandbox image is intentionally versioned independently from ST49.
 # Do not derive it from IMAGE_TAG by default: otherwise a normal app release like
 # `bash pack_1panel_backup.sh 26.05.12.23` would make 1Panel point to
@@ -47,6 +47,8 @@ SANDBOX_IMAGE_REPO="${SANDBOX_IMAGE_REPO:-crpi-hzqv5l81v3ftz5jl.cn-beijing.perso
 NODE_IMAGE="${NODE_IMAGE:-node:20-bookworm-slim}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-slim}"
 SANDBOX_PYTHON_IMAGE="${SANDBOX_PYTHON_IMAGE:-python:3.12-bookworm}"
+INSTALL_APP_NODE_EXTRAS="${INSTALL_APP_NODE_EXTRAS:-0}"
+PREWARM_NPX_MCP="${PREWARM_NPX_MCP:-0}"
 ST49_IMAGE="${ST49_IMAGE:-${IMAGE_REPO}:${IMAGE_TAG:-$ST49_VERSION}}"
 SANDBOX_STANDARD_IMAGE="${ST49_SANDBOX_STANDARD_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-standard}"
 SANDBOX_PLAYWRIGHT_IMAGE="${ST49_SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_VERSION}-playwright}"
@@ -72,9 +74,12 @@ if [[ -n "$IMAGE_TAG" ]]; then
   IMAGE="$ST49_IMAGE"
   echo "==> Building image: $IMAGE"
   echo "==> Base images: NODE_IMAGE=$NODE_IMAGE PYTHON_IMAGE=$PYTHON_IMAGE"
+  echo "==> App image optional Node extras: INSTALL_APP_NODE_EXTRAS=$INSTALL_APP_NODE_EXTRAS PREWARM_NPX_MCP=$PREWARM_NPX_MCP"
   docker build --platform linux/amd64 \
     --build-arg "NODE_IMAGE=$NODE_IMAGE" \
     --build-arg "PYTHON_IMAGE=$PYTHON_IMAGE" \
+    --build-arg "INSTALL_APP_NODE_EXTRAS=$INSTALL_APP_NODE_EXTRAS" \
+    --build-arg "PREWARM_NPX_MCP=$PREWARM_NPX_MCP" \
     -t "$IMAGE" .
   if [[ "${SKIP_PUSH:-0}" == "1" ]]; then
     echo "==> SKIP_PUSH=1, not pushing image: $IMAGE"

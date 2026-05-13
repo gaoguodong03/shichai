@@ -63,7 +63,7 @@
   {
     "id": "playwright-mcp",
     "name": "Playwright 浏览器控制",
-    "enabled": true,
+    "enabled": false,
     "lazy": true,
     "transport": {
       "type": "stdio",
@@ -84,7 +84,7 @@
       }
     },
     "metadata": {
-      "description": "Playwright MCP：通过 Playwright 控制本机浏览器，支持导航、点击、输入、截图等自动化操作。需要本机安装 Node.js 18+，首次使用时 npx 会自动拉取依赖。（默认禁用：npx/stdout 易污染 JSON-RPC；需要时可再启用）"
+      "description": "Playwright MCP：app 容器内浏览器控制入口。默认关闭；浏览器能力优先使用独立 Playwright 沙箱镜像，避免 app 打包或运行时拉取大体积 npx/Chromium 内容。"
     }
   }
 ]
