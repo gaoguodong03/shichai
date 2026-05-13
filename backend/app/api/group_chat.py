@@ -30,7 +30,7 @@ from app.api.settings import (
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.graph import create_skill_execution_agent
-from app.agent.expert_self_awareness import build_expert_self_awareness_block
+from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.leader_scheduler import leader_decide
 from app.agent.group_memory_store import (
     append_turn_log,
@@ -58,18 +58,16 @@ from app.core.llm_trace import append_llm_trace
 from app.core.user_context import get_current_user_context
 from app.core.security import user_context_dependency, get_current_user
 from app.core.scene_scheduler import finalize_host_scheduler_decision, RECRUIT_FIXED_MESSAGE
+from app.agent.scene_runtime import SceneRuntime, pick_scene_host_skill_id
 from app.agent.group_orchestration_fsm import (
-    available_to_add_for_prompt,
     clear_skill_session_lock,
     default_orchestration_profile_for_new_session,
     effective_orchestration_profile,
-    locked_skill_id_for_expert,
     persist_skill_session_lock,
     resolve_group_entry_route,
     user_requests_exit_skill_session,
 )
 from app.agent.skill_session_contract import (
-    GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION,
     resolve_skill_session_state,
 )
 
@@ -240,49 +238,7 @@ def _pick_resolved_host_skill_id(skill_ids: List[str]) -> str:
     会误只加载通用主持，网文专精从未生效。规则：优先任一带 `group-host-` 前缀的专精 id
     （如 group-host-webnovel），否则用列表首项；空列表回退 group-host。
     """
-    ids = [str(x).strip() for x in (skill_ids or []) if str(x).strip()]
-    if not ids:
-        return "group-host"
-    for sid in ids:
-        if sid.startswith("group-host-") and sid != "group-host":
-            return sid
-    return ids[0]
-
-
-def _resolve_scene_host_profile(
-    meta_item: Dict[str, Any],
-    *,
-    dha_map: Dict[str, Dict[str, Any]],
-    app_settings: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """合成「类 DHA」主持人 profile：优先 meta.host_config + 虚拟 id；否则回退到真实 leader DHA。"""
-    hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
-    default_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
-    base_host_cfg = normalize_host_config_dict(hp_norm)
-    leader = str(meta_item.get("leader_agent_id") or "").strip()
-    agent_ids_meta = [str(x).strip() for x in (meta_item.get("agent_ids") or []) if str(x).strip()]
-    orch = effective_orchestration_profile(meta_item, agent_ids=agent_ids_meta)
-    role_label = "群聊场景主持人" if orch == "scene" else "群聊主持人"
-
-    def _apply_virtual(prof: Dict[str, Any], *, name: str) -> Dict[str, Any]:
-        prof["agent_id"] = VIRTUAL_SCENE_HOST_ID
-        prof["name"] = name
-        prof["role"] = role_label
-        return prof
-
-    if "host_config" in meta_item and isinstance(meta_item.get("host_config"), dict):
-        merged = dict(base_host_cfg)
-        merged.update(meta_item["host_config"])
-        hc_dn = str(merged.get("display_name") or "").strip()
-        resolved_name = hc_dn or default_display_name
-        prof = normalize_host_config_dict(merged)
-        return _apply_virtual(prof, name=resolved_name)
-    if leader == VIRTUAL_SCENE_HOST_ID:
-        prof = normalize_host_config_dict(base_host_cfg)
-        return _apply_virtual(prof, name=default_display_name)
-    if leader and leader in dha_map:
-        return dict(dha_map[leader])
-    return None
+    return pick_scene_host_skill_id(skill_ids)
 
 
 def _maybe_upgrade_meta_to_scene_profile(meta_item: Dict[str, Any]) -> bool:
@@ -1171,134 +1127,6 @@ def _extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     return None
-
-
-async def _expert_llm_pick_skill_id(
-    llm: Any,
-    skill_ids: List[str],
-    discussion_goal: str,
-    messages: List[Dict[str, Any]],
-    round_user_text: str,
-) -> Tuple[Optional[str], Dict[str, Any]]:
-    """由专家模型在多 Skill 中择一；失败返回 (None, debug) 以便回退关键词路由。"""
-    debug: Dict[str, Any] = {"strategy": "expert_llm_pick", "scores": []}
-    sl = _request_skills_loader()
-    lines: List[str] = []
-    for sid in skill_ids:
-        sk = sl.skills.get(sid)
-        if sk:
-            desc = (sk.description or "")[:800]
-            nm = sk.name or sid
-            lines.append(f'- skill_id="{sid}" | name="{nm}" | description="{desc}"')
-        else:
-            lines.append(f'- skill_id="{sid}" | （未加载元数据，仍须从 id 中选择）')
-    catalog = "\n".join(lines)
-    last_u = _last_user_message_text(messages)
-    um = (round_user_text or "").strip() or last_u
-    sys_msg = (
-        "你是专家的任务分发模块。只做一件事：根据讨论目标与本轮用户输入，"
-        "从下方候选 Skill 中为该专家**恰好选一个** skill_id。\n"
-        "必须只输出一个 JSON 对象，不要输出其他文字：\n"
-        '{"selected_skill_id":"<从候选中复制的确切 skill_id>"}\n'
-        "选择依据：用户任务与各 Skill 名称、描述的匹配度。"
-    )
-    human = (
-        f"【讨论目标】\n{discussion_goal or '（无）'}\n\n"
-        f"【本轮用户输入】\n{um or '（无）'}\n\n"
-        f"【候选 Skill】\n{catalog}\n"
-    )
-    try:
-        client = llm.get_client()
-        out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human)])
-        raw = out.content if hasattr(out, "content") else str(out)
-        if isinstance(raw, list):
-            raw = "".join(str(x) for x in raw)
-        parsed = _extract_json_object_from_llm_text(str(raw))
-        if parsed:
-            picked = str(parsed.get("selected_skill_id") or "").strip()
-            valid = {str(x).strip() for x in skill_ids}
-            if picked and picked in valid:
-                debug["selected_skill_id"] = picked
-                return picked, debug
-            debug["strategy"] = "expert_llm_pick_invalid_id"
-            debug["invalid_pick"] = picked
-        else:
-            debug["strategy"] = "expert_llm_pick_parse_fail"
-    except Exception as e:
-        logger.warning("专家 Skill 选型 LLM 失败，将回退关键词路由: %s", e)
-        debug["strategy"] = "expert_llm_pick_error"
-        debug["error"] = str(e)
-    return None, debug
-
-
-async def _resolve_expert_skill_id_and_content(
-    dha: Dict[str, Any],
-    discussion_goal: str,
-    messages: List[Dict[str, Any]],
-    *,
-    next_speaker: str,
-    meta_item: Dict[str, Any],
-    ignored_auto_skill_id: Optional[str],
-    app_settings: Dict[str, Any],
-    round_user_text: str,
-) -> Tuple[str, str, Dict[str, Any]]:
-    """专家回合：meta 中 Skill 会话锁存在时固定 Skill(a)（含同一条流内自动连跑多轮）；否则多 Skill 由专家模型选择。"""
-    sl = _request_skills_loader()
-    skill_ids = [str(x).strip() for x in (dha.get("skill_ids") or []) if str(x).strip()]
-
-    owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
-    lsk_raw = str(meta_item.get("skill_session_skill_id") or "").strip()
-    if owner == str(next_speaker or "").strip().lower() and lsk_raw and lsk_raw not in skill_ids:
-        clear_skill_session_lock(meta_item)
-
-    locked = locked_skill_id_for_expert(meta_item, expert_agent_id=next_speaker, expert_skill_ids=skill_ids)
-    if locked:
-        c = sl.get_skill_full_content(locked)
-        if c:
-            return locked, c, {"strategy": "locked_skill_session", "selected_skill_id": locked}
-
-    # 仅保留可加载正文的候选 Skill，避免 LLM 选中不存在/未就绪的 skill_id。
-    loaded_skill_ids: List[str] = []
-    for sid in skill_ids:
-        if sl.get_skill_full_content(sid):
-            loaded_skill_ids.append(sid)
-    if not loaded_skill_ids:
-        return "", "", {
-            "strategy": "expert_skill_catalog_empty",
-            "blocking_error": "expert_skill_content_missing",
-            "strict_llm_required": True,
-            "candidate_skill_ids": skill_ids,
-        }
-    if len(loaded_skill_ids) == 1:
-        only_sid = loaded_skill_ids[0]
-        c = sl.get_skill_full_content(only_sid)
-        if c:
-            return only_sid, c, {"strategy": "single_loaded_skill", "selected_skill_id": only_sid}
-        return "", "", {
-            "strategy": "single_loaded_skill_missing_content",
-            "blocking_error": "expert_skill_content_missing",
-            "strict_llm_required": True,
-            "candidate_skill_ids": loaded_skill_ids,
-        }
-
-    llm_dha = _get_llm_for_dha(dha, app_settings)
-    picked, dbg = await _expert_llm_pick_skill_id(
-        llm_dha,
-        loaded_skill_ids,
-        discussion_goal,
-        messages,
-        round_user_text,
-    )
-    if picked:
-        c = sl.get_skill_full_content(picked)
-        if c:
-            dbg["selected_skill_id"] = picked
-            return picked, c, dbg
-
-    # 严格模式：多 Skill 只允许 LLM 选择，不再回退关键词路由
-    dbg["strict_llm_required"] = True
-    dbg["blocking_error"] = "expert_skill_pick_llm_failed"
-    return "", "", dbg
 
 
 def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
@@ -2444,15 +2272,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     extra_system_prompt = ""
     # speak_mode 仍可由会话 API 写入 meta（前端/习惯）；群聊调度已统一单一路径，不再按 manual/auto 分支。
 
-    host_dha = _resolve_scene_host_profile(m, dha_map=dha_map, app_settings=app_settings)
+    scene_runtime = SceneRuntime.from_group_session(
+        session_id=group_session_id,
+        meta_item=m,
+        agent_ids=agent_ids,
+        dha_map=dha_map,
+        app_host_profile=hp_norm,
+        available_to_add=available_to_add,
+    )
+    host_dha = scene_runtime.host_profile
 
     import json as json_module
 
     async def event_gen():
         nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
         meta_item: Dict[str, Any] = meta[group_session_id]
-        orch_profile = effective_orchestration_profile(meta_item, agent_ids=agent_ids)
-        available_for_scheduler = available_to_add_for_prompt(available_to_add, orchestration_profile=orch_profile)
+        orch_profile = scene_runtime.orchestration_profile
+        available_for_scheduler = scene_runtime.available_to_add_for_scheduler
         custom_prompt_used = False  # custom_prompt 仅对本次请求的首个 DHA 生效
         dha_turns = 0  # 本次流中 DHA 总发言轮次
         orch_ctx = OrchestrationContext(
@@ -2543,9 +2379,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             def _host_bubble_skill_id() -> str:
                 """供前端气泡展示「skill: xxx」；与会话 meta / 主持人 DHA 的 skill_ids 一致。"""
-                if not host_dha:
-                    return "group-host"
-                return _pick_resolved_host_skill_id(list(host_dha.get("skill_ids") or []))
+                return scene_runtime.host_bubble_skill_id()
 
             next_speaker = None
             expert_route_debug_for_turn: Dict[str, Any] = {}
@@ -2957,16 +2791,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker = "user"
                     break
 
-                resolved_skill_id, skill_content, skill_route_debug = await _resolve_expert_skill_id_and_content(
-                    dha,
-                    discussion_goal,
-                    messages,
-                    next_speaker=next_speaker,
+                expert_runtime = await build_expert_turn_runtime(
+                    dha=dha,
+                    agent_id=next_speaker,
+                    group_session_id=group_session_id,
+                    discussion_goal=discussion_goal,
+                    messages=messages,
                     meta_item=meta_item,
-                    ignored_auto_skill_id=ignored_auto_skill_id,
                     app_settings=app_settings,
                     round_user_text=user_message,
+                    extra_system_prompt=extra_system_prompt,
+                    skills_loader=_request_skills_loader(),
+                    llm_resolver=lambda d: _get_llm_for_dha(d, app_settings),
+                    ignored_auto_skill_id=ignored_auto_skill_id,
                 )
+                resolved_skill_id = expert_runtime.skill_id
+                skill_content = expert_runtime.skill_content
+                skill_route_debug = expert_runtime.skill_route_debug
                 if (
                     isinstance(skill_route_debug, dict)
                     and skill_route_debug.get("strict_llm_required")
@@ -3017,9 +2858,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     _persist_pending_state(end_data)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
-                tools = await build_tools_for_group_chat(
-                    dha, group_session_id, resolved_skill_id=resolved_skill_id
-                )
+                tools = expert_runtime.tools
+                agent = expert_runtime.agent
                 route_event = {
                     "type": "route",
                     "agent_id": next_speaker,
@@ -3028,23 +2868,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "skill_route_debug": skill_route_debug if isinstance(skill_route_debug, dict) else {},
                 }
                 yield f"event: route\ndata: {json_module.dumps(route_event, ensure_ascii=False)}\n\n"
-                role = dha.get("role") or ""
-                dha_system = (dha.get("system_prompt") or "").strip()
-                if dha_system:
-                    skill_content = f"{dha_system}\n\n{skill_content}"
-                if role:
-                    skill_content = f"你的角色：{role}\n\n{skill_content}"
-                expert_self_awareness = build_expert_self_awareness_block(dha, _request_skills_loader())
-                skill_content += GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
-
-                llm_dha = _get_llm_for_dha(dha, app_settings)
-                agent = create_skill_execution_agent(
-                    llm_dha,
-                    tools,
-                    skill_content,
-                    extra_system_prompt,
-                    expert_self_awareness=expert_self_awareness,
-                )
                 context = _messages_to_expert_context(messages)
                 if not custom_prompt_used and custom_prompt:
                     user_content = custom_prompt
