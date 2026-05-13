@@ -68,19 +68,18 @@
 
 #### Agent 层（Python）
 
-- **LangGraph**：Python 版本的 `langgraph` 实现 ReAct 循环
-  - 使用 `langgraph` 构建 Agent 工作流
-  - 支持状态管理和节点编排
-- **LangChain**：Python 版本的 `langchain` 核心库
-  - 提供 LLM 抽象接口
-  - 工具调用和链式处理
+- **SimpleAgent**：项目内的轻量 ReAct 循环
+  - 使用结构化 `tool_calls` 驱动模型步、工具步与结束步
+  - 技能执行入口位于 `backend/app/agent/skill_agent_runtime.py`
+- **LangChain 兼容层**：保留 `langchain-core` 消息对象与 `langchain-openai` 客户端
+  - 工具对象使用项目内 `ToolSpec`，绑定模型前转换为 OpenAI tool schema
 - **MCP Python SDK**：使用官方 MCP Python SDK
   - 从 PyPI 安装：`pip install mcp`
   - 或从 GitHub 安装：`pip install git+https://github.com/modelcontextprotocol/python-sdk.git`
   - 直接使用 Python MCP SDK 连接 MCP Server
   - 支持 stdio、SSE、HTTP 等多种传输方式
   - 无需 JavaScript 适配器，原生 Python 集成
-- **多模型支持**：通过 LangChain 的 LLM 接口支持多种模型
+- **多模型支持**：通过 OpenAI 兼容 Chat 客户端支持多种模型
   - OpenAI（GPT-4, GPT-3.5 等）
   - Anthropic（Claude 系列）
   - 本地模型（通过 Ollama、vLLM 等）

@@ -58,7 +58,7 @@ DHA/
 
 | 文件 | 职责 |
 |------|------|
-| `graph.py` | LangGraph ReAct 工作流（agent ↔ call_tool / end）；工具参数归一化委托给 MCP 层。 |
+| `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
 | `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(all_tools, dha, workspace_id)`，按 DHA 的 mcp_server_ids/skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每 skill 的 `run_skill_script_<skill_id>`。 |
 | `skill_selector.py` | 技能选择：根据用户消息与 name+description 选出 skill_id。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |

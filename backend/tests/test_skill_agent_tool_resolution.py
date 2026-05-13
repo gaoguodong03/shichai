@@ -1,7 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage
 
-from app.agent.graph import _call_tool_impl
+from app.agent.skill_agent_runtime import _call_tool_impl
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 
 
@@ -127,4 +127,3 @@ async def test_skill_tool_non_ascii_requested_name_resolved():
     debug = out.get("tool_attempt_debug") or []
     assert debug and debug[0].get("resolved_tool") == safe_name
     assert debug[0].get("matched") is True
-

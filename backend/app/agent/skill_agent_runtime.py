@@ -1,8 +1,4 @@
-"""ReAct Agent 工作流
-
-注意：当前环境为 langgraph==0.0.51 + Python 3.13，会在 pregel 执行时触发 KeyError '__start__'。
-为保证群聊/技能执行稳定，本模块改用不依赖 langgraph 的 SimpleAgent 执行循环。
-"""
+"""Skill agent runtime built on the project-local SimpleAgent loop."""
 import asyncio
 import json
 import logging

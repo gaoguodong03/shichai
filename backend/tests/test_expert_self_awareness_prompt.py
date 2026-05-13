@@ -1,5 +1,5 @@
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
-from app.agent.graph import create_skill_execution_agent
+from app.agent.skill_agent_runtime import create_skill_execution_agent
 
 
 class _FakeSkill:

@@ -178,7 +178,7 @@ skill_execution 的 system_prompt =
 
 ## 六、日志查看
 
-在 `backend/app/agent/graph.py` 的 `call_model` 中，每次调用 LLM 前会输出：
+在 `backend/app/agent/skill_agent_runtime.py` 的 `call_model` 中，每次调用 LLM 前会输出：
 
 ```
 输入大模型的提示词:

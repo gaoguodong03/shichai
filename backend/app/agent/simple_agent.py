@@ -299,7 +299,7 @@ def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
 @dataclass
 class SimpleAgent:
     """
-    一个不依赖 langgraph 的极简 agent：
+    一个不依赖外部编排框架的极简 agent：
     - 仅使用 LLM 的结构化 tool_calls 进行工具调用（删除历史 content-json 回退）
     - 直到模型不再请求工具，返回累计 messages
     """

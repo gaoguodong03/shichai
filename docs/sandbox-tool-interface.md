@@ -1,6 +1,6 @@
 # 沙箱工具调用接口
 
-本文档说明群聊技能执行阶段，模型可调用的沙箱/工具接口、参数格式、返回约定与推荐调用顺序。实现入口以 `backend/app/agent/tools_for_skill.py`、`backend/app/agent/graph.py`、`backend/app/agent/simple_agent.py` 为准。
+本文档说明群聊技能执行阶段，模型可调用的沙箱/工具接口、参数格式、返回约定与推荐调用顺序。实现入口以 `backend/app/agent/tools_for_skill.py`、`backend/app/agent/skill_agent_runtime.py`、`backend/app/agent/simple_agent.py` 为准。
 
 ## 总体规则
 

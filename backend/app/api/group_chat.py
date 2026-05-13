@@ -29,7 +29,7 @@ from app.api.settings import (
 )
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
-from app.agent.graph import create_skill_execution_agent
+from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.leader_scheduler import leader_decide
 from app.agent.group_memory_store import (

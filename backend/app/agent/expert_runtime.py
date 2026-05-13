@@ -13,7 +13,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
-from app.agent.graph import create_skill_execution_agent
+from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.group_orchestration_fsm import clear_skill_session_lock, locked_skill_id_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 from app.agent.tools_for_skill import build_tools_for_group_chat
