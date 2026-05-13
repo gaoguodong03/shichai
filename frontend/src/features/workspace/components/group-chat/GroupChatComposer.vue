@@ -341,19 +341,31 @@
                     </div>
                   </div>
                   <!-- 居中弹窗：文件 -->
-                  <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="showInsertFileModal = false">
+                  <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="!insertLocalFileUploading && (showInsertFileModal = false)">
                     <div class="group-chat-modal group-chat-modal-compact">
                       <div class="group-chat-modal-header">
                         <span class="group-chat-modal-title">文件</span>
-                        <button type="button" class="group-chat-modal-close" @click="showInsertFileModal = false">×</button>
+                        <button type="button" class="group-chat-modal-close" :disabled="insertLocalFileUploading" @click="showInsertFileModal = false">×</button>
                       </div>
                       <div class="group-chat-modal-body">
-                        <button type="button" class="group-chat-toolbar-btn group-chat-insert-local-btn" @click="triggerInsertLocalFile">从本地上传并插入</button>
+                        <button
+                          type="button"
+                          class="group-chat-toolbar-btn group-chat-insert-local-btn"
+                          :disabled="insertLocalFileUploading"
+                          @click="triggerInsertLocalFile"
+                        >
+                          {{ insertLocalFileUploading ? '正在上传…' : '从本地上传并插入' }}
+                        </button>
+                        <div v-if="insertLocalFileUploading" class="group-chat-uploading-notice" role="status" aria-live="polite">
+                          <span class="group-chat-uploading-spinner" aria-hidden="true" />
+                          <span>正在上传 {{ insertLocalFileUploadingName || '本地文件' }}，上传完成前请勿关闭或继续操作。</span>
+                        </div>
                         <div class="group-chat-insert-file-nav">
                           <button
                             v-if="insertFileBrowsePath"
                             type="button"
                             class="group-chat-insert-file-up"
+                            :disabled="insertLocalFileUploading"
                             @click="insertFileGoUp"
                           >
                             上级
@@ -368,7 +380,8 @@
                             :key="e.path"
                             class="group-chat-members-item"
                             :class="e.is_dir ? 'group-chat-members-item-dir' : 'group-chat-members-item-clickable'"
-                            @click="e.is_dir ? insertFileEnterDir(e) : insertFileContent(e)"
+                            :aria-disabled="insertLocalFileUploading"
+                            @click="insertLocalFileUploading ? undefined : (e.is_dir ? insertFileEnterDir(e) : insertFileContent(e))"
                           >
                             <span class="truncate">{{ e.is_dir ? `${e.name}/` : e.name }}</span>
                           </li>
@@ -494,6 +507,7 @@
                     ref="insertLocalFileInputRef"
                     type="file"
                     class="hidden"
+                    :disabled="insertLocalFileUploading"
                     @change="onInsertLocalFile"
                   />
                 </div>
@@ -512,10 +526,10 @@
                   <button
                     type="button"
                     :class="groupWaitingForUser && effectiveNextSpeaker ? 'group-chat-confirm-btn' : 'group-chat-send-btn'"
-                    :disabled="groupStreaming || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
+                    :disabled="groupStreaming || insertLocalFileUploading || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
                     @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
                   >
-                    {{ currentGroupStreaming ? '发送中…' : (otherSessionStreaming ? '其他会话运行中' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送')) }}
+                    {{ currentGroupStreaming ? '发送中…' : (insertLocalFileUploading ? '文件上传中…' : (otherSessionStreaming ? '其他会话运行中' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送'))) }}
                   </button>
                 </div>
               </div>
@@ -579,6 +593,8 @@ const {
   insertFileEnterDir,
   insertFileContent,
   triggerInsertLocalFile,
+  insertLocalFileUploading,
+  insertLocalFileUploadingName,
   showShortcutEditor,
   showShortcutEditorModal,
   shortcutEditorRef,

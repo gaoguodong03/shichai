@@ -140,6 +140,8 @@ const groupWorkspacePreviewLoading = ref(false)
 const groupWorkspacePreviewEditing = ref(false)
 const groupWorkspacePreviewEditContent = ref('')
 const groupWorkspaceUploadInputRef = ref<HTMLInputElement | null>(null)
+const groupWorkspaceUploading = ref(false)
+const groupWorkspaceUploadingName = ref('')
 const groupWorkspaceWidth = ref(360)
 const groupWorkspaceListWidth = ref(192)
 // 工作区预览区默认收起，初始总宽度略窄，仅文件列表为主
@@ -657,15 +659,20 @@ async function removeMember(dhaId: string) {
 }
 
 const insertLocalFileInputRef = ref<HTMLInputElement | null>(null)
+const insertLocalFileUploading = ref(false)
+const insertLocalFileUploadingName = ref('')
 function triggerInsertLocalFile() {
+  if (insertLocalFileUploading.value) return
   insertLocalFileInputRef.value?.click()
 }
 async function onInsertLocalFile(ev: Event) {
   const input = ev.target as HTMLInputElement
   const id = groupDetail.value?.id
-  if (!id || !input.files?.length) return
+  if (!id || !input.files?.length || insertLocalFileUploading.value) return
   const file = input.files[0]
   const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
+  insertLocalFileUploading.value = true
+  insertLocalFileUploadingName.value = file.name || '本地文件'
   try {
     const form = new FormData()
     form.append('file', file)
@@ -691,6 +698,8 @@ async function onInsertLocalFile(ev: Event) {
   } catch {
     alert('上传失败，请检查网络或后端')
   } finally {
+    insertLocalFileUploading.value = false
+    insertLocalFileUploadingName.value = ''
     input.value = ''
   }
 }
@@ -2016,8 +2025,10 @@ async function createGroupWorkspaceFile() {
 async function onGroupWorkspaceUpload(ev: Event) {
   const input = ev.target as HTMLInputElement
   const id = groupDetail.value?.id
-  if (!id || !input.files?.length) return
+  if (!id || !input.files?.length || groupWorkspaceUploading.value) return
   const file = input.files[0]
+  groupWorkspaceUploading.value = true
+  groupWorkspaceUploadingName.value = file.name || '本地文件'
   try {
     const form = new FormData()
     form.append('file', file)
@@ -2035,6 +2046,8 @@ async function onGroupWorkspaceUpload(ev: Event) {
   } catch {
     alert('上传失败，请检查网络或后端')
   } finally {
+    groupWorkspaceUploading.value = false
+    groupWorkspaceUploadingName.value = ''
     input.value = ''
   }
 }
@@ -2970,6 +2983,8 @@ provideGroupChatWorkspaceContext({
   insertFileEnterDir,
   insertFileContent,
   triggerInsertLocalFile,
+  insertLocalFileUploading,
+  insertLocalFileUploadingName,
   showShortcutEditor,
   showShortcutEditorModal,
   shortcutEditorRef,
@@ -3013,6 +3028,8 @@ provideGroupChatWorkspaceContext({
   createGroupWorkspaceDir,
   createGroupWorkspaceFile,
   groupWorkspaceUploadInputRef,
+  groupWorkspaceUploading,
+  groupWorkspaceUploadingName,
   onGroupWorkspaceUpload,
   groupWorkspacePreviewCollapsed,
   toggleWorkspacePreview,

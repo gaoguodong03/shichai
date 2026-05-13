@@ -16,6 +16,7 @@
                   v-if="groupWorkspacePath"
                   type="button"
                   class="group-chat-workspace-back"
+                  :disabled="groupWorkspaceUploading"
                   @click="goGroupWorkspaceUp"
                 >
                   上一级
@@ -24,6 +25,7 @@
                   v-if="groupWorkspacePath"
                   type="button"
                   class="group-chat-workspace-back"
+                  :disabled="groupWorkspaceUploading"
                   @click="groupWorkspaceGoRoot"
                 >
                   根目录
@@ -33,6 +35,7 @@
                   class="group-chat-workspace-toolbar-sm"
                   title="新建文件夹"
                   aria-label="新建文件夹"
+                  :disabled="groupWorkspaceUploading"
                   @click="createGroupWorkspaceDir"
                 >
                   <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -46,6 +49,7 @@
                   class="group-chat-workspace-toolbar-sm"
                   title="新建文件"
                   aria-label="新建文件"
+                  :disabled="groupWorkspaceUploading"
                   @click="createGroupWorkspaceFile"
                 >
                   <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -60,6 +64,7 @@
                   class="group-chat-workspace-toolbar-sm"
                   title="上传文件"
                   aria-label="上传文件"
+                  :disabled="groupWorkspaceUploading"
                   @click="groupWorkspaceUploadInputRef?.click()"
                 >
                   <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -73,6 +78,7 @@
                   class="group-chat-workspace-toolbar-sm"
                   :title="groupWorkspacePreviewCollapsed ? '展开预览' : '收起预览'"
                   aria-label="切换预览"
+                  :disabled="groupWorkspaceUploading"
                   @click="toggleWorkspacePreview()"
                 >
                   <svg
@@ -94,11 +100,16 @@
                   ref="groupWorkspaceUploadInputRef"
                   type="file"
                   class="hidden"
+                  :disabled="groupWorkspaceUploading"
                   @change="onGroupWorkspaceUpload"
                 />
               </div>
             </div>
-            <div class="group-chat-workspace-body">
+            <div v-if="groupWorkspaceUploading" class="group-chat-uploading-notice group-chat-workspace-uploading-notice" role="status" aria-live="polite">
+              <span class="group-chat-uploading-spinner" aria-hidden="true" />
+              <span>正在上传 {{ groupWorkspaceUploadingName || '本地文件' }}，上传完成前请勿继续操作。</span>
+            </div>
+            <div class="group-chat-workspace-body" :class="{ 'group-chat-workspace-body-busy': groupWorkspaceUploading }">
               <div
                 class="group-chat-workspace-list-col"
                 :style="{
@@ -117,6 +128,7 @@
                       v-if="e.is_dir"
                       type="button"
                       class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
+                      :disabled="groupWorkspaceUploading"
                       @click="groupWorkspaceEnterDir(e)"
                     >
                       <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -127,6 +139,7 @@
                       type="button"
                       class="group-chat-workspace-item-btn group-chat-workspace-item-btn-main"
                       :class="{ 'group-chat-workspace-item-selected': groupWorkspacePreviewPath === e.path }"
+                      :disabled="groupWorkspaceUploading"
                       @click="previewWorkspaceFile(e)"
                     >
                       <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -138,6 +151,7 @@
                         type="button"
                         class="group-chat-workspace-item-action"
                         title="下载"
+                        :disabled="groupWorkspaceUploading"
                         @click.stop="downloadGroupWorkspaceFile(e)"
                       >↓</button>
                       <button
@@ -145,12 +159,14 @@
                         type="button"
                         class="group-chat-workspace-item-action"
                         title="重命名"
+                        :disabled="groupWorkspaceUploading"
                         @click.stop="renameGroupWorkspaceEntry(e)"
                       >R</button>
                       <button
                         type="button"
                         class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
                         :title="e.is_dir ? '删除空目录' : '删除文件'"
+                        :disabled="groupWorkspaceUploading"
                         @click.stop="deleteGroupWorkspaceEntry(e)"
                       >×</button>
                     </div>
@@ -161,7 +177,7 @@
               <div
                 v-if="!groupWorkspacePreviewCollapsed"
                 class="group-chat-workspace-resizer"
-                @mousedown="onWorkspaceInnerResizeMouseDown"
+                @mousedown="groupWorkspaceUploading ? undefined : onWorkspaceInnerResizeMouseDown($event)"
               />
               <div
                 v-if="!groupWorkspacePreviewCollapsed"
@@ -176,15 +192,16 @@
                         <button
                           type="button"
                           class="group-chat-workspace-preview-edit-btn"
+                          :disabled="groupWorkspaceUploading"
                           @click="downloadGroupWorkspaceFile({ name: groupWorkspacePreviewName, path: groupWorkspacePreviewPath })"
                         >
                           下载
                         </button>
-                        <button type="button" class="group-chat-workspace-preview-edit-btn" @click="startWorkspacePreviewEdit">编辑</button>
+                        <button type="button" class="group-chat-workspace-preview-edit-btn" :disabled="groupWorkspaceUploading" @click="startWorkspacePreviewEdit">编辑</button>
                       </template>
                       <template v-else>
-                        <button type="button" class="group-chat-workspace-preview-save-btn" @click="saveWorkspacePreviewEdit">保存</button>
-                        <button type="button" class="group-chat-workspace-toolbar-sm" @click="cancelWorkspacePreviewEdit">取消</button>
+                        <button type="button" class="group-chat-workspace-preview-save-btn" :disabled="groupWorkspaceUploading" @click="saveWorkspacePreviewEdit">保存</button>
+                        <button type="button" class="group-chat-workspace-toolbar-sm" :disabled="groupWorkspaceUploading" @click="cancelWorkspacePreviewEdit">取消</button>
                       </template>
                     </template>
                   </div>
@@ -226,6 +243,8 @@ const {
   createGroupWorkspaceDir,
   createGroupWorkspaceFile,
   groupWorkspaceUploadInputRef,
+  groupWorkspaceUploading,
+  groupWorkspaceUploadingName,
   onGroupWorkspaceUpload,
   groupWorkspacePreviewCollapsed,
   toggleWorkspacePreview,

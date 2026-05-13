@@ -2436,3 +2436,60 @@
   font-size: 0.8125rem;
   opacity: 0.9;
 }
+
+.group-chat-uploading-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  margin: 0.25rem 0 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-accent);
+  background: var(--color-accent-subtle, rgba(59, 130, 246, 0.1));
+  border: 1px solid var(--color-accent-soft, rgba(59, 130, 246, 0.22));
+  border-radius: 0.5rem;
+}
+
+.group-chat-workspace-uploading-notice {
+  flex-shrink: 0;
+  margin: 0.5rem 0.75rem 0;
+}
+
+.group-chat-uploading-spinner {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: group-chat-upload-spin 0.8s linear infinite;
+}
+
+.group-chat-workspace-body-busy {
+  opacity: 0.62;
+  pointer-events: none;
+  user-select: none;
+}
+
+.group-chat-workspace-back:disabled,
+.group-chat-workspace-toolbar-sm:disabled,
+.group-chat-workspace-item-action:disabled,
+.group-chat-workspace-item-btn:disabled,
+.group-chat-workspace-preview-edit-btn:disabled,
+.group-chat-workspace-preview-save-btn:disabled,
+.group-chat-insert-local-btn:disabled,
+.group-chat-modal-close:disabled,
+.group-chat-insert-file-up:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.group-chat-members-item[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+@keyframes group-chat-upload-spin {
+  to { transform: rotate(360deg); }
+}
