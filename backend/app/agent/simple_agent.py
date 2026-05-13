@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage, ToolMessage, HumanMessage
-from langchain_core.tools import BaseTool
 from app.agent.llm_client import bind_tools_compat
+from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,7 @@ class SimpleAgent:
     """
 
     llm: Any
-    tools: list[BaseTool]
+    tools: list[ToolSpec]
     system_prompt: str
     tool_runner: Any  # async (state, tools) -> dict
     timeout_s: float = 180.0

@@ -18,6 +18,7 @@ from contextlib import AsyncExitStack
 
 from app.agent.sandbox_adapter import SandboxPolicy
 from app.agent.session_workspace_policy import sandbox_sessions_root
+from app.agent.tool_spec import ToolSpec
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_agent_outputs_root
 from app.core.feature_flags import is_feature_enabled
@@ -42,16 +43,6 @@ except ImportError as e:
     logger.error(f"MCP SDK not found: {e}")
     print("Please install MCP SDK: pip install mcp")
     print("Or from GitHub: pip install git+https://github.com/modelcontextprotocol/python-sdk.git")
-
-try:
-    from langchain.tools import Tool
-except Exception:
-    # Fallback for test/minimal environments where full langchain is unavailable.
-    class Tool:  # type: ignore
-        def __init__(self, name: str, description: str, func):
-            self.name = name
-            self.description = description
-            self.func = func
 
 # HTTP/Streamable HTTP 为可选依赖，仅在配置了远程 Server 时使用
 _streamable_http_available = False
@@ -310,7 +301,7 @@ class MCPToolManager:
     def __init__(self, username: Optional[str] = None):
         self._username = (username or "").strip() or None
         self.sessions: Dict[str, ClientSession] = {}
-        self.tools: Dict[str, Tool] = {}
+        self.tools: Dict[str, ToolSpec] = {}
         self.server_configs: List[Dict[str, Any]] = []
         self.exit_stack = AsyncExitStack()  # 用于管理异步上下文管理器
         self._bootstrap_lock = asyncio.Lock()
@@ -482,10 +473,10 @@ class MCPToolManager:
         try:
             tools_result = await session.list_tools()
             for mcp_tool in tools_result.tools:
-                # 创建 LangChain Tool（传入 server_id 用于生成唯一名称）
-                langchain_tool = self._create_langchain_tool(mcp_tool, session, server_id)
+                # 创建项目内 ToolSpec（传入 server_id 用于生成唯一名称）
+                tool_spec = self._create_tool_spec(mcp_tool, session, server_id)
                 tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
-                self.tools[tool_name] = langchain_tool
+                self.tools[tool_name] = tool_spec
         except Exception as e:
             logger.error(f"Failed to load tools from server {server_id}: {e}", exc_info=True)
 
@@ -507,8 +498,8 @@ class MCPToolManager:
             self.tools.pop(name, None)
         return await self.connect_server(server_id, cfg)
     
-    def _create_langchain_tool(self, mcp_tool, session: ClientSession, server_id: Optional[str] = None) -> Tool:
-        """将 MCP 工具转换为 LangChain Tool"""
+    def _create_tool_spec(self, mcp_tool, session: ClientSession, server_id: Optional[str] = None) -> ToolSpec:
+        """将 MCP 工具转换为项目内 ToolSpec。"""
         # 保存原始工具名和 session 引用
         original_tool_name = mcp_tool.name
         tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
@@ -572,18 +563,18 @@ class MCPToolManager:
             if props:
                 parts = [f"{k} ({v.get('type', 'string')})" for k, v in props.items()]
                 description = f"{description} 参数: {', '.join(parts)}。"
-        # 使用异步 func：graph/agent 侧已按 iscoroutinefunction 做 await，无需 sync 包装，避免 asyncio.run/run_until_complete 带来的新循环或跨任务问题
-        langchain_tool = Tool(
+        # 使用异步 func：graph/agent 侧会 await，避免 asyncio.run/run_until_complete 带来的新循环或跨任务问题
+        tool_spec = ToolSpec.from_function(
             name=tool_name,
             description=description,
             func=tool_func,
+            args_schema=_input_schema,
         )
         # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
-        # LangChain Tool 为 Pydantic 模型，不能直接赋未声明属性，用 object.__setattr__ 绕过
-        object.__setattr__(langchain_tool, "_mcp_input_schema", _input_schema)
-        return langchain_tool
+        tool_spec._mcp_input_schema = _input_schema
+        return tool_spec
     
-    def get_tools(self) -> List[Tool]:
+    def get_tools(self) -> List[ToolSpec]:
         """获取所有工具"""
         return list(self.tools.values())
     

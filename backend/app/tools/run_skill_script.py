@@ -16,11 +16,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from langchain_core.tools import tool
-
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT
 from app.agent.session_workspace_policy import sandbox_session_dir
+from app.agent.tool_spec import ToolSpec
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
 from app.core.feature_flags import is_feature_enabled
@@ -618,7 +617,6 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
-    @tool
     async def run_skill_script(script_path: str, input_json: str = "", cli_args_json: str = "") -> str:
         """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。仅支持 cli_args_json（argv 数组 JSON）。支持 .py/.sh/.ps1/.cmd/.bat。"""
         if write_mode != "workspace_all":
@@ -953,10 +951,32 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             )
         return _json_result(**result_payload)
 
-    run_skill_script.name = "run_skill_script"
-    run_skill_script.description = (
-        "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
-        "cli_args_json 填 JSON 数组字符串，如 [\"--query\",\"问题\"]。"
-        "不要使用 input_json/stdin；可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
+    return ToolSpec.from_function(
+        name="run_skill_script",
+        description=(
+            "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
+            "cli_args_json 填 JSON 数组字符串，如 [\"--query\",\"问题\"]。"
+            "不要使用 input_json/stdin；可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
+        ),
+        coroutine=run_skill_script,
+        args_schema={
+            "type": "object",
+            "properties": {
+                "script_path": {
+                    "type": "string",
+                    "description": "scripts/ 下的相对脚本路径，或 __list__/__manifest__/__describe__:<script>。",
+                },
+                "input_json": {
+                    "type": "string",
+                    "description": "已废弃；不要使用，统一改用 cli_args_json。",
+                    "default": "",
+                },
+                "cli_args_json": {
+                    "type": "string",
+                    "description": "命令行 argv 数组 JSON 字符串，如 [\"--query\", \"用户原话\"]。",
+                    "default": "",
+                },
+            },
+            "required": ["script_path"],
+        },
     )
-    return run_skill_script

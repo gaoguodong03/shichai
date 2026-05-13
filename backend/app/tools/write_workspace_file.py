@@ -1,12 +1,9 @@
 """写入当前会话工作区文件工具 — 经 OpenSandbox 挂载写入 /workspace。"""
 import json
-from langchain_core.tools import StructuredTool
 
-try:
-    from langchain_core.pydantic_v1 import BaseModel, Field
-except ImportError:
-    from pydantic.v1 import BaseModel, Field  # type: ignore
+from pydantic import BaseModel, Field
 
+from app.agent.tool_spec import ToolSpec
 from app.agent.host_plan import is_host_plan_reserved_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import get_workspace_root
@@ -50,7 +47,7 @@ def _normalize_content(content_or_input, **kwargs) -> str:
     return ""
 
 
-def create_write_workspace_file_tool(workspace_id: str) -> StructuredTool:
+def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
     创建写入当前会话 workspace 文件的工具。
     workspace_id 为 session_id 或 group_session_id；写入经 SandboxService + OpenSandbox。
@@ -97,7 +94,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> StructuredTool:
             return f"错误：写入工作区文件失败 - {e}"
         return f"已写入当前 Chat 工作区文件：{normalized}"
 
-    return StructuredTool.from_function(
+    return ToolSpec.from_function(
         name="write_workspace_file",
         description=(
             "将文本内容写入当前 Chat 对应的工作区（workspace）中的文件（经 OpenSandbox /workspace）。\n"

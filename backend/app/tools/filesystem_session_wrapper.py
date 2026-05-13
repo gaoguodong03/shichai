@@ -3,17 +3,9 @@ import os
 import json
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-try:
-    from langchain.tools import Tool
-except Exception:
-    class Tool:  # type: ignore
-        def __init__(self, name: str, description: str, func):
-            self.name = name
-            self.description = description
-            self.func = func
-
+from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path
 from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
@@ -96,14 +88,14 @@ def _ensure_path_in_session(args: Dict[str, Any], session_id: str) -> Dict[str, 
     return out
 
 
-def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
+def wrap_filesystem_tool_for_session(tool: ToolSpec, session_id: str) -> ToolSpec:
     """包装 filesystem MCP 工具：调用前将 path 限制并重写为当前会话 workspace。包装后的 func 保持与 orig 一致（异步则仍为异步），避免 coroutine 未被 await。"""
     orig_func = getattr(tool, "func", None)
     if not callable(orig_func):
         return tool
 
     async def wrapped_func(*args: Any, **kwargs: Any) -> str:
-        # LangChain Tool 可能用 *args 或 **kwargs 传参
+        # 兼容模型/旧包装器可能用 *args 或 **kwargs 传参
         peek = ""
         if kwargs:
             for key in _path_arg_keys():
@@ -131,14 +123,15 @@ def wrap_filesystem_tool_for_session(tool: Tool, session_id: str) -> Tool:
             return await result
         return result
 
-    return Tool(
-        name=tool.name,
-        description=tool.description,
+    return ToolSpec.from_function(
+        name=getattr(tool, "name", ""),
+        description=getattr(tool, "description", ""),
         func=wrapped_func,
+        args_schema=getattr(tool, "args_schema", None),
     )
 
 
-def wrap_filesystem_tools(tools: List[Tool], session_id: Optional[str]) -> List[Tool]:
+def wrap_filesystem_tools(tools: List[ToolSpec], session_id: Optional[str]) -> List[ToolSpec]:
     """对工具列表中所有 filesystem_ 或 file-reader_ 开头的工具按 session_id 包装，path 限定到当前会话工作区；session_id 为空则不包装。"""
     if not session_id:
         return tools

@@ -7,7 +7,8 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
-from langchain_core.tools import tool
+
+from app.agent.tool_spec import ToolSpec
 
 
 def _looks_like_html(body: str, content_type: str) -> bool:
@@ -166,8 +167,7 @@ def _ssrf_block_reason(url: str) -> Optional[str]:
     return None
 
 
-@tool
-def call_api(
+def _call_api_impl(
     url: str,
     method: str = "GET",
     headers_json: str = "",
@@ -369,3 +369,39 @@ def call_api(
                 "若您要**生成图片**，请改用 run_skill_script（script_path=generate_image.py）或 volces-icon_generate_app_icon，不要用 call_api 请求外部 URL。"
             )
         return f"错误：请求失败 - {e}"
+
+
+call_api = ToolSpec.from_function(
+    name="call_api",
+    description=(
+        "调用外部 HTTP API。url 必填，需含 http:// 或 https://；method 默认 GET；"
+        "headers_json 为 JSON 字符串；body 为请求体字符串。对 HTML 响应会尝试提取正文，"
+        "仅允许公网 http(s) URL。"
+    ),
+    func=_call_api_impl,
+    args_schema={
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "公网 http(s) URL；未带协议时会自动补 https://。",
+            },
+            "method": {
+                "type": "string",
+                "description": "HTTP 方法，如 GET、POST、PUT、DELETE，默认 GET。",
+                "default": "GET",
+            },
+            "headers_json": {
+                "type": "string",
+                "description": "可选请求头 JSON 字符串。",
+                "default": "",
+            },
+            "body": {
+                "type": "string",
+                "description": "可选请求体字符串，POST/PUT 时常用。",
+                "default": "",
+            },
+        },
+        "required": ["url"],
+    },
+)

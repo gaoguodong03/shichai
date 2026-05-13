@@ -1,4 +1,4 @@
-"""Skill id → stable LangChain / OpenAI function names for run_skill_script_* tools."""
+"""Skill id -> stable model function names for run_skill_script_* tools."""
 from __future__ import annotations
 
 import hashlib

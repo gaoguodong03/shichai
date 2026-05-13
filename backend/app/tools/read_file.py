@@ -3,13 +3,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
 
-try:
-    from langchain_core.pydantic_v1 import BaseModel, Field
-except ImportError:
-    from pydantic.v1 import BaseModel, Field  # type: ignore
-
+from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root, get_workspace_root_path
@@ -89,7 +85,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     return rel, None
 
 
-def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
+def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
     """创建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
 
     async def _read_file(path: str = "", **kwargs) -> str:
@@ -146,7 +142,7 @@ def create_read_file_tool(session_id: Optional[str] = None) -> StructuredTool:
             return f"错误：读取文件失败 - {e}"
         return text
 
-    return StructuredTool.from_function(
+    return ToolSpec.from_function(
         name="read_file",
         description=(
             "读取用户引用的文件内容。path 为工作区内相对路径（如 report.md 或 notes/report.txt）；"

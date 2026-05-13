@@ -3,6 +3,7 @@ import os
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from app.core.llm_trace import append_llm_trace
+from app.agent.tool_spec import tools_to_openai_tools
 
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "https://jeniya.top/v1"
@@ -33,18 +34,19 @@ def bind_tools_compat(client: Any, tools: list[Any]) -> Any:
     """绑定工具：思考模式不强制 required，避免 Qwen 等网关 400。"""
     if not tools:
         return client
+    binding_tools = tools_to_openai_tools(tools)
     strategy = (os.getenv("LLM_TOOL_CHOICE_STRATEGY", "required") or "required").strip().lower()
     if strategy in ("", "default"):
         strategy = "required"
     if _client_thinking_mode_enabled(client) and strategy in ("required", "any"):
         strategy = "auto"
     if strategy == "auto":
-        return client.bind_tools(tools)
+        return client.bind_tools(binding_tools)
     if strategy in ("required", "any"):
-        return client.bind_tools(tools, tool_choice="required")
+        return client.bind_tools(binding_tools, tool_choice="required")
     if strategy == "none":
-        return client.bind_tools(tools, tool_choice="none")
-    return client.bind_tools(tools, tool_choice="required")
+        return client.bind_tools(binding_tools, tool_choice="none")
+    return client.bind_tools(binding_tools, tool_choice="required")
 
 
 def get_llm_from_config(
@@ -375,8 +377,11 @@ class _TracedLLMClient:
 
     def bind_tools(self, *args: Any, **kwargs: Any) -> Any:
         bind_tools_fn = getattr(self._raw_client, "bind_tools")
+        bound = bind_tools_fn(*args, **kwargs)
+        if not any(hasattr(bound, attr) for attr in ("ainvoke", "invoke", "astream", "bind_tools")):
+            return bound
         return _instrument_llm_client(
-            bind_tools_fn(*args, **kwargs),
+            bound,
             provider_base_url=self._provider_base_url,
             model_name=self._model_name,
             thinking_mode_enabled=self._thinking_mode_enabled,

@@ -11,7 +11,6 @@ import re
 import time
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_core.tools import BaseTool
 from app.agent.llm_client import QwenLLM, bind_tools_compat
 from app.agent.read_path_utils import (
     looks_like_url_or_remote_path,
@@ -20,6 +19,7 @@ from app.agent.read_path_utils import (
 )
 from app.agent.simple_agent import SimpleAgent
 from app.agent.skill_tool_naming import build_skill_script_tool_name
+from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +265,7 @@ def _tool_name_looks_like_bound_mcp(name: str) -> bool:
     return True
 
 
-def _skill_execution_extra_instructions(tools: List[BaseTool]) -> str:
+def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
     parts: List[str] = []
@@ -352,7 +352,7 @@ def _get_tool_call_arguments(tool_call: dict) -> dict:
     return {}
 
 
-def _get_mcp_input_schema(tool_name: str, tools: Sequence[BaseTool]) -> dict | None:
+def _get_mcp_input_schema(tool_name: str, tools: Sequence[ToolSpec]) -> dict | None:
     """从 tools 列表中按 tool_name 取出 MCP 工具的 inputSchema，供 __arg1 等通用参数映射。"""
     if not tools:
         return None
@@ -432,8 +432,8 @@ def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | 
     return best
 
 
-async def _execute_tool_safely(tool: BaseTool, arguments: dict) -> object:
-    """统一执行工具，兼容 func=None 但 coroutine 可用的 StructuredTool。"""
+async def _execute_tool_safely(tool: ToolSpec, arguments: dict) -> object:
+    """统一执行工具，兼容 func=None 但 coroutine 可用的 ToolSpec。"""
     func = getattr(tool, "func", None)
     if callable(func):
         raw = func(**arguments)
@@ -457,11 +457,11 @@ async def _execute_tool_safely(tool: BaseTool, arguments: dict) -> object:
 class AgentState(TypedDict):
     """Agent 状态"""
     messages: Annotated[Sequence[BaseMessage], "对话消息列表"]
-    tools: List[BaseTool]
+    tools: List[ToolSpec]
 
 def create_react_agent(
     llm,
-    tools: list[BaseTool],
+    tools: list[ToolSpec],
     skills_instruction: str = "",
     skill_routing_rules: str = "",
     extra_system_prompt: str = "",
@@ -552,7 +552,7 @@ def create_react_agent(
         
         # 检查最后一条消息是否包含工具调用
         if isinstance(last_message, AIMessage):
-            # 优先检查 LangChain 的结构化工具调用
+            # 优先检查模型返回的结构化工具调用
             if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
                 logger.info(f"should_continue: 检测到 {len(last_message.tool_calls)} 个结构化工具调用")
                 return "call_tool"
@@ -635,7 +635,7 @@ def create_react_agent(
         
         logger.info(f"call_tool: 开始处理工具调用，最后一条消息类型: {type(last_message).__name__}")
         
-        def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
+        def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[ToolSpec]) -> dict:
             """规范化工具参数。run_skill_script_* 不做 MCP 规范化；其余名含 '_' 的用 MCP 规范化，并传入 schema 以便 __arg1 自动映射到首参。"""
             args = dict(arguments) if arguments else {}
             if tool_name.startswith("run_skill_script_"):
@@ -651,7 +651,7 @@ def create_react_agent(
 
         tool_results = []
         
-        # 优先处理 LangChain 的结构化工具调用
+        # 优先处理模型返回的结构化工具调用
         if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
             logger.info(f"call_tool: 处理 {len(last_message.tool_calls)} 个结构化工具调用")
             for tool_call in last_message.tool_calls:
@@ -788,7 +788,7 @@ def create_react_agent(
                 ]
             }
     
-    async def _tool_runner(state: AgentState, tools_list: list[BaseTool]):
+    async def _tool_runner(state: AgentState, tools_list: list[ToolSpec]):
         return await call_tool(state)
 
     return SimpleAgent(
@@ -804,7 +804,7 @@ def create_react_agent(
 
 def create_skill_execution_agent(
     llm,
-    tools: list[BaseTool],
+    tools: list[ToolSpec],
     skill_full_content: str,
     extra_system_prompt: str = "",
     expert_self_awareness: str = "",
@@ -922,7 +922,7 @@ def create_skill_execution_agent(
     async def call_tool(state: AgentState):
         return await _call_tool_impl(state, tools)
 
-    async def _tool_runner(state: AgentState, tools_list: list[BaseTool]):
+    async def _tool_runner(state: AgentState, tools_list: list[ToolSpec]):
         return await _call_tool_impl(state, tools_list)
 
     return SimpleAgent(
@@ -936,7 +936,7 @@ def create_skill_execution_agent(
     )
 
 
-async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
+async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
     """工具调用实现（供 create_skill_execution_agent 复用）"""
     messages = state["messages"]
     last_message = messages[-1]
@@ -1053,7 +1053,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
                 paths.append(s)
         return paths
 
-    def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[BaseTool]) -> dict:
+    def normalize_tool_args(tool_name: str, arguments: dict, tools_list: Sequence[ToolSpec]) -> dict:
         """与主 call_tool 一致：MCP 工具用 schema 做 __arg1→首参 等映射。"""
         args = dict(arguments) if arguments else {}
         if tool_name.startswith("run_skill_script_"):
@@ -1068,7 +1068,7 @@ async def _call_tool_impl(state: AgentState, tools: list[BaseTool]):
         # 非 MCP 工具（read_file 等）直接返回
         return args
 
-    def _resolve_tool_name_for_skill_call(raw_name: str, tools_list: Sequence[BaseTool]) -> str:
+    def _resolve_tool_name_for_skill_call(raw_name: str, tools_list: Sequence[ToolSpec]) -> str:
         requested = str(raw_name or "").strip()
         valid_names = [getattr(t, "name", "") for t in tools_list if getattr(t, "name", "")]
         if requested in valid_names:

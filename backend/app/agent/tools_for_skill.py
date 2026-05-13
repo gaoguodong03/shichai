@@ -22,12 +22,9 @@ from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
 from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
-from langchain_core.tools import StructuredTool
+from app.agent.tool_spec import ToolSpec
 
-try:
-    from langchain_core.pydantic_v1 import BaseModel, Field
-except ImportError:
-    from pydantic.v1 import BaseModel, Field  # type: ignore
+from pydantic import BaseModel, Field
 
 def _resolve_server_ids_with_aliases(server_ids: List[str], available_ids: set[str]) -> List[str]:
     """历史兼容已移除：仅保留当前可用的 server id。"""
@@ -224,25 +221,25 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
     return [
         create_read_file_tool(session_id=workspace_id),
         create_write_workspace_file_tool(workspace_id),
-        StructuredTool.from_function(
+        ToolSpec.from_function(
             name="edit_workspace_file",
             description="在当前工作区对文本文件做增量编辑（按 old_text 替换为 new_text）。",
             coroutine=_edit_workspace_file,
             args_schema=EditWorkspaceFileInput,
         ),
-        StructuredTool.from_function(
+        ToolSpec.from_function(
             name="rename_workspace_file",
             description="重命名或移动当前工作区内的文件/目录。new_name 可传新名称，或传相对路径（如 notes/key.md）。",
             coroutine=_rename_workspace_file,
             args_schema=RenameWorkspaceFileInput,
         ),
-        StructuredTool.from_function(
+        ToolSpec.from_function(
             name="mkdir_workspace",
             description="在当前工作区创建目录。",
             coroutine=_mkdir_workspace,
             args_schema=MkdirWorkspaceInput,
         ),
-        StructuredTool.from_function(
+        ToolSpec.from_function(
             name="list_workspace_directory",
             description="递归列出当前工作区目录内容（含子目录）。",
             coroutine=_list_workspace_directory,
