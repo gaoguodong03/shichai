@@ -78,6 +78,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_dependency)])
 
 _SSE_AGENT_KEEPALIVE_INTERVAL_SEC = 15.0
+_ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
+_ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 
 
 async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: float = _SSE_AGENT_KEEPALIVE_INTERVAL_SEC) -> AsyncIterator[Any]:
@@ -112,6 +114,93 @@ async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: floa
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+
+
+def _write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
+    meta = _load_group_meta()
+    item = meta.get(group_session_id)
+    if item is None:
+        return
+    if state:
+        item["runtime_state"] = state
+    else:
+        item.pop("runtime_state", None)
+    _save_group_meta(meta)
+
+
+def _runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
+    active = _ACTIVE_GROUP_RUNS.get(group_session_id)
+    if active:
+        return {
+            "running": True,
+            "run_id": str(active.get("run_id") or ""),
+            "agent_id": str(active.get("agent_id") or ""),
+            "skill_id": str(active.get("skill_id") or ""),
+            "phase": str(active.get("phase") or "running"),
+            "started_at": active.get("started_at") or "",
+        }
+    stored = meta_item.get("runtime_state")
+    return stored if isinstance(stored, dict) else {"running": False}
+
+
+async def _register_group_run(group_session_id: str, *, user_id: str, task: asyncio.Task[Any]) -> str:
+    run_id = uuid.uuid4().hex
+    started_at = datetime.now(timezone.utc).isoformat()
+    state = {
+        "running": True,
+        "run_id": run_id,
+        "user_id": user_id,
+        "agent_id": "",
+        "skill_id": "",
+        "phase": "routing",
+        "started_at": started_at,
+    }
+    async with _ACTIVE_GROUP_RUNS_LOCK:
+        prev = _ACTIVE_GROUP_RUNS.get(group_session_id)
+        prev_task = prev.get("task") if isinstance(prev, dict) else None
+        if isinstance(prev_task, asyncio.Task) and prev_task is not task and not prev_task.done():
+            prev_task.cancel()
+        _ACTIVE_GROUP_RUNS[group_session_id] = {**state, "task": task}
+    _write_group_runtime_state(group_session_id, state)
+    return run_id
+
+
+async def _update_group_run(group_session_id: str, run_id: str, **updates: Any) -> None:
+    async with _ACTIVE_GROUP_RUNS_LOCK:
+        active = _ACTIVE_GROUP_RUNS.get(group_session_id)
+        if not active or str(active.get("run_id") or "") != run_id:
+            return
+        active.update({k: v for k, v in updates.items() if v is not None})
+        state = {k: v for k, v in active.items() if k != "task"}
+    _write_group_runtime_state(group_session_id, state)
+
+
+async def _finish_group_run(group_session_id: str, run_id: str) -> None:
+    async with _ACTIVE_GROUP_RUNS_LOCK:
+        active = _ACTIVE_GROUP_RUNS.get(group_session_id)
+        if not active or str(active.get("run_id") or "") != run_id:
+            return
+        _ACTIVE_GROUP_RUNS.pop(group_session_id, None)
+    _write_group_runtime_state(group_session_id, None)
+
+
+async def _cancel_group_session_run(group_session_id: str, *, reason: str) -> bool:
+    async with _ACTIVE_GROUP_RUNS_LOCK:
+        active = _ACTIVE_GROUP_RUNS.get(group_session_id)
+        task = active.get("task") if isinstance(active, dict) else None
+    cancelled = False
+    if isinstance(task, asyncio.Task) and not task.done():
+        logger.info("group_chat_run_cancel session=%s reason=%s", group_session_id, reason)
+        task.cancel()
+        cancelled = True
+        done, pending = await asyncio.wait({task}, timeout=2.0)
+        for pending_task in pending:
+            logger.warning("group_chat_run_cancel_pending session=%s reason=%s task=%s", group_session_id, reason, pending_task)
+        for done_task in done:
+            with suppress(asyncio.CancelledError, Exception):
+                done_task.result()
+    await _finish_group_run(group_session_id, str((active or {}).get("run_id") or ""))
+    return cancelled
 
 
 def _log_llm_roundtrip(tag: str, *, system_content: str, user_content: str, model_output: str, max_chars: int = 6000) -> None:
@@ -307,6 +396,7 @@ def _build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[s
         "speak_mode": meta_item.get("speak_mode", "auto"),
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),
+        "runtime_state": _runtime_state_for_session(session_id, meta_item),
     }
     if isinstance(hc, dict):
         out["host_config"] = hc
@@ -2063,6 +2153,7 @@ async def get_group_session(group_session_id: str):
             "messages": messages,
             "agent_map": agent_map,
             "expert_map": agent_map,
+            "runtime_state": _runtime_state_for_session(group_session_id, m),
         },
     }
 
@@ -2220,6 +2311,13 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
 async def delete_group_session(group_session_id: str):
     """删除群聊会话：同时删除 meta、群聊历史文件与该会话的工作区目录。"""
     current_user = get_current_user()
+    await _cancel_group_session_run(group_session_id, reason="session_deleted")
+    try:
+        from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+
+        await get_shared_sandbox_service().dispose_session(group_session_id, turn_id="session_deleted")
+    except Exception:
+        logger.warning("删除群聊 %s 时取消沙箱会话失败。", group_session_id, exc_info=True)
     meta = _load_group_meta()
     if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")
@@ -2239,6 +2337,21 @@ async def delete_group_session(group_session_id: str):
     except Exception:
         logger.warning("删除群聊 %s 的 workspace 目录失败，可手动清理。", group_session_id, exc_info=True)
     return {"status": "ok", "data": {"id": group_session_id, "deleted": True}}
+
+
+async def stop_group_session_run(group_session_id: str):
+    """停止某个群聊会话当前正在运行的流式任务。"""
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+    cancelled = await _cancel_group_session_run(group_session_id, reason="user_stop")
+    try:
+        from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+
+        await get_shared_sandbox_service().dispose_session(group_session_id, turn_id="user_stop")
+    except Exception:
+        logger.warning("停止群聊 %s 时取消沙箱会话失败。", group_session_id, exc_info=True)
+    return {"status": "ok", "data": {"id": group_session_id, "cancelled": cancelled}}
 
 
 async def delete_group_message(group_session_id: str, message_id: str):
@@ -2398,11 +2511,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         available_to_add=available_to_add,
     )
     host_dha = scene_runtime.host_profile
+    stream_user = (get_current_user().username or "").strip()
 
     import json as json_module
 
     async def event_gen():
         nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
+        current_task = asyncio.current_task()
+        run_id = await _register_group_run(
+            group_session_id,
+            user_id=stream_user,
+            task=current_task if current_task is not None else asyncio.create_task(asyncio.sleep(0)),
+        )
         meta_item: Dict[str, Any] = meta[group_session_id]
         orch_profile = scene_runtime.orchestration_profile
         available_for_scheduler = scene_runtime.available_to_add_for_scheduler
@@ -2422,6 +2542,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             "repeat_conclusion_streak": 0,
             "tool_failure_streak": 0,
         }
+        client_disconnected = False
         try:
             required_user_fields: List[Dict[str, Any]] = []
             latest_handoff_reason: Optional[str] = None
@@ -2984,6 +3105,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "expert_route_debug": expert_route_debug_for_turn if isinstance(expert_route_debug_for_turn, dict) else {},
                     "skill_route_debug": skill_route_debug if isinstance(skill_route_debug, dict) else {},
                 }
+                await _update_group_run(
+                    group_session_id,
+                    run_id,
+                    agent_id=next_speaker,
+                    skill_id=resolved_skill_id,
+                    phase="agent_routed",
+                )
                 yield f"event: route\ndata: {json_module.dumps(route_event, ensure_ascii=False)}\n\n"
                 context = _messages_to_expert_context(messages)
                 if not custom_prompt_used and custom_prompt:
@@ -3059,6 +3187,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     # 脚本/API（如生图）可能数十秒无 token；在真正执行工具前再推一行提示。
                                     if not emitted_tool_pending_hint:
                                         emitted_tool_pending_hint = True
+                                        await _update_group_run(group_session_id, run_id, phase="tool_running")
                                         yield f"event: content\ndata: {json_module.dumps({'text': _tool_running_status, 'agent_id': next_speaker, 'meta': {'phase': 'tool_running'}}, ensure_ascii=False)}\n\n"
                             continue
                         if ev_type == "tool_step":
@@ -3374,6 +3503,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _persist_pending_state(end_data)
                 yield f"event: end\ndata: {json_module.dumps(end_data)}\n\n"
 
+        except asyncio.CancelledError:
+            client_disconnected = True
+            logger.info("群聊流式输出已取消 session=%s run_id=%s", group_session_id, run_id)
+            raise
         except Exception as e:
             logger.exception("群聊流式输出异常")
             yield f"event: error\ndata: {json_module.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
@@ -3388,6 +3521,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: end\ndata: {json_module.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception:
                 logger.exception("群聊流式异常 end 事件生成失败")
+        finally:
+            if not client_disconnected:
+                await _finish_group_run(group_session_id, run_id)
 
     return StreamingResponse(
         event_gen(),

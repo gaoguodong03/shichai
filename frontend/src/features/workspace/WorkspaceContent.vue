@@ -113,8 +113,19 @@ type GroupDetail = {
   agent_map: Record<string, { name?: string; role?: string; avatar_url?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
   agent_ids: string[]
   leader_agent_id?: string
+  runtime_state?: { running?: boolean; agent_id?: string; skill_id?: string; phase?: string; started_at?: string }
   /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
   orchestration_profile?: string
+}
+
+type GroupStreamRuntime = {
+  streaming: boolean
+  phase: string
+  abort: AbortController | null
+  runToken: number
+  agentId?: string
+  skillId?: string
+  restored?: boolean
 }
 
 const groupDetail = ref<GroupDetail | null>(null)
@@ -124,8 +135,13 @@ const groupLoading = ref(false)
 const groupError = ref<string | null>(null)
 const groupDisplayMessages = ref<GroupMessage[]>([])
 const groupNextPrompt = ref('')
-const groupStreaming = ref(false)
-const groupStreamingPhase = ref('')
+const groupStreamStates = ref<Record<string, GroupStreamRuntime>>({})
+const currentGroupStreamState = computed(() => {
+  const id = props.selectedGroupSessionId || ''
+  return id ? groupStreamStates.value[id] || null : null
+})
+const groupStreaming = computed(() => Boolean(currentGroupStreamState.value?.streaming))
+const groupStreamingPhase = computed(() => currentGroupStreamState.value?.phase || '')
 const groupMessagesRef = ref<HTMLElement | null>(null)
 const groupDiscussionGoal = ref<string | null>(null)
 const showGroupWorkspace = ref(false)
@@ -570,12 +586,9 @@ async function confirmGroupNext(
   const id = detail?.id
   if (!detail || !id || groupStreaming.value) return
   autoSwitchHint.value = null
-  const runToken = ++groupStreamRunToken.value
-  groupStreaming.value = true
-  groupStreamingSessionId.value = id
   groupWaitingForUser.value = false
   groupSuggestedNextSpeaker.value = null
-  groupStreamingPhase.value = '正在确认…'
+  const { runToken, abort } = beginGroupStream(id, '正在确认…')
   const body: {
     override_next_speaker?: string
     custom_prompt?: string
@@ -597,19 +610,14 @@ async function confirmGroupNext(
     const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
     if (msg) body.custom_prompt = msg
     if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
-    const abort = new AbortController()
-    groupStreamAbort.value = abort
     const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
     if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('确认下一发言人失败', e)
   } finally {
-    if (groupStreamRunToken.value === runToken) {
+    if (isCurrentGroupRun(id, runToken)) {
       clearStreamingPlaceholders()
-      groupStreaming.value = false
-      groupStreamingSessionId.value = null
-      groupStreamingPhase.value = ''
-      groupStreamAbort.value = null
+      finishGroupStream(id, runToken)
     }
   }
 }
@@ -1100,10 +1108,53 @@ const autoSwitchHintText = computed(() => {
   if (!expert) return ''
   return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换专家：${expert}`
 })
-const groupStreamAbort = ref<AbortController | null>(null)
-const groupStreamingSessionId = ref<string | null>(null)
-const currentGroupStreaming = computed(() => Boolean(groupStreaming.value && groupStreamingSessionId.value === props.selectedGroupSessionId))
-const otherSessionStreaming = computed(() => Boolean(groupStreaming.value && groupStreamingSessionId.value && groupStreamingSessionId.value !== props.selectedGroupSessionId))
+function patchGroupStreamState(sessionId: string, patch: Partial<GroupStreamRuntime>) {
+  if (!sessionId) return
+  const prev = groupStreamStates.value[sessionId] || { streaming: false, phase: '', abort: null, runToken: 0 }
+  groupStreamStates.value = {
+    ...groupStreamStates.value,
+    [sessionId]: { ...prev, ...patch },
+  }
+}
+
+function beginGroupStream(sessionId: string, phase: string): { runToken: number; abort: AbortController } {
+  const prev = groupStreamStates.value[sessionId] || { streaming: false, phase: '', abort: null, runToken: 0 }
+  const abort = new AbortController()
+  const runToken = Number(prev.runToken || 0) + 1
+  patchGroupStreamState(sessionId, { streaming: true, phase, abort, runToken, restored: false })
+  return { runToken, abort }
+}
+
+function isCurrentGroupRun(sessionId: string, runToken: number): boolean {
+  return Number(groupStreamStates.value[sessionId]?.runToken || 0) === Number(runToken)
+}
+
+function finishGroupStream(sessionId: string, runToken: number, phase = '') {
+  if (!isCurrentGroupRun(sessionId, runToken)) return
+  patchGroupStreamState(sessionId, { streaming: false, phase, abort: null, agentId: '', skillId: '', restored: false })
+}
+
+function abortGroupStream(sessionId: string) {
+  const st = groupStreamStates.value[sessionId]
+  if (!st) return
+  try {
+    st.abort?.abort()
+  } catch {
+    // ignore
+  }
+  patchGroupStreamState(sessionId, {
+    streaming: false,
+    phase: '已停止',
+    abort: null,
+    runToken: Number(st.runToken || 0) + 1,
+    agentId: '',
+    skillId: '',
+    restored: false,
+  })
+}
+
+const currentGroupStreaming = computed(() => Boolean(currentGroupStreamState.value?.streaming))
+const otherSessionStreaming = computed(() => false)
 const currentGroupStreamingPhase = computed(() => currentGroupStreaming.value ? groupStreamingPhase.value : '')
 const groupTurnLimitReached = ref(false) // 当达到后端 DHA 轮次上限时，为 true，用于给用户提示
 const groupOrchestrationPhase = ref('')
@@ -1111,7 +1162,6 @@ const groupInterruptReason = ref('')
 const groupResumeTargetDhaId = ref<string | null>(null)
 const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
 const groupNextSpeakerOverride = ref<string>('')
-const groupStreamRunToken = ref(0)
 const showAddMember = ref(false)
 const showAddMemberModal = ref(false)
 const showMoreMenu = ref(false)
@@ -1213,10 +1263,12 @@ function updateAutoSwitchHint(payload: Record<string, unknown>, sessionId = prop
   // 若完全没有基线，则只记录不提示；否则只要发生切换就提示。
   if (!prev) {
     lastRoute.value = { sessionId, expertId: routedExpertId, skillId: routedSkillId }
+    patchGroupStreamState(sessionId, { agentId: routedExpertId, skillId: routedSkillId })
     autoSwitchHint.value = null
     return
   }
   lastRoute.value = { sessionId, expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
+  patchGroupStreamState(sessionId, { agentId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId })
   if (!changedExpert && !changedSkill) return
 
   const map = groupDetail.value?.agent_map || {}
@@ -1373,22 +1425,16 @@ async function continueGroupStream() {
   const detail = groupDetail.value
   const id = detail?.id
   if (!detail || !id || groupStreaming.value) return
-  const runToken = ++groupStreamRunToken.value
-  groupStreaming.value = true
-  groupStreamingPhase.value = '正在继续…'
+  const { runToken, abort } = beginGroupStream(id, '正在继续…')
   try {
-    const abort = new AbortController()
-    groupStreamAbort.value = abort
     const shouldEmitMessageSent = await runGroupStream(id, { message: '' }, abort.signal)
     if (shouldEmitMessageSent) emit('message-sent')
   } catch (e) {
     console.error('继续任务失败', e)
   } finally {
-    if (groupStreamRunToken.value === runToken) {
+    if (isCurrentGroupRun(id, runToken)) {
       clearStreamingPlaceholders()
-      groupStreaming.value = false
-      groupStreamingPhase.value = ''
-      groupStreamAbort.value = null
+      finishGroupStream(id, runToken)
     }
   }
 }
@@ -1473,12 +1519,9 @@ async function ignoreAutoSwitchAndPause() {
   autoSwitchIgnoreLoading.value = true
   try {
     try {
-      groupStreamRunToken.value += 1
-      groupStreamAbort.value?.abort()
+      if (props.selectedGroupSessionId) abortGroupStream(props.selectedGroupSessionId)
     } catch (_) {}
-    groupStreaming.value = false
-    groupStreamingSessionId.value = null
-    groupStreamingPhase.value = '已暂停：请编辑后重新发送'
+    if (props.selectedGroupSessionId) patchGroupStreamState(props.selectedGroupSessionId, { phase: '已暂停：请编辑后重新发送' })
     groupWaitingForUser.value = false
     groupSuggestedNextSpeaker.value = null
     clearStreamingPlaceholders()
@@ -2449,7 +2492,11 @@ const activeStreamingMessage = computed<GroupMessage | null>(() => {
 })
 
 const currentActiveStreamingMessage = computed<GroupMessage | null>(() => currentGroupStreaming.value ? activeStreamingMessage.value : null)
-const activeStreamingDhaId = computed(() => currentActiveStreamingMessage.value?.agent_id || '')
+const activeStreamingDhaId = computed(() => (
+  currentActiveStreamingMessage.value?.agent_id
+  || currentGroupStreamState.value?.agentId
+  || (lastRoute.value?.sessionId === props.selectedGroupSessionId ? lastRoute.value?.expertId || '' : '')
+))
 
 function displayGroupSpeakerName(agentId: string): string {
   const id = (agentId || '').trim()
@@ -2587,23 +2634,23 @@ function clearStreamingPlaceholders() {
   if (changed) groupDisplayMessages.value = next
 }
 
-function consumeStreamingStatusContent(data: { text?: string; agent_id?: string; meta?: { phase?: string } }): boolean {
+function consumeStreamingStatusContent(data: { text?: string; agent_id?: string; meta?: { phase?: string } }, sessionId = props.selectedGroupSessionId || ''): boolean {
   const phase = String(data?.meta?.phase || '').trim()
   if (!phase) return false
   if (phase === 'file_resolving' || phase === 'preparing') {
-    groupStreamingPhase.value = '正在处理文件引用…'
+    patchGroupStreamState(sessionId, { phase: '正在处理文件引用…' })
     return true
   }
   if (phase === 'file_resolved' || phase === 'file_parsed') {
-    groupStreamingPhase.value = '文件引用已处理'
+    patchGroupStreamState(sessionId, { phase: '文件引用已处理' })
     return true
   }
   if (phase === 'tool_running' || phase === 'tool_pending') {
-    groupStreamingPhase.value = '技能任务运行中，完成后会继续回复…'
+    patchGroupStreamState(sessionId, { phase: '技能任务运行中，完成后会继续回复…' })
     return true
   }
   if (phase === 'agent_waiting') {
-    groupStreamingPhase.value = '仍在等待技能任务完成…'
+    patchGroupStreamState(sessionId, { phase: '仍在等待技能任务完成…' })
     return true
   }
   return false
@@ -2611,7 +2658,7 @@ function consumeStreamingStatusContent(data: { text?: string; agent_id?: string;
 
 function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExpertAssistantMessageThisRun: boolean }, sessionId = props.selectedGroupSessionId || '') {
   if (sessionId && props.selectedGroupSessionId !== sessionId) return
-  groupStreamingPhase.value = '正在生成回复…'
+  patchGroupStreamState(sessionId, { phase: '正在生成回复…' })
   if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
     if (data.role === 'assistant') {
       replaceOrPushAssistantMessage(data)
@@ -2636,7 +2683,7 @@ function handleStreamMessageEvent(data: Record<string, unknown>, state: { sawExp
     if (suggestedIds.length) {
       groupSuggestedAddDhaIds.value = suggestedIds
       clearStreamingPlaceholders()
-      groupStreamingPhase.value = '等待你确认邀请…'
+      patchGroupStreamState(sessionId, { phase: '等待你确认邀请…' })
     }
   }
 }
@@ -2659,7 +2706,7 @@ function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpe
     if (suggestedIds.length) {
       groupSuggestedAddDhaIds.value = suggestedIds
       clearStreamingPlaceholders()
-      groupStreamingPhase.value = '等待你确认邀请…'
+      patchGroupStreamState(sessionId, { phase: '等待你确认邀请…' })
     }
     if (endData.next_prompt) {
       groupNextPrompt.value = String(endData.next_prompt || '').trim()
@@ -2687,7 +2734,7 @@ function handleStreamEndEvent(endData: Record<string, unknown>, state: { sawExpe
 
 const runGroupStream = createGroupChatStreamRunner({
   isSelectedSession: (sessionId) => props.selectedGroupSessionId === sessionId,
-  setStreamingPhase: (text) => { groupStreamingPhase.value = text },
+  setStreamingPhase: (text, sessionId) => { patchGroupStreamState(sessionId || props.selectedGroupSessionId || '', { phase: text }) },
   appendHostError: (content) => {
     groupDisplayMessages.value = [
       ...groupDisplayMessages.value,
@@ -2747,18 +2794,13 @@ async function sendGroupMessage() {
   // 发送后输入框必须清空：前端不保留历史内容
   groupDiscussionGoal.value = ''
   groupNextPrompt.value = ''
-  const runToken = ++groupStreamRunToken.value
-  groupStreaming.value = true
-  groupStreamingSessionId.value = detail.id
-  groupStreamingPhase.value = '正在分配专家…'
+  const { runToken, abort } = beginGroupStream(detail.id, '正在分配专家…')
   try {
     const msg = await buildMessageWithFiles(detail, base)
     const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
     groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
     // 不再从首条用户消息回填讨论目标，避免重新把历史文本写回输入框
     scrollGroupToBottom()
-    const abort = new AbortController()
-    groupStreamAbort.value = abort
     const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
     if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
     // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
@@ -2767,12 +2809,10 @@ async function sendGroupMessage() {
   } catch (e) {
     console.error('群聊发送失败', e)
   } finally {
-    if (groupStreamRunToken.value === runToken) {
-      groupStreaming.value = false
+    if (isCurrentGroupRun(detail.id, runToken)) {
       clearStreamingPlaceholders()
-      groupStreamingPhase.value = ''
       groupNextSpeakerOverride.value = ''
-      groupStreamAbort.value = null
+      finishGroupStream(detail.id, runToken)
     }
   }
 }
@@ -2820,20 +2860,16 @@ function detectHostTakeoverIntent(raw: string): boolean {
   return summonPatterns.some((re) => re.test(text))
 }
 
-function stopGroupStream() {
-  groupStreamRunToken.value += 1
-  if (groupStreamAbort.value) {
-    try {
-      groupStreamAbort.value.abort()
-    } catch {
-      // ignore
-    }
+async function stopGroupStream() {
+  const id = props.selectedGroupSessionId || ''
+  if (!id) return
+  abortGroupStream(id)
+  try {
+    await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stop`, { method: 'POST' })
+  } catch {
+    // 本地先停止 UI；后端失败时下一次请求会重新同步状态。
   }
-  groupStreamAbort.value = null
   clearStreamingPlaceholders()
-  groupStreaming.value = false
-  groupStreamingSessionId.value = null
-  groupStreamingPhase.value = '已停止'
 }
 
 /** 标准化为 GroupDetail，保证 messages/agent_map/agent_ids 必为数组/对象 */
@@ -2843,6 +2879,9 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
   const agent_map = (raw.agent_map && typeof raw.agent_map === 'object') ? (raw.agent_map as GroupDetail['agent_map']) : {}
   const agent_ids = Array.isArray(raw.agent_ids) ? (raw.agent_ids as string[]) : []
   const orch = String(raw.orchestration_profile ?? '').trim().toLowerCase()
+  const runtime_state = (raw.runtime_state && typeof raw.runtime_state === 'object')
+    ? (raw.runtime_state as GroupDetail['runtime_state'])
+    : undefined
   return {
     id,
     title: String(raw.title ?? '群聊'),
@@ -2850,7 +2889,32 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
     agent_map,
     agent_ids,
     leader_agent_id: String(raw.leader_agent_id ?? ''),
+    runtime_state,
     orchestration_profile: orch === 'scene' || orch === 'recruitment' ? orch : undefined,
+  }
+}
+
+function hydrateRuntimeStateFromServer(detail: GroupDetail) {
+  const rt = detail.runtime_state
+  if (!rt?.running) {
+    const st = groupStreamStates.value[detail.id]
+    if (st?.restored) patchGroupStreamState(detail.id, { streaming: false, phase: '', abort: null, agentId: '', skillId: '', restored: false })
+    return
+  }
+  const phase = String(rt.phase || '').trim()
+  const agentId = String(rt.agent_id || '').trim()
+  const skillId = String(rt.skill_id || '').trim()
+  patchGroupStreamState(detail.id, {
+    streaming: true,
+    phase: phase === 'tool_running' ? '技能任务运行中，完成后会继续回复…' : '仍在等待技能任务完成…',
+    abort: null,
+    runToken: Number(groupStreamStates.value[detail.id]?.runToken || 0),
+    agentId,
+    skillId,
+    restored: true,
+  })
+  if (agentId || skillId) {
+    lastRoute.value = { sessionId: detail.id, expertId: agentId, skillId }
   }
 }
 
@@ -2885,6 +2949,7 @@ async function loadGroupDetail() {
     if (props.selectedGroupSessionId !== id) return
     if (parsed) {
       groupDetail.value = parsed
+      hydrateRuntimeStateFromServer(parsed)
     } else {
       groupDetail.value = null
       groupError.value = !r.ok

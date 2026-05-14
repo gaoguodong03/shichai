@@ -17,6 +17,7 @@ from app.api.group_chat import (
     update_group_session,
     delete_group_session,
     delete_group_message,
+    stop_group_session_run,
     group_chat_stream,
     preview_next_speaker_prompt,
     GroupSessionUpdate,
@@ -77,6 +78,12 @@ async def update_session(session_id: str, body: GroupSessionUpdate):
 async def delete_session(session_id: str):
     """删除会话"""
     return await delete_group_session(session_id)
+
+
+@router.post("/sessions/{session_id}/chat/stop")
+async def stop_session_chat(session_id: str):
+    """停止该会话当前正在运行的回复。"""
+    return await stop_group_session_run(session_id)
 
 
 @router.delete("/sessions/{session_id}/messages/{message_id}")

@@ -164,8 +164,10 @@ def policy_mount_fingerprint(policy: SandboxPolicy) -> str:
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-def handle_cache_key(user_id: str) -> str:
-    return (user_id or "").strip() or "anonymous"
+def handle_cache_key(user_id: str, session_id: str = "") -> str:
+    uid = (user_id or "").strip() or "anonymous"
+    sid = (session_id or "").strip()
+    return f"{uid}:{sid}" if sid else uid
 
 
 def to_workspace_inner_path(rel: str) -> str:
@@ -594,7 +596,7 @@ class SandboxService:
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
-        key = handle_cache_key(user_id)
+        key = handle_cache_key(user_id, req.session_id)
         user_lock = await self._ensure_lock_for_key(key)
         async with user_lock:
             return await self._ensure_user_handle_locked(req, policy, user_id=user_id, key=key)
@@ -609,7 +611,7 @@ class SandboxService:
     ) -> SandboxHandle:
         now = time.time()
         ensure_started_at = time.perf_counter()
-        logical_sid = user_id
+        logical_sid = key
         async with self._lock:
             existing = self._user_handles.get(key)
             if existing is not None:
@@ -718,6 +720,8 @@ class SandboxService:
                 handle.metadata["mount_fingerprint"] = policy_mount_fingerprint(policy)
                 handle.metadata["policy_allow_network"] = bool(policy.allow_network)
                 handle.metadata["image_ref"] = policy.image_ref
+                handle.metadata["user_id"] = user_id
+                handle.metadata["app_session_id"] = req.session_id
             self._user_handles[key] = (handle, now)
         # 出锁后做安装：避免长时间持锁阻塞其他请求
         await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
@@ -742,7 +746,7 @@ class SandboxService:
                     "user_id": user_id,
                     "tool_call_id": req.tool_call_id,
                     "sandbox_id": handle.metadata.get("sandbox_id", ""),
-                    "sandbox_mode": "user_single_sandbox",
+                    "sandbox_mode": "user_session_sandbox",
                     "mount_fingerprint": policy_mount_fingerprint(policy),
                     "runtime": handle.runtime,
                     "runtime_backend": policy.runtime_backend,
@@ -766,7 +770,7 @@ class SandboxService:
                 turn_id=req.turn_id,
                 payload={
                     "user_id": user_id,
-                    "sandbox_mode": "user_single_sandbox",
+                    "sandbox_mode": "user_session_sandbox",
                     "mount_fingerprint": policy_mount_fingerprint(policy),
                     "mounts": mounts_payload,
                     "mount_targets": [str(m.get("target") or "") for m in mounts_payload],
@@ -776,17 +780,24 @@ class SandboxService:
             return handle
 
     async def _invalidate_user_handle(self, user_id: str, *, expected_handle: Optional[SandboxHandle] = None) -> None:
-        key = handle_cache_key(user_id)
         target: Optional[SandboxHandle] = None
         async with self._lock:
-            existing = self._user_handles.get(key)
-            if existing is None:
+            target_key = ""
+            if expected_handle is not None:
+                for k, (handle, _touched) in self._user_handles.items():
+                    if handle is expected_handle:
+                        target_key = k
+                        target = handle
+                        break
+            else:
+                key_prefix = handle_cache_key(user_id)
+                existing = self._user_handles.get(key_prefix)
+                if existing is not None:
+                    target_key = key_prefix
+                    target = existing[0]
+            if not target_key or target is None:
                 return
-            handle, _ = existing
-            if expected_handle is not None and handle is not expected_handle:
-                return
-            self._user_handles.pop(key, None)
-            target = handle
+            self._user_handles.pop(target_key, None)
         if target is None:
             return
         try:
@@ -1493,13 +1504,26 @@ class SandboxService:
             )
 
     async def dispose_session(self, session_id: str, *, turn_id: str = "") -> None:
-        # Backward-compatible API: session-level dispose is no-op in user-level sandbox mode.
-        append_sandbox_event(
-            session_id=session_id,
-            event_type="sandbox_session_disposed",
-            turn_id=turn_id,
-            payload={"session_id": session_id, "mode": "user_single_sandbox"},
-        )
+        sid = (session_id or "").strip()
+        async with self._lock:
+            keys = [
+                k
+                for k, (handle, _touched) in list(self._user_handles.items())
+                if str((handle.metadata or {}).get("app_session_id") or "").strip() == sid
+            ]
+            handles = [(k, self._user_handles.pop(k)) for k in keys]
+        for _k, (_handle, _) in handles:
+            await self._adapter.dispose_sandbox(_handle)
+            append_sandbox_event(
+                session_id=session_id,
+                event_type="sandbox_session_disposed",
+                turn_id=turn_id,
+                payload={
+                    "sandbox_id": _handle.metadata.get("sandbox_id", ""),
+                    "session_id": session_id,
+                    "mode": "user_session_sandbox",
+                },
+            )
 
     async def prewarm_user_sandbox(
         self,
