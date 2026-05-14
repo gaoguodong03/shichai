@@ -1,7 +1,7 @@
 """pytest 公共 fixture：避免 UserContext 缓存跨用例指向旧路径。
 
 第一层 ``layer1_core`` 范围（与 scripts/test-layer1.sh 一致）：
-编排与场景、群聊协议与记忆、沙箱服务、鉴权、工作区与文件、graph/工具/MCP 网关等。
+编排与场景、群聊协议与记忆、沙箱服务、鉴权、工作区与文件、runtime/工具/MCP 网关等。
 不包含：全 HTTP 路由表、全部 tools、全部 MCP 子模块、纯运行时路径的系统性覆盖。
 
 新加 ``test_*.py`` 若应纳入第一层，请把模块名（不含 .py）加入 ``LAYER1_CORE_MODULES``。
@@ -23,9 +23,10 @@ LAYER1_CORE_MODULES: frozenset[str] = frozenset(
         "test_dha_api",
         "test_dha_import_validate",
         "test_expert_bundle",
+        "test_expert_runtime",
         "test_expert_self_awareness_prompt",
         "test_file_ref_and_gateway",
-        "test_graph_tool_resolution",
+        "test_frontend_business_flows",
         "test_group_chat_group_memory",
         "test_group_chat_skill_script_cli_flow",
         "test_group_chat_stream_protocol",
@@ -38,11 +39,14 @@ LAYER1_CORE_MODULES: frozenset[str] = frozenset(
         "test_orchestration_contracts",
         "test_orchestrator_audit",
         "test_public_scenario_api",
+        "test_public_share_api",
+        "test_scene_runtime",
         "test_scene_scheduler",
         "test_scenario_bundle",
         "test_sessions_api",
         "test_session_preset_validate",
         "test_simple_agent_tool_intent",
+        "test_skill_agent_tool_resolution",
         "test_sandbox_service",
         "test_workspace_files",
     }

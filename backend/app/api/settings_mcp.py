@@ -212,7 +212,7 @@ async def create_mcp_server(server: MCPServerCreate):
         "id": server_id,
         "name": server.name,
         "enabled": server.enabled,
-        "transport": server.transport.dict(exclude_none=True),
+        "transport": server.transport.model_dump(exclude_none=True),
         "metadata": server.metadata or {}
     }
     
@@ -247,7 +247,7 @@ async def update_mcp_server(server_id: str, server_update: MCPServerUpdate):
     if server_update.enabled is not None:
         server["enabled"] = server_update.enabled
     if server_update.transport is not None:
-        server["transport"] = server_update.transport.dict(exclude_none=True)
+        server["transport"] = server_update.transport.model_dump(exclude_none=True)
     if server_update.metadata is not None:
         server["metadata"] = server_update.metadata
     

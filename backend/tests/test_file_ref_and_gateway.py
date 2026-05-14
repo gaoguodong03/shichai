@@ -54,20 +54,20 @@ def test_looks_like_url_or_remote_path():
 def test_extract_path_prefers_file_ref_tag():
     from langchain_core.messages import HumanMessage
 
-    from app.agent import graph as g
+    from app.agent import skill_agent_runtime as runtime
 
     msgs = [HumanMessage(content="请看【文件引用：快照｜github-weekly-snapshot.md】")]
-    assert g._extract_path_from_last_user_for_read(msgs) == "github-weekly-snapshot.md"
+    assert runtime._extract_path_from_last_user_for_read(msgs) == "github-weekly-snapshot.md"
 
 
 def test_apply_read_file_replaces_url_with_file_ref_path():
     from langchain_core.messages import HumanMessage
 
-    from app.agent import graph as g
+    from app.agent import skill_agent_runtime as runtime
 
     args = {"path": "//github.com/OpenGithubs/github-weekly-rank/blob/main/2026/04/20260406.md"}
     msgs = [HumanMessage(content="【文件引用：github-weekly-snapshot.md｜github-weekly-snapshot.md】")]
-    g._apply_read_file_path_from_user_message(args, msgs)
+    runtime._apply_read_file_path_from_user_message(args, msgs)
     assert args.get("path") == "github-weekly-snapshot.md"
 
 
@@ -183,6 +183,33 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     assert "ok" in str(out.get("stdout") or "")
 
 
+def test_run_skill_script_subprocess_executes_shell_script(monkeypatch, tmp_path):
+    from app.tools import run_skill_script as rss
+
+    ws_root = tmp_path / "ws"
+    ws_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(rss, "_get_workspace_root", lambda _wid: ws_root)
+
+    script_root = tmp_path / "skill" / "scripts"
+    script_root.mkdir(parents=True, exist_ok=True)
+    script_path = script_root / "probe.sh"
+    script_path.write_text("printf 'shell:%s:%s:%s' \"$1\" \"$SKILL_ID\" \"$PWD\"\n", encoding="utf-8")
+
+    out = rss._execute_script_subprocess(
+        script_full_path=script_path,
+        script_path="probe.sh",
+        skill_id="probe-skill",
+        workspace_id="sess-probe",
+        write_mode="workspace_all",
+        input_json="",
+        cli_argv=["arg with space"],
+        script_root=script_root,
+        timeout_sec=10,
+    )
+    assert out.get("ok") is True
+    assert str(out.get("stdout") or "") == f"shell:arg with space:probe-skill:{ws_root}"
+
+
 def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
     from app.tools import run_skill_script as rss
 
@@ -196,6 +223,27 @@ def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
     )
     shell = " ".join(cmd)
     assert "/skills/demo-skill/scripts/tools/check.py" in shell
+    assert env == {}
+    assert cwd == "/workspace"
+
+
+def test_build_sandbox_exec_request_for_shell_script_uses_bash():
+    from app.tools import run_skill_script as rss
+
+    cmd, env, cwd = rss._build_sandbox_exec_request(
+        skill_id="demo-skill",
+        workspace_id="sess-1",
+        script_path="tools/check.sh",
+        suffix=".sh",
+        cli_argv=["--name", "张 三"],
+        input_json="",
+    )
+
+    shell = " ".join(cmd)
+    assert "/skills/demo-skill/scripts/tools/check.sh" in shell
+    assert 'exec bash "$SCRIPT_PATH"' in shell
+    assert "--name" in shell
+    assert "'张 三'" in shell
     assert env == {}
     assert cwd == "/workspace"
 
