@@ -4,6 +4,7 @@ import { getSkillsList } from './settings'
 export interface ChatStreamRequestPayload {
   message?: string
   session_id: string
+  client_message_id?: string
   skill_ids?: string[]
   override_next_speaker?: string
   action?: string
@@ -39,6 +40,7 @@ export async function chatStreamRequest(payload: ChatStreamRequestPayload): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       message: payload.message ?? '',
+      client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
       override_next_speaker: payload.override_next_speaker,
       action: payload.action,
@@ -59,6 +61,7 @@ export async function streamSessionChat(
   const sessionId = encodeURIComponent(payload.session_id || 'default')
   const body = {
     message: payload.message ?? '',
+    client_message_id: payload.client_message_id,
     skill_ids: payload.skill_ids,
     override_next_speaker: payload.override_next_speaker,
     action: payload.action,
@@ -116,6 +119,7 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
     method: 'POST',
     body: JSON.stringify({
       message: payload.message ?? '',
+      client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
       override_next_speaker: payload.override_next_speaker,
       action: payload.action,

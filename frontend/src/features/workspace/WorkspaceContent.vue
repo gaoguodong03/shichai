@@ -2748,6 +2748,13 @@ const runGroupStream = createGroupChatStreamRunner({
   handleStreamEndEvent,
 })
 
+function createClientMessageId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `cm-${crypto.randomUUID()}`
+  }
+  return `cm-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
 /** 按提示词工程拼接：目标与给下一 DHA 的指令；不再在前端添加「【讨论目标】」前缀 */
 function builtMessage(): string {
   // 保留用户通过 Shift+Enter 输入的换行，只做轻度规范化
@@ -2801,7 +2808,11 @@ async function sendGroupMessage() {
     groupDisplayMessages.value = [...groupDisplayMessages.value, userMsg]
     // 不再从首条用户消息回填讨论目标，避免重新把历史文本写回输入框
     scrollGroupToBottom()
-    const body: Record<string, unknown> = { message: msg, host_takeover_requested: hostTakeoverRequested }
+    const body: Record<string, unknown> = {
+      message: msg,
+      client_message_id: createClientMessageId(),
+      host_takeover_requested: hostTakeoverRequested,
+    }
     if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
     // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
     const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)

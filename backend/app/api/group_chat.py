@@ -1935,6 +1935,7 @@ class GroupSessionUpdate(BaseModel):
 
 class GroupChatRequest(BaseModel):
     message: Optional[str] = None
+    client_message_id: Optional[str] = None
     override_next_speaker: Optional[str] = None  # agent_id | "user" | null
     action: Optional[str] = None  # "continue" 继续下一轮
     custom_prompt: Optional[str] = None  # 手动模式下，可由前端传入自定义给下一发言人的提示词（覆盖默认生成）
@@ -2445,15 +2446,27 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     # 用户消息
     if user_message:
+        client_message_id = (request.client_message_id or "").strip()
+        duplicate_user_message = bool(
+            client_message_id
+            and any(
+                msg.get("role") == "user" and str(msg.get("client_message_id") or "").strip() == client_message_id
+                for msg in messages
+            )
+        )
         first_user_message = not any(m.get("role") == "user" for m in messages)
-        messages.append({
-            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-            "role": "user",
-            "content": user_message,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-        _save_group_history(group_session_id, messages)
-        meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if not duplicate_user_message:
+            user_msg = {
+                "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                "role": "user",
+                "content": user_message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            if client_message_id:
+                user_msg["client_message_id"] = client_message_id
+            messages.append(user_msg)
+            _save_group_history(group_session_id, messages)
+            meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         current_title = (meta[group_session_id].get("title") or "").strip()
         placeholder_titles = ("新对话", "新群聊", "")
@@ -2465,10 +2478,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
         # 标题精修会额外占用一次 LLM。默认只在首条/占位标题时跑，避免每轮消息和专家主流程抢模型延迟。
         should_refresh_title = bool(
-            current_title in placeholder_titles
-            or is_template_title
-            or (first_user_message and title_auto_generated)
-            or (title_auto_generated and _title_refresh_every_user_message())
+            not duplicate_user_message
+            and (
+                current_title in placeholder_titles
+                or is_template_title
+                or (first_user_message and title_auto_generated)
+                or (title_auto_generated and _title_refresh_every_user_message())
+            )
         )
         if should_refresh_title:
             if first_user_message and (current_title in placeholder_titles or is_template_title):
