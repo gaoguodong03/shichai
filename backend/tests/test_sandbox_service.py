@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from app.agent.sandbox_adapter import SandboxHandle, SandboxPolicy
+from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxHandle, SandboxPolicy
+from app.agent.sandbox_image_policy import configured_sandbox_images
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT, SANDBOX_WORKSPACE_ROOT
 from app.agent.sandbox_service import SandboxExecutionRequest, SandboxService
 
@@ -106,6 +107,23 @@ class FlakyNotFoundAdapter(FakeAdapter):
 class DisposeNotFoundAdapter(FakeAdapter):
     async def dispose_sandbox(self, handle):
         raise RuntimeError(f"Sandbox {handle.metadata['sandbox_id']} not found")
+
+
+class CleanupAdapter(FakeAdapter):
+    def __init__(self):
+        super().__init__()
+        self.cleanup_calls = []
+
+    async def cleanup_orphan_sandboxes(self, **kwargs):
+        self.cleanup_calls.append(dict(kwargs))
+        return {
+            "scanned": 2,
+            "deleted": ["old-sandbox"],
+            "failed": [],
+            "skipped_active": len(kwargs.get("active_sandbox_ids") or []),
+            "skipped_young": 0,
+            "skipped_unmanaged": 0,
+        }
 
 
 class MissingPackageAfterMetadataHitAdapter(FakeAdapter):
@@ -400,6 +418,71 @@ async def test_prewarm_reads_saved_playwright_variant(monkeypatch, tmp_path):
     assert policy.image_ref.endswith("-playwright")
     assert policy.environment["SANDBOX_IMAGE_VARIANT"] == "playwright"
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_prewarm_infers_playwright_from_browser_requirements(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("playwright>=1.52.0\npatchright>=1.52.5\n", encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="test")
+
+    settings_path = user_root / "config" / "sandbox" / "sandbox" / "settings.json"
+    assert not settings_path.exists()
+    _sid, policy = adapter.created[0]
+    assert policy.image_ref.endswith("-playwright")
+    assert policy.environment["SANDBOX_IMAGE_VARIANT"] == "playwright"
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+def test_configured_sandbox_images_ignore_blank_env(monkeypatch):
+    monkeypatch.setenv("SANDBOX_STANDARD_IMAGE", "   ")
+    monkeypatch.setenv("SANDBOX_PLAYWRIGHT_IMAGE", "   ")
+
+    images = configured_sandbox_images()
+
+    assert images["standard"].endswith("-standard")
+    assert images["playwright"].endswith("-playwright")
+    monkeypatch.delenv("SANDBOX_STANDARD_IMAGE", raising=False)
+    monkeypatch.delenv("SANDBOX_PLAYWRIGHT_IMAGE", raising=False)
+
+
+def test_opensandbox_spec_marks_st49_metadata():
+    policy = SandboxPolicy(fs_root="/tmp/workspace", image_ref="example/sandbox:tag")
+
+    spec = OpenSandboxAdapter._spec_from_policy(session_id="alice", policy=policy)
+
+    assert spec["metadata"]["managed_by"] == "st49"
+    assert spec["metadata"]["app"] == "shichai"
+    assert spec["metadata"]["session_id"] == "alice"
+
+
+async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", "120")
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    adapter = CleanupAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    await svc.prewarm_user_sandbox("alice", reason="test")
+
+    result = await svc.cleanup_orphan_sandboxes_on_startup()
+
+    assert result["enabled"] is True
+    assert result["deleted"] == ["old-sandbox"]
+    call = adapter.cleanup_calls[-1]
+    assert call["active_sandbox_ids"] == {"sb-alice"}
+    assert call["min_age_sec"] == 120
+    assert call["include_legacy_image_match"] is True
+    assert any(str(image).endswith("-standard") for image in call["known_images"])
+    assert any(str(image).endswith("-playwright") for image in call["known_images"])
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+    monkeypatch.delenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", raising=False)
 
 
 async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tmp_path):

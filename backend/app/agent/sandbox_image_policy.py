@@ -23,17 +23,25 @@ def default_playwright_image() -> str:
     return DEFAULT_PLAYWRIGHT_IMAGE
 
 
+def _first_non_empty(*values: str | None) -> str:
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return ""
+
+
 def configured_sandbox_images() -> Dict[str, str]:
-    standard = (
-        os.getenv("SANDBOX_STANDARD_IMAGE")
-        or os.getenv("SANDBOX_BASE_IMAGE")
-        or default_standard_image()
-    ).strip()
-    playwright = (
-        os.getenv("SANDBOX_PLAYWRIGHT_IMAGE")
-        or os.getenv("SANDBOX_BASE_IMAGE_PLAYWRIGHT")
-        or default_playwright_image()
-    ).strip()
+    standard = _first_non_empty(
+        os.getenv("SANDBOX_STANDARD_IMAGE"),
+        os.getenv("SANDBOX_BASE_IMAGE"),
+        default_standard_image(),
+    )
+    playwright = _first_non_empty(
+        os.getenv("SANDBOX_PLAYWRIGHT_IMAGE"),
+        os.getenv("SANDBOX_BASE_IMAGE_PLAYWRIGHT"),
+        default_playwright_image(),
+    )
     return {
         SANDBOX_VARIANT_STANDARD: standard,
         SANDBOX_VARIANT_PLAYWRIGHT: playwright,

@@ -16,15 +16,23 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_audit import append_sandbox_event
-from app.agent.sandbox_image_policy import image_for_variant, read_sandbox_variant
+from app.agent.sandbox_image_policy import (
+    SANDBOX_VARIANT_PLAYWRIGHT,
+    configured_sandbox_images,
+    image_for_variant,
+    read_sandbox_variant,
+    sandbox_settings_path,
+)
 from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT, SandboxMountPolicy
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
+from app.core.sandbox_requirements import requirement_key
 from app.core.user_context import get_user_context_for, users_data_root
 
 logger = logging.getLogger(__name__)
 
 _REQUIREMENTS_VERIFIER_VERSION = "import-v2"
 _REQUIREMENTS_REAL_VERIFIED_AT_KEY = "requirements_real_verified_at"
+_PLAYWRIGHT_REQUIREMENT_KEYS = {"playwright", "patchright"}
 
 def _env_truthy(name: str, default: str = "0") -> bool:
     val = (os.getenv(name) or default).strip().lower()
@@ -42,6 +50,14 @@ def _env_csv(name: str) -> List[str]:
             parts.append(s)
     # de-dup preserve order
     return list(dict.fromkeys(parts))
+
+
+def _requirements_imply_playwright(req_path: Path) -> bool:
+    try:
+        content = req_path.read_text(encoding="utf-8") if req_path.is_file() else ""
+    except Exception:
+        return False
+    return any(requirement_key(line) in _PLAYWRIGHT_REQUIREMENT_KEYS for line in content.splitlines())
 
 
 def _command_exit_code(result: Any) -> Optional[int]:
@@ -179,7 +195,14 @@ def _sandbox_image_for_user(user_id: str) -> tuple[str, str]:
     uid = (user_id or "").strip()
     if uid:
         try:
-            variant = read_sandbox_variant(get_user_context_for(uid).config_dir / "sandbox")
+            user_ctx = get_user_context_for(uid)
+            config_dir = user_ctx.config_dir / "sandbox"
+            variant = read_sandbox_variant(config_dir)
+            if (
+                not sandbox_settings_path(config_dir).is_file()
+                and _requirements_imply_playwright(config_dir / "requirements.txt")
+            ):
+                variant = SANDBOX_VARIANT_PLAYWRIGHT
         except Exception:
             variant = "standard"
     else:
@@ -1625,3 +1648,52 @@ class SandboxService:
             "failed": len(errors),
             "errors": errors,
         }
+
+    async def cleanup_orphan_sandboxes_on_startup(self) -> Dict[str, Any]:
+        """Best-effort cleanup for OpenSandbox containers left by a previous backend process."""
+        if not _env_truthy("SANDBOX_CLEANUP_ORPHANS_ON_START", default="1"):
+            logger.info("sandbox_orphan_cleanup_disabled")
+            return {"enabled": False, "deleted": [], "failed": []}
+        if not hasattr(self._adapter, "cleanup_orphan_sandboxes"):
+            logger.info("sandbox_orphan_cleanup_skipped reason=adapter_unsupported backend=%s", self.backend_label())
+            return {"enabled": True, "skipped": "adapter_unsupported", "deleted": [], "failed": []}
+        min_age_sec = _env_int("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC") or 60
+        include_legacy = _env_truthy("SANDBOX_ORPHAN_CLEANUP_LEGACY_IMAGE_MATCH", default="1")
+        async with self._lock:
+            active_ids = {
+                str((handle.metadata or {}).get("sandbox_id") or "").strip()
+                for handle, _touched in self._user_handles.values()
+                if isinstance(handle.metadata, dict)
+            }
+        active_ids.discard("")
+        known_images = {
+            str(value or "").strip()
+            for value in configured_sandbox_images().values()
+            if str(value or "").strip()
+        }
+        logger.info(
+            "sandbox_orphan_cleanup_start backend=%s active_count=%s known_image_count=%s min_age_sec=%s legacy_image_match=%s",
+            self.backend_label(),
+            len(active_ids),
+            len(known_images),
+            min_age_sec,
+            include_legacy,
+        )
+        result = await self._adapter.cleanup_orphan_sandboxes(  # type: ignore[attr-defined]
+            active_sandbox_ids=active_ids,
+            known_images=known_images,
+            min_age_sec=min_age_sec,
+            include_legacy_image_match=include_legacy,
+        )
+        deleted = list((result or {}).get("deleted") or [])
+        failed = list((result or {}).get("failed") or [])
+        logger.info(
+            "sandbox_orphan_cleanup_done scanned=%s deleted=%s failed=%s skipped_active=%s skipped_young=%s skipped_unmanaged=%s",
+            int((result or {}).get("scanned") or 0),
+            len(deleted),
+            len(failed),
+            int((result or {}).get("skipped_active") or 0),
+            int((result or {}).get("skipped_young") or 0),
+            int((result or {}).get("skipped_unmanaged") or 0),
+        )
+        return {"enabled": True, **dict(result or {})}

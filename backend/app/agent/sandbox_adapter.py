@@ -5,7 +5,8 @@ import asyncio
 import logging
 import os
 import shlex
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
@@ -87,6 +88,9 @@ class _OpenSandboxRuntimeClient(Protocol):
         ...
 
     async def dispose_sandbox(self, sandbox_id: str) -> None:
+        ...
+
+    async def list_sandboxes(self, *, page: int = 1, page_size: int = 100) -> Dict[str, Any]:
         ...
 
 
@@ -450,7 +454,7 @@ class OpenSandboxAdapter:
                             spec=self._SandboxImageSpec(image=image_ref),
                             entrypoint=entrypoint,
                             env=dict(spec.get("env") or {}),
-                            metadata={},
+                            metadata={k: str(v) for k, v in dict(spec.get("metadata") or {}).items()},
                             timeout=timedelta(seconds=max(60, timeout_s)),
                             resource={"cpu": str(spec.get("resource_limit", {}).get("cpu") or "1000m"),
                                       "memory": str(spec.get("resource_limit", {}).get("memory_mb") or "1024") + "Mi"},
@@ -491,6 +495,36 @@ class OpenSandboxAdapter:
                                 "opensandbox-server 是否启动，以及当前进程是在宿主机还是容器内。"
                             ) from last_exc
                     return {"id": getattr(created, "id", None) or str(created)}
+
+                @staticmethod
+                def _sandbox_info_to_dict(info: Any) -> Dict[str, Any]:
+                    image = getattr(info, "image", None)
+                    status = getattr(info, "status", None)
+                    created_at = getattr(info, "created_at", None)
+                    return {
+                        "id": str(getattr(info, "id", "") or ""),
+                        "status": str(getattr(status, "value", status) or ""),
+                        "image_ref": str(getattr(image, "image", "") or ""),
+                        "metadata": dict(getattr(info, "metadata", None) or {}),
+                        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at or ""),
+                    }
+
+                async def list_sandboxes(self, *, page: int = 1, page_size: int = 100) -> Dict[str, Any]:
+                    from opensandbox.models.sandboxes import SandboxFilter
+
+                    paged = await self._sandboxes.list_sandboxes(
+                        SandboxFilter(page=max(1, int(page)), page_size=max(1, min(500, int(page_size))))
+                    )
+                    pagination = getattr(paged, "pagination", None)
+                    return {
+                        "items": [
+                            self._sandbox_info_to_dict(info)
+                            for info in list(getattr(paged, "sandbox_infos", None) or [])
+                        ],
+                        "has_next_page": bool(getattr(pagination, "has_next_page", False)),
+                        "page": int(getattr(pagination, "page", page) or page),
+                        "total_items": int(getattr(pagination, "total_items", 0) or 0),
+                    }
 
                 async def execute_command(self, sandbox_id: str, req: Dict[str, Any]) -> Dict[str, Any]:
                     argv = req.get("command")
@@ -736,6 +770,11 @@ class OpenSandboxAdapter:
             },
             "env": dict(policy.environment or {}),
             "image_ref": policy.image_ref,
+            "metadata": {
+                "managed_by": "st49",
+                "app": "shichai",
+                "session_id": session_id,
+            },
             "mounts": mounts,
             "workspace_root": policy.fs_root,
         }
@@ -845,3 +884,91 @@ class OpenSandboxAdapter:
     async def dispose_sandbox(self, handle: SandboxHandle) -> None:
         sandbox_id = str(handle.metadata.get("sandbox_id") or handle.session_id)
         await self._client.dispose_sandbox(sandbox_id)
+
+    @staticmethod
+    def _created_at_epoch(value: Any) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        raw = str(value or "").strip()
+        if not raw:
+            return 0.0
+        try:
+            normalized = raw.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(normalized)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def _is_managed_sandbox(item: Dict[str, Any], *, known_images: set[str], include_legacy_image_match: bool) -> bool:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        if str(metadata.get("managed_by") or "") == "st49" or str(metadata.get("app") or "") == "shichai":
+            return True
+        image_ref = str(item.get("image_ref") or "").strip()
+        return bool(include_legacy_image_match and image_ref and image_ref in known_images)
+
+    async def cleanup_orphan_sandboxes(
+        self,
+        *,
+        active_sandbox_ids: set[str] | None = None,
+        known_images: set[str] | None = None,
+        min_age_sec: int = 60,
+        include_legacy_image_match: bool = True,
+        page_size: int = 100,
+    ) -> Dict[str, Any]:
+        active_ids = {str(x).strip() for x in (active_sandbox_ids or set()) if str(x).strip()}
+        images = {str(x).strip() for x in (known_images or set()) if str(x).strip()}
+        now = time.time()
+        scanned = 0
+        skipped_active = 0
+        skipped_young = 0
+        skipped_unmanaged = 0
+        candidates: List[str] = []
+        deleted: List[str] = []
+        failed: List[Dict[str, str]] = []
+        page = 1
+        while True:
+            listing = await self._client.list_sandboxes(page=page, page_size=page_size)
+            items = list((listing or {}).get("items") or [])
+            scanned += len(items)
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                sandbox_id = str(item.get("id") or "").strip()
+                if not sandbox_id:
+                    continue
+                if sandbox_id in active_ids:
+                    skipped_active += 1
+                    continue
+                if not self._is_managed_sandbox(
+                    item,
+                    known_images=images,
+                    include_legacy_image_match=include_legacy_image_match,
+                ):
+                    skipped_unmanaged += 1
+                    continue
+                created_at = self._created_at_epoch(item.get("created_at"))
+                if created_at and now - created_at < max(0, int(min_age_sec)):
+                    skipped_young += 1
+                    continue
+                candidates.append(sandbox_id)
+            if not bool((listing or {}).get("has_next_page")):
+                break
+            page += 1
+        for sandbox_id in candidates:
+            try:
+                await self._client.dispose_sandbox(sandbox_id)
+                deleted.append(sandbox_id)
+            except Exception as exc:  # noqa: BLE001
+                failed.append({"sandbox_id": sandbox_id, "error": str(exc)[:500]})
+        return {
+            "scanned": scanned,
+            "candidates": candidates,
+            "deleted": deleted,
+            "failed": failed,
+            "skipped_active": skipped_active,
+            "skipped_young": skipped_young,
+            "skipped_unmanaged": skipped_unmanaged,
+        }

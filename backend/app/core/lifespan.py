@@ -30,6 +30,18 @@ def _startup_prewarm_timeout_ms() -> int:
         return 600_000
 
 
+def _startup_orphan_cleanup_timeout_sec() -> int:
+    raw = os.getenv("SANDBOX_ORPHAN_CLEANUP_TIMEOUT_SEC") or "30"
+    try:
+        return max(1, int(raw or "30"))
+    except ValueError:
+        logging.getLogger("app.main").warning(
+            "sandbox_env_invalid_int name=SANDBOX_ORPHAN_CLEANUP_TIMEOUT_SEC value=%s",
+            raw,
+        )
+        return 30
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理。MCP enter/exit 必须保持在同一 asyncio 任务。"""
@@ -54,6 +66,21 @@ async def lifespan(app: FastAPI):
             os.getenv("SANDBOX_PLAYWRIGHT_IMAGE", ""),
             os.getenv("SANDBOX_BASE_IMAGE", ""),
         )
+        try:
+            cleanup_result = await asyncio.wait_for(
+                sandbox_service.cleanup_orphan_sandboxes_on_startup(),
+                timeout=_startup_orphan_cleanup_timeout_sec(),
+            )
+            log.info(
+                "sandbox_orphan_cleanup_startup_result enabled=%s deleted=%s failed=%s",
+                cleanup_result.get("enabled"),
+                len(list(cleanup_result.get("deleted") or [])),
+                len(list(cleanup_result.get("failed") or [])),
+            )
+        except asyncio.TimeoutError:
+            log.warning("sandbox_orphan_cleanup_startup_timeout")
+        except Exception as e:  # noqa: BLE001
+            log.warning("sandbox_orphan_cleanup_startup_failed err=%s", e)
         prewarm_enabled = _startup_prewarm_all_users_enabled()
         if prewarm_enabled:
             async def prewarm_all_users() -> None:

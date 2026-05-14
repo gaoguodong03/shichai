@@ -178,21 +178,32 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
      - `opensandbox-server` 与 `st49` 是否都健康
      - `st49` 是否依赖 `opensandbox-server: service_healthy`
 
-14. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
+14. **后端重启后遗留很多 OpenSandbox 沙箱**
+   - 当前后端启动时默认执行一次孤儿沙箱清理：`SANDBOX_CLEANUP_ORPHANS_ON_START=1`。
+   - 新建沙箱会带 `metadata: managed_by=st49, app=shichai`，便于后续精确识别；旧版本没有 metadata 的沙箱会按当前 `SANDBOX_STANDARD_IMAGE` / `SANDBOX_PLAYWRIGHT_IMAGE` 镜像匹配清理。
+   - 保护参数：
+     - `SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC`：默认 60 秒，避免误删刚创建的沙箱。
+     - `SANDBOX_ORPHAN_CLEANUP_LEGACY_IMAGE_MATCH`：默认 1；如同一个 OpenSandbox 被多个应用共用，可设为 0，仅清理带 st49 metadata 的沙箱。
+     - `SANDBOX_ORPHAN_CLEANUP_TIMEOUT_SEC`：默认 30 秒，启动清理超时后只打日志，不阻断后端启动。
+   - 日志关键词：`sandbox_orphan_cleanup_start`、`sandbox_orphan_cleanup_done`、`sandbox_orphan_cleanup_startup_result`。
+
+15. **用户沙箱按需启动与常驻资源**
+   - 默认策略：后端启动时不批量拉起所有历史用户沙箱；用户登录后，或用户访问受保护接口时，再异步预热该用户自己的沙箱。
+   - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
+     - `SANDBOX_ALWAYS_ON=1`：用户沙箱创建后保持常驻，减少后续工具调用冷启动。
+     - `SANDBOX_PREWARM_ALL_USERS=0`：默认关闭启动期全用户预热，避免部署后瞬间创建大量沙箱。
+     - `SANDBOX_PREWARM_ON_USER_REQUEST=1`：用户访问受保护接口时按用户去重预热。
+     - `SANDBOX_LOGIN_PREWARM_TIMEOUT_MS=600000`：登录预热超时，默认 10 分钟。
+     - `SANDBOX_REQUEST_PREWARM_TIMEOUT_MS=600000`：访问触发预热超时，默认沿用登录预热超时。
+     - `SANDBOX_FIXED_CPU=1.0`：统一 CPU 配额。
+     - `SANDBOX_FIXED_MEMORY_MB=2048`：统一内存配额（MB）。
+   - 如确实需要维护窗口提前拉起所有用户，可临时设 `SANDBOX_PREWARM_ALL_USERS=1` 后重启；日常线上不建议默认开启。
+   - 日志关键词：`sandbox_prewarm_all_users_disabled`、`sandbox_login_prewarm_start`、`sandbox_user_request_prewarm_start`、`st49_sandbox_user_bound`。
+
+16. **MCP 抓取偶发 `ClosedResourceError`（本地可用、远端偶发失败）**
    - 含义：MCP 长连接被远端服务回收/断开，常见于 `linkup-fetch` 这类远程 streamable-http。
    - 当前策略：检测到 `ClosedResourceError` 后自动重连对应 MCP server 并重试 1 次。
    - 若仍失败，再看远端 MCP 服务健康、API Key、上游限流与网络波动。
-
-15. **用户沙箱常驻与统一资源（新增）**
-   - 目标：每个用户一个常驻沙箱，减少首次执行冷启动波动。
-   - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
-     - `SANDBOX_ALWAYS_ON=1`：开启常驻模式（不因空闲 TTL 回收）
-     - `SANDBOX_PREWARM_ALL_USERS=1`：服务启动后扫描已存在用户并批量预热
-     - `SANDBOX_FIXED_CPU=1.0`：统一 CPU 配额
-     - `SANDBOX_FIXED_MEMORY_MB=512`：统一内存配额（MB）
-   - 行为说明：
-     - 登录仍会做单用户预热；启动期会额外尝试全用户预热（失败仅记日志，不阻塞启动）。
-     - 运行时若检测到沙箱失联（not found / invalid），会自动失效旧句柄并重建一次。
 
 ### 回归验证（建议每次改沙箱/文件工具后跑一遍）
 - **文件读写（会话隔离）**
