@@ -217,6 +217,7 @@ class SandboxService:
             self._requirements_real_verify_ttl_sec = 300
         self._fixed_cpu = _env_float("SANDBOX_FIXED_CPU")
         self._fixed_memory_mb = _env_int("SANDBOX_FIXED_MEMORY_MB")
+        self._session_isolation = _env_truthy("SANDBOX_SESSION_ISOLATION", default="0")
         self._lock = asyncio.Lock()
         self._user_handles: Dict[str, Tuple[SandboxHandle, float]] = {}
         self._user_ensure_locks: Dict[str, asyncio.Lock] = {}
@@ -596,7 +597,7 @@ class SandboxService:
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
-        key = handle_cache_key(user_id, req.session_id)
+        key = handle_cache_key(user_id, req.session_id if self._session_isolation else "")
         user_lock = await self._ensure_lock_for_key(key)
         async with user_lock:
             return await self._ensure_user_handle_locked(req, policy, user_id=user_id, key=key)
@@ -1504,6 +1505,14 @@ class SandboxService:
             )
 
     async def dispose_session(self, session_id: str, *, turn_id: str = "") -> None:
+        if not self._session_isolation:
+            append_sandbox_event(
+                session_id=session_id,
+                event_type="sandbox_session_disposed",
+                turn_id=turn_id,
+                payload={"session_id": session_id, "mode": "user_single_sandbox"},
+            )
+            return
         sid = (session_id or "").strip()
         async with self._lock:
             keys = [

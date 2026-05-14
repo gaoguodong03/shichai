@@ -160,7 +160,8 @@ async def _ok_runner():
     return {"ok": True}
 
 
-async def test_session_isolation_one_session_one_sandbox():
+async def test_session_isolation_one_session_one_sandbox(monkeypatch):
+    monkeypatch.setenv("SANDBOX_SESSION_ISOLATION", "1")
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
 
@@ -198,7 +199,8 @@ async def test_session_isolation_one_session_one_sandbox():
     assert adapter.created[1][0] == "u1:s2"
 
 
-async def test_dispose_session_releases_sandbox():
+async def test_dispose_session_releases_sandbox(monkeypatch):
+    monkeypatch.setenv("SANDBOX_SESSION_ISOLATION", "1")
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     req = SandboxExecutionRequest(
@@ -289,7 +291,7 @@ async def test_always_on_skips_ttl_recycle(monkeypatch):
         workspace_path=Path("."),
     )
     await svc.execute(req)
-    key = "u5:s1"
+    key = "u5"
     handle, _touched = svc._user_handles[key]
     svc._user_handles[key] = (handle, 0.0)
     out = await svc.execute(req)
@@ -483,7 +485,7 @@ async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_p
 
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
 
-    current_handle, _ = svc._user_handles["alice:prewarm:alice"]
+    current_handle, _ = svc._user_handles["alice"]
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     install_commands = [" ".join(cmd["argv"]) for cmd in adapter.exec_commands]
     assert any("SANDBOX_REQUIREMENTS_B64=" in command for command in install_commands)
@@ -533,14 +535,14 @@ async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
-    handle, touched = svc._user_handles["alice:prewarm:alice"]
+    handle, touched = svc._user_handles["alice"]
     handle.metadata.pop("verified_requirements_hash", None)
     handle.metadata["installed_requirements_hash"] = dep_hash
-    svc._user_handles["alice:prewarm:alice"] = (handle, touched)
+    svc._user_handles["alice"] = (handle, touched)
     before = len(adapter.exec_commands)
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
     assert len(adapter.exec_commands) > before
-    current_handle, _ = svc._user_handles["alice:prewarm:alice"]
+    current_handle, _ = svc._user_handles["alice"]
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
@@ -557,12 +559,12 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
 
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
-    handle, touched = svc._user_handles["alice:prewarm:alice"]
+    handle, touched = svc._user_handles["alice"]
     handle.metadata["installed_requirements_hash"] = dep_hash
     handle.metadata["verified_requirements_hash"] = dep_hash
     handle.metadata["requirements_verifier_version"] = "import-v2"
     handle.metadata["requirements_real_verified_at"] = 1
-    svc._user_handles["alice:prewarm:alice"] = (handle, touched)
+    svc._user_handles["alice"] = (handle, touched)
 
     before = len(adapter.exec_commands)
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
@@ -570,7 +572,7 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
 
     assert any("SANDBOX_REQUIREMENTS_TEXT" in cmd["env"] for cmd in after_commands)
     assert any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in after_commands)
-    current_handle, _ = svc._user_handles["alice:prewarm:alice"]
+    current_handle, _ = svc._user_handles["alice"]
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
@@ -596,7 +598,7 @@ async def test_fresh_prewarm_skips_repeated_real_requirements_verify(monkeypatch
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
-async def test_prewarm_and_session_script_use_separate_session_sandboxes(monkeypatch, tmp_path):
+async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
     user_root = tmp_path / "alice"
@@ -629,9 +631,8 @@ async def test_prewarm_and_session_script_use_separate_session_sandboxes(monkeyp
     )
     await svc.execute(req)
 
-    assert len(adapter.created) == 2
-    assert adapter.created[0][0] == "alice:prewarm:alice"
-    assert adapter.created[1][0] == "alice:sess-1"
+    assert len(adapter.created) == 1
+    assert adapter.created[0][0] == "alice"
     assert adapter.disposed == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
