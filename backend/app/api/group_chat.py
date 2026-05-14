@@ -10,10 +10,11 @@ import time
 import uuid
 import difflib
 import asyncio
+from contextlib import suppress
 from urllib.parse import parse_qs, unquote, urlparse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Tuple
+from typing import AsyncIterator, Optional, Dict, Any, List, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -75,6 +76,42 @@ from app.agent.skill_session_contract import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_dependency)])
+
+_SSE_AGENT_KEEPALIVE_INTERVAL_SEC = 15.0
+
+
+async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: float = _SSE_AGENT_KEEPALIVE_INTERVAL_SEC) -> AsyncIterator[Any]:
+    """Yield upstream items, plus lightweight keepalive markers while the upstream is idle."""
+    done = object()
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+
+    async def _pump() -> None:
+        try:
+            async for item in source:
+                await queue.put(item)
+        except Exception as exc:  # noqa: BLE001
+            await queue.put(exc)
+        finally:
+            await queue.put(done)
+
+    task = asyncio.create_task(_pump())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=max(0.001, float(interval_sec)))
+            except asyncio.TimeoutError:
+                yield {"type": "keepalive"}
+                continue
+            if item is done:
+                break
+            if isinstance(item, Exception):
+                raise item
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 def _log_llm_roundtrip(tag: str, *, system_content: str, user_content: str, model_output: str, max_chars: int = 6000) -> None:
@@ -2986,31 +3023,29 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 accumulated_raw_tool_results: List[str] = []
                 accumulated_tool_calls_trace: List[Dict[str, Any]] = []
                 tool_attempt_debug: List[Dict[str, Any]] = []
-                # 模型一旦发出 tool_calls，后续会同步执行脚本/API（如生图），可能数十秒无 token；
-                # 在此之前推送一行提示，避免用户误以为「专家无响应」。
-                _tool_pending_hint = (
-                    "（正在执行工具：生图等外部接口可能较慢，请稍候 1～3 分钟。完成后会在此显示结果与图片链接。）\n\n"
-                )
-                _preparing_hint = (
-                    "（正在读取你插入的文件并组织回复，请稍候…）\n\n"
-                )
-                _file_parsed_hint = "（文件内容已解析：仅展示前 5 行）\n\n"
+                # 这些 content 事件只携带状态 phase，会被前端消费为状态栏文案，不进入最终聊天气泡。
+                _agent_waiting_status = ""
+                _tool_running_status = ""
+                _file_resolving_status = ""
+                _file_resolved_status = ""
                 should_emit_preparing_hint = had_file_ref_tag and file_refs_resolved_in_request
                 emitted_tool_pending_hint = False
-                # 仅在请求里包含并成功解析了【文件引用】时展示“正在读取文件”占位；
+                # 仅在请求里包含并成功解析了【文件引用】时展示文件引用状态；
                 # memory 检索、普通推理、工具执行等流程不显示该文案。
                 if should_emit_preparing_hint:
-                    # 先推一条可见占位，避免“直到最终 message 才出现整条”的体感。
-                    # 该占位不会写入最终 assistant_msg（由前端在 message 事件时替换）。
-                    yield f"event: content\ndata: {json_module.dumps({'text': _preparing_hint, 'agent_id': next_speaker, 'meta': {'phase': 'preparing'}}, ensure_ascii=False)}\n\n"
-                    yield f"event: content\ndata: {json_module.dumps({'text': _file_parsed_hint, 'agent_id': next_speaker, 'meta': {'phase': 'file_parsed'}}, ensure_ascii=False)}\n\n"
+                    yield f"event: content\ndata: {json_module.dumps({'text': _file_resolving_status, 'agent_id': next_speaker, 'meta': {'phase': 'file_resolving'}}, ensure_ascii=False)}\n\n"
+                    yield f"event: content\ndata: {json_module.dumps({'text': _file_resolved_status, 'agent_id': next_speaker, 'meta': {'phase': 'file_resolved'}}, ensure_ascii=False)}\n\n"
                 try:
-                    async for stream_item in agent.astream(
-                        initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"]
+                    async for stream_item in _iter_with_keepalive(
+                        agent.astream(initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"])
                     ):
                         if not isinstance(stream_item, dict):
                             continue
                         ev_type = str(stream_item.get("type") or "").strip()
+                        if ev_type == "keepalive":
+                            keepalive_phase = "tool_running" if emitted_tool_pending_hint else "agent_waiting"
+                            yield f"event: content\ndata: {json_module.dumps({'text': _agent_waiting_status, 'agent_id': next_speaker, 'meta': {'phase': keepalive_phase}}, ensure_ascii=False)}\n\n"
+                            continue
                         if ev_type == "agent_step":
                             msg_obj = stream_item.get("message")
                             if isinstance(msg_obj, AIMessage):
@@ -3024,7 +3059,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     # 脚本/API（如生图）可能数十秒无 token；在真正执行工具前再推一行提示。
                                     if not emitted_tool_pending_hint:
                                         emitted_tool_pending_hint = True
-                                        yield f"event: content\ndata: {json_module.dumps({'text': _tool_pending_hint, 'agent_id': next_speaker, 'meta': {'phase': 'tool_pending'}}, ensure_ascii=False)}\n\n"
+                                        yield f"event: content\ndata: {json_module.dumps({'text': _tool_running_status, 'agent_id': next_speaker, 'meta': {'phase': 'tool_running'}}, ensure_ascii=False)}\n\n"
                             continue
                         if ev_type == "tool_step":
                             tad = stream_item.get("tool_attempt_debug")

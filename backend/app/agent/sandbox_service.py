@@ -177,7 +177,7 @@ def _sandbox_image_for_user(user_id: str) -> tuple[str, str]:
     uid = (user_id or "").strip()
     if uid:
         try:
-            variant = read_sandbox_variant(get_user_context_for(uid).config_dir)
+            variant = read_sandbox_variant(get_user_context_for(uid).config_dir / "sandbox")
         except Exception:
             variant = "standard"
     else:
@@ -960,16 +960,18 @@ class SandboxService:
                 "if import_missing:\n"
                 "    raise SystemExit('packages installed but import failed: ' + '; '.join(import_missing))\n"
                 "PY\n"
-                "if [ \"${SANDBOX_AUTO_INSTALL_BROWSERS:-0}\" = \"1\" ] && grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
+                "if { [ \"${SANDBOX_AUTO_INSTALL_BROWSERS:-0}\" = \"1\" ] || [ \"${SANDBOX_IMAGE_VARIANT:-}\" = \"playwright\" ]; } && grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
+                "  echo 'browser_install_start variant='\"${SANDBOX_IMAGE_VARIANT:-}\";\n"
                 "  if python3 -m patchright --help >/dev/null 2>&1; then\n"
                 "    python3 -m patchright install chromium || python3 -m playwright install chromium\n"
                 "  else\n"
                 "    python3 -m playwright install chromium\n"
                 "  fi\n"
+                "  echo 'browser_install_done'\n"
                 "fi"
             ),
         ]
-        env = {**_sandbox_default_environment(), "SANDBOX_REQUIREMENTS_B64": b64}
+        env = {**_sandbox_default_environment(), **dict(policy.environment or {}), "SANDBOX_REQUIREMENTS_B64": b64}
         logger.info(
             "st49_sandbox_requirements_install_start code=requirements_install_start user_id=%s dep_hash=%s sandbox_id=%s image_ref=%s req_bytes=%s timeout_ms=%s",
             user_id,

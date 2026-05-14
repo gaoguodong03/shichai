@@ -1,6 +1,7 @@
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
+from app.api.group_chat import _iter_with_keepalive
 from app.agent.simple_agent import SimpleAgent
 
 
@@ -26,6 +27,24 @@ class _FakeLLM:
 
     def get_client(self):
         return self._c
+
+
+@pytest.mark.asyncio
+async def test_keepalive_iter_emits_marker_while_agent_is_idle():
+    async def _slow_source():
+        yield {"type": "agent_step", "message": AIMessage(content="start")}
+        import asyncio
+
+        await asyncio.sleep(0.03)
+        yield {"type": "final_step"}
+
+    events = []
+    async for ev in _iter_with_keepalive(_slow_source(), interval_sec=0.01):
+        events.append(ev)
+
+    assert events[0]["type"] == "agent_step"
+    assert any(ev.get("type") == "keepalive" for ev in events)
+    assert events[-1]["type"] == "final_step"
 
 
 @pytest.mark.asyncio

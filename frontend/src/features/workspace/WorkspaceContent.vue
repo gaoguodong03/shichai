@@ -2590,16 +2590,20 @@ function clearStreamingPlaceholders() {
 function consumeStreamingStatusContent(data: { text?: string; agent_id?: string; meta?: { phase?: string } }): boolean {
   const phase = String(data?.meta?.phase || '').trim()
   if (!phase) return false
-  if (phase === 'preparing') {
-    groupStreamingPhase.value = '正在读取文件…'
+  if (phase === 'file_resolving' || phase === 'preparing') {
+    groupStreamingPhase.value = '正在处理文件引用…'
     return true
   }
-  if (phase === 'file_parsed') {
-    groupStreamingPhase.value = '文件已解析（仅前 5 行）'
+  if (phase === 'file_resolved' || phase === 'file_parsed') {
+    groupStreamingPhase.value = '文件引用已处理'
     return true
   }
-  if (phase === 'tool_pending') {
-    groupStreamingPhase.value = '正在执行工具（可能需要 1～3 分钟）…'
+  if (phase === 'tool_running' || phase === 'tool_pending') {
+    groupStreamingPhase.value = '技能任务运行中，完成后会继续回复…'
+    return true
+  }
+  if (phase === 'agent_waiting') {
+    groupStreamingPhase.value = '仍在等待技能任务完成…'
     return true
   }
   return false
@@ -2746,7 +2750,7 @@ async function sendGroupMessage() {
   const runToken = ++groupStreamRunToken.value
   groupStreaming.value = true
   groupStreamingSessionId.value = detail.id
-  groupStreamingPhase.value = '正在准备…'
+  groupStreamingPhase.value = '正在分配专家…'
   try {
     const msg = await buildMessageWithFiles(detail, base)
     const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }

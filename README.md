@@ -123,7 +123,8 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
    - 镜像职责分离：`ST49_IMAGE` 仅后端容器；`SANDBOX_BASE_IMAGE` 仅 Skill 沙箱容器，二者不要混用。
    - 主应用镜像默认不内置 Playwright/Chromium，也不在构建时预拉取 `@playwright/mcp`；浏览器自动化能力统一放在 Playwright 沙箱镜像中，避免普通应用版本打包时下载大体积 npx/Chromium 内容。
    - 当前 1Panel 默认普通沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard`；独立镜像模板定义在 `docker/skill-sandbox/Dockerfile`。
-   - Playwright 沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright`；模板定义在 `docker/skill-sandbox/Dockerfile.playwright`，额外安装 Chromium、Playwright、`sqlite3` 与 `aiosqlite`。
+   - Playwright 沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright`；模板定义在 `docker/skill-sandbox/Dockerfile.playwright`，额外安装 Chromium、Playwright、Patchright、`sqlite3` 与 `aiosqlite`。
+   - 用户 requirements 中包含 `playwright` 或 `patchright` 且该用户选择“Playwright 版”时，沙箱预热会自动执行浏览器安装校验，避免脚本运行时再报 `patchright install`。
    - 用户可在“设置 → 沙箱”选择“普通版”或“Playwright 版”。部署侧用 `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE` 分别配置两个镜像。
    - OpenSandbox 控制面不要使用 `opensandbox/server:latest`，否则上游镜像漂移可能导致 SDK、server、execd 接口不匹配，表现为 `Status code: 404` / `gateway_tool_unavailable`。1Panel 编排已固定为 `server:v0.1.13`、`execd:v1.0.15`、`egress:v1.0.10`。
    - 本地若出现 `pull access denied for st49-skill-sandbox`，说明环境变量指向了本地 tag，但该镜像没有构建到当前 Docker daemon；解决：取消本地覆盖改用远端 tag，或执行上方 `docker build ... -t st49-skill-sandbox:local-* .`。

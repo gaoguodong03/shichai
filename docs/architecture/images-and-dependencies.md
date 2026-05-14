@@ -93,3 +93,8 @@
 | `st49_skill_script_execute_nonzero` | Skill 脚本执行了但返回非 0 | `exit_code`、`stderr_len`、`sandbox_id`、依赖 hash 字段 |
 
 贴日志时优先贴同一次请求中这些行，尤其是 `user_id`、`dep_hash/requirements_hash`、`installed_requirements_hash`、`verified_requirements_hash` 是否一致。
+
+浏览器类 Skill 需要同时确认两点：
+
+- 用户沙箱设置文件位于 `data/users/<用户名>/config/sandbox/sandbox/settings.json`，执行层会从同一路径读取 `image_variant` 并写入 `SANDBOX_IMAGE_VARIANT`。
+- 用户 requirements 中包含 `playwright` 或 `patchright` 且 `SANDBOX_IMAGE_VARIANT=playwright` 时，预热安装会自动补 Chromium 浏览器缓存；普通版沙箱不会因为全局 requirements 意外下载浏览器。

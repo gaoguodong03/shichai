@@ -67,6 +67,7 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
     openpyxl \
     pandas \
     pillow \
+    patchright \
     playwright \
     pydantic \
     pymupdf \
@@ -81,7 +82,8 @@ RUN python3 -m pip install --upgrade pip setuptools wheel \
 # Python playwright already provides /usr/local/bin/playwright; do not install npm playwright globally.
 RUN npm install -g yarn pnpm@10 typescript tsx \
     && python3 -m playwright install-deps chromium \
-    && python3 -m playwright install chromium
+    && python3 -m playwright install chromium \
+    && python3 -m patchright install chromium
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/bin/tini", "--"]

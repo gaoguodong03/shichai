@@ -381,6 +381,24 @@ async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
+async def test_prewarm_reads_saved_playwright_variant(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    settings_path = user_root / "config" / "sandbox" / "sandbox" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text('{"image_variant": "playwright"}\n', encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="test")
+
+    _sid, policy = adapter.created[0]
+    assert policy.image_ref.endswith("-playwright")
+    assert policy.environment["SANDBOX_IMAGE_VARIANT"] == "playwright"
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
 async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     from app.core.user_context import get_user_context_for
@@ -417,6 +435,37 @@ async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_
     _sid, policy = adapter.created[0]
     assert policy.allow_network is True
     assert any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in adapter.exec_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_playwright_variant_installs_patchright_browsers(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    settings_path = user_root / "config" / "sandbox" / "sandbox" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text('{"image_variant": "playwright"}\n', encoding="utf-8")
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("patchright>=1.52.5\n", encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+
+    install_command = next(
+        " ".join(cmd["argv"])
+        for cmd in adapter.exec_commands
+        if "SANDBOX_REQUIREMENTS_B64" in " ".join(cmd["argv"])
+    )
+    assert "browser_install_start" in install_command
+    assert "python3 -m patchright install chromium" in install_command
+    install_env = next(
+        cmd["env"]
+        for cmd in adapter.exec_commands
+        if "SANDBOX_REQUIREMENTS_B64" in " ".join(cmd["argv"])
+    )
+    assert install_env["SANDBOX_IMAGE_VARIANT"] == "playwright"
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
