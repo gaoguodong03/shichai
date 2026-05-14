@@ -462,6 +462,26 @@ def test_opensandbox_spec_marks_st49_metadata():
     assert spec["metadata"]["session_id"] == "alice"
 
 
+def test_opensandbox_spec_sanitizes_email_session_metadata():
+    policy = SandboxPolicy(fs_root="/tmp/workspace", image_ref="example/sandbox:tag")
+
+    spec = OpenSandboxAdapter._spec_from_policy(session_id="wzr@bupt.edu.cn", policy=policy)
+
+    assert spec["metadata"]["session_id"] == "wzr_bupt.edu.cn"
+    assert "@" not in spec["metadata"]["session_id"]
+
+
+def test_opensandbox_metadata_value_is_label_safe_and_short():
+    raw = "用户:" + ("a" * 100) + "@example.com"
+
+    value = OpenSandboxAdapter._opensandbox_metadata_value(raw)
+
+    assert len(value) <= 63
+    assert value[0].isalnum()
+    assert value[-1].isalnum()
+    assert all(ch.isalnum() or ch in {"-", "_", "."} for ch in value)
+
+
 async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", "120")

@@ -2,17 +2,21 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import re
 import shlex
 import time
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
-logger = logging.getLogger(__name__)
-
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
+from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
+
+_OPENSANDBOX_METADATA_INVALID_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 @dataclass
@@ -454,7 +458,7 @@ class OpenSandboxAdapter:
                             spec=self._SandboxImageSpec(image=image_ref),
                             entrypoint=entrypoint,
                             env=dict(spec.get("env") or {}),
-                            metadata={k: str(v) for k, v in dict(spec.get("metadata") or {}).items()},
+                            metadata=OpenSandboxAdapter._opensandbox_metadata(spec.get("metadata") or {}),
                             timeout=timedelta(seconds=max(60, timeout_s)),
                             resource={"cpu": str(spec.get("resource_limit", {}).get("cpu") or "1000m"),
                                       "memory": str(spec.get("resource_limit", {}).get("memory_mb") or "1024") + "Mi"},
@@ -745,6 +749,28 @@ class OpenSandboxAdapter:
             ) from e
 
     @staticmethod
+    def _opensandbox_metadata_value(value: Any) -> str:
+        raw = str(value or "").strip()
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
+        cleaned = _OPENSANDBOX_METADATA_INVALID_CHARS.sub("_", raw).strip("._-")
+        if not cleaned:
+            return f"v{digest}"
+        if len(cleaned) > 63:
+            suffix = f"-{digest}"
+            cleaned = cleaned[: 63 - len(suffix)].rstrip("._-")
+            if not cleaned:
+                return f"v{digest}"
+            cleaned = f"{cleaned}{suffix}"
+        return cleaned
+
+    @staticmethod
+    def _opensandbox_metadata(metadata: Dict[str, Any]) -> Dict[str, str]:
+        return {
+            str(k): OpenSandboxAdapter._opensandbox_metadata_value(v)
+            for k, v in dict(metadata or {}).items()
+        }
+
+    @staticmethod
     def _spec_from_policy(session_id: str, policy: SandboxPolicy) -> Dict[str, Any]:
         mounts = [
             {
@@ -773,7 +799,7 @@ class OpenSandboxAdapter:
             "metadata": {
                 "managed_by": "st49",
                 "app": "shichai",
-                "session_id": session_id,
+                "session_id": OpenSandboxAdapter._opensandbox_metadata_value(session_id),
             },
             "mounts": mounts,
             "workspace_root": policy.fs_root,
