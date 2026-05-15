@@ -110,3 +110,67 @@ def test_merge_sandbox_requirements_lines_dedupes_by_package(tmp_path: Path, mon
     assert added == ["pandas==2.2.0"]
     assert merged == "requests==2.31.0\npandas==2.2.0\n"
     assert req_path.read_text(encoding="utf-8") == merged
+
+
+def test_collect_mcp_ids_from_skill_dirs_reads_auto_tools(tmp_path: Path):
+    from app.core.settings_bundle_import import collect_mcp_ids_from_skill_dirs
+
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "skill-a"
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: Skill A\n"
+        "auto-tools:\n"
+        "  mcp:\n"
+        "    - tool-a\n"
+        "    - tool-a\n"
+        "    - id: tool-b\n"
+        "      name: Tool B\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    assert collect_mcp_ids_from_skill_dirs(skills_root, ["skill-a", "missing"]) == ["tool-a", "tool-b"]
+
+
+def test_skill_import_zip_merges_root_mcp_servers(monkeypatch, tmp_path: Path):
+    import io
+    import json
+    import zipfile
+
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "SKILL.md",
+            "---\n"
+            "name: Skill A\n"
+            "auto-tools:\n"
+            "  mcp:\n"
+            "    - tool-a\n"
+            "---\n"
+            "body\n",
+        )
+        zf.writestr("mcp_servers.json", json.dumps([{"id": "tool-a", "name": "Tool A", "enabled": True}]))
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/settings/skills/import-zip",
+        files={"file": ("skill-a.zip", buf.getvalue(), "application/zip")},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["mcp_added"] == 1
+
+    mcp_path = tmp_path / "users" / "u1" / "config" / "mcp_servers.json"
+    assert json.loads(mcp_path.read_text(encoding="utf-8"))[0]["id"] == "tool-a"
+    assert not (tmp_path / "users" / "u1" / "skills" / data["id"] / "mcp_servers.json").exists()

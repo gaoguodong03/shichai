@@ -973,6 +973,27 @@
                 <pre class="text-xs whitespace-pre-wrap break-words text-primary">{{ formatShareJson(sharePreviewData?.preview || {}) }}</pre>
               </div>
             </div>
+            <div
+              v-if="hasImportMissingReferences(sharePreviewMissingReferences)"
+              class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-700 dark:bg-red-950/20 dark:border-red-500/50 dark:text-red-300"
+            >
+              <div class="text-xs font-medium mb-1">缺失内容</div>
+              <div class="space-y-2">
+                <div v-for="group in missingReferenceGroups(sharePreviewMissingReferences)" :key="group.key">
+                  <div class="text-xs font-medium">{{ group.label }}</div>
+                  <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
+                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
+                      <span>{{ missingReferenceTitle(group, item) }}</span>
+                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
+                      <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
+                        ，被 {{ missingRequiredByText(item) }} 依赖
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
+            </div>
           </div>
           <div class="flex justify-start gap-2">
             <button
@@ -1068,6 +1089,27 @@
                 </li>
               </ul>
             </div>
+            <div
+              v-if="hasImportMissingReferences(scenarioBundlePreview.bundle_preview.missing_references)"
+              class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-700 dark:bg-red-950/20 dark:border-red-500/50 dark:text-red-300"
+            >
+              <div class="text-xs font-medium mb-1">缺失内容</div>
+              <div class="space-y-2">
+                <div v-for="group in missingReferenceGroups(scenarioBundlePreview.bundle_preview.missing_references)" :key="group.key">
+                  <div class="text-xs font-medium">{{ group.label }}</div>
+                  <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
+                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
+                      <span>{{ missingReferenceTitle(group, item) }}</span>
+                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
+                      <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
+                        ，被 {{ missingRequiredByText(item) }} 依赖
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
+            </div>
             <p v-if="scenarioOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
               将覆盖已有内容：{{ scenarioOverwriteSummary }}
             </p>
@@ -1155,6 +1197,27 @@
                   <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
                 </li>
               </ul>
+            </div>
+            <div
+              v-if="hasImportMissingReferences(dhaBundlePreview.bundle_preview.missing_references)"
+              class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-700 dark:bg-red-950/20 dark:border-red-500/50 dark:text-red-300"
+            >
+              <div class="text-xs font-medium mb-1">缺失内容</div>
+              <div class="space-y-2">
+                <div v-for="group in missingReferenceGroups(dhaBundlePreview.bundle_preview.missing_references)" :key="group.key">
+                  <div class="text-xs font-medium">{{ group.label }}</div>
+                  <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
+                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
+                      <span>{{ missingReferenceTitle(group, item) }}</span>
+                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
+                      <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
+                        ，被 {{ missingRequiredByText(item) }} 依赖
+                      </span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
             </div>
             <p v-if="dhaOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
               将覆盖已有内容：{{ dhaOverwriteSummary }}
@@ -1298,6 +1361,28 @@ function logout() {
 
 type ModuleId = 'workspace' | 'resource' | 'settings'
 type ResourceSubModule = 'scenario' | 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
+type MissingReferenceSource = 'scene' | 'expert' | 'skill' | 'tool'
+
+interface MissingReference {
+  id: string
+  name?: string
+  display_name?: string
+  type_label?: string
+  required_by?: string[]
+  source?: MissingReferenceSource
+}
+
+interface ImportMissingReferences {
+  experts?: MissingReference[]
+  skills?: MissingReference[]
+  tools?: MissingReference[]
+}
+
+interface MissingReferenceGroup {
+  key: keyof ImportMissingReferences
+  label: string
+  items: MissingReference[]
+}
 
 const resourceChildren: { id: ResourceSubModule; label: string }[] = [
   { id: 'scenario', label: '场景' },
@@ -1383,6 +1468,7 @@ const scenarioBundlePreview = ref<{
     experts: { agent_id: string; name: string }[]
     skills: string[]
     mcps: { id: string; name: string }[]
+    missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
     name_conflict_existing_ids?: string[]
@@ -1413,9 +1499,12 @@ const sharePreviewCommitting = ref(false)
 const sharePreviewData = ref<{
   share_id: string
   meta: { object_type: string; title: string; summary?: Record<string, unknown> }
-  preview?: Record<string, unknown>
+  preview?: Record<string, unknown> & { missing_references?: ImportMissingReferences }
 } | null>(null)
 const sharePreviewResult = ref<{ ok: boolean; message: string } | null>(null)
+const sharePreviewMissingReferences = computed(
+  () => sharePreviewData.value?.preview?.missing_references || null,
+)
 
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
@@ -1428,6 +1517,7 @@ const dhaBundlePreview = ref<{
     name?: string
     skills: string[]
     mcps: { id: string; name: string }[]
+    missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
     name_conflict_existing_ids?: string[]
@@ -1459,6 +1549,28 @@ function formatShareJson(obj: unknown): string {
   } catch {
     return String(obj ?? '')
   }
+}
+function hasImportMissingReferences(refs: ImportMissingReferences | null | undefined): boolean {
+  if (!refs) return false
+  return Boolean((refs.experts || []).length || (refs.skills || []).length || (refs.tools || []).length)
+}
+function missingReferenceGroups(refs: ImportMissingReferences | null | undefined): MissingReferenceGroup[] {
+  if (!refs) return []
+  const groups: MissingReferenceGroup[] = [
+    { key: 'experts', label: '专家', items: refs.experts || [] },
+    { key: 'skills', label: '技能', items: refs.skills || [] },
+    { key: 'tools', label: '工具', items: refs.tools || [] },
+  ]
+  return groups.filter((group) => group.items.length)
+}
+function missingRequiredByText(item: MissingReference): string {
+  return (item.required_by || []).filter(Boolean).join('，')
+}
+function missingReferenceTitle(group: MissingReferenceGroup, item: MissingReference): string {
+  const typeLabel = item.type_label || (group.key === 'tools' ? 'MCP 工具' : group.label)
+  const name = String(item.name || '').trim()
+  if (name) return `${typeLabel} ${name}`
+  return item.display_name || `${typeLabel} ${item.id}`
 }
 const scenarioOverwriteSummary = computed(() => {
   const bp = scenarioBundlePreview.value?.bundle_preview

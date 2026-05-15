@@ -175,3 +175,193 @@ def test_scene_share_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
     assert [x["id"] for x in presets] == ["shared-scene"]
     assert presets[0]["host_config"]["skill_ids"] == ["shared-skill"]
     assert presets[0]["host_config"]["mcp_server_ids"] == ["shared-mcp"]
+
+
+def test_scene_share_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path):
+    from app.api import settings as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+
+    raw = build_scenario_bundle_zip_bytes(
+        {"id": "scene-1", "name": "Scene 1", "agent_ids": ["missing-expert"]},
+        [],
+        [],
+        tmp_path / "source_skills",
+        [],
+    )
+    try:
+        result = __import__("asyncio").run(api._import_scene_from_bundle_bytes(raw, dry_run=True))
+    finally:
+        reset_current_username(token)
+
+    missing = result["preview"]["missing_references"]
+    assert missing["experts"][0]["id"] == "missing-expert"
+    assert missing["experts"][0]["display_name"] == "专家 missing-expert"
+    assert missing["experts"][0]["type_label"] == "专家"
+    assert missing["skills"] == []
+    assert missing["tools"] == []
+
+
+def test_expert_share_dry_run_reports_missing_skill(monkeypatch, tmp_path: Path):
+    from app.api import settings as api
+    from app.core.expert_bundle import build_expert_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+
+    raw = build_expert_bundle_zip_bytes(
+        {
+            "agent_id": "expert-1",
+            "name": "Expert 1",
+            "skill_ids": ["missing-skill"],
+            "mcp_server_ids": [],
+        },
+        [],
+        tmp_path / "source_skills",
+        [],
+    )
+    try:
+        result = __import__("asyncio").run(api._import_expert_from_bundle_bytes(raw, dry_run=True))
+    finally:
+        reset_current_username(token)
+
+    missing = result["preview"]["missing_references"]
+    assert missing["skills"][0]["id"] == "missing-skill"
+    assert missing["skills"][0]["display_name"] == "技能 missing-skill"
+    assert missing["skills"][0]["required_by"] == ["专家 Expert 1"]
+    assert missing["experts"] == []
+    assert missing["tools"] == []
+
+
+def test_skill_share_dry_run_reports_missing_mcp_and_ignores_existing(monkeypatch, tmp_path: Path):
+    import json
+
+    from app.api import settings as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+    ctx.config_dir.joinpath("mcp_servers.json").write_text(
+        json.dumps([{"id": "existing-tool", "name": "Existing"}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    source_skills = tmp_path / "source_skills"
+    skill_dir = source_skills / "skill-a"
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: Skill A\n"
+        "auto-tools:\n"
+        "  mcp:\n"
+        "    - missing-tool\n"
+        "    - existing-tool\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    raw = build_scenario_bundle_zip_bytes(
+        {"id": "dummy", "name": "Dummy", "agent_ids": ["dummy"]},
+        [],
+        [],
+        source_skills,
+        ["skill-a"],
+    )
+    try:
+        result = __import__("asyncio").run(api._import_skill_from_bundle_bytes(raw, dry_run=True))
+    finally:
+        reset_current_username(token)
+
+    missing = result["preview"]["missing_references"]
+    assert [x["id"] for x in missing["tools"]] == ["missing-tool"]
+    assert missing["tools"][0]["display_name"] == "MCP 工具 missing-tool"
+    assert missing["tools"][0]["required_by"] == ["技能 Skill A"]
+
+
+def test_skill_share_missing_mcp_uses_name_hint_when_declared(monkeypatch, tmp_path: Path):
+    from app.api import settings as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+
+    source_skills = tmp_path / "source_skills"
+    skill_dir = source_skills / "skill-a"
+    skill_dir.mkdir(parents=True)
+    skill_dir.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: Skill A\n"
+        "auto-tools:\n"
+        "  mcp:\n"
+        "    - id: missing-tool\n"
+        "      name: Missing Tool Name\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    raw = build_scenario_bundle_zip_bytes(
+        {"id": "dummy", "name": "Dummy", "agent_ids": ["dummy"]},
+        [],
+        [],
+        source_skills,
+        ["skill-a"],
+    )
+    try:
+        result = __import__("asyncio").run(api._import_skill_from_bundle_bytes(raw, dry_run=True))
+    finally:
+        reset_current_username(token)
+
+    missing = result["preview"]["missing_references"]
+    assert missing["tools"][0]["id"] == "missing-tool"
+    assert missing["tools"][0]["name"] == "Missing Tool Name"
+    assert missing["tools"][0]["display_name"] == "Missing Tool Name"
+
+
+def test_skill_share_import_merges_bundled_mcp(monkeypatch, tmp_path: Path):
+    import json
+
+    from app.api import settings as api
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+
+    source_skill = tmp_path / "source_skill"
+    source_skill.mkdir()
+    source_skill.joinpath("SKILL.md").write_text(
+        "---\n"
+        "name: Skill A\n"
+        "auto-tools:\n"
+        "  mcp:\n"
+        "    - tool-a\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    raw = api._build_skill_zip_bytes(source_skill, [{"id": "tool-a", "name": "Tool A", "enabled": True}])
+    try:
+        result = __import__("asyncio").run(api._import_skill_from_bundle_bytes(raw, dry_run=False))
+        mcp_rows = json.loads(ctx.config_dir.joinpath("mcp_servers.json").read_text(encoding="utf-8"))
+    finally:
+        reset_current_username(token)
+
+    assert result["summary"]["mcp_added"] == 1
+    assert result["summary"]["missing_references"]["tools"] == []
+    assert [row["id"] for row in mcp_rows] == ["tool-a"]
+    assert not (ctx.skills_dir / str(result["imported_skill_id"]) / "mcp_servers.json").exists()

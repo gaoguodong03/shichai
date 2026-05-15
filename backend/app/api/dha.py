@@ -266,12 +266,19 @@ async def publish_dha_instance_share(agent_id: str):
     from app.api.settings import load_mcp_config
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.scenario_share_store import upsert_public_share
+    from app.core.settings_bundle_import import collect_mcp_ids_from_skill_dirs
+    from app.skills.loader import get_builtin_skills_dir
 
     row = _find_dha_row(agent_id)
     if row is None:
         raise HTTPException(status_code=404, detail="DHA instance not found")
     skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
     mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
+    mcp_ids = sorted(
+        set(mcp_ids)
+        | set(collect_mcp_ids_from_skill_dirs(_dha_skills_dir(), skill_ids))
+        | set(collect_mcp_ids_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
+    )
     mcp_by = {str(s.get("id")): s for s in load_mcp_config() if s.get("id")}
     mcp_rows = [dict(mcp_by[mid]) for mid in mcp_ids if mid in mcp_by]
     zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
@@ -313,13 +320,14 @@ async def import_dha_instance_bundle(
     """导入专家包：合并技能、MCP 与专家条目。"""
     from app.api.settings import load_mcp_config, save_mcp_config, _invalidate_mcp_runtime_after_config_change
     from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
+    from app.core.settings_bundle_import import find_missing_references_for_expert_bundle
     from app.core.scenario_bundle import (
         extract_scenario_bundle_dir,
         copy_bundle_skills_to_user,
         list_skill_ids_in_bundle_skills_dir,
         merge_mcp_servers_for_bundle,
     )
-    from app.skills.loader import invalidate_skills_cache_for_user
+    from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
 
     fn = (file.filename or "").strip().lower()
     if not fn.endswith(".zip"):
@@ -372,6 +380,15 @@ async def import_dha_instance_bundle(
             if str(x.get("agent_id") or "").strip()
             and str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
+        existing_mcp = load_mcp_config()
+        missing_references = find_missing_references_for_expert_bundle(
+            norm,
+            mcp_bundle,
+            tmp,
+            user_skills,
+            existing_mcp,
+            extra_skill_roots=(get_builtin_skills_dir(),),
+        )
 
         if dry_run:
             return {
@@ -387,6 +404,7 @@ async def import_dha_instance_bundle(
                         "would_skip_skills": would_skip,
                         "name_conflict_existing_ids": same_name_agent_ids,
                         "name_conflict_mode": conflict,
+                        "missing_references": missing_references,
                     },
                     "note": "确认后将写入技能目录并合并专家；依赖校验在提交完成后返回。agent_id 仅可在服务端配置文件中修改。",
                 },
@@ -399,7 +417,7 @@ async def import_dha_instance_bundle(
 
         if mcp_bundle:
             merged_mcp, _a, _s, _u = merge_mcp_servers_for_bundle(
-                load_mcp_config(), mcp_bundle, skip_existing=mcp_skip_existing
+                existing_mcp, mcp_bundle, skip_existing=mcp_skip_existing
             )
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
@@ -423,6 +441,7 @@ async def import_dha_instance_bundle(
                     "overwritten_agent_ids": overwritten_agent_ids,
                     "skills_imported": imported_skills,
                     "skills_skipped": skipped_skills,
+                    "missing_references": missing_references,
                 },
                 "validation_after": val_after,
             },

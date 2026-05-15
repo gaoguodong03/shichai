@@ -141,6 +141,10 @@
                       v-for="id in form.allowed_tools.mcp"
                       :key="id"
                       class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-accent bg-accent-subtle text-accent-subtle-text text-sm"
+                      :class="isMcpDependencyMissing(id)
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-accent bg-accent-subtle text-accent-subtle-text'"
+                      :title="isMcpDependencyMissing(id) ? '缺失 MCP 工具配置' : '已存在 MCP 工具配置'"
                     >
                       {{ mcpLabel(id) }}
                       <button
@@ -155,6 +159,9 @@
                     </span>
                   </div>
                   <div v-else class="text-xs text-muted mb-2">未声明 MCP（本技能会话不加载 MCP 工具）。</div>
+                  <p v-if="missingMcpDependencies.length" class="mt-2 text-xs text-red-600">
+                    缺失 MCP 工具配置：{{ missingMcpDependencies.map((id) => `MCP 工具 ${id}`).join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
+                  </p>
                   <div v-if="editMode" class="flex flex-wrap items-center gap-2">
                     <select
                       class="text-sm border border-input-border rounded-lg bg-input-bg text-primary px-2 py-1.5 min-w-[10rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
@@ -392,6 +399,10 @@ const addableMcpServers = computed(() => {
   const chosen = new Set(form.value.allowed_tools.mcp)
   return mcpServers.value.filter((s) => s.enabled !== false && !chosen.has(s.id))
 })
+const mcpServerIds = computed(() => new Set(mcpServers.value.map((s) => s.id)))
+const missingMcpDependencies = computed(() =>
+  form.value.allowed_tools.mcp.filter((id) => id && !mcpServerIds.value.has(id))
+)
 const pythonDependencies = computed(() =>
   String(form.value.allowed_tools.python || '')
     .split(/\r?\n/g)
@@ -429,9 +440,13 @@ function isPythonDependencyMissing(dep: string) {
   return Boolean(key && !sandboxRequirementKeys.value.has(key))
 }
 
+function isMcpDependencyMissing(id: string) {
+  return Boolean(id && !mcpServerIds.value.has(id))
+}
+
 function mcpLabel(id: string) {
   const s = mcpServers.value.find((x) => x.id === id)
-  return s?.name || id
+  return s?.name || `缺失 MCP 工具 ${id}`
 }
 
 function removeMcpServer(id: string) {

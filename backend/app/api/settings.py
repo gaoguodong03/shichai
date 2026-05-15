@@ -35,7 +35,11 @@ from app.core.settings_references import (
     replace_skill_id_in_user_configs as _replace_skill_id_in_user_configs,
 )
 from app.core.settings_bundle_import import (
+    collect_mcp_ids_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
+    find_missing_references_for_expert_bundle as _find_missing_references_for_expert_bundle,
+    find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
+    find_missing_references_for_skill_bundle as _find_missing_references_for_skill_bundle,
     mcp_conflict_id_map as _mcp_conflict_id_map,
     skill_conflict_id_map as _skill_conflict_id_map,
 )
@@ -325,6 +329,38 @@ def _merge_sandbox_requirements_lines(incoming: List[str]) -> Tuple[List[str], s
     return merge_requirements_lines(_get_sandbox_requirements_path(), incoming)
 
 
+def _mcp_rows_for_skill_dir(skill_dir: Path) -> List[Dict[str, Any]]:
+    try:
+        fm, _ = _read_skill_file(skill_dir)
+    except Exception:
+        return []
+    mcp_ids = _mcp_ids_from_frontmatter(fm)
+    if not mcp_ids:
+        return []
+    by_id = {str(row.get("id") or "").strip(): row for row in load_mcp_config() if str(row.get("id") or "").strip()}
+    return [dict(by_id[mid]) for mid in mcp_ids if mid in by_id]
+
+
+def _parse_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [row for row in parsed if isinstance(row, dict) and str(row.get("id") or "").strip()]
+
+
+def _read_mcp_bundle_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
+    path = bundle_dir / "mcp_servers.json"
+    if not path.is_file():
+        return []
+    try:
+        return _parse_mcp_bundle_rows(path.read_bytes())
+    except Exception:
+        return []
+
+
 async def _merge_imported_skill_requirements_and_prewarm(skill_ids: List[str], skills_root: Path) -> Dict[str, Any]:
     incoming: List[str] = []
     for sid in skill_ids:
@@ -396,6 +432,8 @@ def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[s
             expert_rows.append(strip_dha_row_for_disk(dict(dha_by_id[a])))
 
     skill_ids, mcp_ids = collect_skill_and_mcp_ids_for_preset(match, dha_by_id)
+    mcp_ids.update(collect_mcp_ids_from_skill_dirs(_get_skills_dir(), skill_ids))
+    mcp_ids.update(collect_mcp_ids_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
     mcp_all = load_mcp_config()
     mcp_by = {str(s.get("id")): s for s in mcp_all if s.get("id")}
     mcp_rows = [dict(mcp_by[mid]) for mid in sorted(mcp_ids) if mid in mcp_by]
@@ -541,6 +579,18 @@ async def import_session_preset_bundle(
             if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
             and str(r.get("id") or "").strip()
         ]
+        existing_dha = load_dha_instances()
+        existing_mcp = load_mcp_config()
+        missing_references = _find_missing_references_for_scene_bundle(
+            norm,
+            dha_bundle,
+            mcp_bundle,
+            tmp,
+            user_skills,
+            existing_dha,
+            existing_mcp,
+            extra_skill_roots=(get_builtin_skills_dir(),),
+        )
 
         if dry_run:
             return {
@@ -557,6 +607,7 @@ async def import_session_preset_bundle(
                         "would_skip_skills": would_skip_skills,
                         "name_conflict_existing_ids": preset_name_conflicts,
                         "name_conflict_mode": conflict,
+                        "missing_references": missing_references,
                     },
                     "note": "确认导入后，数据写入服务器上该账号目录下的配置文件与技能文件夹。界面无法修改专家 agent_id；若需改 id，请在服务端编辑 dha_instances.json。",
                 },
@@ -569,12 +620,12 @@ async def import_session_preset_bundle(
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
 
         merged_dha = merge_dha_instances_for_bundle(
-            load_dha_instances(), dha_bundle, overwrite=overwrite_experts
+            existing_dha, dha_bundle, overwrite=overwrite_experts
         )
         save_dha_instances(merged_dha)
 
         merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
-            load_mcp_config(), mcp_bundle, skip_existing=mcp_skip_existing
+            existing_mcp, mcp_bundle, skip_existing=mcp_skip_existing
         )
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
@@ -592,6 +643,7 @@ async def import_session_preset_bundle(
                     "overwritten_existing_ids": overwritten_existing_ids,
                     "skills_imported": imported_skills,
                     "skills_skipped": skipped_skills,
+                    "missing_references": missing_references,
                     **requirements_result,
                     "experts_total_after": len(merged_dha),
                     "mcp_added": mcp_added,
@@ -617,11 +669,31 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
+        mcp_bundle = _read_mcp_bundle_rows(tmp)
         skill_ids = list_skill_ids_in_bundle_skills_dir(tmp)
         if not skill_ids:
-            raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
-        sid0 = skill_ids[0]
-        src = tmp / "skills" / sid0
+            root_skill = tmp / "SKILL.md"
+            if not root_skill.is_file():
+                raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
+            root_fm, _root_body = _read_skill_file(tmp)
+            root_name = str(root_fm.get("name") or "skill").strip() or "skill"
+            sid0 = _slugify(root_name)
+            normalized = tmp / "__normalized_skill_bundle"
+            src = normalized / "skills" / sid0
+            src.mkdir(parents=True, exist_ok=True)
+            for child in tmp.iterdir():
+                if child.name in {"__normalized_skill_bundle", "mcp_servers.json"}:
+                    continue
+                dest_child = src / child.name
+                if child.is_dir():
+                    shutil.copytree(child, dest_child)
+                else:
+                    shutil.copy2(child, dest_child)
+            bundle_dir_for_refs = normalized
+        else:
+            sid0 = skill_ids[0]
+            src = tmp / "skills" / sid0
+            bundle_dir_for_refs = tmp
         fm, body = _read_skill_file(src)
         incoming_name = str(fm.get("name") or sid0).strip() or sid0
         incoming_name_key = _normalized_name_key(incoming_name)
@@ -640,6 +712,14 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 overwrite_skill_ids.append(child.name)
         if dry_run:
             req_preview = _python_requirements_from_skill_dir(src)
+            missing_references = _find_missing_references_for_skill_bundle(
+                sid0,
+                mcp_bundle,
+                bundle_dir_for_refs,
+                base,
+                load_mcp_config(),
+                extra_skill_roots=(get_builtin_skills_dir(),),
+            )
             return {
                 "object_type": "skill",
                 "title": incoming_name,
@@ -648,6 +728,8 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "name": incoming_name,
                     "overwrite_skill_ids": overwrite_skill_ids,
                     "python_requirements": req_preview,
+                    "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
+                    "missing_references": missing_references,
                 },
             }
         for old_id in overwrite_skill_ids:
@@ -664,11 +746,34 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         _sanitize_skill_frontmatter_for_write(fm2)
         _write_skill_file(dest, fm2, body2)
         _refresh_skills_loader()
+        mcp_added = 0
+        mcp_skipped = 0
+        mcp_updated = 0
+        if mcp_bundle:
+            merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+                load_mcp_config(), mcp_bundle, skip_existing=False
+            )
+            save_mcp_config(merged_mcp)
+            await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm([target_id], base)
+        missing_references = _find_missing_references_for_skill_bundle(
+            target_id,
+            mcp_bundle,
+            None,
+            base,
+            load_mcp_config(),
+            extra_skill_roots=(get_builtin_skills_dir(),),
+        )
         return {
             "object_type": "skill",
             "imported_skill_id": target_id,
             "name": str(fm2.get("name") or target_id),
+            "summary": {
+                "missing_references": missing_references,
+                "mcp_added": mcp_added,
+                "mcp_skipped": mcp_skipped,
+                "mcp_updated": mcp_updated,
+            },
             **requirements_result,
         }
     finally:
@@ -738,6 +843,14 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
         if dry_run:
+            missing_references = _find_missing_references_for_expert_bundle(
+                norm,
+                mcp_bundle,
+                tmp,
+                user_skills,
+                load_mcp_config(),
+                extra_skill_roots=(get_builtin_skills_dir(),),
+            )
             return {
                 "object_type": "expert",
                 "preview": {
@@ -749,8 +862,17 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                     "would_overwrite_skills": sorted(skill_id_map.keys()),
                     "would_remap_skill_ids": skill_id_map,
                     "would_remap_mcp_server_ids": mcp_id_map,
+                    "missing_references": missing_references,
                 },
             }
+        missing_references = _find_missing_references_for_expert_bundle(
+            norm,
+            mcp_bundle,
+            tmp,
+            user_skills,
+            load_mcp_config(),
+            extra_skill_roots=(get_builtin_skills_dir(),),
+        )
         imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
         for old_id, new_id in mcp_id_map.items():
@@ -774,6 +896,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                 "skills_overwritten": overwritten_skills,
                 "skill_id_map": skill_id_map,
                 "mcp_id_map": mcp_id_map,
+                "missing_references": missing_references,
                 **requirements_result,
             },
         }
@@ -829,6 +952,16 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             ]
             if conflicts:
                 expert_conflicts[incoming_id or str(incoming.get("name") or "")] = list(dict.fromkeys(conflicts))
+        missing_references = _find_missing_references_for_scene_bundle(
+            norm,
+            dha_bundle,
+            mcp_bundle,
+            tmp,
+            user_skills,
+            load_dha_instances(),
+            load_mcp_config(),
+            extra_skill_roots=(get_builtin_skills_dir(),),
+        )
         if dry_run:
             return {
                 "object_type": "scene",
@@ -847,6 +980,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "would_remap_skill_ids": skill_id_map,
                     "would_remap_mcp_server_ids": mcp_id_map,
                     "would_overwrite_experts": expert_conflicts,
+                    "missing_references": missing_references,
                 },
             }
         imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
@@ -874,6 +1008,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "skills_overwritten": overwritten_skills,
                 "skill_id_map": skill_id_map,
                 "mcp_id_map": mcp_id_map,
+                "missing_references": missing_references,
                 **requirements_result,
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
@@ -1267,12 +1402,17 @@ async def import_skill_zip(
     fallback_seed = _slugify(Path(filename).stem or "skill")
     skill_id = _next_available_skill_id(base, fallback_seed)
     skill_dir = base / skill_id
+    mcp_bundle: List[Dict[str, Any]] = []
 
     try:
         with tempfile.TemporaryDirectory(prefix="skill-zip-import-") as tmp:
             src_dir = Path(tmp) / "skill"
             src_dir.mkdir(parents=True, exist_ok=True)
             for raw_name, rel_parts in normalized:
+                if len(rel_parts) == 1 and rel_parts[0].lower() == "mcp_servers.json":
+                    with zf.open(raw_name, "r") as rf:
+                        mcp_bundle = _parse_mcp_bundle_rows(rf.read())
+                    continue
                 if len(rel_parts) == 1 and rel_parts[0].lower() == "skill.md":
                     dst = src_dir / "SKILL.md"
                 else:
@@ -1336,6 +1476,15 @@ async def import_skill_zip(
         _sanitize_skill_frontmatter_for_write(fm)
         _write_skill_file(skill_dir, fm, body)
         _refresh_skills_loader()
+        mcp_added = 0
+        mcp_skipped = 0
+        mcp_updated = 0
+        if mcp_bundle:
+            merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+                load_mcp_config(), mcp_bundle, skip_existing=False
+            )
+            save_mcp_config(merged_mcp)
+            await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm([skill_id], base)
 
         return {
@@ -1347,6 +1496,9 @@ async def import_skill_zip(
                 "path": str(skill_dir),
                 "allowed_tools": _normalized_allowed_tools_dict(fm),
                 "skipped_by_name": False,
+                "mcp_added": mcp_added,
+                "mcp_skipped": mcp_skipped,
+                "mcp_updated": mcp_updated,
                 **requirements_result,
             },
         }
@@ -1372,8 +1524,8 @@ def _content_disposition_attachment(filename: str) -> str:
         )
 
 
-def _build_skill_zip_bytes(skill_dir: Path) -> bytes:
-    """将技能目录打包为 ZIP（根目录含 SKILL.md，与 import-zip 约定一致）；跳过 .git。"""
+def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, Any]]] = None) -> bytes:
+    """将技能目录打包为 ZIP；根目录含 SKILL.md，可选携带 mcp_servers.json。"""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for fp in sorted(skill_dir.rglob("*")):
@@ -1386,7 +1538,11 @@ def _build_skill_zip_bytes(skill_dir: Path) -> bytes:
             if ".git" in rel.parts:
                 continue
             arcname = "/".join(rel.parts)
+            if arcname == "mcp_servers.json":
+                continue
             zf.write(fp, arcname)
+        if mcp_rows:
+            zf.writestr("mcp_servers.json", json.dumps(mcp_rows, ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
 
@@ -1399,7 +1555,7 @@ async def export_skill_zip(skill_id: str):
         raise HTTPException(status_code=404, detail="Skill not found")
     if not (skill_dir / "SKILL.md").is_file():
         raise HTTPException(status_code=404, detail="Skill not found")
-    raw = _build_skill_zip_bytes(skill_dir)
+    raw = _build_skill_zip_bytes(skill_dir, _mcp_rows_for_skill_dir(skill_dir))
     filename = f"{skill_id}.zip"
     return StreamingResponse(
         io.BytesIO(raw),
@@ -1436,7 +1592,8 @@ async def publish_skill_share(skill_id: str):
     sdir = (base / sid).resolve()
     if not sdir.is_dir() or sdir.parent != base or not (sdir / "SKILL.md").is_file():
         raise HTTPException(status_code=404, detail="Skill not found")
-    zip_bytes = _build_skill_zip_bytes(sdir)
+    mcp_rows = _mcp_rows_for_skill_dir(sdir)
+    zip_bytes = _build_skill_zip_bytes(sdir, mcp_rows)
     fm, _body = _read_skill_file(sdir)
     title = str(fm.get("name") or sid)
     share_id = upsert_public_share(
@@ -1447,7 +1604,7 @@ async def publish_skill_share(skill_id: str):
             "title": title,
             "skill_name": title,
             "created_by": get_current_username() or "",
-            "summary": {"skill_count": 1},
+            "summary": {"skill_count": 1, "mcp_count": len(mcp_rows)},
         },
     )
     return {
