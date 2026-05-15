@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_image_policy import configured_sandbox_images
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT, SANDBOX_WORKSPACE_ROOT
@@ -73,6 +75,14 @@ class FakeAdapter:
             src.rename(dst)
             return {"exit_code": 0, "stdout": "", "stderr": ""}
         if argv and argv[0] == "sh":
+            command_text = " ".join(str(x) for x in (argv or []))
+            if "requirements install received empty requirements payload" in command_text:
+                return {
+                    "exit_code": 0,
+                    "stdout": "requirements_verify_start\nrequirements_verify_end",
+                    "stderr": "",
+                    "complete": True,
+                }
             # minimal find for list_workspace_directory tests
             import os
 
@@ -172,6 +182,19 @@ class EnvDroppingAdapter(FakeAdapter):
                 "stderr": "",
             }
         return await super().exec_command(handle, argv, cwd=cwd, timeout_ms=timeout_ms, env={})
+
+
+class IncompleteRequirementsAdapter(FakeAdapter):
+    async def exec_command(self, handle, argv, *, cwd="/workspace", timeout_ms=120_000, env=None):
+        self.exec_commands.append({"argv": list(argv or []), "cwd": cwd, "timeout_ms": timeout_ms, "env": dict(env or {})})
+        if "SANDBOX_REQUIREMENTS_B64" in dict(env or {}):
+            return {
+                "exit_code": None,
+                "complete": False,
+                "stdout": "Downloading openai-2.36.0-py3-none-any.whl",
+                "stderr": "",
+            }
+        return await super().exec_command(handle, argv, cwd=cwd, timeout_ms=timeout_ms, env=env)
 
 
 async def _ok_runner():
@@ -544,7 +567,7 @@ async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
-async def test_playwright_variant_installs_patchright_browsers(monkeypatch, tmp_path):
+async def test_playwright_variant_does_not_install_browsers_by_default(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
     (user_root / "skills").mkdir(parents=True, exist_ok=True)
@@ -565,13 +588,16 @@ async def test_playwright_variant_installs_patchright_browsers(monkeypatch, tmp_
         if "SANDBOX_REQUIREMENTS_B64" in " ".join(cmd["argv"])
     )
     assert "browser_install_start" in install_command
-    assert "python3 -m patchright install chromium" in install_command
+    assert 'if [ "${SANDBOX_AUTO_INSTALL_BROWSERS:-0}" = "1" ]' in install_command
+    assert '|| [ "${SANDBOX_IMAGE_VARIANT:-}" = "playwright" ]' not in install_command
+    assert "--upgrade -r /tmp/requirements.txt" not in install_command
     install_env = next(
         cmd["env"]
         for cmd in adapter.exec_commands
         if "SANDBOX_REQUIREMENTS_B64" in " ".join(cmd["argv"])
     )
     assert install_env["SANDBOX_IMAGE_VARIANT"] == "playwright"
+    assert install_env.get("SANDBOX_AUTO_INSTALL_BROWSERS") != "1"
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
@@ -592,6 +618,25 @@ async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_p
     assert current_handle.metadata.get("verified_requirements_hash") == dep_hash
     install_commands = [" ".join(cmd["argv"]) for cmd in adapter.exec_commands]
     assert any("SANDBOX_REQUIREMENTS_B64=" in command for command in install_commands)
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_incomplete_requirements_install_does_not_mark_verified(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    adapter = IncompleteRequirementsAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    with pytest.raises(RuntimeError, match="requirements 安装未完成"):
+        await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
+
+    handle, _ = svc._user_handles["alice"]
+    assert not handle.metadata.get("installed_requirements_hash")
+    assert not handle.metadata.get("verified_requirements_hash")
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
@@ -736,6 +781,60 @@ async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_p
 
     assert len(adapter.created) == 1
     assert adapter.created[0][0] == "alice"
+    assert adapter.disposed == []
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+    monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
+
+
+async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    req_path.write_text("xlrd\n", encoding="utf-8")
+    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "note.txt").write_text("hello", encoding="utf-8")
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox("alice", reason="request")
+    install_count_after_prewarm = len(adapter.exec_commands)
+    items = await svc.list_workspace_files_flat(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+    )
+
+    assert any(str(item.get("path") or "").endswith("note.txt") for item in items)
+    assert len(adapter.created) == 2
+    assert adapter.created[0][0] == "alice"
+    assert adapter.created[1][0] == "alice:workspace:sess-1"
+    assert adapter.disposed == []
+    assert len(adapter.exec_commands) == install_count_after_prewarm
+
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+        policy=SandboxPolicy(
+            fs_root=str(workspace_root.resolve()),
+            timeout_ms=1000,
+            tool_allowlist=["run_skill_script_demo"],
+        ),
+    )
+    await svc.execute(req)
+
+    assert len(adapter.created) == 2
     assert adapter.disposed == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
