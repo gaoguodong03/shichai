@@ -80,6 +80,8 @@ router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_depen
 _SSE_AGENT_KEEPALIVE_INTERVAL_SEC = 15.0
 _ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 _ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
+_GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
+_GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
 
 
 async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: float = _SSE_AGENT_KEEPALIVE_INTERVAL_SEC) -> AsyncIterator[Any]:
@@ -116,6 +118,43 @@ async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: floa
                 await task
 
 
+async def _publish_group_session_event(group_session_id: str, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    event = {
+        "type": event_type,
+        "session_id": group_session_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if payload:
+        event.update(payload)
+    async with _GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+        queues = list(_GROUP_SESSION_EVENT_SUBSCRIBERS.get(group_session_id) or [])
+    stale: List[asyncio.Queue[Dict[str, Any]]] = []
+    for queue in queues:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            with suppress(asyncio.QueueEmpty):
+                queue.get_nowait()
+            with suppress(asyncio.QueueFull):
+                queue.put_nowait(event)
+        except Exception:
+            stale.append(queue)
+    if stale:
+        async with _GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+            current = _GROUP_SESSION_EVENT_SUBSCRIBERS.get(group_session_id) or []
+            _GROUP_SESSION_EVENT_SUBSCRIBERS[group_session_id] = [q for q in current if q not in stale]
+
+
+def _schedule_group_session_event(group_session_id: str, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    if not group_session_id:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(_publish_group_session_event(group_session_id, event_type, payload))
+
+
 def _write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
     meta = _load_group_meta()
     item = meta.get(group_session_id)
@@ -126,19 +165,40 @@ def _write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, 
     else:
         item.pop("runtime_state", None)
     _save_group_meta(meta)
+    _schedule_group_session_event(
+        group_session_id,
+        "runtime_state",
+        {"runtime_state": state or {"running": False}},
+    )
+
+
+def _runtime_state_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "running": True,
+        "run_id": str(active.get("run_id") or ""),
+        "agent_id": str(active.get("agent_id") or ""),
+        "skill_id": str(active.get("skill_id") or ""),
+        "phase": str(active.get("phase") or "running"),
+        "started_at": active.get("started_at") or "",
+    }
 
 
 def _runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
     active = _ACTIVE_GROUP_RUNS.get(group_session_id)
     if active:
-        return {
-            "running": True,
-            "run_id": str(active.get("run_id") or ""),
-            "agent_id": str(active.get("agent_id") or ""),
-            "skill_id": str(active.get("skill_id") or ""),
-            "phase": str(active.get("phase") or "running"),
-            "started_at": active.get("started_at") or "",
-        }
+        task = active.get("task")
+        if isinstance(task, asyncio.Task) and task.done():
+            run_id = str(active.get("run_id") or "")
+            logger.warning(
+                "group_chat_runtime_state_stale_done session=%s run_id=%s",
+                group_session_id,
+                run_id,
+            )
+            _ACTIVE_GROUP_RUNS.pop(group_session_id, None)
+            meta_item.pop("runtime_state", None)
+            _write_group_runtime_state(group_session_id, None)
+        else:
+            return _runtime_state_for_active_run(active)
     stored = meta_item.get("runtime_state")
     return stored if isinstance(stored, dict) else {"running": False}
 
@@ -438,6 +498,11 @@ def _load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
 def _save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -> None:
     path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
     path.write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
+    _schedule_group_session_event(
+        group_session_id,
+        "messages_updated",
+        {"message_count": len(messages or [])},
+    )
 
 
 def _cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
@@ -2157,6 +2222,48 @@ async def get_group_session(group_session_id: str):
             "runtime_state": _runtime_state_for_session(group_session_id, m),
         },
     }
+
+
+async def group_session_events_stream(group_session_id: str):
+    """会话事件推送流：用于页面恢复/多标签页时主动同步运行态与新消息。"""
+    meta = _load_group_meta()
+    if group_session_id not in meta:
+        raise HTTPException(status_code=404, detail="Group session not found")
+
+    async def event_gen():
+        queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=32)
+        async with _GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+            subscribers = _GROUP_SESSION_EVENT_SUBSCRIBERS.setdefault(group_session_id, [])
+            subscribers.append(queue)
+        try:
+            snapshot = {
+                "type": "snapshot",
+                "session_id": group_session_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "runtime_state": _runtime_state_for_session(group_session_id, meta.get(group_session_id) or {}),
+            }
+            yield f"event: session_update\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=_SSE_AGENT_KEEPALIVE_INTERVAL_SEC)
+                except asyncio.TimeoutError:
+                    yield f"event: keepalive\ndata: {json.dumps({'type': 'keepalive'}, ensure_ascii=False)}\n\n"
+                    continue
+                yield f"event: session_update\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            raise
+        finally:
+            async with _GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+                current = _GROUP_SESSION_EVENT_SUBSCRIBERS.get(group_session_id) or []
+                _GROUP_SESSION_EVENT_SUBSCRIBERS[group_session_id] = [q for q in current if q is not queue]
+                if not _GROUP_SESSION_EVENT_SUBSCRIBERS[group_session_id]:
+                    _GROUP_SESSION_EVENT_SUBSCRIBERS.pop(group_session_id, None)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):

@@ -19,6 +19,7 @@ from app.api.group_chat import (
     delete_group_message,
     stop_group_session_run,
     group_chat_stream,
+    group_session_events_stream,
     preview_next_speaker_prompt,
     GroupSessionUpdate,
     GroupChatRequest,
@@ -66,6 +67,12 @@ async def create_session(body: SessionCreate):
 async def get_session(session_id: str):
     """获取会话详情与消息"""
     return await get_group_session(session_id)
+
+
+@router.get("/sessions/{session_id}/events/stream")
+async def session_events_stream(session_id: str):
+    """会话运行态与消息更新事件流（SSE）。"""
+    return await group_session_events_stream(session_id)
 
 
 @router.put("/sessions/{session_id}")

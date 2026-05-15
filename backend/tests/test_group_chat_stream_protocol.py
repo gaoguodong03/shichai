@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.api.group_chat import _iter_with_keepalive
@@ -45,6 +46,60 @@ async def test_keepalive_iter_emits_marker_while_agent_is_idle():
     assert events[0]["type"] == "agent_step"
     assert any(ev.get("type") == "keepalive" for ev in events)
     assert events[-1]["type"] == "final_step"
+
+
+@pytest.mark.asyncio
+async def test_runtime_state_clears_finished_active_run(monkeypatch):
+    from app.api import group_chat
+
+    task = asyncio.create_task(asyncio.sleep(0))
+    await task
+    writes = []
+    group_chat._ACTIVE_GROUP_RUNS["session-done"] = {
+        "task": task,
+        "run_id": "run-done",
+        "agent_id": "agent-qa",
+        "skill_id": "skill-qa",
+        "phase": "tool_running",
+        "started_at": "2026-05-15T00:00:00+00:00",
+    }
+    monkeypatch.setattr(
+        group_chat,
+        "_write_group_runtime_state",
+        lambda session_id, state: writes.append((session_id, state)),
+    )
+    try:
+        meta_item = {"runtime_state": {"running": True, "phase": "tool_running"}}
+        state = group_chat._runtime_state_for_session("session-done", meta_item)
+    finally:
+        group_chat._ACTIVE_GROUP_RUNS.pop("session-done", None)
+
+    assert state == {"running": False}
+    assert "runtime_state" not in meta_item
+    assert writes == [("session-done", None)]
+
+
+@pytest.mark.asyncio
+async def test_group_session_event_publisher_notifies_subscriber():
+    from app.api import group_chat
+
+    queue = asyncio.Queue(maxsize=4)
+    async with group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+        group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS["session-push"] = [queue]
+    try:
+        await group_chat._publish_group_session_event(
+            "session-push",
+            "messages_updated",
+            {"message_count": 3},
+        )
+        event = await asyncio.wait_for(queue.get(), timeout=1)
+    finally:
+        async with group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+            group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS.pop("session-push", None)
+
+    assert event["type"] == "messages_updated"
+    assert event["session_id"] == "session-push"
+    assert event["message_count"] == 3
 
 
 @pytest.mark.asyncio

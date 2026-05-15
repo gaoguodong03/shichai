@@ -27,7 +27,7 @@
       <div v-else-if="groupError" class="workspace-state workspace-state-error">
         <p class="workspace-state-title">无法加载会话</p>
         <p class="workspace-state-text">{{ groupError }}</p>
-        <button type="button" class="workspace-state-btn" @click="loadGroupDetail">重试</button>
+        <button type="button" class="workspace-state-btn" @click="() => loadGroupDetail()">重试</button>
       </div>
       <div v-else class="workspace-state workspace-state-loading">
         <div class="workspace-state-dots"><span /><span /><span /></div>
@@ -62,6 +62,7 @@ import GroupChatComposer from './components/group-chat/GroupChatComposer.vue'
 import GroupWorkspacePanel from './components/group-chat/GroupWorkspacePanel.vue'
 import { provideGroupChatWorkspaceContext } from './components/group-chat/groupChatWorkspaceContext'
 import { createGroupChatStreamRunner } from './composables/useGroupChatStreamRunner'
+import { streamSessionEvents } from '@/api/chat'
 import { uploadWorkspaceFile } from './workspaceUpload'
 import {
   dhaBodyContent,
@@ -214,6 +215,13 @@ const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
 const USER_STORAGE_KEY = 'dha_user'
 const WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_workspace_open_v1'
 const TOC_WORKSPACE_OPEN_STORAGE_KEY = 'dha_user_pref_toc_workspace_open_v1'
+const RESTORED_RUNTIME_POLL_INTERVAL_MS = 2500
+let restoredRuntimePollTimer: ReturnType<typeof setTimeout> | null = null
+let restoredRuntimePollSessionId = ''
+let groupSessionEventsAbort: AbortController | null = null
+let groupSessionEventsSessionId = ''
+let groupSessionEventsConnected = false
+let groupSessionPushRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
 function loadWorkspaceOpenDefault(): boolean {
   try {
@@ -764,6 +772,8 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', closeMembersDropdown)
   unbindSessionMetaOutsideClick()
+  clearRestoredRuntimePollTimer()
+  closeGroupSessionEventsStream()
   window.removeEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
   window.removeEventListener(SESSION_PRESETS_UPDATED_EVENT_NAME, onSessionPresetsUpdated)
   window.removeEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
@@ -1131,12 +1141,14 @@ function isCurrentGroupRun(sessionId: string, runToken: number): boolean {
 
 function finishGroupStream(sessionId: string, runToken: number, phase = '') {
   if (!isCurrentGroupRun(sessionId, runToken)) return
+  if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
   patchGroupStreamState(sessionId, { streaming: false, phase, abort: null, agentId: '', skillId: '', restored: false })
 }
 
 function abortGroupStream(sessionId: string) {
   const st = groupStreamStates.value[sessionId]
   if (!st) return
+  if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
   try {
     st.abort?.abort()
   } catch {
@@ -1151,6 +1163,110 @@ function abortGroupStream(sessionId: string) {
     skillId: '',
     restored: false,
   })
+}
+
+function clearRestoredRuntimePollTimer() {
+  if (restoredRuntimePollTimer) {
+    clearTimeout(restoredRuntimePollTimer)
+    restoredRuntimePollTimer = null
+  }
+  restoredRuntimePollSessionId = ''
+}
+
+function scheduleRestoredRuntimePoll(sessionId: string) {
+  if (!sessionId || props.selectedGroupSessionId !== sessionId) return
+  if (groupSessionEventsConnected && groupSessionEventsSessionId === sessionId) return
+  if (restoredRuntimePollTimer && restoredRuntimePollSessionId === sessionId) return
+  clearRestoredRuntimePollTimer()
+  restoredRuntimePollSessionId = sessionId
+  restoredRuntimePollTimer = setTimeout(() => {
+    restoredRuntimePollTimer = null
+    void pollRestoredRuntimeState(sessionId)
+  }, RESTORED_RUNTIME_POLL_INTERVAL_MS)
+}
+
+async function pollRestoredRuntimeState(sessionId: string) {
+  if (!sessionId || props.selectedGroupSessionId !== sessionId) return
+  const st = groupStreamStates.value[sessionId]
+  if (!st?.restored || st.abort) {
+    clearRestoredRuntimePollTimer()
+    return
+  }
+  await loadGroupDetail({ silent: true })
+  const next = groupStreamStates.value[sessionId]
+  if (props.selectedGroupSessionId === sessionId && next?.restored && next.streaming && !next.abort) {
+    scheduleRestoredRuntimePoll(sessionId)
+  }
+}
+
+function clearGroupSessionPushRefreshTimer() {
+  if (groupSessionPushRefreshTimer) {
+    clearTimeout(groupSessionPushRefreshTimer)
+    groupSessionPushRefreshTimer = null
+  }
+}
+
+function scheduleGroupSessionPushRefresh(sessionId: string) {
+  if (!sessionId || props.selectedGroupSessionId !== sessionId) return
+  clearGroupSessionPushRefreshTimer()
+  groupSessionPushRefreshTimer = setTimeout(() => {
+    groupSessionPushRefreshTimer = null
+    if (props.selectedGroupSessionId !== sessionId) return
+    const st = groupStreamStates.value[sessionId]
+    if (st?.streaming && st.abort) return
+    void loadGroupDetail({ silent: true })
+  }, 150)
+}
+
+function closeGroupSessionEventsStream() {
+  clearGroupSessionPushRefreshTimer()
+  const abort = groupSessionEventsAbort
+  groupSessionEventsAbort = null
+  groupSessionEventsSessionId = ''
+  groupSessionEventsConnected = false
+  try {
+    abort?.abort()
+  } catch {
+    // ignore
+  }
+}
+
+function openGroupSessionEventsStream(sessionId: string) {
+  if (!sessionId) {
+    closeGroupSessionEventsStream()
+    return
+  }
+  if (groupSessionEventsAbort && groupSessionEventsSessionId === sessionId) return
+  closeGroupSessionEventsStream()
+  const abort = new AbortController()
+  groupSessionEventsAbort = abort
+  groupSessionEventsSessionId = sessionId
+  const handlePushClosed = (error?: unknown) => {
+    if (abort.signal.aborted || props.selectedGroupSessionId !== sessionId) return
+    if (error) console.warn('会话事件推送连接失败，暂时使用恢复态轮询兜底', error)
+    groupSessionEventsConnected = false
+    const st = groupStreamStates.value[sessionId]
+    if (st?.restored && st.streaming && !st.abort) scheduleRestoredRuntimePoll(sessionId)
+  }
+  void streamSessionEvents(
+    sessionId,
+    {
+      onUpdate: (data) => {
+        if (abort.signal.aborted || props.selectedGroupSessionId !== sessionId) return
+        groupSessionEventsConnected = true
+        if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
+        scheduleGroupSessionPushRefresh(sessionId)
+      },
+      onError: (error) => {
+        if (abort.signal.aborted || props.selectedGroupSessionId !== sessionId) return
+        console.warn('会话事件推送中断，暂时使用恢复态轮询兜底', error)
+        groupSessionEventsConnected = false
+        const st = groupStreamStates.value[sessionId]
+        if (st?.restored && st.streaming && !st.abort) scheduleRestoredRuntimePoll(sessionId)
+      },
+    },
+    abort.signal,
+  ).then(() => handlePushClosed()).catch((error) => handlePushClosed(error))
 }
 
 const currentGroupStreaming = computed(() => Boolean(currentGroupStreamState.value?.streaming))
@@ -2907,26 +3023,29 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
 
 function hydrateRuntimeStateFromServer(detail: GroupDetail) {
   const rt = detail.runtime_state
+  const st = groupStreamStates.value[detail.id]
   if (!rt?.running) {
-    const st = groupStreamStates.value[detail.id]
+    if (restoredRuntimePollSessionId === detail.id) clearRestoredRuntimePollTimer()
     if (st?.restored) patchGroupStreamState(detail.id, { streaming: false, phase: '', abort: null, agentId: '', skillId: '', restored: false })
     return
   }
   const phase = String(rt.phase || '').trim()
   const agentId = String(rt.agent_id || '').trim()
   const skillId = String(rt.skill_id || '').trim()
+  const hasLocalAbort = Boolean(st?.streaming && st.abort)
   patchGroupStreamState(detail.id, {
     streaming: true,
     phase: phase === 'tool_running' ? '技能任务运行中，完成后会继续回复…' : '仍在等待技能任务完成…',
-    abort: null,
+    abort: hasLocalAbort ? st?.abort || null : null,
     runToken: Number(groupStreamStates.value[detail.id]?.runToken || 0),
     agentId,
     skillId,
-    restored: true,
+    restored: !hasLocalAbort,
   })
   if (agentId || skillId) {
     lastRoute.value = { sessionId: detail.id, expertId: agentId, skillId }
   }
+  if (!hasLocalAbort) scheduleRestoredRuntimePoll(detail.id)
 }
 
 function parseGroupResponse(id: string, body: unknown): GroupDetail | null {
@@ -2947,11 +3066,14 @@ function parseGroupResponse(id: string, body: unknown): GroupDetail | null {
   return null
 }
 
-async function loadGroupDetail() {
+async function loadGroupDetail(options: { silent?: boolean } = {}) {
   const id = props.selectedGroupSessionId
   if (!id) return
-  groupLoading.value = true
-  groupError.value = null
+  const silent = !!options.silent
+  if (!silent) {
+    groupLoading.value = true
+    groupError.value = null
+  }
   try {
     const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
     const body = await r.json().catch(() => null)
@@ -2962,32 +3084,37 @@ async function loadGroupDetail() {
       groupDetail.value = parsed
       hydrateRuntimeStateFromServer(parsed)
     } else {
+      if (silent) return
       groupDetail.value = null
       groupError.value = !r.ok
         ? (r.status === 404 ? '会话不存在' : (body && typeof body === 'object' && 'detail' in body ? String((body as { detail?: string }).detail) : `请求失败 ${r.status}`))
         : (body && typeof body === 'object' && 'detail' in body ? String((body as { detail?: string }).detail) : '返回格式异常')
     }
   } catch {
-    if (props.selectedGroupSessionId === id) {
+    if (!silent && props.selectedGroupSessionId === id) {
       groupDetail.value = null
       groupError.value = '网络错误，请确认后端已启动（默认端口 8000）'
     }
   } finally {
-    groupLoading.value = false
+    if (!silent) groupLoading.value = false
   }
 }
 
 watch(
   () => props.selectedGroupSessionId,
   (id) => {
+    clearRestoredRuntimePollTimer()
     sessionMetaPopoverOpen.value = false
     unbindSessionMetaOutsideClick()
     if (id) {
+      openGroupSessionEventsStream(id)
       groupError.value = null
       groupWaitingForUser.value = false
       groupSuggestedNextSpeaker.value = null
       groupSuggestedAddDhaIds.value = []
       loadGroupDetail()
+    } else {
+      closeGroupSessionEventsStream()
     }
   },
   { immediate: true }
