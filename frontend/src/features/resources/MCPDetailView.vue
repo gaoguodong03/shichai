@@ -321,20 +321,21 @@ function buildRemoteHeaders(): Record<string, string> | undefined {
   return { [hn]: p + '${vault:' + vid + '}' }
 }
 
-async function load() {
+async function load(options: { silent?: boolean } = {}) {
   if (!props.serverId) return
-  loading.value = true
+  const showPageLoading = !options.silent && (!server.value || (server.value.id !== props.serverId && !saving.value))
+  if (showPageLoading) loading.value = true
   try {
     await loadApiSecrets()
     const r = await fetch('/api/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
       const s = j.data.servers.find((x: { id: string }) => x.id === props.serverId) || null
-      server.value = s
+      if (s || !options.silent) server.value = s
       if (s) fillForm(s)
     }
   } finally {
-    loading.value = false
+    if (showPageLoading) loading.value = false
   }
 }
 
@@ -371,8 +372,13 @@ async function save() {
     })
     const j = await r.json()
     if (j.status === 'ok') {
+      const savedServer = j.data && typeof j.data === 'object' ? j.data as Partial<Server> : null
+      if (savedServer) {
+        server.value = { ...server.value, ...savedServer }
+        fillForm(server.value)
+      }
       emit('updated')
-      await load()
+      await load({ silent: true })
     } else {
       alert(j.detail || '保存失败')
     }

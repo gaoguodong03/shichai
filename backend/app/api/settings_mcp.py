@@ -15,17 +15,17 @@ from pydantic import BaseModel
 from app.core.security import user_context_dependency
 from app.core.user_context import get_current_username
 from app.core.user_settings_paths import mcp_config_path
-from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_bootstrapped, execute_mcp_call
+from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
 
 async def _mcp_runtime_for_request():
-    """当前登录用户的 MCP 运行时（已加载该用户 mcp_servers.json）。"""
+    """当前登录用户的 MCP 运行时（只加载配置，不因查看设置页主动连接 Server）。"""
     un = get_current_username()
     if not un:
         raise HTTPException(status_code=401, detail="未登录")
-    return await ensure_user_mcp_bootstrapped(un)
+    return await ensure_user_mcp_config_loaded(un)
 
 
 async def _invalidate_mcp_runtime_after_config_change():
@@ -87,31 +87,6 @@ async def get_mcp_servers():
     servers = load_mcp_config()
     mcp_manager = await _mcp_runtime_for_request()
 
-    # 确保已连接非 lazy 且尚未连接的 server
-    try:
-        # 对每个已启用且尚未连接的 server 尝试连接（包括 HTTP 远程 server）
-        for config in mcp_manager.server_configs:
-            server_id = config.get("id", "")
-            if not config.get("enabled", True):
-                continue
-            # lazy server：只在真正需要工具时连接，避免在状态页被提前拉起
-            if config.get("lazy", False):
-                continue
-            if server_id in mcp_manager.sessions:
-                continue
-            try:
-                await mcp_manager.connect_server(server_id, config)
-            except asyncio.CancelledError:
-                # 请求被取消（如前端断开、超时），不再继续连接，直接返回当前状态
-                break
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"MCP Server {server_id} 连接失败: {e}")
-    except asyncio.CancelledError:
-        pass  # 被取消时不再抛错，下面会按当前 sessions 返回列表
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"MCP 配置加载失败: {e}")
     
     # 统计每个 server 的工具数量
     server_tool_counts = {}

@@ -47,14 +47,14 @@ def frontend_flow_client(monkeypatch):
         async def fake_prewarm_current_user(*args, **kwargs):
             return {"status": "ok", "sandbox_id": "sb-test"}
 
-        async def fake_ensure_user_mcp_bootstrapped(_username):
+        async def fake_ensure_user_mcp_config_loaded(_username):
             return SimpleNamespace(server_configs=[], sessions={}, tools={})
 
         async def fake_dispose_mcp_runtime_for_user(_username):
             return None
 
         monkeypatch.setattr(sandbox_settings, "_prewarm_current_user", fake_prewarm_current_user)
-        monkeypatch.setattr(settings_mcp, "ensure_user_mcp_bootstrapped", fake_ensure_user_mcp_bootstrapped)
+        monkeypatch.setattr(settings_mcp, "ensure_user_mcp_config_loaded", fake_ensure_user_mcp_config_loaded)
         monkeypatch.setattr(settings_mcp, "dispose_mcp_runtime_for_user", fake_dispose_mcp_runtime_for_user)
 
         try:

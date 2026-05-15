@@ -14,10 +14,15 @@ def _reset_init_state(monkeypatch):
     monkeypatch.setattr(core_init, "_initialized", False)
 
 
-async def test_startup_init_loads_known_user_mcp_and_skills(monkeypatch, tmp_path):
+async def test_startup_init_loads_only_users_with_resources(monkeypatch, tmp_path):
     root = tmp_path / "users"
+    (root / "alice" / "skills" / "demo").mkdir(parents=True)
+    (root / "alice" / "skills" / "demo" / "SKILL.md").write_text("---\nname: Demo\n---\nbody\n", encoding="utf-8")
+    (root / "alice" / "config").mkdir(parents=True)
+    (root / "alice" / "config" / "mcp_servers.json").write_text("[]\n", encoding="utf-8")
     (root / "bob").mkdir(parents=True)
-    (root / "alice").mkdir(parents=True)
+    (root / "carol" / "config").mkdir(parents=True)
+    (root / "carol" / "config" / "mcp_servers.json").write_text("[]\n", encoding="utf-8")
     (root / ".hidden").mkdir(parents=True)
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(root))
 
@@ -25,28 +30,30 @@ async def test_startup_init_loads_known_user_mcp_and_skills(monkeypatch, tmp_pat
     mcp_seen: list[str] = []
 
     def fake_user_context(username: str):
-        return SimpleNamespace(skills_dir=root / username / "skills")
+        return SimpleNamespace(
+            skills_dir=root / username / "skills",
+            config_dir=root / username / "config",
+        )
 
     def fake_skills_loader(username: str, skills_dir):
         skills_seen.append((username, str(skills_dir)))
         return SimpleNamespace(skills={"demo": object()})
 
-    async def fake_mcp_bootstrap(username: str):
+    async def fake_mcp_config_loaded(username: str):
         mcp_seen.append(username)
-        return SimpleNamespace(server_configs=[{"id": "search"}], tools={"search_query": object()})
+        return SimpleNamespace(server_configs=[{"id": "search"}], tools={})
 
     monkeypatch.setattr(core_init, "get_user_context_for", fake_user_context)
     monkeypatch.setattr(core_init, "get_skills_loader_for_user", fake_skills_loader)
-    monkeypatch.setattr(core_init, "ensure_user_mcp_bootstrapped", fake_mcp_bootstrap)
+    monkeypatch.setattr(core_init, "ensure_user_mcp_config_loaded", fake_mcp_config_loaded)
 
     await core_init.ensure_mcp_and_skills_initialized()
     await core_init.ensure_mcp_and_skills_initialized()
 
     assert skills_seen == [
         ("alice", str(root / "alice" / "skills")),
-        ("bob", str(root / "bob" / "skills")),
     ]
-    assert mcp_seen == ["alice", "bob"]
+    assert mcp_seen == ["alice", "carol"]
 
 
 async def test_startup_init_handles_empty_user_root(monkeypatch, tmp_path):

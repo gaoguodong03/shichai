@@ -69,7 +69,7 @@ DHA/
 
 | 文件 | 职责 |
 |------|------|
-| `init.py` | **应用级初始化**：`ensure_mcp_and_skills_initialized()`，启动时扫描已存在用户并加载各自 MCP + Skills；后续会话与群聊共用该用户运行时。 |
+| `init.py` | **应用级初始化**：`ensure_mcp_and_skills_initialized()`，启动时只预热已有 Skill 或 MCP 配置的用户；MCP 只读配置，不在启动期主动连接工具。 |
 | `user_context.py` | 当前用户上下文（依赖注入）。 |
 | `security.py` | 安全与认证依赖。 |
 | `users_store.py` | 用户存储。 |

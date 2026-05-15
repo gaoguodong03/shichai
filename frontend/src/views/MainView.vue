@@ -856,7 +856,7 @@
             :skill-id="selectedId"
             @updated="
               (newId?: string) => {
-                fetchSkills()
+                fetchSkills({ silent: true })
                 if (newId) selectedId = newId
               }
             "
@@ -872,7 +872,7 @@
           <MCPAddView @created="onMCPCreated" />
         </template>
         <template v-else-if="resourceSubModule === 'mcp' && selectedId">
-          <MCPDetailView :server-id="selectedId" @updated="fetchMCP" @deleted="selectedId = null; fetchMCP()" />
+          <MCPDetailView :server-id="selectedId" @updated="fetchMCP({ silent: true })" @deleted="selectedId = null; fetchMCP()" />
         </template>
         <template v-else-if="resourceSubModule === 'mcp'">
           <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
@@ -2590,8 +2590,9 @@ async function commitDhaImport() {
   }
 }
 
-async function fetchSkills() {
-  skillsLoading.value = true
+async function fetchSkills(options: { silent?: boolean } = {}) {
+  const showLoading = !options.silent && skills.value.length === 0
+  if (showLoading) skillsLoading.value = true
   try {
     const r = await fetch('/api/settings/skills')
     const j = await r.json()
@@ -2611,7 +2612,7 @@ async function fetchSkills() {
       }
     }
   } finally {
-    skillsLoading.value = false
+    if (showLoading) skillsLoading.value = false
   }
 }
 
@@ -2764,8 +2765,9 @@ async function deleteDhaInstance(dhaId: string) {
   }
 }
 
-async function fetchMCP() {
-  mcpLoading.value = true
+async function fetchMCP(options: { silent?: boolean } = {}) {
+  const showLoading = !options.silent && mcpServers.value.length === 0
+  if (showLoading) mcpLoading.value = true
   try {
     const r = await fetch('/api/settings/mcp')
     const j = await r.json()
@@ -2784,7 +2786,7 @@ async function fetchMCP() {
       }
     }
   } finally {
-    mcpLoading.value = false
+    if (showLoading) mcpLoading.value = false
   }
 }
 

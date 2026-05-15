@@ -395,6 +395,15 @@ const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: 
 })
 const partMarkdownPreviewMode = ref(true)
 
+function hasLoadedSkillContent() {
+  return Boolean(
+    skillContent.value.raw ||
+      skillContent.value.name ||
+      skillContent.value.description ||
+      skillContent.value.body
+  )
+}
+
 const addableMcpServers = computed(() => {
   const chosen = new Set(form.value.allowed_tools.mcp)
   return mcpServers.value.filter((s) => s.enabled !== false && !chosen.has(s.id))
@@ -758,34 +767,38 @@ async function shareSkill() {
   }
 }
 
-async function load() {
+async function load(options: { silent?: boolean } = {}) {
   if (!props.skillId) return
-  loading.value = true
+  const showPageLoading = !options.silent && (!skill.value || (skill.value.id !== props.skillId && !saving.value))
+  if (showPageLoading) loading.value = true
   try {
     await Promise.all([loadMcpServers(), loadSandboxRequirements()])
     const r = await fetch('/api/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
       const s = j.data.skills.find((x: { id: string }) => x.id === props.skillId) || null
-      skill.value = s
+      if (s || !options.silent) skill.value = s
       if (s) {
-        form.value = {
-          name: s.name,
-          description: s.description ?? '',
-          body: '',
-          allowed_tools: { mcp: [...(s.allowed_tools?.mcp ?? [])], python: s.allowed_tools?.python ?? '' },
+        if (!options.silent && !hasLoadedSkillContent()) {
+          form.value = {
+            name: s.name,
+            description: s.description ?? '',
+            body: '',
+            allowed_tools: { mcp: [...(s.allowed_tools?.mcp ?? [])], python: s.allowed_tools?.python ?? '' },
+          }
         }
-        await loadContent()
+        await loadContent({ silent: options.silent })
       }
     }
   } finally {
-    loading.value = false
+    if (showPageLoading) loading.value = false
   }
 }
 
-async function loadContent() {
+async function loadContent(options: { silent?: boolean } = {}) {
   if (!props.skillId) return
-  contentLoading.value = true
+  const showContentLoading = !options.silent && !hasLoadedSkillContent()
+  if (showContentLoading) contentLoading.value = true
   try {
     const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/content`)
     const j = await r.json()
@@ -804,7 +817,7 @@ async function loadContent() {
       editMode.value = false
     }
   } finally {
-    contentLoading.value = false
+    if (showContentLoading) contentLoading.value = false
   }
 }
 
@@ -875,9 +888,28 @@ async function save() {
         j.data && typeof j.data === 'object' && typeof (j.data as { id?: string }).id === 'string'
           ? (j.data as { id: string }).id
           : undefined
+      const optimisticAllowedTools = {
+        mcp: [...(form.value.allowed_tools.mcp ?? [])],
+        python: form.value.allowed_tools.python ?? '',
+      }
+      skillContent.value = {
+        raw: '',
+        name: form.value.name.trim(),
+        description: form.value.description?.trim() ?? '',
+        body: form.value.body ?? '',
+        allowed_tools: optimisticAllowedTools,
+      }
+      resetFormFromLoadedContent()
+      skill.value = {
+        ...(skill.value || { id: props.skillId, name: '' }),
+        id: newId || props.skillId,
+        name: skillContent.value.name,
+        description: skillContent.value.description,
+        allowed_tools: optimisticAllowedTools,
+      }
       emit('updated', newId)
       await nextTick()
-      await load()
+      await load({ silent: true })
     } else {
       alert(j.detail || '保存失败')
     }
