@@ -20,7 +20,7 @@
 | FastAPI 后端 import 的包 | `backend/requirements.txt` | 主应用启动和测试需要 |
 | 前端构建依赖 | `frontend/package.json` + `frontend/package-lock.json` | 只影响 Vue 构建 |
 | 所有 Skill 都常用的系统命令 | `docker/skill-sandbox/Dockerfile` | 进入标准沙箱镜像，减少首次执行安装成本 |
-| 只有网页自动化 Skill 需要的浏览器能力 | `docker/skill-sandbox/Dockerfile.playwright` | 避免普通沙箱过大 |
+| 只有网页自动化 Skill 需要的浏览器/爬虫能力 | `docker/skill-sandbox/Dockerfile.playwright` + `docker/skill-sandbox/requirements.playwright.txt` | 避免普通沙箱过大 |
 | 单个用户或导入 Skill 的 Python 包 | 用户 `config/sandbox/requirements.txt` | 用户隔离，导入 Skill 时自动 merge 并预热 |
 | OpenSandbox 控制面版本 | `docker-compose.1panel.yml` 的 OpenSandbox 镜像 tag | 需要与 upstream API/execd 匹配 |
 
@@ -60,6 +60,7 @@
 - 确认用户沙箱设置选择 `playwright`。
 - 确认 `SANDBOX_PLAYWRIGHT_IMAGE` 指向 Playwright 镜像。
 - 确认 `PLAYWRIGHT_BROWSERS_PATH` 与镜像内浏览器安装路径一致。
+- 对浏览器/爬虫公共 Python 栈，优先更新并重发 `crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.15-playwright`，不要放进 `26.05.12.1-standard`。
 
 ### 4. OpenSandbox 连接失败
 

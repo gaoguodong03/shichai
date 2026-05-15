@@ -12,7 +12,7 @@ SANDBOX_VARIANT_PLAYWRIGHT = "playwright"
 SANDBOX_VARIANTS = {SANDBOX_VARIANT_STANDARD, SANDBOX_VARIANT_PLAYWRIGHT}
 
 DEFAULT_STANDARD_IMAGE = "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard"
-DEFAULT_PLAYWRIGHT_IMAGE = "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-playwright"
+DEFAULT_PLAYWRIGHT_IMAGE = "crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.15-playwright"
 
 
 def default_standard_image() -> str:

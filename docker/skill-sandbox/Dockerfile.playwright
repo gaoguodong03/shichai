@@ -54,29 +54,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
-# Frequently used Python libraries for file, data, web, image and document-processing skills.
+COPY docker/skill-sandbox/requirements.playwright.txt /tmp/requirements-playwright.txt
+
+# Frequently used Python libraries plus the browser/crawler stack for Playwright sandboxes.
 RUN python3 -m pip install --upgrade pip setuptools wheel \
     && python3 -m pip install \
     aiosqlite \
     beautifulsoup4 \
     httpx \
-    lxml \
     markdown \
     matplotlib \
     numpy \
     openpyxl \
     pandas \
     pillow \
-    patchright \
-    playwright \
-    pydantic \
     pymupdf \
     python-docx \
     python-pptx \
     pyyaml \
     requests \
     rich \
-    tqdm
+    tqdm \
+    && python3 -m pip install -r /tmp/requirements-playwright.txt
 
 # Browser tooling and Chromium runtime. install-deps is intentionally only in this large image.
 # Python playwright already provides /usr/local/bin/playwright; do not install npm playwright globally.
