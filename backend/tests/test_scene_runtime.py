@@ -8,7 +8,7 @@ from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 def test_pick_scene_host_skill_prefers_specialized_host_skill():
     assert pick_scene_host_skill_id(["group-host", "group-host-webnovel"]) == "group-host-webnovel"
     assert pick_scene_host_skill_id(["group-host"]) == "group-host"
-    assert pick_scene_host_skill_id([]) == "group-host"
+    assert pick_scene_host_skill_id([]) == ""
 
 
 def test_scene_runtime_resolves_virtual_host_and_hides_recruitment_list():
@@ -52,3 +52,21 @@ def test_scene_runtime_keeps_recruitment_list_for_empty_room():
     assert runtime.orchestration_profile == ORCHESTRATION_RECRUITMENT
     assert runtime.available_to_add_for_scheduler == available
 
+
+def test_scene_runtime_preserves_empty_host_skill_ids():
+    runtime = SceneRuntime.from_group_session(
+        session_id="g1",
+        meta_item={
+            "leader_agent_id": VIRTUAL_SCENE_HOST_ID,
+            "agent_ids": ["agent-a"],
+            "host_config": {"skill_ids": []},
+            "orchestration_profile": "scene",
+        },
+        agent_ids=["agent-a"],
+        dha_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
+        app_host_profile={"display_name": "四九", "skill_ids": []},
+        available_to_add=[],
+    )
+
+    assert runtime.host_profile["skill_ids"] == []
+    assert runtime.host_bubble_skill_id() == ""

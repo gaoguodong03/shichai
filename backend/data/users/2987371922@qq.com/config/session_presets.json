@@ -15,9 +15,22 @@
     "leader_agent_id": "agent-scene-host",
     "description": "围绕 GitHub 开源周榜（OpenGithubs/github-weekly-rank）收集当周榜单，再分析主题与一周趋势，并可按需补充「今日技术圈大事」摘要，最终合成一篇可读简报。",
     "discussion_goal_example": "请先拉取本周周榜 README，整理 Top 项目要点；再解读本周开源热点相对近期的变化；最后输出一篇合并「周榜 + 趋势（+ 可选今日大事）」的简报。",
+    "agent_refs": [
+      {
+        "id": "agent-8f3a2c1d",
+        "name": "周榜情报专家"
+      },
+      {
+        "id": "agent-6e4b9a2f",
+        "name": "开源趋势分析专家"
+      },
+      {
+        "id": "agent-7c1d5e8b",
+        "name": "技术简报专家"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "group-host-github-weekly"
       ],
       "system_prompt": null,
@@ -31,7 +44,12 @@
         "mkdir": true,
         "list_dir": true
       },
-      "url_capability": true
+      "url_capability": true,
+      "skill_refs": [
+        {
+          "id": "group-host-github-weekly"
+        }
+      ]
     }
   },
   {
@@ -48,9 +66,18 @@
     "leader_agent_id": "agent-scene-host",
     "description": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
     "discussion_goal_example": "",
+    "agent_refs": [
+      {
+        "id": "agent-e2a1b3c4",
+        "name": "测试专家甲"
+      },
+      {
+        "id": "agent-e2d5e6f7",
+        "name": "测试专家乙"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "group-host-test-seq-ab"
       ],
       "system_prompt": "无外链。主持人按固定顺序：专家甲 → 专家乙 → 结束。两位专家各带「两次问候」与「固定 hello」两个测试技能。",
@@ -64,7 +91,12 @@
         "mkdir": true,
         "list_dir": true
       },
-      "url_capability": false
+      "url_capability": false,
+      "skill_refs": [
+        {
+          "id": "group-host-test-seq-ab"
+        }
+      ]
     }
   },
   {
@@ -83,9 +115,22 @@
     "leader_agent_id": "agent-scene-host",
     "description": "",
     "discussion_goal_example": "",
+    "agent_refs": [
+      {
+        "id": "agent-web-fetch",
+        "name": "网页爬取专家"
+      },
+      {
+        "id": "agent-440b26f8",
+        "name": "图片生成专家"
+      },
+      {
+        "id": "agent-195b8c3a",
+        "name": "文字创作专家"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "group-host-webnovel"
       ],
       "system_prompt": null,
@@ -99,7 +144,12 @@
         "mkdir": true,
         "list_dir": true
       },
-      "url_capability": true
+      "url_capability": true,
+      "skill_refs": [
+        {
+          "id": "group-host-webnovel"
+        }
+      ]
     }
   },
   {
@@ -113,7 +163,13 @@
     ],
     "leader_agent_id": "agent-d92e733e",
     "description": "工作流程：\n背景收集：了解报告的目标、受众以及内容范围。\n精炼与结构：头脑风暴报告的内容，逐步起草各部分并进行优化。\n读者测试：测试报告是否对目标读者有效，确保内容清晰、易于理解。",
-    "discussion_goal_example": ""
+    "discussion_goal_example": "",
+    "agent_refs": [
+      {
+        "id": "agent-d92e733e",
+        "name": "文书专员"
+      }
+    ]
   },
   {
     "id": "scenario-c0e66f5803",
@@ -131,9 +187,22 @@
     "leader_agent_id": "agent-scene-host",
     "description": "",
     "discussion_goal_example": "",
+    "agent_refs": [
+      {
+        "id": "agent-web-fetch",
+        "name": "网页爬取专家"
+      },
+      {
+        "id": "agent-440b26f8",
+        "name": "图片生成专家"
+      },
+      {
+        "id": "agent-195b8c3a",
+        "name": "文字创作专家"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "group-host-webnovel"
       ],
       "system_prompt": null,
@@ -147,7 +216,12 @@
         "mkdir": true,
         "list_dir": true
       },
-      "url_capability": true
+      "url_capability": true,
+      "skill_refs": [
+        {
+          "id": "group-host-webnovel"
+        }
+      ]
     }
   },
   {
@@ -164,9 +238,18 @@
     "leader_agent_id": "agent-scene-host",
     "description": "把用户零散想法转成PPT大纲与逐页文稿，再逐页生成统一风格配图，并组装为可编辑PPTX。",
     "discussion_goal_example": "我有一些关于AI客服降本增效的想法，请你们先帮我梳理目标受众和结构，产出10页左右的大纲与逐页讲稿，再按统一风格生成每页配图，最后给我一个可编辑的final.pptx。",
+    "agent_refs": [
+      {
+        "id": "agent-ppt-guide-3f7c1a2b",
+        "name": "PPT引导专家"
+      },
+      {
+        "id": "agent-440b26f8",
+        "name": "图片生成专家"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "group-host-ppt-writing"
       ],
       "system_prompt": null,
@@ -180,7 +263,12 @@
         "mkdir": true,
         "list_dir": true
       },
-      "url_capability": false
+      "url_capability": false,
+      "skill_refs": [
+        {
+          "id": "group-host-ppt-writing"
+        }
+      ]
     }
   },
   {
@@ -197,9 +285,18 @@
     "leader_agent_id": "agent-scene-host",
     "description": "爬取实习僧网页岗位信息",
     "discussion_goal_example": "",
+    "agent_refs": [
+      {
+        "id": "agent-sandbox-dep-check",
+        "name": "沙箱依赖验证专家"
+      },
+      {
+        "id": "agent-eee20032",
+        "name": "实习网页爬取专家"
+      }
+    ],
     "host_config": {
       "skill_ids": [
-        "group-host",
         "shixiseng_dedicated_crawler",
         "skill-fcb54da34be9",
         "sandbox-dep-check"
@@ -216,7 +313,18 @@
         "list_dir": true
       },
       "url_capability": true,
-      "display_name": "四九"
+      "display_name": "四九",
+      "skill_refs": [
+        {
+          "id": "shixiseng_dedicated_crawler"
+        },
+        {
+          "id": "skill-fcb54da34be9"
+        },
+        {
+          "id": "sandbox-dep-check"
+        }
+      ]
     }
   }
 ]

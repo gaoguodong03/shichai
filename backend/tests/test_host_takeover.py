@@ -1,5 +1,6 @@
 """Host-on-demand routing tests."""
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
@@ -129,7 +130,75 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
     assert pick(["group-host", "group-host-webnovel"]) == "group-host-webnovel"
     assert pick(["group-host-webnovel", "group-host"]) == "group-host-webnovel"
     assert pick(["group-host"]) == "group-host"
-    assert pick([]) == "group-host"
+    assert pick([]) == ""
+
+
+async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch):
+    gc = _get_group_chat_module()
+    calls = {}
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, skill_id):
+            return {
+                "group-host": "通用主持 Skill 正文",
+                "group-host-webnovel": "网文专用主持 Skill 正文",
+            }.get(skill_id)
+
+    async def fake_tool_builder(dha, workspace_id, resolved_skill_id):
+        calls["tool_builder"] = {
+            "dha": dha,
+            "workspace_id": workspace_id,
+            "resolved_skill_id": resolved_skill_id,
+        }
+        return [SimpleNamespace(name="read_file", description="读文件")]
+
+    class FakeAgent:
+        async def ainvoke(self, *_args, **_kwargs):
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content='```json\n{"task_done": false, "next_speaker": "agent-a", "next_prompt": "请写大纲", "reason": "按场景专用主持流程"}\n```'
+                    )
+                ]
+            }
+
+    def fake_agent_factory(llm, tools, skill_content, extra_system_prompt=""):
+        calls["agent_factory"] = {
+            "llm": llm,
+            "tools": tools,
+            "skill_content": skill_content,
+            "extra_system_prompt": extra_system_prompt,
+        }
+        return FakeAgent()
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "build_tools_for_group_chat", fake_tool_builder)
+    monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+
+    out = await gc._host_decide_by_dha(
+        llm=object(),
+        host_dha={
+            "agent_id": "agent-scene-host",
+            "name": "四九场景主持",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host", "group-host-webnovel"],
+        },
+        dha_list=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
+        discussion_goal="写网文",
+        recent_messages="",
+        last_speaker_agent_id=None,
+        extra_system_prompt="",
+        group_session_id="group-1",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+    )
+
+    assert out is not None
+    assert out["next_speaker"] == "agent-a"
+    assert calls["tool_builder"]["resolved_skill_id"] == "group-host-webnovel"
+    assert "网文专用主持 Skill 正文" in calls["agent_factory"]["skill_content"]
+    assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
+    assert calls["agent_factory"]["tools"] == [SimpleNamespace(name="read_file", description="读文件")]
 
 
 def test_leader_prompt_hides_skill_details_from_host():

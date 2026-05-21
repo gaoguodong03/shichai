@@ -746,6 +746,19 @@
                     </div>
                     <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
                     <p v-else-if="!skills.length" class="text-xs text-muted">当前技能库为空，请先到左侧“技能”中新建或导入 Skill。</p>
+                    <div v-if="missingScenarioLeaderSkillRefs.length" class="mt-3">
+                      <div class="text-xs font-medium text-red-600 mb-1.5">缺失技能</div>
+                      <div class="flex flex-wrap gap-2">
+                        <span
+                          v-for="item in missingScenarioLeaderSkillRefs"
+                          :key="item.id"
+                          class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
+                          :title="`缺失技能 ID：${item.id}`"
+                        >
+                          {{ item.name }}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -754,12 +767,17 @@
                     <span
                       v-for="id in scenarioDraft.agent_ids || []"
                       :key="id"
-                      class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-accent-subtle text-accent-subtle-text"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border"
+                      :class="scenarioExpertMissing(id)
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-accent/40 bg-accent-subtle text-accent-subtle-text'"
+                      :title="scenarioExpertMissing(id) ? `缺失专家 ID：${id}` : '已选择专家'"
                     >
-                      {{ dhaDisplayName(id) }}
+                      {{ dhaDisplayName(id, scenarioDraft.agent_refs) }}
                       <button
                         type="button"
-                        class="ml-1 text-accent-subtle-text/80 hover:text-danger"
+                        class="ml-0.5 hover:text-danger"
+                        :class="scenarioExpertMissing(id) ? 'text-red-700/80' : 'text-accent-subtle-text/80'"
                         @click="removeScenarioExpert(id)"
                       >×</button>
                     </span>
@@ -777,13 +795,26 @@
                         v-for="d in filteredScenarioAddableExperts"
                         :key="d.agent_id"
                         type="button"
-                        class="px-2 py-1 rounded-md text-xs border border-input-border bg-card text-primary hover:bg-list-hover"
+                        class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
                         @click="addScenarioExpert(d.agent_id)"
                       >
                         + {{ d.name || d.agent_id }}
                       </button>
                       <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
                       <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
+                    </div>
+                    <div v-if="missingScenarioExpertRefs.length" class="mt-3">
+                      <div class="text-xs font-medium text-red-600 mb-1.5">缺失专家</div>
+                      <div class="flex flex-wrap gap-2">
+                        <span
+                          v-for="item in missingScenarioExpertRefs"
+                          :key="item.id"
+                          class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
+                          :title="`缺失专家 ID：${item.id}`"
+                        >
+                          {{ item.name }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1362,6 +1393,7 @@ function logout() {
 type ModuleId = 'workspace' | 'resource' | 'settings'
 type ResourceSubModule = 'scenario' | 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
 type MissingReferenceSource = 'scene' | 'expert' | 'skill' | 'tool'
+type ReferenceSnapshot = { id: string; name?: string }
 
 interface MissingReference {
   id: string
@@ -1400,6 +1432,7 @@ const resourceMenuExpanded = ref(false)
 
 interface ScenarioHostConfig {
   skill_ids: string[]
+  skill_refs?: ReferenceSnapshot[]
   display_name?: string
   system_prompt?: string
   llm_provider_id?: string
@@ -1417,6 +1450,7 @@ interface ScenarioPreset {
   id: string
   name: string
   agent_ids: string[]
+  agent_refs?: ReferenceSnapshot[]
   leader_agent_id?: string
   host_config?: ScenarioHostConfig
   description?: string
@@ -1426,12 +1460,14 @@ type ScenarioDraft = {
   id: string
   name: string
   agent_ids: string[]
+  agent_refs: ReferenceSnapshot[]
   description: string
 }
 const scenarioPresets = ref<ScenarioPreset[]>([])
 const scenarioLoading = ref(false)
 const scenarioSaving = ref(false)
 const creatingScenarioId = ref<string | null>(null)
+const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
 const scenarioLeaderSkillSearch = ref('')
@@ -1452,6 +1488,7 @@ const scenarioDraft = ref<ScenarioDraft>({
   id: '',
   name: '',
   agent_ids: [],
+  agent_refs: [],
   description: '',
 })
 
@@ -1640,6 +1677,22 @@ const filteredScenarioLeaderSkills = computed(() => {
     return hay.includes(q)
   })
 })
+const missingScenarioExpertRefs = computed(() =>
+  (scenarioDraft.value.agent_ids || [])
+    .filter((id) => scenarioExpertMissing(id))
+    .map((id) => ({
+      id,
+      name: referenceNameForId(id, scenarioDraft.value.agent_refs, dhaNameLookup()) || id,
+    })),
+)
+const missingScenarioLeaderSkillRefs = computed(() =>
+  (scenarioLeaderSkillIds.value || [])
+    .filter((id) => scenarioLeaderSkillMissing(id))
+    .map((id) => ({
+      id,
+      name: scenarioLeaderSkillLabel(id),
+    })),
+)
 
 const skills = ref<{ id: string; name: string; description?: string }[]>([])
 const skillsLoading = ref(false)
@@ -1758,6 +1811,7 @@ const dhaInstances = ref<
     role?: string
     system_prompt?: string
     skill_ids?: string[]
+    skill_refs?: ReferenceSnapshot[]
     mcp_server_ids?: string[]
     is_leader?: boolean
     llm_provider_id?: string
@@ -1921,9 +1975,85 @@ function onResourceChildClick(id: ResourceSubModule) {
   resourceSubModule.value = id
 }
 
-function dhaDisplayName(dhaId: string): string {
+function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReferenceSnapshot[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : null
+    const id = String(row?.id || row?.agent_id || row?.skill_id || '').trim()
+    const name = String(row?.name || row?.display_name || row?.label || '').trim()
+    if (!id || seen.has(id)) continue
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
+function mergeReferenceRowsForIds(ids: string[], refs?: ReferenceSnapshot[], lookup?: Record<string, string>): ReferenceSnapshot[] {
+  const old = new Map(normalizeReferenceRows(refs || []).map((row) => [row.id, row.name || '']))
+  const seen = new Set<string>()
+  const out: ReferenceSnapshot[] = []
+  for (const raw of ids || []) {
+    const id = String(raw || '').trim()
+    if (!id || seen.has(id)) continue
+    const name = String((lookup || {})[id] || old.get(id) || '').trim()
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
+function skillNameLookup(): Record<string, string> {
+  return Object.fromEntries((skills.value || []).map((s) => [s.id, s.name || s.id]))
+}
+
+function dhaNameLookup(): Record<string, string> {
+  return Object.fromEntries((dhaInstances.value || []).map((d) => [d.agent_id, d.name || d.agent_id]))
+}
+
+function referenceNameForId(id: string, refs?: ReferenceSnapshot[], lookup?: Record<string, string>): string {
+  const key = String(id || '').trim()
+  if (!key) return ''
+  const current = String((lookup || {})[key] || '').trim()
+  if (current) return current
+  const hit = normalizeReferenceRows(refs || []).find((row) => row.id === key)
+  return hit?.name || ''
+}
+
+function dhaDisplayName(dhaId: string, refs?: ReferenceSnapshot[]): string {
   const hit = (dhaInstances.value || []).find((d) => d.agent_id === dhaId)
-  return hit?.name || dhaId
+  return hit?.name || referenceNameForId(dhaId, refs) || dhaId
+}
+
+function scenarioExpertMissing(dhaId: string): boolean {
+  return Boolean(dhaId && !(dhaInstances.value || []).some((d) => d.agent_id === dhaId))
+}
+
+function scenarioLeaderSkillLabel(skillId: string): string {
+  return referenceNameForId(skillId, selectedScenarioPreset.value?.host_config?.skill_refs, skillNameLookup()) || skillId
+}
+
+function scenarioLeaderSkillMissing(skillId: string): boolean {
+  return Boolean(skillId && !(skills.value || []).some((s) => s.id === skillId))
+}
+
+function normalizeScenarioLeaderSkillIds(raw: unknown, refs?: ReferenceSnapshot[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const skillLookup = skillNameLookup()
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const id = String(item || '').trim()
+    if (!id || seen.has(id)) continue
+    const exists = Boolean(skillLookup[id])
+    const refName = referenceNameForId(id, refs, exists ? skillLookup : undefined)
+    if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists && (!refName || refName === id)) {
+      continue
+    }
+    out.push(id)
+    seen.add(id)
+  }
+  return out
 }
 
 function scenarioLlmOptionLabel(pid: string) {
@@ -1936,9 +2066,9 @@ function syncScenarioDraftFromSelected() {
   scenarioLeaderSkillSearch.value = ''
   const s = selectedScenarioPreset.value
   if (!s) {
-    scenarioDraft.value = { id: '', name: '', agent_ids: [], description: '' }
+    scenarioDraft.value = { id: '', name: '', agent_ids: [], agent_refs: [], description: '' }
     scenarioLeaderDisplayName.value = ''
-    scenarioLeaderSkillIds.value = ['group-host']
+    scenarioLeaderSkillIds.value = []
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
     scenarioLeaderFileCaps.value = { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true }
@@ -1950,12 +2080,13 @@ function syncScenarioDraftFromSelected() {
     id: s.id,
     name: s.name || '',
     agent_ids: ids,
+    agent_refs: mergeReferenceRowsForIds(ids, s.agent_refs || []),
     description: s.description || '',
   }
   const hc = s.host_config
-  if (hc && Array.isArray(hc.skill_ids) && hc.skill_ids.length) {
+  if (hc && typeof hc === 'object') {
     scenarioLeaderDisplayName.value = (hc.display_name as string) || ''
-    scenarioLeaderSkillIds.value = [...hc.skill_ids]
+    scenarioLeaderSkillIds.value = normalizeScenarioLeaderSkillIds(hc.skill_ids, hc.skill_refs)
     scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
     scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
     const fc = (hc.file_capabilities || {}) as Record<string, boolean>
@@ -1970,7 +2101,7 @@ function syncScenarioDraftFromSelected() {
     scenarioLeaderUrlCapability.value = hc.url_capability !== false
   } else {
     scenarioLeaderDisplayName.value = ''
-    scenarioLeaderSkillIds.value = ['group-host']
+    scenarioLeaderSkillIds.value = []
     scenarioLeaderSystemPrompt.value = ''
     scenarioLeaderLlmId.value = ''
     scenarioLeaderFileCaps.value = { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true }
@@ -1991,9 +2122,10 @@ function createScenarioPreset() {
     id,
     name: '',
     agent_ids: [],
+    agent_refs: [],
     description: '',
     leader_agent_id: VIRTUAL_SCENE_HOST_ID,
-    host_config: { skill_ids: ['group-host'] },
+    host_config: { skill_ids: [] },
   }
   scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
   selectedId.value = id
@@ -2003,12 +2135,22 @@ function createScenarioPreset() {
 
 function removeScenarioExpert(dhaId: string) {
   scenarioDraft.value.agent_ids = (scenarioDraft.value.agent_ids || []).filter((x) => x !== dhaId)
+  scenarioDraft.value.agent_refs = mergeReferenceRowsForIds(
+    scenarioDraft.value.agent_ids || [],
+    scenarioDraft.value.agent_refs,
+    dhaNameLookup(),
+  )
 }
 
 function addScenarioExpert(dhaId: string) {
   if (!dhaId) return
   if ((scenarioDraft.value.agent_ids || []).includes(dhaId)) return
   scenarioDraft.value.agent_ids = [...(scenarioDraft.value.agent_ids || []), dhaId]
+  scenarioDraft.value.agent_refs = mergeReferenceRowsForIds(
+    scenarioDraft.value.agent_ids || [],
+    scenarioDraft.value.agent_refs,
+    dhaNameLookup(),
+  )
 }
 
 async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
@@ -2018,6 +2160,7 @@ async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
         id: p.id,
         name: (p.name || '').trim(),
         agent_ids: [...(p.agent_ids || [])],
+        agent_refs: mergeReferenceRowsForIds(p.agent_ids || [], p.agent_refs || [], dhaNameLookup()),
         description: p.description || '',
         discussion_goal_example: (p as { discussion_goal_example?: string }).discussion_goal_example || '',
       }
@@ -2056,10 +2199,13 @@ async function saveScenarioPreset() {
     window.alert('请至少选择 1 位协作专家')
     return
   }
-  const skillIds =
-    scenarioLeaderSkillIds.value.length > 0 ? [...scenarioLeaderSkillIds.value] : ['group-host']
+  const skillIds = normalizeScenarioLeaderSkillIds(
+    scenarioLeaderSkillIds.value,
+    selectedScenarioPreset.value?.host_config?.skill_refs || [],
+  )
   const host_config: ScenarioHostConfig = {
     skill_ids: skillIds,
+    skill_refs: mergeReferenceRowsForIds(skillIds, selectedScenarioPreset.value?.host_config?.skill_refs || [], skillNameLookup()),
     system_prompt: scenarioLeaderSystemPrompt.value || undefined,
     llm_provider_id: scenarioLeaderLlmId.value || undefined,
     file_capabilities: { ...scenarioLeaderFileCaps.value },
@@ -2079,6 +2225,7 @@ async function saveScenarioPreset() {
             name,
             description: scenarioDraft.value.description || '',
             agent_ids: dhaIds,
+            agent_refs: mergeReferenceRowsForIds(dhaIds, scenarioDraft.value.agent_refs, dhaNameLookup()),
             leader_agent_id: VIRTUAL_SCENE_HOST_ID,
             host_config,
           }

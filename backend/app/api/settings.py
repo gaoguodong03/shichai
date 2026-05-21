@@ -29,6 +29,8 @@ from app.core.session_preset_validate import (
     validation_to_api_dict,
 )
 from app.core.settings_references import (
+    merge_reference_rows_for_ids as _merge_reference_rows_for_ids,
+    normalize_reference_rows as _normalize_reference_rows,
     remap_bundle_references as _remap_bundle_references,
     remove_skill_id_from_user_configs as _remove_skill_id_from_user_configs,
     replace_mcp_server_id_in_user_configs as _replace_mcp_server_id_in_user_configs,
@@ -124,7 +126,7 @@ def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
                     continue
                 hc_raw = item.get("host_config")
                 lid = str(item.get("leader_agent_id") or "").strip()
-                if isinstance(hc_raw, dict) and hc_raw:
+                if isinstance(hc_raw, dict):
                     lid = VIRTUAL_SCENE_HOST_ID
                 elif not lid:
                     lid = normalized_ids[0]
@@ -136,8 +138,11 @@ def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
                     "description": str(item.get("description") or ""),
                     "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
                 }
+                agent_refs = _normalize_reference_rows(item.get("agent_refs"))
+                if agent_refs:
+                    row_out["agent_refs"] = _merge_reference_rows_for_ids(normalized_ids, agent_refs)
                 if isinstance(hc_raw, dict):
-                    row_out["host_config"] = hc_raw
+                    row_out["host_config"] = normalize_host_config_dict(hc_raw)
                 presets.append(row_out)
     except Exception:
         return []
@@ -155,6 +160,7 @@ class SessionPresetItem(BaseModel):
     id: str
     name: str
     agent_ids: List[str]
+    agent_refs: Optional[List[Dict[str, Any]]] = None
     description: Optional[str] = ""
     discussion_goal_example: Optional[str] = ""
     leader_agent_id: Optional[str] = ""
@@ -176,8 +182,14 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         return None
     hc_norm: Optional[Dict[str, Any]] = None
     try:
-        valid_dha_ids = {str(d.get("agent_id")).strip() for d in load_dha_instances() if d.get("agent_id")}
+        dha_name_by_id = {
+            str(d.get("agent_id")).strip(): str(d.get("name") or "").strip()
+            for d in load_dha_instances()
+            if d.get("agent_id")
+        }
+        valid_dha_ids = set(dha_name_by_id)
     except RuntimeError:
+        dha_name_by_id = {}
         valid_dha_ids = set()
     if item.host_config is not None:
         hc_norm = normalize_host_config_dict(item.host_config)
@@ -197,6 +209,7 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         "description": str(item.description or ""),
         "discussion_goal_example": str(item.discussion_goal_example or ""),
     }
+    row["agent_refs"] = _merge_reference_rows_for_ids(agent_ids, item.agent_refs, dha_name_by_id)
     if hc_norm is not None:
         row["host_config"] = hc_norm
     return row
@@ -231,6 +244,7 @@ def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetI
             id=str(row["id"]),
             name=str(row["name"]),
             agent_ids=list(row["agent_ids"]),
+            agent_refs=list(row.get("agent_refs") or []),
             description=str(row.get("description") or ""),
             discussion_goal_example=str(row.get("discussion_goal_example") or ""),
             leader_agent_id=str(row.get("leader_agent_id") or ""),
@@ -735,8 +749,9 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         for old_id in overwrite_skill_ids:
             old_dir = base / old_id
             if old_dir.is_dir():
+                old_name = _skill_display_name_from_dir(old_dir, old_id)
                 shutil.rmtree(old_dir, ignore_errors=True)
-                _remove_skill_id_from_user_configs(old_id)
+                _remove_skill_id_from_user_configs(old_id, old_name)
         target_id = _next_available_skill_id(base, _slugify(incoming_name))
         dest = base / target_id
         shutil.copytree(src, dest)
@@ -1070,6 +1085,7 @@ class SkillUpdate(BaseModel):
 # SKILL.md frontmatter 标准键：与 YAML 中 `allowed-tools` 一致
 ALLOWED_TOOLS_FM_KEY = "allowed-tools"
 AUTO_TOOLS_FM_KEY = "auto-tools"
+REFERENCE_LABELS_FM_KEY = "reference-labels"
 
 
 def _refresh_skills_loader():
@@ -1146,28 +1162,79 @@ def _python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
     return str(py)
 
 
+def _mcp_reference_rows_from_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, str]]:
+    labels = fm.get(REFERENCE_LABELS_FM_KEY)
+    if isinstance(labels, dict):
+        rows = _normalize_reference_rows(labels.get("mcp"))
+        if rows:
+            return rows
+    for source in (fm.get(AUTO_TOOLS_FM_KEY), fm.get(ALLOWED_TOOLS_FM_KEY)):
+        if isinstance(source, dict):
+            rows = _normalize_reference_rows(source.get("mcp_refs"))
+            if rows:
+                return rows
+    return []
+
+
+def _mcp_name_lookup() -> Dict[str, str]:
+    try:
+        return {
+            str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
+            for row in load_mcp_config()
+            if str(row.get("id") or "").strip()
+        }
+    except Exception:
+        return {}
+
+
+def _runtime_tools_only(normalized: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "mcp": list(normalized.get("mcp") or []),
+        "python": str(normalized.get("python") or ""),
+    }
+
+
 def _normalized_allowed_tools_dict(fm: Dict[str, Any]) -> Dict[str, Any]:
     """从当前 frontmatter 归一化 allowed-tools（合并旧 mcp_server_ids）。"""
+    mcp_ids = list(_mcp_ids_from_frontmatter(fm))
     return {
-        "mcp": list(_mcp_ids_from_frontmatter(fm)),
+        "mcp": mcp_ids,
         "python": _python_doc_from_allowed_tools(fm),
+        "mcp_refs": _merge_reference_rows_for_ids(
+            mcp_ids,
+            _mcp_reference_rows_from_frontmatter(fm),
+            _mcp_name_lookup(),
+        ),
     }
 
 
 def _normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     """校验并归一化 API 传入的 allowed_tools 体。"""
     mcp_raw = raw.get("mcp")
-    mcp_list = _validate_skill_mcp_server_ids(list(mcp_raw) if isinstance(mcp_raw, list) else [])
+    mcp_list = list(dict.fromkeys(str(x).strip() for x in (mcp_raw if isinstance(mcp_raw, list) else []) if str(x).strip()))
     py = raw.get("python", "")
     py_str = py if isinstance(py, str) else ("" if py is None else str(py))
-    return {"mcp": mcp_list, "python": py_str}
+    return {
+        "mcp": mcp_list,
+        "python": py_str,
+        "mcp_refs": _merge_reference_rows_for_ids(
+            mcp_list,
+            raw.get("mcp_refs"),
+            _mcp_name_lookup(),
+        ),
+    }
 
 
 def _sanitize_skill_frontmatter_for_write(fm: Dict[str, Any]) -> None:
     """写入前：保证 auto-tools/allowed-tools 存在并剥离已废弃键。"""
     normalized = _normalized_allowed_tools_dict(fm)
-    fm[AUTO_TOOLS_FM_KEY] = normalized
-    fm[ALLOWED_TOOLS_FM_KEY] = normalized
+    runtime_tools = _runtime_tools_only(normalized)
+    fm[AUTO_TOOLS_FM_KEY] = runtime_tools
+    fm[ALLOWED_TOOLS_FM_KEY] = runtime_tools
+    ref_labels = fm.get(REFERENCE_LABELS_FM_KEY) if isinstance(fm.get(REFERENCE_LABELS_FM_KEY), dict) else {}
+    ref_labels = dict(ref_labels)
+    ref_labels["mcp"] = normalized.get("mcp_refs") or []
+    fm[REFERENCE_LABELS_FM_KEY] = ref_labels
     for k in ("enabled", "write_mode", "mcp_server_ids", "source", "url"):
         fm.pop(k, None)
 
@@ -1454,8 +1521,9 @@ async def import_skill_zip(
             for sid in overwrite_skill_ids:
                 old_dir = base / sid
                 if old_dir.is_dir():
+                    old_name = _skill_display_name_from_dir(old_dir, sid)
                     shutil.rmtree(old_dir, ignore_errors=True)
-                    _remove_skill_id_from_user_configs(sid)
+                    _remove_skill_id_from_user_configs(sid, old_name)
 
             shutil.copytree(src_dir, skill_dir)
 
@@ -1634,6 +1702,14 @@ def _write_skill_file(skill_dir: Path, frontmatter: Dict, body: str):
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
 
 
+def _skill_display_name_from_dir(skill_dir: Path, fallback_id: str) -> str:
+    try:
+        fm, _body = _read_skill_file(skill_dir)
+        return str(fm.get("name") or fallback_id).strip() or fallback_id
+    except Exception:
+        return fallback_id
+
+
 @router.put("/settings/skills/{skill_id}")
 async def update_skill(skill_id: str, skill_update: SkillUpdate):
     """更新 Skill：修改 SKILL.md 的 frontmatter 与/或正文 body"""
@@ -1650,8 +1726,13 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
         if not isinstance(skill_update.allowed_tools, dict):
             raise HTTPException(status_code=400, detail="allowed_tools must be an object")
         normalized_tools = _normalize_allowed_tools_payload(skill_update.allowed_tools)
-        fm[AUTO_TOOLS_FM_KEY] = normalized_tools
-        fm[ALLOWED_TOOLS_FM_KEY] = normalized_tools
+        runtime_tools = _runtime_tools_only(normalized_tools)
+        fm[AUTO_TOOLS_FM_KEY] = runtime_tools
+        fm[ALLOWED_TOOLS_FM_KEY] = runtime_tools
+        ref_labels = fm.get(REFERENCE_LABELS_FM_KEY) if isinstance(fm.get(REFERENCE_LABELS_FM_KEY), dict) else {}
+        ref_labels = dict(ref_labels)
+        ref_labels["mcp"] = normalized_tools.get("mcp_refs") or []
+        fm[REFERENCE_LABELS_FM_KEY] = ref_labels
     if skill_update.body is not None:
         body = skill_update.body
     _sanitize_skill_frontmatter_for_write(fm)
@@ -1680,8 +1761,9 @@ async def delete_skill(skill_id: str):
     skill_dir = base / skill_id
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
+    skill_name = _skill_display_name_from_dir(skill_dir, skill_id)
     shutil.rmtree(skill_dir)
-    _remove_skill_id_from_user_configs(skill_id)
+    _remove_skill_id_from_user_configs(skill_id, skill_name)
     _refresh_skills_loader()
     return {"status": "ok", "data": {"id": skill_id, "deleted": True}}
 

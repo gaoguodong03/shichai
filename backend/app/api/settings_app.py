@@ -64,7 +64,7 @@ _DEFAULT_LLM_PROVIDERS = {
 _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
     "display_name": "四九",
     "system_prompt": "",
-    "skill_ids": ["group-host"],
+    "skill_ids": [],
     "llm_provider_id": "",
     "mcp_server_ids": [],
     "file_capabilities": normalize_host_config_dict({}).get("file_capabilities") or {},

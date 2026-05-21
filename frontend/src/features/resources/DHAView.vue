@@ -95,6 +95,19 @@
               <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
                 没有匹配的 Skill
               </p>
+              <div v-if="missingSkillBadges.length" class="mt-3">
+                <div class="text-xs font-medium text-red-600 mb-1.5">缺失技能</div>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    v-for="s in missingSkillBadges"
+                    :key="s.id"
+                    class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
+                    :title="`缺失技能 ID：${s.id}`"
+                  >
+                    {{ s.name }}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
@@ -205,7 +218,11 @@
                       <span
                         v-for="s in displaySkillBadges"
                         :key="s.id"
-                        class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-nav-selected-bg text-xs font-medium text-nav-selected-text"
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
+                        :class="s.missing
+                          ? 'border-red-300 bg-red-50 text-red-700'
+                          : 'border-accent/40 bg-nav-selected-bg text-nav-selected-text'"
+                        :title="s.missing ? `缺失技能 ID：${s.id}` : '已选择技能'"
                       >
                         {{ s.name }}
                       </span>
@@ -340,9 +357,11 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { EXPERT_PRESET_AVATAR_URLS, pickRandomExpertAvatar } from '@/constants/expertAvatars'
 
+type ReferenceSnapshot = { id: string; name?: string }
+
 const props = defineProps<{
   selectedDhaId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
+  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; skill_refs?: ReferenceSnapshot[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
 }>()
 
 const emit = defineEmits<{
@@ -379,6 +398,7 @@ const form = ref({
   role: '',
   system_prompt: '',
   skill_ids: [] as string[],
+  skill_refs: [] as ReferenceSnapshot[],
   is_leader: false,
   llm_provider_id: '',
   avatar_url: '',
@@ -396,6 +416,7 @@ watch(
         role: '',
         system_prompt: '',
         skill_ids: [],
+        skill_refs: [],
         is_leader: false,
         llm_provider_id: '',
         avatar_url: randomAv,
@@ -412,6 +433,7 @@ watch(
           role: d.role || '',
           system_prompt: d.system_prompt || '',
           skill_ids: d.skill_ids || [],
+          skill_refs: mergeReferenceRowsForIds(d.skill_ids || [], d.skill_refs || [], skillNameLookup()),
           is_leader: d.is_leader || false,
           llm_provider_id: d.llm_provider_id || '',
           avatar_url: (d as any).avatar_url || '',
@@ -505,21 +527,67 @@ function toggleSkill(id: string) {
   } else {
     form.value.skill_ids = [...current, id]
   }
+  form.value.skill_refs = mergeReferenceRowsForIds(form.value.skill_ids, form.value.skill_refs, skillNameLookup())
+}
+
+function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReferenceSnapshot[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : null
+    const id = String(row?.id || row?.skill_id || '').trim()
+    const name = String(row?.name || row?.display_name || row?.label || '').trim()
+    if (!id || seen.has(id)) continue
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
+function skillNameLookup(): Record<string, string> {
+  return Object.fromEntries((skills.value || []).map((s) => [s.id, s.name || s.id]))
+}
+
+function mergeReferenceRowsForIds(ids: string[], refs?: ReferenceSnapshot[], lookup?: Record<string, string>): ReferenceSnapshot[] {
+  const old = new Map(normalizeReferenceRows(refs || []).map((row) => [row.id, row.name || '']))
+  const seen = new Set<string>()
+  const out: ReferenceSnapshot[] = []
+  for (const raw of ids || []) {
+    const id = String(raw || '').trim()
+    if (!id || seen.has(id)) continue
+    const name = String((lookup || {})[id] || old.get(id) || '').trim()
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
+function skillLabel(id: string): string {
+  const current = (skills.value || []).find((s) => s.id === id)
+  if (current) return current.name || current.id
+  return normalizeReferenceRows(form.value.skill_refs).find((row) => row.id === id)?.name || id
+}
+
+function skillMissing(id: string): boolean {
+  return Boolean(id && !(skills.value || []).some((s) => s.id === id))
 }
 
 const displaySkillBadges = computed(() => {
-  if (!skills.value.length || !form.value.skill_ids.length) return []
-  const map = new Map(skills.value.map((s) => [s.id, s]))
+  if (!form.value.skill_ids.length) return []
   const picked = []
   for (const id of form.value.skill_ids) {
-    const found = map.get(id)
-    if (found) {
-      picked.push(found)
-    }
+    picked.push({ id, name: skillLabel(id), missing: skillMissing(id) })
     if (picked.length >= 15) break
   }
   return picked
 })
+
+const missingSkillBadges = computed(() =>
+  (form.value.skill_ids || [])
+    .filter((id) => skillMissing(id))
+    .map((id) => ({ id, name: skillLabel(id), missing: true })),
+)
 
 const filteredSkills = computed(() => {
   const q = skillSearch.value.trim().toLowerCase()

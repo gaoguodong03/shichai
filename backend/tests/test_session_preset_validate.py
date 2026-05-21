@@ -5,6 +5,7 @@ from app.core.session_preset_validate import (
     validate_session_preset,
     validation_to_api_dict,
 )
+from app.core.host_config import normalize_host_config_dict
 
 
 def test_extract_presets_wrapped():
@@ -50,6 +51,31 @@ def test_validate_host_skill_and_mcp():
         mcp_servers=[{"id": "hm", "enabled": True}, {"id": "em", "enabled": True}],
     )
     assert v.valid
+
+
+def test_validate_empty_host_skill_ids_do_not_create_missing_group_host():
+    preset = {
+        "id": "p",
+        "name": "P",
+        "agent_ids": ["a1"],
+        "host_config": {"skill_ids": []},
+    }
+    dha = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
+    v = validate_session_preset(
+        preset,
+        dha_by_id=dha,
+        skill_has_content=lambda _: False,
+        mcp_servers=[],
+    )
+
+    assert v.valid
+    assert v.missing_skills == []
+
+
+def test_legacy_group_host_placeholder_is_not_a_default_dependency():
+    cfg = normalize_host_config_dict({"skill_ids": ["group-host"]})
+
+    assert cfg["skill_ids"] == []
 
 
 def test_validate_missing_host_mcp_disabled_warning():

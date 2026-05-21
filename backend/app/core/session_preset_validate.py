@@ -44,7 +44,7 @@ def normalize_preset_dict_for_validation(item: Dict[str, Any]) -> Optional[Dict[
         return None
     hc_raw = item.get("host_config")
     lid = str(item.get("leader_agent_id") or "").strip()
-    if isinstance(hc_raw, dict) and hc_raw:
+    if isinstance(hc_raw, dict):
         lid = VIRTUAL_SCENE_HOST_ID
     elif not lid:
         lid = normalized_ids[0]
@@ -56,7 +56,7 @@ def normalize_preset_dict_for_validation(item: Dict[str, Any]) -> Optional[Dict[
         "description": str(item.get("description") or ""),
         "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
     }
-    if isinstance(hc_raw, dict) and hc_raw:
+    if isinstance(hc_raw, dict):
         row["host_config"] = dict(hc_raw)
     return row
 
@@ -136,7 +136,7 @@ def validate_session_preset(
                 out.disabled_mcp_servers.append(row)
 
     hc_raw = preset.get("host_config")
-    if isinstance(hc_raw, dict) and hc_raw:
+    if isinstance(hc_raw, dict):
         hc = normalize_host_config_dict(hc_raw)
         check_skills(hc.get("skill_ids") or [], context="host")
         check_mcps(hc.get("mcp_server_ids") or [], context="host")

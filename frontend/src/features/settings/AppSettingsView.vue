@@ -142,7 +142,7 @@ function emptyForm(): HostForm {
   return {
     host_display_name: '四九',
     system_prompt: '',
-    skill_ids: ['group-host'],
+    skill_ids: [],
     llm_provider_id: '',
     file_capabilities: defaultFileCaps(),
     url_capability: true,
@@ -170,7 +170,7 @@ function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
   next.host_display_name = String(d.display_name ?? '四九')
   next.system_prompt = String(d.system_prompt ?? '')
-  next.skill_ids = Array.isArray(d.skill_ids) ? d.skill_ids.map((x) => String(x || '').trim()).filter(Boolean) : ['group-host']
+  next.skill_ids = Array.isArray(d.skill_ids) ? d.skill_ids.map((x) => String(x || '').trim()).filter(Boolean) : []
   next.llm_provider_id = String(d.llm_provider_id ?? '')
   const fc = (d.file_capabilities || {}) as Record<string, unknown>
   next.file_capabilities = {
@@ -259,7 +259,7 @@ async function save() {
       body: JSON.stringify({
         display_name: form.value.host_display_name,
         system_prompt: form.value.system_prompt,
-        skill_ids: skillIds.length ? skillIds : ['group-host'],
+        skill_ids: skillIds,
         llm_provider_id: form.value.llm_provider_id,
         file_capabilities: form.value.file_capabilities,
         url_capability: form.value.url_capability,

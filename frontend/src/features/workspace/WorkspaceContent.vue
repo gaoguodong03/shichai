@@ -797,6 +797,7 @@ const groupMemberNames = computed(() => {
 
 type ShortcutHostConfig = {
   skill_ids: string[]
+  skill_refs?: { id: string; name?: string }[]
   display_name?: string
   system_prompt?: string
   llm_provider_id?: string
@@ -814,6 +815,38 @@ type ShortcutPreset = {
 const shortcutPresets = ref<ShortcutPreset[]>([])
 const shortcutPresetsLoaded = ref(false)
 const SHORTCUT_STORAGE_KEY_BASE = 'dha.group.shortcuts.v1'
+const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
+
+function normalizeShortcutHostConfig(hc: ShortcutHostConfig | undefined): ShortcutHostConfig | undefined {
+  if (!hc) return undefined
+  const skillLookup = Object.fromEntries((props.skills || []).map((s) => [s.id, s.name || s.id]))
+  const refs = Array.isArray(hc.skill_refs) ? hc.skill_refs : []
+  const refName = (id: string) => {
+    const fromCurrent = String(skillLookup[id] || '').trim()
+    if (fromCurrent) return fromCurrent
+    const hit = refs.find((row) => String(row?.id || '').trim() === id)
+    return String(hit?.name || '').trim()
+  }
+  const skillIds: string[] = []
+  const seen = new Set<string>()
+  for (const item of Array.isArray(hc.skill_ids) ? hc.skill_ids : []) {
+    const id = String(item || '').trim()
+    if (!id || seen.has(id)) continue
+    const exists = Boolean(skillLookup[id])
+    const name = refName(id)
+    if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists && (!name || name === id)) {
+      continue
+    }
+    skillIds.push(id)
+    seen.add(id)
+  }
+  return {
+    ...hc,
+    skill_ids: skillIds,
+    skill_refs: refs.filter((row) => skillIds.includes(String(row?.id || '').trim())),
+  }
+}
+
 function getCurrentUserShortcutStorageKey(): string {
   try {
     const username = String(localStorage.getItem(USER_STORAGE_KEY) || '')
@@ -839,7 +872,7 @@ function normalizeShortcutPresets(input: unknown): ShortcutPreset[] {
     if (!id || !name || !dhaIds.length || seen.has(id)) continue
     seen.add(id)
     const lid = String(raw?.leader_agent_id || '').trim()
-    const hc = raw?.host_config as ShortcutHostConfig | undefined
+    const hc = normalizeShortcutHostConfig(raw?.host_config as ShortcutHostConfig | undefined)
     out.push({
       id,
       name,

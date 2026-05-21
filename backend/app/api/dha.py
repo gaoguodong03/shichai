@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.security import user_context_dependency
+from app.core.settings_references import mark_agent_id_missing_in_session_presets, merge_reference_rows_for_ids
 from app.core.user_context import get_current_user_context, get_current_username
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
@@ -41,6 +42,7 @@ class DHACreate(BaseModel):
     role: str = ""
     system_prompt: Optional[str] = None
     skill_ids: List[str] = []
+    skill_refs: Optional[List[Dict[str, Any]]] = None
     mcp_server_ids: List[str] = []
     is_leader: bool = False
     llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
@@ -57,6 +59,7 @@ class DHAUpdate(BaseModel):
     role: Optional[str] = None
     system_prompt: Optional[str] = None
     skill_ids: Optional[List[str]] = None
+    skill_refs: Optional[List[Dict[str, Any]]] = None
     mcp_server_ids: Optional[List[str]] = None
     is_leader: Optional[bool] = None
     llm_provider_id: Optional[str] = None
@@ -109,6 +112,23 @@ def merge_file_capabilities(stored: Any) -> Dict[str, bool]:
 
 def _labels_from_file_capabilities(caps: Dict[str, bool]) -> List[str]:
     return [label for key, label in _FILE_CAP_LABELS.items() if caps.get(key)]
+
+
+def _skill_name_lookup() -> Dict[str, str]:
+    try:
+        from app.api.settings import load_skills_config
+
+        return {
+            str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
+            for row in load_skills_config()
+            if str(row.get("id") or "").strip()
+        }
+    except Exception:
+        return {}
+
+
+def _skill_refs_for_ids(skill_ids: List[str], existing_refs: Any = None) -> List[Dict[str, str]]:
+    return merge_reference_rows_for_ids(skill_ids, existing_refs, _skill_name_lookup())
 
 
 async def enrich_dha_instance(instance: Dict[str, Any], workspace_id: str = "__capability_probe__") -> Dict[str, Any]:
@@ -169,6 +189,7 @@ def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, A
     if not name:
         return None
     aid = str(raw.get("agent_id") or raw.get("expert_id") or "").strip()
+    skill_ids = [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()]
     return {
         "agent_id": aid,
         "name": name,
@@ -176,7 +197,8 @@ def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, A
         "system_prompt": str(raw.get("system_prompt") or "")
         if raw.get("system_prompt") is not None
         else "",
-        "skill_ids": [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()],
+        "skill_ids": skill_ids,
+        "skill_refs": _skill_refs_for_ids(skill_ids, raw.get("skill_refs")),
         "mcp_server_ids": [str(x).strip() for x in (raw.get("mcp_server_ids") or []) if str(x).strip()],
         "is_leader": bool(raw.get("is_leader", False)),
         "llm_provider_id": str(raw.get("llm_provider_id") or "").strip(),
@@ -470,12 +492,14 @@ async def create_dha_instance(body: DHACreate):
     """创建 DHA 实例"""
     instances = load_dha_instances()
     agent_id = (body.agent_id or body.expert_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
+    skill_ids = body.skill_ids or []
     new_instance = {
         "agent_id": agent_id,
         "name": body.name,
         "role": body.role or "",
         "system_prompt": body.system_prompt or "",
-        "skill_ids": body.skill_ids or [],
+        "skill_ids": skill_ids,
+        "skill_refs": _skill_refs_for_ids(skill_ids, body.skill_refs),
         "mcp_server_ids": body.mcp_server_ids or [],
         "is_leader": body.is_leader,
         "llm_provider_id": body.llm_provider_id or "",
@@ -504,6 +528,11 @@ async def update_dha_instance(agent_id: str, body: DHAUpdate):
         inst["system_prompt"] = body.system_prompt
     if body.skill_ids is not None:
         inst["skill_ids"] = body.skill_ids
+    if body.skill_ids is not None or body.skill_refs is not None:
+        inst["skill_refs"] = _skill_refs_for_ids(
+            [str(x).strip() for x in (inst.get("skill_ids") or []) if str(x).strip()],
+            body.skill_refs if body.skill_refs is not None else inst.get("skill_refs"),
+        )
     if body.mcp_server_ids is not None:
         inst["mcp_server_ids"] = body.mcp_server_ids
     if body.is_leader is not None:
@@ -525,9 +554,11 @@ async def delete_dha_instance(agent_id: str):
     """删除 DHA 实例"""
     instances = load_dha_instances()
     original = len(instances)
+    target = next((d for d in instances if d.get("agent_id") == agent_id), None)
     instances = [d for d in instances if d.get("agent_id") != agent_id]
     if len(instances) == original:
         raise HTTPException(status_code=404, detail="DHA instance not found")
+    mark_agent_id_missing_in_session_presets(agent_id, str((target or {}).get("name") or agent_id))
     save_dha_instances(instances)
     return {"status": "ok", "data": {"agent_id": agent_id, "expert_id": agent_id, "deleted": True}}
 

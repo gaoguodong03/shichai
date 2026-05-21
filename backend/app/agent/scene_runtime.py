@@ -21,7 +21,7 @@ def pick_scene_host_skill_id(skill_ids: List[str]) -> str:
     """Pick the host Skill for a scene/host runtime in a predictable way."""
     ids = [str(x).strip() for x in (skill_ids or []) if str(x).strip()]
     if not ids:
-        return "group-host"
+        return ""
     for sid in ids:
         if sid.startswith("group-host-") and sid != "group-host":
             return sid
@@ -81,7 +81,7 @@ class SceneRuntime:
 
     def host_bubble_skill_id(self) -> str:
         if not self.host_profile:
-            return "group-host"
+            return ""
         return pick_scene_host_skill_id(list(self.host_profile.get("skill_ids") or []))
 
     @classmethod

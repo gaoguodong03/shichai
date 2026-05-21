@@ -7,14 +7,17 @@ import json
 import time
 import uuid
 import zipfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.security import user_context_dependency
+from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 from app.core.user_context import get_current_username
-from app.core.user_settings_paths import mcp_config_path
+from app.core.user_settings_paths import mcp_config_path, skills_dir_path
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -75,6 +78,73 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
         json.dump(servers, f, ensure_ascii=False, indent=2)
 
 
+def _frontmatter_mcp_ids(fm: Dict[str, Any]) -> List[str]:
+    for key in ("auto-tools", "allowed-tools"):
+        tools = fm.get(key)
+        if isinstance(tools, dict):
+            raw = tools.get("mcp")
+            if isinstance(raw, list):
+                return list(dict.fromkeys(str(x).strip() for x in raw if str(x).strip()))
+    legacy = fm.get("mcp_server_ids")
+    if isinstance(legacy, list):
+        return list(dict.fromkeys(str(x).strip() for x in legacy if str(x).strip()))
+    return []
+
+
+def _read_skill_frontmatter(skill_file: Path) -> tuple[Dict[str, Any], str]:
+    text = skill_file.read_text(encoding="utf-8")
+    if not text.strip().startswith("---"):
+        return {}, text
+    parts = text.split("---", 2)
+    if len(parts) < 3:
+        return {}, text
+    parsed = yaml.safe_load(parts[1]) or {}
+    return parsed if isinstance(parsed, dict) else {}, parts[2].lstrip("\n")
+
+
+def _write_skill_frontmatter(skill_file: Path, fm: Dict[str, Any], body: str) -> None:
+    content = "---\n" + yaml.dump(fm, allow_unicode=True, default_flow_style=False) + "---\n" + body
+    skill_file.write_text(content, encoding="utf-8")
+
+
+def _mark_mcp_id_missing_in_skills(server_id: str, server_name: str = "") -> None:
+    """删除 MCP 前，为仍声明它的 Skill 保存名称快照。"""
+    sid = str(server_id or "").strip()
+    if not sid:
+        return
+    try:
+        root = skills_dir_path().resolve()
+    except Exception:
+        return
+    if not root.is_dir():
+        return
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        skill_file = child / "SKILL.md"
+        if not skill_file.is_file():
+            continue
+        try:
+            fm, body = _read_skill_frontmatter(skill_file)
+            mcp_ids = _frontmatter_mcp_ids(fm)
+            if sid not in mcp_ids:
+                continue
+            labels = fm.get("reference-labels") if isinstance(fm.get("reference-labels"), dict) else {}
+            labels = dict(labels)
+            refs = merge_reference_rows_for_ids(
+                mcp_ids,
+                labels.get("mcp"),
+                {sid: server_name} if server_name else {},
+            )
+            if refs == normalize_reference_rows(labels.get("mcp")):
+                continue
+            labels["mcp"] = refs
+            fm["reference-labels"] = labels
+            _write_skill_frontmatter(skill_file, fm, body)
+        except Exception:
+            continue
+
+
 def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -86,7 +156,6 @@ async def get_mcp_servers():
     """获取 MCP Server 列表"""
     servers = load_mcp_config()
     mcp_manager = await _mcp_runtime_for_request()
-
     
     # 统计每个 server 的工具数量
     server_tool_counts = {}
@@ -241,11 +310,13 @@ async def delete_mcp_server(server_id: str):
     
     # 查找并删除
     original_count = len(servers)
+    target = next((s for s in servers if s.get("id") == server_id), None)
     servers = [s for s in servers if s.get("id") != server_id]
     
     if len(servers) == original_count:
         raise HTTPException(status_code=404, detail="MCP Server not found")
     
+    _mark_mcp_id_missing_in_skills(server_id, str((target or {}).get("name") or server_id))
     save_mcp_config(servers)
     await _invalidate_mcp_runtime_after_config_change()
 

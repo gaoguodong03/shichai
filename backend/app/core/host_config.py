@@ -4,6 +4,10 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.api.dha import merge_file_capabilities
+from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
+
+
+LEGACY_DEFAULT_HOST_SKILL_ID = "group-host"
 
 
 def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
@@ -11,8 +15,16 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         raw = {}
     skill_ids = [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()]
-    if not skill_ids:
-        skill_ids = ["group-host"]
+    ref_names = {
+        row["id"]: str(row.get("name") or "").strip()
+        for row in normalize_reference_rows(raw.get("skill_refs"))
+        if row.get("id")
+    }
+    skill_ids = [
+        sid
+        for sid in skill_ids
+        if sid != LEGACY_DEFAULT_HOST_SKILL_ID or bool(ref_names.get(sid))
+    ]
     sp = raw.get("system_prompt")
     system_prompt = str(sp).strip() if sp is not None else ""
     llm = str(raw.get("llm_provider_id") or "").strip()
@@ -32,4 +44,7 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
     }
     if display_name:
         out["display_name"] = display_name
+    skill_refs = merge_reference_rows_for_ids(skill_ids, raw.get("skill_refs"))
+    if skill_refs:
+        out["skill_refs"] = skill_refs
     return out

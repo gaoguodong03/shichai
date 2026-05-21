@@ -423,18 +423,18 @@ def _pick_resolved_host_skill_id(skill_ids: List[str]) -> str:
 
     历史行为是固定使用列表第一项；若用户写成 [group-host, group-host-webnovel]，
     会误只加载通用主持，网文专精从未生效。规则：优先任一带 `group-host-` 前缀的专精 id
-    （如 group-host-webnovel），否则用列表首项；空列表回退 group-host。
+    （如 group-host-webnovel），否则用列表首项；空列表表示主持人不绑定 Skill。
     """
     return pick_scene_host_skill_id(skill_ids)
 
 
 def _maybe_upgrade_meta_to_scene_profile(meta_item: Dict[str, Any]) -> bool:
-    """虚拟主持人 + 已配置主持 skill_ids + 场内有人时，将缺省/recruitment 升为 scene。"""
+    """虚拟主持人 + 已配置场景 host_config + 场内有人时，将缺省/recruitment 升为 scene。"""
     _prof = str(meta_item.get("orchestration_profile") or "").strip().lower()
     _hc = meta_item.get("host_config")
     if str(meta_item.get("leader_agent_id") or "").strip() != VIRTUAL_SCENE_HOST_ID:
         return False
-    if not (isinstance(_hc, dict) and list(_hc.get("skill_ids") or []) and (meta_item.get("agent_ids") or [])):
+    if not (isinstance(_hc, dict) and (meta_item.get("agent_ids") or [])):
         return False
     if _prof in ("", "recruitment"):
         meta_item["orchestration_profile"] = "scene"
@@ -1713,20 +1713,16 @@ async def _host_decide_by_dha(
     sl = _request_skills_loader()
     msgs = list(messages or [])
     skill_ids = [str(x).strip() for x in (host_dha.get("skill_ids") or []) if str(x).strip()]
+    resolved_skill_id = ""
     if not skill_ids:
-        skill_content = sl.get_skill_full_content("group-host")
-        if not skill_content:
-            return None
-        resolved_skill_id = "group-host"
+        skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出主持说明与 next_speaker/next_prompt 决策，不代替专家完成专业正文。"
     else:
         # 多 Skill 时优先专精（如 group-host-webnovel），避免 [group-host, …] 首位锁死通用主持
         sid0 = _pick_resolved_host_skill_id(skill_ids)
-        skill_content = sl.get_skill_full_content(sid0)
         resolved_skill_id = sid0
-        gh = sl.get_skill_full_content("group-host")
-        if not (skill_content or "").strip() and gh:
-            skill_content = gh
-            resolved_skill_id = "group-host"
+        skill_content = sl.get_skill_full_content(sid0) if sid0 else ""
+        if not (skill_content or "").strip():
+            skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出主持说明与 next_speaker/next_prompt 决策，不代替专家完成专业正文。"
     skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{skill_content}"
     host_system = (host_dha.get("system_prompt") or "").strip()
     if host_system:
@@ -1837,9 +1833,7 @@ async def _host_only_respond_and_recommend(
     skill_content = ""
     if host_skill_ids:
         sid0 = _pick_resolved_host_skill_id(host_skill_ids)
-        skill_content = str(sl.get_skill_full_content(sid0) or "")
-    if not skill_content:
-        skill_content = str(sl.get_skill_full_content("group-host") or "")
+        skill_content = str(sl.get_skill_full_content(sid0) or "") if sid0 else ""
     if not skill_content:
         skill_content = "你是群聊主持人，负责协调讨论并适时推荐合适的专家加入。"
     host_intro = f"你是 {host_display_name}，担任本群主持人。"
@@ -3169,6 +3163,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 resolved_skill_id = expert_runtime.skill_id
                 skill_content = expert_runtime.skill_content
                 skill_route_debug = expert_runtime.skill_route_debug
+                logger.info(
+                    "group_chat_expert_runtime_resolved code=expert_runtime_resolved session=%s run_id=%s agent_id=%s skill_id=%s skill_loaded=%s tool_count=%s skill_strategy=%s blocking_error=%s",
+                    group_session_id,
+                    run_id,
+                    next_speaker,
+                    resolved_skill_id,
+                    bool(skill_content),
+                    len(list(getattr(expert_runtime, "tools", []) or [])),
+                    str((skill_route_debug or {}).get("strategy") if isinstance(skill_route_debug, dict) else ""),
+                    str((skill_route_debug or {}).get("blocking_error") if isinstance(skill_route_debug, dict) else ""),
+                )
                 if (
                     isinstance(skill_route_debug, dict)
                     and skill_route_debug.get("strict_llm_required")
@@ -3235,6 +3240,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     skill_id=resolved_skill_id,
                     phase="agent_routed",
                 )
+                logger.info(
+                    "group_chat_route_emit code=expert_route_emit session=%s run_id=%s agent_id=%s skill_id=%s tool_count=%s",
+                    group_session_id,
+                    run_id,
+                    next_speaker,
+                    resolved_skill_id,
+                    len(list(tools or [])),
+                )
                 yield f"event: route\ndata: {json_module.dumps(route_event, ensure_ascii=False)}\n\n"
                 context = _messages_to_expert_context(messages)
                 if not custom_prompt_used and custom_prompt:
@@ -3287,6 +3300,15 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     yield f"event: content\ndata: {json_module.dumps({'text': _file_resolving_status, 'agent_id': next_speaker, 'meta': {'phase': 'file_resolving'}}, ensure_ascii=False)}\n\n"
                     yield f"event: content\ndata: {json_module.dumps({'text': _file_resolved_status, 'agent_id': next_speaker, 'meta': {'phase': 'file_resolved'}}, ensure_ascii=False)}\n\n"
                 try:
+                    logger.info(
+                        "group_chat_agent_stream_start code=agent_stream_start session=%s run_id=%s agent_id=%s skill_id=%s user_content_len=%s tool_count=%s",
+                        group_session_id,
+                        run_id,
+                        next_speaker,
+                        resolved_skill_id,
+                        len(user_content or ""),
+                        len(list(tools or [])),
+                    )
                     async for stream_item in _iter_with_keepalive(
                         agent.astream(initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"])
                     ):
@@ -3310,6 +3332,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     # 脚本/API（如生图）可能数十秒无 token；在真正执行工具前再推一行提示。
                                     if not emitted_tool_pending_hint:
                                         emitted_tool_pending_hint = True
+                                        logger.info(
+                                            "group_chat_tool_running code=agent_tool_calls_detected session=%s run_id=%s agent_id=%s skill_id=%s tool_call_count=%s",
+                                            group_session_id,
+                                            run_id,
+                                            next_speaker,
+                                            resolved_skill_id,
+                                            len(list(msg_obj.tool_calls or [])),
+                                        )
                                         await _update_group_run(group_session_id, run_id, phase="tool_running")
                                         yield f"event: content\ndata: {json_module.dumps({'text': _tool_running_status, 'agent_id': next_speaker, 'meta': {'phase': 'tool_running'}}, ensure_ascii=False)}\n\n"
                             continue
@@ -3328,12 +3358,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 for call in tcalls:
                                     if isinstance(call, dict) and call not in accumulated_tool_calls_trace:
                                         accumulated_tool_calls_trace.append(call)
+                                logger.info(
+                                    "group_chat_tool_step code=agent_tool_step session=%s run_id=%s agent_id=%s skill_id=%s tool_call_count=%s raw_result_count=%s",
+                                    group_session_id,
+                                    run_id,
+                                    next_speaker,
+                                    resolved_skill_id,
+                                    len(tcalls),
+                                    len(accumulated_raw_tool_results),
+                                )
                             tro = stream_item.get("tool_raw_outputs")
                             if isinstance(tro, list):
                                 for raw_str in tro:
                                     s = str(raw_str or "")
                                     if s and s not in accumulated_raw_tool_results:
                                         accumulated_raw_tool_results.append(s)
+                                logger.info(
+                                    "group_chat_tool_outputs code=agent_tool_outputs session=%s run_id=%s agent_id=%s skill_id=%s raw_result_count=%s raw_result_lens=%s",
+                                    group_session_id,
+                                    run_id,
+                                    next_speaker,
+                                    resolved_skill_id,
+                                    len(accumulated_raw_tool_results),
+                                    [len(str(x or "")) for x in accumulated_raw_tool_results[-5:]],
+                                )
                             continue
                         if ev_type == "final_step":
                             tad = stream_item.get("tool_attempt_debug")
@@ -3370,6 +3418,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = resolved_skill_id if dha else "default"
                 current_skill_id_for_pending = skill_id
+                logger.info(
+                    "group_chat_agent_stream_done code=agent_stream_done session=%s run_id=%s agent_id=%s skill_id=%s content_len=%s tool_call_count=%s raw_result_count=%s sandbox_trace=%s",
+                    group_session_id,
+                    run_id,
+                    next_speaker,
+                    skill_id,
+                    len(full_content or ""),
+                    len(tool_calls_trace or []),
+                    len(accumulated_raw_tool_results or []),
+                    sandbox_entry_trace,
+                )
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                     "role": "assistant",

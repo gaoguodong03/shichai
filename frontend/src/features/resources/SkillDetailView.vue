@@ -140,7 +140,7 @@
                     <span
                       v-for="id in form.allowed_tools.mcp"
                       :key="id"
-                      class="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 rounded-lg border border-accent bg-accent-subtle text-accent-subtle-text text-sm"
+                      class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full border text-xs font-medium"
                       :class="isMcpDependencyMissing(id)
                         ? 'border-red-300 bg-red-50 text-red-700'
                         : 'border-accent bg-accent-subtle text-accent-subtle-text'"
@@ -150,7 +150,8 @@
                       <button
                         v-if="editMode"
                         type="button"
-                        class="p-0.5 rounded hover:bg-accent/20 text-accent-subtle-text"
+                        class="p-0.5 rounded-full hover:bg-accent/20"
+                        :class="isMcpDependencyMissing(id) ? 'text-red-700/80' : 'text-accent-subtle-text'"
                         title="移除"
                         @click="removeMcpServer(id)"
                       >
@@ -160,23 +161,19 @@
                   </div>
                   <div v-else class="text-xs text-muted mb-2">未声明 MCP（本技能会话不加载 MCP 工具）。</div>
                   <p v-if="missingMcpDependencies.length" class="mt-2 text-xs text-red-600">
-                    缺失 MCP 工具配置：{{ missingMcpDependencies.map((id) => `MCP 工具 ${id}`).join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
+                    缺失 MCP 工具配置：{{ missingMcpDependencyLabels.join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
                   </p>
                   <div v-if="editMode" class="flex flex-wrap items-center gap-2">
-                    <select
-                      class="text-sm border border-input-border rounded-lg bg-input-bg text-primary px-2 py-1.5 min-w-[10rem] themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-                      :disabled="!addableMcpServers.length"
-                      @change="onAddMcpSelect"
+                    <button
+                      v-for="srv in addableMcpServers"
+                      :key="srv.id"
+                      type="button"
+                      class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
+                      @click="addMcpServer(srv.id)"
                     >
-                      <option value="">添加 MCP…</option>
-                      <option
-                        v-for="srv in addableMcpServers"
-                        :key="srv.id"
-                        :value="srv.id"
-                      >
-                        {{ srv.name || srv.id }}
-                      </option>
-                    </select>
+                      + {{ srv.name || srv.id }}
+                    </button>
+                    <span v-if="!addableMcpServers.length" class="text-xs text-muted">可添加 MCP 已为空</span>
                   </div>
                   <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
                 </div>
@@ -194,7 +191,7 @@
                       <span
                         v-for="dep in pythonDependencies"
                         :key="dep"
-                        class="inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-mono transition-colors"
+                        class="inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-mono transition-colors"
                         :class="isPythonDependencyMissing(dep)
                           ? 'border-red-300 bg-red-50 text-red-700'
                           : 'border-border bg-input-bg text-primary'"
@@ -329,6 +326,7 @@ import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
+type ReferenceSnapshot = { id: string; name?: string }
 
 const props = defineProps<{ skillId: string }>()
 const emit = defineEmits<{ (e: 'updated', newSkillId?: string): void; (e: 'deleted'): void }>()
@@ -341,19 +339,19 @@ const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'other', label: 'Other' },
 ]
 
-const skill = ref<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp: string[]; python: string } } | null>(null)
+const skill = ref<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp: string[]; python: string; mcp_refs?: ReferenceSnapshot[] } } | null>(null)
 const skillContent = ref<{
   raw: string
   name: string
   description: string
   body: string
-  allowed_tools: { mcp: string[]; python: string }
+  allowed_tools: { mcp: string[]; python: string; mcp_refs: ReferenceSnapshot[] }
 }>({
   raw: '',
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [], python: '' },
+  allowed_tools: { mcp: [], python: '', mcp_refs: [] },
 })
 const loading = ref(false)
 const contentLoading = ref(false)
@@ -363,7 +361,7 @@ const form = ref({
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [] as string[], python: '' },
+  allowed_tools: { mcp: [] as string[], python: '', mcp_refs: [] as ReferenceSnapshot[] },
 })
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
@@ -412,6 +410,9 @@ const mcpServerIds = computed(() => new Set(mcpServers.value.map((s) => s.id)))
 const missingMcpDependencies = computed(() =>
   form.value.allowed_tools.mcp.filter((id) => id && !mcpServerIds.value.has(id))
 )
+const missingMcpDependencyLabels = computed(() =>
+  missingMcpDependencies.value.map((id) => mcpLabel(id)),
+)
 const pythonDependencies = computed(() =>
   String(form.value.allowed_tools.python || '')
     .split(/\r?\n/g)
@@ -453,23 +454,63 @@ function isMcpDependencyMissing(id: string) {
   return Boolean(id && !mcpServerIds.value.has(id))
 }
 
+function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReferenceSnapshot[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : null
+    const id = String(row?.id || row?.mcp_server_id || '').trim()
+    const name = String(row?.name || row?.display_name || row?.label || '').trim()
+    if (!id || seen.has(id)) continue
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
+function mcpNameLookup(): Record<string, string> {
+  return Object.fromEntries((mcpServers.value || []).map((s) => [s.id, s.name || s.id]))
+}
+
+function mergeReferenceRowsForIds(ids: string[], refs?: ReferenceSnapshot[], lookup?: Record<string, string>): ReferenceSnapshot[] {
+  const old = new Map(normalizeReferenceRows(refs || []).map((row) => [row.id, row.name || '']))
+  const out: ReferenceSnapshot[] = []
+  const seen = new Set<string>()
+  for (const raw of ids || []) {
+    const id = String(raw || '').trim()
+    if (!id || seen.has(id)) continue
+    const name = String((lookup || {})[id] || old.get(id) || '').trim()
+    out.push(name ? { id, name } : { id })
+    seen.add(id)
+  }
+  return out
+}
+
 function mcpLabel(id: string) {
   const s = mcpServers.value.find((x) => x.id === id)
-  return s?.name || `缺失 MCP 工具 ${id}`
+  const snap = normalizeReferenceRows(form.value.allowed_tools.mcp_refs).find((x) => x.id === id)
+  return s?.name || snap?.name || `MCP 工具 ${id}`
 }
 
 function removeMcpServer(id: string) {
   form.value.allowed_tools.mcp = form.value.allowed_tools.mcp.filter((x) => x !== id)
+  form.value.allowed_tools.mcp_refs = mergeReferenceRowsForIds(
+    form.value.allowed_tools.mcp,
+    form.value.allowed_tools.mcp_refs,
+    mcpNameLookup(),
+  )
 }
 
-function onAddMcpSelect(ev: Event) {
-  const el = ev.target as HTMLSelectElement
-  const v = (el?.value || '').trim()
-  if (!v) return
-  if (!form.value.allowed_tools.mcp.includes(v)) {
-    form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
-  }
-  el.value = ''
+function addMcpServer(id: string) {
+  const v = String(id || '').trim()
+  if (!v || form.value.allowed_tools.mcp.includes(v)) return
+  form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
+  form.value.allowed_tools.mcp_refs = mergeReferenceRowsForIds(
+    form.value.allowed_tools.mcp,
+    form.value.allowed_tools.mcp_refs,
+    mcpNameLookup(),
+  )
 }
 
 function resetFormFromLoadedContent() {
@@ -479,6 +520,7 @@ function resetFormFromLoadedContent() {
   form.value.allowed_tools = {
     mcp: [...skillContent.value.allowed_tools.mcp],
     python: skillContent.value.allowed_tools.python,
+    mcp_refs: [...skillContent.value.allowed_tools.mcp_refs],
   }
 }
 
@@ -784,7 +826,15 @@ async function load(options: { silent?: boolean } = {}) {
             name: s.name,
             description: s.description ?? '',
             body: '',
-            allowed_tools: { mcp: [...(s.allowed_tools?.mcp ?? [])], python: s.allowed_tools?.python ?? '' },
+            allowed_tools: {
+              mcp: [...(s.allowed_tools?.mcp ?? [])],
+              python: s.allowed_tools?.python ?? '',
+              mcp_refs: mergeReferenceRowsForIds(
+                s.allowed_tools?.mcp ?? [],
+                s.allowed_tools?.mcp_refs ?? [],
+                mcpNameLookup(),
+              ),
+            },
           }
         }
         await loadContent({ silent: options.silent })
@@ -806,12 +856,13 @@ async function loadContent(options: { silent?: boolean } = {}) {
       const at = j.data.allowed_tools
       const mcp = Array.isArray(at?.mcp) ? at.mcp.map((x: string) => String(x || '').trim()).filter(Boolean) : []
       const python = typeof at?.python === 'string' ? at.python : ''
+      const mcpRefs = mergeReferenceRowsForIds(mcp, at?.mcp_refs || [], mcpNameLookup())
       skillContent.value = {
         raw: j.data.raw ?? '',
         name: j.data.name ?? '',
         description: j.data.description ?? '',
         body: j.data.body ?? '',
-        allowed_tools: { mcp, python },
+        allowed_tools: { mcp, python, mcp_refs: mcpRefs },
       }
       resetFormFromLoadedContent()
       editMode.value = false
@@ -878,6 +929,11 @@ async function save() {
         allowed_tools: {
           mcp: form.value.allowed_tools.mcp ?? [],
           python: form.value.allowed_tools.python ?? '',
+          mcp_refs: mergeReferenceRowsForIds(
+            form.value.allowed_tools.mcp ?? [],
+            form.value.allowed_tools.mcp_refs ?? [],
+            mcpNameLookup(),
+          ),
         },
       }),
     })
@@ -891,6 +947,11 @@ async function save() {
       const optimisticAllowedTools = {
         mcp: [...(form.value.allowed_tools.mcp ?? [])],
         python: form.value.allowed_tools.python ?? '',
+        mcp_refs: mergeReferenceRowsForIds(
+          form.value.allowed_tools.mcp ?? [],
+          form.value.allowed_tools.mcp_refs ?? [],
+          mcpNameLookup(),
+        ),
       }
       skillContent.value = {
         raw: '',
