@@ -42,7 +42,7 @@ export SANDBOX_BASE_IMAGE=st49-skill-sandbox:local-standard
 docker build -f docker/skill-sandbox/Dockerfile.playwright -t st49-skill-sandbox:local-playwright .
 export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 
-  python manage_accounts.py add --username hjl@bupt.edu.cn --password 'telestar'
+  python manage_accounts.py add --username demo@example.com --password 'change-me'
   python manage_accounts.py delete --username 13800138000 --yes
   python manage_accounts.py delete --username 13800138000 --remove-data --yes
 
@@ -76,6 +76,11 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 - OpenSandbox：宿主机 `8091` -> 容器 `8090`
 - 如需调整，可在 1Panel 的环境变量中覆盖：`ST49_HOST_PORT`、`OPENSANDBOX_HOST_PORT`、`ST49_IMAGE`
 - 沙箱镜像优先写在 `backend/.env`：1Panel/Compose 用 `ST49_SANDBOX_STANDARD_IMAGE`、`ST49_SANDBOX_PLAYWRIGHT_IMAGE`，裸机后端用 `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE`；`pack_1panel_backup.sh` 会读取这些值后写入备份包。
+
+### 本地状态文件
+
+- `backend/.env`、`backend/config/auth_users.txt`、`backend/config/users.json` 与 `backend/data/users/` 是本地运行时状态，不提交到 Git。
+- 本地开发可从 `backend/.env.example`、`backend/config/auth_users.txt.example`、`backend/config/users.json.example` 复制模板；账号创建优先使用 `backend/manage_accounts.py`。
 
 ### 常见踩坑（以后出问题先看这里）
 

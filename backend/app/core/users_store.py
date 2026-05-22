@@ -1,6 +1,6 @@
 """简单的 JSON 用户信息存储。
 
-仅存放用户 profile / 元信息，不存放密码（密码仍由 auth_users.txt 管理）。
+仅存放本地运行时用户 profile / 元信息，不存放密码；密码由 SQLite 认证库管理。
 """
 
 from __future__ import annotations
@@ -100,4 +100,3 @@ def rename_user_profile(old_username: str, new_username: str) -> UserProfile:
     users[new_name] = profile
     _save_all(users)
     return profile
-

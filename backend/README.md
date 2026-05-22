@@ -24,11 +24,16 @@ FastAPI 服务：统一会话流、Agent 配置、每用户 MCP / Skills、工�
 python -m venv venv
 # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-# 可选：复制并编辑 .env
+# 复制并编辑 .env，至少设置模型 Key 与 AUTH_SECRET
+cp .env.example .env
+# 创建本地账号；密码会写入 SQLite hash，不要提交运行时配置文件
+python manage_accounts.py add --username demo@example.com --password 'change-me'
 python -m app.main
 ```
 
 API 文档：`http://localhost:8000/docs`
+
+本地运行时文件不进入 Git：`backend/.env`、`backend/config/auth_users.txt`、`backend/config/users.json`、`backend/config/auth_users.sqlite`、`backend/data/users/`。模板文件保留为 `.example`。
 
 ## 项目结构（节选）
 
@@ -40,7 +45,7 @@ backend/
 │   ├── agent/           # Agent / 工具组装
 │   ├── mcp/             # 每用户 MCP 运行时
 │   └── skills/          # SkillsLoader（按用户目录缓存）
-├── config/              # 仓库内默认配置示例
+├── config/              # 仓库内默认配置与本地运行时模板
 └── requirements.txt
 ```
 

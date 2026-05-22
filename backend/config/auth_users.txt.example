@@ -1,0 +1,6 @@
+# Optional legacy seed file.
+# Copy to backend/config/auth_users.txt only for a local bootstrap migration.
+# Prefer: python manage_accounts.py add --username demo@example.com --password 'change-me'
+#
+# Format:
+# demo@example.com:change-me
