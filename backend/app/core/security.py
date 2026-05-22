@@ -67,10 +67,10 @@ def _truthy_env(name: str, default: str = "0") -> bool:
 def _prewarm_on_user_request_enabled() -> bool:
     raw = os.getenv("SANDBOX_PREWARM_ON_USER_REQUEST")
     if raw is not None:
-        return _truthy_env("SANDBOX_PREWARM_ON_USER_REQUEST", "1")
+        return _truthy_env("SANDBOX_PREWARM_ON_USER_REQUEST", "0")
     if os.getenv("PYTEST_CURRENT_TEST"):
         return False
-    return True
+    return False
 
 
 def _request_prewarm_timeout_ms() -> int:
