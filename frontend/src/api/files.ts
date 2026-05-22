@@ -1,4 +1,4 @@
-import { apiUrl, apiFetch, ApiResult } from './base'
+import { apiFetch, ApiResult } from './base'
 
 export interface FileEntry {
   name: string

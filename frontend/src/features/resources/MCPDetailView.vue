@@ -251,7 +251,6 @@ const server = ref<Server | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
-const testing = ref(false)
 const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
   open: false,
   ok: true,
@@ -400,32 +399,6 @@ async function deleteServer() {
     }
   } finally {
     deleting.value = false
-  }
-}
-
-async function testConnection() {
-  if (!server.value) return
-  testing.value = true
-  try {
-    const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}/test`, {
-      method: 'POST',
-    })
-    const j = await r.json()
-    if (j.status === 'ok') {
-      if (j.data?.connected) {
-        alert(`连接测试成功，耗时 ${j.data?.response_time ?? '?'} ms，工具数约 ${j.data?.tool_count ?? 0}`)
-      } else {
-        alert(j.data?.error || j.detail || '连接测试失败')
-      }
-      await load()
-    } else {
-      alert(j.detail || '连接测试失败')
-    }
-  } catch (e) {
-    console.error('Failed to test MCP connection', e)
-    alert('连接测试失败')
-  } finally {
-    testing.value = false
   }
 }
 

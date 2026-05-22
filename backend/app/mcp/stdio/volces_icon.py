@@ -11,8 +11,7 @@ API Key 通过环境变量 VOLCES_IMAGE_API_KEY 传入，或在 mcp_servers.json
     在 backend/config/mcp_servers.json 中添加 stdio 配置，并在 transport.env 中设置 VOLCES_IMAGE_API_KEY。
 """
 import os
-import time
-import json
+import logging
 import httpx
 from mcp.server.fastmcp import FastMCP
 
@@ -20,29 +19,19 @@ API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
 MODEL = "ep-20250705144856-6jcl6"
 
 mcp = FastMCP("图片生成")
+logger = logging.getLogger(__name__)
 
 
 def _agent_log(message: str, data: dict | None = None, hypothesis_id: str | None = None) -> None:
-    """Optional local diagnostics; disabled unless VOLCES_ICON_DEBUG_LOG is set."""
-    log_path = os.environ.get("VOLCES_ICON_DEBUG_LOG", "").strip()
-    if not log_path:
-        return
-    try:
-        payload = {
-            "id": f"log_volces_icon_{int(time.time() * 1000)}",
-            "timestamp": int(time.time() * 1000),
-            "location": "app/mcp/stdio/volces_icon.py",
-            "message": message,
-            "data": data or {},
-            "runId": "volces-icon",
-        }
-        if hypothesis_id:
-            payload["hypothesisId"] = hypothesis_id
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+    """Structured diagnostics through the standard logger; secrets stay masked by callers."""
+    logger.debug(
+        "volces_icon: %s",
+        message,
+        extra={
+            "volces_icon_data": data or {},
+            "volces_icon_hypothesis_id": hypothesis_id or "",
+        },
+    )
 
 
 def _get_api_key() -> str:

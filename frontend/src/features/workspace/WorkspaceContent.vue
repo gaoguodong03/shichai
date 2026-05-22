@@ -66,7 +66,6 @@ import { streamSessionEvents } from '@/api/chat'
 import { uploadWorkspaceFile } from './workspaceUpload'
 import {
   dhaBodyContent,
-  escapeHtml,
   formatToolPopover,
   getToolRawResults,
   renderMarkdownHtml,
@@ -306,19 +305,6 @@ const groupFileCapabilitySummary = computed(() => {
     out.url = out.url || !!detail.agent_map?.[agentId]?.url_capability
   }
   return out
-})
-
-const groupFileCapabilityItems = computed(() => {
-  const caps = groupFileCapabilitySummary.value
-  return [
-    { key: 'read', label: '读取', enabled: !!caps.read },
-    { key: 'edit', label: '编辑', enabled: !!caps.edit },
-    { key: 'write', label: '写入', enabled: !!caps.write },
-    { key: 'rename', label: '重命名', enabled: !!caps.rename },
-    { key: 'mkdir', label: '新建目录', enabled: !!caps.mkdir },
-    { key: 'list_dir', label: '递归列目录', enabled: !!caps.list_dir },
-    { key: 'url', label: 'URL数据', enabled: !!caps.url },
-  ]
 })
 
 function scrollToMessage(messageId: string) {
@@ -789,12 +775,6 @@ onUnmounted(() => {
   revokeGroupWorkspacePreviewBlob()
 })
 
-const groupMemberNames = computed(() => {
-  const d = groupDetail.value
-  if (!d?.agent_ids?.length || !d.agent_map) return ''
-  return d.agent_ids.map((id) => d.agent_map![id]?.name || id).join('、')
-})
-
 type ShortcutHostConfig = {
   skill_ids: string[]
   skill_refs?: { id: string; name?: string }[]
@@ -974,46 +954,6 @@ function deleteShortcutPreset(id: string) {
   }
   saveShortcutPresets()
 }
-function toggleNewShortcutDha(dhaId: string) {
-  const set = new Set(newShortcutDhaIds.value)
-  if (set.has(dhaId)) set.delete(dhaId)
-  else set.add(dhaId)
-  newShortcutDhaIds.value = Array.from(set)
-}
-function createShortcutPreset() {
-  const name = (newShortcutName.value || '').trim()
-  const ids = Array.from(new Set(newShortcutDhaIds.value)).filter(Boolean)
-  if (!name || !ids.length) return
-  if (editingShortcutId.value) {
-    shortcutPresets.value = shortcutPresets.value.map((p) =>
-      p.id === editingShortcutId.value ? { ...p, name, agent_ids: ids } : p,
-    )
-  } else {
-    const id = `sc-${Date.now()}`
-    shortcutPresets.value = [
-      { id, name, agent_ids: ids, description: '', discussion_goal_example: '' },
-      ...shortcutPresets.value,
-    ]
-  }
-  editingShortcutId.value = ''
-  newShortcutName.value = ''
-  newShortcutDhaIds.value = []
-  shortcutExpertSearch.value = ''
-  saveShortcutPresets()
-}
-function startEditShortcutPreset(preset: ShortcutPreset) {
-  editingShortcutId.value = preset.id
-  newShortcutName.value = preset.name
-  newShortcutDhaIds.value = [...preset.agent_ids]
-  shortcutExpertSearch.value = ''
-}
-function cancelEditShortcutPreset() {
-  editingShortcutId.value = ''
-  newShortcutName.value = ''
-  newShortcutDhaIds.value = []
-  shortcutExpertSearch.value = ''
-}
-
 /** 供父组件在导入场景包后拉起新会话（与快捷场景「新建会话」同一套逻辑） */
 async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
   const availableAgentIds = new Set(
@@ -1284,7 +1224,7 @@ function openGroupSessionEventsStream(sessionId: string) {
   void streamSessionEvents(
     sessionId,
     {
-      onUpdate: (data) => {
+      onUpdate: () => {
         if (abort.signal.aborted || props.selectedGroupSessionId !== sessionId) return
         groupSessionEventsConnected = true
         if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
@@ -1315,12 +1255,6 @@ const showAddMember = ref(false)
 const showAddMemberModal = ref(false)
 const showMoreMenu = ref(false)
 const showNextPromptField = ref(false) // 更多 -> 显示下一 DHA 提示词，默认隐藏
-function onShowNextPromptFieldChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  showNextPromptField.value = target.checked
-  if (target.checked) showMoreMenu.value = false // 勾选后关闭「更多」以便看到下方输入框
-}
-
 function onShowNextPromptFieldChangeByClick() {
   showNextPromptField.value = !showNextPromptField.value
   if (showNextPromptField.value) showMoreMenu.value = false
@@ -1388,8 +1322,6 @@ function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null
 
 function updateAutoSwitchHint(payload: Record<string, unknown>, sessionId = props.selectedGroupSessionId || '') {
   if (!payload || !sessionId) return
-  const expertDebug = (payload.expert_route_debug || {}) as Record<string, unknown>
-  const skillDebug = (payload.skill_route_debug || {}) as Record<string, unknown>
   const routedExpertId = String(payload.agent_id || '').trim()
   const routedSkillId = String(payload.skill_id || '').trim()
   if (!routedExpertId && !routedSkillId) return
@@ -1569,25 +1501,6 @@ async function loadHostDisplayName() {
   }
 }
 
-/** 邀请后自动继续执行任务（不要求用户再点发送） */
-async function continueGroupStream() {
-  const detail = groupDetail.value
-  const id = detail?.id
-  if (!detail || !id || groupStreaming.value) return
-  const { runToken, abort } = beginGroupStream(id, '正在继续…')
-  try {
-    const shouldEmitMessageSent = await runGroupStream(id, { message: '' }, abort.signal)
-    if (shouldEmitMessageSent) emit('message-sent')
-  } catch (e) {
-    console.error('继续任务失败', e)
-  } finally {
-    if (isCurrentGroupRun(id, runToken)) {
-      clearStreamingPlaceholders()
-      finishGroupStream(id, runToken)
-    }
-  }
-}
-
 async function inviteSuggestedDha() {
   const ids = pendingSuggestedAddDhaIds.value
   const groupId = groupDetail.value?.id
@@ -1646,23 +1559,6 @@ async function inviteOneSuggestedDha(dhaId: string) {
   }
 }
 
-async function ignoreAutoSwitchAndRedo() {
-  const hint = currentAutoSwitchHint.value
-  if (!hint || groupStreaming.value) return
-  autoSwitchIgnoreLoading.value = true
-  try {
-    const expertId = (hint.expertId || '').trim()
-    const skillId = (hint.skillId || '').trim()
-    autoSwitchHint.value = null
-    await confirmGroupNext('__auto__', {
-      ignoreAutoExpertId: expertId || undefined,
-      ignoreAutoSkillId: skillId || undefined,
-    })
-  } finally {
-    autoSwitchIgnoreLoading.value = false
-  }
-}
-
 async function ignoreAutoSwitchAndPause() {
   if (!currentAutoSwitchHint.value) return
   autoSwitchIgnoreLoading.value = true
@@ -1702,19 +1598,6 @@ function lastNonSystemGroupMessageForToolbar(): GroupMessage | null {
   }
   return null
 }
-
-/** 最近一条专家 assistant 气泡（用于无「下一位」建议时的弱回退） */
-const latestExpertSpeakerDhaId = computed(() => {
-  const ids = orderedMemberIds.value
-  const list = groupDisplayMessages.value || []
-  for (let i = list.length - 1; i >= 0; i--) {
-    const m = list[i] as GroupMessage
-    if (m?.role === 'assistant' && m?.agent_id && (m as Record<string, unknown>).skill_id && ids.includes(m.agent_id)) {
-      return m.agent_id
-    }
-  }
-  return ''
-})
 
 /** 输入区旁「发言焦点」：流式中=正在输出者；空闲时=服务端建议的下一位（含 user/host/end），避免误显示上一轮专家或 ids[0] 抖动 */
 const effectiveNextSpeaker = computed(() => {
@@ -1757,23 +1640,6 @@ const effectiveNextSpeaker = computed(() => {
   if (!lid || lid === 'host') return 'host'
   if (ids.includes(lid)) return lid
   return 'host'
-})
-
-/** 下一位角色用于暂停态提示；允许展示 user/end。 */
-const toolbarSpeakerChipId = computed(() => {
-  const eff = effectiveNextSpeaker.value
-  const ids = orderedMemberIds.value
-  const resume = (groupResumeTargetDhaId.value || '').trim()
-
-  if (eff === 'user') {
-    if (resume && ids.includes(resume)) return resume
-    const lid = (leaderDisplayId.value || '').trim()
-    if (!lid || lid === 'host') return 'host'
-    if (ids.includes(lid)) return lid
-    return 'host'
-  }
-  if (!eff || eff === 'end') return eff
-  return eff
 })
 
 /** 暂停态「下一位」文案：保留 user/end 的语义。 */
@@ -1881,9 +1747,8 @@ function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string })
   }
 }
 
-function onAtKeydown(source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
+function onAtKeydown(_source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
   if (!showAtDropdown.value || atMentionOptions.value.length === 0) return
-  const el = e.target as HTMLTextAreaElement
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     atSelectedIndex.value = (atSelectedIndex.value + 1) % atMentionOptions.value.length
@@ -1988,12 +1853,6 @@ function formatUserBubbleForDisplay(content: string): string {
   return s.trimEnd()
 }
 
-/** 从首条用户消息中取出纯讨论目标，去掉「【讨论目标】」前缀，避免预填后再次发送时重复 */
-function normalizeDiscussionGoalFromContent(content: string | null | undefined): string | null {
-  const stripped = stripDiscussionGoalForDisplay(content ?? '')
-  return stripped ? stripped : null
-}
-
 /** 判断是否是“短单行”文案（无换行），短句强制单行不换行 */
 function isShortSingleLine(text: string): string | null {
   const t = (text || '').trim()
@@ -2088,7 +1947,7 @@ watch(
 // 切换会话时，清空上一场的「下一 DHA 提示词」、文件引用等状态，避免串场
 watch(
   () => props.selectedGroupSessionId,
-  (id) => {
+  () => {
     groupDiscussionGoal.value = null
     groupNextPrompt.value = ''
     attachedFiles.value = []
@@ -2327,7 +2186,6 @@ function isImageFile(name: string) {
   return IMAGE_EXT.includes(ext)
 }
 
-const groupWorkspacePreviewIsMd = computed(() => /\.md$/i.test(groupWorkspacePreviewName.value))
 const groupWorkspacePreviewIsImage = computed(() => isImageFile(groupWorkspacePreviewName.value))
 
 function startWorkspacePreviewEdit() {

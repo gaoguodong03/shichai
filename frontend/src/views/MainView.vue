@@ -2852,22 +2852,6 @@ async function deleteGroupSession(id: string) {
 }
 
 
-async function renameGroupSession(id: string, currentTitle: string) {
-  const next = prompt('重命名会话', currentTitle)
-  if (next == null || next.trim() === '') return
-  const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: next.trim() }),
-  })
-  const j = await r.json()
-  if (j.status === 'ok') {
-    fetchGroupSessions()
-    if (selectedGroupSessionId.value === id) workspaceContentRef.value?.refresh()
-  } else {
-    alert(j.detail || '重命名失败')
-  }
-}
 
 async function fetchDHA() {
   dhaInstancesLoading.value = true
