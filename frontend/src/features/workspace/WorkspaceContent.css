@@ -810,60 +810,60 @@
   margin-top: 0.45rem;
 }
 /* 所有直接子块（p/h/ul/ol/pre/blockquote 等）统一：仅下边距 0.12em，首尾无额外留白 */
-.group-chat-markdown :deep(> *) {
+.group-chat-markdown > * {
   margin-top: 0 !important;
   margin-bottom: 0.12em !important;
 }
-.group-chat-markdown :deep(> *:last-child) {
+.group-chat-markdown > *:last-child {
   margin-bottom: 0 !important;
 }
-.group-chat-markdown :deep(p) {
+.group-chat-markdown p {
   margin: 0 0 0.12em 0 !important;
 }
-.group-chat-markdown :deep(p:last-child) {
+.group-chat-markdown p:last-child {
   margin-bottom: 0 !important;
 }
-.group-chat-markdown :deep(h1), .group-chat-markdown :deep(h2), .group-chat-markdown :deep(h3),
-.group-chat-markdown :deep(h4), .group-chat-markdown :deep(h5), .group-chat-markdown :deep(h6) {
+.group-chat-markdown h1, .group-chat-markdown h2, .group-chat-markdown h3,
+.group-chat-markdown h4, .group-chat-markdown h5, .group-chat-markdown h6 {
   font-weight: 600;
   line-height: 1.25;
   margin: 0 0 0.12em 0 !important;
 }
-.group-chat-markdown :deep(h1:first-child), .group-chat-markdown :deep(h2:first-child), .group-chat-markdown :deep(h3:first-child),
-.group-chat-markdown :deep(h4:first-child), .group-chat-markdown :deep(h5:first-child), .group-chat-markdown :deep(h6:first-child) {
+.group-chat-markdown h1:first-child, .group-chat-markdown h2:first-child, .group-chat-markdown h3:first-child,
+.group-chat-markdown h4:first-child, .group-chat-markdown h5:first-child, .group-chat-markdown h6:first-child {
   margin-top: 0 !important;
 }
-.group-chat-markdown :deep(h1) {
+.group-chat-markdown h1 {
   font-size: 1.3em;
   border-bottom: 1px solid var(--color-border-light);
   padding-bottom: 0.15em;
 }
-.group-chat-markdown :deep(h2) {
+.group-chat-markdown h2 {
   font-size: 1.16em;
 }
-.group-chat-markdown :deep(h3) {
+.group-chat-markdown h3 {
   font-size: 1.05em;
 }
-.group-chat-markdown :deep(h4), .group-chat-markdown :deep(h5), .group-chat-markdown :deep(h6) {
+.group-chat-markdown h4, .group-chat-markdown h5, .group-chat-markdown h6 {
   font-size: 1em;
 }
-.group-chat-markdown :deep(ul), .group-chat-markdown :deep(ol) {
+.group-chat-markdown ul, .group-chat-markdown ol {
   margin: 0 0 0.12em 0 !important;
   padding-left: 1.4em;
   line-height: 1.4;
 }
-.group-chat-markdown :deep(li) {
+.group-chat-markdown li {
   margin: 0;
   padding: 0;
 }
-.group-chat-markdown :deep(li > p) {
+.group-chat-markdown li > p {
   margin: 0 !important;
 }
-.group-chat-markdown :deep(h1 + p), .group-chat-markdown :deep(h2 + p), .group-chat-markdown :deep(h3 + p),
-.group-chat-markdown :deep(h4 + p), .group-chat-markdown :deep(h5 + p), .group-chat-markdown :deep(h6 + p) {
+.group-chat-markdown h1 + p, .group-chat-markdown h2 + p, .group-chat-markdown h3 + p,
+.group-chat-markdown h4 + p, .group-chat-markdown h5 + p, .group-chat-markdown h6 + p {
   margin-top: 0 !important;
 }
-.group-chat-markdown :deep(pre) {
+.group-chat-markdown pre {
   margin: 0.12em 0 !important;
   padding: 0.35rem 0.5rem;
   overflow-x: auto;
@@ -872,14 +872,14 @@
   font-size: 0.8125em;
   line-height: 1.35;
 }
-.group-chat-markdown :deep(.group-chat-tool-call) {
+.group-chat-markdown .group-chat-tool-call {
   margin: 0.12em 0 !important;
   border: 1px solid var(--color-border-light);
   border-radius: 10px;
   background: color-mix(in srgb, var(--color-card) 88%, var(--color-input-bg));
   overflow: hidden;
 }
-.group-chat-markdown :deep(.group-chat-tool-call-summary) {
+.group-chat-markdown .group-chat-tool-call-summary {
   list-style: none;
   cursor: pointer;
   display: flex;
@@ -888,10 +888,10 @@
   padding: 0.4rem 0.55rem;
   user-select: none;
 }
-.group-chat-markdown :deep(.group-chat-tool-call-summary::-webkit-details-marker) {
+.group-chat-markdown .group-chat-tool-call-summary::-webkit-details-marker {
   display: none;
 }
-.group-chat-markdown :deep(.group-chat-tool-call-pill) {
+.group-chat-markdown .group-chat-tool-call-pill {
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.12rem 0.45rem;
@@ -900,15 +900,15 @@
   background: var(--color-accent-subtle);
   border: 1px solid var(--color-accent);
 }
-.group-chat-markdown :deep(.group-chat-tool-call-hint) {
+.group-chat-markdown .group-chat-tool-call-hint {
   font-size: 0.75rem;
   color: var(--color-text-muted);
 }
-.group-chat-markdown :deep(.group-chat-tool-call[open] .group-chat-tool-call-summary) {
+.group-chat-markdown .group-chat-tool-call[open] .group-chat-tool-call-summary {
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-page);
 }
-.group-chat-markdown :deep(.group-chat-tool-call-pre) {
+.group-chat-markdown .group-chat-tool-call-pre {
   margin: 0 !important;
   padding: 0.5rem 0.75rem;
   overflow-x: auto;
@@ -916,63 +916,63 @@
   font-size: 0.8125em;
   line-height: 1.35;
 }
-.group-chat-markdown :deep(code) {
+.group-chat-markdown code {
   padding: 0.15em 0.35em;
   border-radius: 4px;
   background: var(--color-input-bg);
   font-size: 0.9em;
 }
-.group-chat-markdown :deep(pre code) {
+.group-chat-markdown pre code {
   padding: 0;
   background: none;
 }
-.group-chat-markdown :deep(a) {
+.group-chat-markdown a {
   color: var(--color-accent-subtle-text);
   text-decoration: none;
   border-bottom: 1px dashed var(--color-accent-subtle-text);
 }
-.group-chat-markdown :deep(a:hover) {
+.group-chat-markdown a:hover {
   text-decoration: none;
   border-bottom-style: solid;
 }
-.group-chat-markdown :deep(strong) {
+.group-chat-markdown strong {
   font-weight: 600;
 }
-.group-chat-markdown :deep(em) {
+.group-chat-markdown em {
   font-style: italic;
 }
-.group-chat-markdown :deep(table) {
+.group-chat-markdown table {
   width: 100%;
   border-collapse: collapse;
   margin: 0.12em 0 !important;
   font-size: 0.8125rem;
 }
-.group-chat-markdown :deep(tr) {
+.group-chat-markdown tr {
   line-height: 1.35;
 }
-.group-chat-markdown :deep(th),
-.group-chat-markdown :deep(td) {
+.group-chat-markdown th,
+.group-chat-markdown td {
   border: 1px solid var(--color-border-light);
   padding: 0.2rem 0.4rem;
   text-align: left;
 }
-.group-chat-markdown :deep(thead) {
+.group-chat-markdown thead {
   background-color: var(--color-list-hover);
 }
-.group-chat-markdown :deep(tbody tr:nth-child(odd)) {
+.group-chat-markdown tbody tr:nth-child(odd) {
   background-color: var(--color-page);
 }
-.group-chat-markdown :deep(tbody tr:nth-child(even)) {
+.group-chat-markdown tbody tr:nth-child(even) {
   background-color: var(--color-card);
 }
-.group-chat-markdown :deep(blockquote) {
+.group-chat-markdown blockquote {
   margin: 0.12em 0 !important;
   padding: 0.15rem 0.4rem;
   border-left: 3px solid var(--color-border);
   background: var(--color-list-hover);
   color: var(--color-text-muted);
 }
-.group-chat-markdown :deep(hr) {
+.group-chat-markdown hr {
   border: 0;
   border-top: 1px solid var(--color-border-light);
   margin: 0.2em 0 !important;
