@@ -86,7 +86,7 @@
               {{ loading ? (isRegister ? '创建中…' : '验证中…') : (isRegister ? '创建账户' : '登录') }}
             </button>
           </form>
-          <p class="mt-6 text-center text-sm text-muted hidden">
+          <p class="mt-6 text-center text-sm text-muted">
             <button
               type="button"
               class="text-accent hover:opacity-80 hover:underline"
@@ -129,6 +129,7 @@ function isValidAccount(value: string): boolean {
 function toggleMode() {
   isRegister.value = !isRegister.value
   error.value = ''
+  passwordConfirm.value = ''
 }
 
 function parseError(j: { detail?: unknown }): string {
@@ -150,9 +151,24 @@ async function onSubmit() {
     error.value = '账号格式不正确，请输入手机号或电子邮箱'
     return
   }
+  if (!pwd) {
+    error.value = '请输入密码'
+    return
+  }
+  if (isRegister.value) {
+    if (pwd.length < 6) {
+      error.value = '密码至少 6 位'
+      return
+    }
+    if (pwd !== passwordConfirm.value) {
+      error.value = '两次密码不一致'
+      return
+    }
+  }
   loading.value = true
   try {
-    const r = await fetch('/api/auth/login', {
+    const endpoint = isRegister.value ? '/api/auth/register' : '/api/auth/login'
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: name, password: pwd }),
