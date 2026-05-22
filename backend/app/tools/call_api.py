@@ -231,42 +231,6 @@ def _call_api_impl(
     if block:
         return f"错误：{block}"
 
-    # #region agent log: call_api entry
-    try:
-        from urllib.parse import parse_qs, urlunparse as _urlunparse
-        parsed = urlparse(url)
-        # redacted: 去掉 key 值，避免在日志中记录敏感信息
-        qs = parse_qs(parsed.query, keep_blank_values=True)
-        if "key" in qs:
-            qs["key"] = ["***"]
-        redacted_query = "&".join(f"{k}={v[0]}" for k, v in qs.items())
-        redacted_url = _urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, redacted_query, parsed.fragment))
-    except Exception:
-        redacted_url = "parse_error"
-    try:
-        import time as _t, json as _json, os as _os
-        log_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), ".cursor", "debug.log")
-        _os.makedirs(_os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as _f:
-            _f.write(
-                _json.dumps(
-                    {
-                        "id": f"log_{int(_t.time()*1000)}_call_api_enter",
-                        "timestamp": int(_t.time() * 1000),
-                        "location": "app/tools/call_api.py:entry",
-                        "message": "call_api_enter",
-                        "runId": "call_api-debug-1",
-                        "hypothesisId": "H-all",
-                        "data": {"method": method, "url_redacted": redacted_url},
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # #endregion agent log: call_api entry
-
     import os as _os_env
     timeout_sec = float(_os_env.getenv("CALL_API_TIMEOUT", "30"))
     try:
@@ -280,83 +244,10 @@ def _call_api_impl(
         except Exception:
             text = _format_non_json_body(raw, ct, url)
 
-        # #region agent log: call_api success
-        try:
-            import time as _t2, json as _json2, os as _os2
-            log_path2 = _os2.path.join(_os2.path.dirname(_os2.path.dirname(_os2.path.dirname(__file__))), ".cursor", "debug.log")
-            _os2.makedirs(_os2.path.dirname(log_path2), exist_ok=True)
-            with open(log_path2, "a", encoding="utf-8") as _f2:
-                _f2.write(
-                    _json2.dumps(
-                        {
-                            "id": f"log_{int(_t2.time()*1000)}_call_api_success",
-                            "timestamp": int(_t2.time() * 1000),
-                            "location": "app/tools/call_api.py:success",
-                            "message": "call_api_success",
-                            "runId": "call_api-debug-1",
-                            "hypothesisId": "H-all",
-                            "data": {"status_code": resp.status_code, "text_preview": text[:200]},
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion agent log: call_api success
-
         return f"状态码: {resp.status_code}\n\n{text}"
     except httpx.TimeoutException:
-        # #region agent log: call_api timeout
-        try:
-            import time as _t3, json as _json3, os as _os3
-            log_path3 = _os3.path.join(_os3.path.dirname(_os3.path.dirname(_os3.path.dirname(__file__))), ".cursor", "debug.log")
-            _os3.makedirs(_os3.path.dirname(log_path3), exist_ok=True)
-            with open(log_path3, "a", encoding="utf-8") as _f3:
-                _f3.write(
-                    _json3.dumps(
-                        {
-                            "id": f"log_{int(_t3.time()*1000)}_call_api_timeout",
-                            "timestamp": int(_t3.time() * 1000),
-                            "location": "app/tools/call_api.py:except_timeout",
-                            "message": "call_api_timeout",
-                            "runId": "call_api-debug-1",
-                            "hypothesisId": "H-all",
-                            "data": {"timeout_sec": timeout_sec},
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion agent log: call_api timeout
         return f"错误：请求超时（{timeout_sec} 秒）。"
     except Exception as e:
-        # #region agent log: call_api error
-        try:
-            import time as _t4, json as _json4, os as _os4
-            log_path4 = _os4.path.join(_os4.path.dirname(_os4.path.dirname(_os4.path.dirname(__file__))), ".cursor", "debug.log")
-            _os4.makedirs(_os4.path.dirname(log_path4), exist_ok=True)
-            with open(log_path4, "a", encoding="utf-8") as _f4:
-                _f4.write(
-                    _json4.dumps(
-                        {
-                            "id": f"log_{int(_t4.time()*1000)}_call_api_error",
-                            "timestamp": int(_t4.time() * 1000),
-                            "location": "app/tools/call_api.py:except_error",
-                            "message": "call_api_error",
-                            "runId": "call_api-debug-1",
-                            "hypothesisId": "H-all",
-                            "data": {"error_type": type(e).__name__, "error_msg": str(e)[:200]},
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            pass
-        # #endregion agent log: call_api error
         err_str = str(e)
         if "protocol" in err_str.lower() and ("missing" in err_str.lower() or "http" in err_str.lower()):
             return (

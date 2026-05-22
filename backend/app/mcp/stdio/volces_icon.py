@@ -23,9 +23,11 @@ mcp = FastMCP("图片生成")
 
 
 def _agent_log(message: str, data: dict | None = None, hypothesis_id: str | None = None) -> None:
-    """调试日志：写入 .cursor/debug.log（不记录密钥等敏感信息）"""
+    """Optional local diagnostics; disabled unless VOLCES_ICON_DEBUG_LOG is set."""
+    log_path = os.environ.get("VOLCES_ICON_DEBUG_LOG", "").strip()
+    if not log_path:
+        return
     try:
-        log_path = "/Users/ggd/mycode/DHA/.cursor/debug.log"
         payload = {
             "id": f"log_volces_icon_{int(time.time() * 1000)}",
             "timestamp": int(time.time() * 1000),
@@ -36,10 +38,10 @@ def _agent_log(message: str, data: dict | None = None, hypothesis_id: str | None
         }
         if hypothesis_id:
             payload["hypothesisId"] = hypothesis_id
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception:
-        # 调试日志失败不影响正常逻辑
         pass
 
 

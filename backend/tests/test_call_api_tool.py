@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 
@@ -135,3 +136,39 @@ def test_call_api_accepts_json_string_as_url_object(monkeypatch):
     )
     out = _run_call_api(mod, url=packed)
     assert "状态码: 201" in out
+
+
+def test_call_api_does_not_write_cursor_debug_log(monkeypatch):
+    from app.tools import call_api as mod
+
+    debug_log = Path(mod.__file__).resolve().parents[2] / ".cursor" / "debug.log"
+    if debug_log.exists():
+        debug_log.unlink()
+
+    class _Resp:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+        text = '{"ok":true}'
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    class _Client:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def request(self, method, url, content=None, headers=None):
+            return _Resp()
+
+    monkeypatch.setattr(mod.httpx, "Client", _Client)
+    out = _run_call_api(mod, url="https://example.com/api")
+
+    assert "状态码: 200" in out
+    assert not debug_log.exists()
