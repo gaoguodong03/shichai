@@ -7,7 +7,7 @@
 - 项目根目录：`/Users/ggd/project/shichai`。
 - 优先使用 `rtk` 执行命令；当前可用路径为 `/Users/ggd/.local/bin/rtk`。
 - 后端验证统一使用 conda 环境：`conda run -n st49 bash -lc '...'`。
-- 不要执行 `git commit`，除非用户明确要求。
+- 完成后执行 `git commit`，使用中文写较为详细的 commit 记录。
 - 运行测试后需要清理 `backend` 下生成的 `__pycache__` / `.pyc`。
 - 不要删除 `frontend/package-lock.json`。
 

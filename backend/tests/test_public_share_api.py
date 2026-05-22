@@ -49,7 +49,7 @@ def test_public_share_bundle_download_success(monkeypatch, tmp_path: Path):
 
 
 def test_settings_share_import_dispatch_scene(monkeypatch):
-    from app.api import settings as api
+    from app.api import settings_presets as api
     from app.main import app
 
     monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
@@ -81,7 +81,7 @@ def test_settings_share_import_dispatch_scene(monkeypatch):
 def test_scene_share_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
     import json
 
-    from app.api import settings as api
+    from app.api import settings_presets as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -178,7 +178,7 @@ def test_scene_share_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
 
 
 def test_scene_share_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path):
-    from app.api import settings as api
+    from app.api import settings_presets as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 

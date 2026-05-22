@@ -1,6 +1,6 @@
 import json
 
-from app.api import settings as settings_api
+from app.api import settings_presets as settings_presets_api
 
 
 def _write_presets(path, rows):
@@ -9,7 +9,7 @@ def _write_presets(path, rows):
 
 def test_merge_session_presets_skip_by_name(tmp_path, monkeypatch):
     presets_path = tmp_path / "session_presets.json"
-    monkeypatch.setattr(settings_api, "_get_session_presets_path", lambda: presets_path)
+    monkeypatch.setattr(settings_presets_api, "_get_session_presets_path", lambda: presets_path)
     _write_presets(
         presets_path,
         [
@@ -18,7 +18,7 @@ def test_merge_session_presets_skip_by_name(tmp_path, monkeypatch):
         ],
     )
 
-    merged, imported_ids, skipped_by_name, overwritten_ids = settings_api._merge_session_presets_into_file(
+    merged, imported_ids, skipped_by_name, overwritten_ids = settings_presets_api._merge_session_presets_into_file(
         [{"id": "incoming", "name": "同名场景", "agent_ids": ["x1"]}],
         "skip",
     )
@@ -30,7 +30,7 @@ def test_merge_session_presets_skip_by_name(tmp_path, monkeypatch):
 
 def test_merge_session_presets_overwrite_all_same_name(tmp_path, monkeypatch):
     presets_path = tmp_path / "session_presets.json"
-    monkeypatch.setattr(settings_api, "_get_session_presets_path", lambda: presets_path)
+    monkeypatch.setattr(settings_presets_api, "_get_session_presets_path", lambda: presets_path)
     _write_presets(
         presets_path,
         [
@@ -40,7 +40,7 @@ def test_merge_session_presets_overwrite_all_same_name(tmp_path, monkeypatch):
         ],
     )
 
-    merged, imported_ids, skipped_by_name, overwritten_ids = settings_api._merge_session_presets_into_file(
+    merged, imported_ids, skipped_by_name, overwritten_ids = settings_presets_api._merge_session_presets_into_file(
         [{"id": "s3", "name": "同名场景", "agent_ids": ["x1"]}],
         "overwrite",
     )

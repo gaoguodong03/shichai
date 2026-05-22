@@ -26,7 +26,7 @@
 
 ## 任务 1：锁定当前 settings preset 行为
 
-- [ ] **步骤 1：查找现有测试**
+- [x] **步骤 1：查找现有测试**
 
 运行：
 
@@ -36,7 +36,7 @@
 
 预期：列出现有测试文件；如果没有覆盖 `/settings/session-presets/import-bundle` 或 `/settings/shares/{share_id}/import`，任务 2 需要补测试。
 
-- [ ] **步骤 2：运行当前相关测试作为基线**
+- [x] **步骤 2：运行当前相关测试作为基线**
 
 运行：
 
@@ -46,13 +46,13 @@
 
 预期：全部通过。若某测试不存在，记录实际可用测试名，不要跳过同类覆盖。
 
-- [ ] **步骤 3：Commit**
+- [x] **步骤 3：Commit**
 
 本任务只做基线确认，不提交。
 
 ## 任务 2：补一个路由保持不变的回归测试
 
-- [ ] **步骤 1：编写失败或通过的契约测试**
+- [x] **步骤 1：编写失败或通过的契约测试**
 
 若现有测试没有覆盖 session preset list/update，新增：
 
@@ -64,7 +64,9 @@ def test_session_presets_routes_remain_available(client):
 
 根据项目现有 auth fixture 调整 client 使用方式，目标是锁定路由仍然注册，不测试实现细节。
 
-- [ ] **步骤 2：运行测试验证基线**
+执行记录：现有 `test_frontend_resource_center_and_settings_flow` 已覆盖 session preset `PUT` + `GET`，未新增重复契约测试；私有 helper 测试改为指向 `settings_presets`，迁移前按预期失败于模块缺失。
+
+- [x] **步骤 2：运行测试验证基线**
 
 运行：
 
@@ -74,7 +76,9 @@ def test_session_presets_routes_remain_available(client):
 
 预期：通过；如果新增测试需要 auth fixture，先修测试，不改生产代码。
 
-- [ ] **步骤 3：Commit**
+- [x] **步骤 3：Commit**
+
+执行记录：本轮根据用户明确要求提交。
 
 ```bash
 /Users/ggd/.local/bin/rtk git add backend/tests
@@ -83,7 +87,7 @@ def test_session_presets_routes_remain_available(client):
 
 ## 任务 3：创建 `settings_presets.py` 并迁移 session preset CRUD
 
-- [ ] **步骤 1：创建新 router 文件**
+- [x] **步骤 1：创建新 router 文件**
 
 从 `settings.py` 迁移以下内容到 `backend/app/api/settings_presets.py`：
 
@@ -100,7 +104,7 @@ def test_session_presets_routes_remain_available(client):
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 ```
 
-- [ ] **步骤 2：注册 router**
+- [x] **步骤 2：注册 router**
 
 在 `backend/app/api/routes.py` 中 include 新 router，保持路径不变。
 
@@ -112,7 +116,7 @@ from app.api import settings_presets
 app.include_router(settings_presets.router, prefix="/api")
 ```
 
-- [ ] **步骤 3：运行测试**
+- [x] **步骤 3：运行测试**
 
 ```bash
 /Users/ggd/.local/bin/rtk conda run -n st49 bash -lc 'cd backend && python -m pytest -q tests/test_settings_import_conflict.py tests/test_public_share_api.py tests/test_frontend_business_flows.py tests/test_sessions_api.py'
@@ -120,7 +124,9 @@ app.include_router(settings_presets.router, prefix="/api")
 
 预期：通过。
 
-- [ ] **步骤 4：Commit**
+- [x] **步骤 4：Commit**
+
+执行记录：本轮根据用户明确要求提交。
 
 ```bash
 /Users/ggd/.local/bin/rtk git add backend/app/api/settings.py backend/app/api/settings_presets.py backend/app/api/routes.py
@@ -129,7 +135,7 @@ app.include_router(settings_presets.router, prefix="/api")
 
 ## 任务 4：迁移 scenario bundle export/share/import
 
-- [ ] **步骤 1：迁移 bundle helper 和路由**
+- [x] **步骤 1：迁移 bundle helper 和路由**
 
 从 `settings.py` 迁移：
 
@@ -142,7 +148,7 @@ app.include_router(settings_presets.router, prefix="/api")
 
 保留对已有 core helper 的调用，不复制 core 层逻辑。
 
-- [ ] **步骤 2：迁移 import 需要的私有 helper**
+- [x] **步骤 2：迁移 import 需要的私有 helper**
 
 如果 import bundle 依赖 Skill helper，先从 `settings.py` 导入这些 helper，避免一次性拆 Skill 模块：
 
@@ -152,7 +158,7 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 如果出现循环导入，先停止并只迁移无循环依赖的 route；然后新建 `backend/app/core/settings_import_helpers.py`，把 `_skill_conflict_id_map` 和 requirement merge 需要的纯 helper 移入 core，再让两个 API 模块共同引用。
 
-- [ ] **步骤 3：运行测试**
+- [x] **步骤 3：运行测试**
 
 ```bash
 /Users/ggd/.local/bin/rtk conda run -n st49 bash -lc 'cd backend && python -m pytest -q tests/test_settings_import_conflict.py tests/test_public_share_api.py tests/test_frontend_business_flows.py tests/test_sessions_api.py'
@@ -160,7 +166,9 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 预期：通过。
 
-- [ ] **步骤 4：Commit**
+- [x] **步骤 4：Commit**
+
+执行记录：本轮根据用户明确要求提交。
 
 ```bash
 /Users/ggd/.local/bin/rtk git add backend/app/api/settings.py backend/app/api/settings_presets.py backend/app/core/settings_import_helpers.py backend/app/api/routes.py
@@ -169,7 +177,7 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 ## 任务 5：验证、缓存清理和行数复核
 
-- [ ] **步骤 1：完整后端相关验证**
+- [x] **步骤 1：完整后端相关验证**
 
 运行：
 
@@ -179,7 +187,7 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 预期：全部通过。
 
-- [ ] **步骤 2：语法验证**
+- [x] **步骤 2：语法验证**
 
 运行：
 
@@ -189,7 +197,7 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 预期：无输出，exit 0。
 
-- [ ] **步骤 3：清理缓存**
+- [x] **步骤 3：清理缓存**
 
 运行：
 
@@ -197,7 +205,7 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 /Users/ggd/.local/bin/rtk sh -lc 'find backend -type d -name __pycache__ -prune -exec rm -rf {} +; find backend -type f -name "*.pyc" -delete'
 ```
 
-- [ ] **步骤 4：行数复核**
+- [x] **步骤 4：行数复核**
 
 运行：
 
@@ -207,7 +215,9 @@ from app.api.settings import _skill_conflict_id_map, _merge_imported_skill_requi
 
 预期：`settings.py` 明显下降，新增文件职责聚焦。
 
-- [ ] **步骤 5：最终提交**
+- [x] **步骤 5：最终提交**
+
+执行记录：本轮根据用户明确要求提交。
 
 如有验证文档或计划状态更新：
 
