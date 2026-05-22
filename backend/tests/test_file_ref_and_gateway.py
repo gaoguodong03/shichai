@@ -287,44 +287,12 @@ def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_execute_mcp_call_via_gateway(temp_user_data_root, monkeypatch):
+async def test_execute_mcp_call_direct_does_not_use_sandbox_gateway(monkeypatch):
     from app.mcp.manager import execute_mcp_call
-    from app.agent.sandbox_adapter import SandboxHandle
-    from app.agent.sandbox_service import SandboxService
-    from app.agent.tool_gateway import UnifiedToolGateway
-    import app.mcp.manager as mcp_manager
 
+    # 这个开关仍可影响其它工具路径，但 MCP 调用应直接由 MCP manager 执行，
+    # 不再借 OpenSandbox gateway 包装远端 MCP 错误。
     monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "1")
-
-    class _FakeAdapter:
-        async def create_session_sandbox(self, session_id, policy):
-            return SandboxHandle(
-                runtime="fake",
-                session_id=session_id,
-                root=policy.fs_root,
-                metadata={"sandbox_id": f"sb-{session_id}", "policy": {"tool_allowlist": list(policy.tool_allowlist), "timeout_ms": policy.timeout_ms}},
-            )
-
-        async def run_tool_in_sandbox(self, _handle, tool_request):
-            runner = tool_request["runner"]
-            return await runner()
-
-        async def read_file(self, _handle, _path):
-            return b""
-
-        async def write_file(self, _handle, _path, _data, token_version=0):
-            return {"status": "ok", "token_version": token_version}
-
-        async def list_artifacts(self, _handle, task_id=""):
-            return []
-
-        async def dispose_sandbox(self, _handle):
-            return None
-
-    fake_gateway = UnifiedToolGateway(
-        sandbox_service=SandboxService(sandbox_adapter=_FakeAdapter(), session_ttl_sec=3600)
-    )
-    monkeypatch.setattr(mcp_manager, "_MCP_GATEWAY", fake_gateway)
 
     class _FakeSession:
         def __init__(self):
@@ -360,39 +328,10 @@ async def test_execute_mcp_call_via_gateway(temp_user_data_root, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_execute_mcp_call_treats_internal_cancel_as_tool_error(temp_user_data_root, monkeypatch):
+async def test_execute_mcp_call_treats_internal_cancel_as_tool_error(monkeypatch):
     from app.mcp.manager import execute_mcp_call
-    from app.agent.sandbox_adapter import SandboxHandle
-    from app.agent.sandbox_service import SandboxService
-    from app.agent.tool_gateway import UnifiedToolGateway
-    import app.mcp.manager as mcp_manager
 
     monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "1")
-
-    class _FakeAdapter:
-        async def create_session_sandbox(self, session_id, policy):
-            return SandboxHandle(runtime="fake", session_id=session_id, root=policy.fs_root, metadata={})
-
-        async def run_tool_in_sandbox(self, _handle, tool_request):
-            runner = tool_request["runner"]
-            return await runner()
-
-        async def read_file(self, _handle, _path):
-            return b""
-
-        async def write_file(self, _handle, _path, _data, token_version=0):
-            return {"status": "ok", "token_version": token_version}
-
-        async def list_artifacts(self, _handle, task_id=""):
-            return []
-
-        async def dispose_sandbox(self, _handle):
-            return None
-
-    fake_gateway = UnifiedToolGateway(
-        sandbox_service=SandboxService(sandbox_adapter=_FakeAdapter(), session_ttl_sec=3600)
-    )
-    monkeypatch.setattr(mcp_manager, "_MCP_GATEWAY", fake_gateway)
 
     class _CancelledSession:
         async def call_tool(self, tool_name, kwargs):
@@ -408,6 +347,78 @@ async def test_execute_mcp_call_treats_internal_cancel_as_tool_error(temp_user_d
     assert ok is False
     assert result is None
     assert "cancelled" in err.lower()
+    assert "sandbox_diag" not in err
+    assert "gateway executor" not in err
+
+
+@pytest.mark.asyncio
+async def test_execute_mcp_call_surfaces_empty_runtime_error_without_sandbox_diag(monkeypatch):
+    from app.mcp.manager import execute_mcp_call
+
+    monkeypatch.setenv("UNIFIED_TOOL_GATEWAY_ENABLED", "1")
+
+    class _RuntimeErrorSession:
+        async def call_tool(self, tool_name, kwargs):
+            raise RuntimeError()
+
+    ok, result, err = await execute_mcp_call(
+        server_id="mcp-empty",
+        tool_name="web_search_exa",
+        kwargs={"query": "x"},
+        session=_RuntimeErrorSession(),
+        timeout_sec=2.0,
+    )
+    assert ok is False
+    assert result is None
+    assert "type=RuntimeError" in err
+    assert "message=<empty>" in err
+    assert "sandbox_diag" not in err
+    assert "gateway executor" not in err
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.mcp.manager as mcp_manager
+
+    mgr = mcp_manager.MCPToolManager()
+    mgr.sessions["mcp-exa"] = "stale-session"
+    calls = []
+    reconnects = []
+
+    async def _fake_execute_mcp_call(*, server_id, tool_name, kwargs, session, timeout_sec=None):
+        calls.append((server_id, tool_name, kwargs, session, timeout_sec))
+        if len(calls) == 1:
+            return (
+                False,
+                None,
+                "MCP tool call failed: server=mcp-exa tool=web_search_exa "
+                "type=RuntimeError message=<empty> repr=RuntimeError()",
+            )
+        result = SimpleNamespace(content=[SimpleNamespace(text="ok after reconnect")])
+        return True, result, ""
+
+    async def _fake_reconnect_server(server_id):
+        reconnects.append(server_id)
+        mgr.sessions[server_id] = "fresh-session"
+        return True
+
+    monkeypatch.setattr(mcp_manager, "execute_mcp_call", _fake_execute_mcp_call)
+    monkeypatch.setattr(mgr, "_reconnect_server", _fake_reconnect_server)
+
+    mcp_tool = SimpleNamespace(
+        name="web_search_exa",
+        description="search",
+        inputSchema={"type": "object", "properties": {"query": {"type": "string"}}},
+    )
+    tool = mgr._create_tool_spec(mcp_tool, session="stale-session", server_id="mcp-exa")
+    out = await tool.acall(query="pytest")
+
+    assert out == "ok after reconnect"
+    assert reconnects == ["mcp-exa"]
+    assert calls[0][3] == "stale-session"
+    assert calls[1][3] == "fresh-session"
 
 
 @pytest.mark.asyncio

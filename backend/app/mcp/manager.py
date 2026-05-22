@@ -12,26 +12,12 @@ import logging
 import asyncio
 import threading
 import time
-import uuid
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
 
-from app.agent.sandbox_adapter import SandboxPolicy
-from app.agent.session_workspace_policy import sandbox_sessions_root
 from app.agent.tool_spec import ToolSpec
-from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
-from app.api.files import get_agent_outputs_root
-from app.core.feature_flags import is_feature_enabled
 
 logger = logging.getLogger(__name__)
-_MCP_GATEWAY: Optional[UnifiedToolGateway] = None
-
-
-def _get_mcp_gateway() -> UnifiedToolGateway:
-    global _MCP_GATEWAY
-    if _MCP_GATEWAY is None:
-        _MCP_GATEWAY = UnifiedToolGateway()
-    return _MCP_GATEWAY
 
 try:
     from mcp import ClientSession, StdioServerParameters
@@ -77,6 +63,50 @@ def _looks_like_closed_resource_error(err: str) -> bool:
     return ("closedresourceerror" in low) or ("resource closed" in low)
 
 
+def _exception_detail(exc: BaseException) -> str:
+    msg = str(exc)
+    parts = [
+        f"type={exc.__class__.__name__}",
+        f"message={msg if msg.strip() else '<empty>'}",
+        f"repr={repr(exc)}",
+    ]
+    cause = getattr(exc, "__cause__", None)
+    context = getattr(exc, "__context__", None)
+    if cause is not None:
+        cause_msg = str(cause)
+        parts.append(
+            f"cause={cause.__class__.__name__}:{cause_msg if cause_msg.strip() else '<empty>'}"
+        )
+    elif context is not None:
+        context_msg = str(context)
+        parts.append(
+            f"context={context.__class__.__name__}:{context_msg if context_msg.strip() else '<empty>'}"
+        )
+    return " ".join(parts)
+
+
+def _looks_like_retryable_mcp_call_error(err: str) -> bool:
+    s = str(err or "").strip()
+    if not s:
+        return False
+    if _looks_like_closed_resource_error(s):
+        return True
+    low = s.lower()
+    retry_markers = (
+        "cancelled",
+        "remote stream ended",
+        "remoteprotocolerror",
+        "incomplete chunked read",
+        "peer closed connection",
+        "connection reset",
+        "connection aborted",
+        "stream reset",
+        "type=runtimeerror message=<empty>",
+        "runtimeerror()",
+    )
+    return any(marker in low for marker in retry_markers)
+
+
 def _looks_like_protocol_mismatch_error(err: str) -> bool:
     s = str(err or "").strip().lower()
     if not s:
@@ -105,13 +135,19 @@ async def execute_mcp_call(
     session: ClientSession,
     timeout_sec: Optional[float] = None,
 ) -> tuple[bool, Any, str]:
-    """Execute a single MCP tool call with optional unified gateway."""
+    """Execute a single MCP tool call directly through the MCP session.
+
+    MCP calls are not sandbox commands. They may talk to remote Streamable HTTP
+    servers or stdio subprocesses owned by the MCP manager, so keep timeout,
+    serialization, and error formatting in this layer instead of routing them
+    through the OpenSandbox tool gateway.
+    """
     def _resolve_timeout_sec(raw: Optional[float]) -> Optional[float]:
         """
         MCP 工具超时：
         - raw 显式传入时优先
         - 否则读取环境变量 MCP_TOOL_TIMEOUT_SEC
-          - 未设置或 <=0 表示不启用“工具级”超时（但 gateway 仍需要一个 timeout_ms，见下方 fallback）
+        - 未设置时沿用 MCP_TOOL_TIMEOUT_FALLBACK_MS，避免远端 MCP 永久挂起
         """
         if raw is not None:
             try:
@@ -120,37 +156,22 @@ async def execute_mcp_call(
                 return None
             return None if v <= 0 else v
         env = (os.getenv("MCP_TOOL_TIMEOUT_SEC") or "").strip()
-        if not env:
-            return None
+        if env:
+            try:
+                v = float(env)
+            except Exception:
+                v = 0.0
+            if v > 0:
+                return v
+        fallback_ms = (os.getenv("MCP_TOOL_TIMEOUT_FALLBACK_MS") or "3600000").strip()
         try:
-            v = float(env)
+            fallback = int(fallback_ms)
         except Exception:
-            return None
-        return None if v <= 0 else v
+            fallback = 3_600_000
+        return None if fallback <= 0 else max(1.0, fallback / 1000.0)
 
     resolved_timeout_sec = _resolve_timeout_sec(timeout_sec)
-    # gateway/沙箱层必须有 timeout_ms；当未启用工具级超时时，给一个很大的默认值（可用环境变量覆盖）
-    fallback_timeout_ms = int(os.getenv("MCP_TOOL_TIMEOUT_FALLBACK_MS", "3600000"))  # 1h
-    resolved_timeout_ms = (
-        max(1000, int(resolved_timeout_sec * 1000)) if resolved_timeout_sec is not None else fallback_timeout_ms
-    )
-
-    if not is_feature_enabled("UNIFIED_TOOL_GATEWAY_ENABLED", default=True):
-        try:
-            lock = _get_mcp_call_lock(session)
-            async with lock:
-                if resolved_timeout_sec is None:
-                    result = await session.call_tool(tool_name, kwargs)
-                else:
-                    result = await asyncio.wait_for(
-                        session.call_tool(tool_name, kwargs), timeout=resolved_timeout_sec
-                    )
-            return True, result, ""
-        except Exception as e:  # noqa: BLE001
-            return False, None, str(e)
-
-    outputs_root = str(get_agent_outputs_root().resolve())
-    async def _runner() -> Dict[str, Any]:
+    try:
         lock = _get_mcp_call_lock(session)
         async with lock:
             if resolved_timeout_sec is None:
@@ -159,36 +180,25 @@ async def execute_mcp_call(
                 result = await asyncio.wait_for(
                     session.call_tool(tool_name, kwargs), timeout=resolved_timeout_sec
                 )
-        return {"mcp_result": result}
-
-    ctx = ToolExecutionContext(
-        session_id=f"mcp:{server_id}",
-        workspace_id=outputs_root,
-        agent_id="mcp-runtime",
-        user_id="mcp-runtime",
-        skill_id="",
-        task_id=f"mcp:{server_id}",
-        turn_id=f"tool-call:{uuid.uuid4().hex}",
-        tool_call_id=f"{server_id}:{tool_name}:{uuid.uuid4().hex}",
-        timeout_ms=int(resolved_timeout_ms),
-        retry_count=1,
-        sandbox_cwd=sandbox_sessions_root(),
-        policy=SandboxPolicy(
-            fs_root=outputs_root,
-            timeout_ms=int(resolved_timeout_ms),
-            tool_allowlist=[f"{server_id}_{tool_name}", tool_name],
-        ),
-    )
-    gw = await _get_mcp_gateway().execute(
-        tool_name=f"{server_id}_{tool_name}",
-        tool_kind="mcp",
-        payload={"kwargs": kwargs},
-        context=ctx,
-        runner=_runner,
-    )
-    if not gw.ok:
-        return False, None, gw.error or "gateway_execution_error"
-    return True, (gw.output or {}).get("mcp_result"), ""
+        return True, result, ""
+    except asyncio.TimeoutError:
+        timeout_label = resolved_timeout_sec if resolved_timeout_sec is not None else "none"
+        return (
+            False,
+            None,
+            f"MCP tool timeout: server={server_id} tool={tool_name} timeout_sec={timeout_label}",
+        )
+    except asyncio.CancelledError as e:
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise
+        detail = _exception_detail(e)
+        logger.warning("MCP tool call cancelled server=%s tool=%s %s", server_id, tool_name, detail)
+        return False, None, f"MCP tool cancelled: server={server_id} tool={tool_name} {detail}"
+    except Exception as e:  # noqa: BLE001
+        detail = _exception_detail(e)
+        logger.warning("MCP tool call failed server=%s tool=%s %s", server_id, tool_name, detail, exc_info=True)
+        return False, None, f"MCP tool call failed: server={server_id} tool={tool_name} {detail}"
 
 
 def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) -> str:
@@ -525,11 +535,17 @@ class MCPToolManager:
                     session=active_session,
                     timeout_sec=None,
                 )
-                # 远端 streamable_http 连接被回收时，首次调用可能抛 ClosedResourceError；自动重连后重试一次。
-                if (not ok) and _looks_like_closed_resource_error(err):
+                # 远端 streamable_http 连接被回收或异常中断时，首次调用可能只返回很弱的 SDK 错误；
+                # 这里在 MCP 层重连一次，不把问题包装成 sandbox 失败。
+                if (not ok) and _looks_like_retryable_mcp_call_error(err):
                     sid = server_id or ""
                     if sid:
-                        logger.warning("MCP 会话已关闭，尝试重连后重试: server=%s tool=%s", sid, original_tool_name)
+                        logger.warning(
+                            "MCP 调用疑似会话失效，尝试重连后重试: server=%s tool=%s err=%s",
+                            sid,
+                            original_tool_name,
+                            str(err or "")[:500],
+                        )
                         reconnected = await self._reconnect_server(sid)
                         if reconnected:
                             retry_session = self.sessions.get(sid)
