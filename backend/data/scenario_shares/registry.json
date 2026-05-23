@@ -1,155 +1,7 @@
 {
   "version": 1,
   "entries": {
-    "1c9d0219e444": {
-      "preset_name": "网文创作",
-      "source_preset_id": "scenario-mnrbpjb1",
-      "created_by": "2987371922@qq.com",
-      "filename": "1c9d0219e444.zip",
-      "created_at": "2026-04-12T10:25:31.993506+00:00"
-    },
-    "aeba1e80a2c8": {
-      "preset_name": "报告写作",
-      "source_preset_id": "scenario-mn7duusy",
-      "created_by": "free4inno@bupt.edu.cn",
-      "filename": "aeba1e80a2c8.zip",
-      "created_at": "2026-04-12T10:25:42.994084+00:00"
-    },
-    "b5d1185e14d7": {
-      "preset_name": "网文创作",
-      "source_preset_id": "scenario-mnrbpjb1",
-      "created_by": "2987371922@qq.com",
-      "filename": "b5d1185e14d7.zip",
-      "created_at": "2026-04-12T10:32:44.935882+00:00"
-    },
-    "597b21e29501": {
-      "preset_name": "报告写作",
-      "source_preset_id": "scenario-mn7duusy",
-      "created_by": "2987371922@qq.com",
-      "filename": "597b21e29501.zip",
-      "created_at": "2026-04-12T10:42:05.608392+00:00"
-    },
-    "e31301732732": {
-      "preset_name": "网文创作",
-      "source_preset_id": "scenario-c0e66f5803",
-      "created_by": "2987371922@qq.com",
-      "filename": "e31301732732.zip",
-      "created_at": "2026-04-12T10:42:07.069541+00:00"
-    },
-    "d1230f6e615b": {
-      "preset_name": "开源周榜与趋势",
-      "source_preset_id": "scenario-osweekly-8f3e2a1d",
-      "created_by": "2987371922@qq.com",
-      "filename": "d1230f6e615b.zip",
-      "created_at": "2026-04-12T13:34:46.690837+00:00"
-    },
-    "04459d51ce67": {
-      "preset_name": "开源周榜与趋势",
-      "source_preset_id": "scenario-osweekly-8f3e2a1d",
-      "created_by": "zry@bupt.edu.cn",
-      "filename": "04459d51ce67.zip",
-      "created_at": "2026-04-12T14:23:28.037181+00:00"
-    },
-    "b82ca5395d6d": {
-      "preset_name": "网文创作",
-      "source_preset_id": "scenario-mnrbpjb1",
-      "created_by": "zry@bupt.edu.cn",
-      "filename": "b82ca5395d6d.zip",
-      "created_at": "2026-04-12T14:23:40.105045+00:00"
-    },
-    "9696bceaea77": {
-      "preset_name": "测试·甲乙顺序",
-      "source_preset_id": "scenario-test-seq-ab",
-      "created_by": "2987371922@qq.com",
-      "filename": "9696bceaea77.zip",
-      "created_at": "2026-04-13T11:34:28.503768+00:00",
-      "updated_at": "2026-04-13T11:34:47.325132+00:00"
-    },
-    "90bf2e0ce09d": {
-      "preset_name": "开源周榜与趋势",
-      "source_preset_id": "scenario-osweekly-8f3e2a1d",
-      "created_by": "13801027172",
-      "filename": "90bf2e0ce09d.zip",
-      "created_at": "2026-04-17T08:29:31.459514+00:00"
-    },
-    "1bcbf796efaa": {
-      "preset_name": "网文创作",
-      "source_preset_id": "scenario-mnrbpjb1",
-      "created_by": "13801027172",
-      "filename": "1bcbf796efaa.zip",
-      "created_at": "2026-04-17T08:29:34.586782+00:00"
-    },
-    "f4b3d0b174d3": {
-      "preset_name": "编写PPT",
-      "source_preset_id": "scenario-ppt-writing-v1",
-      "created_by": "2987371922@qq.com",
-      "filename": "f4b3d0b174d3.zip",
-      "created_at": "2026-04-22T02:56:32.877281+00:00"
-    },
-    "1f8ba4d87b19": {
-      "object_type": "expert",
-      "source_ref": "agent-ppt-guide-3f7c1a2b",
-      "title": "PPT引导专家",
-      "expert_name": "PPT引导专家",
-      "created_by": "2987371922@qq.com",
-      "summary": {
-        "skill_count": 2,
-        "mcp_count": 0
-      },
-      "filename": "1f8ba4d87b19.zip",
-      "created_at": "2026-04-23T05:49:32.532998+00:00"
-    },
-    "ecbf74de0008": {
-      "object_type": "mcp",
-      "source_ref": "linkup",
-      "title": "Linkup抓取网页",
-      "mcp_name": "Linkup抓取网页",
-      "created_by": "2987371922@qq.com",
-      "summary": {
-        "mcp_count": 1
-      },
-      "filename": "ecbf74de0008.zip",
-      "created_at": "2026-04-23T05:53:25.552093+00:00"
-    },
-    "f476743c0a6c": {
-      "object_type": "skill",
-      "source_ref": "github",
-      "title": "GitHub 开源周榜情报",
-      "skill_name": "GitHub 开源周榜情报",
-      "created_by": "2987371922@qq.com",
-      "summary": {
-        "skill_count": 1
-      },
-      "filename": "f476743c0a6c.zip",
-      "created_at": "2026-04-23T05:58:43.858712+00:00"
-    },
-    "98e5126bd5f9": {
-      "object_type": "scene",
-      "source_ref": "scenario-mna6y0ji",
-      "title": "伴学研讨",
-      "summary": {
-        "agent_count": 2
-      },
-      "preset_name": "伴学研讨",
-      "source_preset_id": "scenario-mna6y0ji",
-      "created_by": "wzr@bupt.edu.cn",
-      "filename": "98e5126bd5f9.zip",
-      "created_at": "2026-04-24T08:44:34.911467+00:00"
-    },
-    "f067f9c7c1c8": {
-      "object_type": "scene",
-      "source_ref": "scenario-mofrhjuv",
-      "title": "实习僧网页爬取",
-      "summary": {
-        "agent_count": 2
-      },
-      "preset_name": "实习僧网页爬取",
-      "source_preset_id": "scenario-mofrhjuv",
-      "created_by": "2987371922@qq.com",
-      "filename": "f067f9c7c1c8.zip",
-      "created_at": "2026-04-26T12:49:08.853475+00:00"
-    },
-    "178dd4c94416": {
+    "4eb7c91f9d3c": {
       "object_type": "scene",
       "source_ref": "scenario-osweekly-8f3e2a1d",
       "title": "开源周榜与趋势",
@@ -158,9 +10,48 @@
       },
       "preset_name": "开源周榜与趋势",
       "source_preset_id": "scenario-osweekly-8f3e2a1d",
+      "created_by": "2987371922@qq.com",
+      "filename": "4eb7c91f9d3c.zip",
+      "created_at": "2026-05-23T05:26:59.739374+00:00"
+    },
+    "d0d1478234d8": {
+      "object_type": "scene",
+      "source_ref": "scenario-mpfdiq6q",
+      "title": "伴学研讨",
+      "summary": {
+        "agent_count": 5
+      },
+      "preset_name": "伴学研讨",
+      "source_preset_id": "scenario-mpfdiq6q",
       "created_by": "298371922@qq.com",
-      "filename": "178dd4c94416.zip",
-      "created_at": "2026-05-23T04:21:40.214394+00:00"
+      "filename": "d0d1478234d8.zip",
+      "created_at": "2026-05-23T08:39:35.907691+00:00"
+    },
+    "942f1fab09c0": {
+      "object_type": "scene",
+      "source_ref": "scenario-mofrhjuv",
+      "title": "实习僧网页爬取",
+      "summary": {
+        "agent_count": 2
+      },
+      "preset_name": "实习僧网页爬取",
+      "source_preset_id": "scenario-mofrhjuv",
+      "created_by": "298371922@qq.com",
+      "filename": "942f1fab09c0.zip",
+      "created_at": "2026-05-23T08:41:29.516815+00:00"
+    },
+    "f80cde9079e7": {
+      "object_type": "scene",
+      "source_ref": "scenario-mp456suk",
+      "title": "实习岗位查询分析",
+      "summary": {
+        "agent_count": 3
+      },
+      "preset_name": "实习岗位查询分析",
+      "source_preset_id": "scenario-mp456suk",
+      "created_by": "298371922@qq.com",
+      "filename": "f80cde9079e7.zip",
+      "created_at": "2026-05-23T08:42:15.333606+00:00"
     }
   }
 }
