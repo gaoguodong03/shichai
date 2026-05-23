@@ -383,8 +383,8 @@ async def test_prewarm_all_known_users_scans_user_root(monkeypatch, tmp_path):
 async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
-    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -404,7 +404,7 @@ async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_pat
     targets = {m.target for m in (policy.volume_mounts or [])}
     assert SANDBOX_WORKSPACE_ROOT in targets
     assert SANDBOX_SKILLS_ROOT in targets
-    assert policy.skill_scripts_host_path.endswith("/alice/skills")
+    assert policy.skill_scripts_host_path.endswith("/alice/resources/skills")
     assert policy.tool_allowlist == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
@@ -750,11 +750,11 @@ async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_p
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
-    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -790,11 +790,11 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
-    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello", encoding="utf-8")
     adapter = FakeAdapter()
