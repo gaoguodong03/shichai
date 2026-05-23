@@ -146,13 +146,15 @@ def get_user_context_for(username: str) -> UserContext:
 
 
 def ensure_empty_session_presets(username: str) -> None:
-    """新账号不预置会话快捷场景（与前端「场景配置」同源，写入空列表）。"""
+    """新账号不预置会话快捷场景；已有本地数据时不覆盖。"""
     name = (username or "").strip()
     if not name:
         return
     ctx = get_user_context_for(name)
     path = (ctx.config_dir / "session_presets.json").resolve()
     try:
+        if path.exists():
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("[]", encoding="utf-8")
     except Exception:

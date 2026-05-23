@@ -68,6 +68,21 @@ def test_sqlite_register_login_and_password_not_plaintext(env_and_client):
     assert row[2] != password
 
 
+def test_register_preserves_existing_local_session_presets(env_and_client):
+    client, db_path = env_and_client
+
+    username = "existing_local@example.com"
+    user_root = db_path.parent / "users" / username
+    preset_path = user_root / "config" / "session_presets.json"
+    preset_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_presets = [{"id": "saved-scene", "name": "已保存场景"}]
+    preset_path.write_text(json.dumps(existing_presets, ensure_ascii=False), encoding="utf-8")
+
+    _auth_register(client, username=username, password="pw-existing-123")
+
+    assert json.loads(preset_path.read_text(encoding="utf-8")) == existing_presets
+
+
 def test_multiuser_isolation_by_token_headers(env_and_client):
     client, _ = env_and_client
 
@@ -197,4 +212,3 @@ def test_reject_invalid_account_format(env_and_client):
     r = client.post("/api/auth/login", json={"username": invalid_username, "password": "pw-123456"})
     assert r.status_code == 400
     assert r.json()["detail"] == "账号格式不正确，请输入手机号或电子邮箱"
-
