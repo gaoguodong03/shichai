@@ -133,7 +133,7 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
     assert pick([]) == ""
 
 
-async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch):
+async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path):
     gc = _get_group_chat_module()
     calls = {}
 
@@ -144,13 +144,8 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch):
                 "group-host-webnovel": "网文专用主持 Skill 正文",
             }.get(skill_id)
 
-    async def fake_tool_builder(dha, workspace_id, resolved_skill_id):
-        calls["tool_builder"] = {
-            "dha": dha,
-            "workspace_id": workspace_id,
-            "resolved_skill_id": resolved_skill_id,
-        }
-        return [SimpleNamespace(name="read_file", description="读文件")]
+    async def fake_tool_builder(*_args, **_kwargs):
+        raise AssertionError("host scheduler should not use workspace tools for scheduler-state persistence")
 
     class FakeAgent:
         async def ainvoke(self, *_args, **_kwargs):
@@ -162,18 +157,20 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch):
                 ]
             }
 
-    def fake_agent_factory(llm, tools, skill_content, extra_system_prompt=""):
+    def fake_agent_factory(llm, tools, skill_content, extra_system_prompt="", **kwargs):
         calls["agent_factory"] = {
             "llm": llm,
             "tools": tools,
             "skill_content": skill_content,
             "extra_system_prompt": extra_system_prompt,
+            "kwargs": kwargs,
         }
         return FakeAgent()
 
     monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
     monkeypatch.setattr(gc, "build_tools_for_group_chat", fake_tool_builder)
     monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
 
     out = await gc._host_decide_by_dha(
         llm=object(),
@@ -195,10 +192,78 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch):
 
     assert out is not None
     assert out["next_speaker"] == "agent-a"
-    assert calls["tool_builder"]["resolved_skill_id"] == "group-host-webnovel"
     assert "网文专用主持 Skill 正文" in calls["agent_factory"]["skill_content"]
     assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
-    assert calls["agent_factory"]["tools"] == [SimpleNamespace(name="read_file", description="读文件")]
+    assert calls["agent_factory"]["tools"] == []
+    assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
+
+
+async def test_host_decide_persists_scheduler_files_from_model_text_without_tool_round(monkeypatch, tmp_path):
+    gc = _get_group_chat_module()
+    calls = {}
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, skill_id):
+            return "主持人 Skill 正文"
+
+    async def fake_tool_builder(*_args, **_kwargs):
+        raise AssertionError("host scheduler should not construct workspace tools")
+
+    class FakeAgent:
+        async def ainvoke(self, initial_state, **_kwargs):
+            calls["initial_state"] = initial_state
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content=(
+                            "current_phase.txt: 阶段1：选题\n"
+                            "next_speaker.txt: 教师\n"
+                            "speaker_task.txt: 请提出本轮研讨主题。"
+                        )
+                    )
+                ]
+            }
+
+    def fake_agent_factory(llm, tools, skill_content, extra_system_prompt="", **kwargs):
+        calls["agent_factory"] = {
+            "tools": tools,
+            "skill_content": skill_content,
+            "kwargs": kwargs,
+        }
+        return FakeAgent()
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "build_tools_for_group_chat", fake_tool_builder)
+    monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
+
+    out = await gc._host_decide_by_dha(
+        llm=object(),
+        host_dha={
+            "agent_id": "agent-scene-host",
+            "name": "四九场景主持",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host"],
+        },
+        dha_list=[{"agent_id": "agent-teacher", "name": "伴学研讨——引导教学的教师", "role": "教师"}],
+        discussion_goal="开始研讨",
+        recent_messages="【用户】开始研讨",
+        last_speaker_agent_id=None,
+        extra_system_prompt="",
+        group_session_id="group-fast",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+    )
+
+    assert out is not None
+    assert out["next_speaker"] == "agent-teacher"
+    assert out["next_prompt"] == "请提出本轮研讨主题。"
+    assert out["decision_source"] == "host_scheduler_state"
+    assert calls["agent_factory"]["tools"] == []
+    assert "不要调用 read_file/write_workspace_file" in calls["agent_factory"]["skill_content"]
+    assert (tmp_path / "current_phase.txt").read_text(encoding="utf-8") == "阶段1：选题\n"
+    assert (tmp_path / "next_speaker.txt").read_text(encoding="utf-8") == "教师\n"
+    assert (tmp_path / "speaker_task.txt").read_text(encoding="utf-8") == "请提出本轮研讨主题。\n"
 
 
 def test_leader_prompt_hides_skill_details_from_host():

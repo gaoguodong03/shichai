@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.agent.workspace_visibility import (
+    internal_diagnostic_path_error,
+    is_internal_diagnostic_workspace_path,
+)
 from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root, get_workspace_root_path
 from app.core.security import get_current_user
 
@@ -93,6 +97,8 @@ def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
         rel, err = _workspace_relative_for_session(session_id=session_id or "", path=raw)
         if err:
             return err
+        if is_internal_diagnostic_workspace_path(rel):
+            return internal_diagnostic_path_error(rel)
         if not session_id:
             return "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
         ws_root = get_workspace_root_path(session_id)
@@ -115,6 +121,8 @@ def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
                     if not p.is_file():
                         continue
                     rr = str(p.relative_to(ws_root)).replace("\\", "/")
+                    if is_internal_diagnostic_workspace_path(rr):
+                        continue
                     all_files.append(rr)
                     if target_name and p.name.lower() == target_name:
                         hints.append(rr)

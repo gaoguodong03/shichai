@@ -37,6 +37,17 @@ def parse_opensandbox_target() -> tuple[str, int]:
     return host, port
 
 
+def resolve_opensandbox_compose_path(repo_root: Path) -> Path | None:
+    compose_file = (os.getenv("OPENSANDBOX_COMPOSE_FILE") or "").strip()
+    if compose_file:
+        compose_path = Path(compose_file).expanduser()
+        if not compose_path.is_absolute():
+            compose_path = (repo_root / compose_path).resolve()
+        return compose_path.resolve()
+    compose_path = (repo_root / "docker-compose.yml").resolve()
+    return compose_path if compose_path.exists() else None
+
+
 def auto_bootstrap_opensandbox() -> None:
     """Local dev bootstrap: auto `docker compose up -d opensandbox-server` when unreachable."""
     if not is_truthy_env("AUTO_START_OPENSANDBOX", "1"):
@@ -47,14 +58,13 @@ def auto_bootstrap_opensandbox() -> None:
 
     backend_root = Path(__file__).resolve().parent.parent.parent
     repo_root = backend_root.parent
-    compose_file = (os.getenv("OPENSANDBOX_COMPOSE_FILE") or "").strip()
-    if compose_file:
-        compose_path = Path(compose_file).expanduser()
-        if not compose_path.is_absolute():
-            compose_path = (repo_root / compose_path).resolve()
-    else:
-        candidates = [repo_root / "docker-compose.yml", repo_root / "docker-compose.1panel.yml"]
-        compose_path = next((p for p in candidates if p.exists()), candidates[-1])
+    compose_path = resolve_opensandbox_compose_path(repo_root)
+    if compose_path is None:
+        print(
+            "[startup] OpenSandbox 不可达，且未找到本地 docker-compose.yml；"
+            "不会自动启动 1Panel 编排。若确需本地自动启动，请设置 OPENSANDBOX_COMPOSE_FILE。"
+        )
+        return
 
     print(f"[startup] OpenSandbox 不可达 {host}:{port}，尝试自动启动 docker compose: {compose_path} ...")
     try:

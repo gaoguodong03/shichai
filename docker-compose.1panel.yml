@@ -15,7 +15,7 @@ services:
       # 生产环境建议在 .env 中设置 OPENSANDBOX_API_KEY；未设置时用该开关避免服务启动被阻断。
       - OPENSANDBOX_INSECURE_SERVER=${OPENSANDBOX_INSECURE_SERVER:-YES}
       # OpenSandbox 新版本默认拒绝所有 host bind mounts；这里放行工作区/技能所在数据根目录。
-      - OPENSANDBOX_ALLOWED_HOST_PATHS=${OPENSANDBOX_ALLOWED_HOST_PATHS:-/Users/ggd/project/shichai/backend/data,/var/lib/docker/volumes/st49/_data}
+      - OPENSANDBOX_ALLOWED_HOST_PATHS=${OPENSANDBOX_ALLOWED_HOST_PATHS:-/var/lib/docker/volumes/st49/_data}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     extra_hosts:
@@ -30,7 +30,7 @@ services:
         # 业务脚本运行镜像由 st49 创建沙箱时通过 image_ref/SANDBOX_STANDARD_IMAGE 传给 OpenSandbox。
         export OPENSANDBOX_EXECD_IMAGE="$${OPENSANDBOX_EXECD_IMAGE:-opensandbox/execd:v1.0.15}"
         export OPENSANDBOX_EGRESS_IMAGE="$${OPENSANDBOX_EGRESS_IMAGE:-opensandbox/egress:v1.0.10}"
-        export OPENSANDBOX_ALLOWED_HOST_PATHS="$${OPENSANDBOX_ALLOWED_HOST_PATHS:-/Users/ggd/project/shichai/backend/data,/var/lib/docker/volumes/st49/_data}"
+        export OPENSANDBOX_ALLOWED_HOST_PATHS="$${OPENSANDBOX_ALLOWED_HOST_PATHS:-/var/lib/docker/volumes/st49/_data}"
         allowed_host_paths=""
         old_ifs="$$IFS"
         IFS=,

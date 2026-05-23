@@ -17,6 +17,7 @@ from app.mcp.manager import ensure_user_mcp_config_loaded
 from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.agent.workspace_visibility import is_internal_diagnostic_workspace_path
 from app.tools.call_api import call_api
 from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
@@ -201,6 +202,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         if not items:
             return f"目录 {prefix} 下：（空）"
         root = f"{sandbox_session_dir(workspace_id)}/{cleaned}".rstrip("/")
+        workspace_root = sandbox_session_dir(workspace_id).rstrip("/")
         # OpenSandbox filesystem.search 返回的是完整路径；这里转成类似 find 的相对输出。
         rels: list[str] = []
         for it in items or []:
@@ -210,6 +212,11 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             if not p:
                 continue
             if p == root:
+                continue
+            workspace_rel = ""
+            if p.startswith(workspace_root + "/"):
+                workspace_rel = p[len(workspace_root) + 1 :]
+            if workspace_rel and is_internal_diagnostic_workspace_path(workspace_rel):
                 continue
             if p.startswith(root + "/"):
                 rels.append("./" + p[len(root) + 1 :])

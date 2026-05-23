@@ -53,13 +53,21 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
         calls["tool_builder"] = (dha["agent_id"], workspace_id, resolved_skill_id)
         return [SimpleNamespace(name="read_file", description="读文件")]
 
-    def fake_agent_factory(llm, tools, skill_content, extra_system_prompt="", expert_self_awareness=""):
+    def fake_agent_factory(
+        llm,
+        tools,
+        skill_content,
+        extra_system_prompt="",
+        expert_self_awareness="",
+        synthesize_after_read_file_paths=(),
+    ):
         calls["agent_factory"] = {
             "llm": llm,
             "tools": tools,
             "skill_content": skill_content,
             "extra_system_prompt": extra_system_prompt,
             "expert_self_awareness": expert_self_awareness,
+            "synthesize_after_read_file_paths": synthesize_after_read_file_paths,
         }
         return SimpleNamespace(kind="agent")
 
@@ -96,6 +104,10 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     assert "技能正文" in runtime.skill_content
     assert "Skill 会话状态" in runtime.skill_content
     assert calls["agent_factory"]["tools"] == runtime.tools
+    assert calls["agent_factory"]["synthesize_after_read_file_paths"] == (
+        "speaker_task.txt",
+        "memory/speaker_task.txt",
+    )
 
 
 def test_build_expert_turn_runtime_blocks_when_skill_content_missing():

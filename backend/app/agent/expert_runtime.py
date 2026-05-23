@@ -306,6 +306,7 @@ async def build_expert_turn_runtime(
         skill_content,
         extra_system_prompt,
         expert_self_awareness=expert_self_awareness,
+        synthesize_after_read_file_paths=("speaker_task.txt", "memory/speaker_task.txt"),
     )
     runtime.skill_content = skill_content
     runtime.tools = tools

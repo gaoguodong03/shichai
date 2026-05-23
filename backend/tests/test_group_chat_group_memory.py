@@ -1,6 +1,7 @@
 """群聊记忆开关与回退路径测试。"""
 import json
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
@@ -125,6 +126,52 @@ def test_log_llm_roundtrip_writes_session_workspace_jsonl(tmp_path):
     assert rows[0]["output"] == {"content": "模型输出"}
     assert rows[0]["agent_id"] == "agent-host"
     assert rows[0]["model"] == "qwen3"
+
+
+def test_expert_turn_model_name_uses_runtime_llm_not_free_variable():
+    gc = _get_group_chat_module()
+    runtime = SimpleNamespace(llm=SimpleNamespace(model="runtime-model"))
+
+    assert gc._expert_runtime_model_name(runtime) == "runtime-model"
+
+
+def test_persist_expert_turn_task_files_materializes_speaker_task(tmp_path, monkeypatch):
+    gc = _get_group_chat_module()
+    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
+
+    gc._persist_expert_turn_task_files(
+        session_id="group-test",
+        next_speaker="agent-teacher",
+        task_text="请正式开启研讨并提出首个问题。",
+        dha_map={"agent-teacher": {"name": "教师"}},
+    )
+
+    assert (tmp_path / "speaker_task.txt").read_text(encoding="utf-8") == "请正式开启研讨并提出首个问题。\n"
+    assert (tmp_path / "next_speaker.txt").read_text(encoding="utf-8") == "教师\n"
+
+
+def test_host_decision_from_workspace_files_uses_persisted_state(tmp_path, monkeypatch):
+    gc = _get_group_chat_module()
+    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
+    (tmp_path / "current_phase.txt").write_text("阶段1：选题\n", encoding="utf-8")
+    (tmp_path / "next_speaker.txt").write_text("伴学研讨——引导教学的教师\n", encoding="utf-8")
+    (tmp_path / "speaker_task.txt").write_text("请开场并提出引导性问题。\n", encoding="utf-8")
+
+    decision = gc._host_decision_from_workspace_files(
+        "group-test",
+        [
+            {
+                "agent_id": "agent-teacher",
+                "name": "伴学研讨——引导教学的教师",
+                "role": "教师",
+            }
+        ],
+    )
+
+    assert decision is not None
+    assert decision["next_speaker"] == "agent-teacher"
+    assert decision["next_prompt"] == "请开场并提出引导性问题。"
+    assert "阶段1：选题" in decision["reason"]
 
 
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():

@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.api.group_chat import _iter_with_keepalive
 from app.agent.simple_agent import SimpleAgent
@@ -166,6 +166,51 @@ async def test_astream_synthesizes_visible_answer_after_tool_output():
 
     assert any("工具已执行完成" in text for text in agent_texts)
     assert any("Example Domain" in text for text in agent_texts)
+
+
+@pytest.mark.asyncio
+async def test_astream_synthesizes_after_configured_task_file_read_without_repeating_tool():
+    first = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+    )
+    final = AIMessage(content="根据任务文件完成本轮发言")
+    repeated = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-repeat", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+    )
+    calls = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        calls["n"] += 1
+        return {
+            "messages": [ToolMessage(content="任务：教师给出选题。", tool_call_id="tc-read")],
+            "tool_attempt_debug": [{"matched": True}],
+            "tool_calls": [{"tool": "read_file", "arguments": {"path": "speaker_task.txt"}}],
+            "tool_raw_outputs": ["任务：教师给出选题。"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([first, final, repeated]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_read_file_paths=("speaker_task.txt",),
+    )
+    events = []
+    async for ev in agent.astream({"messages": [HumanMessage(content="go")]}, stream_mode=["updates"]):
+        events.append(ev)
+
+    assert calls["n"] == 1
+    agent_texts = [
+        str(ev["message"].content)
+        for ev in events
+        if ev.get("type") == "agent_step" and isinstance(ev.get("message"), AIMessage)
+    ]
+    assert agent_texts[-1] == "根据任务文件完成本轮发言"
+    final_debug = next(ev["tool_attempt_debug"] for ev in events if ev.get("type") == "final_step")
+    assert any(item.get("source") == "synthesize_after_read_file" for item in final_debug)
 
 
 @pytest.mark.asyncio

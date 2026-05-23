@@ -150,3 +150,55 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert "已写入" in out
     ws = get_workspace_root("sess-w")
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
+
+
+def test_read_file_hides_internal_diagnostic_memory_files(temp_user_data_root):
+    """read_file 不应把内部排障 JSONL 暴露给专家。"""
+    from app.api.files import get_workspace_root
+    from app.tools.read_file import create_read_file_tool
+
+    ws = get_workspace_root("sess-r")
+    (ws / "memory").mkdir(parents=True, exist_ok=True)
+    (ws / "memory" / "llm_roundtrips.jsonl").write_text('{"secret": true}\n', encoding="utf-8")
+
+    tool = create_read_file_tool("sess-r")
+    out = asyncio.run(tool.ainvoke({"path": "memory/llm_roundtrips.jsonl"}))
+
+    assert "内部排障日志" in out
+    assert "secret" not in out
+
+
+def test_list_workspace_directory_hides_internal_diagnostic_memory_files(temp_user_data_root, monkeypatch):
+    """list_workspace_directory 只暴露用户/任务可用文件，不列出内部 JSONL 日志。"""
+    from app.agent import tools_for_skill as tool_module
+    from app.agent.session_workspace_policy import sandbox_session_dir
+    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+
+    class _FakeSandboxService:
+        async def list_workspace_files_flat(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_prefix="",
+            turn_id="workspace-fs",
+        ):
+            root = sandbox_session_dir(session_id).rstrip("/")
+            return [
+                {"path": f"{root}/speaker_task.txt", "name": "speaker_task.txt", "size": 5},
+                {"path": f"{root}/memory/facts.md", "name": "facts.md", "size": 5},
+                {"path": f"{root}/memory/llm_roundtrips.jsonl", "name": "llm_roundtrips.jsonl", "size": 5},
+                {"path": f"{root}/memory/orchestrator_audit.jsonl", "name": "orchestrator_audit.jsonl", "size": 5},
+            ]
+
+    monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    tools = _create_builtin_workspace_tools("sess-l")
+    list_tool = next(t for t in tools if t.name == "list_workspace_directory")
+
+    out = asyncio.run(list_tool.ainvoke({"path": ""}))
+
+    assert "speaker_task.txt" in out
+    assert "memory/facts.md" in out
+    assert "llm_roundtrips" not in out
+    assert "orchestrator_audit" not in out

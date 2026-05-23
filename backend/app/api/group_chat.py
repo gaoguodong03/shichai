@@ -310,6 +310,11 @@ def _log_llm_roundtrip(
         except Exception as e:
             logger.warning("写入会话 LLM roundtrip 失败(tag=%s session=%s): %s", tag, session_id, e)
 
+
+def _expert_runtime_model_name(expert_runtime: Any) -> str:
+    return str(getattr(getattr(expert_runtime, "llm", None), "model", "") or "")
+
+
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
 
@@ -1154,6 +1159,26 @@ def _build_checked_next_prompt(
     )
 
 
+def _persist_expert_turn_task_files(
+    *,
+    session_id: str,
+    next_speaker: str,
+    task_text: str,
+    dha_map: Dict[str, Dict[str, Any]],
+) -> None:
+    """Materialize scheduler dispatch into workspace files that Skills read."""
+    root = get_workspace_root_path(session_id)
+    root.mkdir(parents=True, exist_ok=True)
+    speaker = str(next_speaker or "").strip()
+    dha = dha_map.get(speaker) if isinstance(dha_map, dict) else None
+    label = str((dha or {}).get("name") or speaker or "unknown").strip()
+    if label:
+        (root / "next_speaker.txt").write_text(label + "\n", encoding="utf-8")
+    task = str(task_text or "").strip()
+    if task:
+        (root / "speaker_task.txt").write_text(task + "\n", encoding="utf-8")
+
+
 def _looks_like_conclusion_text(text: str) -> bool:
     s = (text or "").lower()
     keys = (
@@ -1556,6 +1581,224 @@ def _parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _match_workspace_speaker_to_agent_id(raw_speaker: str, dha_list: List[Dict[str, Any]]) -> str:
+    raw = str(raw_speaker or "").strip()
+    raw_lower = raw.lower()
+    if not raw:
+        return ""
+    for dha in dha_list or []:
+        aid = str((dha or {}).get("agent_id") or "").strip()
+        if aid and aid.lower() == raw_lower:
+            return aid
+    for dha in dha_list or []:
+        aid = str((dha or {}).get("agent_id") or "").strip()
+        name = str((dha or {}).get("name") or "").strip()
+        if aid and name and name == raw:
+            return aid
+    for dha in dha_list or []:
+        aid = str((dha or {}).get("agent_id") or "").strip()
+        name = str((dha or {}).get("name") or "").strip()
+        role = str((dha or {}).get("role") or "").strip()
+        if aid and raw and (raw in name or raw in role):
+            return aid
+    return ""
+
+
+def _host_decision_from_workspace_files(session_id: str, dha_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    root = get_workspace_root_path(session_id)
+    next_speaker_file = root / "next_speaker.txt"
+    speaker_task_file = root / "speaker_task.txt"
+    if not next_speaker_file.exists() or not speaker_task_file.exists():
+        return None
+    try:
+        raw_speaker = next_speaker_file.read_text(encoding="utf-8").strip()
+        task = speaker_task_file.read_text(encoding="utf-8").strip()
+        phase_file = root / "current_phase.txt"
+        phase_text = phase_file.read_text(encoding="utf-8").strip() if phase_file.exists() else ""
+    except OSError:
+        return None
+    if not raw_speaker or not task:
+        return None
+    agent_id = _match_workspace_speaker_to_agent_id(raw_speaker, dha_list)
+    if not agent_id:
+        return None
+    dha = next((d for d in dha_list if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
+    name = str((dha or {}).get("name") or raw_speaker or agent_id).strip()
+    reason = "主持人已将调度状态写入工作区"
+    if phase_text:
+        reason += f"（{phase_text}）"
+    return {
+        "task_done": True,
+        "next_speaker": agent_id,
+        "reason": reason,
+        "announcement": f"下面由 {name} 发言。",
+        "next_prompt": task,
+        "suggested_order": None,
+        "suggested_add_agent_ids": None,
+        "suggested_add_expert_ids": None,
+        "phase": None,
+        "owner_agent_id": None,
+        "interrupt_reason": None,
+        "decision_source": "workspace_state",
+        "handoff_reason": reason,
+        "required_user_fields": [],
+    }
+
+
+_HOST_SCHEDULER_STATE_INSTRUCTION = """
+
+## 平台调度状态落盘规则
+
+你仍按主持人 Skill 判断当前阶段和下一位发言人，但不要调用 read_file/write_workspace_file/edit_workspace_file/list_workspace_directory 等工具。
+平台后端会负责把调度状态写入工作区文件。你只需要在本轮回复中给出以下结构化结果：
+
+```json
+{
+  "current_phase": "阶段1：选题",
+  "next_speaker": "教师",
+  "speaker_task": "请教师给出本轮研讨主题。",
+  "reason": "简短说明"
+}
+```
+
+`next_speaker` 可以写参与者 agent_id，也可以写主持人 Skill 中的角色名；`speaker_task` 会被写入 speaker_task.txt 并交给下一位发言人执行。
+不要生成角色正文。
+"""
+
+
+def _host_text_field(content: str, names: tuple[str, ...]) -> str:
+    labels = [re.escape(name) for name in names if name]
+    if not labels:
+        return ""
+    all_labels = (
+        r"current_phase(?:\.txt)?|next_speaker(?:\.txt)?|speaker_task(?:\.txt)?|"
+        r"current_phase\.txt|next_speaker\.txt|speaker_task\.txt"
+    )
+    pattern = (
+        r"(?ims)^\s*`?(?:"
+        + "|".join(labels)
+        + r")`?\s*[:：]\s*(.*?)"
+        + r"(?=^\s*`?(?:"
+        + all_labels
+        + r")`?\s*[:：]|\Z)"
+    )
+    match = re.search(pattern, content or "")
+    return match.group(1).strip() if match else ""
+
+
+def _extract_host_scheduler_state(content: str) -> Dict[str, str]:
+    """Extract scheduler file state from host output without requiring tool calls."""
+    text = str(content or "").strip()
+    state = {"current_phase": "", "next_speaker": "", "speaker_task": ""}
+    if not text:
+        return state
+    obj = _extract_json_object_from_llm_text(text)
+    if isinstance(obj, dict):
+        state["current_phase"] = str(
+            obj.get("current_phase")
+            or obj.get("current_phase.txt")
+            or obj.get("phase_label")
+            or ""
+        ).strip()
+        state["next_speaker"] = str(obj.get("next_speaker") or obj.get("next_speaker.txt") or "").strip()
+        state["speaker_task"] = str(
+            obj.get("speaker_task")
+            or obj.get("speaker_task.txt")
+            or obj.get("next_prompt")
+            or ""
+        ).strip()
+    if not state["current_phase"]:
+        state["current_phase"] = _host_text_field(text, ("current_phase.txt", "current_phase"))
+    if not state["next_speaker"]:
+        state["next_speaker"] = _host_text_field(text, ("next_speaker.txt", "next_speaker"))
+    if not state["speaker_task"]:
+        state["speaker_task"] = _host_text_field(text, ("speaker_task.txt", "speaker_task"))
+    return state
+
+
+def _persist_host_scheduler_state_files(session_id: str, state: Dict[str, str]) -> None:
+    if not session_id:
+        return
+    phase = str((state or {}).get("current_phase") or "").strip()
+    speaker = str((state or {}).get("next_speaker") or "").strip()
+    task = str((state or {}).get("speaker_task") or "").strip()
+    if not any((phase, speaker, task)):
+        return
+    started = time.perf_counter()
+    root = get_workspace_root_path(session_id)
+    root.mkdir(parents=True, exist_ok=True)
+    if phase:
+        (root / "current_phase.txt").write_text(phase + "\n", encoding="utf-8")
+    if speaker:
+        (root / "next_speaker.txt").write_text(speaker + "\n", encoding="utf-8")
+    if task:
+        (root / "speaker_task.txt").write_text(task + "\n", encoding="utf-8")
+    logger.info(
+        "group_chat_scheduler_host_state_persisted session=%s phase_len=%s speaker_len=%s task_len=%s elapsed_ms=%s",
+        session_id,
+        len(phase),
+        len(speaker),
+        len(task),
+        int((time.perf_counter() - started) * 1000),
+    )
+
+
+def _host_decision_from_scheduler_state(
+    state: Dict[str, str],
+    dha_list: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    raw_speaker = str((state or {}).get("next_speaker") or "").strip()
+    task = str((state or {}).get("speaker_task") or "").strip()
+    phase_text = str((state or {}).get("current_phase") or "").strip()
+    if not raw_speaker:
+        return None
+    raw_lower = raw_speaker.lower()
+    user_speakers = {"user", "用户", "用户输入", "学生", "student"}
+    reason = "主持人已输出调度状态，平台已写入工作区"
+    if phase_text:
+        reason += f"（{phase_text}）"
+    if raw_lower in user_speakers:
+        return {
+            "task_done": True,
+            "next_speaker": "user",
+            "reason": reason,
+            "announcement": "请用户继续发言。",
+            "next_prompt": task or None,
+            "suggested_order": None,
+            "suggested_add_agent_ids": None,
+            "suggested_add_expert_ids": None,
+            "phase": None,
+            "owner_agent_id": None,
+            "interrupt_reason": None,
+            "decision_source": "host_scheduler_state",
+            "handoff_reason": reason,
+            "required_user_fields": [],
+        }
+    if not task:
+        return None
+    agent_id = _match_workspace_speaker_to_agent_id(raw_speaker, dha_list)
+    if not agent_id:
+        return None
+    dha = next((d for d in dha_list if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
+    name = str((dha or {}).get("name") or raw_speaker or agent_id).strip()
+    return {
+        "task_done": True,
+        "next_speaker": agent_id,
+        "reason": reason,
+        "announcement": f"下面由 {name} 发言。",
+        "next_prompt": task,
+        "suggested_order": None,
+        "suggested_add_agent_ids": None,
+        "suggested_add_expert_ids": None,
+        "phase": None,
+        "owner_agent_id": None,
+        "interrupt_reason": None,
+        "decision_source": "host_scheduler_state",
+        "handoff_reason": reason,
+        "required_user_fields": [],
+    }
+
+
 def _user_requests_host_takeover(
     message: str,
     *,
@@ -1795,6 +2038,7 @@ async def _host_decide_by_dha(
     host_system = (host_dha.get("system_prompt") or "").strip()
     if host_system:
         skill_content = f"{host_system}\n\n{skill_content}"
+    skill_content = f"{skill_content}\n\n{_HOST_SCHEDULER_STATE_INSTRUCTION}"
 
     dha_lines = []
     for d in dha_list:
@@ -1855,13 +2099,14 @@ async def _host_decide_by_dha(
         user_content += "【当前为首轮】尚无上一位专家发言。\n\n"
 
     try:
-        tools: List[Any] = []
-        if group_session_id:
-            tools = await build_tools_for_group_chat(host_dha, group_session_id, resolved_skill_id=resolved_skill_id)
         agent = create_skill_execution_agent(
-            llm, tools, skill_content, extra_system_prompt or ""
+            llm,
+            [],
+            skill_content,
+            extra_system_prompt or "",
+            synthesize_after_tools=False,
         )
-        initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
+        initial_state = {"messages": [HumanMessage(content=user_content)], "tools": []}
         run_cfg = {"configurable": {"thread_id": f"host-decide:{uuid.uuid4().hex}"}}
         final_state = await agent.ainvoke(initial_state, config=run_cfg)
         out_msgs = final_state.get("messages", [])
@@ -1883,7 +2128,30 @@ async def _host_decide_by_dha(
                 "model": str(getattr(llm, "model", "") or ""),
             },
         )
-        return _parse_host_response(content_str)
+        scheduler_state = _extract_host_scheduler_state(content_str)
+        if any((scheduler_state.get("current_phase"), scheduler_state.get("next_speaker"), scheduler_state.get("speaker_task"))):
+            if group_session_id:
+                _persist_host_scheduler_state_files(group_session_id, scheduler_state)
+            state_decision = _host_decision_from_scheduler_state(scheduler_state, dha_list)
+            if state_decision:
+                logger.info(
+                    "group_chat_scheduler_host_state_decision session=%s next_speaker=%s",
+                    group_session_id,
+                    state_decision.get("next_speaker"),
+                )
+                return state_decision
+        parsed = _parse_host_response(content_str)
+        if parsed:
+            return parsed
+        workspace_decision = _host_decision_from_workspace_files(group_session_id, dha_list) if group_session_id else None
+        if workspace_decision:
+            logger.info(
+                "group_chat_scheduler_workspace_state_decision session=%s next_speaker=%s",
+                group_session_id,
+                workspace_decision.get("next_speaker"),
+            )
+            return workspace_decision
+        return None
     except Exception as e:
         logger.warning("主持人 DHA 调用失败，将回退到默认调度: %s", e)
         return None
@@ -3356,6 +3624,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 context = _messages_to_expert_context(messages)
                 if not custom_prompt_used and custom_prompt:
                     user_content = custom_prompt
+                    task_text_for_workspace = custom_prompt
                     custom_prompt_used = True
                 elif round_next_prompt:
                     user_content = _build_checked_next_prompt(
@@ -3366,7 +3635,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         app_settings,
                         decision_next_prompt=round_next_prompt,
                     )
+                    task_text_for_workspace = round_next_prompt
                 else:
+                    task_text_for_workspace = "请紧扣讨论目标发言，不要偏离主题。"
                     user_content = (
                         f"【群聊讨论目标】\n{discussion_goal}\n\n"
                         f"【最近讨论】\n{context}\n\n"
@@ -3383,6 +3654,20 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 ):
                     uc = uc + "\n\n【历史对话（供参考）】\n" + context
                 user_content = uc
+                try:
+                    _persist_expert_turn_task_files(
+                        session_id=group_session_id,
+                        next_speaker=next_speaker,
+                        task_text=task_text_for_workspace,
+                        dha_map=dha_map,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "group_chat_expert_task_file_persist_failed session=%s agent_id=%s err=%s",
+                        group_session_id,
+                        next_speaker,
+                        e,
+                    )
                 initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
                 run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{next_speaker}:{uuid.uuid4().hex}"}}
 
@@ -3576,7 +3861,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         agent_id=next_speaker,
                         skill_id=skill_id,
                         llm_provider_id=str((dha or {}).get("llm_provider_id") or app_settings.get("default_llm") or ""),
-                        model=str(getattr(llm, "model", "") or ""),
+                        model=_expert_runtime_model_name(expert_runtime),
                         extra={
                             "has_tool_call": bool(tool_calls_trace),
                             "raw_result_count": len(accumulated_raw_tool_results or []),

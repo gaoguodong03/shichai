@@ -34,6 +34,45 @@ _REQUIREMENTS_VERIFIER_VERSION = "import-v2"
 _REQUIREMENTS_REAL_VERIFIED_AT_KEY = "requirements_real_verified_at"
 _PLAYWRIGHT_REQUIREMENT_KEYS = {"playwright", "patchright"}
 
+
+class SandboxEnvironmentError(RuntimeError):
+    """Non-retryable sandbox infrastructure/configuration failure."""
+
+
+def _is_host_path_mount_source_error(error: Exception) -> bool:
+    text = str(error or "")
+    return "mount source path" in text and ("/host_mnt/" in text or "host_path" in text)
+
+
+def _is_lifecycle_connect_error(error: Exception) -> bool:
+    text = str(error or "").lower()
+    return (
+        "opensandbox lifecycle api" in text
+        or "all connection attempts failed" in text
+        or "connecterror" in text
+        or "connection refused" in text
+    )
+
+
+def _lifecycle_connect_error_message(error: Exception) -> str:
+    return (
+        "OpenSandbox lifecycle API 连接失败：当前应用进程无法连接 OpenSandbox 服务。"
+        "请确认 1Panel 编排中的 opensandbox-server 已启动，"
+        "并检查 OPENSANDBOX_DOMAIN/OPENSANDBOX_HOST_PORT 是否指向应用容器可达的地址。"
+        "本地 conda 调试时，需要显式启动本地 OpenSandbox 服务或配置 OPENSANDBOX_COMPOSE_FILE 指向本地 compose；"
+        "docker-compose.1panel.yml 只用于远程 1Panel 编排，不再作为本地自动启动配置。"
+        f" 原始错误: {error}"
+    )
+
+
+def _opensandbox_lifecycle_reachable() -> tuple[bool, str]:
+    from app.core import dev_bootstrap
+
+    host, port = dev_bootstrap.parse_opensandbox_target()
+    target = f"{host}:{port}"
+    return dev_bootstrap.can_connect(host, port, timeout=0.25), target
+
+
 def _env_truthy(name: str, default: str = "0") -> bool:
     val = (os.getenv(name) or default).strip().lower()
     return val in {"1", "true", "yes", "on", "enabled"}
@@ -340,6 +379,7 @@ class SandboxService:
         self, req: SandboxExecutionRequest
     ) -> tuple[Path, Optional[Path], list]:
         host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
+        self._ensure_mount_source_ready(host_sessions_root)
         skills_root: Optional[Path] = None
         uid = (req.user_id or "").strip()
         if uid:
@@ -358,6 +398,13 @@ class SandboxService:
                 workspace_sessions_host_path=host_sessions_root
             )
         return host_sessions_root, skills_root, mounts
+
+    @staticmethod
+    def _ensure_mount_source_ready(path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        sentinel = path / ".st49-mount-ready"
+        if not sentinel.exists():
+            sentinel.write_text("ready\n", encoding="utf-8")
 
     @staticmethod
     def _resolve_cwd(policy: SandboxPolicy, req: SandboxExecutionRequest) -> str:
@@ -840,7 +887,7 @@ class SandboxService:
                 self._user_handles.pop(key, None)
 
             logger.info(
-                "st49_sandbox_create_prepare code=user_handle_create_prepare user_id=%s session_id=%s cache_key=%s logical_sid=%s image_ref=%s variant=%s mount_fp=%s allow_network=%s timeout_ms=%s skills_root=%s workspace_root=%s",
+                "st49_sandbox_create_prepare code=user_handle_create_prepare user_id=%s session_id=%s cache_key=%s logical_sid=%s image_ref=%s variant=%s mount_fp=%s allow_network=%s timeout_ms=%s skills_root=%s workspace_root=%s workspace_root_exists=%s workspace_mount_ready=%s",
                 user_id,
                 req.session_id,
                 key,
@@ -852,8 +899,30 @@ class SandboxService:
                 int(policy.timeout_ms or 0),
                 str(policy.skill_scripts_host_path or ""),
                 str(policy.workspace_host_path or policy.fs_root or ""),
+                Path(str(policy.workspace_host_path or policy.fs_root or "")).exists(),
+                (Path(str(policy.workspace_host_path or policy.fs_root or "")) / ".st49-mount-ready").exists(),
             )
-            handle = await self._adapter.create_session_sandbox(logical_sid, policy)
+            try:
+                handle = await self._adapter.create_session_sandbox(logical_sid, policy)
+            except Exception as e:  # noqa: BLE001
+                if _is_lifecycle_connect_error(e):
+                    raise SandboxEnvironmentError(_lifecycle_connect_error_message(e)) from e
+                if _is_host_path_mount_source_error(e):
+                    workspace_root = Path(str(policy.workspace_host_path or policy.fs_root or ""))
+                    ready = workspace_root / ".st49-mount-ready"
+                    raise SandboxEnvironmentError(
+                        "OpenSandbox host_path 挂载失败：应用侧工作区目录已经传给 Docker，但 Docker daemon 无法访问该宿主路径。"
+                        f" workspace_root={workspace_root}"
+                        f" workspace_root_exists={workspace_root.exists()}"
+                        f" workspace_mount_ready={ready.exists()}"
+                        "。本地 Docker Desktop 场景请检查 Docker Desktop File Sharing"
+                        "（Settings → Resources → File Sharing）是否包含项目目录"
+                        "（例如 /Users/ggd/project/shichai），必要时重启 Docker Desktop；"
+                        "1Panel/容器部署场景请确认 SANDBOX_HOST_PATH_MAP 将 /app/backend/data 映射到"
+                        " Docker daemon 可见路径（例如 /var/lib/docker/volumes/st49/_data）。"
+                        f" 原始错误: {e}"
+                    ) from e
+                raise
             if isinstance(handle.metadata, dict):
                 handle.metadata["mount_fingerprint"] = policy_mount_fingerprint(policy)
                 handle.metadata["policy_allow_network"] = bool(policy.allow_network)
@@ -1355,6 +1424,97 @@ class SandboxService:
         )
         return await self._ensure_user_handle(req, policy)
 
+    @staticmethod
+    def _workspace_host_file(*, workspace_path: Path, rel_path: str) -> tuple[str, Path]:
+        session_rel = normalize_rel_path(rel_path)
+        target = ensure_within_root(workspace_path / session_rel, workspace_path)
+        return session_rel, target
+
+    @classmethod
+    def _read_workspace_text_on_host(cls, *, workspace_path: Path, rel_path: str) -> str:
+        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
+        if not target.exists() or target.is_dir():
+            raise FileNotFoundError(session_rel)
+        return target.read_bytes().decode("utf-8")
+
+    @classmethod
+    def _write_workspace_text_on_host(cls, *, workspace_path: Path, rel_path: str, content: str) -> tuple[str, int]:
+        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        data = str(content or "").encode("utf-8")
+        target.write_bytes(data)
+        return session_rel, len(data)
+
+    @classmethod
+    def _mkdir_workspace_on_host(cls, *, workspace_path: Path, rel_path: str) -> str:
+        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
+        target.mkdir(parents=True, exist_ok=True)
+        return session_rel
+
+    @classmethod
+    def _list_workspace_files_on_host(
+        cls,
+        *,
+        workspace_path: Path,
+        session_id: str,
+        rel_prefix: str = "",
+    ) -> list[dict[str, Any]]:
+        root_rel, root = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_prefix)
+        if not root.exists():
+            return []
+        files = [root] if root.is_file() else sorted([p for p in root.rglob("*") if p.is_file()])
+        session_root = sandbox_session_dir(session_id).rstrip("/")
+        out: list[dict[str, Any]] = []
+        for p in files:
+            rel = str(p.relative_to(workspace_path)).replace("\\", "/")
+            out.append(
+                {
+                    "path": f"{session_root}/{rel}",
+                    "name": p.name,
+                    "size": p.stat().st_size,
+                    "is_dir": False,
+                    "task_id": f"{session_root}/{root_rel}".rstrip("/"),
+                }
+            )
+        return out
+
+    @classmethod
+    def _workspace_rel_from_shell_arg(cls, *, session_id: str, raw_path: str) -> str:
+        raw = str(raw_path or "").strip().replace("\\", "/")
+        session_root = sandbox_session_dir(session_id).rstrip("/")
+        if raw == session_root:
+            return ""
+        if raw.startswith(session_root + "/"):
+            return normalize_rel_path(raw[len(session_root) + 1 :])
+        if raw.startswith("/workspace/"):
+            raise ValueError("路径不在当前工作区")
+        return normalize_rel_path(raw)
+
+    @classmethod
+    def _exec_workspace_shell_on_host(
+        cls,
+        *,
+        session_id: str,
+        workspace_path: Path,
+        argv: List[str],
+    ) -> Dict[str, Any] | None:
+        args = [str(x) for x in (argv or [])]
+        if len(args) >= 3 and args[0] == "mkdir" and args[1] == "-p":
+            rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[2])
+            cls._mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=rel)
+            return {"exit_code": 0, "stdout": "", "stderr": "", "complete": True}
+        if len(args) == 3 and args[0] == "mv":
+            src_rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[1])
+            dst_rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[2])
+            _src_rel, src = cls._workspace_host_file(workspace_path=workspace_path, rel_path=src_rel)
+            _dst_rel, dst = cls._workspace_host_file(workspace_path=workspace_path, rel_path=dst_rel)
+            if not src.exists():
+                raise FileNotFoundError(src_rel)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            src.rename(dst)
+            return {"exit_code": 0, "stdout": "", "stderr": "", "complete": True}
+        return None
+
     async def read_workspace_text(
         self,
         *,
@@ -1366,45 +1526,17 @@ class SandboxService:
         tool_call_id: str = "read",
     ) -> str:
         started_at = time.perf_counter()
-        handle = await self._ensure_workspace_handle(
-            user_id=user_id,
-            session_id=session_id,
-            workspace_path=workspace_path,
-            turn_id=turn_id,
-            tool_call_id=tool_call_id,
-            timeout_ms=60_000,
-        )
         session_rel = normalize_rel_path(rel_path)
-        inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
-        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
-        try:
-            data = await self._adapter.read_file(handle, inner)
-            text = data.decode("utf-8")
-            logger.info(
-                "sandbox_workspace_read_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s",
-                user_id,
-                session_id,
-                session_rel,
-                len(data),
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-            )
-            return text
-        except Exception as e:
-            status = "not_found" if "404" in str(e) or "not found" in str(e).lower() else "error"
-            logger.warning(
-                "sandbox_workspace_read_failed status=%s user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
-                status,
-                user_id,
-                session_id,
-                session_rel,
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-                str(e)[:500],
-            )
-            if status == "not_found":
-                raise FileNotFoundError(session_rel) from e
-            raise
+        text = self._read_workspace_text_on_host(workspace_path=workspace_path, rel_path=session_rel)
+        logger.info(
+            "sandbox_workspace_read_host_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s",
+            user_id,
+            session_id,
+            session_rel,
+            len(text.encode("utf-8")),
+            int((time.perf_counter() - started_at) * 1000),
+        )
+        return text
 
     async def write_workspace_text(
         self,
@@ -1418,41 +1550,20 @@ class SandboxService:
         tool_call_id: str = "write",
     ) -> None:
         started_at = time.perf_counter()
-        handle = await self._ensure_workspace_handle(
-            user_id=user_id,
-            session_id=session_id,
-            workspace_path=workspace_path,
-            turn_id=turn_id,
-            tool_call_id=tool_call_id,
-            timeout_ms=60_000,
-        )
         session_rel = normalize_rel_path(rel_path)
-        inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
-        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
-        data = content.encode("utf-8")
-        try:
-            await self._adapter.write_file(handle, inner, data)
-            logger.info(
-                "sandbox_workspace_write_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s",
-                user_id,
-                session_id,
-                session_rel,
-                len(data),
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-            )
-        except Exception as e:
-            logger.warning(
-                "sandbox_workspace_write_failed user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s sandbox_id=%s err=%s",
-                user_id,
-                session_id,
-                session_rel,
-                len(data),
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-                str(e)[:500],
-            )
-            raise
+        session_rel, byte_count = self._write_workspace_text_on_host(
+            workspace_path=workspace_path,
+            rel_path=session_rel,
+            content=content,
+        )
+        logger.info(
+            "sandbox_workspace_write_host_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s",
+            user_id,
+            session_id,
+            session_rel,
+            byte_count,
+            int((time.perf_counter() - started_at) * 1000),
+        )
 
     async def mkdir_workspace(
         self,
@@ -1464,43 +1575,15 @@ class SandboxService:
         turn_id: str = "workspace-fs",
     ) -> None:
         started_at = time.perf_counter()
-        handle = await self._ensure_workspace_handle(
-            user_id=user_id,
-            session_id=session_id,
-            workspace_path=workspace_path,
-            turn_id=turn_id,
-            tool_call_id="mkdir",
-            timeout_ms=60_000,
-        )
         session_rel = normalize_rel_path(rel_path)
-        inner = f"{sandbox_session_dir(session_id)}/{session_rel}".rstrip("/")
-        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
-        if hasattr(self._adapter, "exec_command"):
-            try:
-                await self._adapter.exec_command(handle, ["mkdir", "-p", inner])  # type: ignore[attr-defined]
-                logger.info(
-                    "sandbox_workspace_mkdir_done user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s",
-                    user_id,
-                    session_id,
-                    session_rel,
-                    int((time.perf_counter() - started_at) * 1000),
-                    sandbox_id,
-                )
-            except Exception as e:
-                logger.warning(
-                    "sandbox_workspace_mkdir_failed user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
-                    user_id,
-                    session_id,
-                    session_rel,
-                    int((time.perf_counter() - started_at) * 1000),
-                    sandbox_id,
-                    str(e)[:500],
-                )
-                raise
-            return
-        # Tests / minimal fakes: create on host workspace root (same bind mount as /workspace)
-        p = ensure_within_root(workspace_path / session_rel, workspace_path)
-        p.mkdir(parents=True, exist_ok=True)
+        session_rel = self._mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=session_rel)
+        logger.info(
+            "sandbox_workspace_mkdir_host_done user_id=%s session_id=%s path=%s elapsed_ms=%s",
+            user_id,
+            session_id,
+            session_rel,
+            int((time.perf_counter() - started_at) * 1000),
+        )
 
     async def list_workspace_files_flat(
         self,
@@ -1512,40 +1595,21 @@ class SandboxService:
         turn_id: str = "workspace-fs",
     ) -> List[Dict[str, Any]]:
         started_at = time.perf_counter()
-        handle = await self._ensure_workspace_handle(
-            user_id=user_id,
-            session_id=session_id,
-            workspace_path=workspace_path,
-            turn_id=turn_id,
-            tool_call_id="list",
-            timeout_ms=120_000,
-        )
         root_rel = normalize_rel_path(rel_prefix)
-        root = f"{sandbox_session_dir(session_id)}/{root_rel}".rstrip("/")
-        sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
-        try:
-            items = await self._adapter.list_artifacts(handle, task_id=root)
-            logger.info(
-                "sandbox_workspace_list_done user_id=%s session_id=%s path=%s count=%s elapsed_ms=%s sandbox_id=%s",
-                user_id,
-                session_id,
-                root_rel or ".",
-                len(items or []),
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-            )
-            return items
-        except Exception as e:
-            logger.warning(
-                "sandbox_workspace_list_failed user_id=%s session_id=%s path=%s elapsed_ms=%s sandbox_id=%s err=%s",
-                user_id,
-                session_id,
-                root_rel or ".",
-                int((time.perf_counter() - started_at) * 1000),
-                sandbox_id,
-                str(e)[:500],
-            )
-            raise
+        items = self._list_workspace_files_on_host(
+            workspace_path=workspace_path,
+            session_id=session_id,
+            rel_prefix=root_rel,
+        )
+        logger.info(
+            "sandbox_workspace_list_host_done user_id=%s session_id=%s path=%s count=%s elapsed_ms=%s",
+            user_id,
+            session_id,
+            root_rel or ".",
+            len(items or []),
+            int((time.perf_counter() - started_at) * 1000),
+        )
+        return items
 
     async def exec_workspace_shell(
         self,
@@ -1559,6 +1623,22 @@ class SandboxService:
         timeout_ms: int = 120_000,
     ) -> Dict[str, Any]:
         started_at = time.perf_counter()
+        host_result = self._exec_workspace_shell_on_host(
+            session_id=session_id,
+            workspace_path=workspace_path,
+            argv=argv,
+        )
+        if host_result is not None:
+            logger.info(
+                "sandbox_workspace_exec_host_done user_id=%s session_id=%s argv0=%s argc=%s exit_code=%s elapsed_ms=%s",
+                user_id,
+                session_id,
+                str(argv[0] if argv else ""),
+                len(argv or []),
+                host_result.get("exit_code"),
+                int((time.perf_counter() - started_at) * 1000),
+            )
+            return host_result
         handle = await self._ensure_workspace_handle(
             user_id=user_id,
             session_id=session_id,
@@ -1684,6 +1764,8 @@ class SandboxService:
                     payload={"tool_name": req.tool_name, "tool_call_id": req.tool_call_id},
                 )
                 raise
+            except SandboxEnvironmentError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 if attempt == 0 and self._is_sandbox_not_found_error(exc):
                     await self._invalidate_user_handle(user_id, expected_handle=handle)
@@ -1699,20 +1781,9 @@ class SandboxService:
                         },
                     )
                     continue
-                if attempt == 0 and "all connection attempts failed" in str(exc).lower():
+                if _is_lifecycle_connect_error(exc):
                     await self._invalidate_user_handle(user_id, expected_handle=handle)
-                    append_sandbox_event(
-                        session_id=req.session_id,
-                        event_type="sandbox_session_recreated",
-                        turn_id=req.turn_id,
-                        payload={
-                            "tool_name": req.tool_name,
-                            "tool_call_id": req.tool_call_id,
-                            "user_id": req.user_id,
-                            "reason": "sandbox_connectivity_error",
-                        },
-                    )
-                    continue
+                    raise SandboxEnvironmentError(_lifecycle_connect_error_message(exc)) from exc
                 if attempt == 0 and "tool not allowed by sandbox policy" in str(exc).lower():
                     await self._invalidate_user_handle(user_id, expected_handle=handle)
                     append_sandbox_event(
@@ -1901,6 +1972,20 @@ class SandboxService:
         if not hasattr(self._adapter, "cleanup_orphan_sandboxes"):
             logger.info("sandbox_orphan_cleanup_skipped reason=adapter_unsupported backend=%s", self.backend_label())
             return {"enabled": True, "skipped": "adapter_unsupported", "deleted": [], "failed": []}
+        if isinstance(self._adapter, OpenSandboxAdapter):
+            reachable, target = _opensandbox_lifecycle_reachable()
+            if not reachable:
+                logger.warning(
+                    "sandbox_orphan_cleanup_skipped reason=opensandbox_unreachable target=%s",
+                    target,
+                )
+                return {
+                    "enabled": True,
+                    "skipped": "opensandbox_unreachable",
+                    "target": target,
+                    "deleted": [],
+                    "failed": [],
+                }
         min_age_sec = _env_int("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC") or 60
         include_legacy = _env_truthy("SANDBOX_ORPHAN_CLEANUP_LEGACY_IMAGE_MATCH", default="1")
         async with self._lock:

@@ -115,6 +115,37 @@ def _audio_transcription_final_message(tool_out: dict[str, Any]) -> AIMessage | 
     return None
 
 
+_TERMINAL_TOOL_FAILURE_MARKERS = (
+    "OpenSandbox lifecycle API 连接失败",
+    "OpenSandbox host_path 挂载失败",
+    "Docker Desktop File Sharing",
+)
+
+
+def _terminal_tool_failure_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return None
+    combined = "\n".join(str(x or "") for x in raw_outputs)
+    if not combined.strip():
+        return None
+    marker = next((item for item in _TERMINAL_TOOL_FAILURE_MARKERS if item in combined), "")
+    if not marker:
+        return None
+    if "lifecycle API" in marker:
+        detail = (
+            "OpenSandbox 服务当前不可达，工具无法启动沙箱。请先确认 1Panel 编排里的 opensandbox-server 已启动，"
+            "并检查 OPENSANDBOX_DOMAIN/OPENSANDBOX_HOST_PORT 是否是应用容器可访问的地址。"
+            "本地 conda 调试时，需要显式启动本地 OpenSandbox 服务或配置 OPENSANDBOX_COMPOSE_FILE 指向本地 compose。"
+        )
+    else:
+        detail = (
+            "OpenSandbox 的 host_path 挂载不可用。远程 1Panel 部署请确认 SANDBOX_HOST_PATH_MAP 和 "
+            "OPENSANDBOX_ALLOWED_HOST_PATHS 指向 Docker daemon 可见的宿主路径；本地 Docker Desktop 调试请检查 File Sharing。"
+        )
+    return AIMessage(content=f"工具运行环境不可用：{detail}")
+
+
 def _tool_call_id(tool_call: Any, idx: int) -> str:
     if isinstance(tool_call, dict):
         return str(tool_call.get("id") or tool_call.get("tool_call_id") or f"tool-{idx}")
@@ -125,6 +156,34 @@ def _tool_call_name(tool_call: Any) -> str:
     if isinstance(tool_call, dict):
         return str(tool_call.get("name") or "tool")
     return str(getattr(tool_call, "name", None) or "tool")
+
+
+def _tool_call_args(tool_call: Any) -> dict[str, Any]:
+    raw: Any = None
+    if isinstance(tool_call, dict):
+        raw = tool_call.get("arguments")
+        if raw is None:
+            raw = tool_call.get("args")
+    else:
+        raw = getattr(tool_call, "arguments", None)
+        if raw is None:
+            raw = getattr(tool_call, "args", None)
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _normalize_workspace_path_for_compare(path: Any) -> str:
+    text = str(path or "").strip().replace("\\", "/").strip("/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    return text
 
 
 def _missing_tool_response_messages(tool_calls: list[Any], existing_messages: list[Any], reason: str) -> list[ToolMessage]:
@@ -311,10 +370,89 @@ class SimpleAgent:
     timeout_s: float = 180.0
     max_steps: int = 12
     max_repeated_tool_rounds: int = 3
+    stop_after_tool_names: tuple[str, ...] = ()
+    synthesize_after_tools: bool = True
+    synthesize_after_read_file_paths: tuple[str, ...] = ()
 
-    async def _call_model(self, client: Any, messages: list[BaseMessage]) -> AIMessage:
+    def _tool_should_stop_after_result(self, tool_out: dict[str, Any], tool_attempt_debug: list[dict[str, Any]]) -> bool:
+        stop_names = {str(x or "").strip() for x in (self.stop_after_tool_names or ()) if str(x or "").strip()}
+        if not stop_names:
+            return False
+        calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+        if not isinstance(calls, list):
+            return False
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            tool_name = str(call.get("tool") or call.get("name") or "").strip()
+            if tool_name in stop_names:
+                tool_attempt_debug.append(
+                    {
+                        "source": "stop_after_tool_result",
+                        "matched": True,
+                        "tool": tool_name,
+                    }
+                )
+                return True
+        return False
+
+    def _read_file_should_synthesize_after_result(
+        self,
+        tool_out: dict[str, Any],
+        tool_attempt_debug: list[dict[str, Any]],
+    ) -> bool:
+        targets = {
+            _normalize_workspace_path_for_compare(path)
+            for path in (self.synthesize_after_read_file_paths or ())
+            if _normalize_workspace_path_for_compare(path)
+        }
+        if not targets:
+            return False
+        calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+        if not isinstance(calls, list):
+            return False
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            tool_name = str(call.get("tool") or call.get("name") or "").strip()
+            if tool_name not in {"read_file", "file-reader_read_file"}:
+                continue
+            args = _tool_call_args(call)
+            path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
+            if not path:
+                continue
+            if not any(path == target or path.endswith(f"/{target}") for target in targets):
+                continue
+            logger.info("SimpleAgent: synthesize_after_read_file tool=%s path=%s", tool_name, path)
+            tool_attempt_debug.append(
+                {
+                    "source": "synthesize_after_read_file",
+                    "matched": True,
+                    "tool": tool_name,
+                    "path": path,
+                }
+            )
+            return True
+        return False
+
+    async def _call_model(self, client: Any, messages: list[BaseMessage], *, step: int | None = None) -> AIMessage:
+        chars = sum(len(_extract_text_content(msg)) for msg in messages)
+        logger.info(
+            "SimpleAgent: LLM call start step=%s messages=%s chars=%s timeout_s=%s",
+            step if step is not None else "",
+            len(messages),
+            chars,
+            self.timeout_s,
+        )
         try:
-            return await asyncio.wait_for(client.ainvoke(messages), timeout=self.timeout_s)
+            started = time.perf_counter()
+            response = await asyncio.wait_for(client.ainvoke(messages), timeout=self.timeout_s)
+            logger.info(
+                "SimpleAgent: LLM call done step=%s elapsed=%.2fs",
+                step if step is not None else "",
+                time.perf_counter() - started,
+            )
+            return response
         except asyncio.TimeoutError:
             logger.error("SimpleAgent: LLM 调用超时（%ss）", self.timeout_s)
             return AIMessage(content="抱歉，模型响应超时，请稍后重试。")
@@ -341,7 +479,7 @@ class SimpleAgent:
         repeated_tool_rounds = 0
         output_continuations = 0
         for step in range(self.max_steps):
-            response = await self._call_model(client, messages)
+            response = await self._call_model(client, messages, step=step + 1)
             messages.append(response)
             yield {"type": "agent_step", "step": step + 1, "message": response}
 
@@ -427,6 +565,18 @@ class SimpleAgent:
                     "tool_raw_outputs": tool_raw_outputs,
                     "tool_attempt_debug": tool_attempt_debug,
                 }
+                terminal_failure_message = _terminal_tool_failure_message(tool_out)
+                if terminal_failure_message is not None:
+                    messages.append(terminal_failure_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "terminal_tool_failure_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(terminal_failure_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": terminal_failure_message}
+                    break
                 audio_final_message = _audio_transcription_final_message(tool_out)
                 if audio_final_message is not None:
                     messages.append(audio_final_message)
@@ -441,7 +591,7 @@ class SimpleAgent:
                     break
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
-                    final_message = await self._call_model(self.llm.get_client(), messages)
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -450,6 +600,16 @@ class SimpleAgent:
                             "content_preview": _extract_text_content(final_message)[:240],
                         }
                     )
+                    yield {"type": "agent_step", "step": step + 2, "message": final_message}
+                    break
+                if self._tool_should_stop_after_result(tool_out, tool_attempt_debug):
+                    break
+                if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
+                    messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if not _extract_text_content(final_message).strip():
+                        final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
+                    messages.append(final_message)
                     yield {"type": "agent_step", "step": step + 2, "message": final_message}
                     break
                 continue
@@ -486,10 +646,10 @@ class SimpleAgent:
 
         # Ensure we always have a user-visible final answer after tool execution.
         # Some models may stop after tool calls without producing a natural language response.
-        if tools and not _has_visible_ai_text(messages):
+        if self.synthesize_after_tools and tools and not _has_visible_ai_text(messages):
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
-            synthesis_response = await self._call_model(synthesis_client, messages)
+            synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
             if not _extract_text_content(synthesis_response).strip():
                 synthesis_response = _deterministic_tool_fallback_message(all_tool_raw_outputs)
             messages.append(synthesis_response)
@@ -527,7 +687,7 @@ class SimpleAgent:
         output_continuations = 0
         for step in range(self.max_steps):
             t0 = time.perf_counter()
-            response = await self._call_model(client, messages)
+            response = await self._call_model(client, messages, step=step + 1)
 
             messages.append(response)
             logger.info("SimpleAgent: step=%s LLM done in %.2fs", step + 1, time.perf_counter() - t0)
@@ -600,6 +760,17 @@ class SimpleAgent:
                         len(missing_tool_msgs),
                     )
                     messages.extend(missing_tool_msgs)
+                terminal_failure_message = _terminal_tool_failure_message(tool_out)
+                if terminal_failure_message is not None:
+                    messages.append(terminal_failure_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "terminal_tool_failure_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(terminal_failure_message)[:240],
+                        }
+                    )
+                    break
                 audio_final_message = _audio_transcription_final_message(tool_out)
                 if audio_final_message is not None:
                     messages.append(audio_final_message)
@@ -613,7 +784,7 @@ class SimpleAgent:
                     break
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
-                    final_message = await self._call_model(self.llm.get_client(), messages)
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -622,6 +793,15 @@ class SimpleAgent:
                             "content_preview": _extract_text_content(final_message)[:240],
                         }
                     )
+                    break
+                if self._tool_should_stop_after_result(tool_out, tool_attempt_debug):
+                    break
+                if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
+                    messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if not _extract_text_content(final_message).strip():
+                        final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
+                    messages.append(final_message)
                     break
                 continue
 
@@ -649,10 +829,10 @@ class SimpleAgent:
                     continue
             break
 
-        if tools and not _has_visible_ai_text(messages):
+        if self.synthesize_after_tools and tools and not _has_visible_ai_text(messages):
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
-            synthesis_response = await self._call_model(synthesis_client, messages)
+            synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
             if not _extract_text_content(synthesis_response).strip():
                 synthesis_response = _deterministic_tool_fallback_message(tool_raw_outputs)
             messages.append(synthesis_response)

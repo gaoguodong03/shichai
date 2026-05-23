@@ -13,7 +13,7 @@ from app.agent.sandbox_adapter import (
     SandboxAdapter,
     SandboxPolicy,
 )
-from app.agent.sandbox_service import SandboxExecutionRequest, SandboxService
+from app.agent.sandbox_service import SandboxEnvironmentError, SandboxExecutionRequest, SandboxService
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
 
@@ -161,6 +161,16 @@ class ToolGateway:
                     return result
                 await asyncio.sleep(0.3 * (2**i))
             except Exception as e:  # noqa: BLE001
+                if isinstance(e, SandboxEnvironmentError):
+                    result = ToolResult(
+                        ok=False,
+                        error=str(e),
+                        interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
+                        elapsed_ms=int((time.time() - started) * 1000),
+                        retries_used=i,
+                    )
+                    self._idem.set(key, result)
+                    return result
                 last_err = (
                     "gateway executor error: "
                     f"tool={req.tool_name} type={e.__class__.__name__} message={str(e)}"

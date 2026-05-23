@@ -112,8 +112,9 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
    - 解决：配置容器路径到宿主路径映射：
      - `SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data`
    - 补充说明：
-     - 你现在的 1Panel 编排（`docker-compose.1panel.yml`）已经内置该映射。
-     - **只有在本地开发用 bind mount（例如 `./backend/data:/app/backend/data`）时**，才需要关心 Docker Desktop 的 File Sharing 是否包含你的项目目录；1Panel 外部卷场景不需要 Docker Desktop File Sharing。
+     - 远程上线以 1Panel 编排为主路径：`st49_data` 外部卷挂到 `/app/backend/data`，OpenSandbox 只放行 Docker daemon 可见的 `/var/lib/docker/volumes/st49/_data`。
+     - 本地 conda 后端不等价于 1Panel 编排。它把 `/Users/.../backend/data` 直接传给 OpenSandbox 时，依赖 Docker Desktop File Sharing；如果 Docker Desktop 没共享项目目录，会出现 `/host_mnt/Users/... no such file or directory`。
+     - 后端不会再自动拿 `docker-compose.1panel.yml` 当本地 OpenSandbox 调试编排。若确需本地自动启动 OpenSandbox，请提供专用 `docker-compose.yml` 或设置 `OPENSANDBOX_COMPOSE_FILE`。
 
 7. **沙箱内脚本无法访问 GitHub（git clone/curl/pip 等失败）**
    - 默认：沙箱 **禁网**（更安全），因此沙箱内执行联网命令通常会失败。

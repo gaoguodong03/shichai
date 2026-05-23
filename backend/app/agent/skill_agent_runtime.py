@@ -815,6 +815,9 @@ def create_skill_execution_agent(
     extra_system_prompt: str = "",
     expert_self_awareness: str = "",
     t_request_start: float = None,
+    stop_after_tool_names: tuple[str, ...] = (),
+    synthesize_after_tools: bool = True,
+    synthesize_after_read_file_paths: tuple[str, ...] = (),
 ):
     """
     创建技能执行 Agent：仅用于「第二次调用」。
@@ -939,6 +942,9 @@ def create_skill_execution_agent(
         timeout_s=float(_LLM_AGENT_TIMEOUT),
         max_steps=_SKILL_AGENT_MAX_STEPS,
         max_repeated_tool_rounds=_SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS,
+        stop_after_tool_names=stop_after_tool_names,
+        synthesize_after_tools=synthesize_after_tools,
+        synthesize_after_read_file_paths=synthesize_after_read_file_paths,
     )
 
 

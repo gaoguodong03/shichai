@@ -170,6 +170,38 @@ def test_parse_cli_args_json_recovers_comma_separated_json_strings():
     assert argv == ["--query", "广西南宁的差旅标准是什么"]
 
 
+async def test_tool_gateway_does_not_retry_sandbox_environment_errors():
+    from app.agent.sandbox_service import SandboxEnvironmentError
+    from app.agent.tool_gateway import ToolGateway, ToolRequest
+
+    calls = 0
+
+    async def _executor(_payload):
+        nonlocal calls
+        calls += 1
+        raise SandboxEnvironmentError("Docker Desktop File Sharing 未配置")
+
+    gateway = ToolGateway(executor=_executor)
+    result = await gateway.execute(
+        ToolRequest(
+            tool_name="run_skill_script_demo",
+            payload={},
+            session_id="s1",
+            task_id="task",
+            turn_id="t1",
+            tool_call_id="c1",
+            agent_id="a1",
+            skill_id="skill",
+            retry_count=2,
+        )
+    )
+
+    assert calls == 1
+    assert result.ok is False
+    assert result.retries_used == 0
+    assert "Docker Desktop File Sharing" in result.error
+
+
 def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     from app.tools import run_skill_script as rss
 

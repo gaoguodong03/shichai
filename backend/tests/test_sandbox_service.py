@@ -8,7 +8,7 @@ import pytest
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_image_policy import configured_sandbox_images
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT, SANDBOX_WORKSPACE_ROOT
-from app.agent.sandbox_service import SandboxExecutionRequest, SandboxService
+from app.agent.sandbox_service import SandboxEnvironmentError, SandboxExecutionRequest, SandboxService
 
 
 class FakeAdapter:
@@ -119,6 +119,24 @@ class DisposeNotFoundAdapter(FakeAdapter):
         raise RuntimeError(f"Sandbox {handle.metadata['sandbox_id']} not found")
 
 
+class HostPathMountFailAdapter(FakeAdapter):
+    async def create_session_sandbox(self, session_id, policy):
+        raise RuntimeError(
+            "Create sandbox failed: Failed to create directory /opt/opensandbox in sandbox: "
+            '500 Server Error ("error while creating mount source path '
+            "'/host_mnt/Users/ggd/project/shichai/backend/data/users/u1/sessions/workspaces': "
+            'mkdir /host_mnt/Users/ggd/project/shichai/backend/data/users/u1: no such file or directory")'
+        )
+
+
+class LifecycleConnectFailAdapter(FakeAdapter):
+    async def create_session_sandbox(self, session_id, policy):
+        raise RuntimeError(
+            "OpenSandbox lifecycle API 连接失败；请检查 OPENSANDBOX_DOMAIN/OPENSANDBOX_HOST_PORT、"
+            "opensandbox-server 是否启动，以及当前进程是在宿主机还是容器内。"
+        )
+
+
 class CleanupAdapter(FakeAdapter):
     def __init__(self):
         super().__init__()
@@ -134,6 +152,24 @@ class CleanupAdapter(FakeAdapter):
             "skipped_young": 0,
             "skipped_unmanaged": 0,
         }
+
+
+class UnreachableOpenSandboxCleanupAdapter(OpenSandboxAdapter):
+    def __init__(self):
+        self.cleanup_calls = 0
+
+    async def cleanup_orphan_sandboxes(self, **kwargs):
+        self.cleanup_calls += 1
+        raise AssertionError("cleanup should be skipped when lifecycle target is unreachable")
+
+
+class UnreachableOpenSandboxWorkspaceAdapter(OpenSandboxAdapter):
+    def __init__(self):
+        self.create_calls = 0
+
+    async def create_session_sandbox(self, session_id, policy):
+        self.create_calls += 1
+        raise AssertionError("workspace read should skip sandbox creation when lifecycle target is unreachable")
 
 
 class MissingPackageAfterMetadataHitAdapter(FakeAdapter):
@@ -409,6 +445,148 @@ async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_pat
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
+async def test_build_policy_creates_missing_workspace_mount_root(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+    )
+
+    policy = await svc._build_policy(req)
+
+    workspaces_root = user_root / "sessions" / "workspaces"
+    assert workspaces_root.is_dir()
+    assert (workspaces_root / ".st49-mount-ready").is_file()
+    assert policy.workspace_host_path == str(workspaces_root.resolve())
+    assert any(m.source == str(workspaces_root.resolve()) for m in policy.volume_mounts or [])
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_create_host_path_mount_failure_reports_docker_desktop_hint(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    adapter = HostPathMountFailAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+    )
+
+    with pytest.raises(SandboxEnvironmentError) as exc_info:
+        await svc.execute(req)
+
+    message = str(exc_info.value)
+    assert "Docker Desktop File Sharing" in message
+    assert "workspace_root_exists=True" in message
+    assert "workspace_mount_ready=True" in message
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_create_lifecycle_connect_failure_is_non_retryable_environment_error(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    adapter = LifecycleConnectFailAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    req = SandboxExecutionRequest(
+        user_id="alice",
+        session_id="sess-1",
+        turn_id="t1",
+        tool_call_id="c1",
+        tool_name="run_skill_script_demo",
+        tool_kind="script",
+        payload={},
+        timeout_ms=1000,
+        runner=_ok_runner,
+        workspace_path=workspace_root,
+    )
+
+    with pytest.raises(SandboxEnvironmentError) as exc_info:
+        await svc.execute(req)
+
+    message = str(exc_info.value)
+    assert adapter.created == []
+    assert "OpenSandbox lifecycle API 连接失败" in message
+    assert "opensandbox-server 已启动" in message
+    assert "OPENSANDBOX_COMPOSE_FILE" in message
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_read_workspace_text_falls_back_to_host_when_opensandbox_unreachable(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "note.txt").write_text("hello from host workspace", encoding="utf-8")
+    adapter = LifecycleConnectFailAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    text = await svc.read_workspace_text(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+        rel_path="note.txt",
+    )
+
+    assert text == "hello from host workspace"
+    assert adapter.created == []
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
+async def test_read_workspace_text_skips_opensandbox_create_when_target_unreachable(monkeypatch, tmp_path):
+    from app.agent import sandbox_service as sandbox_service_module
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "note.txt").write_text("hello without opensandbox logs", encoding="utf-8")
+    adapter = UnreachableOpenSandboxWorkspaceAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    monkeypatch.setattr(
+        sandbox_service_module,
+        "_opensandbox_lifecycle_reachable",
+        lambda: (False, "127.0.0.1:8091"),
+    )
+
+    text = await svc.read_workspace_text(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+        rel_path="note.txt",
+    )
+
+    assert text == "hello without opensandbox logs"
+    assert adapter.create_calls == 0
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
+
+
 async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
@@ -526,6 +704,26 @@ async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeyp
     assert any(str(image).endswith("-playwright") for image in call["known_images"])
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", raising=False)
+
+
+async def test_startup_orphan_cleanup_skips_unreachable_opensandbox_without_listing(monkeypatch):
+    from app.agent import sandbox_service as sandbox_service_module
+
+    adapter = UnreachableOpenSandboxCleanupAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    monkeypatch.setattr(
+        sandbox_service_module,
+        "_opensandbox_lifecycle_reachable",
+        lambda: (False, "127.0.0.1:8091"),
+        raising=False,
+    )
+
+    result = await svc.cleanup_orphan_sandboxes_on_startup()
+
+    assert result["enabled"] is True
+    assert result["skipped"] == "opensandbox_unreachable"
+    assert result["target"] == "127.0.0.1:8091"
+    assert adapter.cleanup_calls == 0
 
 
 async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tmp_path):
@@ -809,9 +1007,8 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
     )
 
     assert any(str(item.get("path") or "").endswith("note.txt") for item in items)
-    assert len(adapter.created) == 2
+    assert len(adapter.created) == 1
     assert adapter.created[0][0] == "alice"
-    assert adapter.created[1][0] == "alice:workspace:sess-1"
     assert adapter.disposed == []
     assert len(adapter.exec_commands) == install_count_after_prewarm
 
@@ -834,10 +1031,58 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
     )
     await svc.execute(req)
 
-    assert len(adapter.created) == 2
+    assert len(adapter.created) == 1
     assert adapter.disposed == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
+
+
+async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreachable(monkeypatch, tmp_path):
+    from app.agent import sandbox_service as sandbox_service_module
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    user_root = tmp_path / "alice"
+    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    adapter = UnreachableOpenSandboxWorkspaceAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    monkeypatch.setattr(
+        sandbox_service_module,
+        "_opensandbox_lifecycle_reachable",
+        lambda: (False, "127.0.0.1:8091"),
+    )
+
+    await svc.write_workspace_text(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+        rel_path="notes/a.txt",
+        content="host write",
+    )
+    await svc.mkdir_workspace(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+        rel_path="archive",
+    )
+    result = await svc.exec_workspace_shell(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+        argv=["mv", "/workspace/sess-1/notes/a.txt", "/workspace/sess-1/archive/a.txt"],
+    )
+    items = await svc.list_workspace_files_flat(
+        user_id="alice",
+        session_id="sess-1",
+        workspace_path=workspace_root,
+    )
+
+    assert result["exit_code"] == 0
+    assert (workspace_root / "archive" / "a.txt").read_text(encoding="utf-8") == "host write"
+    assert any(str(item.get("path") or "") == "/workspace/sess-1/archive/a.txt" for item in items)
+    assert adapter.create_calls == 0
+    monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
 async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeypatch, tmp_path):
