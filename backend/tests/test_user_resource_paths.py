@@ -12,3 +12,21 @@ def test_user_context_uses_user_id_not_email(monkeypatch, tmp_path):
     assert ctx.sessions_dir == ctx.base_dir / "sessions"
     assert ctx.vault_dir == ctx.base_dir / "vault"
     assert not (tmp_path / "users" / "alice@example.com").exists()
+
+
+def test_atomic_write_json_preserves_existing_file_on_serializer_error(tmp_path):
+    from app.core.atomic_json import atomic_write_json, read_json_or_default
+
+    target = tmp_path / "resource.json"
+    atomic_write_json(target, {"version": 1, "name": "old"})
+
+    class NotJson:
+        pass
+
+    try:
+        atomic_write_json(target, {"bad": NotJson()})
+    except TypeError:
+        pass
+
+    assert read_json_or_default(target, {}) == {"version": 1, "name": "old"}
+    assert not list(tmp_path.glob("resource.json.*.tmp"))
