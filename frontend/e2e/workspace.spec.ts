@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { bootLoggedInApp } from './fixtures/mockApi'
+import { bootLoggedInApp, createE2eState, expectMainShell, loginByStorage, mockApi } from './fixtures/mockApi'
 
 test.describe('验收 2/6：工作空间会话与文件', () => {
   test('用户可以新建会话、发送消息并看到专家回复', async ({ page }) => {
@@ -32,5 +32,33 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.locator('.group-chat-toolbar-btn').filter({ hasText: /^场景$/ }).click()
     await expect(page.getByPlaceholder('搜索场景（名称/专家）')).toBeVisible()
     await expect(page.getByText('问答验收场景', { exact: true }).first()).toBeVisible()
+  })
+
+  test('服务端无场景时不会把本地历史快捷场景带给新账号', async ({ page }) => {
+    const state = createE2eState()
+    state.scenarios = []
+    await loginByStorage(page)
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'dha.group.shortcuts.v1',
+        JSON.stringify([
+          {
+            id: 'scenario-local-history',
+            name: '历史本地场景',
+            agent_ids: ['agent-qa'],
+            leader_agent_id: 'agent-qa',
+          },
+        ]),
+      )
+    })
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.locator('.group-chat-toolbar-btn').filter({ hasText: /^场景$/ }).click()
+
+    await expect(page.getByPlaceholder('搜索场景（名称/专家）')).toBeVisible()
+    await expect(page.getByText('历史本地场景', { exact: true })).toHaveCount(0)
   })
 })

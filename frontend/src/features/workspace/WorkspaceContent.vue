@@ -869,21 +869,23 @@ function defaultShortcutPresets(): ShortcutPreset[] {
   // 新账号不再根据专家名自动注入「调研/博客」等场景，避免首屏即写入服务端 session_presets
   return []
 }
-async function loadServerShortcutPresets(): Promise<ShortcutPreset[]> {
+async function loadServerShortcutPresets(): Promise<ShortcutPreset[] | null> {
   try {
     const r = await fetch('/api/settings/session-presets')
     const j = await r.json().catch(() => ({}))
+    if (!r.ok || (j as { status?: string })?.status !== 'ok') return null
     const list = (j as { data?: { presets?: unknown } })?.data?.presets
+    if (!Array.isArray(list)) return null
     return normalizeShortcutPresets(list)
   } catch {
-    return []
+    return null
   }
 }
 async function loadShortcutPresets() {
   shortcutPresetsLoaded.value = false
   const serverPresets = await loadServerShortcutPresets()
-  if (serverPresets.length) {
-    // 后端有配置时以其为准，避免本地旧缓存把已删除项带回来
+  if (serverPresets !== null) {
+    // 后端成功返回时以服务端为准；空列表也表示当前账号没有场景，不能再套用本地历史缓存。
     shortcutPresets.value = serverPresets
     saveShortcutPresets(false)
     shortcutPresetsLoaded.value = true
