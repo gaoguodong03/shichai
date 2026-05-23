@@ -169,6 +169,136 @@ async def test_astream_synthesizes_visible_answer_after_tool_output():
 
 
 @pytest.mark.asyncio
+async def test_astream_shortens_long_tool_call_ids_before_followup_llm_call():
+    long_call_id = "run_skill_script:" + ("nested/path/" * 18) + "main.py:abcdef1234567890"
+    assert len(long_call_id) > 64
+
+    class _RejectLongToolCallClient:
+        def __init__(self):
+            self.calls = 0
+            self.seen_followup_ids = []
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(
+                    content="",
+                    tool_calls=[{"id": long_call_id, "name": "run_skill_script", "args": {"script_path": "main.py"}}],
+                )
+            ai_call_id = messages[-2].tool_calls[0]["id"]
+            tool_call_id = messages[-1].tool_call_id
+            self.seen_followup_ids.append((ai_call_id, tool_call_id))
+            if len(tool_call_id) > 64:
+                raise RuntimeError(f"call_id too long: {len(tool_call_id)}")
+            return AIMessage(content="工具结果已总结")
+
+    class _RejectLongToolCallLLM:
+        def __init__(self):
+            self.client = _RejectLongToolCallClient()
+
+        def get_client(self):
+            return self.client
+
+    llm = _RejectLongToolCallLLM()
+
+    async def _tool_runner(state, tools):
+        tool_call_id = state["messages"][-1].tool_calls[0]["id"]
+        return {
+            "messages": [ToolMessage(content="ok", tool_call_id=tool_call_id)],
+            "tool_attempt_debug": [{"matched": True}],
+            "tool_calls": [{"tool": "run_skill_script", "arguments": {"script_path": "main.py"}}],
+            "tool_raw_outputs": ["ok"],
+        }
+
+    agent = SimpleAgent(
+        llm=llm,
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=2,
+    )
+    agent_texts = []
+    async for ev in agent.astream({"messages": [HumanMessage(content="go")]}, stream_mode=["updates"]):
+        if isinstance(ev, dict) and ev.get("type") == "agent_step":
+            msg = ev.get("message")
+            if isinstance(msg, AIMessage) and str(msg.content or "").strip():
+                agent_texts.append(str(msg.content))
+
+    assert agent_texts[-1] == "工具结果已总结"
+    assert llm.client.seen_followup_ids
+    ai_call_id, tool_call_id = llm.client.seen_followup_ids[-1]
+    assert ai_call_id == tool_call_id
+    assert len(tool_call_id) <= 64
+
+
+@pytest.mark.asyncio
+async def test_ainvoke_shortens_long_tool_call_ids_before_followup_llm_call():
+    long_call_id = "run_skill_script:" + ("deep/path/" * 18) + "main.py:abcdef1234567890"
+    assert len(long_call_id) > 64
+
+    class _RejectLongToolCallClient:
+        def __init__(self):
+            self.calls = 0
+            self.seen_followup_ids = []
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        async def ainvoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                return AIMessage(
+                    content="",
+                    tool_calls=[{"id": long_call_id, "name": "run_skill_script", "args": {"script_path": "main.py"}}],
+                )
+            ai_call_id = messages[-2].tool_calls[0]["id"]
+            tool_call_id = messages[-1].tool_call_id
+            self.seen_followup_ids.append((ai_call_id, tool_call_id))
+            if len(tool_call_id) > 64:
+                raise RuntimeError(f"call_id too long: {len(tool_call_id)}")
+            return AIMessage(content="工具结果已总结")
+
+    class _RejectLongToolCallLLM:
+        def __init__(self):
+            self.client = _RejectLongToolCallClient()
+
+        def get_client(self):
+            return self.client
+
+    llm = _RejectLongToolCallLLM()
+
+    async def _tool_runner(state, tools):
+        tool_call_id = state["messages"][-1].tool_calls[0]["id"]
+        return {
+            "messages": [ToolMessage(content="ok", tool_call_id=tool_call_id)],
+            "tool_attempt_debug": [{"matched": True}],
+            "tool_calls": [{"tool": "run_skill_script", "arguments": {"script_path": "main.py"}}],
+            "tool_raw_outputs": ["ok"],
+        }
+
+    agent = SimpleAgent(
+        llm=llm,
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=2,
+    )
+
+    result = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+    final = result["messages"][-1]
+
+    assert isinstance(final, AIMessage)
+    assert final.content == "工具结果已总结"
+    assert llm.client.seen_followup_ids
+    ai_call_id, tool_call_id = llm.client.seen_followup_ids[-1]
+    assert ai_call_id == tool_call_id
+    assert len(tool_call_id) <= 64
+
+
+@pytest.mark.asyncio
 async def test_astream_synthesizes_after_configured_task_file_read_without_repeating_tool():
     first = AIMessage(
         content="",
