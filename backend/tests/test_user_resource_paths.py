@@ -76,3 +76,69 @@ def test_api_secret_values_use_current_user_context_dir(monkeypatch, tmp_path):
         assert load_api_secret_values() == {"jeniya": "from-user-id-dir"}
     finally:
         reset_current_user_identity(token)
+
+
+def test_save_dha_instances_mirrors_agents_resource_files(monkeypatch, tmp_path):
+    import json
+
+    from app.api.dha import save_dha_instances
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-save", username="save@example.com")
+    try:
+        save_dha_instances(
+            [
+                {
+                    "agent_id": "agent-resource-flow",
+                    "name": "资源目录专家",
+                    "role": "验证专家资源落盘",
+                    "skill_ids": [],
+                    "mcp_server_ids": [],
+                }
+            ]
+        )
+
+        user_root = tmp_path / "users" / "user-resource-save"
+        agent_file = user_root / "resources" / "agents" / "agent-resource-flow.json"
+        assert agent_file.is_file()
+        assert json.loads(agent_file.read_text(encoding="utf-8"))["name"] == "资源目录专家"
+
+        save_dha_instances([])
+        assert not agent_file.exists()
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    from app.api.settings_presets import SessionPresetItem, SessionPresetsBody, update_session_presets
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-save", username="save@example.com")
+    try:
+        body = SessionPresetsBody(
+            presets=[
+                SessionPresetItem(
+                    id="scenario-resource-flow",
+                    name="资源目录场景",
+                    agent_ids=["agent-resource-flow"],
+                    description="验证场景资源落盘",
+                    leader_agent_id="agent-resource-flow",
+                )
+            ]
+        )
+        asyncio.run(update_session_presets(body))
+
+        user_root = tmp_path / "users" / "user-resource-save"
+        scenario_file = user_root / "resources" / "scenarios" / "scenario-resource-flow.json"
+        assert scenario_file.is_file()
+        assert json.loads(scenario_file.read_text(encoding="utf-8"))["name"] == "资源目录场景"
+
+        asyncio.run(update_session_presets(SessionPresetsBody(presets=[])))
+        assert not scenario_file.exists()
+    finally:
+        reset_current_user_identity(token)

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.core.security import user_context_dependency
 from app.core.settings_references import mark_agent_id_missing_in_session_presets, merge_reference_rows_for_ids
 from app.core.user_context import get_current_user_context, get_current_username
+from app.core.resource_store import mirror_rows_to_resource_dir
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
@@ -181,6 +182,9 @@ def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
     path = _ensure_config_dir()
     with open(path, "w", encoding="utf-8") as f:
         json.dump(normalized, f, ensure_ascii=False, indent=2)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        mirror_rows_to_resource_dir(normalized, user_ctx.agents_dir.resolve(), "agent_id")
 
 
 def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.api.settings_mcp import load_mcp_config, save_mcp_config
 from app.core.host_config import normalize_host_config_dict
+from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.scenario_bundle import (
     build_scenario_bundle_zip_bytes,
     collect_skill_and_mcp_ids_for_preset,
@@ -47,7 +48,7 @@ from app.core.settings_references import (
     remap_bundle_references as _remap_bundle_references,
     replace_mcp_server_id_in_user_configs as _replace_mcp_server_id_in_user_configs,
 )
-from app.core.user_context import get_current_username
+from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import session_presets_path, skills_dir_path
 from app.mcp.manager import dispose_mcp_runtime_for_user
 from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user, invalidate_skills_cache_for_user
@@ -275,7 +276,14 @@ def _merge_session_presets_into_file(
         if rid not in used:
             merged.append(row)
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_session_presets_to_resources(merged)
     return merged, imported_ids, skipped_by_name, overwritten_existing_ids
+
+
+def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        mirror_rows_to_resource_dir(rows, user_ctx.scenarios_dir.resolve(), "id")
 
 
 @router.put("/settings/session-presets")
@@ -292,6 +300,7 @@ async def update_session_presets(body: SessionPresetsBody):
         seen.add(row["id"])
         normalized.append(row)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+    _mirror_session_presets_to_resources(normalized)
     return {"status": "ok", "data": {"presets": normalized}}
 
 
