@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
 from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
-from app.core.user_context import ensure_empty_session_presets, users_data_root
+from app.core.user_context import ensure_empty_session_presets, ensure_user_resource_layout, users_data_root
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
 router = APIRouter(tags=["auth"])
@@ -110,9 +110,11 @@ async def login(body: LoginBody):
     profile = ensure_user_profile(name, created_at=created_at)
     user_record = get_user_by_username(name)
     user_id = user_record.user_id if user_record is not None else ""
+    if user_id:
+        ensure_user_resource_layout(user_id=user_id, username=name)
 
     # 登录后异步预热用户级沙箱，避免首次工具调用冷启动。
-    asyncio.create_task(_prewarm_user_sandbox_after_login(name))
+    asyncio.create_task(_prewarm_user_sandbox_after_login(user_id or name))
 
     token = create_access_token(name)
     return {
@@ -229,7 +231,9 @@ async def register(body: RegisterBody):
     profile = ensure_user_profile(name, created_at=created_at)
     user_record = get_user_by_username(name)
     user_id = user_record.user_id if user_record is not None else ""
-    ensure_empty_session_presets(name)
+    if user_id:
+        ensure_user_resource_layout(user_id=user_id, username=name)
+        ensure_empty_session_presets(user_id)
 
     token = create_access_token(name)
     return {

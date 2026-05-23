@@ -25,8 +25,8 @@ from fastapi import Depends, Header, HTTPException
 from app.core.user_context import (
     UserContext,
     get_current_user_context,
-    set_current_username,
-    reset_current_username,
+    reset_current_user_identity,
+    set_current_user_identity,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ _REQUEST_PREWARM_USERS: set[str] = set()
 class CurrentUser:
     """对外暴露的当前用户信息（给路由使用）。"""
 
+    user_id: str
     username: str
     ctx: UserContext
 
@@ -193,15 +194,25 @@ async def user_context_dependency(
             detail="需要登录：请提供 Authorization: Bearer <token>（本地调试可设 ALLOW_ANONYMOUS_API=1）",
         )
 
-    token_ctx = set_current_username(username)
+    user_id = username
+    try:
+        from app.core.auth_db import get_user_by_username
+
+        user_record = get_user_by_username(username)
+        if user_record is not None and user_record.user_id:
+            user_id = user_record.user_id
+    except Exception:
+        logger.warning("auth_user_id_resolve_failed username=%s", username, exc_info=True)
+
+    token_ctx = set_current_user_identity(user_id=user_id, username=username)
     try:
         ctx = get_current_user_context(default_fallback=True)
         if ctx is None:
             raise HTTPException(status_code=401, detail="未能解析当前用户上下文")
-        _schedule_user_request_prewarm(username)
-        yield CurrentUser(username=username, ctx=ctx)
+        _schedule_user_request_prewarm(user_id)
+        yield CurrentUser(user_id=user_id, username=username, ctx=ctx)
     finally:
-        reset_current_username(token_ctx)
+        reset_current_user_identity(token_ctx)
 
 
 def get_current_user() -> CurrentUser:
@@ -212,4 +223,4 @@ def get_current_user() -> CurrentUser:
     ctx = get_current_user_context(default_fallback=True)
     if ctx is None:
         raise RuntimeError("当前没有可用的 UserContext，请确保在请求上下文内调用。")
-    return CurrentUser(username=ctx.username, ctx=ctx)
+    return CurrentUser(user_id=ctx.user_id, username=ctx.username, ctx=ctx)

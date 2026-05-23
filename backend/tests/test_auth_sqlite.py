@@ -89,6 +89,29 @@ def test_register_creates_stable_user_id_and_returns_it(env_and_client):
     assert row == (data["user_id"], username)
 
 
+def test_register_initializes_user_id_directory_layout(env_and_client):
+    client, db_path = env_and_client
+
+    username = "layout@example.com"
+    data = _auth_register(client, username=username, password="pw-layout-123")
+    user_root = db_path.parent / "users" / data["user_id"]
+
+    assert user_root.exists()
+    assert (user_root / "profile.json").exists()
+    assert (user_root / "resources" / "scenarios").is_dir()
+    assert (user_root / "resources" / "agents").is_dir()
+    assert (user_root / "resources" / "skills").is_dir()
+    assert (user_root / "resources" / "tools").is_dir()
+    assert (user_root / "resources" / "models").is_dir()
+    assert (user_root / "sessions").is_dir()
+    assert (user_root / "vault").is_dir()
+    assert not (db_path.parent / "users" / username).exists()
+
+    profile = json.loads((user_root / "profile.json").read_text(encoding="utf-8"))
+    assert profile["user_id"] == data["user_id"]
+    assert profile["username"] == username
+
+
 def test_register_preserves_existing_local_session_presets(env_and_client):
     client, db_path = env_and_client
 
