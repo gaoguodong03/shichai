@@ -29,6 +29,26 @@ def session_presets_path() -> Path:
     return (require_user_context().config_dir / "session_presets.json").resolve()
 
 
+def scenarios_resources_dir() -> Path:
+    return require_user_context().scenarios_dir.resolve()
+
+
+def agents_resources_dir() -> Path:
+    return require_user_context().agents_dir.resolve()
+
+
+def tools_resources_dir() -> Path:
+    return require_user_context().tools_dir.resolve()
+
+
+def models_resources_dir() -> Path:
+    return require_user_context().models_dir.resolve()
+
+
+def vault_secrets_path() -> Path:
+    return (require_user_context().vault_dir / "secrets.enc.json").resolve()
+
+
 def sandbox_requirements_path() -> Path:
     return (require_user_context().config_dir / "sandbox" / "requirements.txt").resolve()
 
