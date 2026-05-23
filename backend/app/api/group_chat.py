@@ -38,7 +38,7 @@ from app.agent.group_memory_store import (
     append_turn_log,
     upsert_facts,
     build_dispatch_context,
-    append_expert_message_file,
+    append_group_message_file,
 )
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -917,6 +917,89 @@ def _extract_facts_from_response(text: str, max_items: int = 4) -> List[str]:
     compact = s.replace("\n", " ")
     chunks = [x.strip() for x in re.split(r"[。；;.!?！？]", compact) if x.strip()]
     return [c[:220] for c in chunks[:max_items]]
+
+
+def _persist_group_memory_turn(
+    *,
+    session_id: str,
+    msg: Dict[str, Any],
+    discussion_goal: str,
+    input_prompt_summary: str,
+    app_settings: Dict[str, Any],
+    workspace_root: Optional[Path] = None,
+) -> None:
+    """将一条可见主持人/专家发言写入 memory/messages 与 memory/logs。"""
+    mem = _get_group_memory_settings(app_settings)
+    if not mem["enabled"]:
+        return
+    role = str((msg or {}).get("role") or "").strip()
+    if role not in {"assistant", "host"}:
+        return
+    content = str((msg or {}).get("content") or "").strip()
+    if not content:
+        return
+    agent_id = str((msg or {}).get("agent_id") or "").strip()
+    if not agent_id and role == "host":
+        agent_id = VIRTUAL_SCENE_HOST_ID
+    if not agent_id:
+        return
+    skill_id = str((msg or {}).get("skill_id") or "").strip()
+    tool_raw_results = (msg or {}).get("tool_raw_results") or []
+    if not isinstance(tool_raw_results, list):
+        tool_raw_results = [str(tool_raw_results)]
+    tool_debug = (msg or {}).get("tool_debug") if isinstance((msg or {}).get("tool_debug"), dict) else {}
+    tool_calls = tool_debug.get("tool_calls") if isinstance(tool_debug, dict) else []
+    if not isinstance(tool_calls, list):
+        tool_calls = []
+    tool_attempt_debug = tool_debug.get("tool_attempt_debug") if isinstance(tool_debug, dict) else []
+    if not isinstance(tool_attempt_debug, list):
+        tool_attempt_debug = []
+    sandbox_entry_trace = tool_debug.get("sandbox_entry_trace") if isinstance(tool_debug, dict) else []
+    if not isinstance(sandbox_entry_trace, list):
+        sandbox_entry_trace = []
+    skill_route_debug = (msg or {}).get("skill_route_debug")
+    if not isinstance(skill_route_debug, dict):
+        skill_route_debug = {}
+
+    full_message_ref = append_group_message_file(
+        session_id=session_id,
+        agent_id=agent_id,
+        timestamp=msg.get("timestamp"),
+        content=content,
+        skill_id=skill_id,
+        role=role,
+        workspace_root=workspace_root,
+    )
+    append_turn_log(
+        session_id=session_id,
+        max_logs=mem["max_logs"],
+        workspace_root=workspace_root,
+        turn_record={
+            "agent_id": agent_id,
+            "timestamp": msg.get("timestamp"),
+            "skill_id": skill_id,
+            "full_message_ref": full_message_ref,
+            "discussion_goal": discussion_goal,
+            "input_prompt_summary": (input_prompt_summary or "")[:800],
+            "response_summary": content[:1400],
+            "tool_result_summary": "\n".join((str(x) for x in tool_raw_results[:2]))[:1000],
+            "tool_calls": tool_calls,
+            "tool_raw_outputs": tool_raw_results or (["[no tool raw outputs captured]"] if tool_calls else ["[no tool calls detected]"]),
+            "tool_attempt_debug": tool_attempt_debug,
+            "sandbox_entry_trace": sandbox_entry_trace,
+            "skill_route_debug": skill_route_debug,
+        },
+    )
+
+    if role == "assistant":
+        facts_delta = _extract_facts_from_response(content)
+        if facts_delta:
+            upsert_facts(
+                session_id=session_id,
+                facts_delta=facts_delta,
+                max_facts=mem["max_facts"],
+                workspace_root=workspace_root,
+            )
 
 
 def _build_next_prompt_with_memory(
@@ -2736,6 +2819,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 """供前端气泡展示「skill: xxx」；与会话 meta / 主持人 DHA 的 skill_ids 一致。"""
                 return scene_runtime.host_bubble_skill_id()
 
+            def _persist_host_memory(host_msg: Dict[str, Any]) -> None:
+                try:
+                    _persist_group_memory_turn(
+                        session_id=group_session_id,
+                        msg=host_msg,
+                        discussion_goal=discussion_goal,
+                        input_prompt_summary=(user_message or custom_prompt or discussion_goal),
+                        app_settings=app_settings,
+                    )
+                except Exception:
+                    logger.warning("group memory write failed for host turn", exc_info=True)
+
             next_speaker = None
             expert_route_debug_for_turn: Dict[str, Any] = {}
             scheduler_next_prompt: Optional[str] = None
@@ -2767,6 +2862,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     host_msg["suggested_add_expert_ids"] = picked
                 messages.append(host_msg)
                 _save_group_history(group_session_id, messages)
+                _persist_host_memory(host_msg)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
                 _save_group_meta(meta)
                 yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
@@ -3015,6 +3111,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
                     _save_group_history(group_session_id, messages)
+                    _persist_host_memory(host_msg)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                 # 主持人点名后，当前轮次继续执行被点名专家发言，避免用户看到“将安排发言”却无下文。
                 if next_speaker in agent_ids:
@@ -3058,6 +3155,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     if decision.get("suggested_order"):
                         host_msg["suggested_order"] = decision["suggested_order"]
                     _save_group_history(group_session_id, messages)
+                    _persist_host_memory(host_msg)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_id = next_speaker
@@ -3088,6 +3186,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             host_msg["agent_id"] = leader_agent_id
                         messages.append(host_msg)
                         _save_group_history(group_session_id, messages)
+                        _persist_host_memory(host_msg)
                         yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                     if next_speaker == "user":
                         orch_ctx.phase = OrchestrationPhase.AWAITING_USER
@@ -3106,6 +3205,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     fallback_host["agent_id"] = leader_agent_id
                 messages.append(fallback_host)
                 _save_group_history(group_session_id, messages)
+                _persist_host_memory(fallback_host)
                 _save_group_meta(meta)
                 yield f"event: message\ndata: {json_module.dumps(fallback_host, ensure_ascii=False)}\n\n"
 
@@ -3207,6 +3307,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         host_msg["agent_id"] = leader_agent_id
                     messages.append(host_msg)
                     _save_group_history(group_session_id, messages)
+                    _persist_host_memory(host_msg)
                     _save_group_meta(meta)
                     yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
                     end_data = build_end_payload(
@@ -3481,44 +3582,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _save_group_meta(meta)
                 # 专家回合自动落盘：失败不影响主对话链路
                 try:
-                    mem = _get_group_memory_settings(app_settings)
-                    if mem["enabled"]:
-                        full_message_ref = append_expert_message_file(
-                            session_id=group_session_id,
-                            agent_id=next_speaker,
-                            timestamp=assistant_msg.get("timestamp"),
-                            content=full_content,
-                            skill_id=skill_id,
-                        )
-                        input_summary = (user_content or "")[:800]
-                        response_summary = (full_content or "")[:1400]
-                        tool_summary = "\n".join((accumulated_raw_tool_results or [])[:2])[:1000]
-                        append_turn_log(
-                            session_id=group_session_id,
-                            max_logs=mem["max_logs"],
-                            turn_record={
-                                "agent_id": next_speaker,
-                                "timestamp": assistant_msg.get("timestamp"),
-                                "skill_id": skill_id,
-                                "full_message_ref": full_message_ref,
-                                "discussion_goal": discussion_goal,
-                                "input_prompt_summary": input_summary,
-                                "response_summary": response_summary,
-                                "tool_result_summary": tool_summary,
-                                "tool_calls": tool_calls_trace,
-                                "tool_raw_outputs": accumulated_raw_tool_results or (["[no tool raw outputs captured]"] if tool_calls_trace else ["[no tool calls detected]"]),
-                                "tool_attempt_debug": tool_attempt_debug,
-                                "sandbox_entry_trace": sandbox_entry_trace,
-                                "skill_route_debug": skill_route_debug if isinstance(skill_route_debug, dict) else {},
-                            },
-                        )
-                        facts_delta = _extract_facts_from_response(full_content)
-                        if facts_delta:
-                            upsert_facts(
-                                session_id=group_session_id,
-                                facts_delta=facts_delta,
-                                max_facts=mem["max_facts"],
-                            )
+                    _persist_group_memory_turn(
+                        session_id=group_session_id,
+                        msg=assistant_msg,
+                        discussion_goal=discussion_goal,
+                        input_prompt_summary=user_content,
+                        app_settings=app_settings,
+                    )
                 except Exception:
                     logger.warning("group memory write failed", exc_info=True)
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"

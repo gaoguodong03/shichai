@@ -48,6 +48,44 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     assert "主持人本轮指派" in out
 
 
+def test_persist_group_memory_turn_writes_host_messages_and_logs(tmp_path):
+    gc = _get_group_chat_module()
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+
+    msg = {
+        "role": "host",
+        "agent_id": "agent-scene-host",
+        "content": "请用户补充或继续提问。",
+        "timestamp": "2026-05-13T12:30:50+00:00",
+        "skill_id": "group-host-general",
+    }
+
+    gc._persist_group_memory_turn(
+        session_id="group-test",
+        msg=msg,
+        discussion_goal="数据库中有内容吗",
+        input_prompt_summary="这是全部信息了吗",
+        app_settings={"group_memory": {"enabled": True, "max_logs": 5, "max_facts": 20}},
+        workspace_root=ws,
+    )
+
+    messages = sorted((ws / "memory" / "messages").glob("*_agent-scene-host.md"))
+    logs = sorted((ws / "memory" / "logs").glob("*_agent-scene-host.md"))
+    assert len(messages) == 1
+    assert len(logs) == 1
+
+    message_content = messages[0].read_text(encoding="utf-8")
+    log_content = logs[0].read_text(encoding="utf-8")
+    assert "# Host Message" in message_content
+    assert "- agent_id: agent-scene-host" in message_content
+    assert "- skill_id: group-host-general" in message_content
+    assert "请用户补充或继续提问。" in message_content
+    assert "- full_message_ref: memory/messages/2026-05-13T12-30-50+00-00_agent-scene-host.md" in log_content
+    assert "## Response Summary" in log_content
+    assert "请用户补充或继续提问。" in log_content
+
+
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():
     gc = _get_group_chat_module()
     base = "工具执行成功。"

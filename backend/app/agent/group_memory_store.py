@@ -141,6 +141,36 @@ def append_turn_log(
     return str(path)
 
 
+def append_group_message_file(
+    session_id: str,
+    agent_id: str,
+    timestamp: Optional[str],
+    content: str,
+    skill_id: str = "",
+    role: str = "assistant",
+    workspace_root: Optional[Path] = None,
+) -> str:
+    """保存群聊角色完整发言到 memory/messages，返回工作区相对路径。"""
+    ws_root = _workspace_root(session_id, workspace_root=workspace_root)
+    mem = _memory_root(session_id, workspace_root=workspace_root)
+    messages_dir = mem / "messages"
+    ts = (timestamp or datetime.now(timezone.utc).isoformat()).replace(":", "-")
+    did = _safe_name(agent_id or "expert")
+    p = messages_dir / f"{ts}_{did}.md"
+    role_label = "Host Message" if str(role or "").strip() == "host" else "Expert Message"
+    body = (
+        f"# {role_label}\n\n"
+        f"- session_id: {session_id}\n"
+        f"- role: {str(role or '').strip() or 'assistant'}\n"
+        f"- agent_id: {agent_id or ''}\n"
+        f"- skill_id: {skill_id or ''}\n"
+        f"- timestamp: {timestamp or ''}\n\n"
+        f"## Content\n\n{content or ''}\n"
+    )
+    p.write_text(body, encoding="utf-8")
+    return str(p.relative_to(ws_root)).replace("\\", "/")
+
+
 def append_expert_message_file(
     session_id: str,
     agent_id: str,
@@ -150,22 +180,15 @@ def append_expert_message_file(
     workspace_root: Optional[Path] = None,
 ) -> str:
     """保存专家完整发言到 memory/messages，返回工作区相对路径。"""
-    ws_root = _workspace_root(session_id, workspace_root=workspace_root)
-    mem = _memory_root(session_id, workspace_root=workspace_root)
-    messages_dir = mem / "messages"
-    ts = (timestamp or datetime.now(timezone.utc).isoformat()).replace(":", "-")
-    did = _safe_name(agent_id or "expert")
-    p = messages_dir / f"{ts}_{did}.md"
-    body = (
-        f"# Expert Message\n\n"
-        f"- session_id: {session_id}\n"
-        f"- agent_id: {agent_id or ''}\n"
-        f"- skill_id: {skill_id or ''}\n"
-        f"- timestamp: {timestamp or ''}\n\n"
-        f"## Content\n\n{content or ''}\n"
+    return append_group_message_file(
+        session_id=session_id,
+        agent_id=agent_id,
+        timestamp=timestamp,
+        content=content,
+        skill_id=skill_id,
+        role="assistant",
+        workspace_root=workspace_root,
     )
-    p.write_text(body, encoding="utf-8")
-    return str(p.relative_to(ws_root)).replace("\\", "/")
 
 
 def upsert_facts(
