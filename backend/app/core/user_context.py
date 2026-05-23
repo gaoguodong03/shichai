@@ -8,12 +8,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
+
+from app.core.atomic_json import atomic_write_json
 
 
 _current_username: ContextVar[Optional[str]] = ContextVar("current_username", default=None)
@@ -213,11 +214,19 @@ def ensure_user_resource_layout(*, user_id: str, username: str = "") -> UserCont
     ):
         path.mkdir(parents=True, exist_ok=True)
     if not ctx.profile_path.exists():
-        payload = {
-            "user_id": ctx.user_id,
-            "username": ctx.username,
-        }
-        ctx.profile_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_user_profile(user_id=ctx.user_id, username=ctx.username)
+    return ctx
+
+
+def write_user_profile(*, user_id: str, username: str) -> UserContext:
+    """写入用户资源根下的 profile.json。"""
+    ctx = build_user_context(user_id=user_id, username=username)
+    ctx.profile_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "user_id": ctx.user_id,
+        "username": ctx.username,
+    }
+    atomic_write_json(ctx.profile_path, payload)
     return ctx
 
 

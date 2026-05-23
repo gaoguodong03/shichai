@@ -245,6 +245,34 @@ def test_change_account_and_password(env_and_client):
     assert r.status_code == 200
 
 
+def test_change_account_keeps_user_id_resource_directory(env_and_client):
+    client, db_path = env_and_client
+
+    old_username = "old-account@example.com"
+    new_username = "new-account@example.com"
+    registered = _auth_register(client, username=old_username, password="pw-account-123")
+    token = registered["access_token"]
+    user_id = registered["user_id"]
+    old_user_root = db_path.parent / "users" / user_id
+    marker = old_user_root / "resources" / "skills" / "marker" / "SKILL.md"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("---\nname: Marker\n---\nbody\n", encoding="utf-8")
+
+    r = client.put(
+        "/api/auth/account",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"new_username": new_username, "current_password": "pw-account-123"},
+    )
+
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["username"] == new_username
+    assert data["user_id"] == user_id
+    assert marker.exists()
+    assert old_user_root.exists()
+    assert not (db_path.parent / "users" / new_username).exists()
+
+
 def test_reject_invalid_account_format(env_and_client):
     client, _ = env_and_client
     invalid_username = "invalid_username"

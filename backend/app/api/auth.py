@@ -7,9 +7,7 @@
 import asyncio
 import logging
 import os
-import shutil
 import re
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -18,7 +16,7 @@ from datetime import datetime, timezone
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
 from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
-from app.core.user_context import ensure_empty_session_presets, ensure_user_resource_layout, users_data_root
+from app.core.user_context import ensure_empty_session_presets, ensure_user_resource_layout, write_user_profile
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
 router = APIRouter(tags=["auth"])
@@ -49,19 +47,6 @@ class ChangeAccountBody(BaseModel):
 class ChangePasswordBody(BaseModel):
     current_password: str
     new_password: str
-
-
-def _move_user_data_dir(old_username: str, new_username: str) -> tuple[bool, Path, Path]:
-    root = users_data_root()
-    old_dir = (root / old_username).resolve()
-    new_dir = (root / new_username).resolve()
-    if not old_dir.exists():
-        return False, old_dir, new_dir
-    if new_dir.exists():
-        raise HTTPException(status_code=400, detail="新账号的数据目录已存在，无法重命名")
-    new_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(old_dir), str(new_dir))
-    return True, old_dir, new_dir
 
 
 async def _prewarm_user_sandbox_after_login(username: str) -> None:
@@ -148,27 +133,20 @@ async def change_account(body: ChangeAccountBody, current_user: CurrentUser = De
     if user_exists(username=new_name):
         raise HTTPException(status_code=400, detail="账号已存在")
 
-    moved = False
-    old_dir: Path | None = None
-    new_dir: Path | None = None
     try:
-        moved, old_dir, new_dir = _move_user_data_dir(old_name, new_name)
+        user_id = current_user.user_id
         rename_user(old_username=old_name, new_username=new_name)
         profile = rename_user_profile(old_name, new_name)
-    except HTTPException:
-        raise
+        if user_id:
+            write_user_profile(user_id=user_id, username=new_name)
     except Exception as e:
-        if moved and old_dir is not None and new_dir is not None and new_dir.exists() and not old_dir.exists():
-            try:
-                shutil.move(str(new_dir), str(old_dir))
-            except Exception:
-                pass
         raise HTTPException(status_code=500, detail=f"修改账号失败: {e}")
 
     token = create_access_token(new_name)
     return {
         "status": "ok",
         "data": {
+            "user_id": current_user.user_id,
             "username": new_name,
             "display_name": profile.display_name or new_name,
             "access_token": token,
@@ -203,6 +181,7 @@ async def change_password(body: ChangePasswordBody, current_user: CurrentUser = 
     return {
         "status": "ok",
         "data": {
+            "user_id": current_user.user_id,
             "username": username,
             "access_token": token,
             "token_type": "bearer",
