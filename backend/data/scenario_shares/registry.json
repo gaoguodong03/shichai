@@ -148,6 +148,19 @@
       "created_by": "2987371922@qq.com",
       "filename": "f067f9c7c1c8.zip",
       "created_at": "2026-04-26T12:49:08.853475+00:00"
+    },
+    "178dd4c94416": {
+      "object_type": "scene",
+      "source_ref": "scenario-osweekly-8f3e2a1d",
+      "title": "开源周榜与趋势",
+      "summary": {
+        "agent_count": 3
+      },
+      "preset_name": "开源周榜与趋势",
+      "source_preset_id": "scenario-osweekly-8f3e2a1d",
+      "created_by": "298371922@qq.com",
+      "filename": "178dd4c94416.zip",
+      "created_at": "2026-05-23T04:21:40.214394+00:00"
     }
   }
 }
