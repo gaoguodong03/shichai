@@ -21,6 +21,11 @@ def _extract_text_content(message: BaseMessage) -> str:
     return str(content or "")
 
 
+def _is_llm_failure_message(message: BaseMessage) -> bool:
+    text = _extract_text_content(message).strip()
+    return text.startswith("抱歉，模型响应失败：") or text.startswith("抱歉，模型响应超时")
+
+
 def _has_visible_ai_text(messages: list[BaseMessage]) -> bool:
     for msg in reversed(messages):
         if not isinstance(msg, AIMessage):
@@ -265,6 +270,146 @@ def _has_run_skill_script_call(tool_out: dict[str, Any]) -> bool:
     return False
 
 
+def _large_script_success_min_raw_chars() -> int:
+    raw = (os.getenv("SKILL_AGENT_LARGE_SCRIPT_SUCCESS_DIRECT_FINAL_MIN_CHARS") or "8000").strip()
+    try:
+        return max(0, int(raw))
+    except Exception:
+        return 8000
+
+
+def _compact_multiline_text(text: str, *, limit: int = 6000) -> str:
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    head_len = max(1000, limit // 2)
+    tail_len = max(1000, limit - head_len - 80)
+    return (
+        text[:head_len].rstrip()
+        + "\n\n...（中间内容已省略）...\n\n"
+        + text[-tail_len:].lstrip()
+    )[:limit].rstrip()
+
+
+def _large_run_skill_script_success_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    if not _env_truthy("SKILL_AGENT_DIRECT_FINAL_ON_LARGE_SCRIPT_SUCCESS", "1"):
+        return None
+    if not _has_run_skill_script_call(tool_out):
+        return None
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return None
+    if sum(len(str(item or "")) for item in raw_outputs) < _large_script_success_min_raw_chars():
+        return None
+    payload = _successful_tool_payload(tool_out)
+    if payload is None:
+        return None
+    stdout = str(payload.get("stdout") or "").strip()
+    stderr = str(payload.get("stderr") or "").strip()
+    script = str(payload.get("script") or "").strip()
+    if not stdout and not stderr:
+        return None
+
+    parts = ["脚本执行成功。"]
+    if script:
+        parts.append(f"脚本：{script}")
+    if stdout:
+        parsed_stdout = _json_loads_maybe(stdout)
+        if isinstance(parsed_stdout, (dict, list)):
+            stdout = json.dumps(parsed_stdout, ensure_ascii=False, indent=2)
+        parts.append(_compact_multiline_text(stdout))
+    elif stderr:
+        parts.append("stdout 为空，以下是 stderr 摘要：")
+        parts.append(_compact_multiline_text(stderr, limit=2400))
+    return AIMessage(content="\n\n".join(part for part in parts if part).strip())
+
+
+_RECOVERABLE_COORDINATION_READ_PATHS = {
+    "speaker_task.txt",
+    "memory/speaker_task.txt",
+    "current_phase.txt",
+    "next_speaker.txt",
+}
+
+
+def _tool_call_display_name(tool_call: Any) -> str:
+    if isinstance(tool_call, dict):
+        return str(tool_call.get("tool") or tool_call.get("name") or "tool").strip() or "tool"
+    return str(getattr(tool_call, "tool", None) or getattr(tool_call, "name", None) or "tool").strip() or "tool"
+
+
+def _tool_call_display_path(tool_call: Any) -> str:
+    args = _tool_call_args(tool_call)
+    for key in ("path", "script_path", "__arg1"):
+        value = args.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return ""
+
+
+def _tool_call_error_label(tool_out: dict[str, Any], idx: int) -> str:
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    call: Any = None
+    if isinstance(calls, list) and calls:
+        call = calls[min(idx, len(calls) - 1)]
+    name = _tool_call_display_name(call) if call is not None else "tool"
+    path = _tool_call_display_path(call) if call is not None else ""
+    return f"{name}: {path}" if path else name
+
+
+def _is_recoverable_coordination_tool_error(tool_out: dict[str, Any], idx: int, text: str) -> bool:
+    if "文件不存在" not in text:
+        return False
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list) or not calls:
+        return False
+    call = calls[min(idx, len(calls) - 1)]
+    if _tool_call_display_name(call) not in {"read_file", "file-reader_read_file"}:
+        return False
+    path = _normalize_workspace_path_for_compare(_tool_call_display_path(call))
+    return path in _RECOVERABLE_COORDINATION_READ_PATHS
+
+
+def _error_text_from_raw_tool_output(raw: Any) -> str | None:
+    payload = _json_loads_maybe(raw)
+    if isinstance(payload, dict):
+        returncode = payload.get("returncode", payload.get("exit_code"))
+        is_error = payload.get("ok") is False or (isinstance(returncode, int) and returncode != 0)
+        if not is_error:
+            return None
+        message = str(payload.get("message") or payload.get("error") or payload.get("code") or "工具执行失败").strip()
+        parts = [message]
+        for key in ("stderr", "stdout", "gateway_error"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                parts.append(f"{key}:\n{_compact_multiline_text(value, limit=1800)}")
+        return "\n\n".join(parts)
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("错误："):
+            return stripped
+    return None
+
+
+def _tool_error_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return None
+    for idx, raw in enumerate(raw_outputs):
+        error_text = _error_text_from_raw_tool_output(raw)
+        if not error_text:
+            continue
+        if _is_recoverable_coordination_tool_error(tool_out, idx, error_text):
+            continue
+        label = _tool_call_error_label(tool_out, idx)
+        return AIMessage(content=f"当前步骤失败：{label}\n\n{_compact_multiline_text(error_text, limit=2400)}")
+    return None
+
+
 def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[str, Any]) -> bool:
     if not _env_truthy("SKILL_AGENT_FORCE_FINAL_ON_SUCCESS", "1"):
         return False
@@ -353,6 +498,12 @@ def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
     else:
         content = "工具已执行完成，但模型没有生成最终文字总结；本轮没有捕获到可展示的工具返回内容。"
     return AIMessage(content=content)
+
+
+def _fallback_after_llm_failure_message(raw_outputs: list[str], response: BaseMessage) -> AIMessage | None:
+    if not raw_outputs or not _is_llm_failure_message(response):
+        return None
+    return _deterministic_tool_fallback_message(raw_outputs)
 
 
 @dataclass
@@ -577,6 +728,18 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": terminal_failure_message}
                     break
+                tool_error_message = _tool_error_direct_final_message(tool_out)
+                if tool_error_message is not None:
+                    messages.append(tool_error_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "tool_error_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(tool_error_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": tool_error_message}
+                    break
                 audio_final_message = _audio_transcription_final_message(tool_out)
                 if audio_final_message is not None:
                     messages.append(audio_final_message)
@@ -588,6 +751,18 @@ class SimpleAgent:
                         }
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": audio_final_message}
+                    break
+                large_script_final_message = _large_run_skill_script_success_direct_final_message(tool_out)
+                if large_script_final_message is not None:
+                    messages.append(large_script_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "large_run_skill_script_success_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(large_script_final_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": large_script_final_message}
                     break
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
@@ -615,6 +790,18 @@ class SimpleAgent:
                 continue
             content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():
+                fallback_after_failure = _fallback_after_llm_failure_message(all_tool_raw_outputs, response)
+                if fallback_after_failure is not None:
+                    messages.append(fallback_after_failure)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "llm_failure_after_tool_outputs_fallback",
+                            "matched": True,
+                            "content_preview": _extract_text_content(fallback_after_failure)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 1, "message": fallback_after_failure}
+                    break
                 tool_attempt_debug.append(
                     {
                         "source": "no_tool_detected",
@@ -771,6 +958,17 @@ class SimpleAgent:
                         }
                     )
                     break
+                tool_error_message = _tool_error_direct_final_message(tool_out)
+                if tool_error_message is not None:
+                    messages.append(tool_error_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "tool_error_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(tool_error_message)[:240],
+                        }
+                    )
+                    break
                 audio_final_message = _audio_transcription_final_message(tool_out)
                 if audio_final_message is not None:
                     messages.append(audio_final_message)
@@ -779,6 +977,17 @@ class SimpleAgent:
                             "source": "audio_transcription_direct_final",
                             "matched": True,
                             "content_preview": _extract_text_content(audio_final_message)[:240],
+                        }
+                    )
+                    break
+                large_script_final_message = _large_run_skill_script_success_direct_final_message(tool_out)
+                if large_script_final_message is not None:
+                    messages.append(large_script_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "large_run_skill_script_success_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(large_script_final_message)[:240],
                         }
                     )
                     break
@@ -809,6 +1018,17 @@ class SimpleAgent:
             # no tool calls → finish
             content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():
+                fallback_after_failure = _fallback_after_llm_failure_message(tool_raw_outputs, response)
+                if fallback_after_failure is not None:
+                    messages.append(fallback_after_failure)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "llm_failure_after_tool_outputs_fallback",
+                            "matched": True,
+                            "content_preview": _extract_text_content(fallback_after_failure)[:240],
+                        }
+                    )
+                    break
                 tool_attempt_debug.append(
                     {
                         "source": "no_tool_detected",

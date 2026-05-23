@@ -168,6 +168,19 @@ def test_read_file_hides_internal_diagnostic_memory_files(temp_user_data_root):
     assert "secret" not in out
 
 
+def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root):
+    """Skill 生成在 workspace/scripts 下的结果文件仍然是工作区文件。"""
+    from app.tools.read_file import _workspace_relative_for_session
+
+    rel, err = _workspace_relative_for_session(
+        session_id="sess-script-output",
+        path="scripts/saved_data/result_20260523_123036/analysis_report.txt",
+    )
+
+    assert err is None
+    assert rel == "scripts/saved_data/result_20260523_123036/analysis_report.txt"
+
+
 def test_list_workspace_directory_hides_internal_diagnostic_memory_files(temp_user_data_root, monkeypatch):
     """list_workspace_directory 只暴露用户/任务可用文件，不列出内部 JSONL 日志。"""
     from app.agent import tools_for_skill as tool_module

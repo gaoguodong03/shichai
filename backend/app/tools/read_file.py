@@ -60,12 +60,6 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
             f"错误：{normalized} 是工具返回字段，不是工作区文件。"
             "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_file。"
         )
-    if normalized.startswith("scripts/"):
-        return "", (
-            f"错误：{normalized} 看起来是技能脚本路径，不是工作区文件。"
-            "技能脚本位于 /skills/<skill_id>/scripts，仅可通过 run_skill_script_<skill_id> 执行；"
-            "脚本执行结果中的 stdout/stderr 已在工具返回中，不需要再读取。"
-        )
     if not session_id:
         if not normalized:
             return "", "错误：未提供文件路径。"

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
@@ -220,5 +222,174 @@ async def test_simple_agent_synthesizes_immediately_after_configured_read_file_p
     assert any(
         item.get("source") == "synthesize_after_read_file"
         and item.get("path") == "speaker_task.txt"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_direct_final_for_large_script_success_without_second_llm():
+    script_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-script",
+                "name": "run_skill_script_shixiseng_dedicated_crawler",
+                "args": {"script_path": "main.py"},
+            }
+        ],
+    )
+    should_not_call = AIMessage(content="不应该为了大体积脚本日志再次调用模型")
+    raw_payload = {
+        "ok": True,
+        "code": "script_executed",
+        "script": "main.py",
+        "returncode": 0,
+        "stdout": (
+            "All tasks finished. Check results in: scripts/saved_data/result_20260523_123036\n"
+            "实习僧本轮爬取分析反馈\n"
+            "本轮岗位数：55 个。\n"
+            "成功写入/导出岗位数：55 个。"
+        ),
+        "stderr": "fetch log\n" + ("x" * 9000),
+    }
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [ToolMessage(content=json.dumps(raw_payload, ensure_ascii=False), tool_call_id="tc-script")],
+            "tool_calls": [{"tool": "run_skill_script_shixiseng_dedicated_crawler", "arguments": {"script_path": "main.py"}}],
+            "tool_raw_outputs": [json.dumps(raw_payload, ensure_ascii=False)],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([script_call, should_not_call]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert "本轮岗位数：55 个" in final_text
+    assert "不应该" not in final_text
+    assert "fetch log" not in final_text
+    assert any(
+        item.get("source") == "large_run_skill_script_success_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
+    read_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-read",
+                "name": "read_file",
+                "args": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
+            }
+        ],
+    )
+    llm_failure = AIMessage(content="抱歉，模型响应失败：Connection error.")
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [
+                ToolMessage(
+                    content="实习僧本轮爬取分析反馈\n本轮岗位数：55 个。\n成功写入/导出岗位数：55 个。",
+                    tool_call_id="tc-read",
+                )
+            ],
+            "tool_calls": [
+                {
+                    "tool": "read_file",
+                    "arguments": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
+                }
+            ],
+            "tool_raw_outputs": ["实习僧本轮爬取分析反馈\n本轮岗位数：55 个。\n成功写入/导出岗位数：55 个。"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([read_call, llm_failure]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert "本轮岗位数：55 个" in final_text
+    assert "模型响应失败" not in final_text
+    assert any(
+        item.get("source") == "llm_failure_after_tool_outputs_fallback"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_reports_tool_error_without_more_llm_calls():
+    read_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-read",
+                "name": "read_file",
+                "args": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
+            }
+        ],
+    )
+    should_not_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-list",
+                "name": "run_skill_script_shixiseng_dedicated_crawler",
+                "args": {"script_path": "__list__"},
+            }
+        ],
+    )
+    tool_round = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        tool_round["n"] += 1
+        return {
+            "messages": [
+                ToolMessage(
+                    content="错误：文件不存在：scripts/saved_data/result_20260523_123036/analysis_report.txt",
+                    tool_call_id="tc-read",
+                )
+            ],
+            "tool_calls": [
+                {
+                    "tool": "read_file",
+                    "arguments": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
+                }
+            ],
+            "tool_raw_outputs": [
+                "错误：文件不存在：scripts/saved_data/result_20260523_123036/analysis_report.txt"
+            ],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([read_call, should_not_call]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert tool_round["n"] == 1
+    assert "当前步骤失败" in final_text
+    assert "analysis_report.txt" in final_text
+    assert "tc-list" not in str(getattr(out["messages"][-1], "tool_calls", ""))
+    assert any(
+        item.get("source") == "tool_error_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )
