@@ -68,6 +68,27 @@ def test_sqlite_register_login_and_password_not_plaintext(env_and_client):
     assert row[2] != password
 
 
+def test_register_creates_stable_user_id_and_returns_it(env_and_client):
+    client, db_path = env_and_client
+
+    username = "stable-id@example.com"
+    data = _auth_register(client, username=username, password="pw-stable-123")
+
+    assert data["username"] == username
+    assert isinstance(data["user_id"], str)
+    assert data["user_id"]
+    assert "@" not in data["user_id"]
+
+    conn = sqlite3.connect(str(db_path))
+    row = conn.execute(
+        "SELECT user_id, username FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    conn.close()
+
+    assert row == (data["user_id"], username)
+
+
 def test_register_preserves_existing_local_session_presets(env_and_client):
     client, db_path = env_and_client
 

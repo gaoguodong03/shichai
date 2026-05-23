@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from datetime import datetime, timezone
 
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
-from app.core.auth_db import create_user, verify_user, user_exists, update_password, rename_user
+from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
 from app.core.user_context import ensure_empty_session_presets, users_data_root
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
@@ -108,6 +108,8 @@ async def login(body: LoginBody):
     # 确保有用户档案（users.json）
     created_at = datetime.now(timezone.utc).isoformat()
     profile = ensure_user_profile(name, created_at=created_at)
+    user_record = get_user_by_username(name)
+    user_id = user_record.user_id if user_record is not None else ""
 
     # 登录后异步预热用户级沙箱，避免首次工具调用冷启动。
     asyncio.create_task(_prewarm_user_sandbox_after_login(name))
@@ -117,6 +119,7 @@ async def login(body: LoginBody):
         "status": "ok",
         "data": {
             "username": name,
+            "user_id": user_id,
             "display_name": profile.display_name or name,
             "access_token": token,
             "token_type": "bearer",
@@ -224,6 +227,8 @@ async def register(body: RegisterBody):
 
     created_at = datetime.now(timezone.utc).isoformat()
     profile = ensure_user_profile(name, created_at=created_at)
+    user_record = get_user_by_username(name)
+    user_id = user_record.user_id if user_record is not None else ""
     ensure_empty_session_presets(name)
 
     token = create_access_token(name)
@@ -231,6 +236,7 @@ async def register(body: RegisterBody):
         "status": "ok",
         "data": {
             "username": name,
+            "user_id": user_id,
             "display_name": profile.display_name or name,
             "access_token": token,
             "token_type": "bearer",

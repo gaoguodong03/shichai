@@ -14,10 +14,18 @@ import hashlib
 import hmac
 import os
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+
+@dataclass(frozen=True)
+class AuthUserRecord:
+    user_id: str
+    username: str
+    created_at: str
 
 
 def _backend_root() -> Path:
@@ -52,6 +60,7 @@ def init_auth_db() -> None:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
+              user_id TEXT UNIQUE,
               username TEXT PRIMARY KEY,
               salt_b64 TEXT NOT NULL,
               password_hash TEXT NOT NULL,
@@ -59,7 +68,26 @@ def init_auth_db() -> None:
             );
             """
         )
+        _ensure_user_id_column(conn)
         conn.commit()
+
+
+def _new_user_id() -> str:
+    return f"user-{uuid.uuid4().hex}"
+
+
+def _ensure_user_id_column(conn: sqlite3.Connection) -> None:
+    cols = {str(row["name"]) for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "user_id" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN user_id TEXT")
+    rows = conn.execute("SELECT username, user_id FROM users").fetchall()
+    for row in rows:
+        if not str(row["user_id"] or "").strip():
+            conn.execute(
+                "UPDATE users SET user_id = ? WHERE username = ?",
+                (_new_user_id(), str(row["username"])),
+            )
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
 
 
 def _load_users_from_txt() -> dict[str, str]:
@@ -137,6 +165,7 @@ def create_user(*, username: str, password: str, created_at: str = "", conn: Opt
     try:
         salt_b64, pw_hash_hex = hash_password(password)
         created_at = created_at or datetime.now(timezone.utc).isoformat()
+        user_id = _new_user_id()
 
         # 使用 INSERT OR IGNORE + 检查是否存在，避免竞态导致的覆盖
         cur = conn.execute("SELECT 1 FROM users WHERE username = ?", (username.strip(),))
@@ -145,15 +174,36 @@ def create_user(*, username: str, password: str, created_at: str = "", conn: Opt
 
         conn.execute(
             """
-            INSERT INTO users (username, salt_b64, password_hash, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO users (user_id, username, salt_b64, password_hash, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (username.strip(), salt_b64, pw_hash_hex, created_at),
+            (user_id, username.strip(), salt_b64, pw_hash_hex, created_at),
         )
         conn.commit()
     finally:
         if close_after:
             conn.close()
+
+
+def get_user_by_username(username: str) -> Optional[AuthUserRecord]:
+    """按登录名返回认证用户记录。"""
+    target = (username or "").strip()
+    if not target:
+        return None
+    init_auth_db()
+    with _get_sqlite_conn(get_auth_db_path()) as conn:
+        cur = conn.execute(
+            "SELECT user_id, username, created_at FROM users WHERE username = ?",
+            (target,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return AuthUserRecord(
+            user_id=str(row["user_id"] or ""),
+            username=str(row["username"] or ""),
+            created_at=str(row["created_at"] or ""),
+        )
 
 
 def verify_user(*, username: str, password: str) -> bool:
@@ -236,4 +286,3 @@ def rename_user(*, old_username: str, new_username: str) -> None:
             raise ValueError("new username already exists")
         conn.execute("UPDATE users SET username = ? WHERE username = ?", (new_name, old_name))
         conn.commit()
-
