@@ -59,7 +59,14 @@ def get_llm_from_config(
     解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
     """
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
-    cfg = providers.get(provider_id) or providers.get("qwen")
+    provider_key = str(provider_id or "").strip()
+    providers_by_lower = {str(k).strip().lower(): v for k, v in providers.items()}
+    cfg = (
+        providers.get(provider_key)
+        or providers_by_lower.get(provider_key.lower())
+        or providers.get("qwen")
+        or providers_by_lower.get("qwen")
+    )
     if not cfg:
         return QwenLLM()
 

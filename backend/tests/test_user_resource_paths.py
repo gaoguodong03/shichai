@@ -55,3 +55,24 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         assert vault_secrets_path() == root / "vault" / "secrets.enc.json"
     finally:
         reset_current_user_identity(token)
+
+
+def test_api_secret_values_use_current_user_context_dir(monkeypatch, tmp_path):
+    import json
+
+    from app.api.settings_secrets import load_api_secret_values
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    user_config = tmp_path / "users" / "user-secret-owner" / "config"
+    user_config.mkdir(parents=True)
+    (user_config / "api_secrets.json").write_text(
+        json.dumps({"items": {"jeniya": {"label": "Jeniya", "api_key": "from-user-id-dir"}}}),
+        encoding="utf-8",
+    )
+
+    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    try:
+        assert load_api_secret_values() == {"jeniya": "from-user-id-dir"}
+    finally:
+        reset_current_user_identity(token)

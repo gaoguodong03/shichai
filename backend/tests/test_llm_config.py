@@ -42,6 +42,26 @@ def test_get_llm_from_config_jeniya():
     assert llm.api_key == "test-jeniya-key"
 
 
+def test_get_llm_from_config_provider_id_is_case_insensitive():
+    """provider id 大小写不应导致误回退到 qwen。"""
+    from app.agent.llm_client import get_llm_from_config
+
+    llm = get_llm_from_config("JENIYA", {
+        "jeniya": {
+            "base_url": "https://jeniya.top/v1",
+            "model": "gpt-4o",
+            "api_key_env": "JENIYA_API_KEY",
+        },
+        "qwen": {
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen3-max",
+            "api_key_env": "QWEN_API_KEY",
+        },
+    })
+    assert llm.base_url == "https://jeniya.top/v1"
+    assert llm.api_key == "test-jeniya-key"
+
+
 def test_get_llm_from_config_api_key_ref():
     """api_key_ref 优先于环境变量与内联 api_key"""
     from app.agent.llm_client import get_llm_from_config

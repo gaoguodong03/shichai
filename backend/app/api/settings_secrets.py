@@ -3,16 +3,37 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.security import user_context_dependency
-from app.core.user_context import get_current_username
+from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import api_secrets_path
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
+
+
+def _load_api_secret_values_from_path(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, dict):
+            return {}
+        out: Dict[str, str] = {}
+        for sid, meta in items.items():
+            if isinstance(meta, dict):
+                v = (meta.get("api_key") or "").strip()
+                if v:
+                    out[str(sid)] = v
+        return out
+    except Exception:
+        return {}
 
 
 def load_api_secrets_raw() -> Dict[str, Any]:
@@ -45,31 +66,16 @@ def load_api_secret_values_for_user(username: str) -> Dict[str, str]:
     if not un:
         return {}
     path = (get_user_context_for(un).config_dir / "api_secrets.json").resolve()
-    if not path.exists():
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        items = data.get("items") if isinstance(data, dict) else None
-        if not isinstance(items, dict):
-            return {}
-        out: Dict[str, str] = {}
-        for sid, meta in items.items():
-            if isinstance(meta, dict):
-                v = (meta.get("api_key") or "").strip()
-                if v:
-                    out[str(sid)] = v
-        return out
-    except Exception:
-        return {}
+    return _load_api_secret_values_from_path(path)
 
 
 def load_api_secret_values() -> Dict[str, str]:
     """当前请求用户密钥 id -> api_key，供 LLM 解析 api_key_ref。"""
-    un = get_current_username()
-    if not un:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
         return {}
-    return load_api_secret_values_for_user(un)
+    path = (user_ctx.config_dir / "api_secrets.json").resolve()
+    return _load_api_secret_values_from_path(path)
 
 
 def _normalize_api_secret_id(raw: str) -> str:
