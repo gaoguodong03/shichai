@@ -59,24 +59,24 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 ## 1Panel 最简部署（接近一条命令）
 
 - 文件：`docker-compose.1panel.yml`
-- 环境变量模板：`backend/.env.1panel.example`
+- 可选环境变量覆盖模板：`backend/.env.1panel.example`
 - 1Panel 可导入备份包：`1panel-compose-backup.tar.gz`
 
 ### 三步完成
 
-1. 准备环境变量  
-   复制 `backend/.env.1panel.example` 为 `backend/.env`，至少填写 `QWEN_API_KEY`，并修改 `AUTH_SECRET`。
+1. 构建镜像并生成 1Panel 备份包
+   直接运行 `bash pack_1panel_backup.sh 26.05.xx`。脚本不要求存在 `backend/.env`；如果该文件存在，只把其中的镜像/沙箱白名单变量作为覆盖值读取。
 2. 在 1Panel 创建数据卷  
    创建名为 `st49` 的 Docker 卷（后端数据持久化；compose 会把内部卷 `st49_data` 绑定到该外部卷）。
 3. 导入并启动  
-   在 1Panel 导入 `1panel-compose-backup.tar.gz`（编排备份导入），点击启动。
+   在 1Panel 导入 `1panel-compose-backup.tar.gz`（编排备份导入），按需在 1Panel 的环境变量里配置模型 Key 和 `AUTH_SECRET`，然后点击启动。
 
 ### 访问与端口
 
 - 主应用：宿主机 `8100` -> 容器 `8000`
 - OpenSandbox：宿主机 `8091` -> 容器 `8090`
 - 如需调整，可在 1Panel 的环境变量中覆盖：`ST49_HOST_PORT`、`OPENSANDBOX_HOST_PORT`、`ST49_IMAGE`
-- 沙箱镜像优先写在 `backend/.env`：1Panel/Compose 用 `ST49_SANDBOX_STANDARD_IMAGE`、`ST49_SANDBOX_PLAYWRIGHT_IMAGE`，裸机后端用 `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE`；`pack_1panel_backup.sh` 会读取这些值后写入备份包。
+- 沙箱镜像默认由 `pack_1panel_backup.sh` 写入备份包；如需覆盖，可通过 shell 环境变量、可选 `backend/.env` 或 1Panel 环境变量设置 `ST49_SANDBOX_STANDARD_IMAGE`、`ST49_SANDBOX_PLAYWRIGHT_IMAGE`。
 
 ### 本地状态文件
 

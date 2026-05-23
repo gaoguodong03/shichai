@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -332,18 +333,26 @@ def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
     # wrapper 要求 agent_outputs 位于 backend 目录内；这里构造一个 backend 下的临时根目录
     backend_root = Path(__file__).resolve().parents[1]
     local_user_root = backend_root / ".tmp-test-user-data"
-    local_user_root.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(local_user_root))
-    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+    try:
+        local_user_root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(local_user_root))
+        monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
 
-    # 合法路径会被归一化到当前 session 前缀
-    ok = _normalize_path_for_session("notes/a.md", "sess-a")
-    assert "/workspaces/sess-a/" in ok
-    # 越界路径应被拒绝
-    import pytest
+        # 合法路径会被归一化到当前 session 前缀
+        ok = _normalize_path_for_session("notes/a.md", "sess-a")
+        assert "/workspaces/sess-a/" in ok
+        # 越界路径应被拒绝
+        import pytest
 
-    with pytest.raises(ValueError):
-        _normalize_path_for_session("../sess-b/secrets.txt", "sess-a")
+        with pytest.raises(ValueError):
+            _normalize_path_for_session("../sess-b/secrets.txt", "sess-a")
+    finally:
+        shutil.rmtree(local_user_root, ignore_errors=True)
+
+
+def test_filesystem_wrapper_test_data_is_removed():
+    backend_root = Path(__file__).resolve().parents[1]
+    assert not (backend_root / ".tmp-test-user-data").exists()
 
 
 @pytest.mark.asyncio
