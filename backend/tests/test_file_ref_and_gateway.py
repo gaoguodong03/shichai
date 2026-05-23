@@ -71,6 +71,23 @@ def test_apply_read_file_replaces_url_with_file_ref_path():
     assert args.get("path") == "github-weekly-snapshot.md"
 
 
+def test_skill_extra_instructions_require_writing_task_file_before_reading():
+    from app.agent import skill_agent_runtime as runtime
+    from app.agent.tool_spec import ToolSpec
+
+    instructions = runtime._skill_execution_extra_instructions(
+        [
+            ToolSpec(name="read_file"),
+            ToolSpec(name="write_workspace_file"),
+        ]
+    )
+
+    assert "speaker_task.txt" in instructions
+    assert "memory/speaker_task.txt" in instructions
+    assert "必须先调用 `write_workspace_file` 创建或覆盖该文件" in instructions
+    assert "确认写入成功后，才允许再调用 `read_file` 读取" in instructions
+
+
 def test_file_ref_resolver_blocks_traversal(temp_user_data_root):
     from app.agent.file_ref_resolver import resolve_file_refs_in_text
 

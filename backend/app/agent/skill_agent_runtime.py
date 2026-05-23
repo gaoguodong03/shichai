@@ -298,6 +298,8 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
                 "- 当用户让你「保存/写入/覆盖某个文件」时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，"
                 "而不是只说「请手动保存」。\n"
             )
+        if "write_workspace_file" in names:
+            parts.append(_WORKSPACE_TASK_FILE_RULE)
         parts.append("- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。\n")
         parts.append(
             "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
@@ -408,6 +410,13 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
     1, int(os.getenv("SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS", "1"))
 )
 
+_WORKSPACE_TASK_FILE_RULE = (
+    "- 需要创建任务文件时，必须先调用 `write_workspace_file` 创建或覆盖该文件；"
+    "path 固定使用 `speaker_task.txt` 或 `memory/speaker_task.txt`。"
+    "确认写入成功后，才允许再调用 `read_file` 读取；"
+    "不要在未写入成功前猜测或读取 `speaker_task.txt`。\n"
+)
+
 
 def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | None:
     """当模型将多个工具名拼接（如 amap-maps_maps_geo + amap-maps_maps_weather）时，解析出第一个有效工具名。"""
@@ -506,6 +515,7 @@ def create_react_agent(
 **强制规则（优先级很高）：**
 - 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 note/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；path 必须用**用户本条消息里的路径**，不要沿用会话中较早提到的旧路径。
 - 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
+- 需要创建任务文件时，必须先调用 `write_workspace_file` 创建或覆盖该文件；path 固定使用 `speaker_task.txt` 或 `memory/speaker_task.txt`。确认写入成功后，才允许再调用 `read_file` 读取；不要在未写入成功前猜测或读取 `speaker_task.txt`。
 - 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
 - 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
 
