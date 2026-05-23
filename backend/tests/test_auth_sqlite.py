@@ -112,6 +112,27 @@ def test_register_initializes_user_id_directory_layout(env_and_client):
     assert profile["username"] == username
 
 
+def test_register_reuses_existing_resource_user_id_after_auth_db_reset(env_and_client):
+    client, db_path = env_and_client
+
+    username = "restore-existing@example.com"
+    existing_user_id = "user-existing-resource-id"
+    user_root = db_path.parent / "users" / existing_user_id
+    marker = user_root / "resources" / "skills" / "saved" / "SKILL.md"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("---\nname: Saved\n---\nbody\n", encoding="utf-8")
+    (user_root / "profile.json").write_text(
+        json.dumps({"user_id": existing_user_id, "username": username}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    data = _auth_register(client, username=username, password="pw-restore-123")
+
+    assert data["user_id"] == existing_user_id
+    assert marker.exists()
+    assert not (db_path.parent / "users" / username).exists()
+
+
 def test_register_preserves_existing_local_session_presets(env_and_client):
     client, db_path = env_and_client
 
@@ -125,6 +146,33 @@ def test_register_preserves_existing_local_session_presets(env_and_client):
     _auth_register(client, username=username, password="pw-existing-123")
 
     assert json.loads(preset_path.read_text(encoding="utf-8")) == existing_presets
+
+
+def test_register_seeds_legacy_auth_users_before_existence_check(monkeypatch, tmp_path):
+    username = "legacy-seed@example.com"
+    password = "legacy-pass-123"
+    db_path = tmp_path / "auth_users.sqlite"
+    auth_users = tmp_path / "auth_users.txt"
+    auth_users.write_text(f"{username}:{password}\n", encoding="utf-8")
+
+    monkeypatch.setenv("AUTH_DB_PATH", str(db_path))
+    monkeypatch.setenv("AUTH_USERS_FILE", str(auth_users))
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+
+    from app.core import users_store as _users_store
+
+    monkeypatch.setattr(_users_store, "_USERS_FILE", tmp_path / "users.json")
+
+    from app.main import app
+
+    client = TestClient(app)
+
+    r = client.post("/api/auth/register", json={"username": username, "password": "new-pass-123"})
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == "用户名已存在"
+    data = _auth_login(client, username=username, password=password)
+    assert data["username"] == username
 
 
 def test_multiuser_isolation_by_token_headers(env_and_client):
@@ -177,6 +225,20 @@ def test_multiuser_isolation_by_token_headers(env_and_client):
     # 当前工作区会自动包含 memory 目录；只断言业务文件隔离正确
     assert "a.txt" in names_a
     assert "b.txt" not in names_a
+
+
+def test_authenticated_mcp_resource_center_uses_stable_user_id_dir(env_and_client):
+    client, db_path = env_and_client
+
+    username = "resource-center@example.com"
+    data = _auth_register(client, username=username, password="pw-resource-123")
+    token = data["access_token"]
+
+    r = client.get("/api/settings/mcp", headers={"Authorization": f"Bearer {token}"})
+
+    assert r.status_code == 200
+    assert (db_path.parent / "users" / data["user_id"]).exists()
+    assert not (db_path.parent / "users" / username).exists()
 
 
 def test_change_account_and_password(env_and_client):

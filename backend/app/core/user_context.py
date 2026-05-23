@@ -195,8 +195,23 @@ def get_current_user_context(default_fallback: bool = True) -> Optional[UserCont
 
 
 def get_user_context_for(username: str) -> UserContext:
-    """显式获取某个 user_id 对应的 UserContext，不依赖请求上下文。"""
-    return _build_user_context(username, username)
+    """显式获取某个用户的 UserContext，不依赖请求上下文。
+
+    兼容旧调用点传入登录名的情况：若 SQLite 认证库中存在该账号，
+    使用其稳定 user_id 作为物理目录名，避免重新创建 username 目录。
+    """
+    ident = (username or "").strip()
+    if not ident:
+        return _build_user_context("", "")
+    try:
+        from app.core.auth_db import get_user_by_username
+
+        user_record = get_user_by_username(ident)
+        if user_record is not None and user_record.user_id:
+            return _build_user_context(user_record.user_id, user_record.username or ident)
+    except Exception:
+        pass
+    return _build_user_context(ident, ident)
 
 
 def ensure_user_resource_layout(*, user_id: str, username: str = "") -> UserContext:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import sqlite3
 import uuid
@@ -76,6 +77,64 @@ def _new_user_id() -> str:
     return f"user-{uuid.uuid4().hex}"
 
 
+def _existing_resource_user_id_for_username(username: str) -> Optional[str]:
+    target = (username or "").strip()
+    if not target:
+        return None
+    try:
+        from app.core.user_context import users_data_root
+
+        root = users_data_root()
+        if not root.exists():
+            return None
+        candidates: list[Path] = []
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            profile_path = child / "profile.json"
+            if not profile_path.exists():
+                continue
+            try:
+                data = json.loads(profile_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if str(data.get("username") or "").strip() == target:
+                candidates.append(child)
+
+        exact_dir = root / target
+        if exact_dir.is_dir() and exact_dir not in candidates:
+            candidates.append(exact_dir)
+
+        if not candidates:
+            return None
+
+        candidates.sort(
+            key=lambda p: (
+                0 if p.name.startswith("user-") else 1,
+                -int(p.stat().st_mtime_ns),
+                p.name,
+            )
+        )
+        return candidates[0].name
+    except Exception:
+        return None
+
+
+def _user_id_available(conn: sqlite3.Connection, *, user_id: str, username: str) -> bool:
+    row = conn.execute("SELECT username FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return True
+    return str(row["username"] or "") == username
+
+
+def _choose_user_id(conn: sqlite3.Connection, username: str) -> str:
+    name = (username or "").strip()
+    existing = _existing_resource_user_id_for_username(name)
+    if existing and _user_id_available(conn, user_id=existing, username=name):
+        return existing
+    return _new_user_id()
+
+
 def _ensure_user_id_column(conn: sqlite3.Connection) -> None:
     cols = {str(row["name"]) for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     if "user_id" not in cols:
@@ -83,9 +142,10 @@ def _ensure_user_id_column(conn: sqlite3.Connection) -> None:
     rows = conn.execute("SELECT username, user_id FROM users").fetchall()
     for row in rows:
         if not str(row["user_id"] or "").strip():
+            username = str(row["username"])
             conn.execute(
                 "UPDATE users SET user_id = ? WHERE username = ?",
-                (_new_user_id(), str(row["username"])),
+                (_choose_user_id(conn, username), username),
             )
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
 
@@ -165,10 +225,11 @@ def create_user(*, username: str, password: str, created_at: str = "", conn: Opt
     try:
         salt_b64, pw_hash_hex = hash_password(password)
         created_at = created_at or datetime.now(timezone.utc).isoformat()
-        user_id = _new_user_id()
+        name = username.strip()
+        user_id = _choose_user_id(conn, name)
 
         # 使用 INSERT OR IGNORE + 检查是否存在，避免竞态导致的覆盖
-        cur = conn.execute("SELECT 1 FROM users WHERE username = ?", (username.strip(),))
+        cur = conn.execute("SELECT 1 FROM users WHERE username = ?", (name,))
         if cur.fetchone() is not None:
             raise ValueError("username already exists")
 
@@ -177,7 +238,7 @@ def create_user(*, username: str, password: str, created_at: str = "", conn: Opt
             INSERT INTO users (user_id, username, salt_b64, password_hash, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
-            (user_id, username.strip(), salt_b64, pw_hash_hex, created_at),
+            (user_id, name, salt_b64, pw_hash_hex, created_at),
         )
         conn.commit()
     finally:
@@ -230,6 +291,7 @@ def verify_user(*, username: str, password: str) -> bool:
 
 
 def user_exists(username: str) -> bool:
+    seed_from_auth_users_txt_if_needed()
     db_path = get_auth_db_path()
     if not db_path.exists():
         return False
