@@ -35,10 +35,9 @@ from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.leader_scheduler import leader_decide
 from app.agent.group_memory_store import (
-    append_turn_log,
+    append_llm_roundtrip,
     upsert_facts,
     build_dispatch_context,
-    append_group_message_file,
 )
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -56,7 +55,6 @@ from app.agent.tools_for_skill import build_tools_for_group_chat
 from app.skills.loader import get_skills_loader_for_user
 from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.feature_flags import is_feature_enabled
-from app.core.llm_trace import append_llm_trace
 from app.core.user_context import get_current_user_context
 from app.core.security import user_context_dependency, get_current_user
 from app.core.scene_scheduler import finalize_host_scheduler_decision, RECRUIT_FIXED_MESSAGE
@@ -263,14 +261,24 @@ async def _cancel_group_session_run(group_session_id: str, *, reason: str) -> bo
     return cancelled
 
 
-def _log_llm_roundtrip(tag: str, *, system_content: str, user_content: str, model_output: str, max_chars: int = 6000) -> None:
+def _log_llm_roundtrip(
+    tag: str,
+    *,
+    system_content: str,
+    user_content: str,
+    model_output: str,
+    session_id: str = "",
+    workspace_root: Optional[Path] = None,
+    max_chars: int = 6000,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
     """统一打印 LLM 往返（用于排查主持/调度选人问题）。"""
     def _clip(s: str) -> str:
         t = str(s or "")
         return t if len(t) <= max_chars else (t[:max_chars] + f"\n... [truncated {len(t) - max_chars} chars]")
 
     logger.info(
-        "[LLM_TRACE][%s] system_prompt:\n%s\n\n[LLM_TRACE][%s] user_prompt:\n%s\n\n[LLM_TRACE][%s] model_output:\n%s",
+        "[LLM_ROUNDTRIP][%s] system_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] user_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] model_output:\n%s",
         tag,
         _clip(system_content),
         tag,
@@ -278,16 +286,29 @@ def _log_llm_roundtrip(tag: str, *, system_content: str, user_content: str, mode
         tag,
         _clip(model_output),
     )
-    try:
-        append_llm_trace(
-            tag=tag,
-            system_content=system_content,
-            user_content=user_content,
-            model_output=model_output,
-            max_chars=max_chars,
-        )
-    except Exception as e:
-        logger.warning("写入 LLM_TRACE 文件失败(tag=%s): %s", tag, e)
+    if session_id:
+        extra = extra or {}
+        try:
+            append_llm_roundtrip(
+                session_id=session_id,
+                workspace_root=workspace_root,
+                phase=tag,
+                input_messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content},
+                ],
+                output={"content": model_output},
+                agent_id=str(extra.get("agent_id") or ""),
+                skill_id=str(extra.get("skill_id") or ""),
+                llm_provider_id=str(extra.get("llm_provider_id") or ""),
+                model=str(extra.get("model") or ""),
+                run_id=str(extra.get("run_id") or ""),
+                client_message_id=str(extra.get("client_message_id") or ""),
+                tool_specs=extra.get("tool_specs") if isinstance(extra.get("tool_specs"), list) else [],
+                extra={k: v for k, v in extra.items() if k not in {"agent_id", "skill_id", "llm_provider_id", "model", "run_id", "client_message_id", "tool_specs"}},
+            )
+        except Exception as e:
+            logger.warning("写入会话 LLM roundtrip 失败(tag=%s session=%s): %s", tag, session_id, e)
 
 GROUP_META_FILE = "group_sessions_meta.json"
 GROUP_HISTORY_PREFIX = "group_history_"
@@ -750,6 +771,8 @@ async def _ai_title_from_recent_user_messages(
     messages: List[Dict[str, Any]],
     max_chars: int = 18,
     max_user_messages: int = 6,
+    group_session_id: str = "",
+    llm_provider_id: str = "",
 ) -> str:
     """根据最近用户发言，AI 生成约 15 字主题（用于群聊标题）。"""
     try:
@@ -780,6 +803,21 @@ async def _ai_title_from_recent_user_messages(
         content = "最近用户发言：\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])
         resp = await client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=content)])
         raw = (getattr(resp, "content", "") or "").strip()
+        if group_session_id:
+            try:
+                append_llm_roundtrip(
+                    session_id=group_session_id,
+                    phase="title_generation",
+                    input_messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": content},
+                    ],
+                    output={"content": raw},
+                    llm_provider_id=llm_provider_id,
+                    model=str(getattr(llm, "model", "") or ""),
+                )
+            except Exception as trace_err:
+                logger.warning("写入会话 LLM roundtrip 失败(tag=title_generation session=%s): %s", group_session_id, trace_err)
         if not raw:
             return ""
         # 只取第一行，去掉常见前缀/标点
@@ -820,6 +858,8 @@ def _schedule_group_title_refresh(
                 messages_snapshot,
                 max_chars=max_chars,
                 max_user_messages=max_user_messages,
+                group_session_id=session_id,
+                llm_provider_id=str(llm_provider_id or ""),
             )
             if not ai_title:
                 logger.info(
@@ -928,78 +968,24 @@ def _persist_group_memory_turn(
     app_settings: Dict[str, Any],
     workspace_root: Optional[Path] = None,
 ) -> None:
-    """将一条可见主持人/专家发言写入 memory/messages 与 memory/logs。"""
+    """从可见专家发言中维护 facts.md；排障日志由 llm_roundtrips.jsonl 独立承担。"""
     mem = _get_group_memory_settings(app_settings)
     if not mem["enabled"]:
         return
     role = str((msg or {}).get("role") or "").strip()
-    if role not in {"assistant", "host"}:
+    if role != "assistant":
         return
     content = str((msg or {}).get("content") or "").strip()
     if not content:
         return
-    agent_id = str((msg or {}).get("agent_id") or "").strip()
-    if not agent_id and role == "host":
-        agent_id = VIRTUAL_SCENE_HOST_ID
-    if not agent_id:
-        return
-    skill_id = str((msg or {}).get("skill_id") or "").strip()
-    tool_raw_results = (msg or {}).get("tool_raw_results") or []
-    if not isinstance(tool_raw_results, list):
-        tool_raw_results = [str(tool_raw_results)]
-    tool_debug = (msg or {}).get("tool_debug") if isinstance((msg or {}).get("tool_debug"), dict) else {}
-    tool_calls = tool_debug.get("tool_calls") if isinstance(tool_debug, dict) else []
-    if not isinstance(tool_calls, list):
-        tool_calls = []
-    tool_attempt_debug = tool_debug.get("tool_attempt_debug") if isinstance(tool_debug, dict) else []
-    if not isinstance(tool_attempt_debug, list):
-        tool_attempt_debug = []
-    sandbox_entry_trace = tool_debug.get("sandbox_entry_trace") if isinstance(tool_debug, dict) else []
-    if not isinstance(sandbox_entry_trace, list):
-        sandbox_entry_trace = []
-    skill_route_debug = (msg or {}).get("skill_route_debug")
-    if not isinstance(skill_route_debug, dict):
-        skill_route_debug = {}
-
-    full_message_ref = append_group_message_file(
-        session_id=session_id,
-        agent_id=agent_id,
-        timestamp=msg.get("timestamp"),
-        content=content,
-        skill_id=skill_id,
-        role=role,
-        workspace_root=workspace_root,
-    )
-    append_turn_log(
-        session_id=session_id,
-        max_logs=mem["max_logs"],
-        workspace_root=workspace_root,
-        turn_record={
-            "agent_id": agent_id,
-            "timestamp": msg.get("timestamp"),
-            "skill_id": skill_id,
-            "full_message_ref": full_message_ref,
-            "discussion_goal": discussion_goal,
-            "input_prompt_summary": (input_prompt_summary or "")[:800],
-            "response_summary": content[:1400],
-            "tool_result_summary": "\n".join((str(x) for x in tool_raw_results[:2]))[:1000],
-            "tool_calls": tool_calls,
-            "tool_raw_outputs": tool_raw_results or (["[no tool raw outputs captured]"] if tool_calls else ["[no tool calls detected]"]),
-            "tool_attempt_debug": tool_attempt_debug,
-            "sandbox_entry_trace": sandbox_entry_trace,
-            "skill_route_debug": skill_route_debug,
-        },
-    )
-
-    if role == "assistant":
-        facts_delta = _extract_facts_from_response(content)
-        if facts_delta:
-            upsert_facts(
-                session_id=session_id,
-                facts_delta=facts_delta,
-                max_facts=mem["max_facts"],
-                workspace_root=workspace_root,
-            )
+    facts_delta = _extract_facts_from_response(content)
+    if facts_delta:
+        upsert_facts(
+            session_id=session_id,
+            facts_delta=facts_delta,
+            max_facts=mem["max_facts"],
+            workspace_root=workspace_root,
+        )
 
 
 def _build_next_prompt_with_memory(
@@ -1091,7 +1077,6 @@ def _ensure_structured_next_prompt(
             "【上下文】",
             "【已知信息】",
             "【关键事实】",
-            "【相关历史摘录】",
         )
     )
     has_output_format = any(k in p for k in ("【输出格式】", "【输出要求】", "格式要求", "请按以下格式"))
@@ -1890,6 +1875,13 @@ async def _host_decide_by_dha(
             system_content=(extra_system_prompt or "") + "\n\n" + skill_content,
             user_content=user_content,
             model_output=content_str,
+            session_id=group_session_id,
+            extra={
+                "agent_id": str(host_dha.get("agent_id") or VIRTUAL_SCENE_HOST_ID),
+                "skill_id": resolved_skill_id,
+                "llm_provider_id": str(host_dha.get("llm_provider_id") or app_settings.get("default_llm") or ""),
+                "model": str(getattr(llm, "model", "") or ""),
+            },
         )
         return _parse_host_response(content_str)
     except Exception as e:
@@ -1902,6 +1894,7 @@ async def _host_only_respond_and_recommend(
     recent_messages: str,
     all_instances: List[Dict[str, Any]],
     extra_system_prompt: str,
+    group_session_id: str = "",
 ) -> tuple[str, Optional[List[str]]]:
     """
     当前群聊 0 个成员时：主持人回复用户并推荐 1~3 位专家加入（等待用户确认）。
@@ -1955,6 +1948,13 @@ async def _host_only_respond_and_recommend(
             system_content=(extra_system_prompt or "") + "\n\n" + system_content,
             user_content=user_content,
             model_output=content_str,
+            session_id=group_session_id,
+            extra={
+                "agent_id": VIRTUAL_SCENE_HOST_ID,
+                "skill_id": sid0 if host_skill_ids else "",
+                "llm_provider_id": str(app_settings.get("default_llm") or ""),
+                "model": str(getattr(llm, "model", "") or ""),
+            },
         )
         if not content_str or not content_str.strip():
             # LLM 没输出：直接兜底推荐
@@ -2843,7 +2843,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 valid_ids = {d.get("agent_id") for d in all_instances if d.get("agent_id")}
                 # 0 专家场景始终由主持人先回复并给出推荐，避免任何非 LLM 的短路分支
                 host_content, suggested_add_agent_ids = await _host_only_respond_and_recommend(
-                    discussion_goal, recent, all_instances, extra_system_prompt
+                    discussion_goal, recent, all_instances, extra_system_prompt, group_session_id
                 )
                 suggested_add_agent_ids = suggested_add_agent_ids or []
                 picked = list(dict.fromkeys([x for x in suggested_add_agent_ids if x in valid_ids]))[:3]
@@ -3049,6 +3049,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                 if decision is None:
                     logger.info("group_chat_scheduler_fallback_to_leader_decide session=%s", group_session_id)
+                    default_llm_provider_id = str(app_settings.get("default_llm") or "")
                     llm_default = _get_llm_for_dha(None, app_settings)
                     decision = await leader_decide(
                         llm_default,
@@ -3058,6 +3059,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         last_speaker_agent_id,
                         available_for_scheduler,
                         orchestration_profile=orch_profile,
+                        group_session_id=group_session_id,
+                        llm_provider_id=default_llm_provider_id,
                     )
                     logger.info(
                         "group_chat_scheduler_leader_decide_done session=%s next_speaker=%s reason=%s",
@@ -3376,7 +3379,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     and ("【最近几轮讨论内容" not in uc)
                     and ("【最近讨论】" not in uc)
                     and ("【关键事实】" not in uc)
-                    and ("【相关历史摘录】" not in uc)
                     and ("【用户任务清单】" not in uc)
                 ):
                     uc = uc + "\n\n【历史对话（供参考）】\n" + context
@@ -3560,22 +3562,30 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
                 try:
-                    append_llm_trace(
-                        tag="expert_turn",
-                        system_content=skill_content,
-                        user_content=user_content,
-                        model_output=full_content,
+                    append_llm_roundtrip(
+                        session_id=group_session_id,
+                        phase="expert_turn",
+                        input_messages=[
+                            {"role": "system", "content": skill_content},
+                            {"role": "user", "content": user_content},
+                        ],
+                        output={
+                            "content": full_content,
+                            "tool_calls": tool_calls_trace,
+                        },
+                        agent_id=next_speaker,
+                        skill_id=skill_id,
+                        llm_provider_id=str((dha or {}).get("llm_provider_id") or app_settings.get("default_llm") or ""),
+                        model=str(getattr(llm, "model", "") or ""),
                         extra={
-                            "group_session_id": group_session_id,
-                            "agent_id": next_speaker,
-                            "skill_id": skill_id,
                             "has_tool_call": bool(tool_calls_trace),
                             "raw_result_count": len(accumulated_raw_tool_results or []),
                             "tool_attempt_count": len(tool_attempt_debug or []),
+                            "tool_raw_outputs": accumulated_raw_tool_results,
                         },
                     )
                 except Exception as e:
-                    logger.warning("写入 LLM_TRACE 文件失败(tag=expert_turn): %s", e)
+                    logger.warning("写入会话 LLM roundtrip 失败(tag=expert_turn session=%s): %s", group_session_id, e)
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
                 meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()

@@ -2,7 +2,6 @@
 import os
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
-from app.core.llm_trace import append_llm_trace
 from app.agent.tool_spec import tools_to_openai_tools
 
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
@@ -324,36 +323,6 @@ class QwenLLM:
             thinking_mode_enabled=thinking_mode_enabled,
         )
 
-
-def _message_content_to_text(obj: Any) -> str:
-    if obj is None:
-        return ""
-    content = getattr(obj, "content", obj)
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                t = item.get("text")
-                if t is not None:
-                    parts.append(str(t))
-                else:
-                    parts.append(str(item))
-            else:
-                parts.append(str(item))
-        return "\n".join(parts)
-    return str(content)
-
-
-def _input_to_text(inp: Any) -> str:
-    if isinstance(inp, list):
-        return "\n\n".join(_message_content_to_text(x) for x in inp)
-    return _message_content_to_text(inp)
-
-
 class _TracedLLMClient:
     """对底层 LLM client 的只读代理：不修改原对象，避免 Pydantic 字段限制报错。"""
 
@@ -395,58 +364,10 @@ class _TracedLLMClient:
         )
 
     async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
-        try:
-            out = await self._raw_client.ainvoke(inp, *args, **kwargs)
-            append_llm_trace(
-                tag="global_llm_ainvoke",
-                system_content="",
-                user_content=_input_to_text(inp),
-                model_output=_message_content_to_text(out),
-                extra={
-                    "base_url": self._provider_base_url,
-                    "model": self._model_name,
-                },
-            )
-            return out
-        except Exception as e:
-            append_llm_trace(
-                tag="global_llm_ainvoke_error",
-                system_content="",
-                user_content=_input_to_text(inp),
-                model_output=f"[ERROR] {type(e).__name__}: {e}",
-                extra={
-                    "base_url": self._provider_base_url,
-                    "model": self._model_name,
-                },
-            )
-            raise
+        return await self._raw_client.ainvoke(inp, *args, **kwargs)
 
     def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
-        try:
-            out = self._raw_client.invoke(inp, *args, **kwargs)
-            append_llm_trace(
-                tag="global_llm_invoke",
-                system_content="",
-                user_content=_input_to_text(inp),
-                model_output=_message_content_to_text(out),
-                extra={
-                    "base_url": self._provider_base_url,
-                    "model": self._model_name,
-                },
-            )
-            return out
-        except Exception as e:
-            append_llm_trace(
-                tag="global_llm_invoke_error",
-                system_content="",
-                user_content=_input_to_text(inp),
-                model_output=f"[ERROR] {type(e).__name__}: {e}",
-                extra={
-                    "base_url": self._provider_base_url,
-                    "model": self._model_name,
-                },
-            )
-            raise
+        return self._raw_client.invoke(inp, *args, **kwargs)
 
 
 def _instrument_llm_client(

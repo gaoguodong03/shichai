@@ -1,4 +1,5 @@
 """群聊记忆开关与回退路径测试。"""
+import json
 import os
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
@@ -31,7 +32,7 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     def _fake_dispatch_context(*args, **kwargs):
         return {
             "has_memory": True,
-            "rendered": "【关键事实】\n- 已确认标题\n\n【相关历史摘录】\n1. xxx",
+            "rendered": "【关键事实】\n- 已确认标题",
         }
 
     monkeypatch.setattr(gc, "build_dispatch_context", _fake_dispatch_context)
@@ -48,12 +49,12 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     assert "主持人本轮指派" in out
 
 
-def test_persist_group_memory_turn_writes_host_messages_and_logs(tmp_path):
+def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     gc = _get_group_chat_module()
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
 
-    msg = {
+    host_msg = {
         "role": "host",
         "agent_id": "agent-scene-host",
         "content": "请用户补充或继续提问。",
@@ -63,27 +64,67 @@ def test_persist_group_memory_turn_writes_host_messages_and_logs(tmp_path):
 
     gc._persist_group_memory_turn(
         session_id="group-test",
-        msg=msg,
+        msg=host_msg,
         discussion_goal="数据库中有内容吗",
         input_prompt_summary="这是全部信息了吗",
         app_settings={"group_memory": {"enabled": True, "max_logs": 5, "max_facts": 20}},
         workspace_root=ws,
     )
 
-    messages = sorted((ws / "memory" / "messages").glob("*_agent-scene-host.md"))
-    logs = sorted((ws / "memory" / "logs").glob("*_agent-scene-host.md"))
-    assert len(messages) == 1
-    assert len(logs) == 1
+    assert not (ws / "memory" / "facts.md").exists()
+    assert not (ws / "memory" / "messages").exists()
+    assert not (ws / "memory" / "logs").exists()
 
-    message_content = messages[0].read_text(encoding="utf-8")
-    log_content = logs[0].read_text(encoding="utf-8")
-    assert "# Host Message" in message_content
-    assert "- agent_id: agent-scene-host" in message_content
-    assert "- skill_id: group-host-general" in message_content
-    assert "请用户补充或继续提问。" in message_content
-    assert "- full_message_ref: memory/messages/2026-05-13T12-30-50+00-00_agent-scene-host.md" in log_content
-    assert "## Response Summary" in log_content
-    assert "请用户补充或继续提问。" in log_content
+    assistant_msg = {
+        "role": "assistant",
+        "agent_id": "agent-data",
+        "content": "- 用户希望输出周报\n- 需要包含趋势图表",
+        "timestamp": "2026-05-13T12:31:50+00:00",
+        "skill_id": "weekly-report",
+    }
+    gc._persist_group_memory_turn(
+        session_id="group-test",
+        msg=assistant_msg,
+        discussion_goal="数据库中有内容吗",
+        input_prompt_summary="这是全部信息了吗",
+        app_settings={"group_memory": {"enabled": True, "max_logs": 5, "max_facts": 20}},
+        workspace_root=ws,
+    )
+
+    facts = (ws / "memory" / "facts.md").read_text(encoding="utf-8")
+    assert "- 用户希望输出周报" in facts
+    assert "- 需要包含趋势图表" in facts
+    assert not (ws / "memory" / "messages").exists()
+    assert not (ws / "memory" / "logs").exists()
+
+
+def test_log_llm_roundtrip_writes_session_workspace_jsonl(tmp_path):
+    gc = _get_group_chat_module()
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+
+    gc._log_llm_roundtrip(
+        "host_decide",
+        session_id="group-test",
+        workspace_root=ws,
+        system_content="系统提示",
+        user_content="用户提示",
+        model_output="模型输出",
+        extra={"agent_id": "agent-host", "model": "qwen3"},
+    )
+
+    trace_file = ws / "memory" / "llm_roundtrips.jsonl"
+    rows = [json.loads(line) for line in trace_file.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["phase"] == "host_decide"
+    assert rows[0]["session_id"] == "group-test"
+    assert rows[0]["input_messages"] == [
+        {"role": "system", "content": "系统提示"},
+        {"role": "user", "content": "用户提示"},
+    ]
+    assert rows[0]["output"] == {"content": "模型输出"}
+    assert rows[0]["agent_id"] == "agent-host"
+    assert rows[0]["model"] == "qwen3"
 
 
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():

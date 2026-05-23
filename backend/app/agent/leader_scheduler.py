@@ -2,10 +2,11 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.core.llm_trace import append_llm_trace
+from app.agent.group_memory_store import append_llm_roundtrip
 
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -93,6 +94,9 @@ async def leader_decide(
     available_to_add: Optional[List[Dict[str, Any]]] = None,
     *,
     orchestration_profile: str = "recruitment",
+    group_session_id: str = "",
+    workspace_root: Optional[Path] = None,
+    llm_provider_id: str = "",
 ) -> Dict[str, Any]:
     """
     调用领导人 LLM 决定：task_done、next_speaker。
@@ -117,7 +121,7 @@ async def leader_decide(
         HumanMessage(content=user_content),
     ]
     logger.info(
-        "[LLM_TRACE][leader_decide] system_prompt:\n%s\n\n[LLM_TRACE][leader_decide] user_prompt:\n%s",
+        "[LLM_ROUNDTRIP][leader_decide] system_prompt:\n%s\n\n[LLM_ROUNDTRIP][leader_decide] user_prompt:\n%s",
         system_prompt,
         user_content,
     )
@@ -126,16 +130,23 @@ async def leader_decide(
         client = llm.get_client()
         response = await asyncio.wait_for(client.ainvoke(messages), timeout=30.0)
         content = (response.content or "").strip()
-        logger.info("[LLM_TRACE][leader_decide] model_output:\n%s", content)
-        try:
-            append_llm_trace(
-                tag="leader_decide",
-                system_content=system_prompt,
-                user_content=user_content,
-                model_output=content,
-            )
-        except Exception as e:
-            logger.warning("写入 LLM_TRACE 文件失败(tag=leader_decide): %s", e)
+        logger.info("[LLM_ROUNDTRIP][leader_decide] model_output:\n%s", content)
+        if group_session_id:
+            try:
+                append_llm_roundtrip(
+                    session_id=group_session_id,
+                    workspace_root=workspace_root,
+                    phase="leader_decide",
+                    input_messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    output={"content": content},
+                    model=str(getattr(llm, "model", "") or ""),
+                    llm_provider_id=llm_provider_id,
+                )
+            except Exception as e:
+                logger.warning("写入会话 LLM roundtrip 失败(tag=leader_decide session=%s): %s", group_session_id, e)
 
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()

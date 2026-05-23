@@ -1,68 +1,12 @@
 """群聊记忆文件存储与派发上下文测试。"""
+import json
 from pathlib import Path
 
 from app.agent.group_memory_store import (
-    append_turn_log,
+    append_llm_roundtrip,
     upsert_facts,
     build_dispatch_context,
-    append_expert_message_file,
 )
-
-
-def test_append_turn_log_with_rotation(tmp_path: Path):
-    session_id = "group-test"
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True, exist_ok=True)
-
-    for i in range(5):
-        append_turn_log(
-            session_id=session_id,
-            workspace_root=ws,
-            max_logs=3,
-            turn_record={
-                "agent_id": f"agent-{i}",
-                "timestamp": f"2026-01-01T00:00:0{i}+00:00",
-                "discussion_goal": "测试目标",
-                "input_prompt_summary": f"input-{i}",
-                "response_summary": f"output-{i}",
-            },
-        )
-
-    logs_dir = ws / "memory" / "logs"
-    logs = sorted(logs_dir.glob("*.md"))
-    assert len(logs) == 3
-    assert all("Turn Log" in p.read_text(encoding="utf-8") for p in logs)
-
-
-def test_append_turn_log_persists_tool_debug_sections(tmp_path: Path):
-    session_id = "group-test"
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True, exist_ok=True)
-    append_turn_log(
-        session_id=session_id,
-        workspace_root=ws,
-        max_logs=3,
-        turn_record={
-            "agent_id": "agent-1",
-            "timestamp": "2026-01-01T00:00:00+00:00",
-            "discussion_goal": "测试工具调试",
-            "input_prompt_summary": "input",
-            "response_summary": "output",
-            "tool_calls": [{"tool": "run_skill_script_app-icon-generator", "arguments": {"script_path": "generate_image.py"}}],
-            "tool_raw_outputs": ['{"ok": false, "code": "runtime_missing"}'],
-            "sandbox_entry_trace": [{"tool_name": "run_skill_script_app-icon-generator", "allowlist_hit": True}],
-        },
-    )
-    logs = sorted((ws / "memory" / "logs").glob("*.md"))
-    assert logs
-    content = logs[-1].read_text(encoding="utf-8")
-    assert "## Tool Calls" in content
-    assert "run_skill_script_app-icon-generator" in content
-    assert "## Tool Raw Outputs" in content
-    assert "runtime_missing" in content
-    assert "## Tool Attempt Debug" in content
-    assert "## Sandbox Entry Trace" in content
-    assert "allowlist_hit" in content
 
 
 def test_upsert_facts_dedup_and_cap(tmp_path: Path):
@@ -80,32 +24,18 @@ def test_upsert_facts_dedup_and_cap(tmp_path: Path):
     assert "- 事实D" in content
 
 
-def test_build_dispatch_context_prefers_related_logs(tmp_path: Path):
+def test_build_dispatch_context_uses_only_facts(tmp_path: Path):
     session_id = "group-test"
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
 
     upsert_facts(session_id, ["用户希望输出周报", "需包含图表"], workspace_root=ws)
-    append_turn_log(
-        session_id=session_id,
-        workspace_root=ws,
-        turn_record={
-            "agent_id": "agent-data",
-            "timestamp": "2026-01-01T00:00:01+00:00",
-            "discussion_goal": "生成数据周报",
-            "response_summary": "已完成图表草稿并给出统计摘要",
-        },
-    )
-    append_turn_log(
-        session_id=session_id,
-        workspace_root=ws,
-        turn_record={
-            "agent_id": "agent-design",
-            "timestamp": "2026-01-01T00:00:02+00:00",
-            "discussion_goal": "生成封面图",
-            "response_summary": "提供了封面风格建议",
-        },
-    )
+    old_logs = ws / "memory" / "logs"
+    old_logs.mkdir(parents=True, exist_ok=True)
+    (old_logs / "old.md").write_text("这条旧日志不应进入下一轮提示词", encoding="utf-8")
+    old_messages = ws / "memory" / "messages"
+    old_messages.mkdir(parents=True, exist_ok=True)
+    (old_messages / "old.md").write_text("旧完整发言也不应被引用", encoding="utf-8")
 
     ctx = build_dispatch_context(
         session_id=session_id,
@@ -114,35 +44,22 @@ def test_build_dispatch_context_prefers_related_logs(tmp_path: Path):
         goal="数据 周报",
         k=1,
     )
+
     assert ctx["has_memory"] is True
+    assert ctx["facts"] == ["用户希望输出周报", "需包含图表"]
+    assert ctx["logs"] == []
+    assert ctx["refs"] == []
     assert "关键事实" in ctx["rendered"]
-    assert len(ctx["logs"]) == 1
-    assert "agent-data" in ctx["logs"][0]["excerpt"]
+    assert "相关历史摘录" not in ctx["rendered"]
+    assert "旧日志不应进入下一轮提示词" not in ctx["rendered"]
+    assert "旧完整发言也不应被引用" not in ctx["rendered"]
 
 
-def test_dispatch_context_contains_file_refs(tmp_path: Path):
+def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
     session_id = "group-test"
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
-    ref = append_expert_message_file(
-        session_id=session_id,
-        workspace_root=ws,
-        agent_id="agent-data",
-        timestamp="2026-01-01T00:00:03+00:00",
-        content="这是完整发言内容",
-        skill_id="skill-a",
-    )
-    append_turn_log(
-        session_id=session_id,
-        workspace_root=ws,
-        turn_record={
-            "agent_id": "agent-data",
-            "timestamp": "2026-01-01T00:00:03+00:00",
-            "discussion_goal": "生成数据周报",
-            "response_summary": "请参考完整发言",
-            "full_message_ref": ref,
-        },
-    )
+
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
@@ -150,5 +67,46 @@ def test_dispatch_context_contains_file_refs(tmp_path: Path):
         goal="数据 周报",
         k=1,
     )
-    assert ctx["refs"] == [ref]
-    assert f"【文件引用：{ref}】" in ctx["rendered"]
+
+    assert ctx == {"facts": [], "logs": [], "refs": [], "rendered": "", "has_memory": False}
+
+
+def test_append_llm_roundtrip_writes_jsonl_without_truncation(tmp_path: Path):
+    session_id = "group-test"
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+    long_text = "输入" * 8000
+
+    append_llm_roundtrip(
+        session_id=session_id,
+        workspace_root=ws,
+        phase="host_decide",
+        input_messages=[{"role": "system", "content": long_text}],
+        output={"content": "输出1"},
+        agent_id="agent-host",
+        skill_id="group-host-general",
+        llm_provider_id="qwen",
+        model="qwen3",
+        run_id="run-1",
+        client_message_id="client-1",
+        tool_specs=[{"name": "tool-a", "description": "工具A"}],
+    )
+    append_llm_roundtrip(
+        session_id=session_id,
+        workspace_root=ws,
+        phase="expert_turn",
+        input_messages=[{"role": "user", "content": "继续"}],
+        output={"content": "输出2"},
+    )
+
+    trace_file = ws / "memory" / "llm_roundtrips.jsonl"
+    rows = [json.loads(line) for line in trace_file.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2
+    assert rows[0]["schema_version"] == 1
+    assert rows[0]["session_id"] == session_id
+    assert rows[0]["phase"] == "host_decide"
+    assert rows[0]["agent_id"] == "agent-host"
+    assert rows[0]["input_messages"][0]["content"] == long_text
+    assert rows[0]["output"] == {"content": "输出1"}
+    assert rows[0]["tool_specs"] == [{"name": "tool-a", "description": "工具A"}]
+    assert rows[1]["phase"] == "expert_turn"

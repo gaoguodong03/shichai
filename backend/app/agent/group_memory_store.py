@@ -1,6 +1,7 @@
 """群聊记忆存储：将专家回合落盘到工作区，并构建主持人派发上下文。"""
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,8 +18,6 @@ def _memory_root(session_id: str, workspace_root: Optional[Path] = None) -> Path
     root = _workspace_root(session_id, workspace_root=workspace_root)
     mem = root / "memory"
     mem.mkdir(parents=True, exist_ok=True)
-    (mem / "logs").mkdir(parents=True, exist_ok=True)
-    (mem / "messages").mkdir(parents=True, exist_ok=True)
     return mem
 
 
@@ -27,168 +26,6 @@ def _truncate(text: str, limit: int) -> str:
     if len(s) <= limit:
         return s
     return s[:limit].rstrip() + "..."
-
-
-def _safe_name(v: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_-]+", "-", (v or "unknown")).strip("-") or "unknown"
-
-
-def append_turn_log(
-    session_id: str,
-    turn_record: Dict[str, Any],
-    max_logs: int = 20,
-    workspace_root: Optional[Path] = None,
-) -> str:
-    """追加一条专家回合日志到 memory/logs，并限制日志文件数量。"""
-    mem = _memory_root(session_id, workspace_root=workspace_root)
-    logs_dir = mem / "logs"
-    ts = (turn_record.get("timestamp") or datetime.now(timezone.utc).isoformat()).replace(":", "-")
-    agent_id = _safe_name(str(turn_record.get("agent_id") or "expert"))
-    filename = f"{ts}_{agent_id}.md"
-    path = logs_dir / filename
-
-    tool_calls = turn_record.get("tool_calls") or []
-    if not isinstance(tool_calls, list):
-        tool_calls = []
-    tool_calls_text = ""
-    if tool_calls:
-        lines: List[str] = []
-        for idx, item in enumerate(tool_calls[:8], start=1):
-            if isinstance(item, dict):
-                tname = str(item.get("tool") or item.get("name") or "").strip() or "unknown_tool"
-                args = _truncate(str(item.get("arguments") or item.get("args") or ""), 1200)
-                lines.append(f"{idx}. {tname}\n   args: {args}")
-            else:
-                lines.append(f"{idx}. {_truncate(str(item), 1200)}")
-        tool_calls_text = "\n".join(lines)
-
-    tool_raw_outputs = turn_record.get("tool_raw_outputs") or []
-    if not isinstance(tool_raw_outputs, list):
-        tool_raw_outputs = [str(tool_raw_outputs)]
-    tool_raw_text = ""
-    if tool_raw_outputs:
-        lines2: List[str] = []
-        for idx, item in enumerate(tool_raw_outputs[:8], start=1):
-            lines2.append(f"{idx}. {_truncate(str(item or ''), 4000)}")
-        tool_raw_text = "\n\n".join(lines2)
-
-    tool_attempt_debug = turn_record.get("tool_attempt_debug") or []
-    if not isinstance(tool_attempt_debug, list):
-        tool_attempt_debug = [tool_attempt_debug]
-    tool_attempt_text = ""
-    if tool_attempt_debug:
-        lines3: List[str] = []
-        for idx, item in enumerate(tool_attempt_debug[:8], start=1):
-            lines3.append(f"{idx}. {_truncate(str(item or ''), 2500)}")
-        tool_attempt_text = "\n\n".join(lines3)
-
-    sandbox_entry_trace = turn_record.get("sandbox_entry_trace") or []
-    if not isinstance(sandbox_entry_trace, list):
-        sandbox_entry_trace = [sandbox_entry_trace]
-    sandbox_trace_text = ""
-    if sandbox_entry_trace:
-        lines4: List[str] = []
-        for idx, item in enumerate(sandbox_entry_trace[:8], start=1):
-            lines4.append(f"{idx}. {_truncate(str(item or ''), 2500)}")
-        sandbox_trace_text = "\n\n".join(lines4)
-
-    skill_route_debug = turn_record.get("skill_route_debug") or {}
-    skill_route_text = ""
-    if isinstance(skill_route_debug, dict) and skill_route_debug:
-        strategy = str(skill_route_debug.get("strategy") or "")
-        selected = str(skill_route_debug.get("selected_skill_id") or "")
-        lines5: List[str] = []
-        if strategy:
-            lines5.append(f"- strategy: {strategy}")
-        if selected:
-            lines5.append(f"- selected_skill_id: {selected}")
-        scores = skill_route_debug.get("scores") or []
-        if isinstance(scores, list) and scores:
-            lines5.append("- scores:")
-            for idx, row in enumerate(scores[:5], start=1):
-                if isinstance(row, dict):
-                    sid = str(row.get("skill_id") or "")
-                    sc = row.get("score")
-                    lines5.append(f"  {idx}. {sid}: {sc}")
-        skill_route_text = "\n".join(lines5)
-
-    content = (
-        f"# Turn Log\n\n"
-        f"- session_id: {session_id}\n"
-        f"- agent_id: {turn_record.get('agent_id') or ''}\n"
-        f"- timestamp: {turn_record.get('timestamp') or ''}\n"
-        f"- skill_id: {turn_record.get('skill_id') or ''}\n\n"
-        f"- full_message_ref: {turn_record.get('full_message_ref') or ''}\n\n"
-        f"## Discussion Goal\n{turn_record.get('discussion_goal') or ''}\n\n"
-        f"## Input Prompt Summary\n{turn_record.get('input_prompt_summary') or ''}\n\n"
-        f"## Response Summary\n{turn_record.get('response_summary') or ''}\n\n"
-        f"## Tool Result Summary\n{turn_record.get('tool_result_summary') or ''}\n\n"
-        f"## Tool Calls\n{tool_calls_text}\n\n"
-        f"## Tool Raw Outputs\n{tool_raw_text}\n"
-        f"\n## Tool Attempt Debug\n{tool_attempt_text}\n"
-        f"\n## Sandbox Entry Trace\n{sandbox_trace_text}\n"
-        f"\n## Skill Route Debug\n{skill_route_text}\n"
-    )
-    path.write_text(content, encoding="utf-8")
-
-    files = sorted(logs_dir.glob("*.md"), key=lambda p: p.name)
-    overflow = max(0, len(files) - max(1, int(max_logs)))
-    for p in files[:overflow]:
-        try:
-            p.unlink()
-        except OSError:
-            continue
-    return str(path)
-
-
-def append_group_message_file(
-    session_id: str,
-    agent_id: str,
-    timestamp: Optional[str],
-    content: str,
-    skill_id: str = "",
-    role: str = "assistant",
-    workspace_root: Optional[Path] = None,
-) -> str:
-    """保存群聊角色完整发言到 memory/messages，返回工作区相对路径。"""
-    ws_root = _workspace_root(session_id, workspace_root=workspace_root)
-    mem = _memory_root(session_id, workspace_root=workspace_root)
-    messages_dir = mem / "messages"
-    ts = (timestamp or datetime.now(timezone.utc).isoformat()).replace(":", "-")
-    did = _safe_name(agent_id or "expert")
-    p = messages_dir / f"{ts}_{did}.md"
-    role_label = "Host Message" if str(role or "").strip() == "host" else "Expert Message"
-    body = (
-        f"# {role_label}\n\n"
-        f"- session_id: {session_id}\n"
-        f"- role: {str(role or '').strip() or 'assistant'}\n"
-        f"- agent_id: {agent_id or ''}\n"
-        f"- skill_id: {skill_id or ''}\n"
-        f"- timestamp: {timestamp or ''}\n\n"
-        f"## Content\n\n{content or ''}\n"
-    )
-    p.write_text(body, encoding="utf-8")
-    return str(p.relative_to(ws_root)).replace("\\", "/")
-
-
-def append_expert_message_file(
-    session_id: str,
-    agent_id: str,
-    timestamp: Optional[str],
-    content: str,
-    skill_id: str = "",
-    workspace_root: Optional[Path] = None,
-) -> str:
-    """保存专家完整发言到 memory/messages，返回工作区相对路径。"""
-    return append_group_message_file(
-        session_id=session_id,
-        agent_id=agent_id,
-        timestamp=timestamp,
-        content=content,
-        skill_id=skill_id,
-        role="assistant",
-        workspace_root=workspace_root,
-    )
 
 
 def upsert_facts(
@@ -225,22 +62,6 @@ def upsert_facts(
     return merged
 
 
-def _goal_terms(goal: str) -> List[str]:
-    terms = re.findall(r"[A-Za-z0-9_-]{2,}|[\u4e00-\u9fff]{2,}", goal or "")
-    return [t.lower() for t in terms][:12]
-
-
-def _score_log(content: str, target_agent_id: str, terms: List[str]) -> int:
-    text = (content or "").lower()
-    score = 0
-    if target_agent_id and target_agent_id.lower() in text:
-        score += 3
-    for t in terms:
-        if t in text:
-            score += 1
-    return score
-
-
 def build_dispatch_context(
     session_id: str,
     target_agent_id: str,
@@ -249,10 +70,9 @@ def build_dispatch_context(
     max_facts: int = 60,
     workspace_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """读取 memory/facts 与 memory/logs，返回派发上下文及渲染文本。"""
+    """读取 memory/facts，返回派发上下文；旧 logs/messages 不进入下一轮提示词。"""
     mem = _memory_root(session_id, workspace_root=workspace_root)
     facts_file = mem / "facts.md"
-    logs_dir = mem / "logs"
 
     facts: List[str] = []
     if facts_file.exists():
@@ -262,51 +82,62 @@ def build_dispatch_context(
                 facts.append(line[2:].strip())
     facts = facts[-max(1, int(max_facts)) :]
 
-    logs: List[Dict[str, str]] = []
-    refs: List[str] = []
-    terms = _goal_terms(goal)
-    for p in sorted(logs_dir.glob("*.md"), key=lambda x: x.name, reverse=True):
-        try:
-            raw = p.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        m = re.search(r"^- full_message_ref:\s*(.+?)\s*$", raw, flags=re.MULTILINE)
-        full_ref = (m.group(1).strip() if m else "")
-        score = _score_log(raw, target_agent_id, terms)
-        logs.append(
-            {
-                "name": p.name,
-                "score": str(score),
-                "excerpt": _truncate(raw.replace("\n", " "), 360),
-                "full_message_ref": full_ref,
-            }
-        )
-    logs.sort(key=lambda x: (int(x["score"]), x["name"]), reverse=True)
-    top_logs = logs[: max(1, int(k))]
-
     lines: List[str] = []
     if facts:
         lines.append("【关键事实】")
         lines.extend([f"- {f}" for f in facts[-10:]])
-        lines.append("")
-    if top_logs:
-        lines.append("【相关历史摘录】")
-        for idx, item in enumerate(top_logs, start=1):
-            lines.append(f"{idx}. ({item['name']}) {item['excerpt']}")
-            ref = (item.get("full_message_ref") or "").strip()
-            if ref:
-                refs.append(ref)
-    if refs:
-        lines.append("")
-        lines.append("【可读取的历史发言文件】")
-        for ref in list(dict.fromkeys(refs))[:5]:
-            lines.append(f"- 【文件引用：{ref}】")
     rendered = "\n".join(lines).strip()
 
     return {
         "facts": facts,
-        "logs": top_logs,
-        "refs": list(dict.fromkeys(refs)),
+        "logs": [],
+        "refs": [],
         "rendered": rendered,
-        "has_memory": bool(facts or top_logs),
+        "has_memory": bool(facts),
     }
+
+
+def append_llm_roundtrip(
+    *,
+    session_id: str,
+    phase: str,
+    input_messages: List[Dict[str, Any]],
+    output: Dict[str, Any],
+    workspace_root: Optional[Path] = None,
+    run_id: str = "",
+    client_message_id: str = "",
+    agent_id: str = "",
+    skill_id: str = "",
+    llm_provider_id: str = "",
+    model: str = "",
+    tool_specs: Optional[List[Dict[str, Any]]] = None,
+    error: Optional[Dict[str, Any]] = None,
+    latency_ms: Optional[int] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> str:
+    """完整追加一条当前会话 LLM 输入/输出排障记录，不截断、不轮转。"""
+    mem = _memory_root(session_id, workspace_root=workspace_root)
+    dst = mem / "llm_roundtrips.jsonl"
+    record: Dict[str, Any] = {
+        "schema_version": 1,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "session_id": session_id,
+        "run_id": run_id or "",
+        "client_message_id": client_message_id or "",
+        "phase": phase or "",
+        "agent_id": agent_id or "",
+        "skill_id": skill_id or "",
+        "llm_provider_id": llm_provider_id or "",
+        "model": model or "",
+        "input_messages": input_messages or [],
+        "tool_specs": tool_specs or [],
+        "output": output or {},
+        "error": error,
+        "latency_ms": latency_ms,
+    }
+    if extra:
+        record["extra"] = extra
+    with dst.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False, default=str))
+        f.write("\n")
+    return str(dst)
