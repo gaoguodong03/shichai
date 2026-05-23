@@ -101,7 +101,7 @@ def _get_current_user_id() -> str:
         from app.core.user_context import get_current_user_context
 
         user_ctx = get_current_user_context(default_fallback=False)
-        return user_ctx.username if user_ctx is not None else ""
+        return user_ctx.user_id if user_ctx is not None else ""
     except Exception:
         return ""
 

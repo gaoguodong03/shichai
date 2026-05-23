@@ -74,10 +74,11 @@ backend/
 
 ## Skill 脚本执行（run_skill_script）
 
-- 脚本目录：`data/users/{username}/skills/{skill_id}/scripts/`
+- 脚本目录：`data/users/{user_id}/resources/skills/{skill_id}/scripts/`
 - 支持后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`
-- Python 脚本使用当前解释器（如 `conda activate sc` 后的 `python`）执行
+- 线上路径走 OpenSandbox：脚本在 `/workspace/<session_id>` 下执行，Skill 资源通过 `/skills/<skill_id>` 只读挂载。
 - 调用协议：CLI-only（仅 `cli_args_json`），不再支持 `input_json`/stdin JSON
+- 相对路径手册：`docs/Skill脚本相对路径操作手册.md`
 - 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
 - 推荐 stdout JSON 字段：`ok`、`code`、`message`、`result/text/output`，以及可选 `skill_session_over`。成功完成且不需要同一 Skill 继续处理时设 `skill_session_over: true`；仍需用户补充或确认时设 `false`。
 - 内置调试命令：
@@ -94,7 +95,7 @@ python backend/scripts/validate_skill_cli_contract.py
 ## 多用户上线建议（默认体验补丁）
 
 - 架构原则：所有用户共用一套 `run_skill_script` 执行器，按用户上下文访问各自 `skills/` 与 `workspace/`。
-- 技能目录为每用户 `data/users/{username}/skills/{skill_id}/`（资源中心创建或 ZIP 导入）。
+- 技能目录为每用户 `data/users/{user_id}/resources/skills/{skill_id}/`（资源中心创建或 ZIP 导入）。
 - 全局兼容补丁：在工具组装层维护历史 MCP id 别名映射（如 `fetch -> linkup`），防止旧 skill 配置导致运行失败。
 - 补丁边界：这类补丁属于默认体验增强，不改变“单执行器 + 多用户隔离”的架构方向。
 

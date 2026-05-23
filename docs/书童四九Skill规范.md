@@ -6,7 +6,7 @@
 
 本规范适用于：
 
-- 用户目录下的 `backend/data/users/<user>/skills/<skill_id>/SKILL.md`；
+- 用户目录下的 `backend/data/users/<user_id>/resources/skills/<skill_id>/SKILL.md`；
 - Skill 附带的 `scripts/`、`references/`、`assets/`；
 - 专家在群聊中绑定和执行的 Skill；
 - 需要 OpenSandbox 执行脚本的 Skill。
@@ -89,6 +89,8 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 - 把脚本路径写成工作区文件路径。
 
 ## 5. 脚本型 Skill 规范
+
+脚本路径、工作区路径、Skill 资源路径与数据库文件设计的详细说明见 `docs/Skill脚本相对路径操作手册.md`。
 
 ### 5.1 调用契约
 

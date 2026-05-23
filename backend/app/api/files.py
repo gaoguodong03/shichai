@@ -11,7 +11,7 @@ from app.core.security import CurrentUser, user_context_dependency
 
 router = APIRouter(tags=["files"])
 
-# 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{username}/agent-outputs
+# 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{user_id}/sessions
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
 

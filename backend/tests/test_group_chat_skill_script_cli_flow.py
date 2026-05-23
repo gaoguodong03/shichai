@@ -66,7 +66,7 @@ def _frontend_flow_env(tmp_path, monkeypatch):
 
     user_root = tmp_path / user
     config_dir = user_root / "config"
-    skill_dir = user_root / "skills" / "sandbox-dependency-verify"
+    skill_dir = user_root / "resources" / "skills" / "sandbox-dependency-verify"
     scripts_dir = skill_dir / "scripts"
     config_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir.mkdir(parents=True, exist_ok=True)

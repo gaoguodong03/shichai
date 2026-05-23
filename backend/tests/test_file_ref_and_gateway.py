@@ -266,6 +266,17 @@ def test_inline_shell_env_embeds_requirements_for_opensandbox_env_drop():
     assert "python3 -c" in out[2]
 
 
+def test_run_skill_script_user_identity_uses_stable_user_id():
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.tools import run_skill_script as rss
+
+    token = set_current_user_identity(user_id="user-stable-123", username="owner@example.com")
+    try:
+        assert rss._get_current_user_id() == "user-stable-123"
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
     from app.tools.filesystem_session_wrapper import _normalize_path_for_session
 
