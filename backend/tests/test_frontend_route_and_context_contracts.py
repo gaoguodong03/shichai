@@ -47,6 +47,7 @@ def test_group_chat_context_is_split_and_typed():
 def test_group_chat_components_do_not_use_aggregate_context():
     files = [
         "frontend/src/features/workspace/WorkspaceContent.vue",
+        "frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts",
         "frontend/src/features/workspace/components/group-chat/GroupChatHeader.vue",
         "frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue",
         "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",
@@ -63,8 +64,10 @@ def test_group_chat_components_do_not_use_aggregate_context():
 
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
+    provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
     composable = read("frontend/src/features/workspace/composables/useGroupWorkspacePanel.ts")
-    assert "useGroupWorkspacePanel" in src
+    assert "useWorkspaceContentProviders" in src
+    assert "useGroupWorkspacePanel" in provider
     assert "export function useGroupWorkspacePanel" in composable
     for name in [
         "async function loadGroupWorkspace",
@@ -74,6 +77,24 @@ def test_workspace_panel_logic_is_extracted_to_composable():
         "async function onGroupWorkspaceUpload",
         "function onGroupWorkspaceResizeMouseDown",
         "function toggleWorkspacePreview",
+    ]:
+        assert name not in src
+        assert name in composable
+
+
+def test_workspace_content_is_standard_size_shell():
+    src = read("frontend/src/features/workspace/WorkspaceContent.vue")
+    composable = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
+    assert len(src.splitlines()) <= 1000
+    assert "useWorkspaceContentProviders" in src
+    assert "export function useWorkspaceContentProviders" in composable
+    for name in [
+        "async function sendGroupMessage",
+        "async function loadGroupDetail",
+        "function handleStreamMessageEvent",
+        "function onAtInput",
+        "async function loadShortcutPresets",
+        "async function onInsertLocalFile",
     ]:
         assert name not in src
         assert name in composable
