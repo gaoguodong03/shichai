@@ -22,7 +22,7 @@ This avoids the cost of splitting into multiple frontend apps or bundles while s
 - Add stable frontend URLs for the main business areas:
   - `/workspace`
   - `/resources/scenario`
-  - `/resources/dha`
+  - `/resources/agent`
   - `/resources/skill`
   - `/resources/mcp`
   - `/resources/llm`
@@ -69,6 +69,8 @@ This gives future reverse proxy rules an exact target without requiring separate
 - `workspace.example.com` can rewrite to `/workspace`.
 - `resources.example.com` can rewrite to `/resources/scenario`.
 - `settings.example.com` can rewrite to `/settings/app`.
+
+The resource URL should use `agent` for the expert management page. The older `dha` wording may still exist in implementation identifiers during migration, but public route names should not introduce new `/resources/dha` URLs.
 
 ## MainView State Boundary
 
