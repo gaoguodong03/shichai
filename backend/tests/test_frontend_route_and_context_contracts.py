@@ -59,3 +59,21 @@ def test_group_chat_components_do_not_use_aggregate_context():
     assert "provideGroupChatMessageContext" in combined
     assert "provideGroupChatComposerContext" in combined
     assert "provideGroupChatWorkspacePanelContext" in combined
+
+
+def test_workspace_panel_logic_is_extracted_to_composable():
+    src = read("frontend/src/features/workspace/WorkspaceContent.vue")
+    composable = read("frontend/src/features/workspace/composables/useGroupWorkspacePanel.ts")
+    assert "useGroupWorkspacePanel" in src
+    assert "export function useGroupWorkspacePanel" in composable
+    for name in [
+        "async function loadGroupWorkspace",
+        "async function previewWorkspaceFile",
+        "async function createGroupWorkspaceDir",
+        "async function createGroupWorkspaceFile",
+        "async function onGroupWorkspaceUpload",
+        "function onGroupWorkspaceResizeMouseDown",
+        "function toggleWorkspacePreview",
+    ]:
+        assert name not in src
+        assert name in composable
