@@ -14,9 +14,10 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
 from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
-from app.core.user_context import get_current_username
+from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import mcp_config_path, skills_dir_path
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
@@ -76,6 +77,21 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        resource_rows = []
+        for row in servers or []:
+            if not isinstance(row, dict):
+                continue
+            copied = dict(row)
+            copied.setdefault("type", "mcp")
+            resource_rows.append(copied)
+        mirror_rows_to_resource_dir(
+            resource_rows,
+            user_ctx.tools_dir.resolve(),
+            "id",
+            body_filename="tool.json",
+        )
 
 
 def _frontmatter_mcp_ids(fm: Dict[str, Any]) -> List[str]:

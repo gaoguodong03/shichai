@@ -100,9 +100,11 @@ def test_save_dha_instances_mirrors_agents_resource_files(monkeypatch, tmp_path)
         )
 
         user_root = tmp_path / "users" / "user-resource-save"
-        agent_file = user_root / "resources" / "agents" / "agent-resource-flow.json"
+        agent_file = user_root / "resources" / "agents" / "agent-resource-flow" / "agent.json"
         assert agent_file.is_file()
-        assert json.loads(agent_file.read_text(encoding="utf-8"))["name"] == "资源目录专家"
+        agent_data = json.loads(agent_file.read_text(encoding="utf-8"))
+        assert agent_data["id"] == "agent-resource-flow"
+        assert agent_data["name"] == "资源目录专家"
 
         save_dha_instances([])
         assert not agent_file.exists()
@@ -134,11 +136,43 @@ def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tm
         asyncio.run(update_session_presets(body))
 
         user_root = tmp_path / "users" / "user-resource-save"
-        scenario_file = user_root / "resources" / "scenarios" / "scenario-resource-flow.json"
+        scenario_file = user_root / "resources" / "scenarios" / "scenario-resource-flow" / "scenario.json"
         assert scenario_file.is_file()
         assert json.loads(scenario_file.read_text(encoding="utf-8"))["name"] == "资源目录场景"
 
         asyncio.run(update_session_presets(SessionPresetsBody(presets=[])))
         assert not scenario_file.exists()
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_save_mcp_config_mirrors_tools_resource_files(monkeypatch, tmp_path):
+    import json
+
+    from app.api.settings_mcp import save_mcp_config
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-save", username="save@example.com")
+    try:
+        save_mcp_config(
+            [
+                {
+                    "id": "tool-resource-flow",
+                    "name": "资源目录工具",
+                    "type": "mcp",
+                    "enabled": True,
+                    "transport": {"type": "stdio", "command": "python", "args": ["server.py"]},
+                }
+            ]
+        )
+
+        user_root = tmp_path / "users" / "user-resource-save"
+        tool_file = user_root / "resources" / "tools" / "tool-resource-flow" / "tool.json"
+        assert tool_file.is_file()
+        assert json.loads(tool_file.read_text(encoding="utf-8"))["name"] == "资源目录工具"
+
+        save_mcp_config([])
+        assert not tool_file.exists()
     finally:
         reset_current_user_identity(token)

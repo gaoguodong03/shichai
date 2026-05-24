@@ -283,7 +283,12 @@ def _merge_session_presets_into_file(
 def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is not None:
-        mirror_rows_to_resource_dir(rows, user_ctx.scenarios_dir.resolve(), "id")
+        mirror_rows_to_resource_dir(
+            rows,
+            user_ctx.scenarios_dir.resolve(),
+            "id",
+            body_filename="scenario.json",
+        )
 
 
 @router.put("/settings/session-presets")

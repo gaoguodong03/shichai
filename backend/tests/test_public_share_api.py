@@ -176,6 +176,15 @@ def test_scene_share_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
     assert presets[0]["host_config"]["skill_ids"] == ["shared-skill"]
     assert presets[0]["host_config"]["mcp_server_ids"] == ["shared-mcp"]
 
+    scenario_resource = user_root / "resources" / "scenarios" / "shared-scene" / "scenario.json"
+    agent_resource = user_root / "resources" / "agents" / "shared-expert" / "agent.json"
+    tool_resource = user_root / "resources" / "tools" / "shared-mcp" / "tool.json"
+    skill_resource = user_root / "resources" / "skills" / "shared-skill" / "SKILL.md"
+    assert json.loads(scenario_resource.read_text(encoding="utf-8"))["name"] == "Scene A"
+    assert json.loads(agent_resource.read_text(encoding="utf-8"))["id"] == "shared-expert"
+    assert json.loads(tool_resource.read_text(encoding="utf-8"))["name"] == "Tool A"
+    assert skill_resource.is_file()
+
 
 def test_scene_share_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path):
     from app.api import settings_presets as api

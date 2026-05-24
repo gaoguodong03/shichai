@@ -184,7 +184,12 @@ def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
         json.dump(normalized, f, ensure_ascii=False, indent=2)
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is not None:
-        mirror_rows_to_resource_dir(normalized, user_ctx.agents_dir.resolve(), "agent_id")
+        mirror_rows_to_resource_dir(
+            normalized,
+            user_ctx.agents_dir.resolve(),
+            "agent_id",
+            body_filename="agent.json",
+        )
 
 
 def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
