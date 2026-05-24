@@ -133,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { useGroupChatWorkspaceContext } from './groupChatWorkspaceContext'
+import { useGroupChatMessageContext } from './groupChatWorkspaceContext'
 
 type MsgExt = any
 type GroupMessage = any
@@ -164,5 +164,5 @@ const {
   extractUserFileReferenceNames,
   deleteGroupMessage,
   saveDhaMessageToFile,
-} = useGroupChatWorkspaceContext()
+} = useGroupChatMessageContext()
 </script>

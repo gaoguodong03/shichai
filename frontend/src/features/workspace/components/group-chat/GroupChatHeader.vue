@@ -118,7 +118,10 @@
 </template>
 
 <script setup lang="ts">
-import { useGroupChatWorkspaceContext } from './groupChatWorkspaceContext'
+import {
+  useGroupChatSessionContext,
+  useGroupChatWorkspacePanelContext,
+} from './groupChatWorkspaceContext'
 
 const {
   props,
@@ -134,7 +137,10 @@ const {
   tocActiveKey,
   jumpToSessionTopic,
   renderSnippetMarkdown,
+} = useGroupChatSessionContext()
+
+const {
   showGroupWorkspace,
   toggleGroupWorkspaceOpen,
-} = useGroupChatWorkspaceContext()
+} = useGroupChatWorkspacePanelContext()
 </script>

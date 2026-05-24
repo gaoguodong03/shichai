@@ -25,3 +25,37 @@ def test_main_view_uses_route_as_navigation_source():
     assert "router.push(resourceRoutePath(id))" in src
     assert "router.push(settingsRoutePath(" in src
     assert "type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'" in src
+
+
+def test_group_chat_context_is_split_and_typed():
+    src = read("frontend/src/features/workspace/components/group-chat/groupChatWorkspaceContext.ts")
+    assert "Record<string, any>" not in src
+    for name in [
+        "GroupChatSessionContext",
+        "GroupChatMessageContext",
+        "GroupChatComposerContext",
+        "GroupChatWorkspacePanelContext",
+        "useGroupChatSessionContext",
+        "useGroupChatMessageContext",
+        "useGroupChatComposerContext",
+        "useGroupChatWorkspacePanelContext",
+    ]:
+        assert name in src
+    assert "useGroupChatWorkspaceContext" not in src
+
+
+def test_group_chat_components_do_not_use_aggregate_context():
+    files = [
+        "frontend/src/features/workspace/WorkspaceContent.vue",
+        "frontend/src/features/workspace/components/group-chat/GroupChatHeader.vue",
+        "frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue",
+        "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",
+        "frontend/src/features/workspace/components/group-chat/GroupWorkspacePanel.vue",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    assert "provideGroupChatWorkspaceContext" not in combined
+    assert "useGroupChatWorkspaceContext" not in combined
+    assert "provideGroupChatSessionContext" in combined
+    assert "provideGroupChatMessageContext" in combined
+    assert "provideGroupChatComposerContext" in combined
+    assert "provideGroupChatWorkspacePanelContext" in combined

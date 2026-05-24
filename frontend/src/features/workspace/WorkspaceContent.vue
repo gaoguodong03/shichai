@@ -60,7 +60,12 @@ import GroupChatHeader from './components/group-chat/GroupChatHeader.vue'
 import GroupChatMessages from './components/group-chat/GroupChatMessages.vue'
 import GroupChatComposer from './components/group-chat/GroupChatComposer.vue'
 import GroupWorkspacePanel from './components/group-chat/GroupWorkspacePanel.vue'
-import { provideGroupChatWorkspaceContext } from './components/group-chat/groupChatWorkspaceContext'
+import {
+  provideGroupChatComposerContext,
+  provideGroupChatMessageContext,
+  provideGroupChatSessionContext,
+  provideGroupChatWorkspacePanelContext,
+} from './components/group-chat/groupChatWorkspaceContext'
 import { createGroupChatStreamRunner } from './composables/useGroupChatStreamRunner'
 import { streamSessionEvents } from '@/api/chat'
 import { uploadWorkspaceFile } from './workspaceUpload'
@@ -3014,7 +3019,7 @@ watch(
 )
 
 
-provideGroupChatWorkspaceContext({
+provideGroupChatSessionContext({
   props,
   emit,
   groupDetail,
@@ -3028,8 +3033,9 @@ provideGroupChatWorkspaceContext({
   tocActiveKey,
   jumpToSessionTopic,
   renderSnippetMarkdown,
-  showGroupWorkspace,
-  toggleGroupWorkspaceOpen,
+})
+
+provideGroupChatMessageContext({
   groupMessagesRef,
   groupDisplayMessages,
   isMemberJoinedMessage,
@@ -3055,6 +3061,9 @@ provideGroupChatWorkspaceContext({
   extractUserFileReferenceNames,
   deleteGroupMessage,
   saveDhaMessageToFile,
+})
+
+provideGroupChatComposerContext({
   pendingSuggestedDhaItems,
   hostDisplayName,
   suggestedInviteLoading,
@@ -3062,6 +3071,8 @@ provideGroupChatWorkspaceContext({
   autoSwitchHintText,
   autoSwitchIgnoreLoading,
   currentActiveStreamingMessage,
+  activeStreamingSpeakerName,
+  streamingPulse,
   groupWaitingForUser,
   nextSpeakerLabelText,
   orchestrationInterruptHint,
@@ -3087,8 +3098,8 @@ provideGroupChatWorkspaceContext({
   atMentionOptions,
   atSelectedIndex,
   selectMention,
+  groupDetail,
   groupNextPrompt,
-  filteredShortcutExperts,
   showMoreMenu,
   moreMenuRef,
   onShowNextPromptFieldChangeByClick,
@@ -3096,7 +3107,6 @@ provideGroupChatWorkspaceContext({
   showInsertFileModal,
   insertFileRef,
   insertFileLoading,
-  groupFileCapabilitySummary,
   insertFileEntries,
   insertFileBrowsePath,
   insertFileGoUp,
@@ -3106,7 +3116,6 @@ provideGroupChatWorkspaceContext({
   insertLocalFileUploading,
   insertLocalFileUploadingName,
   insertLocalFileUploadProgress,
-  showShortcutEditor,
   showShortcutEditorModal,
   shortcutEditorRef,
   shortcutPresetSearch,
@@ -3114,12 +3123,11 @@ provideGroupChatWorkspaceContext({
   filteredShortcutPresets,
   applyShortcutPreset,
   shortcutPresetExpertNamesText,
-  deleteShortcutPreset,
-  showAddMember,
-  addMemberRef,
   orderedMemberIds,
-  displayGroupSpeakerName,
-  leaderDhaId,
+  expertAvatarUrl,
+  dhaAvatarColor,
+  dhaIndex,
+  dhaAvatarChar,
   leaderDisplayId,
   removeMember,
   invitableDhas,
@@ -3135,12 +3143,16 @@ provideGroupChatWorkspaceContext({
   confirmGroupNext,
   sendGroupMessage,
   toolbarDisplayShowHostAvatar,
+  hostLogoUrl,
   toolbarDisplayLabelText,
   toolbarDisplaySpeakerId,
-  focusRoleNameForToolbar,
   showAddMemberModal,
-  createSessionFromScenarioPreset,
   VIRTUAL_SCENE_HOST_ID,
+})
+
+provideGroupChatWorkspacePanelContext({
+  showGroupWorkspace,
+  toggleGroupWorkspaceOpen,
   onGroupWorkspaceResizeMouseDown,
   groupWorkspaceWidth,
   groupWorkspacePath,

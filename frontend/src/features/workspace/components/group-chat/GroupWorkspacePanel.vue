@@ -233,7 +233,7 @@
 </template>
 
 <script setup lang="ts">
-import { useGroupChatWorkspaceContext } from './groupChatWorkspaceContext'
+import { useGroupChatWorkspacePanelContext } from './groupChatWorkspaceContext'
 
 const {
   showGroupWorkspace,
@@ -273,5 +273,5 @@ const {
   groupWorkspacePreviewIsImage,
   groupWorkspacePreviewImageUrl,
   groupWorkspacePreviewContent,
-} = useGroupChatWorkspaceContext()
+} = useGroupChatWorkspacePanelContext()
 </script>

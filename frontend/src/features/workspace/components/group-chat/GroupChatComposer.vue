@@ -540,7 +540,7 @@
 </template>
 
 <script setup lang="ts">
-import { useGroupChatWorkspaceContext } from './groupChatWorkspaceContext'
+import { useGroupChatComposerContext } from './groupChatWorkspaceContext'
 import GroupChatStatusBars from './GroupChatStatusBars.vue'
 
 const {
@@ -628,5 +628,5 @@ const {
   toolbarDisplaySpeakerId,
   showAddMemberModal,
   VIRTUAL_SCENE_HOST_ID,
-} = useGroupChatWorkspaceContext()
+} = useGroupChatComposerContext()
 </script>
