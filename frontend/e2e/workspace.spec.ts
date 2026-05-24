@@ -109,4 +109,60 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByRole('heading', { name: '问答验收场景' })).toBeVisible()
     await expect(page.getByRole('heading', { name: '已有验收会话' })).toHaveCount(0)
   })
+
+  test('自动切换专家提示使用专家名称而不是 agent id', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].agent_ids = ['agent-qa', 'agent-writer']
+    state.sessions[0].messages = [
+      {
+        message_id: 'assistant-history',
+        role: 'assistant',
+        agent_id: 'agent-qa',
+        skill_id: 'skill-qa',
+        content: '历史回复：这里可以继续追问。',
+      } as never,
+    ]
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/sessions/session-existing', async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: {
+            id: 'session-existing',
+            title: '已有验收会话',
+            updated_at: '2026-05-23T08:00:00Z',
+            messages: state.sessions[0].messages,
+            agent_ids: state.sessions[0].agent_ids,
+            agent_map: {
+              'agent-qa': { name: '问答专家', role: '回答用户问题' },
+            },
+            orchestration_profile: 'scene',
+          },
+        }),
+      })
+    })
+    await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: [
+          `event: route\ndata: ${JSON.stringify({ agent_id: 'agent-writer', skill_id: 'skill-write' })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+        ].join(''),
+      })
+    })
+
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请换一个专家继续')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.getByText('四九已帮您切换专家：写作专家')).toBeVisible()
+    await expect(page.getByText('四九已帮您切换专家：agent-writer')).toHaveCount(0)
+  })
 })

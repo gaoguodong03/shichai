@@ -1311,10 +1311,9 @@ export function useWorkspaceContentProviders(args: {
     patchGroupStreamState(sessionId, { agentId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId })
     if (!changedExpert && !changedSkill) return
 
-    const map = groupDetail.value?.agent_map || {}
     const finalExpertId = routedExpertId
     const finalSkillId = routedSkillId
-    const expertName = finalExpertId ? (map[finalExpertId]?.name || finalExpertId) : ''
+    const expertName = finalExpertId ? displayGroupSpeakerName(finalExpertId) : ''
     const skillName = finalSkillId ? formatSkillId(finalSkillId) : ''
     autoSwitchHint.value = {
       sessionId,
