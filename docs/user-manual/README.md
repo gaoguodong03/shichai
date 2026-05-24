@@ -43,7 +43,7 @@
 
 ### 页面截图
 
-![登录页面](images/login-page.png)
+![登录页面](./images/login-page.png)
 
 ![注册页面](images/register-page.png)
 
