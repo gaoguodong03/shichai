@@ -284,7 +284,7 @@
             </div>
           </template>
           <!-- 专家 -->
-          <template v-else-if="resourceSubModule === 'dha'">
+          <template v-else-if="resourceSubModule === 'agent'">
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
@@ -324,7 +324,7 @@
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
                   title="搜索专家"
-                  @click="toggleSearch('dha')"
+                  @click="toggleSearch('agent')"
                 >
                   <svg
                     class="main-sidebar-svg-icon"
@@ -620,7 +620,7 @@
           <button
             v-for="c in settingsCategories"
             :key="c.id"
-            @click="selectedId = c.id"
+            @click="router.push(settingsRoutePath(c.id))"
             :class="[
               'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
               selectedId === c.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
@@ -873,7 +873,7 @@
             </div>
           </div>
         </template>
-        <template v-else-if="resourceSubModule === 'dha'">
+        <template v-else-if="resourceSubModule === 'agent'">
           <DHAView
             :selected-dha-id="selectedId"
             :dha-instances="dhaInstances"
@@ -1391,7 +1391,8 @@ function logout() {
 }
 
 type ModuleId = 'workspace' | 'resource' | 'settings'
-type ResourceSubModule = 'scenario' | 'dha' | 'skill' | 'mcp' | 'llm' | 'files'
+type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'
+type SettingsCategoryId = 'app' | 'theme' | 'secrets' | 'account-security' | 'sandbox'
 type MissingReferenceSource = 'scene' | 'expert' | 'skill' | 'tool'
 type ReferenceSnapshot = { id: string; name?: string }
 
@@ -1418,17 +1419,43 @@ interface MissingReferenceGroup {
 
 const resourceChildren: { id: ResourceSubModule; label: string }[] = [
   { id: 'scenario', label: '场景' },
-  { id: 'dha', label: '专家' },
+  { id: 'agent', label: '专家' },
   { id: 'skill', label: '技能' },
   { id: 'mcp', label: '工具' },
   { id: 'llm', label: '模型' },
   { id: 'files', label: '文件' },
 ]
 
-const currentModule = ref<ModuleId>('workspace')
-const resourceSubModule = ref<ResourceSubModule>('scenario')
 const selectedId = ref<string | null>(null)
 const resourceMenuExpanded = ref(false)
+
+function resourceRoutePath(id: ResourceSubModule) {
+  return `/resources/${id}`
+}
+
+function settingsRoutePath(id: SettingsCategoryId) {
+  return `/settings/${id}`
+}
+
+const currentModule = computed<ModuleId>(() => {
+  if (route.path.startsWith('/resources')) return 'resource'
+  if (route.path.startsWith('/settings')) return 'settings'
+  return 'workspace'
+})
+
+const resourceSubModule = computed<ResourceSubModule>(() => {
+  const section = String(route.params.section || 'scenario')
+  return section === 'agent' || section === 'skill' || section === 'mcp' || section === 'llm' || section === 'files'
+    ? section
+    : 'scenario'
+})
+
+const settingsSection = computed<SettingsCategoryId>(() => {
+  const section = String(route.params.section || 'app')
+  return section === 'theme' || section === 'secrets' || section === 'account-security' || section === 'sandbox'
+    ? section
+    : 'app'
+})
 
 interface ScenarioHostConfig {
   skill_ids: string[]
@@ -1733,12 +1760,12 @@ const dhaSearch = ref('')
 const skillSearch = ref('')
 const mcpSearch = ref('')
 
-function toggleSearch(kind: 'scenario' | 'dha' | 'skill' | 'mcp') {
+function toggleSearch(kind: 'scenario' | 'agent' | 'skill' | 'mcp') {
   if (kind === 'scenario') {
     showScenarioSearch.value = !showScenarioSearch.value
     if (!showScenarioSearch.value) scenarioSearch.value = ''
   }
-  if (kind === 'dha') {
+  if (kind === 'agent') {
     showDhaSearch.value = !showDhaSearch.value
     if (!showDhaSearch.value) dhaSearch.value = ''
   }
@@ -1792,7 +1819,7 @@ const filteredMcpServers = computed(() => {
     return hay.includes(q)
   })
 })
-const settingsCategories = [
+const settingsCategories: { id: SettingsCategoryId; label: string }[] = [
   { id: 'app', label: '主持人设置' },
   { id: 'theme', label: '配色' },
   { id: 'secrets', label: '密钥' },
@@ -1944,35 +1971,23 @@ function onNavClick(moduleId: ModuleId) {
     resourceMenuExpanded.value = !resourceMenuExpanded.value
     return
   }
-  currentModule.value = moduleId
   if (moduleId === 'resource') {
     resourceMenuExpanded.value = true
   } else {
     resourceMenuExpanded.value = false
   }
-  selectedId.value = null
+  if (moduleId !== 'resource') selectedId.value = null
   if (moduleId === 'resource' || moduleId === 'settings') {
     ensureMiddleColumnOpen()
   }
-  if (moduleId === 'workspace') {
-    fetchGroupSessions()
-    fetchDHA()
-    fetchSkills()
-  }
-  if (moduleId === 'resource') {
-    fetchScenarioPresets()
-    fetchDHA()
-    fetchSkills()
-    fetchMCP()
-    fetchLLM()
-    fetchFileSessions()
-  }
+  if (moduleId === 'workspace') void router.push('/workspace')
+  if (moduleId === 'resource') void router.push('/resources/scenario')
+  if (moduleId === 'settings') void router.push('/settings/app')
 }
 
 function onResourceChildClick(id: ResourceSubModule) {
-  currentModule.value = 'resource'
   resourceMenuExpanded.value = true
-  resourceSubModule.value = id
+  void router.push(resourceRoutePath(id))
 }
 
 function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
@@ -2312,7 +2327,7 @@ function closeSharePreviewModal() {
   sharePreviewResult.value = null
   sharePreviewData.value = null
   if (route.path === '/share/run') {
-    router.replace('/')
+    router.replace('/workspace')
   }
 }
 
@@ -2434,7 +2449,7 @@ async function commitScenarioImport() {
       if (importedPid) {
         const preset = scenarioPresets.value.find((x) => x.id === importedPid)
         if (preset && (preset.agent_ids || []).length) {
-          currentModule.value = 'workspace'
+          await router.push('/workspace')
           await nextTick()
           await workspaceContentRef.value?.createSessionFromScenarioPreset?.({
             id: preset.id,
@@ -2447,7 +2462,7 @@ async function commitScenarioImport() {
           })
         }
       }
-      router.replace('/')
+      router.replace('/workspace')
     }
   } catch (e) {
     scenarioImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
@@ -2546,23 +2561,22 @@ async function tryOpenScenarioShareFromRoute() {
       const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
       if (!metaR.ok) {
         window.alert('分享链接无效或已失效')
-        router.replace('/')
+        router.replace('/workspace')
         return
       }
       const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
       if (!bundleR.ok) {
         window.alert('无法下载场景包')
-        router.replace('/')
+        router.replace('/workspace')
         return
       }
       const blob = await bundleR.blob()
       const file = new File([blob], `scenario-share-${id}.zip`, { type: 'application/zip' })
       pendingBundleFile.value = file
       scenarioBundlePreview.value = null
-      currentModule.value = 'resource'
-      resourceSubModule.value = 'scenario'
       resourceMenuExpanded.value = true
       ensureMiddleColumnOpen()
+      await router.replace('/resources/scenario')
       const fd = new FormData()
       fd.append('file', file)
       fd.append('dry_run', 'true')
@@ -2586,7 +2600,7 @@ async function tryOpenScenarioShareFromRoute() {
     const metaR = await fetch(`/api/public/shares/${encodeURIComponent(id)}/meta`)
     if (!metaR.ok) {
       window.alert('分享链接无效或已失效')
-      router.replace('/')
+      router.replace('/workspace')
       return
     }
     const mj = (await metaR.json().catch(() => ({}))) as {
@@ -2618,7 +2632,7 @@ async function tryOpenScenarioShareFromRoute() {
     sharePreviewModalOpen.value = true
   } catch (e) {
     window.alert((e as Error).message || '无法加载分享场景')
-    router.replace('/')
+    router.replace('/workspace')
   } finally {
     scenarioShareRouteImportLoading.value = false
     scenarioShareOpenInFlight.value = false
@@ -2861,7 +2875,7 @@ async function fetchDHA() {
     if (j.status === 'ok' && j.data?.instances) {
       dhaInstances.value = j.data.instances
       // 资源中心 专家：默认选中第一个，且当当前选中项失效时自动回退
-      if (currentModule.value === 'resource' && resourceSubModule.value === 'dha') {
+      if (currentModule.value === 'resource' && resourceSubModule.value === 'agent') {
         const list = dhaInstances.value || []
         if (selectedId.value === '__new__') return
         const ids = list.map((d) => d.agent_id)
@@ -3094,21 +3108,26 @@ function onMCPCreated(id: string) {
 
 watch(currentModule, (mod) => {
   if (mod !== 'resource') selectedId.value = null
+  resourceMenuExpanded.value = mod === 'resource'
   if (mod === 'resource') {
     if (resourceSubModule.value === 'scenario') fetchScenarioPresets()
     if (resourceSubModule.value === 'skill') fetchSkills()
     if (resourceSubModule.value === 'mcp') fetchMCP()
-    if (resourceSubModule.value === 'dha') fetchDHA()
+    if (resourceSubModule.value === 'agent') fetchDHA()
     if (resourceSubModule.value === 'llm') fetchLLM()
     if (resourceSubModule.value === 'files') fetchFileSessions()
   }
-  if (mod === 'settings') selectedId.value = 'app'
+  if (mod === 'settings') selectedId.value = settingsSection.value
   if (mod === 'workspace') {
     fetchGroupSessions()
     fetchDHA()
     fetchSkills()
   }
 }, { immediate: true })
+
+watch(settingsSection, (section) => {
+  if (currentModule.value === 'settings') selectedId.value = section
+})
 
 watch(resourceSubModule, (sub) => {
   // 切换子栏目时收起搜索，避免“跨栏目残留过滤”造成误解
@@ -3125,7 +3144,7 @@ watch(resourceSubModule, (sub) => {
     return
   }
   selectedId.value = null
-  if (sub === 'dha') fetchDHA()
+  if (sub === 'agent') fetchDHA()
   if (sub === 'skill') fetchSkills()
   if (sub === 'mcp') fetchMCP()
   if (sub === 'llm') fetchLLM()

@@ -14,6 +14,7 @@ test.describe('验收 1/6：登录与账号入口', () => {
     await page.getByRole('button', { name: '创建账户' }).click()
 
     await expectMainShell(page)
+    await expect(page).toHaveURL(/\/workspace$/)
     await expect(page.getByRole('heading', { name: '已有验收会话' })).toBeVisible()
   })
 
@@ -26,5 +27,6 @@ test.describe('验收 1/6：登录与账号入口', () => {
     await page.getByRole('button', { name: '登录' }).click()
 
     await expectMainShell(page)
+    await expect(page).toHaveURL(/\/workspace$/)
   })
 })

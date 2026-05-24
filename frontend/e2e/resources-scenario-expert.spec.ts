@@ -18,10 +18,9 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
   })
 
   test('用户可以创建专家并保存专家配置', async ({ page }) => {
-    await bootLoggedInApp(page)
+    await bootLoggedInApp(page, '/resources/agent')
 
-    await page.getByRole('button', { name: '资源中心' }).click()
-    await page.getByRole('button', { name: '专家', exact: true }).click()
+    await expect(page).toHaveURL(/\/resources\/agent$/)
     await expect(page.getByRole('complementary').getByText('问答专家').first()).toBeVisible()
 
     await page.getByRole('button', { name: '创建专家' }).click()

@@ -619,7 +619,7 @@ export async function loginByStorage(page: Page) {
 export async function expectMainShell(page: Page) {
   await expect(page.getByRole('button', { name: '工作空间' })).toBeVisible()
   await expect(page.getByRole('button', { name: '资源中心' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '设置' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '设置', exact: true })).toBeVisible()
 }
 
 export async function bootLoggedInApp(page: Page, path = '/') {
