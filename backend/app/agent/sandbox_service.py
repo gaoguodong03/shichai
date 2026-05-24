@@ -13,197 +13,63 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
+from app.agent.path_whitelist_guard import normalize_rel_path
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_audit import append_sandbox_event
-from app.agent.sandbox_image_policy import (
-    SANDBOX_VARIANT_PLAYWRIGHT,
-    configured_sandbox_images,
-    image_for_variant,
-    read_sandbox_variant,
-    sandbox_settings_path,
+from app.agent.sandbox_handle_keys import (
+    handle_cache_key,
+    policy_mount_fingerprint,
+    request_handle_cache_key,
+    request_needs_user_requirements,
 )
-from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT, SandboxMountPolicy
-from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
-from app.core.sandbox_requirements import requirement_key
+from app.agent.sandbox_image_policy import configured_sandbox_images
+from app.agent.sandbox_lifecycle_errors import (
+    SandboxEnvironmentError,
+    is_host_path_mount_source_error as _is_host_path_mount_source_error,
+    is_lifecycle_connect_error as _is_lifecycle_connect_error,
+    lifecycle_connect_error_message as _lifecycle_connect_error_message,
+    opensandbox_lifecycle_reachable as _opensandbox_lifecycle_reachable,
+)
+from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT
+from app.agent.sandbox_policy_builder import (
+    apply_fixed_resource_policy,
+    apply_user_image_policy,
+    build_mounts_for_request,
+    cached_handle_still_valid,
+    resolve_cwd,
+    workspace_only_policy,
+    workspace_with_skills_policy,
+)
+from app.agent.sandbox_policy_runtime import (
+    env_csv as _env_csv,
+    env_float as _env_float,
+    env_int as _env_int,
+    env_truthy as _env_truthy,
+    network_allowed_for_tool as _network_allowed_for_tool,
+    sandbox_default_environment as _sandbox_default_environment,
+)
+from app.agent.sandbox_requirements_runtime import (
+    command_exit_code as _command_exit_code,
+    command_output as _command_output,
+    requirements_b64 as _requirements_b64,
+    requirements_imply_playwright as _requirements_imply_playwright,
+    requirements_package_summary as _requirements_package_summary,
+    tail as _tail,
+)
+from app.agent.sandbox_workspace_fs import (
+    exec_workspace_shell_on_host,
+    list_workspace_files_on_host,
+    mkdir_workspace_on_host,
+    read_workspace_text_on_host,
+    write_workspace_text_on_host,
+)
+from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir
 from app.core.user_context import get_user_context_for, users_data_root
 
 logger = logging.getLogger(__name__)
 
 _REQUIREMENTS_VERIFIER_VERSION = "import-v2"
 _REQUIREMENTS_REAL_VERIFIED_AT_KEY = "requirements_real_verified_at"
-_PLAYWRIGHT_REQUIREMENT_KEYS = {"playwright", "patchright"}
-
-
-class SandboxEnvironmentError(RuntimeError):
-    """Non-retryable sandbox infrastructure/configuration failure."""
-
-
-def _is_host_path_mount_source_error(error: Exception) -> bool:
-    text = str(error or "")
-    return "mount source path" in text and ("/host_mnt/" in text or "host_path" in text)
-
-
-def _is_lifecycle_connect_error(error: Exception) -> bool:
-    text = str(error or "").lower()
-    return (
-        "opensandbox lifecycle api" in text
-        or "all connection attempts failed" in text
-        or "connecterror" in text
-        or "connection refused" in text
-    )
-
-
-def _lifecycle_connect_error_message(error: Exception) -> str:
-    return (
-        "OpenSandbox lifecycle API 连接失败：当前应用进程无法连接 OpenSandbox 服务。"
-        "请确认 1Panel 编排中的 opensandbox-server 已启动，"
-        "并检查 OPENSANDBOX_DOMAIN/OPENSANDBOX_HOST_PORT 是否指向应用容器可达的地址。"
-        "本地 conda 调试时，需要显式启动本地 OpenSandbox 服务或配置 OPENSANDBOX_COMPOSE_FILE 指向本地 compose；"
-        "docker-compose.1panel.yml 只用于远程 1Panel 编排，不再作为本地自动启动配置。"
-        f" 原始错误: {error}"
-    )
-
-
-def _opensandbox_lifecycle_reachable() -> tuple[bool, str]:
-    from app.core import dev_bootstrap
-
-    host, port = dev_bootstrap.parse_opensandbox_target()
-    target = f"{host}:{port}"
-    return dev_bootstrap.can_connect(host, port, timeout=0.25), target
-
-
-def _env_truthy(name: str, default: str = "0") -> bool:
-    val = (os.getenv(name) or default).strip().lower()
-    return val in {"1", "true", "yes", "on", "enabled"}
-
-
-def _env_csv(name: str) -> List[str]:
-    raw = (os.getenv(name) or "").strip()
-    if not raw:
-        return []
-    parts = []
-    for x in raw.split(","):
-        s = x.strip()
-        if s:
-            parts.append(s)
-    # de-dup preserve order
-    return list(dict.fromkeys(parts))
-
-
-def _requirements_imply_playwright(req_path: Path) -> bool:
-    try:
-        content = req_path.read_text(encoding="utf-8") if req_path.is_file() else ""
-    except Exception:
-        return False
-    return any(requirement_key(line) in _PLAYWRIGHT_REQUIREMENT_KEYS for line in content.splitlines())
-
-
-def _requirements_package_summary(content: str, *, limit: int = 24) -> Dict[str, Any]:
-    keys: List[str] = []
-    for line in (content or "").splitlines():
-        key = requirement_key(line)
-        if key and key not in keys:
-            keys.append(key)
-    return {
-        "count": len(keys),
-        "preview": keys[:limit],
-        "has_playwright": "playwright" in keys,
-        "has_patchright": "patchright" in keys,
-        "truncated": len(keys) > limit,
-    }
-
-
-def _command_exit_code(result: Any) -> Optional[int]:
-    if not isinstance(result, dict):
-        return None
-    for key in ("exit_code", "returncode", "return_code", "code"):
-        value = result.get(key)
-        if isinstance(value, int):
-            return value
-    ok = result.get("ok")
-    if ok is False:
-        return 1
-    return None
-
-
-def _command_output(result: Any) -> tuple[str, str]:
-    if not isinstance(result, dict):
-        return "", ""
-    return str(result.get("stdout") or ""), str(result.get("stderr") or "")
-
-
-def _tail(text: str, limit: int = 4000) -> str:
-    value = str(text or "")
-    return value[-limit:] if len(value) > limit else value
-
-
-def _sandbox_default_environment() -> Dict[str, str]:
-    """默认注入到沙箱的运行环境。"""
-    browsers_path = (os.getenv("PLAYWRIGHT_BROWSERS_PATH") or "/ms-playwright").strip()
-    env: Dict[str, str] = {}
-    if browsers_path:
-        env["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
-    return env
-
-
-def _requirements_b64(content: str) -> str:
-    normalized = (content or "").strip()
-    if not normalized:
-        return ""
-    return base64.b64encode(normalized.encode("utf-8")).decode("ascii")
-
-
-def _env_float(name: str) -> Optional[float]:
-    raw = (os.getenv(name) or "").strip()
-    if not raw:
-        return None
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("sandbox_env_invalid_float name=%s value=%s", name, raw)
-        return None
-    if value <= 0:
-        logger.warning("sandbox_env_non_positive_float name=%s value=%s", name, raw)
-        return None
-    return value
-
-
-def _env_int(name: str) -> Optional[int]:
-    raw = (os.getenv(name) or "").strip()
-    if not raw:
-        return None
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("sandbox_env_invalid_int name=%s value=%s", name, raw)
-        return None
-    if value <= 0:
-        logger.warning("sandbox_env_non_positive_int name=%s value=%s", name, raw)
-        return None
-    return value
-
-def _network_allowed_for_tool(tool_name: str) -> bool:
-    """
-    Decide whether sandbox may access network for a given tool.
-
-    - SANDBOX_ALLOW_NETWORK=1 and SANDBOX_NETWORK_TOOL_ALLOWLIST empty => allow for all tools (legacy behavior)
-    - SANDBOX_NETWORK_TOOL_ALLOWLIST non-empty => only allow if tool_name in allowlist (or '*')
-    - 配置里常写 run_skill_script，实际工具名为 run_skill_script_<skill_id>，二者等价放行
-    - SANDBOX_ALLOW_NETWORK=0 => deny unless allowlist is explicitly configured (opt-in)
-    """
-    name = (tool_name or "").strip()
-    allowlist = _env_csv("SANDBOX_NETWORK_TOOL_ALLOWLIST")
-    allow_global = _env_truthy("SANDBOX_ALLOW_NETWORK", default="0")
-    if allowlist:
-        if "*" in allowlist:
-            return True
-        if name in allowlist:
-            return True
-        if name.startswith("run_skill_script_") and "run_skill_script" in allowlist:
-            return True
-        return False
-    return bool(allow_global)
 
 
 @dataclass
@@ -225,74 +91,6 @@ class SandboxExecutionRequest:
     runtime_profile: str = "standard"
     policy: Optional[SandboxPolicy] = None
     cwd: str = ""
-
-
-def policy_mount_fingerprint(policy: SandboxPolicy) -> str:
-    parts = [policy.fs_root or ""]
-    for m in sorted(policy.volume_mounts or [], key=lambda x: (x.target, x.source)):
-        parts.append(f"{m.source}|{m.target}|{int(m.read_only)}|{m.mount_type}")
-    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
-
-
-def handle_cache_key(user_id: str, session_id: str = "") -> str:
-    uid = (user_id or "").strip() or "anonymous"
-    sid = (session_id or "").strip()
-    return f"{uid}:{sid}" if sid else uid
-
-
-def request_handle_cache_key(req: SandboxExecutionRequest, user_id: str, *, session_isolation: bool) -> str:
-    if (req.tool_name or "").strip() == "__sandbox_workspace_fs__":
-        return handle_cache_key(f"{user_id}:workspace", req.session_id)
-    return handle_cache_key(user_id, req.session_id if session_isolation else "")
-
-
-def request_needs_user_requirements(req: SandboxExecutionRequest) -> bool:
-    return (req.tool_name or "").strip() != "__sandbox_workspace_fs__"
-
-
-def to_workspace_inner_path(rel: str) -> str:
-    r = (rel or "").strip().lstrip("/").replace("..", "")
-    return f"/workspace/{r}" if r else "/workspace"
-
-
-def _sandbox_image_for_user(user_id: str) -> tuple[str, str]:
-    uid = (user_id or "").strip()
-    settings_exists = False
-    requirements_imply_playwright = False
-    settings_path_text = ""
-    if uid:
-        try:
-            user_ctx = get_user_context_for(uid)
-            config_dir = user_ctx.config_dir / "sandbox"
-            settings_path = sandbox_settings_path(config_dir)
-            settings_path_text = str(settings_path)
-            settings_exists = settings_path.is_file()
-            variant = read_sandbox_variant(config_dir)
-            requirements_imply_playwright = _requirements_imply_playwright(config_dir / "requirements.txt")
-            if not settings_exists and requirements_imply_playwright:
-                variant = SANDBOX_VARIANT_PLAYWRIGHT
-        except Exception as exc:
-            logger.warning(
-                "st49_sandbox_image_policy_failed code=image_policy_read_failed user_id=%s settings_path=%s err=%s",
-                uid,
-                settings_path_text,
-                str(exc)[:500],
-            )
-            variant = "standard"
-    else:
-        variant = "standard"
-    image_ref = image_for_variant(variant)
-    logger.info(
-        "st49_sandbox_image_policy code=image_policy_resolved user_id=%s variant=%s image_ref=%s settings_exists=%s requirements_imply_playwright=%s env_standard_set=%s env_playwright_set=%s",
-        uid or "<empty>",
-        variant,
-        image_ref,
-        settings_exists,
-        requirements_imply_playwright,
-        bool((os.getenv("SANDBOX_STANDARD_IMAGE") or "").strip()),
-        bool((os.getenv("SANDBOX_PLAYWRIGHT_IMAGE") or "").strip()),
-    )
-    return variant, image_ref
 
 
 class SandboxService:
@@ -354,135 +152,9 @@ class SandboxService:
             return False
         return ("not found" in msg) or ("no such" in msg) or ("invalid sandbox" in msg)
 
-    def _apply_fixed_resource_policy(self, policy: SandboxPolicy) -> SandboxPolicy:
-        updates: Dict[str, Any] = {}
-        if self._fixed_cpu is not None and float(policy.cpu_limit) != float(self._fixed_cpu):
-            updates["cpu_limit"] = self._fixed_cpu
-        if self._fixed_memory_mb is not None and int(policy.memory_limit_mb) != int(self._fixed_memory_mb):
-            updates["memory_limit_mb"] = self._fixed_memory_mb
-        default_env = _sandbox_default_environment()
-        merged_env = {**default_env, **dict(policy.environment or {})}
-        if merged_env != dict(policy.environment or {}):
-            updates["environment"] = merged_env
-        if updates:
-            return replace(policy, **updates)
-        return policy
-
-    def _apply_user_image_policy(self, policy: SandboxPolicy, user_id: str) -> SandboxPolicy:
-        variant, image_ref = _sandbox_image_for_user(user_id)
-        if policy.image_ref == image_ref:
-            return policy
-        env = {**dict(policy.environment or {}), "SANDBOX_IMAGE_VARIANT": variant}
-        return replace(policy, image_ref=image_ref, environment=env)
-
-    def _build_mounts_for_request(
-        self, req: SandboxExecutionRequest
-    ) -> tuple[Path, Optional[Path], list]:
-        host_sessions_root = host_sessions_root_from_workspace(req.workspace_path)
-        self._ensure_mount_source_ready(host_sessions_root)
-        skills_root: Optional[Path] = None
-        uid = (req.user_id or "").strip()
-        if uid:
-            try:
-                skills_root = get_user_context_for(uid).skills_dir.resolve()
-            except Exception:
-                skills_root = None
-        if skills_root is not None:
-            mounts = SandboxMountPolicy.workspace_with_all_skills(
-                workspace_sessions_host_path=host_sessions_root,
-                skills_root_host_path=skills_root,
-                workspace_target=sandbox_sessions_root(),
-            )
-        else:
-            mounts = SandboxMountPolicy.workspace_sessions_root_only(
-                workspace_sessions_host_path=host_sessions_root
-            )
-        return host_sessions_root, skills_root, mounts
-
-    @staticmethod
-    def _ensure_mount_source_ready(path: Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        sentinel = path / ".st49-mount-ready"
-        if not sentinel.exists():
-            sentinel.write_text("ready\n", encoding="utf-8")
-
     @staticmethod
     def _resolve_cwd(policy: SandboxPolicy, req: SandboxExecutionRequest) -> str:
-        desired = (req.cwd or "").strip() or sandbox_session_dir(req.session_id)
-        targets = {str(m.target or "").strip() for m in (policy.volume_mounts or []) if str(m.target or "").strip()}
-        if desired == "/":
-            return desired
-        if desired.startswith("/workspace"):
-            if "/workspace" in targets:
-                return desired
-            return "/"
-        return desired
-
-    def _workspace_only_policy(self, sessions_root_path: Path, *, timeout_ms: int = 60_000) -> SandboxPolicy:
-        mounts = SandboxMountPolicy.workspace_sessions_root_only(workspace_sessions_host_path=sessions_root_path)
-        return SandboxPolicy(
-            fs_root=str(sessions_root_path.resolve()),
-            workspace_host_path=str(sessions_root_path.resolve()),
-            volume_mounts=mounts,
-            timeout_ms=max(1000, int(timeout_ms)),
-            tool_allowlist=[],
-            runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
-            runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
-            allow_network=False,
-            allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
-        )
-
-    def _workspace_with_skills_policy(
-        self,
-        sessions_root_path: Path,
-        *,
-        skills_root_path: Path,
-        timeout_ms: int = 60_000,
-    ) -> SandboxPolicy:
-        mounts = SandboxMountPolicy.workspace_with_all_skills(
-            workspace_sessions_host_path=sessions_root_path,
-            skills_root_host_path=skills_root_path,
-            workspace_target=SANDBOX_WORKSPACE_ROOT,
-        )
-        return SandboxPolicy(
-            fs_root=str(sessions_root_path.resolve()),
-            workspace_host_path=str(sessions_root_path.resolve()),
-            skill_scripts_host_path=str(skills_root_path.resolve()),
-            timeout_ms=max(1000, int(timeout_ms)),
-            tool_allowlist=[],
-            runtime_backend=os.getenv("SANDBOX_RUNTIME_BACKEND", "docker"),
-            runtime_profile=os.getenv("SANDBOX_RUNTIME_PROFILE", "standard"),
-            allow_network=False,
-            allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
-            volume_mounts=mounts,
-        )
-
-    @staticmethod
-    def _cached_handle_still_valid(handle: SandboxHandle, policy: SandboxPolicy, tool_name: str) -> bool:
-        """
-        单用户沙箱会复用同一 OpenSandbox 会话。创建时写入的 policy.tool_allowlist 与挂载指纹若与当前请求不一致，
-        必须丢弃缓存，否则会误拦后续工具（例如先跑 A 技能再跑 sandbox-dep-check）。
-        """
-        meta = handle.metadata if isinstance(handle.metadata, dict) else {}
-        old_fp = str(meta.get("mount_fingerprint") or "").strip()
-        new_fp = policy_mount_fingerprint(policy)
-        if not old_fp or old_fp != new_fp:
-            return False
-        old_image_ref = str(meta.get("image_ref") or "").strip()
-        new_image_ref = str(policy.image_ref or "").strip()
-        if old_image_ref != new_image_ref:
-            return False
-        old_policy = meta.get("policy")
-        old_allow: list[str] = []
-        if isinstance(old_policy, dict):
-            old_allow = list(old_policy.get("tool_allowlist") or [])
-        tn = (tool_name or "").strip()
-        if old_allow and tn and tn not in old_allow:
-            return False
-        stored_net = meta.get("policy_allow_network")
-        if stored_net is not None and bool(stored_net) != bool(policy.allow_network):
-            return False
-        return True
+        return resolve_cwd(policy, session_id=req.session_id, cwd=req.cwd)
 
     def _requirements_hash_for_user(self, user_id: str) -> str:
         txt = self._read_user_sandbox_requirements(user_id)
@@ -696,7 +368,10 @@ class SandboxService:
             policy = req.policy
             if final_net != bool(req.policy.allow_network):
                 policy = replace(req.policy, allow_network=final_net)
-            host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
+            host_sessions_root, skills_root, mounts = build_mounts_for_request(
+                user_id=req.user_id,
+                workspace_path=req.workspace_path,
+            )
             updates: Dict[str, Any] = {}
             # 用户级单沙箱复用模式：不按工具名做 allowlist 限制，避免跨工具调用被旧策略误拦截。
             if list(policy.tool_allowlist or []):
@@ -710,9 +385,18 @@ class SandboxService:
                 updates["skill_scripts_host_path"] = str(skills_root.resolve())
             if updates:
                 policy = replace(policy, **updates)
-            return self._apply_user_image_policy(self._apply_fixed_resource_policy(policy), req.user_id)
-        host_sessions_root, skills_root, mounts = self._build_mounts_for_request(req)
-        return self._apply_user_image_policy(self._apply_fixed_resource_policy(SandboxPolicy(
+            policy = apply_fixed_resource_policy(
+                policy,
+                fixed_cpu=self._fixed_cpu,
+                fixed_memory_mb=self._fixed_memory_mb,
+                default_env=_sandbox_default_environment(),
+            )
+            return apply_user_image_policy(policy, req.user_id)
+        host_sessions_root, skills_root, mounts = build_mounts_for_request(
+            user_id=req.user_id,
+            workspace_path=req.workspace_path,
+        )
+        policy = SandboxPolicy(
             fs_root=str(host_sessions_root.resolve()),
             workspace_host_path=str(host_sessions_root.resolve()),
             skill_scripts_host_path=str(skills_root) if skills_root else "",
@@ -725,11 +409,23 @@ class SandboxService:
             volume_mounts=mounts,
             allow_network=_network_allowed_for_tool(req.tool_name),
             allowed_hosts=_env_csv("SANDBOX_ALLOWED_HOSTS"),
-        )), req.user_id)
+        )
+        policy = apply_fixed_resource_policy(
+            policy,
+            fixed_cpu=self._fixed_cpu,
+            fixed_memory_mb=self._fixed_memory_mb,
+            default_env=_sandbox_default_environment(),
+        )
+        return apply_user_image_policy(policy, req.user_id)
 
     async def _ensure_user_handle(self, req: SandboxExecutionRequest, policy: SandboxPolicy) -> SandboxHandle:
         user_id = (req.user_id or "").strip() or f"session:{req.session_id}"
-        key = request_handle_cache_key(req, user_id, session_isolation=self._session_isolation)
+        key = request_handle_cache_key(
+            tool_name=req.tool_name,
+            user_id=user_id,
+            session_id=req.session_id,
+            session_isolation=self._session_isolation,
+        )
         user_lock = await self._ensure_lock_for_key(key)
         async with user_lock:
             return await self._ensure_user_handle_locked(req, policy, user_id=user_id, key=key)
@@ -745,7 +441,7 @@ class SandboxService:
         now = time.time()
         ensure_started_at = time.perf_counter()
         logical_sid = key
-        needs_requirements = request_needs_user_requirements(req)
+        needs_requirements = request_needs_user_requirements(req.tool_name)
         async with self._lock:
             existing = self._user_handles.get(key)
             if existing is not None:
@@ -863,7 +559,7 @@ class SandboxService:
                         )
                 else:
                     ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
-                    if ttl_ok and self._cached_handle_still_valid(
+                    if ttl_ok and cached_handle_still_valid(
                         handle, policy, req.tool_name
                     ):
                         self._user_handles[key] = (handle, now)
@@ -1408,7 +1104,7 @@ class SandboxService:
         timeout_ms: int,
     ) -> SandboxHandle:
         host_sessions_root = host_sessions_root_from_workspace(workspace_path)
-        policy = self._workspace_only_policy(host_sessions_root, timeout_ms=timeout_ms)
+        policy = workspace_only_policy(host_sessions_root, timeout_ms=timeout_ms)
         req = SandboxExecutionRequest(
             user_id=user_id,
             session_id=session_id,
@@ -1424,97 +1120,6 @@ class SandboxService:
         )
         return await self._ensure_user_handle(req, policy)
 
-    @staticmethod
-    def _workspace_host_file(*, workspace_path: Path, rel_path: str) -> tuple[str, Path]:
-        session_rel = normalize_rel_path(rel_path)
-        target = ensure_within_root(workspace_path / session_rel, workspace_path)
-        return session_rel, target
-
-    @classmethod
-    def _read_workspace_text_on_host(cls, *, workspace_path: Path, rel_path: str) -> str:
-        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
-        if not target.exists() or target.is_dir():
-            raise FileNotFoundError(session_rel)
-        return target.read_bytes().decode("utf-8")
-
-    @classmethod
-    def _write_workspace_text_on_host(cls, *, workspace_path: Path, rel_path: str, content: str) -> tuple[str, int]:
-        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        data = str(content or "").encode("utf-8")
-        target.write_bytes(data)
-        return session_rel, len(data)
-
-    @classmethod
-    def _mkdir_workspace_on_host(cls, *, workspace_path: Path, rel_path: str) -> str:
-        session_rel, target = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_path)
-        target.mkdir(parents=True, exist_ok=True)
-        return session_rel
-
-    @classmethod
-    def _list_workspace_files_on_host(
-        cls,
-        *,
-        workspace_path: Path,
-        session_id: str,
-        rel_prefix: str = "",
-    ) -> list[dict[str, Any]]:
-        root_rel, root = cls._workspace_host_file(workspace_path=workspace_path, rel_path=rel_prefix)
-        if not root.exists():
-            return []
-        files = [root] if root.is_file() else sorted([p for p in root.rglob("*") if p.is_file()])
-        session_root = sandbox_session_dir(session_id).rstrip("/")
-        out: list[dict[str, Any]] = []
-        for p in files:
-            rel = str(p.relative_to(workspace_path)).replace("\\", "/")
-            out.append(
-                {
-                    "path": f"{session_root}/{rel}",
-                    "name": p.name,
-                    "size": p.stat().st_size,
-                    "is_dir": False,
-                    "task_id": f"{session_root}/{root_rel}".rstrip("/"),
-                }
-            )
-        return out
-
-    @classmethod
-    def _workspace_rel_from_shell_arg(cls, *, session_id: str, raw_path: str) -> str:
-        raw = str(raw_path or "").strip().replace("\\", "/")
-        session_root = sandbox_session_dir(session_id).rstrip("/")
-        if raw == session_root:
-            return ""
-        if raw.startswith(session_root + "/"):
-            return normalize_rel_path(raw[len(session_root) + 1 :])
-        if raw.startswith("/workspace/"):
-            raise ValueError("路径不在当前工作区")
-        return normalize_rel_path(raw)
-
-    @classmethod
-    def _exec_workspace_shell_on_host(
-        cls,
-        *,
-        session_id: str,
-        workspace_path: Path,
-        argv: List[str],
-    ) -> Dict[str, Any] | None:
-        args = [str(x) for x in (argv or [])]
-        if len(args) >= 3 and args[0] == "mkdir" and args[1] == "-p":
-            rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[2])
-            cls._mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=rel)
-            return {"exit_code": 0, "stdout": "", "stderr": "", "complete": True}
-        if len(args) == 3 and args[0] == "mv":
-            src_rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[1])
-            dst_rel = cls._workspace_rel_from_shell_arg(session_id=session_id, raw_path=args[2])
-            _src_rel, src = cls._workspace_host_file(workspace_path=workspace_path, rel_path=src_rel)
-            _dst_rel, dst = cls._workspace_host_file(workspace_path=workspace_path, rel_path=dst_rel)
-            if not src.exists():
-                raise FileNotFoundError(src_rel)
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            src.rename(dst)
-            return {"exit_code": 0, "stdout": "", "stderr": "", "complete": True}
-        return None
-
     async def read_workspace_text(
         self,
         *,
@@ -1527,7 +1132,7 @@ class SandboxService:
     ) -> str:
         started_at = time.perf_counter()
         session_rel = normalize_rel_path(rel_path)
-        text = self._read_workspace_text_on_host(workspace_path=workspace_path, rel_path=session_rel)
+        text = read_workspace_text_on_host(workspace_path=workspace_path, rel_path=session_rel)
         logger.info(
             "sandbox_workspace_read_host_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s",
             user_id,
@@ -1551,7 +1156,7 @@ class SandboxService:
     ) -> None:
         started_at = time.perf_counter()
         session_rel = normalize_rel_path(rel_path)
-        session_rel, byte_count = self._write_workspace_text_on_host(
+        session_rel, byte_count = write_workspace_text_on_host(
             workspace_path=workspace_path,
             rel_path=session_rel,
             content=content,
@@ -1576,7 +1181,7 @@ class SandboxService:
     ) -> None:
         started_at = time.perf_counter()
         session_rel = normalize_rel_path(rel_path)
-        session_rel = self._mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=session_rel)
+        session_rel = mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=session_rel)
         logger.info(
             "sandbox_workspace_mkdir_host_done user_id=%s session_id=%s path=%s elapsed_ms=%s",
             user_id,
@@ -1596,7 +1201,7 @@ class SandboxService:
     ) -> List[Dict[str, Any]]:
         started_at = time.perf_counter()
         root_rel = normalize_rel_path(rel_prefix)
-        items = self._list_workspace_files_on_host(
+        items = list_workspace_files_on_host(
             workspace_path=workspace_path,
             session_id=session_id,
             rel_prefix=root_rel,
@@ -1623,7 +1228,7 @@ class SandboxService:
         timeout_ms: int = 120_000,
     ) -> Dict[str, Any]:
         started_at = time.perf_counter()
-        host_result = self._exec_workspace_shell_on_host(
+        host_result = exec_workspace_shell_on_host(
             session_id=session_id,
             workspace_path=workspace_path,
             argv=argv,
@@ -1683,7 +1288,7 @@ class SandboxService:
 
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
         policy = await self._build_policy(req)
-        cwd = self._resolve_cwd(policy, req)
+        cwd = resolve_cwd(policy, session_id=req.session_id, cwd=req.cwd)
         mount_targets = [str(m.target or "") for m in (policy.volume_mounts or []) if str(m.target or "")]
         payload = req.payload if isinstance(req.payload, dict) else {}
         command = payload.get("__sandbox_command")
@@ -1887,12 +1492,18 @@ class SandboxService:
         workspaces_subdir = (os.getenv("WORKSPACES_SUBDIR") or "workspaces").strip() or "workspaces"
         workspaces_root = (user_ctx.agent_outputs_dir / workspaces_subdir).resolve()
         workspaces_root.mkdir(parents=True, exist_ok=True)
-        policy = self._workspace_with_skills_policy(
+        policy = workspace_with_skills_policy(
             workspaces_root,
             skills_root_path=user_ctx.skills_dir.resolve(),
             timeout_ms=timeout_ms,
         )
-        policy = self._apply_user_image_policy(self._apply_fixed_resource_policy(policy), uid)
+        policy = apply_fixed_resource_policy(
+            policy,
+            fixed_cpu=self._fixed_cpu,
+            fixed_memory_mb=self._fixed_memory_mb,
+            default_env=_sandbox_default_environment(),
+        )
+        policy = apply_user_image_policy(policy, uid)
         if (self._read_user_sandbox_requirements(uid) or "").strip() and not policy.allow_network:
             policy = replace(policy, allow_network=True)
         req = SandboxExecutionRequest(

@@ -448,7 +448,7 @@ async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_pat
 async def test_build_policy_creates_missing_workspace_mount_root(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -478,7 +478,7 @@ async def test_build_policy_creates_missing_workspace_mount_root(monkeypatch, tm
 async def test_create_host_path_mount_failure_reports_docker_desktop_hint(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = HostPathMountFailAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -508,7 +508,7 @@ async def test_create_host_path_mount_failure_reports_docker_desktop_hint(monkey
 async def test_create_lifecycle_connect_failure_is_non_retryable_environment_error(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = LifecycleConnectFailAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -539,7 +539,7 @@ async def test_create_lifecycle_connect_failure_is_non_retryable_environment_err
 async def test_read_workspace_text_falls_back_to_host_when_opensandbox_unreachable(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello from host workspace", encoding="utf-8")
@@ -563,7 +563,7 @@ async def test_read_workspace_text_skips_opensandbox_create_when_target_unreacha
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello without opensandbox logs", encoding="utf-8")
@@ -590,7 +590,7 @@ async def test_read_workspace_text_skips_opensandbox_create_when_target_unreacha
 async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     out = await svc.prewarm_user_sandbox("alice", reason="test")
@@ -606,7 +606,7 @@ async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
 async def test_prewarm_reads_saved_playwright_variant(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     settings_path = user_root / "config" / "sandbox" / "sandbox" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text('{"image_variant": "playwright"}\n', encoding="utf-8")
@@ -624,7 +624,7 @@ async def test_prewarm_reads_saved_playwright_variant(monkeypatch, tmp_path):
 async def test_prewarm_infers_playwright_from_browser_requirements(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("playwright>=1.52.0\npatchright>=1.52.5\n", encoding="utf-8")
@@ -687,7 +687,7 @@ async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeyp
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC", "120")
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     adapter = CleanupAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
     await svc.prewarm_user_sandbox("alice", reason="test")
@@ -752,7 +752,7 @@ async def test_default_sandbox_requirements_hash_regression(monkeypatch, tmp_pat
 async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -768,7 +768,7 @@ async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_
 async def test_playwright_variant_does_not_install_browsers_by_default(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     settings_path = user_root / "config" / "sandbox" / "sandbox" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text('{"image_variant": "playwright"}\n', encoding="utf-8")
@@ -802,7 +802,7 @@ async def test_playwright_variant_does_not_install_browsers_by_default(monkeypat
 async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -822,7 +822,7 @@ async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_p
 async def test_incomplete_requirements_install_does_not_mark_verified(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -841,7 +841,7 @@ async def test_incomplete_requirements_install_does_not_mark_verified(monkeypatc
 async def test_execute_injects_user_requirements_env_when_payload_missing(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("pendulum==3.0.0\n", encoding="utf-8")
@@ -857,7 +857,7 @@ async def test_execute_injects_user_requirements_env_when_payload_missing(monkey
         payload={"__sandbox_command": ["sh", "-lc", "true"], "__sandbox_env": {}},
         timeout_ms=1000,
         runner=_ok_runner,
-        workspace_path=tmp_path / "alice" / "agent-outputs" / "workspaces" / "s1",
+        workspace_path=tmp_path / "alice" / "sessions" / "workspaces" / "s1",
     )
 
     await svc.execute(req)
@@ -873,7 +873,7 @@ async def test_execute_injects_user_requirements_env_when_payload_missing(monkey
 async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -896,7 +896,7 @@ async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
 async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -926,7 +926,7 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
 async def test_fresh_prewarm_skips_repeated_real_requirements_verify(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     req_path = user_root / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
@@ -1042,7 +1042,7 @@ async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreach
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = UnreachableOpenSandboxWorkspaceAdapter()
@@ -1088,8 +1088,8 @@ async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreach
 async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
-    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
@@ -1128,8 +1128,8 @@ async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeyp
 async def test_build_policy_fills_mounts_when_req_policy_missing_them(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    (user_root / "skills").mkdir(parents=True, exist_ok=True)
-    workspace_root = user_root / "agent-outputs" / "workspaces" / "sess-1"
+    (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
+    workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
     svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
