@@ -49,6 +49,19 @@ from app.api.group_chat_state import (
     save_group_meta as _save_group_meta,
     update_group_run as _update_group_run,
 )
+from app.agent.group_context import (
+    has_auto_continue_signal as _has_auto_continue_signal,
+    has_tool_failure as _has_tool_failure,
+    is_group_context_noise as _is_group_context_noise,
+    looks_like_conclusion_text as _looks_like_conclusion_text,
+    messages_to_context as _messages_to_context,
+    messages_to_expert_context as _messages_to_expert_context,
+    normalize_compare_text as _normalize_compare_text,
+    normalize_discussion_goal as _normalize_discussion_goal,
+    scheduler_recent_context as _scheduler_recent_context,
+    shorten_text as _shorten_text,
+    title_from_first_message as _title_from_first_message,
+)
 from app.api.files import get_workspace_root_path
 from app.agent.llm_client import get_llm_from_config
 from app.agent.skill_agent_runtime import create_skill_execution_agent
@@ -347,121 +360,6 @@ async def get_group_archive(group_session_id: str):
     return {"status": "ok", "data": {"segments": segments, "agent_map": agent_map, "expert_map": agent_map}}
 
 
-def _messages_to_context(
-    messages: List[Dict[str, Any]],
-    max_turns: int = 15,
-    max_chars: int = 12000,
-    max_chars_per_message: int = 1200,
-) -> str:
-    """将群聊消息转为供领导人/DHA 使用的上下文字符串（带长度保护）。
-
-    - 限制每条消息长度，避免单条工具结果把上下文撑爆
-    - 限制总上下文长度，超限时仅保留尾部（最近信息优先）
-    """
-    recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
-    lines = []
-    for m in recent:
-        role = m.get("role", "")
-        content = (m.get("content") or "").strip()
-        if len(content) > max_chars_per_message:
-            content = content[:max_chars_per_message].rstrip() + "\n...[内容已截断]"
-        agent_id = m.get("agent_id", "")
-        if role == "user":
-            lines.append(f"【用户】{content}")
-        elif role == "host":
-            lines.append(f"【主持人】{content}")
-        else:
-            name = agent_id or "助手"
-            lines.append(f"【{name}】{content}")
-    context = "\n\n".join(lines)
-    if len(context) > max_chars:
-        context = "...[较早历史已省略]\n\n" + context[-max_chars:]
-    return context
-
-
-def _is_group_context_noise(content: str) -> bool:
-    """过滤不应再次喂给专家模型的技术错误回执，避免错误历史自我放大撑爆上下文。"""
-    s = (content or "").strip()
-    if not s:
-        return False
-    noise_markers = (
-        "抱歉，模型响应失败",
-        "Error code: 400",
-        "Error code: 404",
-        "Error code: 500",
-        "context length is only",
-        "input_tokens",
-        "gateway_tool_unavailable",
-        "gateway executor error",
-        "Model not found or no running instances available",
-        "EngineCore encountered an issue",
-        "技术原因导致",
-        "工具暂时不可用",
-        "系统暂时无法查询",
-    )
-    return any(marker in s for marker in noise_markers)
-
-
-def _messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
-    """专家执行上下文：保留最近有效业务信息，剔除技术错误回执，并控制 4k 小模型预算。"""
-    filtered: List[Dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
-    skipped = 0
-    for m in messages or []:
-        content = (m.get("content") or "").strip() if isinstance(m, dict) else ""
-        if _is_group_context_noise(content):
-            skipped += 1
-            continue
-        key = (str(m.get("role") or ""), str(m.get("agent_id") or ""), content)
-        if key in seen:
-            skipped += 1
-            continue
-        seen.add(key)
-        filtered.append(m)
-    context = _messages_to_context(
-        filtered,
-        max_turns=3,
-        max_chars=700,
-        max_chars_per_message=240,
-    )
-    if skipped:
-        logger.debug("group_expert_context_noise_filtered skipped=%s kept=%s", skipped, len(filtered))
-    return context
-
-
-def _scheduler_recent_context(group_session_id: str, messages: List[Dict[str, Any]]) -> str:
-    """主持人调度上下文：仅使用最近对话摘录。"""
-    _ = group_session_id
-    return _messages_to_context(messages)
-
-
-def _normalize_discussion_goal(raw: str, max_len: int = 200) -> str:
-    """从用户消息中提取纯讨论目标，去掉前端的「【讨论目标】」前缀，避免在 prompt 中重复出现。"""
-    if not raw or not isinstance(raw, str):
-        return (raw or "").strip()[:max_len] if raw else ""
-    s = (raw or "").strip()
-    prefix = "【讨论目标】"
-    if s.startswith(prefix):
-        s = s[len(prefix) :].lstrip("\n ")
-    return s[:max_len] if len(s) > max_len else s
-
-
-def _title_from_first_message(text: str, max_chars: int = 10) -> str:
-    """根据用户首次发送生成会话标题，约 max_chars 字以内。去掉【讨论目标】等前缀，取首行或截断。"""
-    if not text or not isinstance(text, str):
-        return ""
-    s = text.strip()
-    for prefix in ("【讨论目标】", "【给下一 DHA 的提示】"):
-        if s.startswith(prefix):
-            s = s[len(prefix) :].lstrip("\n ")
-    first_line = s.split("\n")[0].strip() if s else ""
-    if not first_line:
-        return ""
-    if len(first_line) > max_chars:
-        return first_line[:max_chars].rstrip()
-    return first_line
-
-
 async def _ai_title_from_recent_user_messages(
     llm: Any,
     messages: List[Dict[str, Any]],
@@ -729,20 +627,6 @@ def _build_next_prompt_with_memory(
     return (decision_next_prompt or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
 
 
-def _shorten_text(text: str, max_chars: int = 1800) -> str:
-    s = (text or "").strip()
-    if len(s) <= max_chars:
-        return s
-    return s[:max_chars].rstrip() + "\n...[内容已截断]"
-
-
-def _normalize_compare_text(text: str) -> str:
-    s = (text or "").lower()
-    s = re.sub(r"[\s\r\n\t]+", "", s)
-    s = re.sub(r"[`~!@#$%^&*()_\-+=\[\]{}\\|;:'\",.<>/?，。！？；：、“”‘’（）《》【】…·]", "", s)
-    return s
-
-
 def _ensure_structured_next_prompt(
     prompt: str,
     discussion_goal: str,
@@ -870,22 +754,6 @@ def _persist_expert_turn_task_files(
         (root / "speaker_task.txt").write_text(task + "\n", encoding="utf-8")
 
 
-def _looks_like_conclusion_text(text: str) -> bool:
-    s = (text or "").lower()
-    keys = (
-        "结论", "总结", "综上", "最终", "已完成", "完成了", "没有更多", "无法继续", "请用户补充", "建议用户",
-    )
-    return any(k in s for k in keys)
-
-
-def _has_tool_failure(tool_raw_results: List[str], full_content: str) -> bool:
-    blob = "\n".join([str(x or "") for x in (tool_raw_results or [])] + [str(full_content or "")]).lower()
-    fail_keys = (
-        "执行错误", "error", "failed", "exception", "traceback", "timeout", "超时", "not found", "调用异常", "无法",
-    )
-    return any(k in blob for k in fail_keys)
-
-
 def _evaluate_soft_stop(
     state: Dict[str, Any],
     current_speaker: str,
@@ -925,28 +793,6 @@ def _evaluate_soft_stop(
     if int(state.get("low_increment_streak", 0)) >= 2:
         return "连续两轮内容增量较低，建议暂停并由用户确认下一步。"
     return None
-
-
-def _has_auto_continue_signal(content: str) -> bool:
-    """自动模式下判断专家是否明确表达“将继续执行下一步”。
-
-    仅当出现明显继续推进信号时，才让同一专家在同一条流里自动连跑下一轮；
-    否则默认交还用户，避免访谈类/问答类 skill 连续自说自话。
-    """
-    text = str(content or "").strip().lower()
-    if not text:
-        return False
-    # 继续信号必须足够“显式”，避免把常见写作措辞（如“我将继续…”）误判为需要自动连跑下一轮。
-    # 如需让专家在同一条流中自动连跑，请让其输出以下任一明确标记。
-    explicit_markers = (
-        "[[AUTO_CONTINUE]]",
-        "【自动继续】",
-        "AUTO_CONTINUE",
-        "继续执行",
-        "继续处理",
-    )
-    return any(c.lower() in text for c in explicit_markers)
-
 
 def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
     """若工具结果中包含工作区图片下载链接，则自动补一段 Markdown 图片预览。"""
