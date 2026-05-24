@@ -50,12 +50,12 @@ async def test_keepalive_iter_emits_marker_while_agent_is_idle():
 
 @pytest.mark.asyncio
 async def test_runtime_state_clears_finished_active_run(monkeypatch):
-    from app.api import group_chat
+    from app.api import group_chat_state
 
     task = asyncio.create_task(asyncio.sleep(0))
     await task
     writes = []
-    group_chat._ACTIVE_GROUP_RUNS["session-done"] = {
+    group_chat_state.ACTIVE_GROUP_RUNS["session-done"] = {
         "task": task,
         "run_id": "run-done",
         "agent_id": "agent-qa",
@@ -64,15 +64,15 @@ async def test_runtime_state_clears_finished_active_run(monkeypatch):
         "started_at": "2026-05-15T00:00:00+00:00",
     }
     monkeypatch.setattr(
-        group_chat,
-        "_write_group_runtime_state",
+        group_chat_state,
+        "write_group_runtime_state",
         lambda session_id, state: writes.append((session_id, state)),
     )
     try:
         meta_item = {"runtime_state": {"running": True, "phase": "tool_running"}}
-        state = group_chat._runtime_state_for_session("session-done", meta_item)
+        state = group_chat_state.runtime_state_for_session("session-done", meta_item)
     finally:
-        group_chat._ACTIVE_GROUP_RUNS.pop("session-done", None)
+        group_chat_state.ACTIVE_GROUP_RUNS.pop("session-done", None)
 
     assert state == {"running": False}
     assert "runtime_state" not in meta_item
