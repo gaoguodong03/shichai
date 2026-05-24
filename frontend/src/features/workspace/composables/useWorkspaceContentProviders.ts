@@ -30,7 +30,7 @@ export type WorkspaceContentProps = {
 export type WorkspaceContentEmit = {
   (e: 'message-sent'): void
   (e: 'dha-added'): void
-  (e: 'scenario-new-session', sessionId: string): void
+  (e: 'scenario-new-session', sessionId: string, session?: { id: string; title?: string; updated_at?: string; agent_ids?: string[] }): void
   (e: 'middle-column-open-request'): void
   (e: 'middle-column-toggle'): void
 }
@@ -886,6 +886,20 @@ export function useWorkspaceContentProviders(args: {
     }
     saveShortcutPresets()
   }
+
+  function reusableBlankSessionIdForScenario(): string {
+    const detail = groupDetail.value
+    const selectedId = props.selectedGroupSessionId || ''
+    if (!detail || !selectedId || detail.id !== selectedId) return ''
+    if (groupStreaming.value) return ''
+    const title = (detail.title || '').trim()
+    const isPlaceholderTitle = title === '' || title === '新对话' || title === '新群聊'
+    if (!isPlaceholderTitle) return ''
+    if ((detail.messages || []).length > 0) return ''
+    if ((detail.agent_ids || []).length > 0) return ''
+    return selectedId
+  }
+
   /** 供父组件在导入场景包后拉起新会话（与快捷场景「新建会话」同一套逻辑） */
   async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
     const availableAgentIds = new Set(
@@ -919,19 +933,32 @@ export function useWorkspaceContentProviders(args: {
         body.leader_agent_id = targetExperts[0]
       }
     }
+    const reusableSessionId = reusableBlankSessionIdForScenario()
     try {
-      const r = await fetch('/api/sessions', {
-        method: 'POST',
+      const r = await fetch(reusableSessionId ? `/api/sessions/${encodeURIComponent(reusableSessionId)}` : '/api/sessions', {
+        method: reusableSessionId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const j = (await r.json().catch(() => ({}))) as { status?: string; data?: { id?: string }; detail?: string }
+      const j = (await r.json().catch(() => ({}))) as { status?: string; data?: { id?: string; title?: string; updated_at?: string; agent_ids?: string[] }; detail?: string }
       if (j.status !== 'ok' || !j.data?.id) {
         window.alert(typeof j.detail === 'string' ? j.detail : '创建会话失败')
         return null
       }
       const newId = j.data.id
-      emit('scenario-new-session', newId)
+      if (reusableSessionId && newId === reusableSessionId) {
+        const parsed = parseGroupResponse(newId, j)
+        if (parsed) {
+          groupDetail.value = {
+            ...parsed,
+            agent_map: Object.keys(parsed.agent_map || {}).length
+              ? parsed.agent_map
+              : groupDetail.value?.agent_map || {},
+          }
+        }
+        await loadGroupDetail({ silent: true })
+      }
+      emit('scenario-new-session', newId, j.data.id ? { id: newId, title: j.data.title, updated_at: j.data.updated_at, agent_ids: j.data.agent_ids } : undefined)
       return newId
     } catch {
       window.alert('创建会话失败，请检查网络')

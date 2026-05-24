@@ -1470,6 +1470,8 @@ class GroupSessionUpdate(BaseModel):
     leader_agent_id: Optional[str] = None  # 场景主持人；虚拟 id 见 VIRTUAL_SCENE_HOST_ID；空字符串表示清空
     host_config: Optional[Dict[str, Any]] = None  # 虚拟主持人配置（skill_ids / system_prompt / llm 等）
     orchestration_profile: Optional[str] = None  # recruitment | scene
+    agent_ids: Optional[List[str]] = None  # 直接替换成员；用于空白会话转换为场景，不写入邀请系统消息
+    expert_ids: Optional[List[str]] = None  # 兼容字段：expert_ids
     add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
     remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
     add_expert_ids: Optional[List[str]] = None  # 兼容字段：add_expert_ids
@@ -1803,6 +1805,22 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         if op not in ("recruitment", "scene"):
             raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
         meta[group_session_id]["orchestration_profile"] = op
+    direct_ids = body.expert_ids if body.expert_ids is not None else body.agent_ids
+    if direct_ids is not None:
+        instances = load_dha_instances()
+        id_to_preferred = _build_preferred_agent_id_map(instances)
+        preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
+        valid_ids = {d.get("agent_id") for d in preferred_instances if d.get("agent_id")}
+        direct_ids_norm = _normalize_to_preferred_agent_ids(list(direct_ids or []), id_to_preferred=id_to_preferred)
+        deduped: List[str] = []
+        for did in direct_ids_norm:
+            if did not in valid_ids:
+                raise HTTPException(status_code=400, detail=f"专家 {did} 不存在")
+            if did not in deduped:
+                deduped.append(did)
+        meta[group_session_id]["agent_ids"] = deduped
+        if deduped and str(meta[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
+            meta[group_session_id]["orchestration_profile"] = "scene"
     add_ids = (
         body.add_expert_ids
         if body.add_expert_ids is not None

@@ -13,6 +13,8 @@ type Session = {
   updated_at: string
   agent_ids: string[]
   messages: Message[]
+  leader_agent_id?: string
+  host_config?: Record<string, unknown>
 }
 
 type Agent = {
@@ -236,15 +238,18 @@ function readBody<T extends Record<string, unknown>>(route: Route): T {
 }
 
 function sessionResponse(session: Session, state: E2eState) {
-  return {
+  const response: Record<string, unknown> = {
     id: session.id,
     title: session.title,
     updated_at: session.updated_at,
     messages: session.messages,
     agent_ids: session.agent_ids,
     agent_map: Object.fromEntries(state.agents.map((a) => [a.agent_id, { name: a.name, role: a.role }])),
-    orchestration_profile: 'recruitment',
+    orchestration_profile: session.host_config ? 'scene' : 'recruitment',
   }
+  if (session.leader_agent_id) response.leader_agent_id = session.leader_agent_id
+  if (session.host_config) response.host_config = session.host_config
+  return response
 }
 
 function fileKey(workspaceId: string, path: string) {
@@ -296,12 +301,15 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { sessions: state.sessions })
     }
     if (path === '/sessions' && method === 'POST') {
+      const body = readBody<{ title?: string; agent_ids?: unknown[]; leader_agent_id?: string; host_config?: Record<string, unknown> }>(route)
       const next: Session = {
-        id: 'session-new',
-        title: '新对话',
+        id: `session-new-${state.sessions.length + 1}`,
+        title: String(body.title || '新对话'),
         updated_at: now,
-        agent_ids: [],
+        agent_ids: Array.isArray(body.agent_ids) ? body.agent_ids.map(String) : [],
         messages: [],
+        leader_agent_id: body.leader_agent_id,
+        host_config: body.host_config,
       }
       state.sessions = [next, ...state.sessions.filter((s) => s.id !== next.id)]
       state.files[fileKey(next.id, '')] = state.files[fileKey(next.id, '')] || [
@@ -320,6 +328,17 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const body = readBody<Record<string, unknown>>(route)
       if (typeof body.title === 'string') session.title = body.title
       if (Array.isArray(body.agent_ids)) session.agent_ids = body.agent_ids.map(String)
+      if (Array.isArray(body.add_agent_ids)) {
+        session.agent_ids = Array.from(new Set([...session.agent_ids, ...body.add_agent_ids.map(String)]))
+      }
+      if (Array.isArray(body.remove_agent_ids)) {
+        const remove = new Set(body.remove_agent_ids.map(String))
+        session.agent_ids = session.agent_ids.filter((id) => !remove.has(id))
+      }
+      if (typeof body.leader_agent_id === 'string') session.leader_agent_id = body.leader_agent_id
+      if (body.host_config && typeof body.host_config === 'object') {
+        session.host_config = body.host_config as Record<string, unknown>
+      }
       return ok(route, sessionResponse(session, state))
     }
     if (sessionMatch && method === 'DELETE') {

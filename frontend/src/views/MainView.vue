@@ -1827,10 +1827,13 @@ const settingsCategories: { id: SettingsCategoryId; label: string }[] = [
   { id: 'sandbox', label: '沙箱' },
 ]
 // Group
+type GroupSessionRow = { id: string; title: string; updated_at: string; agent_ids?: string[] }
 const selectedGroupSessionId = ref<string | null>(null)
-const groupSessions = ref<{ id: string; title: string; updated_at: string; agent_ids?: string[] }[]>([])
+const groupSessions = ref<GroupSessionRow[]>([])
 const groupSessionsLoading = ref(false)
 const creatingSession = ref(false)
+let groupSessionsFetchSeq = 0
+const protectedGroupSessionIds = new Set<string>()
 const dhaInstances = ref<
   {
     agent_id: string
@@ -2777,23 +2780,51 @@ async function fetchSkills(options: { silent?: boolean } = {}) {
   }
 }
 
+function upsertGroupSessionRow(row?: Partial<GroupSessionRow> | null) {
+  const id = String(row?.id || '').trim()
+  if (!id) return
+  const next: GroupSessionRow = {
+    id,
+    title: String(row?.title || '新对话'),
+    updated_at: String(row?.updated_at || new Date().toISOString()),
+    agent_ids: Array.isArray(row?.agent_ids) ? row.agent_ids : [],
+  }
+  groupSessions.value = [next, ...groupSessions.value.filter((s) => s.id !== id)]
+}
+
+function protectNewGroupSession(id: string) {
+  if (!id) return
+  protectedGroupSessionIds.add(id)
+  window.setTimeout(() => protectedGroupSessionIds.delete(id), 5000)
+}
+
 async function fetchGroupSessions() {
+  const seq = ++groupSessionsFetchSeq
   groupSessionsLoading.value = true
   try {
     const r = await fetch('/api/sessions')
     const j = await r.json()
+    if (seq !== groupSessionsFetchSeq) return
     if (j.status === 'ok' && j.data?.sessions) {
-      groupSessions.value = j.data.sessions
+      let nextSessions = (j.data.sessions || []) as GroupSessionRow[]
+      for (const protectedId of protectedGroupSessionIds) {
+        if (!nextSessions.some((s) => s.id === protectedId)) {
+          const optimistic = groupSessions.value.find((s) => s.id === protectedId)
+          if (optimistic) nextSessions = [optimistic, ...nextSessions]
+        }
+      }
+      groupSessions.value = nextSessions
       const current = selectedGroupSessionId.value
       const ids = groupSessions.value.map((s) => s.id)
       if (current && !ids.includes(current)) {
+        if (protectedGroupSessionIds.has(current)) return
         selectedGroupSessionId.value = groupSessions.value.length > 0 ? groupSessions.value[0].id : null
       } else if (!current && groupSessions.value.length > 0) {
         selectedGroupSessionId.value = groupSessions.value[0].id
       }
     }
   } finally {
-    groupSessionsLoading.value = false
+    if (seq === groupSessionsFetchSeq) groupSessionsLoading.value = false
   }
 }
 
@@ -2815,7 +2846,9 @@ async function onChatMessageSent() {
 }
 
 /** 从场景预设新建会话后：切到新会话并刷新列表 */
-async function onScenarioNewSession(sessionId: string) {
+async function onScenarioNewSession(sessionId: string, session?: Partial<GroupSessionRow>) {
+  protectNewGroupSession(sessionId)
+  upsertGroupSessionRow(session || { id: sessionId })
   selectedGroupSessionId.value = sessionId
   await fetchGroupSessions()
 }
@@ -2837,6 +2870,8 @@ async function createNewSession() {
     })
     const j = await r.json()
     if (j.status === 'ok' && j.data?.id) {
+      protectNewGroupSession(j.data.id)
+      upsertGroupSessionRow(j.data)
       selectedGroupSessionId.value = j.data.id
       await fetchGroupSessions()
     } else {

@@ -61,6 +61,34 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     assert get_after_delete.status_code == 404
 
 
+def test_update_empty_session_can_become_scene_without_join_messages(client: TestClient):
+    agent_resp = client.post("/api/agents", json={"agent_id": "agent-scene-flow", "name": "场景专家"})
+    assert agent_resp.status_code == 200
+
+    create_resp = client.post("/api/sessions", json={"title": "新对话", "agent_ids": []})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    update_resp = client.put(
+        f"/api/sessions/{session_id}",
+        json={
+            "title": "问答验收场景",
+            "agent_ids": ["agent-scene-flow"],
+            "leader_agent_id": "agent-scene-flow",
+        },
+    )
+    assert update_resp.status_code == 200
+    updated = update_resp.json()["data"]
+    assert updated["id"] == session_id
+    assert updated["title"] == "问答验收场景"
+    assert updated["agent_ids"] == ["agent-scene-flow"]
+    assert updated["orchestration_profile"] == "scene"
+
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["data"]["messages"] == []
+
+
 def test_sessions_get_returns_404_for_missing_id(client: TestClient):
     resp = client.get("/api/sessions/group-not-exist-123456")
     assert resp.status_code == 404
