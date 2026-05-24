@@ -229,9 +229,25 @@ def load_group_meta() -> Dict[str, Dict[str, Any]]:
     return {}
 
 
-def save_group_meta(meta: Dict[str, Dict[str, Any]]) -> None:
+def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bool = True) -> None:
     path = ensure_sessions_dir() / GROUP_META_FILE
-    path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    data = meta
+    if preserve_unmentioned and path.exists():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(current, dict):
+                data = dict(current)
+                for session_id, incoming_item in (meta or {}).items():
+                    current_item = current.get(session_id)
+                    if isinstance(current_item, dict) and isinstance(incoming_item, dict):
+                        current_updated_at = str(current_item.get("updated_at") or "")
+                        incoming_updated_at = str(incoming_item.get("updated_at") or "")
+                        if current_updated_at and incoming_updated_at and current_updated_at > incoming_updated_at:
+                            continue
+                    data[session_id] = incoming_item
+        except Exception:
+            data = meta
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:

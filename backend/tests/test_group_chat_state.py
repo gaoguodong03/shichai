@@ -14,6 +14,51 @@ def test_group_meta_history_round_trip(tmp_path, monkeypatch):
     assert state.load_group_history("s1")[0]["content"] == "你好"
 
 
+def test_stale_group_meta_save_preserves_sessions_created_later(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_group_meta({"long": {"title": "长对话", "updated_at": "t1"}})
+
+    stale_snapshot = state.load_group_meta()
+    state.save_group_meta(
+        {
+            "long": {"title": "长对话", "updated_at": "t1"},
+            "new": {"title": "期间新建", "updated_at": "t2"},
+        }
+    )
+
+    stale_snapshot["long"]["updated_at"] = "t3"
+    state.save_group_meta(stale_snapshot)
+
+    saved = state.load_group_meta()
+    assert saved["long"]["updated_at"] == "t3"
+    assert saved["new"]["title"] == "期间新建"
+
+
+def test_stale_group_meta_save_does_not_revert_newer_session_updates(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_group_meta(
+        {
+            "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
+            "other": {"title": "旧标题", "updated_at": "2026-05-24T10:00:00+00:00"},
+        }
+    )
+
+    stale_snapshot = state.load_group_meta()
+    state.save_group_meta(
+        {
+            "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
+            "other": {"title": "新标题", "updated_at": "2026-05-24T10:01:00+00:00"},
+        }
+    )
+
+    stale_snapshot["long"]["updated_at"] = "2026-05-24T10:02:00+00:00"
+    state.save_group_meta(stale_snapshot)
+
+    saved = state.load_group_meta()
+    assert saved["long"]["updated_at"] == "2026-05-24T10:02:00+00:00"
+    assert saved["other"]["title"] == "新标题"
+
+
 def test_build_archive_segments_ignores_host_messages():
     messages = [
         {"role": "user", "message_id": "u1", "content": "目标", "timestamp": "t1"},

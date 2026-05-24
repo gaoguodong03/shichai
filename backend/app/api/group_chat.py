@@ -1926,7 +1926,7 @@ async def delete_group_session(group_session_id: str):
     if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")
     del meta[group_session_id]
-    _save_group_meta(meta)
+    _save_group_meta(meta, preserve_unmentioned=False)
     # 删除群聊历史
     path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
     if path.exists():
