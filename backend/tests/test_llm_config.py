@@ -264,6 +264,38 @@ def test_get_client_default_omits_max_tokens(monkeypatch):
     assert "max_tokens" not in captured
 
 
+def test_get_client_default_request_timeout_is_short(monkeypatch):
+    """默认单次 LLM HTTP 等待不要长期卡住，必要时由环境变量或 provider 配置放大。"""
+    from app.agent.llm_client import QwenLLM
+
+    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+    )
+
+    assert captured["request_timeout"] == 10
+
+
+def test_get_client_request_timeout_is_capped_by_default(monkeypatch):
+    """即使配置里残留较大的 request_timeout，默认也限制单次 HTTP 等待。"""
+    from app.agent.llm_client import QwenLLM
+
+    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT_MAX", raising=False)
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen3-max",
+            provider_config={"request_timeout": 180},
+        ),
+    )
+
+    assert captured["request_timeout"] == 10
+
+
 def test_traced_client_preserves_wrapper_after_bind_tools(monkeypatch):
     """工具绑定后仍保留 trace/thinking 包装。"""
     from app.agent.llm_client import QwenLLM

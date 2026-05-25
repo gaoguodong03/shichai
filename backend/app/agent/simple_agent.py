@@ -473,14 +473,26 @@ def _tool_error_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | No
     if not isinstance(raw_outputs, list):
         return None
     for idx, raw in enumerate(raw_outputs):
+        label = _tool_call_error_label(tool_out, idx)
+        if label.startswith("run_skill_script"):
+            continue
         error_text = _error_text_from_raw_tool_output(raw)
         if not error_text:
             continue
         if _is_recoverable_coordination_tool_error(tool_out, idx, error_text):
             continue
-        label = _tool_call_error_label(tool_out, idx)
         return AIMessage(content=f"当前步骤失败：{label}\n\n{_compact_multiline_text(error_text, limit=2400)}")
     return None
+
+
+def _script_dependency_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return None
+    message = _script_dependency_fallback_summary([str(raw or "") for raw in raw_outputs])
+    if not message:
+        return None
+    return AIMessage(content=message)
 
 
 def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[str, Any]) -> bool:
@@ -565,12 +577,71 @@ def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
 
 
 def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
+    dependency_message = _script_dependency_fallback_summary(raw_outputs)
+    if dependency_message:
+        return AIMessage(content=dependency_message)
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     if summary:
         content = f"工具已执行完成，但模型没有生成最终文字总结。以下是本轮工具返回摘要：\n\n{summary}"
     else:
         content = "工具已执行完成，但模型没有生成最终文字总结；本轮没有捕获到可展示的工具返回内容。"
     return AIMessage(content=content)
+
+
+def _script_dependency_fallback_summary(raw_outputs: list[str]) -> str:
+    def _iter_json_objects(text: str):
+        decoder = json.JSONDecoder()
+        pos = 0
+        while pos < len(text):
+            start = text.find("{", pos)
+            if start < 0:
+                break
+            try:
+                obj, end = decoder.raw_decode(text[start:])
+            except Exception:
+                pos = start + 1
+                continue
+            if isinstance(obj, dict):
+                yield obj
+            pos = start + max(end, 1)
+
+    def _candidate_texts(payload: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        for key in ("stderr", "stdout", "message", "error", "gateway_error"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                out.append(value)
+        return out
+
+    def _dependency_message(payload: dict[str, Any]) -> str | None:
+        if payload.get("code") != "package_not_installed":
+            return None
+        package = str(payload.get("package") or "").strip()
+        if not package:
+            return None
+        return f"没装这个依赖：{package}"
+
+    for raw in raw_outputs or []:
+        payload = _json_loads_maybe(raw)
+        if isinstance(payload, dict):
+            msg = _dependency_message(payload)
+            if msg:
+                return msg
+            for text in _candidate_texts(payload):
+                nested = _json_loads_maybe(text)
+                if isinstance(nested, dict):
+                    msg = _dependency_message(nested)
+                    if msg:
+                        return msg
+                for obj in _iter_json_objects(text):
+                    msg = _dependency_message(obj)
+                    if msg:
+                        return msg
+        for obj in _iter_json_objects(str(raw or "")):
+            msg = _dependency_message(obj)
+            if msg:
+                return msg
+    return ""
 
 
 def _fallback_after_llm_failure_message(raw_outputs: list[str], response: BaseMessage) -> AIMessage | None:
@@ -804,6 +875,18 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": terminal_failure_message}
                     break
+                dependency_final_message = _script_dependency_direct_final_message(tool_out)
+                if dependency_final_message is not None:
+                    messages.append(dependency_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_dependency_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(dependency_final_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": dependency_final_message}
+                    break
                 tool_error_message = _tool_error_direct_final_message(tool_out)
                 if tool_error_message is not None:
                     messages.append(tool_error_message)
@@ -861,6 +944,21 @@ class SimpleAgent:
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
                     messages.append(final_message)
+                    yield {"type": "agent_step", "step": step + 2, "message": final_message}
+                    break
+                if self.synthesize_after_tools and tools:
+                    messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if not _extract_text_content(final_message).strip():
+                        final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
+                    messages.append(final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "post_tool_synthesis_unbound",
+                            "matched": True,
+                            "content_preview": _extract_text_content(final_message)[:240],
+                        }
+                    )
                     yield {"type": "agent_step", "step": step + 2, "message": final_message}
                     break
                 continue
@@ -1037,6 +1135,17 @@ class SimpleAgent:
                         }
                     )
                     break
+                dependency_final_message = _script_dependency_direct_final_message(tool_out)
+                if dependency_final_message is not None:
+                    messages.append(dependency_final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_dependency_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(dependency_final_message)[:240],
+                        }
+                    )
+                    break
                 tool_error_message = _tool_error_direct_final_message(tool_out)
                 if tool_error_message is not None:
                     messages.append(tool_error_message)
@@ -1090,6 +1199,20 @@ class SimpleAgent:
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
                     messages.append(final_message)
+                    break
+                if self.synthesize_after_tools and tools:
+                    messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
+                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if not _extract_text_content(final_message).strip():
+                        final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
+                    messages.append(final_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "post_tool_synthesis_unbound",
+                            "matched": True,
+                            "content_preview": _extract_text_content(final_message)[:240],
+                        }
+                    )
                     break
                 continue
 

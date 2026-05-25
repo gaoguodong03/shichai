@@ -4,6 +4,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent import SimpleAgent
+from app.agent.tool_spec import ToolSpec
 
 
 class _FakeClient:
@@ -331,6 +332,154 @@ async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
 
 
 @pytest.mark.asyncio
+async def test_simple_agent_uses_unbound_client_after_tool_result():
+    first = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-check",
+                "name": "run_skill_script_sandbox-dep-check",
+                "args": {"script_path": "check_pkg_version.py"},
+            }
+        ],
+    )
+
+    class _Client:
+        def __init__(self, *, root, bound: bool = False):
+            self.root = root
+            self.bound = bound
+
+        def bind_tools(self, tools, **kwargs):
+            self.root.bind_kwargs.append(kwargs)
+            return _Client(root=self.root, bound=True)
+
+        async def ainvoke(self, messages):
+            self.root.calls.append({"bound": self.bound, "message_count": len(messages)})
+            if len(self.root.calls) == 1:
+                return first
+            if self.bound:
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-repeat",
+                            "name": "run_skill_script_sandbox-dep-check",
+                            "args": {"script_path": "check_pkg_version.py"},
+                        }
+                    ],
+                )
+            return AIMessage(content="工具结果已总结")
+
+    class _LLM:
+        def __init__(self):
+            self.calls = []
+            self.bind_kwargs = []
+
+        def get_client(self):
+            return _Client(root=self)
+
+    llm = _LLM()
+    tool_round = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        tool_round["n"] += 1
+        return {
+            "messages": [ToolMessage(content="ok", tool_call_id="tc-check")],
+            "tool_calls": [
+                {
+                    "tool": "run_skill_script_sandbox-dep-check",
+                    "arguments": {"script_path": "check_pkg_version.py"},
+                }
+            ],
+            "tool_raw_outputs": ["ok"],
+        }
+
+    agent = SimpleAgent(
+        llm=llm,
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_sandbox-dep-check",
+                description="check dependency",
+                func=lambda: None,
+            )
+        ],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    assert str(out["messages"][-1].content) == "工具结果已总结"
+    assert tool_round["n"] == 1
+    assert llm.calls[0]["bound"] is True
+    assert llm.calls[1]["bound"] is False
+
+
+@pytest.mark.asyncio
+async def test_script_dependency_failure_fallback_when_final_llm_fails():
+    script_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-check",
+                "name": "run_skill_script_sandbox-dep-check",
+                "args": {"script_path": "check_pkg_version.py"},
+            }
+        ],
+    )
+    llm_failure = AIMessage(content="抱歉，模型响应失败：Connection error.")
+    raw = json.dumps(
+        {
+            "ok": False,
+            "code": "script_exit_nonzero",
+            "message": "脚本退出码 3",
+            "returncode": 3,
+            "stdout": "",
+            "stderr": (
+                "skill_python_requirements_bytes=96\n"
+                + json.dumps(
+                    {
+                        "ok": False,
+                        "code": "package_not_installed",
+                        "package": "pytest",
+                        "error": "ModuleNotFoundError: No module named 'pytest'",
+                    },
+                    ensure_ascii=False,
+                )
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [ToolMessage(content=raw, tool_call_id="tc-check")],
+            "tool_calls": [
+                {
+                    "tool": "run_skill_script_sandbox-dep-check",
+                    "arguments": {"script_path": "check_pkg_version.py"},
+                }
+            ],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([script_call, llm_failure]),
+        tools=[],
+        system_prompt="验证结束后输出 [[SKILL_SESSION_END]]。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert "没装这个依赖：pytest" in final_text
+    assert "模型响应失败" not in final_text
+
+
+@pytest.mark.asyncio
 async def test_simple_agent_reports_tool_error_without_more_llm_calls():
     read_call = AIMessage(
         content="",
@@ -391,5 +540,76 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
     assert "tc-list" not in str(getattr(out["messages"][-1], "tool_calls", ""))
     assert any(
         item.get("source") == "tool_error_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_skill_script_dependency_missing_direct_final_without_second_llm():
+    script_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-check",
+                "name": "run_skill_script_sandbox-dep-check",
+                "args": {"script_path": "check_pkg_version.py"},
+            }
+        ],
+    )
+    should_not_call = AIMessage(content="不应该等待模型总结")
+    tool_round = {"n": 0}
+    raw = json.dumps(
+        {
+            "ok": False,
+            "code": "script_exit_nonzero",
+            "message": "脚本退出码 3",
+            "returncode": 3,
+            "stdout": "",
+            "stderr": json.dumps(
+                {
+                    "ok": False,
+                    "code": "package_not_installed",
+                    "package": "pytest",
+                    "error": "ModuleNotFoundError: No module named 'pytest'",
+                },
+                ensure_ascii=False,
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+    async def _tool_runner(state, tools):
+        tool_round["n"] += 1
+        return {
+            "messages": [ToolMessage(content=raw, tool_call_id="tc-check")],
+            "tool_calls": [
+                {
+                    "tool": "run_skill_script_sandbox-dep-check",
+                    "arguments": {"script_path": "check_pkg_version.py"},
+                }
+            ],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([script_call, should_not_call]),
+        tools=[],
+        system_prompt="验证结束后输出 [[SKILL_SESSION_END]]。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert tool_round["n"] == 1
+    assert "没装这个依赖：pytest" in final_text
+    assert "不应该等待模型总结" not in final_text
+    assert not any(
+        item.get("source") == "tool_error_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+    assert any(
+        item.get("source") == "script_dependency_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )
