@@ -103,6 +103,26 @@ async def test_group_session_event_publisher_notifies_subscriber():
 
 
 @pytest.mark.asyncio
+async def test_background_stream_keeps_source_running_after_client_close():
+    from app.api.group_chat import _stream_background_events
+
+    source_finished = asyncio.Event()
+
+    async def source():
+        yield "event: content\ndata: {}\n\n"
+        await asyncio.sleep(0.01)
+        source_finished.set()
+
+    stream = _stream_background_events(source())
+    first = await stream.__anext__()
+    assert first.startswith("event: content")
+
+    await stream.aclose()
+
+    await asyncio.wait_for(source_finished.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
 async def test_astream_emits_unified_protocol_events():
     first = AIMessage(
         content="",

@@ -122,6 +122,37 @@ router = APIRouter(tags=["group_chat"], dependencies=[Depends(user_context_depen
 _SSE_AGENT_KEEPALIVE_INTERVAL_SEC = 15.0
 
 
+async def _stream_background_events(source: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Forward a run event source to one client without binding the run to that client."""
+    done = object()
+    queue: asyncio.Queue[Any] = asyncio.Queue()
+    client_attached = True
+
+    async def _pump() -> None:
+        try:
+            async for chunk in source:
+                if client_attached:
+                    queue.put_nowait(chunk)
+        finally:
+            if client_attached:
+                queue.put_nowait(done)
+
+    def _consume_task_result(task: asyncio.Task[Any]) -> None:
+        with suppress(asyncio.CancelledError, Exception):
+            task.result()
+
+    pump_task = asyncio.create_task(_pump())
+    pump_task.add_done_callback(_consume_task_result)
+    try:
+        while True:
+            item = await queue.get()
+            if item is done:
+                break
+            yield item
+    finally:
+        client_attached = False
+
+
 async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: float = _SSE_AGENT_KEEPALIVE_INTERVAL_SEC) -> AsyncIterator[Any]:
     """Yield upstream items, plus lightweight keepalive markers while the upstream is idle."""
     done = object()
@@ -2134,7 +2165,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     import json as json_module
 
-    async def event_gen():
+    async def run_events():
         nonlocal last_speaker_agent_id, agent_ids, dha_list, available_to_add, host_takeover_requested
         current_task = asyncio.current_task()
         run_id = await _register_group_run(
@@ -3224,7 +3255,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 await _finish_group_run(group_session_id, run_id)
 
     return StreamingResponse(
-        event_gen(),
+        _stream_background_events(run_events()),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
