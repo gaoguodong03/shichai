@@ -264,8 +264,8 @@ def test_get_client_default_omits_max_tokens(monkeypatch):
     assert "max_tokens" not in captured
 
 
-def test_get_client_default_request_timeout_is_short(monkeypatch):
-    """默认单次 LLM HTTP 等待不要长期卡住，必要时由环境变量或 provider 配置放大。"""
+def test_get_client_default_request_timeout_is_interactive_budget(monkeypatch):
+    """默认单次 LLM HTTP 等待不要过长；慢模型可用 provider 配置单独放大。"""
     from app.agent.llm_client import QwenLLM
 
     monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
@@ -274,11 +274,11 @@ def test_get_client_default_request_timeout_is_short(monkeypatch):
         QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
     )
 
-    assert captured["request_timeout"] == 10
+    assert captured["request_timeout"] == 60
 
 
-def test_get_client_request_timeout_is_capped_by_default(monkeypatch):
-    """即使配置里残留较大的 request_timeout，默认也限制单次 HTTP 等待。"""
+def test_get_client_request_timeout_provider_config_can_extend_default(monkeypatch):
+    """provider 配置中的 request_timeout 默认生效，不被隐式 10s 上限截断。"""
     from app.agent.llm_client import QwenLLM
 
     monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
@@ -293,7 +293,39 @@ def test_get_client_request_timeout_is_capped_by_default(monkeypatch):
         ),
     )
 
-    assert captured["request_timeout"] == 10
+    assert captured["request_timeout"] == 180
+
+
+def test_get_client_default_max_retries_is_zero(monkeypatch):
+    """默认失败即失败，避免一次请求超时后继续重试拖慢前端反馈。"""
+    from app.agent.llm_client import QwenLLM
+
+    monkeypatch.delenv("QWEN_MAX_RETRIES", raising=False)
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+    )
+
+    assert captured["max_retries"] == 0
+
+
+def test_get_client_request_timeout_can_be_capped_by_env(monkeypatch):
+    """需要快速失败时，可显式设置 QWEN_REQUEST_TIMEOUT_MAX 做上限。"""
+    from app.agent.llm_client import QwenLLM
+
+    monkeypatch.delenv("QWEN_REQUEST_TIMEOUT", raising=False)
+    monkeypatch.setenv("QWEN_REQUEST_TIMEOUT_MAX", "30")
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            model="qwen3-max",
+            provider_config={"request_timeout": 180},
+        ),
+    )
+
+    assert captured["request_timeout"] == 30
 
 
 def test_traced_client_preserves_wrapper_after_bind_tools(monkeypatch):

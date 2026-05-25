@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -112,6 +113,30 @@ def runtime_state_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _runtime_state_stale_seconds() -> int:
+    raw = (os.getenv("GROUP_RUNTIME_STATE_STALE_SECONDS") or "1800").strip()
+    try:
+        return max(0, int(raw))
+    except Exception:
+        return 1800
+
+
+def _stored_runtime_state_is_stale(stored: Any) -> bool:
+    if not isinstance(stored, dict) or stored.get("running") is not True:
+        return False
+    started_raw = str(stored.get("started_at") or "").strip()
+    if not started_raw:
+        return True
+    try:
+        started = datetime.fromisoformat(started_raw.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - started.astimezone(timezone.utc)).total_seconds()
+    return age >= _runtime_state_stale_seconds()
+
+
 def runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
     active = ACTIVE_GROUP_RUNS.get(group_session_id)
     if active:
@@ -129,6 +154,17 @@ def runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) 
         else:
             return runtime_state_for_active_run(active)
     stored = meta_item.get("runtime_state")
+    if _stored_runtime_state_is_stale(stored):
+        logger.warning(
+            "group_chat_runtime_state_stale_stored session=%s run_id=%s phase=%s started_at=%s",
+            group_session_id,
+            str(stored.get("run_id") or "") if isinstance(stored, dict) else "",
+            str(stored.get("phase") or "") if isinstance(stored, dict) else "",
+            str(stored.get("started_at") or "") if isinstance(stored, dict) else "",
+        )
+        meta_item.pop("runtime_state", None)
+        write_group_runtime_state(group_session_id, None)
+        return {"running": False}
     return stored if isinstance(stored, dict) else {"running": False}
 
 

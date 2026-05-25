@@ -140,6 +140,23 @@ def skill_session_over_from_tool_outputs(
     return last_over
 
 
+def audio_transcription_success_from_tool_outputs(
+    raw_outputs: Iterable[str] | None,
+    tool_names: Iterable[str] | None = None,
+) -> bool:
+    names = [str(name or "") for name in tool_names] if tool_names is not None else None
+    if names is None or not any(name.startswith("run_skill_script_audio-transcription") for name in names):
+        return False
+    for payload in _iter_tool_payloads(raw_outputs, tool_names):
+        if payload.get("ok") is not True:
+            continue
+        code = str(payload.get("code") or "").strip()
+        text = str(payload.get("text") or "").strip()
+        if code == "transcribed" and text:
+            return True
+    return False
+
+
 def resolve_skill_session_state(
     raw_content: str,
     tool_raw_outputs: Iterable[str] | None = None,
@@ -162,4 +179,6 @@ def resolve_skill_session_state(
     over_from_script = skill_session_over_from_tool_outputs(tool_raw_outputs, tool_names)
     if over_from_script is not None:
         return SkillSessionStateResolution(over_from_script, display_content, "script_stdout")
+    if audio_transcription_success_from_tool_outputs(tool_raw_outputs, tool_names):
+        return SkillSessionStateResolution(True, display_content, "audio_transcription_success")
     return SkillSessionStateResolution(None, display_content, "none")

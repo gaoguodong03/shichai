@@ -94,3 +94,23 @@ def test_runtime_state_clears_done_task(tmp_path, monkeypatch):
     finally:
         state.ACTIVE_GROUP_RUNS.clear()
         loop.close()
+
+
+def test_runtime_state_clears_stale_stored_run_without_active_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setenv("GROUP_RUNTIME_STATE_STALE_SECONDS", "60")
+    state.ACTIVE_GROUP_RUNS.clear()
+
+    meta_item = {
+        "runtime_state": {
+            "running": True,
+            "run_id": "old-run",
+            "phase": "tool_running",
+            "started_at": "2026-05-24T00:00:00+00:00",
+        }
+    }
+
+    runtime = state.runtime_state_for_session("s1", meta_item)
+
+    assert runtime == {"running": False}
+    assert "runtime_state" not in meta_item

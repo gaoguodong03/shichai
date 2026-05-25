@@ -12,7 +12,7 @@ class _FakeClient:
         self._responses = list(responses)
         self._idx = 0
 
-    def bind_tools(self, tools):
+    def bind_tools(self, tools, *args, **kwargs):
         return self
 
     async def ainvoke(self, messages):
@@ -277,6 +277,102 @@ async def test_simple_agent_direct_final_for_large_script_success_without_second
     assert "fetch log" not in final_text
     assert any(
         item.get("source") == "large_run_skill_script_success_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
+    transcript = "完整转写内容。" + ("很长的音频文本。" * 700)
+    asr_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-asr",
+                "name": "audio-asr_transcribe_audio_file",
+                "args": {
+                    "path": "backend/data/users/u/sessions/workspaces/g/a.mp3",
+                    "chunk_seconds": 120,
+                },
+            }
+        ],
+    )
+    should_not_call = AIMessage(content="不应该为了音频转写再次调用模型")
+
+    async def _tool_runner(state, tools):
+        raw = json.dumps({"ok": True, "text": transcript, "segment_count": 1}, ensure_ascii=False)
+        return {
+            "messages": [ToolMessage(content=raw[:4000] + "\n...[工具结果已截断]", tool_call_id="tc-asr")],
+            "tool_calls": [
+                {
+                    "tool": "audio-asr_transcribe_audio_file",
+                    "arguments": {"path": "backend/data/users/u/sessions/workspaces/g/a.mp3"},
+                }
+            ],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([asr_call, should_not_call]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="转文字")]})
+
+    assert str(out["messages"][-1].content) == transcript
+    assert "不应该" not in str(out["messages"][-1].content)
+    assert any(
+        item.get("source") == "audio_transcription_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_forces_audio_asr_tool_for_audio_file_ref_before_llm_reply():
+    stale_reply = AIMessage(content="我会复述旧的截断结果，但不应该被调用")
+    transcript = "完整音频转写"
+    called = {"tool": 0}
+
+    async def _tool_runner(state, tools):
+        called["tool"] += 1
+        last = state["messages"][-1]
+        tool_calls = getattr(last, "tool_calls", None) or []
+        assert tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
+        assert tool_calls[0]["args"]["path"] == "学生降转及研究方向调整.mp3"
+        raw = json.dumps({"ok": True, "text": transcript, "segment_count": 1}, ensure_ascii=False)
+        return {
+            "messages": [ToolMessage(content=raw, tool_call_id=tool_calls[0]["id"])],
+            "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": tool_calls[0]["args"]}],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([stale_reply]),
+        tools=[ToolSpec(name="audio-asr_transcribe_audio_file", description="转写音频")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=3,
+    )
+
+    out = await agent.ainvoke(
+        {
+            "messages": [
+                HumanMessage(
+                    content="请转文字\n【文件引用：学生降转及研究方向调整.mp3｜学生降转及研究方向调整.mp3】"
+                )
+            ],
+            "workspace_id": "group-audio",
+        }
+    )
+
+    assert called["tool"] == 1
+    assert str(out["messages"][-1].content) == transcript
+    assert "旧的截断" not in str(out["messages"][-1].content)
+    assert any(
+        item.get("source") == "forced_audio_asr_file_ref"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

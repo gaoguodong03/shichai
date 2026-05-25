@@ -153,6 +153,50 @@ async def _stream_background_events(source: AsyncIterator[str]) -> AsyncIterator
         client_attached = False
 
 
+def _tool_names_from_history_message(msg: Dict[str, Any]) -> List[str]:
+    debug = msg.get("tool_debug")
+    calls = debug.get("tool_calls") if isinstance(debug, dict) else None
+    if not isinstance(calls, list):
+        return []
+    names: List[str] = []
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("tool") or call.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _clear_completed_skill_session_lock_from_history(
+    meta_item: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+) -> bool:
+    owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
+    skill_id = str(meta_item.get("skill_session_skill_id") or "").strip()
+    if not owner or not skill_id:
+        return False
+    for msg in reversed(messages or []):
+        if str(msg.get("role") or "") != "assistant":
+            continue
+        if str(msg.get("agent_id") or "").strip().lower() != owner:
+            continue
+        if str(msg.get("skill_id") or "").strip() != skill_id:
+            continue
+        raw_results = msg.get("tool_raw_results")
+        tool_names = _tool_names_from_history_message(msg)
+        resolved = resolve_skill_session_state(
+            str(msg.get("content") or ""),
+            raw_results if isinstance(raw_results, list) else None,
+            tool_names=tool_names or None,
+        )
+        if resolved.over is True:
+            clear_skill_session_lock(meta_item)
+            return True
+        return False
+    return False
+
+
 async def _iter_with_keepalive(source: AsyncIterator[Any], *, interval_sec: float = _SSE_AGENT_KEEPALIVE_INTERVAL_SEC) -> AsyncIterator[Any]:
     """Yield upstream items, plus lightweight keepalive markers while the upstream is idle."""
     done = object()
@@ -2333,6 +2377,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n"
                 return
 
+            if _clear_completed_skill_session_lock_from_history(meta_item, messages):
+                _save_group_meta(meta)
+                _audit("clear_completed_skill_session_lock_from_history", {})
+
             had_skill_lock = bool(str(meta_item.get("skill_session_owner_id") or "").strip())
             if user_requests_exit_skill_session(user_message) and had_skill_lock:
                 clear_skill_session_lock(meta_item)
@@ -2850,7 +2898,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         next_speaker,
                         e,
                     )
-                initial_state = {"messages": [HumanMessage(content=user_content)], "tools": tools}
+                initial_state = {
+                    "messages": [HumanMessage(content=user_content)],
+                    "tools": tools,
+                    "workspace_id": group_session_id,
+                }
                 run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{next_speaker}:{uuid.uuid4().hex}"}}
 
                 accumulated = []

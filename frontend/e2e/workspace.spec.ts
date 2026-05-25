@@ -165,4 +165,61 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('四九已帮您切换专家：写作专家')).toBeVisible()
     await expect(page.getByText('四九已帮您切换专家：agent-writer')).toHaveCount(0)
   })
+
+  test('正在运行的会话在列表显示转圈，离开后完成显示新回复提示', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions = [
+      state.sessions[0],
+      {
+        id: 'session-other',
+        title: '另一个会话',
+        updated_at: '2026-05-23T07:00:00Z',
+        agent_ids: [],
+        messages: [],
+      },
+    ]
+    await loginByStorage(page)
+    await mockApi(page, state)
+
+    let releaseStream: (() => void) | null = null
+    const streamStarted = new Promise<void>((resolve) => {
+      page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+        resolve()
+        await new Promise<void>((release) => {
+          releaseStream = release
+        })
+        const session = state.sessions.find((s) => s.id === 'session-existing')
+        if (session) {
+          session.messages.push({ message_id: 'assistant-late', role: 'assistant', agent_id: 'agent-qa', content: '后台完成的回复' })
+        }
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          body: [
+            `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', role: 'assistant', agent_id: 'agent-qa', content: '后台完成的回复' })}\n\n`,
+            `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+          ].join(''),
+        })
+      })
+    })
+
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请后台运行一下')
+    await page.getByRole('button', { name: '发送' }).click()
+    await streamStarted
+
+    const runningRow = page.locator('[data-session-id="session-existing"]')
+    await expect(runningRow.getByLabel('会话正在运行')).toBeVisible()
+
+    await page.getByText('另一个会话', { exact: true }).click()
+    releaseStream?.()
+
+    await expect(runningRow.getByLabel('会话正在运行')).toHaveCount(0)
+    await expect(runningRow.getByLabel('会话有新回复')).toBeVisible()
+
+    await runningRow.click()
+    await expect(runningRow.getByLabel('会话有新回复')).toHaveCount(0)
+  })
 })

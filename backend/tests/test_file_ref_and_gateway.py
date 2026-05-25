@@ -72,6 +72,37 @@ def test_apply_read_file_replaces_url_with_file_ref_path():
     assert args.get("path") == "github-weekly-snapshot.md"
 
 
+def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkeypatch, tmp_path):
+    from langchain_core.messages import HumanMessage
+
+    from app.agent import skill_agent_runtime as runtime
+    from app.api.files import get_workspace_root_path
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-audio", username="audio@example.com")
+    try:
+        ws = get_workspace_root_path("group-audio")
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "学生降转及研究方向调整.mp3").write_bytes(b"audio")
+
+        args = {"path": "学生降转及研究方向调整.mp3", "language": "zh"}
+        msgs = [
+            HumanMessage(
+                content="请转写【文件引用：学生降转及研究方向调整.mp3｜学生降转及研究方向调整.mp3】"
+            )
+        ]
+
+        runtime._apply_audio_asr_path_from_user_message(args, msgs, "group-audio")
+    finally:
+        reset_current_user_identity(token)
+
+    assert args["path"] == (
+        "backend/data/users/user-audio/sessions/workspaces/group-audio/"
+        "学生降转及研究方向调整.mp3"
+    )
+
+
 def test_skill_extra_instructions_require_writing_task_file_before_reading():
     from app.agent import skill_agent_runtime as runtime
     from app.agent.tool_spec import ToolSpec

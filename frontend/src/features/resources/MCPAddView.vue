@@ -47,6 +47,33 @@
             placeholder="例如：&#10;-m&#10;mcp_server_fs"
           />
         </div>
+        <div class="space-y-3 border-t border-border-light pt-4">
+          <p class="text-xs text-muted">
+            本地进程密钥（可选）：选择密钥后会保存到
+            <code class="font-mono text-[11px]">transport.env</code>，运行时注入给 stdio MCP。
+          </p>
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">环境变量名</label>
+            <input
+              v-model="stdioEnvName"
+              type="text"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              placeholder="QWEN_AUDIO_API_KEY"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
+            <select
+              v-model="stdioVaultRef"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+            >
+              <option value="">（不注入密钥）</option>
+              <option v-for="s in secretItems" :key="s.id" :value="s.id">
+                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
+              </option>
+            </select>
+          </div>
+        </div>
       </template>
       <template v-if="form.transport.type === 'sse'">
         <div>
@@ -184,6 +211,8 @@ const { secretItems, loadApiSecrets } = useApiSecrets()
 const authHeaderName = ref('Authorization')
 const authPrefix = ref('Bearer ')
 const authVaultRef = ref('')
+const stdioEnvName = ref('QWEN_AUDIO_API_KEY')
+const stdioVaultRef = ref('')
 
 const saving = ref(false)
 const form = ref({
@@ -195,6 +224,7 @@ const form = ref({
     args: [] as string[],
     url: '',
     base_url: '',
+    env: {} as Record<string, string>,
   },
   metadata: { description: '' },
 })
@@ -213,10 +243,13 @@ function onTransportChange() {
     args: [],
     url: '',
     base_url: '',
+    env: {},
   }
   authHeaderName.value = 'Authorization'
   authPrefix.value = 'Bearer '
   authVaultRef.value = ''
+  stdioEnvName.value = 'QWEN_AUDIO_API_KEY'
+  stdioVaultRef.value = ''
 }
 
 function buildRemoteHeaders(): Record<string, string> | undefined {
@@ -225,6 +258,13 @@ function buildRemoteHeaders(): Record<string, string> | undefined {
   const hn = authHeaderName.value.trim() || 'Authorization'
   const p = authPrefix.value ?? ''
   return { [hn]: p + '${vault:' + vid + '}' }
+}
+
+function buildStdioEnv(): Record<string, string> | undefined {
+  const vid = stdioVaultRef.value.trim()
+  const name = stdioEnvName.value.trim()
+  if (!vid || !name) return undefined
+  return { [name]: '${vault:' + vid + '}' }
 }
 
 async function submit() {
@@ -238,6 +278,8 @@ async function submit() {
     if (form.value.transport.type === 'stdio') {
       transport.command = form.value.transport.command
       transport.args = form.value.transport.args || []
+      const stdioEnv = buildStdioEnv()
+      if (stdioEnv) transport.env = stdioEnv
     } else if (form.value.transport.type === 'sse') {
       transport.url = form.value.transport.url
       if (remoteHeaders) transport.headers = remoteHeaders

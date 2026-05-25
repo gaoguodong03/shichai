@@ -244,17 +244,18 @@ class QwenLLM:
             from langchain_openai import ChatOpenAI
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"langchain_openai is required for LLM client: {e}") from e
-        # 可通过 QWEN_REQUEST_TIMEOUT 调整（秒），默认 10，避免上游断连前长时间阻塞。
-        request_timeout = _parse_int_env("QWEN_REQUEST_TIMEOUT", 10)
-        # max_retries：默认 2。若每次调用都 Retrying，多为 DashScope 限流（429），可设 QWEN_MAX_RETRIES=0 先看真实错误
-        max_retries = _parse_int_env("QWEN_MAX_RETRIES", 2)
+        # 可通过 QWEN_REQUEST_TIMEOUT 调整（秒）。默认 60s 适合前端交互；
+        # 慢模型/慢网关可在 provider 配置里单独设置 request_timeout=180。
+        request_timeout = _parse_int_env("QWEN_REQUEST_TIMEOUT", 60)
+        # max_retries：默认 0，失败即失败，避免一次超时后后台继续重试拖慢反馈。
+        max_retries = _parse_int_env("QWEN_MAX_RETRIES", 0)
         request_timeout = _coerce_optional_int(self.provider_config.get("request_timeout")) or request_timeout
-        request_timeout_max = _parse_int_env("QWEN_REQUEST_TIMEOUT_MAX", 10)
+        request_timeout_max = _parse_int_env("QWEN_REQUEST_TIMEOUT_MAX", 0)
         if request_timeout_max > 0:
             request_timeout = min(request_timeout, request_timeout_max)
         max_retries = _coerce_optional_int(self.provider_config.get("max_retries"))
         if max_retries is None:
-            max_retries = _parse_int_env("QWEN_MAX_RETRIES", 2)
+            max_retries = _parse_int_env("QWEN_MAX_RETRIES", 0)
         kwargs = {
             "model": self.model,
             "openai_api_key": self.api_key,

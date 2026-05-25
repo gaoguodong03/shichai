@@ -75,7 +75,7 @@ backend/data/users/<user_id>/
 
 最常用的 Python 写法：
 
-```python
+```
 from pathlib import Path
 import os
 
@@ -86,7 +86,7 @@ SCRIPT_ROOT = Path(os.environ["SKILL_SCRIPT_ROOT"]).resolve()
 
 推荐在每个复杂脚本里放一个很小的路径 helper，统一处理当前工作区相对路径：
 
-```python
+```
 from pathlib import Path
 import os
 
@@ -179,7 +179,7 @@ rm outputs/tmp.json
 
 Python 脚本推荐这样读写：
 
-```python
+```
 from pathlib import Path
 
 # 当前 cwd 已经是当前工作区。
@@ -192,14 +192,14 @@ out.write_text("处理结果", encoding="utf-8")
 
 如果参数来自用户或模型，必须走 `workspace_path()` 校验：
 
-```python
+```
 input_path = workspace_path(args.input)
 output_path = workspace_path(args.output)
 ```
 
 脚本返回给用户的路径应是工作区相对路径：
 
-```python
+```
 print(json.dumps({
     "ok": True,
     "outputs": [workspace_rel(output_path)],
@@ -282,7 +282,7 @@ notes/query.sql
 
 脚本应把这些路径解析到 `SKILL_WORKSPACE_ROOT` 下：
 
-```python
+```
 from pathlib import Path
 import os
 
@@ -304,7 +304,7 @@ def workspace_path(rel_path: str) -> Path:
 
 因为 `cwd` 是当前会话工作区：
 
-```python
+```
 Path("output/result.json").write_text("{}", encoding="utf-8")
 ```
 
@@ -316,7 +316,7 @@ Path("output/result.json").write_text("{}", encoding="utf-8")
 
 这种写法适合生成用户可见结果。目录不存在时脚本要自行创建：
 
-```python
+```
 out_dir = Path("output")
 out_dir.mkdir(parents=True, exist_ok=True)
 ```
@@ -325,7 +325,7 @@ out_dir.mkdir(parents=True, exist_ok=True)
 
 Skill 自带数据库、模板、示例文件、提示词片段等，应放在 Skill 根目录下的 `assets/` 或 `config/`，脚本通过 `SKILL_HOME` 读取：
 
-```python
+```
 db_path = SKILL_HOME / "assets" / "demo.sqlite"
 template_path = SKILL_HOME / "assets" / "template.docx"
 ```
@@ -338,7 +338,7 @@ template_path = SKILL_HOME / "assets" / "template.docx"
 
 只用于本次脚本运行的 SQLite 数据库，优先使用内存数据库：
 
-```python
+```
 import sqlite3
 
 conn = sqlite3.connect(":memory:")
@@ -350,7 +350,7 @@ conn = sqlite3.connect(":memory:")
 
 如果数据库是本次会话的产物，或者用户后续需要下载、继续查询，应写到当前工作区：
 
-```python
+```
 db_path = WORKSPACE_ROOT / "data" / "jobs.sqlite"
 db_path.parent.mkdir(parents=True, exist_ok=True)
 conn = sqlite3.connect(db_path)
@@ -375,7 +375,7 @@ resources/skills/<skill_id>/assets/<name>.sqlite
 
 脚本中只读打开：
 
-```python
+```
 db_path = SKILL_HOME / "assets" / "demo.sqlite"
 conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
 ```

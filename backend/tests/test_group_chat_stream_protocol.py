@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.api.group_chat import _iter_with_keepalive
 from app.agent.simple_agent import SimpleAgent
+from app.agent.tool_spec import ToolSpec
 
 
 class _SeqClient:
@@ -122,6 +123,35 @@ async def test_background_stream_keeps_source_running_after_client_close():
     await asyncio.wait_for(source_finished.wait(), timeout=1)
 
 
+def test_clears_completed_audio_skill_lock_from_history():
+    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_id": "agent-a",
+        "skill_session_skill_id": "audio-transcription",
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "agent_id": "agent-a",
+            "skill_id": "audio-transcription",
+            "content": "转写文本",
+            "tool_raw_results": [
+                '{"ok": true, "stdout": "{\\"ok\\": true, \\"code\\": \\"transcribed\\", \\"done\\": true, \\"final\\": true, \\"text\\": \\"转写文本\\"}"}'
+            ],
+            "tool_debug": {
+                "tool_calls": [
+                    {"tool": "run_skill_script_audio-transcription", "arguments": {"script_path": "transcribe_audio.py"}}
+                ]
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
+    assert "skill_session_owner_id" not in meta_item
+    assert "skill_session_skill_id" not in meta_item
+
+
 @pytest.mark.asyncio
 async def test_astream_emits_unified_protocol_events():
     first = AIMessage(
@@ -152,6 +182,60 @@ async def test_astream_emits_unified_protocol_events():
     assert any(isinstance(e, dict) and e.get("type") == "agent_step" for e in events)
     assert any(isinstance(e, dict) and e.get("type") == "tool_step" for e in events)
     assert any(isinstance(e, dict) and e.get("type") == "final_step" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_astream_forces_audio_asr_tool_for_audio_file_ref_before_llm_reply():
+    stale_reply = AIMessage(content="我会直接复述旧内容，但不应该显示")
+    transcript = "流式完整音频转写"
+    called = {"tool": 0}
+
+    async def _tool_runner(state, tools):
+        called["tool"] += 1
+        last = state["messages"][-1]
+        tool_calls = getattr(last, "tool_calls", None) or []
+        assert tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
+        assert tool_calls[0]["args"]["path"] == "interview.m4a"
+        raw = '{"ok": true, "text": "' + transcript + '", "segment_count": 1}'
+        return {
+            "messages": [ToolMessage(content=raw, tool_call_id=tool_calls[0]["id"])],
+            "tool_attempt_debug": [],
+            "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": tool_calls[0]["args"]}],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([stale_reply]),
+        tools=[ToolSpec(name="audio-asr_transcribe_audio_file", description="转写音频")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=2,
+    )
+    events = []
+    async for ev in agent.astream(
+        {"messages": [HumanMessage(content="请转写【文件引用：面试录音｜interview.m4a】")]},
+        stream_mode=["updates"],
+    ):
+        events.append(ev)
+
+    assert called["tool"] == 1
+    assert any(
+        isinstance(ev.get("message"), AIMessage)
+        and getattr(ev["message"], "tool_calls", None)
+        and ev["message"].tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
+        for ev in events
+        if isinstance(ev, dict) and ev.get("type") == "agent_step"
+    )
+    assert any(
+        isinstance(ev.get("message"), AIMessage) and str(ev["message"].content) == transcript
+        for ev in events
+        if isinstance(ev, dict) and ev.get("type") == "agent_step"
+    )
+    final = next(ev for ev in events if isinstance(ev, dict) and ev.get("type") == "final_step")
+    assert any(
+        item.get("source") == "forced_audio_asr_file_ref"
+        for item in final.get("tool_attempt_debug", [])
+    )
 
 
 @pytest.mark.asyncio

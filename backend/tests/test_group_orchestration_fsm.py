@@ -143,6 +143,19 @@ def test_resolve_skill_session_state_ignores_done_final_for_session_lock():
     assert resolved.source == "none"
 
 
+def test_resolve_skill_session_state_treats_audio_transcription_success_as_over():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"code\\": \\"transcribed\\", \\"done\\": true, \\"final\\": true, \\"text\\": \\"转写文本\\"}"}'
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "转写文本",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_audio-transcription"],
+    )
+    assert resolved.over is True
+    assert resolved.source == "audio_transcription_success"
+
+
 def test_resolve_skill_session_state_ignores_non_script_tool_over_when_named():
     raw_tool_outputs = [
         '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'

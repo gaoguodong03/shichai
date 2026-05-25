@@ -24,6 +24,11 @@ _EXT_RE = re.compile(
     re.I,
 )
 _FILE_REF_TAG_RE = re.compile(r"【文件引用：([^】]+)】")
+_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".amr"}
+_AUDIO_EXT_RE = re.compile(
+    r"([\w./\u4e00-\u9fff\-]+?(?:\.(?:mp3|wav|m4a|aac|flac|ogg|opus|webm|amr)))\b",
+    re.I,
+)
 
 def _clean_user_path_candidate(s: str) -> str:
     return (s or "").strip().strip(" \t\r\n\"'""''「」『』")
@@ -235,6 +240,83 @@ def _apply_read_file_path_from_user_message(arguments: dict, messages: Sequence[
     if prefer_more_specific_path(auto_norm, cur_norm):
         logger.info("read_file: 用户路径更具体，覆盖模型参数: %s -> %s", cur, auto_path)
         arguments["path"] = auto_path
+        arguments.pop("__arg1", None)
+
+
+def _looks_like_audio_workspace_rel_path(path: str) -> bool:
+    p = _clean_user_path_candidate(path).replace("\\", "/")
+    if not p or p.startswith("/") or ".." in p or looks_like_url_or_remote_path(p):
+        return False
+    return any(p.lower().endswith(ext) for ext in _AUDIO_EXTS)
+
+
+def _extract_path_from_last_user_for_audio(messages: Sequence[BaseMessage]) -> str:
+    last_user = None
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            last_user = msg
+            break
+    if last_user is None:
+        return ""
+    content = str(getattr(last_user, "content", "") or "")
+    for candidate in _paths_from_file_ref_tags(content):
+        cleaned = _clean_user_path_candidate(candidate).replace("\\", "/")
+        if _looks_like_audio_workspace_rel_path(cleaned):
+            return cleaned
+    for match in _AUDIO_EXT_RE.finditer(content):
+        cleaned = _clean_user_path_candidate(match.group(1)).replace("\\", "/")
+        if _looks_like_audio_workspace_rel_path(cleaned):
+            return cleaned
+    return ""
+
+
+def _workspace_audio_path_to_backend_data_arg(rel_path: str, workspace_id: str) -> str:
+    rel = _clean_user_path_candidate(rel_path).replace("\\", "/").lstrip("/")
+    if not rel or rel.startswith("backend/data/"):
+        return rel
+    if not workspace_id:
+        return rel
+    if not _looks_like_audio_workspace_rel_path(rel):
+        return rel
+
+    from app.api.files import get_workspace_root_path
+    from app.core.user_context import users_data_root
+
+    ws_root = get_workspace_root_path(workspace_id).resolve()
+    target = (ws_root / rel).resolve()
+    try:
+        target.relative_to(ws_root)
+    except ValueError:
+        return rel
+
+    data_root = users_data_root().resolve().parent
+    try:
+        data_rel = target.relative_to(data_root).as_posix()
+    except ValueError:
+        return rel
+    return f"backend/data/{data_rel}"
+
+
+def _apply_audio_asr_path_from_user_message(
+    arguments: dict,
+    messages: Sequence[BaseMessage],
+    workspace_id: str,
+) -> None:
+    """For audio-asr MCP, convert workspace-relative audio paths to backend/data paths."""
+    cur = str(arguments.get("path") or arguments.get("__arg1") or "").strip()
+    if cur.startswith("backend/data/"):
+        arguments["path"] = cur
+        arguments.pop("__arg1", None)
+        return
+
+    user_audio_path = _extract_path_from_last_user_for_audio(messages)
+    source = cur if _looks_like_audio_workspace_rel_path(cur) else user_audio_path
+    if not source:
+        return
+    converted = _workspace_audio_path_to_backend_data_arg(source, workspace_id)
+    if converted and converted != cur:
+        logger.info("audio_asr: 工作区音频路径转换为 backend/data 路径: %s -> %s", source, converted)
+        arguments["path"] = converted
         arguments.pop("__arg1", None)
 
 
@@ -1080,6 +1162,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         # 非 MCP 工具（read_file 等）直接返回
         return args
 
+    workspace_id = str(state.get("workspace_id") or "") if isinstance(state, dict) else ""
+
     def _resolve_tool_name_for_skill_call(raw_name: str, tools_list: Sequence[ToolSpec]) -> str:
         requested = str(raw_name or "").strip()
         valid_names = [getattr(t, "name", "") for t in tools_list if getattr(t, "name", "")]
@@ -1111,6 +1195,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     tool = t
                     break
             if tool:
+                if tool_name == "audio-asr_transcribe_audio_file":
+                    _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
                 # read_file：从最近用户消息补全 path，或在模型沿用旧路径时用用户本条消息覆盖
                 if _tool_is_workspace_plain_read_file(tool_name):
                     _apply_read_file_path_from_user_message(arguments, messages)
@@ -1205,6 +1291,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                 tool = t
                 break
         if tool:
+            if tool_name == "audio-asr_transcribe_audio_file":
+                _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
             if _tool_is_workspace_plain_read_file(tool_name):
                 _apply_read_file_path_from_user_message(arguments, messages)
             if tool_name == "rename_workspace_file":

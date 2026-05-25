@@ -136,6 +136,7 @@
             v-else
             v-for="s in groupSessions"
             :key="s.id"
+            :data-session-id="s.id"
             @click="selectGroupSession(s.id)"
             :class="[
               'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
@@ -143,7 +144,22 @@
             ]"
           >
             <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">{{ displaySessionTitle(s) }}</div>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <div class="truncate font-medium">{{ displaySessionTitle(s) }}</div>
+                <span
+                  v-if="sessionNotice(s.id).running"
+                  class="session-running-spinner"
+                  role="status"
+                  aria-label="会话正在运行"
+                  title="会话正在运行"
+                />
+                <span
+                  v-else-if="sessionNotice(s.id).hasUpdate"
+                  class="session-unread-dot"
+                  aria-label="会话有新回复"
+                  title="会话有新回复"
+                />
+              </div>
               <div class="mt-0.5 flex items-center gap-1">
                 <template v-if="(s.agent_ids?.length || 0) > 0">
                   <div class="flex -space-x-1">
@@ -650,6 +666,7 @@
           @middle-column-open-request="middleColumnOpen = true"
           @middle-column-toggle="toggleMiddleColumn"
           @message-sent="onChatMessageSent"
+          @session-run-state="onSessionRunState"
           @scenario-new-session="onScenarioNewSession"
           @dha-added="onDhaAdded"
         />
@@ -1827,11 +1844,19 @@ const settingsCategories: { id: SettingsCategoryId; label: string }[] = [
   { id: 'sandbox', label: '沙箱' },
 ]
 // Group
-type GroupSessionRow = { id: string; title: string; updated_at: string; agent_ids?: string[] }
+type GroupSessionRow = {
+  id: string
+  title: string
+  updated_at: string
+  agent_ids?: string[]
+  runtime_state?: { running?: boolean }
+}
+type SessionNotice = { running?: boolean; hasUpdate?: boolean }
 const selectedGroupSessionId = ref<string | null>(null)
 const groupSessions = ref<GroupSessionRow[]>([])
 const groupSessionsLoading = ref(false)
 const creatingSession = ref(false)
+const sessionNotices = ref<Record<string, SessionNotice>>({})
 let groupSessionsFetchSeq = 0
 const protectedGroupSessionIds = new Set<string>()
 const dhaInstances = ref<
@@ -2792,6 +2817,47 @@ function upsertGroupSessionRow(row?: Partial<GroupSessionRow> | null) {
   groupSessions.value = [next, ...groupSessions.value.filter((s) => s.id !== id)]
 }
 
+function sessionNotice(sessionId: string): SessionNotice {
+  return sessionNotices.value[sessionId] || {}
+}
+
+function isSessionCurrentlyVisible(sessionId: string): boolean {
+  return currentModule.value === 'workspace' && selectedGroupSessionId.value === sessionId
+}
+
+function patchSessionNotice(sessionId: string, patch: SessionNotice) {
+  if (!sessionId) return
+  const prev = sessionNotices.value[sessionId] || {}
+  sessionNotices.value = {
+    ...sessionNotices.value,
+    [sessionId]: { ...prev, ...patch },
+  }
+}
+
+function clearSessionUpdateNotice(sessionId: string) {
+  if (!sessionId) return
+  const prev = sessionNotices.value[sessionId]
+  if (!prev?.hasUpdate) return
+  patchSessionNotice(sessionId, { hasUpdate: false })
+}
+
+function onSessionRunState(sessionId: string, running: boolean) {
+  const prev = sessionNotices.value[sessionId] || {}
+  const shouldMarkUpdated = !running && prev.running && !isSessionCurrentlyVisible(sessionId)
+  patchSessionNotice(sessionId, {
+    running,
+    hasUpdate: shouldMarkUpdated ? true : prev.hasUpdate,
+  })
+}
+
+function syncSessionRuntimeNotices(sessions: GroupSessionRow[]) {
+  for (const session of sessions) {
+    if (session.runtime_state?.running === true) {
+      patchSessionNotice(session.id, { running: true })
+    }
+  }
+}
+
 function protectNewGroupSession(id: string) {
   if (!id) return
   protectedGroupSessionIds.add(id)
@@ -2814,6 +2880,7 @@ async function fetchGroupSessions() {
         }
       }
       groupSessions.value = nextSessions
+      syncSessionRuntimeNotices(nextSessions)
       const current = selectedGroupSessionId.value
       const ids = groupSessions.value.map((s) => s.id)
       if (current && !ids.includes(current)) {
@@ -2884,7 +2951,15 @@ async function createNewSession() {
 
 function selectGroupSession(id: string) {
   selectedGroupSessionId.value = id
+  clearSessionUpdateNotice(id)
 }
+
+watch(
+  [currentModule, selectedGroupSessionId],
+  ([moduleId, sessionId]) => {
+    if (moduleId === 'workspace' && sessionId) clearSessionUpdateNotice(sessionId)
+  },
+)
 
 async function deleteGroupSession(id: string) {
   if (!confirm('确定删除该会话？')) return

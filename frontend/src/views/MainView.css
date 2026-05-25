@@ -15,6 +15,31 @@
   opacity: 0.9;
 }
 
+.session-running-spinner {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: session-running-spin 0.8s linear infinite;
+}
+
+.session-unread-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-danger, #dc2626);
+  box-shadow: 0 0 0 2px var(--color-sidebar);
+}
+
+@keyframes session-running-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 中间列滚动条在浅/深色模式下统一走主题变量 */
 .middle-column-scrollbar {
   scrollbar-width: thin;
@@ -38,4 +63,3 @@
 .middle-column-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
 }
-

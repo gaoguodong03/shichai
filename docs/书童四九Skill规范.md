@@ -186,7 +186,7 @@ allowed-tools:
 
 推荐缺依赖写法：
 
-```python
+```
 try:
     import pandas as pd
 except ImportError:
@@ -245,7 +245,7 @@ except ImportError:
 
 #### 5.3.4 Python 脚本最小模板
 
-```python
+```
 from __future__ import annotations
 
 import argparse

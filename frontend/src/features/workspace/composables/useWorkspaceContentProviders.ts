@@ -29,6 +29,7 @@ export type WorkspaceContentProps = {
 
 export type WorkspaceContentEmit = {
   (e: 'message-sent'): void
+  (e: 'session-run-state', sessionId: string, running: boolean): void
   (e: 'dha-added'): void
   (e: 'scenario-new-session', sessionId: string, session?: { id: string; title?: string; updated_at?: string; agent_ids?: string[] }): void
   (e: 'middle-column-open-request'): void
@@ -1064,6 +1065,7 @@ export function useWorkspaceContentProviders(args: {
     const abort = new AbortController()
     const runToken = Number(prev.runToken || 0) + 1
     patchGroupStreamState(sessionId, { streaming: true, phase, abort, runToken, restored: false })
+    emit('session-run-state', sessionId, true)
     return { runToken, abort }
   }
 
@@ -1075,6 +1077,7 @@ export function useWorkspaceContentProviders(args: {
     if (!isCurrentGroupRun(sessionId, runToken)) return
     if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
     patchGroupStreamState(sessionId, { streaming: false, phase, abort: null, agentId: '', skillId: '', restored: false })
+    emit('session-run-state', sessionId, false)
   }
 
   function abortGroupStream(sessionId: string) {
@@ -1095,6 +1098,7 @@ export function useWorkspaceContentProviders(args: {
       skillId: '',
       restored: false,
     })
+    emit('session-run-state', sessionId, false)
   }
 
   function clearRestoredRuntimePollTimer() {
