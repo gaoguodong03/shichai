@@ -175,6 +175,42 @@ def test_register_seeds_legacy_auth_users_before_existence_check(monkeypatch, tm
     assert data["username"] == username
 
 
+def test_login_seeds_missing_legacy_auth_user_when_sqlite_not_empty(monkeypatch, tmp_path):
+    existing_username = "existing-sqlite@example.com"
+    legacy_username = "legacy-partial@example.com"
+    legacy_password = "legacy-partial-pass"
+    db_path = tmp_path / "auth_users.sqlite"
+    auth_users = tmp_path / "auth_users.txt"
+    auth_users.write_text(f"{legacy_username}:{legacy_password}\n", encoding="utf-8")
+
+    monkeypatch.setenv("AUTH_DB_PATH", str(db_path))
+    monkeypatch.setenv("AUTH_USERS_FILE", str(auth_users))
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+
+    from app.core import users_store as _users_store
+    from app.core.auth_db import create_user
+
+    monkeypatch.setattr(_users_store, "_USERS_FILE", tmp_path / "users.json")
+    create_user(username=existing_username, password="already-migrated")
+
+    from app.main import app
+
+    client = TestClient(app)
+
+    data = _auth_login(client, username=legacy_username, password=legacy_password)
+
+    assert data["username"] == legacy_username
+    conn = sqlite3.connect(str(db_path))
+    row = conn.execute(
+        "SELECT username, password_hash FROM users WHERE username = ?",
+        (legacy_username,),
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == legacy_username
+    assert row[1] != legacy_password
+
+
 def test_multiuser_isolation_by_token_headers(env_and_client):
     client, _ = env_and_client
 

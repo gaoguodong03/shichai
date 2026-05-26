@@ -166,32 +166,27 @@ def _load_users_from_txt() -> dict[str, str]:
     return result
 
 
-def _is_db_empty() -> bool:
-    db_path = get_auth_db_path()
-    if not db_path.exists():
-        return True
-    with _get_sqlite_conn(db_path) as conn:
-        cur = conn.execute("SELECT COUNT(1) AS c FROM users")
-        row = cur.fetchone()
-        return int(row["c"] or 0) == 0
-
-
 def seed_from_auth_users_txt_if_needed() -> None:
     """
-    若 users 表为空，则从 auth_users.txt 导入并写入密码 hash。
-    仅在初次启动/首次运行时生效。
+    从 auth_users.txt 导入尚未进入 SQLite 的旧账号并写入密码 hash。
+    已存在于 SQLite 的账号保持原密码，不被旧文件覆盖。
     """
     init_auth_db()
-    if not _is_db_empty():
-        return
     users = _load_users_from_txt()
     if not users:
         return
 
     now = datetime.now(timezone.utc).isoformat()
     with _get_sqlite_conn(get_auth_db_path()) as conn:
+        existing = {
+            str(row["username"] or "")
+            for row in conn.execute("SELECT username FROM users").fetchall()
+        }
         for username, password in users.items():
+            if username in existing:
+                continue
             create_user(username=username, password=password, created_at=now, conn=conn)
+            existing.add(username)
         conn.commit()
 
 
