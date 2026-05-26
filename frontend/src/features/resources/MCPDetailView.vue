@@ -197,6 +197,14 @@
         </button>
         <button
           type="button"
+          @click="exportZip"
+          :disabled="exporting"
+          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
+        >
+          {{ exporting ? '导出中...' : '导出' }}
+        </button>
+        <button
+          type="button"
           @click="shareServer"
           class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
         >
@@ -281,6 +289,7 @@ const server = ref<Server | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const exporting = ref(false)
 const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
   open: false,
   ok: true,
@@ -463,6 +472,34 @@ async function deleteServer() {
     }
   } finally {
     deleting.value = false
+  }
+}
+
+async function exportZip() {
+  if (!props.serverId || !server.value) return
+  exporting.value = true
+  try {
+    const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}/export-zip`)
+    if (!r.ok) {
+      let msg = '导出失败'
+      try {
+        const j = (await r.json()) as { detail?: string }
+        if (j.detail) msg = j.detail
+      } catch {
+        /* ignore */
+      }
+      alert(msg)
+      return
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${props.serverId}.zip`
+    a.click()
+    URL.revokeObjectURL(url)
+  } finally {
+    exporting.value = false
   }
 }
 

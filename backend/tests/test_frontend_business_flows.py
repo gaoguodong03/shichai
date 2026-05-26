@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+import json
 import tempfile
+import zipfile
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
@@ -73,6 +76,57 @@ def frontend_flow_client(monkeypatch):
 
 def _headers(user: str = "frontend-flow@example.test") -> dict[str, str]:
     return {"X-User-Name": user}
+
+
+def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: TestClient):
+    client = frontend_flow_client
+    headers = _headers("frontend-mcp@example.test")
+
+    created = client.post(
+        "/api/settings/mcp",
+        json={
+            "name": "音频转写 MCP",
+            "enabled": True,
+            "transport": {
+                "type": "stdio",
+                "command": "python",
+                "args": ["app/mcp/stdio/audio_asr.py"],
+                "env": {
+                    "QWEN_AUDIO_API_KEY": "${vault:asr}",
+                    "QWEN_AUDIO_BASE_URL": "http://10.129.50.230/v1",
+                    "QWEN_AUDIO_MODEL": "qwen3-asr-1.7b",
+                },
+            },
+            "metadata": {"description": "音频转写"},
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    server_id = created.json()["data"]["id"]
+
+    exported = client.get(f"/api/settings/mcp/{server_id}/export-zip", headers=headers)
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/zip")
+    with zipfile.ZipFile(BytesIO(exported.content)) as zf:
+        rows = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+    assert rows[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
+    assert rows[0]["transport"]["env"]["QWEN_AUDIO_MODEL"] == "qwen3-asr-1.7b"
+
+    deleted = client.delete(f"/api/settings/mcp/{server_id}", headers=headers)
+    assert deleted.status_code == 200
+
+    imported = client.post(
+        "/api/settings/mcp/import-zip",
+        files={"file": ("audio-asr.zip", exported.content, "application/zip")},
+        headers=headers,
+    )
+    assert imported.status_code == 200
+    assert imported.json()["data"]["summary"]["mcp_added"] == 1
+
+    listed = client.get("/api/settings/mcp", headers=headers)
+    assert listed.status_code == 200
+    restored = next(x for x in listed.json()["data"]["servers"] if x["id"] == server_id)
+    assert restored["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
 
 
 def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClient):

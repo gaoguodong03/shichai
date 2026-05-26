@@ -11,11 +11,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
+from app.core.scenario_bundle import merge_mcp_servers_for_bundle
 from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import mcp_config_path, skills_dir_path
@@ -167,6 +169,30 @@ def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
         zf.writestr("mcp_servers.json", json.dumps([server], ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
+
+def _content_disposition_attachment(filename: str) -> str:
+    safe = str(filename or "mcp-export.zip").replace("\\", "\\\\").replace('"', '\\"')
+    return f'attachment; filename="{safe}"'
+
+
+def _read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            try:
+                payload = zf.read("mcp_servers.json")
+            except KeyError as exc:
+                raise HTTPException(status_code=400, detail="ZIP 中缺少 mcp_servers.json") from exc
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="不是有效的 ZIP 文件") from exc
+    try:
+        parsed = json.loads(payload.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="mcp_servers.json 格式错误") from exc
+    rows = [x for x in parsed if isinstance(x, dict)] if isinstance(parsed, list) else []
+    if not rows:
+        raise HTTPException(status_code=400, detail="分享包中没有可导入的 MCP 配置")
+    return rows
+
 @router.get("/settings/mcp")
 async def get_mcp_servers():
     """获取 MCP Server 列表"""
@@ -232,6 +258,22 @@ async def get_mcp_share_link(server_id: str):
     return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
 
 
+@router.get("/settings/mcp/{server_id}/export-zip")
+async def export_mcp_server_zip(server_id: str):
+    sid = str(server_id or "").strip()
+    if not sid:
+        raise HTTPException(status_code=400, detail="server_id required")
+    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
+    if not hit:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    raw = _build_single_mcp_bundle_zip_bytes(dict(hit))
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition_attachment(f"{sid}.zip")},
+    )
+
+
 @router.post("/settings/mcp/{server_id}/publish-share")
 async def publish_mcp_share(server_id: str):
     from app.core.scenario_share_store import upsert_public_share
@@ -259,6 +301,28 @@ async def publish_mcp_share(server_id: str):
         "status": "ok",
         "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}", "server_id": sid, "server_name": name},
     }
+
+
+@router.post("/settings/mcp/import-zip")
+async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Form(False)):
+    raw = await file.read()
+    rows = _read_mcp_bundle_rows(raw)
+    preview = [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in rows]
+    if dry_run:
+        return {"status": "ok", "data": {"object_type": "mcp", "preview": {"mcps": preview}}}
+    merged, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
+        load_mcp_config(), rows, skip_existing=False
+    )
+    save_mcp_config(merged)
+    await _invalidate_mcp_runtime_after_config_change()
+    return {
+        "status": "ok",
+        "data": {
+            "object_type": "mcp",
+            "summary": {"mcp_added": mcp_added, "mcp_skipped": mcp_skipped, "mcp_updated": mcp_updated},
+        },
+    }
+
 
 @router.post("/settings/mcp")
 async def create_mcp_server(server: MCPServerCreate):

@@ -515,6 +515,35 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入工具"
+                  :disabled="mcpZipImporting"
+                  @click="triggerMcpZipImport"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
+                  </svg>
+                </button>
+                <input
+                  ref="mcpZipInputRef"
+                  type="file"
+                  accept=".zip,application/zip"
+                  class="hidden"
+                  @change="onMcpZipSelected"
+                />
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
                   title="搜索工具"
                   @click="toggleSearch('mcp')"
                 >
@@ -1882,6 +1911,8 @@ const skillZipImporting = ref(false)
 const skillImportModalOpen = ref(false)
 const pendingSkillZipFile = ref<File | null>(null)
 const skillImportResult = ref<{ ok: boolean; message: string } | null>(null)
+const mcpZipInputRef = ref<HTMLInputElement | null>(null)
+const mcpZipImporting = ref(false)
 
 // 中间列宽度（可拖动调整）
 const middleColumnWidth = ref(240)
@@ -3185,6 +3216,43 @@ async function commitSkillZipImport() {
     skillImportResult.value = { ok: false, message: '导入技能失败，请检查网络或 ZIP 格式' }
   } finally {
     skillZipImporting.value = false
+  }
+}
+
+function triggerMcpZipImport() {
+  if (mcpZipImporting.value) return
+  mcpZipInputRef.value?.click()
+}
+
+async function onMcpZipSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || mcpZipImporting.value) return
+  const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+  if (!isZip) {
+    window.alert('仅支持导入 ZIP 文件')
+    return
+  }
+  mcpZipImporting.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const r = await fetch('/api/settings/mcp/import-zip', {
+      method: 'POST',
+      body: fd,
+    })
+    const j = await r.json().catch(() => ({}))
+    if (j?.status !== 'ok') {
+      throw new Error(j?.detail || '导入工具失败')
+    }
+    await fetchMCP()
+    const summary = j?.data?.summary || {}
+    window.alert(`导入成功：新增 ${summary.mcp_added ?? 0} 个，更新 ${summary.mcp_updated ?? 0} 个，跳过 ${summary.mcp_skipped ?? 0} 个`)
+  } catch (err) {
+    window.alert((err as Error).message || '导入工具失败，请检查网络或 ZIP 格式')
+  } finally {
+    mcpZipImporting.value = false
   }
 }
 
