@@ -395,6 +395,14 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             "`url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。"
             "服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
         )
+    if "audio-asr_transcribe_audio_file" in names:
+        parts.append(
+            "## 音频转写路径规则\n\n"
+            "调用 `audio-asr_transcribe_audio_file` 时，如果用户消息包含【文件引用：…】或工作区文件名，"
+            "path 使用用户本条消息中的工作区相对路径即可（例如 `meeting.mp3`）。运行时会在工具执行前把它转换成 "
+            "`backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、"
+            "`sessions/workspaces/<session_id>/` 等内部路径。\n\n"
+        )
     if script_names:
         parts.append(
             "## 技能脚本工具\n\n"

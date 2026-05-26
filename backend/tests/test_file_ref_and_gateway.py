@@ -120,6 +120,22 @@ def test_skill_extra_instructions_require_writing_task_file_before_reading():
     assert "确认写入成功后，才允许再调用 `read_file` 读取" in instructions
 
 
+def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths():
+    from app.agent import skill_agent_runtime as runtime
+    from app.agent.tool_spec import ToolSpec
+
+    instructions = runtime._skill_execution_extra_instructions(
+        [
+            ToolSpec(name="audio-asr_transcribe_audio_file"),
+            ToolSpec(name="list_workspace_directory"),
+        ]
+    )
+
+    assert "audio-asr_transcribe_audio_file" in instructions
+    assert "工作区相对路径" in instructions
+    assert "不要要求用户提供 `backend/data/`" in instructions
+
+
 def test_file_ref_resolver_blocks_traversal(temp_user_data_root):
     from app.agent.file_ref_resolver import resolve_file_refs_in_text
 
