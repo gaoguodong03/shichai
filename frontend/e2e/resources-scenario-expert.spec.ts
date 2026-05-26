@@ -17,6 +17,18 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })
 
+  test('创建场景草稿未保存前不出现在场景列表', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/scenario')
+
+    const sidebar = page.getByRole('complementary')
+    await page.getByRole('button', { name: '创建场景' }).click()
+    await page.getByRole('button', { name: '创建场景' }).click()
+    await page.getByRole('button', { name: '创建场景' }).click()
+
+    await expect(page.getByRole('heading', { name: '创建场景' })).toBeVisible()
+    await expect(sidebar.getByText('0 位专家', { exact: true })).toHaveCount(0)
+  })
+
   test('用户可以创建专家并保存专家配置', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/agent')
 

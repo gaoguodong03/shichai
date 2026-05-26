@@ -1540,6 +1540,7 @@ const scenarioPresets = ref<ScenarioPreset[]>([])
 const scenarioLoading = ref(false)
 const scenarioSaving = ref(false)
 const creatingScenarioId = ref<string | null>(null)
+const scenarioDraftIds = ref<string[]>([])
 const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
 const scenarioSearch = ref('')
 const scenarioExpertSearch = ref('')
@@ -1718,9 +1719,18 @@ const dhaOverwriteSummary = computed(() => {
 })
 
 const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
+function isUnsavedScenarioDraftPreset(s: ScenarioPreset): boolean {
+  return (
+    s.id.startsWith('scenario-') &&
+    !(s.name || '').trim() &&
+    !(s.description || '').trim() &&
+    !(s.agent_ids || []).length
+  )
+}
 const filteredScenarioPresets = computed(() => {
   const q = (scenarioSearch.value || '').trim().toLowerCase()
-  const list = scenarioPresets.value || []
+  const draftIds = new Set(scenarioDraftIds.value)
+  const list = (scenarioPresets.value || []).filter((s) => !draftIds.has(s.id) && !isUnsavedScenarioDraftPreset(s))
   if (!q) return list
   return list.filter((s) => `${s.name || ''} ${s.description || ''}`.toLowerCase().includes(q))
 })
@@ -2192,6 +2202,7 @@ function toggleScenarioLeaderSkill(skillId: string) {
 function createScenarioPreset() {
   const ts = Date.now().toString(36)
   const id = `scenario-${ts}`
+  const draftIds = new Set(scenarioDraftIds.value)
   const next: ScenarioPreset = {
     id,
     name: '',
@@ -2201,7 +2212,11 @@ function createScenarioPreset() {
     leader_agent_id: VIRTUAL_SCENE_HOST_ID,
     host_config: { skill_ids: [] },
   }
-  scenarioPresets.value = [next, ...(scenarioPresets.value || [])]
+  scenarioPresets.value = [
+    next,
+    ...(scenarioPresets.value || []).filter((p) => !draftIds.has(p.id) && !isUnsavedScenarioDraftPreset(p)),
+  ]
+  scenarioDraftIds.value = [id]
   selectedId.value = id
   creatingScenarioId.value = id
   syncScenarioDraftFromSelected()
@@ -2308,6 +2323,7 @@ async function saveScenarioPreset() {
     await persistScenarioPresets(next)
     scenarioPresets.value = next
     if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
+    scenarioDraftIds.value = scenarioDraftIds.value.filter((id) => id !== cur.id)
     syncScenarioDraftFromSelected()
     void ensureScenarioSharePublishedSilent()
   } catch (e) {
@@ -2328,6 +2344,7 @@ async function deleteScenarioPreset(id: string) {
     await persistScenarioPresets(next)
     scenarioPresets.value = next
     if (creatingScenarioId.value === id) creatingScenarioId.value = null
+    scenarioDraftIds.value = scenarioDraftIds.value.filter((draftId) => draftId !== id)
     if (selectedId.value === id) {
       selectedId.value = next[0]?.id || null
     }
@@ -2358,6 +2375,7 @@ async function fetchScenarioPresets() {
       }
       if (!selectedId.value || selectedId.value !== creatingScenarioId.value) {
         creatingScenarioId.value = null
+        scenarioDraftIds.value = []
       }
       syncScenarioDraftFromSelected()
       void fetchScenarioShareLink()
