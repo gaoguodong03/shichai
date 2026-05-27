@@ -166,6 +166,33 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('四九已帮您切换专家：agent-writer')).toHaveCount(0)
   })
 
+  test('场景会话工作空间显示场景主持人名称', async ({ page }) => {
+    const state = createE2eState()
+    state.hostProfile.display_name = '全局主持'
+    state.sessions[0] = {
+      ...state.sessions[0],
+      leader_agent_id: 'agent-scene-host',
+      host_config: { display_name: '场景主持', skill_ids: [] },
+      messages: [
+        {
+          message_id: 'host-scene-name',
+          role: 'host',
+          agent_id: 'agent-scene-host',
+          content: '请问答专家继续。',
+        } as never,
+      ],
+    }
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+
+    await expect(page.locator('.group-chat-bubble-meta').filter({ hasText: '场景主持' })).toBeVisible()
+    await expect(page.locator('.group-chat-bubble-meta').filter({ hasText: '全局主持' })).toHaveCount(0)
+  })
+
   test('正在运行的会话在列表显示转圈，离开后完成显示新回复提示', async ({ page }) => {
     const state = createE2eState()
     state.sessions = [

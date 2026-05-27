@@ -1757,7 +1757,9 @@ async def get_group_session(group_session_id: str):
     }
     app_settings_gs = load_app_settings()
     hp_gs = normalize_host_profile(app_settings_gs.get("host_profile") or {})
-    host_dn = str(hp_gs.get("display_name") or "四九").strip() or "四九"
+    hc_gs = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
+    hc_dn = str(hc_gs.get("display_name") or "").strip()
+    host_dn = hc_dn or str(hp_gs.get("display_name") or "四九").strip() or "四九"
     if VIRTUAL_SCENE_HOST_ID in relevant_ids or str(m.get("leader_agent_id") or "").strip() == VIRTUAL_SCENE_HOST_ID:
         agent_map[VIRTUAL_SCENE_HOST_ID] = {
             "name": host_dn,

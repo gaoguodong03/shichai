@@ -65,6 +65,7 @@ export function useWorkspaceContentProviders(args: {
     agent_map: Record<string, { name?: string; role?: string; avatar_url?: string; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }>
     agent_ids: string[]
     leader_agent_id?: string
+    host_config?: { display_name?: string } & Record<string, unknown>
     runtime_state?: { running?: boolean; agent_id?: string; skill_id?: string; phase?: string; started_at?: string }
     /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
     orchestration_profile?: string
@@ -83,6 +84,11 @@ export function useWorkspaceContentProviders(args: {
   const groupDetail = ref<GroupDetail | null>(null)
   const DEFAULT_HOST_DISPLAY_NAME = '四九'
   const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
+  const effectiveHostDisplayName = computed(() => {
+    const hcName = String(groupDetail.value?.host_config?.display_name || '').trim()
+    if (hcName) return hcName
+    return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
+  })
   const groupLoading = ref(false)
   const groupError = ref<string | null>(null)
   const groupDisplayMessages = ref<GroupMessage[]>([])
@@ -435,11 +441,11 @@ export function useWorkspaceContentProviders(args: {
   function bubbleDisplayName(msg: GroupMessage): string {
     const row = msg as GroupMessage & { agent_id?: string }
     const aid = String(row.agent_id || '').trim()
+    if (isHostBubbleMessage(msg)) return effectiveHostDisplayName.value
     if (aid) {
       const n = (groupDetail.value?.agent_map || {})[aid]?.name
       if (n && String(n).trim()) return String(n).trim()
     }
-    if (isHostBubbleMessage(msg)) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim()
     return aid || '—'
   }
 
@@ -1049,7 +1055,7 @@ export function useWorkspaceContentProviders(args: {
     if (!h) return ''
     const expert = (h.expertName || '').trim()
     if (!expert) return ''
-    return `${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME}已帮您切换专家：${expert}`
+    return `${effectiveHostDisplayName.value}已帮您切换专家：${expert}`
   })
   function patchGroupStreamState(sessionId: string, patch: Partial<GroupStreamRuntime>) {
     if (!sessionId) return
@@ -1608,12 +1614,12 @@ export function useWorkspaceContentProviders(args: {
   const nextSpeakerLabelText = computed(() => {
     const eff = effectiveNextSpeaker.value
     const ids = orderedMemberIds.value
-    if (!eff) return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+    if (!eff) return effectiveHostDisplayName.value || '四九'
     if (eff === 'user') return '你'
     if (eff === 'end') return '已结束'
-    if (eff === 'host') return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+    if (eff === 'host') return effectiveHostDisplayName.value || '四九'
     if (ids.includes(eff)) return displayGroupSpeakerName(eff)
-    return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+    return effectiveHostDisplayName.value || '四九'
   })
 
   function isToolbarRoleValid(id: string): boolean {
@@ -1640,7 +1646,7 @@ export function useWorkspaceContentProviders(args: {
   const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
   const atMentionOptions = computed(() => {
-    const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME }
+    const host = { type: 'host' as const, id: 'host', label: effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME }
     const d = groupDetail.value
     const ids = d?.agent_ids || []
     const map = d?.agent_map || {}
@@ -1683,7 +1689,7 @@ export function useWorkspaceContentProviders(args: {
 
   function selectMention(opt: { type: 'host' | 'dha'; id: string; label: string }) {
     const insertText =
-      opt.type === 'host' ? `@${hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME} ` : `@${opt.label} `
+      opt.type === 'host' ? `@${effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME} ` : `@${opt.label} `
     if (atSource.value === 'goal') {
       const raw = (groupDiscussionGoal.value ?? '') as string
       const before = raw.slice(0, atInsertStart.value)
@@ -2114,7 +2120,7 @@ export function useWorkspaceContentProviders(args: {
   function displayGroupSpeakerName(agentId: string): string {
     const id = (agentId || '').trim()
     if (!id) return ''
-    if (id === 'host') return hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
+    if (id === 'host' || id === VIRTUAL_SCENE_HOST_ID) return effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME
     // 1) 资源中心实例列表（最稳定，含中文名）
     const fromInstances = (props.dhaInstances || []).find((x) => x.agent_id === id)?.name
     if (fromInstances && fromInstances.trim()) return fromInstances.trim()
@@ -2162,7 +2168,7 @@ export function useWorkspaceContentProviders(args: {
       const n = displayGroupSpeakerName(id).trim()
       if (n) return n
     }
-    return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+    return effectiveHostDisplayName.value || '四九'
   })
 
   const focusRoleShowHostAvatar = computed(() => {
@@ -2178,7 +2184,7 @@ export function useWorkspaceContentProviders(args: {
   const toolbarDisplayShowHostAvatar = computed(() => focusRoleShowHostAvatar.value)
   const toolbarDisplayLabelText = computed(() => {
     const n = focusRoleNameForToolbar.value.trim()
-    return n || (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || '四九'
+    return n || effectiveHostDisplayName.value || '四九'
   })
 
   /** 流式脉冲点：基于已到达的内容长度滚动切换 */
@@ -2451,7 +2457,7 @@ export function useWorkspaceContentProviders(args: {
     const rest = s.slice(m[0].length)
     if (!token) return { override_next_speaker: '', cleaned_goal: raw }
 
-    if (token === '主持人' || token === (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME)) {
+    if (token === '主持人' || token === (effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME)) {
       // @主持人 用于触发“主持人按需接管”，不做 override，也不从用户输入中移除该标记。
       return { override_next_speaker: '', cleaned_goal: raw }
     }
@@ -2471,7 +2477,7 @@ export function useWorkspaceContentProviders(args: {
     const text = (raw || '').trim()
     if (!text) return false
     if (text.includes('@主持人') || text.includes('@四九')) return true
-    const hostName = (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME || '').trim()
+    const hostName = (effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME || '').trim()
     const aliases = ['主持人', '四九']
     if (hostName && !aliases.includes(hostName)) aliases.push(hostName)
     const aliasPattern = aliases
@@ -2502,6 +2508,9 @@ export function useWorkspaceContentProviders(args: {
     const messages = Array.isArray(raw.messages) ? raw.messages as GroupDetail['messages'] : []
     const agent_map = (raw.agent_map && typeof raw.agent_map === 'object') ? (raw.agent_map as GroupDetail['agent_map']) : {}
     const agent_ids = Array.isArray(raw.agent_ids) ? (raw.agent_ids as string[]) : []
+    const host_config = (raw.host_config && typeof raw.host_config === 'object')
+      ? (raw.host_config as GroupDetail['host_config'])
+      : undefined
     const orch = String(raw.orchestration_profile ?? '').trim().toLowerCase()
     const runtime_state = (raw.runtime_state && typeof raw.runtime_state === 'object')
       ? (raw.runtime_state as GroupDetail['runtime_state'])
@@ -2513,6 +2522,7 @@ export function useWorkspaceContentProviders(args: {
       agent_map,
       agent_ids,
       leader_agent_id: String(raw.leader_agent_id ?? ''),
+      host_config,
       runtime_state,
       orchestration_profile: orch === 'scene' || orch === 'recruitment' ? orch : undefined,
     }
@@ -2664,7 +2674,7 @@ export function useWorkspaceContentProviders(args: {
 
   provideGroupChatComposerContext({
     pendingSuggestedDhaItems,
-    hostDisplayName,
+    hostDisplayName: effectiveHostDisplayName,
     suggestedInviteLoading,
     currentAutoSwitchHint,
     autoSwitchHintText,
