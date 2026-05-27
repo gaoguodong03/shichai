@@ -3,6 +3,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 const STORAGE_KEY = 'dha_theme'
 const ACCENT_STORAGE_KEY = 'dha_accent'
 const PRESET_STORAGE_KEY = 'dha_theme_preset'
+const LOGIN_STORAGE_KEY = 'dha_logged_in'
+const USER_STORAGE_KEY = 'dha_user'
+const USER_ID_STORAGE_KEY = 'dha_user_id'
+
+export const THEME_AUTH_CHANGED_EVENT = 'dha-theme-auth-changed'
 
 export type Theme = 'light' | 'dark'
 export type ThemePreference = 'light' | 'dark' | 'system'
@@ -37,8 +42,34 @@ function applyPreset(preset: ThemePreset) {
   root.classList.add(`theme-${preset}`)
 }
 
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch (_) {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch (_) {}
+}
+
+function currentThemeScope(): string | null {
+  if (safeGetItem(LOGIN_STORAGE_KEY) !== 'true') return null
+  const user = (safeGetItem(USER_ID_STORAGE_KEY) || safeGetItem(USER_STORAGE_KEY) || '').trim()
+  return user || null
+}
+
+function scopedStorageKey(key: string): string | null {
+  const scope = currentThemeScope()
+  if (!scope) return null
+  return `${key}:${encodeURIComponent(scope)}`
+}
+
 export function useTheme() {
-  const preference = ref<ThemePreference>('system')
+  const preference = ref<ThemePreference>('light')
   const accent = ref<AccentPreference>('blue')
   const preset = ref<ThemePreset>('default')
 
@@ -51,9 +82,8 @@ export function useTheme() {
     preference.value = next
     const toApply = next === 'system' ? getSystemPreference() : next
     applyTheme(toApply)
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch (_) {}
+    const key = scopedStorageKey(STORAGE_KEY)
+    if (key) safeSetItem(key, next)
   }
 
   function setTheme(next: Theme) {
@@ -69,17 +99,15 @@ export function useTheme() {
   function setAccent(next: AccentPreference) {
     accent.value = next
     applyAccent(next)
-    try {
-      localStorage.setItem(ACCENT_STORAGE_KEY, next)
-    } catch (_) {}
+    const key = scopedStorageKey(ACCENT_STORAGE_KEY)
+    if (key) safeSetItem(key, next)
   }
 
   function setPreset(next: ThemePreset) {
     preset.value = next
     applyPreset(next)
-    try {
-      localStorage.setItem(PRESET_STORAGE_KEY, next)
-    } catch (_) {}
+    const key = scopedStorageKey(PRESET_STORAGE_KEY)
+    if (key) safeSetItem(key, next)
   }
 
   function listenSystem() {
@@ -92,34 +120,42 @@ export function useTheme() {
     return () => mq.removeEventListener('change', handler)
   }
 
-  onMounted(() => {
+  function loadThemeForCurrentUser() {
     let stored: ThemePreference | null = null
-    try {
-      const s = localStorage.getItem(STORAGE_KEY)
-      if (s === 'dark' || s === 'light' || s === 'system') stored = s
-    } catch (_) {}
-    const next = stored ?? 'system'
+    const storageKey = scopedStorageKey(STORAGE_KEY)
+    const s = storageKey ? safeGetItem(storageKey) : null
+    if (s === 'dark' || s === 'light' || s === 'system') stored = s
+    const next = stored ?? 'light'
     preference.value = next
     const toApply = next === 'system' ? getSystemPreference() : next
     applyTheme(toApply)
+
     let accentStored: AccentPreference | null = null
-    try {
-      const a = localStorage.getItem(ACCENT_STORAGE_KEY)
-      if (a === 'blue' || a === 'purple' || a === 'green') accentStored = a
-    } catch (_) {}
+    const accentKey = scopedStorageKey(ACCENT_STORAGE_KEY)
+    const a = accentKey ? safeGetItem(accentKey) : null
+    if (a === 'blue' || a === 'purple' || a === 'green') accentStored = a
     const accentNext = accentStored ?? 'blue'
     accent.value = accentNext
     applyAccent(accentNext)
+
     let presetStored: ThemePreset | null = null
-    try {
-      const p = localStorage.getItem(PRESET_STORAGE_KEY)
-      if (p && PRESET_CLASSES.includes(p as ThemePreset)) presetStored = p as ThemePreset
-    } catch (_) {}
+    const presetKey = scopedStorageKey(PRESET_STORAGE_KEY)
+    const p = presetKey ? safeGetItem(presetKey) : null
+    if (p && PRESET_CLASSES.includes(p as ThemePreset)) presetStored = p as ThemePreset
     const presetNext = presetStored ?? 'default'
     preset.value = presetNext
     applyPreset(presetNext)
+  }
+
+  onMounted(() => {
+    loadThemeForCurrentUser()
     const off = listenSystem()
-    if (off) onUnmounted(off)
+    const onAuthChanged = () => loadThemeForCurrentUser()
+    window.addEventListener(THEME_AUTH_CHANGED_EVENT, onAuthChanged)
+    onUnmounted(() => {
+      if (off) off()
+      window.removeEventListener(THEME_AUTH_CHANGED_EVENT, onAuthChanged)
+    })
   })
 
   return {
@@ -133,5 +169,6 @@ export function useTheme() {
     setPreset,
     toggleTheme,
     listenSystem,
+    loadThemeForCurrentUser,
   }
 }

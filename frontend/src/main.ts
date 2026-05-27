@@ -5,9 +5,11 @@ import router from './router'
 /* 主题必须最先加载，避免 Vite/PostCSS 处理 @import 时打乱顺序导致变量未定义 */
 import './theme/theme.css'
 import './style.css'
+import { THEME_AUTH_CHANGED_EVENT } from './composables/useTheme'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
+const USER_ID_STORAGE_KEY = 'dha_user_id'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
 function requestUrlString(input: RequestInfo | URL): string {
@@ -40,7 +42,9 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response>
     try {
       localStorage.removeItem(LOGIN_STORAGE_KEY)
       localStorage.removeItem(USER_STORAGE_KEY)
+      localStorage.removeItem(USER_ID_STORAGE_KEY)
       localStorage.removeItem(TOKEN_STORAGE_KEY)
+      window.dispatchEvent(new Event(THEME_AUTH_CHANGED_EVENT))
       const path = window.location.pathname
       const search = window.location.search || ''
       const full = `${path}${search}`

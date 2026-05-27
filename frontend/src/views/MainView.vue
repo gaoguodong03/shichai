@@ -1414,7 +1414,7 @@ import UserPreferenceSettingsView from '@/features/settings/UserPreferenceSettin
 import AccountSecuritySettingsView from '@/features/settings/AccountSecuritySettingsView.vue'
 import SandboxSettingsView from '@/features/settings/SandboxSettingsView.vue'
 import ApiSecretsSettingsView from '@/features/settings/ApiSecretsSettingsView.vue'
-import { useTheme } from '@/composables/useTheme'
+import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
 
@@ -1426,13 +1426,16 @@ const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 inject<ReturnType<typeof useTheme>>('theme') ?? useTheme()
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
+const USER_ID_STORAGE_KEY = 'dha_user_id'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
 function logout() {
   if (!window.confirm('确定要登出吗？')) return
   localStorage.removeItem(LOGIN_STORAGE_KEY)
   localStorage.removeItem(USER_STORAGE_KEY)
+  localStorage.removeItem(USER_ID_STORAGE_KEY)
   localStorage.removeItem(TOKEN_STORAGE_KEY)
+  window.dispatchEvent(new Event(THEME_AUTH_CHANGED_EVENT))
   router.push('/login')
 }
 

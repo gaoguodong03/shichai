@@ -108,6 +108,7 @@
 import { ref } from 'vue'
 
 const USER_STORAGE_KEY = 'dha_user'
+const USER_ID_STORAGE_KEY = 'dha_user_id'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
 const newAccount = ref('')
@@ -179,6 +180,9 @@ async function onChangeAccount() {
       return
     }
     localStorage.setItem(USER_STORAGE_KEY, j.data.username as string)
+    if (typeof j.data.user_id === 'string' && j.data.user_id) {
+      localStorage.setItem(USER_ID_STORAGE_KEY, j.data.user_id)
+    }
     localStorage.setItem(TOKEN_STORAGE_KEY, j.data.access_token as string)
     newAccount.value = ''
     accountCurrentPassword.value = ''

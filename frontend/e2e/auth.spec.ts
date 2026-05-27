@@ -29,4 +29,30 @@ test.describe('验收 1/6：登录与账号入口', () => {
     await expectMainShell(page)
     await expect(page).toHaveURL(/\/workspace$/)
   })
+
+  test('登录页和其他用户不会继承上一位用户的暗色配色', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('dha_logged_in', 'true')
+      localStorage.setItem('dha_user', 'alice@example.test')
+      localStorage.setItem('dha_token', 'test-token-alice')
+    })
+    await mockApi(page)
+    page.on('dialog', (dialog) => dialog.accept())
+
+    await page.goto('/settings/theme')
+    await page.getByRole('button', { name: /纯黑/ }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+
+    await page.getByRole('button', { name: '登出' }).click()
+    await expect(page).toHaveURL(/\/login$/)
+    await expect(page.locator('html')).not.toHaveClass(/dark/)
+
+    await page.getByLabel('账号').fill('bob@example.test')
+    await page.getByLabel('密码', { exact: true }).fill('password123')
+    await page.getByRole('button', { name: '登录' }).click()
+
+    await expectMainShell(page)
+    await expect(page).toHaveURL(/\/workspace$/)
+    await expect(page.locator('html')).not.toHaveClass(/dark/)
+  })
 })
