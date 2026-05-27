@@ -608,7 +608,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     if (path === '/public/shares/share-scenario/meta' && method === 'GET') {
       return ok(route, {
-        object_type: 'scenario',
+        object_type: 'scene',
         title: '问答验收场景',
         summary: { scenario: '问答验收场景', experts: ['问答专家'], skills: ['问答技能'] },
       })
@@ -616,7 +616,16 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path === '/settings/shares/share-scenario/import' && method === 'POST') {
       return ok(route, {
         preview: {
-          summary: { scenario: '问答验收场景', experts: ['问答专家'], skills: ['问答技能'] },
+          preset_id: 'scenario-qa',
+          preset_name: '问答验收场景',
+          experts: [{ agent_id: 'agent-qa', name: '问答专家' }],
+          skills: ['skill-qa'],
+          mcps: [{ id: 'mcp-files', name: '文件系统工具' }],
+          name_conflict_existing_ids: [],
+          would_overwrite_skills: [],
+          would_remap_skill_ids: {},
+          would_remap_mcp_server_ids: {},
+          would_overwrite_experts: {},
           missing_references: {},
         },
         summary: { scenario: '问答验收场景', experts: ['问答专家'], skills: ['问答技能'] },

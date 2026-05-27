@@ -1040,15 +1040,41 @@
               <span class="font-medium text-primary truncate">{{ sharePreviewData?.meta?.title || '未命名分享' }}</span>
             </div>
             <div class="text-xs text-muted">分享 ID：<span class="font-mono text-primary">{{ sharePreviewData?.share_id || '-' }}</span></div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div class="rounded-md border border-border-light p-2 bg-card">
-                <div class="text-xs text-muted mb-1">元信息摘要</div>
-                <pre class="text-xs whitespace-pre-wrap break-words text-primary">{{ formatShareJson(sharePreviewData?.meta?.summary || {}) }}</pre>
+            <div v-if="isShareScenePreview(sharePreviewData)" class="space-y-2">
+              <div class="font-medium text-primary">{{ shareScenePreview(sharePreviewData)?.preset_name || sharePreviewData?.meta?.title || '未命名场景' }}</div>
+              <div class="text-xs text-muted">场景名称：{{ shareScenePreview(sharePreviewData)?.preset_name || sharePreviewData?.meta?.title || '未命名场景' }}</div>
+              <div v-if="(shareScenePreview(sharePreviewData)?.experts || []).length" class="pt-2">
+                <div class="text-xs font-medium text-muted mb-1">包内专家</div>
+                <ul class="list-disc pl-4 text-muted space-y-0.5">
+                  <li v-for="ex in shareScenePreview(sharePreviewData)?.experts || []" :key="ex.agent_id">
+                    <span class="text-primary">{{ ex.name || ex.agent_id }}</span>
+                  </li>
+                </ul>
               </div>
-              <div class="rounded-md border border-border-light p-2 bg-card">
-                <div class="text-xs text-muted mb-1">导入预览</div>
-                <pre class="text-xs whitespace-pre-wrap break-words text-primary">{{ formatShareJson(sharePreviewData?.preview || {}) }}</pre>
+              <div v-if="(shareScenePreview(sharePreviewData)?.skills || []).length" class="pt-2">
+                <div class="text-xs font-medium text-muted mb-1">包内技能</div>
+                <p class="text-xs text-primary">{{ displaySkillNames(shareScenePreview(sharePreviewData)?.skills || []).join('，') }}</p>
               </div>
+              <div v-if="(shareScenePreview(sharePreviewData)?.mcps || []).length" class="pt-2">
+                <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
+                <ul class="list-disc pl-4 text-muted space-y-0.5">
+                  <li v-for="m in shareScenePreview(sharePreviewData)?.mcps || []" :key="m.id">
+                    <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
+                  </li>
+                </ul>
+              </div>
+              <p v-if="shareSceneOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
+                将覆盖已有内容：{{ shareSceneOverwriteSummary }}
+              </p>
+            </div>
+            <div v-else class="rounded-md border border-border-light p-3 bg-card">
+              <div class="text-xs font-medium text-muted mb-2">分享内容</div>
+              <ul v-if="sharePreviewSummaryItems.length" class="space-y-1 text-xs text-primary">
+                <li v-for="item in sharePreviewSummaryItems" :key="item.label">
+                  <span class="text-muted">{{ item.label }}：</span>{{ item.value }}
+                </li>
+              </ul>
+              <p v-else class="text-xs text-muted">该分享可导入到当前账号。</p>
             </div>
             <div
               v-if="hasImportMissingReferences(sharePreviewMissingReferences)"
@@ -1589,6 +1615,20 @@ const scenarioBundlePreview = ref<{
     name_conflict_mode?: 'skip' | 'overwrite'
   }
 } | null>(null)
+type ShareScenePreview = {
+  preset_id?: string
+  preset_name?: string
+  experts?: { agent_id: string; name: string }[]
+  skills?: string[]
+  mcps?: { id: string; name: string }[]
+  missing_references?: ImportMissingReferences
+  would_overwrite_skills?: string[]
+  would_skip_skills?: string[]
+  name_conflict_existing_ids?: string[]
+  would_overwrite_experts?: Record<string, string[]>
+  would_remap_skill_ids?: Record<string, string>
+  would_remap_mcp_server_ids?: Record<string, string>
+}
 const scenarioShareAutoPublishing = ref(false)
 const scenarioShareRouteImportLoading = ref(false)
 const scenarioShareLinkData = ref<{ share_id: string | null }>({ share_id: null })
@@ -1613,12 +1653,21 @@ const sharePreviewCommitting = ref(false)
 const sharePreviewData = ref<{
   share_id: string
   meta: { object_type: string; title: string; summary?: Record<string, unknown> }
-  preview?: Record<string, unknown> & { missing_references?: ImportMissingReferences }
+  preview?: (Record<string, unknown> & { missing_references?: ImportMissingReferences }) | ShareScenePreview
 } | null>(null)
 const sharePreviewResult = ref<{ ok: boolean; message: string } | null>(null)
 const sharePreviewMissingReferences = computed(
   () => sharePreviewData.value?.preview?.missing_references || null,
 )
+const sharePreviewSummaryItems = computed(() => {
+  const summary = sharePreviewData.value?.meta?.summary || {}
+  return Object.entries(summary)
+    .map(([key, value]) => ({
+      label: shareSummaryLabel(key),
+      value: shareSummaryValue(value),
+    }))
+    .filter((item) => item.value)
+})
 
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
@@ -1656,6 +1705,35 @@ const hasDhaNameConflict = computed(
 function displaySkillNames(skillIds: string[]): string[] {
   const byId = new Map((skills.value || []).map((s) => [s.id, s.name || s.id]))
   return (skillIds || []).map((sid) => byId.get(sid) || sid)
+}
+function isShareScenePreview(
+  data: typeof sharePreviewData.value,
+): data is NonNullable<typeof sharePreviewData.value> & { preview: ShareScenePreview } {
+  if (!data?.preview) return false
+  const type = String(data.meta?.object_type || '').trim().toLowerCase()
+  return (type === 'scene' || type === 'scenario') && typeof (data.preview as ShareScenePreview).preset_name === 'string'
+}
+function shareScenePreview(data: typeof sharePreviewData.value): ShareScenePreview | null {
+  return isShareScenePreview(data) ? data.preview : null
+}
+function shareSummaryLabel(key: string): string {
+  const labels: Record<string, string> = {
+    agent_count: '专家数量',
+    scenario: '场景',
+    experts: '专家',
+    skills: '技能',
+    mcps: 'MCP',
+    tools: '工具',
+    skill_count: '技能数量',
+    mcp_count: 'MCP 数量',
+  }
+  return labels[key] || key
+}
+function shareSummaryValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join('，')
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).join('，')
+  return String(value)
 }
 function formatShareJson(obj: unknown): string {
   try {
@@ -1702,6 +1780,29 @@ const scenarioOverwriteSummary = computed(() => {
   if ((bp.mcps || []).length) {
     const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
     if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
+  }
+  return parts.join('\n')
+})
+const shareSceneOverwriteSummary = computed(() => {
+  const bp = shareScenePreview(sharePreviewData.value)
+  if (!bp) return ''
+  const parts: string[] = []
+  if ((bp.name_conflict_existing_ids || []).length) {
+    parts.push(`场景：${bp.preset_name || bp.preset_id || '未命名场景'}`)
+  }
+  if (bp.would_overwrite_experts && Object.keys(bp.would_overwrite_experts).length) {
+    const expertNames = (bp.experts || []).map((x) => x.name || x.agent_id).filter(Boolean)
+    parts.push(`专家：${expertNames.join('，') || Object.keys(bp.would_overwrite_experts).join('，')}`)
+  }
+  const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
+  if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
+  const remapMcpIds = Object.values(bp.would_remap_mcp_server_ids || {})
+  if (remapMcpIds.length) {
+    const mcpNames = (bp.mcps || [])
+      .filter((x) => remapMcpIds.includes(x.id))
+      .map((x) => x.name || x.id)
+      .filter(Boolean)
+    parts.push(`工具：${mcpNames.join('，') || remapMcpIds.join('，')}`)
   }
   return parts.join('\n')
 })
