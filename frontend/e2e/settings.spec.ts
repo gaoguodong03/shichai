@@ -84,6 +84,29 @@ test.describe('验收 5/6：设置中心', () => {
     await expect(page.getByText('自动化密钥')).toBeVisible()
 
     await page.getByRole('button', { name: '账号' }).click()
+    const accountHintText = page.getByText('账号支持手机号或是电子邮箱。')
+    await expect(accountHintText).toBeVisible()
+    await expect(page.getByRole('button', { name: '账号格式说明' })).toHaveCount(0)
+    const accountInputs = page.locator('#new-account, #account-password, #current-password, #new-password, #confirm-password')
+    await expect(accountInputs).toHaveCount(5)
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const probe = document.createElement('div')
+          probe.style.backgroundColor = getComputedStyle(document.documentElement)
+            .getPropertyValue('--color-input-bg')
+            .trim()
+          document.body.appendChild(probe)
+          const expected = getComputedStyle(probe).backgroundColor
+          probe.remove()
+          return Array.from(
+            document.querySelectorAll<HTMLInputElement>(
+              '#new-account, #account-password, #current-password, #new-password, #confirm-password',
+            ),
+          ).every((input) => getComputedStyle(input).backgroundColor === expected)
+        }),
+      )
+      .toBe(true)
     await page.getByPlaceholder('请输入新账号').fill('updated@example.test')
     await page.getByPlaceholder('请输入当前密码').first().fill('password123')
     await expect(page.getByText('修改密码')).toBeVisible()

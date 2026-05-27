@@ -18,7 +18,7 @@
               type="text"
               autocomplete="username"
               placeholder="请输入新账号"
-              class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
             />
           </div>
           <div>
@@ -29,7 +29,7 @@
               type="password"
               autocomplete="current-password"
               placeholder="请输入当前密码"
-              class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
             />
           </div>
           <p v-if="accountError" class="text-sm text-danger">{{ accountError }}</p>
@@ -60,7 +60,7 @@
               type="password"
               autocomplete="current-password"
               placeholder="请输入当前密码"
-              class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
             />
           </div>
           <div>
@@ -71,7 +71,7 @@
               type="password"
               autocomplete="new-password"
               placeholder="请输入新密码（至少 6 位）"
-              class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
             />
           </div>
           <div>
@@ -82,7 +82,7 @@
               type="password"
               autocomplete="new-password"
               placeholder="请再次输入新密码"
-              class="w-full rounded-lg border border-input-border bg-accent-subtle px-3 py-2.5 text-primary placeholder-placeholder focus:border-input-focus-ring focus:outline-none focus:ring-1 focus:ring-input-focus-ring"
+              class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
             />
           </div>
           <p v-if="passwordError" class="text-sm text-danger">{{ passwordError }}</p>
