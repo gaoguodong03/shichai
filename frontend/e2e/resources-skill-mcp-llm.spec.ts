@@ -17,6 +17,32 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: /Scripts/ })).toBeVisible()
   })
 
+  test('技能详情页点击分享后展示链接，编辑按钮在编辑态变为保存', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/skill')
+
+    await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
+    await expect(page.getByText('访问方式', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '分享', exact: true })).toBeVisible()
+    await expect(page.locator('main main').getByText('访问方式', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: /\/share\/run\?id=share-skill/ })).toHaveCount(0)
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const topRow = document.querySelector('header > div:first-child')
+        const share = Array.from(topRow?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '分享')
+        const exportButton = Array.from(topRow?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '导出')
+        return Boolean(share && exportButton && (share.compareDocumentPosition(exportButton) & Node.DOCUMENT_POSITION_FOLLOWING))
+      }),
+    ).toBe(true)
+
+    await page.getByRole('button', { name: '分享', exact: true }).click()
+    await expect(page.getByRole('link', { name: /\/share\/run\?id=share-skill/ })).toBeVisible()
+
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: '编辑', exact: true }).click()
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
+  })
+
   test('用户可以创建工具并进入工具配置页', async ({ page }) => {
     await bootLoggedInApp(page)
 
@@ -32,6 +58,23 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
 
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
     await expect(page.getByText('自动化工具')).toBeVisible()
+  })
+
+  test('工具详情页底部直接展示访问方式，不再使用分享按钮', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/mcp')
+
+    await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
+    await expect(page.getByText('访问方式', { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: /\/share\/run\?id=share-mcp/ })).toBeVisible()
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const form = document.querySelector('form')
+        const access = Array.from(form?.querySelectorAll('div') || []).find((el) => el.textContent?.trim() === '访问方式')
+        const save = Array.from(form?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '保存')
+        return Boolean(access && save && (access.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING))
+      }),
+    ).toBe(true)
   })
 
   test('用户可以进入模型配置并保存模型参数', async ({ page }) => {

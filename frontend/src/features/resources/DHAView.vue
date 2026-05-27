@@ -112,6 +112,23 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
+            <div
+              v-if="selectedDhaId && selectedDhaId !== '__new__'"
+              class="pt-4 border-t border-border-light space-y-2"
+            >
+              <div class="text-sm font-medium text-primary">访问方式</div>
+              <div v-if="sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
+              <p v-else-if="shareError" class="text-sm text-danger">{{ shareError }}</p>
+              <a
+                v-else-if="shareFullUrl"
+                class="block w-full rounded-xl border border-border-light bg-page px-4 py-3 font-mono text-sm text-accent break-all hover:underline"
+                :href="shareFullUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+              >{{ shareFullUrl }}</a>
+              <p v-else class="text-sm text-muted">保存专家后自动生成访问链接。</p>
+            </div>
+
             <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
               <button
                 type="submit"
@@ -127,14 +144,6 @@
                 @click="exportDhaBundle"
               >
                 导出
-              </button>
-              <button
-                v-if="selectedDhaId && selectedDhaId !== '__new__'"
-                type="button"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
-                @click="shareDha"
-              >
-                分享
               </button>
               <button
                 type="button"
@@ -324,33 +333,6 @@
       </div>
     </Teleport>
   </div>
-  <div
-    v-if="shareDialog.open"
-    class="fixed inset-0 z-[360] flex items-center justify-center p-4 bg-black/40"
-    role="dialog"
-    aria-modal="true"
-    @click.self="shareDialog.open = false"
-  >
-    <div class="w-full max-w-md rounded-xl border border-border-light bg-card shadow-xl p-4">
-      <h4 class="text-base font-semibold mb-2" :class="shareDialog.ok ? 'text-primary' : 'text-danger'">
-        {{ shareDialog.ok ? '分享成功' : '分享失败' }}
-      </h4>
-      <template v-if="shareDialog.ok">
-        <p class="text-sm text-muted mb-2">分享链接（已复制）</p>
-        <div class="px-3 py-2 rounded border border-border-light bg-page font-mono text-sm break-all">{{ shareDialog.shareUrl }}</div>
-      </template>
-      <p v-else class="text-sm text-danger">{{ shareDialog.message }}</p>
-      <div class="mt-3 flex justify-end">
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm rounded border border-border-light hover:bg-list-hover"
-          @click="shareDialog.open = false"
-        >
-          关闭
-        </button>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -376,13 +358,12 @@ const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 const showAvatarModal = ref(false)
-const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
-  open: false,
-  ok: true,
-  message: '',
-  shareId: '',
-  shareUrl: '',
-})
+const shareId = ref('')
+const sharePublishing = ref(false)
+const shareError = ref('')
+const shareFullUrl = computed(() =>
+  shareId.value ? `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId.value)}` : '',
+)
 
 const defaultFileCaps = () => ({
   read: true,
@@ -452,6 +433,16 @@ watch(
     }
   },
   { immediate: true }
+)
+
+watch(
+  () => props.selectedDhaId,
+  (id) => {
+    shareId.value = ''
+    shareError.value = ''
+    if (id && id !== '__new__') void ensureDhaSharePublished()
+  },
+  { immediate: true },
 )
 
 async function fetchSkills() {
@@ -626,25 +617,27 @@ function publicAppOriginForShareLink(): string {
   return window.location.origin
 }
 
-async function shareDha() {
+async function ensureDhaSharePublished() {
   const id = props.selectedDhaId
   if (!id || id === '__new__') return
+  sharePublishing.value = true
+  shareError.value = ''
   try {
-    let shareId: string | null = null
+    let nextShareId: string | null = null
     const r0 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/share-link`)
     const j0 = await r0.json().catch(() => ({}))
-    if (j0?.status === 'ok' && j0?.data?.share_id) shareId = String(j0.data.share_id)
-    if (!shareId) {
+    if (j0?.status === 'ok' && j0?.data?.share_id) nextShareId = String(j0.data.share_id)
+    if (!nextShareId) {
       const r1 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/publish-share`, { method: 'POST' })
       const j1 = await r1.json().catch(() => ({}))
-      if (j1?.status === 'ok' && j1?.data?.share_id) shareId = String(j1.data.share_id)
+      if (j1?.status === 'ok' && j1?.data?.share_id) nextShareId = String(j1.data.share_id)
     }
-    if (!shareId) throw new Error('生成分享链接失败')
-    const url = `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId)}`
-    await navigator.clipboard.writeText(url)
-    shareDialog.value = { open: true, ok: true, message: '', shareId, shareUrl: url }
+    if (!nextShareId) throw new Error('生成访问链接失败')
+    if (props.selectedDhaId === id) shareId.value = nextShareId
   } catch (e) {
-    shareDialog.value = { open: true, ok: false, message: (e as Error).message || '分享失败', shareId: '', shareUrl: '' }
+    if (props.selectedDhaId === id) shareError.value = (e as Error).message || '生成访问链接失败'
+  } finally {
+    if (props.selectedDhaId === id) sharePublishing.value = false
   }
 }
 

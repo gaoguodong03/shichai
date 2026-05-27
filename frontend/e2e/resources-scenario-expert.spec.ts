@@ -43,4 +43,21 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
     await expect(page.getByRole('complementary').getByText('自动化专家').first()).toBeVisible()
   })
+
+  test('专家详情页直接展示访问方式，不再使用分享按钮', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/agent')
+
+    await expect(page.getByRole('heading', { name: '配置专家' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
+    await expect(page.getByText('访问方式', { exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: /\/share\/run\?id=share-expert/ })).toBeVisible()
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const form = document.querySelector('form')
+        const access = Array.from(form?.querySelectorAll('div') || []).find((el) => el.textContent?.trim() === '访问方式')
+        const save = Array.from(form?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '保存')
+        return Boolean(access && save && (access.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING))
+      }),
+    ).toBe(true)
+  })
 })

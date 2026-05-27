@@ -2,70 +2,75 @@
   <div class="flex flex-col h-full bg-page text-primary overflow-hidden">
     <div v-if="loading" class="p-4 text-muted flex-1">加载中...</div>
     <template v-else-if="skill">
-      <header class="px-4 py-3 border-b border-border bg-card flex items-center justify-between gap-3 flex-shrink-0">
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold text-primary truncate">技能</h1>
-          <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.id }}</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            v-if="activeTab !== 'main'"
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="partsLoading"
-            @click="addPartFile"
-          >
-            新建文件
-          </button>
-          <button
-            v-if="activeTab !== 'main'"
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="partsLoading"
-            @click="addPartFolder"
-          >
-            新建文件夹
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="exporting"
-            @click="exportZip"
-          >
-            {{ exporting ? '导出中…' : '导出' }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="sharing"
-            @click="shareSkill"
-          >
-            {{ sharing ? '生成中…' : '分享' }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="saving || deleting || contentLoading"
-            @click="toggleEditMode"
-          >
-            {{ editMode ? '取消编辑' : '编辑' }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="saving || deleting || !editMode"
-            @click="save"
-          >
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
-            :disabled="deleting || saving"
-            @click="deleteSkill"
-          >
-            {{ deleting ? '删除中...' : '删除' }}
-          </button>
+      <header class="px-4 py-3 border-b border-border bg-card flex-shrink-0">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-[12rem]">
+            <h1 class="text-base font-semibold text-primary truncate">技能</h1>
+            <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.id }}</p>
+          </div>
+          <div class="min-w-0 flex-1 space-y-1">
+            <div v-if="sharePanelOpen && sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
+            <p v-else-if="sharePanelOpen && shareError" class="text-sm text-danger">{{ shareError }}</p>
+            <a
+              v-else-if="sharePanelOpen && shareFullUrl"
+              class="block w-full rounded-xl border border-border-light bg-page px-4 py-3 font-mono text-sm text-accent truncate hover:underline"
+              :href="shareFullUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ shareFullUrl }}</a>
+          </div>
+          <div class="flex flex-shrink-0 items-center gap-2">
+            <button
+              v-if="activeTab !== 'main'"
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="partsLoading"
+              @click="addPartFile"
+            >
+              新建文件
+            </button>
+            <button
+              v-if="activeTab !== 'main'"
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="partsLoading"
+              @click="addPartFolder"
+            >
+              新建文件夹
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="sharePublishing"
+              @click="showSkillShareLink"
+            >
+              {{ sharePublishing ? '生成中...' : '分享' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="exporting"
+              @click="exportZip"
+            >
+              {{ exporting ? '导出中…' : '导出' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="saving || deleting || contentLoading"
+              @click="handleEditSave"
+            >
+              {{ editMode ? (saving ? '保存中...' : '保存') : '编辑' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              :disabled="deleting || saving"
+              @click="deleteSkill"
+            >
+              {{ deleting ? '删除中...' : '删除' }}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -292,33 +297,6 @@
     </template>
     <div v-else class="p-4 text-muted flex-1">未找到该技能</div>
   </div>
-  <div
-    v-if="shareDialog.open"
-    class="fixed inset-0 z-[360] flex items-center justify-center p-4 bg-black/40"
-    role="dialog"
-    aria-modal="true"
-    @click.self="shareDialog.open = false"
-  >
-    <div class="w-full max-w-md rounded-xl border border-border-light bg-card shadow-xl p-4">
-      <h4 class="text-base font-semibold mb-2" :class="shareDialog.ok ? 'text-primary' : 'text-danger'">
-        {{ shareDialog.ok ? '分享成功' : '分享失败' }}
-      </h4>
-      <template v-if="shareDialog.ok">
-        <p class="text-sm text-muted mb-2">分享链接（已复制）</p>
-        <div class="px-3 py-2 rounded border border-border-light bg-page font-mono text-sm break-all">{{ shareDialog.shareUrl }}</div>
-      </template>
-      <p v-else class="text-sm text-danger">{{ shareDialog.message }}</p>
-      <div class="mt-3 flex justify-end">
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm rounded border border-border-light hover:bg-list-hover"
-          @click="shareDialog.open = false"
-        >
-          关闭
-        </button>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -379,19 +357,18 @@ const partContent = ref('')
 const partContentLoading = ref(false)
 const partSaving = ref(false)
 const exporting = ref(false)
-const sharing = ref(false)
+const shareId = ref('')
+const sharePublishing = ref(false)
+const shareError = ref('')
+const sharePanelOpen = ref(false)
 const sandboxRequirementsContent = ref('')
 const addingPythonDependencies = ref(false)
 const sandboxDependencyMessage = ref('')
 const sandboxDependencyError = ref(false)
-const shareDialog = ref<{ open: boolean; ok: boolean; message: string; shareId: string; shareUrl: string }>({
-  open: false,
-  ok: true,
-  message: '',
-  shareId: '',
-  shareUrl: '',
-})
 const partMarkdownPreviewMode = ref(true)
+const shareFullUrl = computed(() =>
+  shareId.value ? `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId.value)}` : '',
+)
 
 function hasLoadedSkillContent() {
   return Boolean(
@@ -532,6 +509,14 @@ function toggleEditMode() {
   }
   activeTab.value = 'main'
   editMode.value = true
+}
+
+function handleEditSave() {
+  if (editMode.value) {
+    void save()
+    return
+  }
+  toggleEditMode()
 }
 
 const currentPartFiles = computed(() => {
@@ -785,28 +770,33 @@ function publicAppOriginForShareLink(): string {
   return window.location.origin
 }
 
-async function shareSkill() {
+async function ensureSkillSharePublished() {
   if (!props.skillId) return
-  sharing.value = true
+  const id = props.skillId
+  sharePublishing.value = true
+  shareError.value = ''
   try {
-    let shareId: string | null = null
-    const r0 = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/share-link`)
+    let nextShareId: string | null = null
+    const r0 = await fetch(`/api/settings/skills/${encodeURIComponent(id)}/share-link`)
     const j0 = await r0.json().catch(() => ({}))
-    if (j0?.status === 'ok' && j0?.data?.share_id) shareId = String(j0.data.share_id)
-    if (!shareId) {
-      const r1 = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/publish-share`, { method: 'POST' })
+    if (j0?.status === 'ok' && j0?.data?.share_id) nextShareId = String(j0.data.share_id)
+    if (!nextShareId) {
+      const r1 = await fetch(`/api/settings/skills/${encodeURIComponent(id)}/publish-share`, { method: 'POST' })
       const j1 = await r1.json().catch(() => ({}))
-      if (j1?.status === 'ok' && j1?.data?.share_id) shareId = String(j1.data.share_id)
+      if (j1?.status === 'ok' && j1?.data?.share_id) nextShareId = String(j1.data.share_id)
     }
-    if (!shareId) throw new Error('生成分享链接失败')
-    const url = `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId)}`
-    await navigator.clipboard.writeText(url)
-    shareDialog.value = { open: true, ok: true, message: '', shareId, shareUrl: url }
+    if (!nextShareId) throw new Error('生成访问链接失败')
+    if (props.skillId === id) shareId.value = nextShareId
   } catch (e) {
-    shareDialog.value = { open: true, ok: false, message: (e as Error).message || '分享失败', shareId: '', shareUrl: '' }
+    if (props.skillId === id) shareError.value = (e as Error).message || '生成访问链接失败'
   } finally {
-    sharing.value = false
+    if (props.skillId === id) sharePublishing.value = false
   }
+}
+
+async function showSkillShareLink() {
+  sharePanelOpen.value = true
+  if (!shareId.value) await ensureSkillSharePublished()
 }
 
 async function load(options: { silent?: boolean } = {}) {
@@ -1116,6 +1106,9 @@ watch(
     partDirPath.value = ''
     partContent.value = ''
     editMode.value = false
+    shareId.value = ''
+    shareError.value = ''
+    sharePanelOpen.value = false
     await load()
     if (activeTab.value === 'main') return
     const tab = activeTab.value as PartType
