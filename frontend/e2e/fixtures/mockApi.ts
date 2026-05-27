@@ -41,9 +41,6 @@ type Skill = {
 type McpServer = {
   id: string
   name: string
-  enabled: boolean
-  status: string
-  tool_count: number
   transport: Record<string, unknown>
   metadata?: Record<string, unknown>
 }
@@ -139,9 +136,6 @@ export function createE2eState(): E2eState {
       {
         id: 'mcp-files',
         name: '文件系统工具',
-        enabled: true,
-        status: 'connected',
-        tool_count: 3,
         transport: { type: 'stdio', command: 'python', args: ['-m', 'mock_mcp'] },
         metadata: { description: '读写工作区文件' },
       },
@@ -495,9 +489,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const server: McpServer = {
         id: `mcp-${state.mcpServers.length + 1}`,
         name: String(body.name || '新工具'),
-        enabled: body.enabled !== false,
-        status: 'connected',
-        tool_count: 0,
         transport: (body.transport as Record<string, unknown>) || { type: 'stdio', command: '' },
         metadata: (body.metadata as Record<string, unknown>) || {},
       }

@@ -217,7 +217,6 @@ const stdioVaultRef = ref('')
 const saving = ref(false)
 const form = ref({
   name: '',
-  enabled: true,
   transport: {
     type: 'stdio' as 'stdio' | 'sse' | 'http',
     command: '',
@@ -290,7 +289,6 @@ async function submit() {
 
     const body: Record<string, unknown> = {
       name: form.value.name.trim(),
-      enabled: form.value.enabled,
       transport,
       metadata: form.value.metadata,
     }

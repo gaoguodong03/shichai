@@ -58,12 +58,33 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
 
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
     await expect(page.getByText('自动化工具')).toBeVisible()
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const toolButton = Array.from(document.querySelectorAll('button')).find((el) => el.textContent?.includes('自动化工具'))
+        return toolButton?.querySelectorAll('div').length || 0
+      }),
+    ).toBeGreaterThanOrEqual(2)
   })
 
   test('工具详情页底部直接展示访问方式，不再使用分享按钮', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/mcp')
 
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
+    await expect(page.getByText(/^ID:/)).toHaveCount(0)
+    await expect.poll(async () =>
+      page.evaluate(() => {
+        const form = document.querySelector('form')
+        const nameLabel = Array.from(form?.querySelectorAll('label') || []).find((el) => el.textContent?.trim() === '名称 *')
+        const descriptionLabel = Array.from(form?.querySelectorAll('label') || []).find((el) => el.textContent?.trim() === '描述')
+        const transportLabel = Array.from(form?.querySelectorAll('label') || []).find((el) => el.textContent?.trim() === '传输类型 *')
+        if (!nameLabel || !descriptionLabel || !transportLabel) return false
+        const afterName = Boolean(nameLabel.compareDocumentPosition(descriptionLabel) & Node.DOCUMENT_POSITION_FOLLOWING)
+        const beforeTransport = Boolean(descriptionLabel.compareDocumentPosition(transportLabel) & Node.DOCUMENT_POSITION_FOLLOWING)
+        return afterName && beforeTransport
+      }),
+    ).toBe(true)
+    await expect(page.getByLabel('启用')).toHaveCount(0)
+    await expect(page.getByText(/状态:|工具数|已连接|未连接/)).toHaveCount(0)
     await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
     await expect(page.getByText('访问方式', { exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: /\/share\/run\?id=share-mcp/ })).toBeVisible()

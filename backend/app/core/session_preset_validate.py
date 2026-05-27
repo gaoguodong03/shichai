@@ -62,13 +62,13 @@ def normalize_preset_dict_for_validation(item: Dict[str, Any]) -> Optional[Dict[
 
 
 def _mcp_id_maps(servers: Sequence[Mapping[str, Any]]) -> Dict[str, bool]:
-    """id -> enabled"""
+    """id -> present. Legacy enabled flags are ignored."""
     by_id: Dict[str, bool] = {}
     for s in servers or []:
         sid = str(s.get("id") or "").strip()
         if not sid:
             continue
-        by_id[sid] = bool(s.get("enabled", True))
+        by_id[sid] = True
     return by_id
 
 

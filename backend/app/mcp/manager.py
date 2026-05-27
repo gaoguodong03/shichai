@@ -328,7 +328,7 @@ class MCPToolManager:
                 self.server_configs = json.load(f)
             logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
             for config in self.server_configs:
-                logger.info(f"  - {config.get('id')}: {config.get('name')}, enabled: {config.get('enabled')}")
+                logger.info(f"  - {config.get('id')}: {config.get('name')}")
         else:
             logger.warning(f"MCP 配置文件不存在: {config_path}")
             # 默认配置示例
@@ -493,7 +493,7 @@ class MCPToolManager:
     async def _reconnect_server(self, server_id: str) -> bool:
         """Best-effort reconnect for a specific server when session is closed."""
         cfg = next((c for c in self.server_configs if c.get("id") == server_id), None)
-        if not cfg or not cfg.get("enabled", True):
+        if not cfg:
             return False
         old = self.sessions.pop(server_id, None)
         if old is not None:
@@ -600,25 +600,24 @@ class MCPToolManager:
 
         for config in self.server_configs:
             server_id = config.get("id", f"server_{len(self.sessions)}")
-            if config.get("enabled", True):
-                # lazy server: 不在启动期建立连接，首次需要时再连接
-                if config.get("lazy", False):
-                    logger.info("MCP Server %s 标记为 lazy，跳过启动初始化", server_id)
-                    continue
-                try:
-                    # 单个 server 失败不应影响其它 server 与主服务启动
-                    tmo = float(config.get("metadata", {}).get("init_timeout_sec", 15.0))
-                    logger.info("初始化 MCP Server: %s (timeout=%.1fs)", server_id, tmo)
-                    success = await asyncio.wait_for(self.connect_server(server_id, config), timeout=tmo)
-                    if not success:
-                        logger.error("MCP Server %s 初始化失败（已跳过）", server_id)
-                except asyncio.TimeoutError:
-                    logger.error("MCP Server %s 初始化超时（已跳过）", server_id, exc_info=True)
-                except asyncio.CancelledError as e:
-                    # 某些 stdio/http 初始化会触发 anyio cancel scope；这里降级处理，避免阻塞整个系统
-                    logger.error("MCP Server %s 初始化被取消（已跳过）: %s", server_id, e, exc_info=True)
-                except BaseException as e:
-                    logger.error("MCP Server %s 初始化异常（已跳过）: %s", server_id, e, exc_info=True)
+            # lazy server: 不在启动期建立连接，首次需要时再连接
+            if config.get("lazy", False):
+                logger.info("MCP Server %s 标记为 lazy，跳过启动初始化", server_id)
+                continue
+            try:
+                # 单个 server 失败不应影响其它 server 与主服务启动
+                tmo = float(config.get("metadata", {}).get("init_timeout_sec", 15.0))
+                logger.info("初始化 MCP Server: %s (timeout=%.1fs)", server_id, tmo)
+                success = await asyncio.wait_for(self.connect_server(server_id, config), timeout=tmo)
+                if not success:
+                    logger.error("MCP Server %s 初始化失败（已跳过）", server_id)
+            except asyncio.TimeoutError:
+                logger.error("MCP Server %s 初始化超时（已跳过）", server_id, exc_info=True)
+            except asyncio.CancelledError as e:
+                # 某些 stdio/http 初始化会触发 anyio cancel scope；这里降级处理，避免阻塞整个系统
+                logger.error("MCP Server %s 初始化被取消（已跳过）: %s", server_id, e, exc_info=True)
+            except BaseException as e:
+                logger.error("MCP Server %s 初始化异常（已跳过）: %s", server_id, e, exc_info=True)
         
         logger.info("加载 mcp 工具完成")
 
@@ -640,9 +639,6 @@ class MCPToolManager:
             cfg = next((c for c in self.server_configs if c.get("id") == sid), None)
             if not cfg:
                 logger.warning("ensure_servers_loaded: 未找到 MCP server 配置: %s", sid)
-                continue
-            if not cfg.get("enabled", True):
-                logger.info("ensure_servers_loaded: MCP server %s 未启用（enabled=false），跳过", sid)
                 continue
             await self.connect_server(sid, cfg)
     

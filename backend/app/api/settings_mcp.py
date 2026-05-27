@@ -54,14 +54,12 @@ class MCPTransport(BaseModel):
 class MCPServerCreate(BaseModel):
     """创建 MCP Server 请求"""
     name: str
-    enabled: bool = True
     transport: MCPTransport
     metadata: Optional[Dict[str, Any]] = None
 
 class MCPServerUpdate(BaseModel):
     """更新 MCP Server 请求"""
     name: Optional[str] = None
-    enabled: Optional[bool] = None
     transport: Optional[MCPTransport] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -70,13 +68,16 @@ def load_mcp_config() -> List[Dict[str, Any]]:
     config_path = mcp_config_path()
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            rows = json.load(f)
+        if isinstance(rows, list):
+            return [_strip_legacy_runtime_fields(row) for row in rows if isinstance(row, dict)]
     return []
 
 def save_mcp_config(servers: List[Dict[str, Any]]):
     """保存 MCP 配置"""
     config_path = mcp_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    servers = [_strip_legacy_runtime_fields(row) for row in servers or [] if isinstance(row, dict)]
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
     user_ctx = get_current_user_context(default_fallback=False)
@@ -94,6 +95,14 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
             "id",
             body_filename="tool.json",
         )
+
+
+def _strip_legacy_runtime_fields(server: Dict[str, Any]) -> Dict[str, Any]:
+    copied = dict(server)
+    copied.pop("enabled", None)
+    copied.pop("status", None)
+    copied.pop("tool_count", None)
+    return copied
 
 
 def _frontmatter_mcp_ids(fm: Dict[str, Any]) -> List[str]:
@@ -197,38 +206,12 @@ def _read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
 async def get_mcp_servers():
     """获取 MCP Server 列表"""
     servers = load_mcp_config()
-    mcp_manager = await _mcp_runtime_for_request()
-    
-    # 统计每个 server 的工具数量
-    server_tool_counts = {}
-    for tool_name, tool in mcp_manager.tools.items():
-        # 工具名称格式: server_id_tool_name
-        if '_' in tool_name:
-            server_id = tool_name.split('_', 1)[0]
-            server_tool_counts[server_id] = server_tool_counts.get(server_id, 0) + 1
-    
-    # 检查连接状态
-    server_status = {}
-    for server_id in mcp_manager.sessions.keys():
-        server_status[server_id] = "connected"
-    
-    # 添加状态信息
     result = []
     for server in servers:
         server_id = server.get("id", "")
-        tool_count = server_tool_counts.get(server_id, 0)
-        status = server_status.get(server_id, "disconnected")
-        
-        # 如果启用了但未连接，可能是连接失败
-        if server.get("enabled", False) and status == "disconnected":
-            status = "disconnected"
-        
         server_info = {
             "id": server_id,
             "name": server.get("name", ""),
-            "enabled": server.get("enabled", False),
-            "tool_count": tool_count,
-            "status": status,
             "transport": server.get("transport", {}),
             "metadata": server.get("metadata", {})
         }
@@ -335,7 +318,6 @@ async def create_mcp_server(server: MCPServerCreate):
     new_server = {
         "id": server_id,
         "name": server.name,
-        "enabled": server.enabled,
         "transport": server.transport.model_dump(exclude_none=True),
         "metadata": server.metadata or {}
     }
@@ -368,8 +350,6 @@ async def update_mcp_server(server_id: str, server_update: MCPServerUpdate):
     server = servers[server_index]
     if server_update.name is not None:
         server["name"] = server_update.name
-    if server_update.enabled is not None:
-        server["enabled"] = server_update.enabled
     if server_update.transport is not None:
         server["transport"] = server_update.transport.model_dump(exclude_none=True)
     if server_update.metadata is not None:
@@ -407,40 +387,6 @@ async def delete_mcp_server(server_id: str):
             "deleted": True
         }
     }
-
-@router.post("/settings/mcp/{server_id}/enable")
-async def enable_mcp_server(server_id: str):
-    """启用 MCP Server"""
-    servers = load_mcp_config()
-    
-    for server in servers:
-        if server.get("id") == server_id:
-            server["enabled"] = True
-            save_mcp_config(servers)
-            await _invalidate_mcp_runtime_after_config_change()
-            return {
-                "status": "ok",
-                "data": server
-            }
-    
-    raise HTTPException(status_code=404, detail="MCP Server not found")
-
-@router.post("/settings/mcp/{server_id}/disable")
-async def disable_mcp_server(server_id: str):
-    """禁用 MCP Server"""
-    servers = load_mcp_config()
-    
-    for server in servers:
-        if server.get("id") == server_id:
-            server["enabled"] = False
-            save_mcp_config(servers)
-            await _invalidate_mcp_runtime_after_config_change()
-            return {
-                "status": "ok",
-                "data": server
-            }
-    
-    raise HTTPException(status_code=404, detail="MCP Server not found")
 
 @router.post("/settings/mcp/{server_id}/test")
 async def test_mcp_server(server_id: str):

@@ -78,7 +78,7 @@ def test_legacy_group_host_placeholder_is_not_a_default_dependency():
     assert cfg["skill_ids"] == []
 
 
-def test_validate_missing_host_mcp_disabled_warning():
+def test_validate_host_mcp_ignores_legacy_enabled_false():
     preset = {
         "id": "p",
         "name": "P",
@@ -93,7 +93,7 @@ def test_validate_missing_host_mcp_disabled_warning():
         mcp_servers=[{"id": "off", "enabled": False}],
     )
     assert v.valid
-    assert any(x.get("mcp_server_id") == "off" for x in v.disabled_mcp_servers)
+    assert v.disabled_mcp_servers == []
 
 
 def test_skip_agent_skills_when_agent_missing():

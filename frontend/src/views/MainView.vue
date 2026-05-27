@@ -583,7 +583,9 @@
               ]"
             >
               <div class="truncate font-medium">{{ s.name || s.id }}</div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ s.status === 'connected' ? '已连接' : '未连接' }} · {{ s.tool_count || 0 }} 工具</div>
+              <div class="truncate text-xs text-muted mt-0.5 min-h-4" aria-hidden="true">
+                {{ s.description || s.metadata?.description || '\u00a0' }}
+              </div>
             </button>
           </template>
           <!-- LLM -->
@@ -1883,7 +1885,7 @@ const missingScenarioLeaderSkillRefs = computed(() =>
 
 const skills = ref<{ id: string; name: string; description?: string }[]>([])
 const skillsLoading = ref(false)
-const mcpServers = ref<{ id: string; name: string; description?: string; metadata?: Record<string, any>; status: string; tool_count: number }[]>([])
+const mcpServers = ref<{ id: string; name: string; description?: string; metadata?: Record<string, any> }[]>([])
 const mcpLoading = ref(false)
 const llmDefault = ref<string>('qwen')
 const llmProviders = ref<

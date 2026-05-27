@@ -109,6 +109,7 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     assert exported.headers["content-type"].startswith("application/zip")
     with zipfile.ZipFile(BytesIO(exported.content)) as zf:
         rows = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+    assert "enabled" not in rows[0]
     assert rows[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
     assert rows[0]["transport"]["env"]["QWEN_AUDIO_MODEL"] == "qwen3-asr-1.7b"
 
@@ -127,6 +128,34 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     assert listed.status_code == 200
     restored = next(x for x in listed.json()["data"]["servers"] if x["id"] == server_id)
     assert restored["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
+
+
+def test_mcp_settings_omits_legacy_enable_and_runtime_state(frontend_flow_client: TestClient):
+    client = frontend_flow_client
+    headers = _headers("frontend-mcp-legacy@example.test")
+
+    created = client.post(
+        "/api/settings/mcp",
+        json={
+            "name": "旧开关工具",
+            "enabled": False,
+            "transport": {"type": "stdio", "command": "python", "args": ["-m", "noop"]},
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    server_id = created.json()["data"]["id"]
+    assert "enabled" not in created.json()["data"]
+
+    listed = client.get("/api/settings/mcp", headers=headers)
+    assert listed.status_code == 200
+    row = next(x for x in listed.json()["data"]["servers"] if x["id"] == server_id)
+    assert "enabled" not in row
+    assert "status" not in row
+    assert "tool_count" not in row
+
+    assert client.post(f"/api/settings/mcp/{server_id}/enable", headers=headers).status_code == 404
+    assert client.post(f"/api/settings/mcp/{server_id}/disable", headers=headers).status_code == 404
 
 
 def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClient):
@@ -437,11 +466,9 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert mcp.status_code == 200
     mcp_id = mcp.json()["data"]["id"]
-    assert client.post(f"/api/settings/mcp/{mcp_id}/enable", headers=headers).status_code == 200
-    assert client.post(f"/api/settings/mcp/{mcp_id}/disable", headers=headers).status_code == 200
     mcp_update = client.put(
         f"/api/settings/mcp/{mcp_id}",
-        json={"name": "前端流程 MCP 2", "enabled": False},
+        json={"name": "前端流程 MCP 2"},
         headers=headers,
     )
     assert mcp_update.status_code == 200

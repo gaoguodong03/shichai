@@ -15,9 +15,13 @@
           class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
         />
       </div>
-      <div class="flex items-center gap-2">
-        <input v-model="form.enabled" type="checkbox" id="mcp-enabled" class="rounded border-input-border bg-input-bg" />
-        <label for="mcp-enabled" class="text-sm text-primary">启用</label>
+      <div>
+        <label class="block text-sm font-medium text-primary mb-1">描述</label>
+        <textarea
+          v-model="form.metadata.description"
+          rows="2"
+          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+        />
       </div>
       <div>
         <label class="block text-sm font-medium text-primary mb-1">传输类型 *</label>
@@ -178,15 +182,6 @@
           </div>
         </div>
       </template>
-      <div>
-        <label class="block text-sm font-medium text-primary mb-1">描述</label>
-        <textarea
-          v-model="form.metadata.description"
-          rows="2"
-          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-        />
-      </div>
-      <p class="text-xs text-muted">ID: {{ server.id }} · 状态: {{ server.status }} · 工具数: {{ server.tool_count ?? 0 }}</p>
       <div class="pt-4 border-t border-border-light space-y-2">
         <div class="text-sm font-medium text-primary">访问方式</div>
         <div v-if="sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
@@ -249,9 +244,6 @@ const stdioVaultRef = ref('')
 interface Server {
   id: string
   name: string
-  enabled: boolean
-  status: string
-  tool_count?: number
   transport?: {
     type: string
     command?: string
@@ -277,7 +269,6 @@ const shareFullUrl = computed(() =>
 )
 const form = ref({
   name: '',
-  enabled: true,
   transport: {
     type: 'stdio' as string,
     command: '',
@@ -308,7 +299,6 @@ function fillForm(s: Server) {
   stdioVaultRef.value = stdioAuth.vaultRef
   form.value = {
     name: s.name,
-    enabled: s.enabled,
     transport: {
       type: t.type || 'stdio',
       command: t.command || '',
@@ -411,7 +401,6 @@ async function save() {
 
     const body: Record<string, unknown> = {
       name: form.value.name.trim(),
-      enabled: form.value.enabled,
       transport,
       metadata: form.value.metadata,
     }

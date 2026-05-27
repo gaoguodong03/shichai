@@ -538,6 +538,33 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monkeypatch):
+    import app.mcp.manager as mcp_manager
+
+    mgr = mcp_manager.MCPToolManager()
+    mgr.server_configs = [
+        {
+            "id": "mcp-legacy-off",
+            "name": "Legacy Off",
+            "enabled": False,
+            "transport": {"type": "stdio", "command": "python"},
+        }
+    ]
+    connected = []
+
+    async def _fake_connect_server(server_id, config):
+        connected.append((server_id, config))
+        mgr.sessions[server_id] = "session"
+        return True
+
+    monkeypatch.setattr(mgr, "connect_server", _fake_connect_server)
+
+    await mgr.ensure_servers_loaded(["mcp-legacy-off"])
+
+    assert connected == [("mcp-legacy-off", mgr.server_configs[0])]
+
+
+@pytest.mark.asyncio
 async def test_execute_mcp_call_serializes_same_session(temp_user_data_root, monkeypatch):
     from app.mcp.manager import execute_mcp_call
 

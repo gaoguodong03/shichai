@@ -22,7 +22,7 @@ def _mcp_id_maps(servers: Sequence[Mapping[str, Any]]) -> Dict[str, bool]:
         sid = str(s.get("id") or "").strip()
         if not sid:
             continue
-        by_id[sid] = bool(s.get("enabled", True))
+        by_id[sid] = True
     return by_id
 
 

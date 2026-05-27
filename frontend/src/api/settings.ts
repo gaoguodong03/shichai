@@ -27,7 +27,7 @@ export async function deleteSkill(id: string): Promise<ApiResult> {
 
 /** GET /api/settings/mcp */
 export async function getMcpServers(): Promise<
-  ApiResult<{ servers: Array<{ id: string; name?: string; enabled?: boolean; [k: string]: unknown }> }>
+  ApiResult<{ servers: Array<{ id: string; name?: string; [k: string]: unknown }> }>
 > {
   return apiFetch('/settings/mcp')
 }
@@ -44,12 +44,6 @@ export async function saveMcpServer(payload: Record<string, unknown> & { id?: st
 /** DELETE /api/settings/mcp/:id */
 export async function deleteMcpServer(id: string): Promise<ApiResult> {
   return apiFetch(`/settings/mcp/${id}`, { method: 'DELETE' })
-}
-
-/** POST /api/settings/mcp/:id/enable 或 disable */
-export async function toggleMcpServer(id: string, enabled: boolean): Promise<ApiResult> {
-  const endpoint = enabled ? 'enable' : 'disable'
-  return apiFetch(`/settings/mcp/${id}/${endpoint}`, { method: 'POST' })
 }
 
 /** POST /api/settings/mcp/:id/test */

@@ -675,19 +675,19 @@ def load_skills_config() -> List[Dict[str, Any]]:
     return skills
 
 def _validate_skill_mcp_server_ids(mcp_ids: Optional[List[str]]) -> List[str]:
-    """校验 skill 声明的 MCP id 均存在且已启用。"""
+    """校验 skill 声明的 MCP id 均存在。"""
     raw = [str(x).strip() for x in (mcp_ids or []) if str(x).strip()]
     cfg = load_mcp_config()
     allowed = {
         str(s.get("id")).strip()
         for s in cfg
-        if s.get("enabled", True) and str(s.get("id") or "").strip()
+        if str(s.get("id") or "").strip()
     }
     unknown = [x for x in raw if x not in allowed]
     if unknown:
         raise HTTPException(
             status_code=400,
-            detail="Unknown or disabled MCP server id: " + ", ".join(unknown),
+            detail="Unknown MCP server id: " + ", ".join(unknown),
         )
     return list(dict.fromkeys(raw))
 
@@ -699,8 +699,8 @@ def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
         return []
     fm, _ = _read_skill_file(skill_dir)
     ids = _mcp_ids_from_frontmatter(fm)
-    enabled_ids = {s.get("id") for s in load_mcp_config() if s.get("enabled", True)}
-    return [x for x in ids if x in enabled_ids]
+    existing_ids = {s.get("id") for s in load_mcp_config()}
+    return [x for x in ids if x in existing_ids]
 
 
 @router.get("/settings/skills")

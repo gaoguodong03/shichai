@@ -7,7 +7,6 @@ export {
   getMcpServers,
   saveMcpServer,
   deleteMcpServer,
-  toggleMcpServer,
   testMcpServer,
 } from './settings'
 export { listWorkspaceFiles, downloadUrl, type FileEntry } from './files'
