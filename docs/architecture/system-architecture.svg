@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1260" viewBox="0 0 1800 1260" role="img" aria-labelledby="title desc">
+  <title id="title">书童四九分层系统架构图</title>
+  <desc id="desc">书童四九的分层架构图：用户界面、API 接入、Agent 编排、工具运行、用户数据与外部服务。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#344054"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="124%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#101828" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .bg { fill: #f6f8fb; }
+      .title { font: 700 42px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #101828; }
+      .subtitle { font: 400 18px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475467; }
+      .layer-name { font: 700 22px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #344054; }
+      .node-title { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #101828; }
+      .node-text { font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475467; }
+      .chip-text { font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #344054; }
+      .label { font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #344054; }
+      .small { font: 400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #667085; }
+      .layer { rx: 26; stroke-width: 1.2; filter: url(#shadow); }
+      .ui-layer { fill: #eaf5ff; stroke: #b8ddff; }
+      .api-layer { fill: #eef4ff; stroke: #c7d7fe; }
+      .agent-layer { fill: #ecfdf3; stroke: #bbf7d0; }
+      .runtime-layer { fill: #fff7ed; stroke: #fed7aa; }
+      .base-layer { fill: #f9fafb; stroke: #d0d5dd; }
+      .node { fill: #ffffff; stroke: #d0d5dd; stroke-width: 1.5; rx: 18; }
+      .node-strong { fill: #ffffff; stroke: #2563eb; stroke-width: 2; rx: 20; }
+      .chip { fill: #ffffff; stroke: #d0d5dd; stroke-width: 1.1; rx: 16; }
+      .data { fill: #fff1f3; stroke: #fda4af; }
+      .external { fill: #f5f3ff; stroke: #c4b5fd; }
+      .arrow-main { fill: none; stroke: #2563eb; stroke-width: 3.2; marker-end: url(#arrow-blue); }
+      .arrow-side { fill: none; stroke: #344054; stroke-width: 2.2; marker-end: url(#arrow); }
+      .arrow-soft { fill: none; stroke: #98a2b3; stroke-width: 2; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+      .legend { fill: #ffffff; stroke: #d0d5dd; stroke-width: 1; rx: 18; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1260"/>
+  <text class="title" x="74" y="78">书童四九分层系统架构图</text>
+  <text class="subtitle" x="76" y="114">从用户界面到 Agent 编排、工具沙箱、用户数据与外部服务的分层视图，主链路清晰，支撑能力分列两侧。</text>
+
+  <rect class="layer ui-layer" x="70" y="155" width="1660" height="150"/>
+  <text class="layer-name" x="106" y="204">1. 用户体验层</text>
+  <rect class="node-strong" x="650" y="185" width="500" height="92"/>
+  <text class="node-title" x="710" y="224">浏览器端 Vue 单页应用</text>
+  <text class="node-text" x="710" y="250">承载工作区、资源中心、设置、登录态与流式消息展示</text>
+  <rect class="chip" x="1230" y="188" width="126" height="40"/>
+  <text class="chip-text" x="1261" y="213">工作区</text>
+  <rect class="chip" x="1370" y="188" width="126" height="40"/>
+  <text class="chip-text" x="1401" y="213">资源中心</text>
+  <rect class="chip" x="1510" y="188" width="126" height="40"/>
+  <text class="chip-text" x="1548" y="213">设置</text>
+  <rect class="chip" x="1230" y="238" width="406" height="40"/>
+  <text class="chip-text" x="1288" y="263">REST 请求 + SSE 流式返回</text>
+
+  <rect class="layer api-layer" x="70" y="350" width="1660" height="170"/>
+  <text class="layer-name" x="106" y="404">2. API 接入层</text>
+  <rect class="node-strong" x="650" y="382" width="500" height="105"/>
+  <text class="node-title" x="710" y="424">FastAPI 统一入口</text>
+  <text class="node-text" x="710" y="450">完成认证、用户上下文解析、路由分发与同源静态托管</text>
+  <rect class="chip" x="1220" y="382" width="160" height="42"/>
+  <text class="chip-text" x="1251" y="408">会话 API</text>
+  <rect class="chip" x="1398" y="382" width="160" height="42"/>
+  <text class="chip-text" x="1428" y="408">Agent API</text>
+  <rect class="chip" x="1220" y="442" width="338" height="42"/>
+  <text class="chip-text" x="1260" y="468">设置 / 文件 / 分享 API</text>
+  <rect class="chip" x="228" y="402" width="250" height="48"/>
+  <text class="chip-text" x="278" y="432">Bearer Token → 用户身份</text>
+
+  <rect class="layer agent-layer" x="70" y="565" width="1660" height="245"/>
+  <text class="layer-name" x="106" y="620">3. Agent 编排层</text>
+  <rect class="node-strong" x="650" y="605" width="500" height="150"/>
+  <text class="node-title" x="710" y="650">主持人 + 专家运行时</text>
+  <text class="node-text" x="710" y="680">读取会话上下文，决定下一位发言专家</text>
+  <text class="node-text" x="710" y="707">把专家人设、Skill 策略、工具能力合成为一次 ReAct 执行</text>
+  <rect class="chip" x="246" y="632" width="185" height="46"/>
+  <text class="chip-text" x="288" y="661">会话状态</text>
+  <rect class="chip" x="455" y="632" width="185" height="46"/>
+  <text class="chip-text" x="499" y="661">专家配置</text>
+  <rect class="chip" x="246" y="695" width="394" height="46"/>
+  <text class="chip-text" x="332" y="724">Skill 策略与任务说明</text>
+  <rect class="chip" x="1220" y="632" width="360" height="46"/>
+  <text class="chip-text" x="1300" y="661">模型调用策略</text>
+  <rect class="chip" x="1220" y="695" width="360" height="46"/>
+  <text class="chip-text" x="1286" y="724">工具调用决策</text>
+
+  <rect class="layer runtime-layer" x="70" y="855" width="1660" height="205"/>
+  <text class="layer-name" x="106" y="910">4. 工具运行层</text>
+  <rect class="node-strong" x="650" y="895" width="500" height="112"/>
+  <text class="node-title" x="710" y="940">工具网关与用户沙箱</text>
+  <text class="node-text" x="710" y="967">统一处理工具调用、超时、路径约束、脚本执行与调试摘要</text>
+  <rect class="chip" x="230" y="900" width="170" height="48"/>
+  <text class="chip-text" x="281" y="930">MCP 工具</text>
+  <rect class="chip" x="420" y="900" width="170" height="48"/>
+  <text class="chip-text" x="475" y="930">文件工具</text>
+  <rect class="chip" x="230" y="965" width="360" height="48"/>
+  <text class="chip-text" x="331" y="995">Skill 脚本执行</text>
+  <rect class="chip" x="1218" y="900" width="360" height="48"/>
+  <text class="chip-text" x="1280" y="930">OpenSandbox 控制面</text>
+  <rect class="chip" x="1218" y="965" width="360" height="48"/>
+  <text class="chip-text" x="1308" y="995">标准 / 浏览器沙箱镜像</text>
+
+  <rect class="layer base-layer" x="70" y="1100" width="1660" height="110"/>
+  <text class="layer-name" x="106" y="1158">5. 基础支撑层</text>
+  <rect class="node data" x="355" y="1122" width="420" height="66"/>
+  <text class="node-title" x="385" y="1152">用户隔离数据目录</text>
+  <text class="node-text" x="385" y="1175">配置 / 会话 / Skill / 工作区文件 / 账号</text>
+  <rect class="node external" x="1025" y="1122" width="420" height="66"/>
+  <text class="node-title" x="1055" y="1152">外部服务</text>
+  <text class="node-text" x="1055" y="1175">LLM Provider / MCP Server / 镜像与容器运行时</text>
+
+  <path class="arrow-main" d="M900 277 L900 382"/>
+  <text class="label" x="918" y="338">请求进入后端</text>
+  <path class="arrow-main" d="M900 487 L900 605"/>
+  <text class="label" x="918" y="552">会话进入编排</text>
+  <path class="arrow-main" d="M900 755 L900 895"/>
+  <text class="label" x="918" y="832">需要工具时下探</text>
+
+  <path class="arrow-side" d="M1150 680 L1220 680"/>
+  <text class="label" x="1162" y="664">推理</text>
+  <path class="arrow-side" d="M1150 951 L1218 951"/>
+  <text class="label" x="1162" y="935">执行</text>
+  <path class="arrow-soft" d="M650 442 C520 442, 450 1120, 565 1122"/>
+  <path class="arrow-soft" d="M650 680 C515 680, 470 1120, 565 1122"/>
+  <path class="arrow-soft" d="M650 951 C535 951, 485 1120, 565 1122"/>
+  <path class="arrow-soft" d="M1150 680 C1265 680, 1290 1120, 1235 1122"/>
+  <path class="arrow-soft" d="M1150 951 C1280 951, 1298 1120, 1235 1122"/>
+
+  <path class="arrow-main" d="M650 230 C520 230, 520 414, 650 414"/>
+  <text class="label" x="458" y="324">流式响应回到前端</text>
+
+  <rect class="legend" x="70" y="1230" width="1660" height="1" opacity="0"/>
+  <circle cx="105" cy="1236" r="8" fill="#2563eb"/>
+  <text class="small" x="122" y="1241">蓝色主线：用户请求 → API 接入 → Agent 编排 → 工具运行；SSE 从同一链路返回。</text>
+  <circle cx="660" cy="1236" r="8" fill="#98a2b3"/>
+  <text class="small" x="677" y="1241">灰色虚线：各层按当前用户读写数据，或调用外部模型、MCP 与沙箱控制面。</text>
+</svg>
