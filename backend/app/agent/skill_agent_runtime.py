@@ -320,6 +320,16 @@ def _apply_audio_asr_path_from_user_message(
         arguments.pop("__arg1", None)
 
 
+def _apply_image_generation_workspace_id(arguments: dict, workspace_id: str) -> None:
+    """For image-generation MCP, default outputs to the active workspace."""
+    wid = (workspace_id or "").strip()
+    if not wid:
+        return
+    if str(arguments.get("workspace_id") or "").strip():
+        return
+    arguments["workspace_id"] = wid
+
+
 def _tool_name_looks_like_bound_mcp(name: str) -> bool:
     """区分「本技能声明的 MCP 工具（server_tool）」与工作区 / 脚本 / 包装类工具。"""
     n = (name or "").strip()
@@ -746,6 +756,7 @@ def create_react_agent(
             return args
 
         tool_results = []
+        workspace_id = str(state.get("workspace_id") or "") if isinstance(state, dict) else ""
         
         # 优先处理模型返回的结构化工具调用
         if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
@@ -759,6 +770,8 @@ def create_react_agent(
                     if fallback:
                         arguments["description"] = fallback
                         logger.info(f"call_tool: 已从 content 补全 description，长度: {len(fallback)}")
+                if tool_name == "image-generation_generate_image":
+                    _apply_image_generation_workspace_id(arguments, workspace_id)
                 logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
                 logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
                 
@@ -820,6 +833,8 @@ def create_react_agent(
                 if fallback:
                     arguments["description"] = fallback
                     logger.info(f"call_tool: 已从 content 补全 description，长度: {len(fallback)}")
+            if tool_name == "image-generation_generate_image":
+                _apply_image_generation_workspace_id(arguments, workspace_id)
             logger.info(f"call_tool: 工具名称: {tool_name}, 参数: {arguments}")
             logger.info(f"call_tool: 可用工具列表: {[t.name for t in state['tools']]}")
             
@@ -1205,6 +1220,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             if tool:
                 if tool_name == "audio-asr_transcribe_audio_file":
                     _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
+                if tool_name == "image-generation_generate_image":
+                    _apply_image_generation_workspace_id(arguments, workspace_id)
                 # read_file：从最近用户消息补全 path，或在模型沿用旧路径时用用户本条消息覆盖
                 if _tool_is_workspace_plain_read_file(tool_name):
                     _apply_read_file_path_from_user_message(arguments, messages)
@@ -1301,6 +1318,8 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         if tool:
             if tool_name == "audio-asr_transcribe_audio_file":
                 _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
+            if tool_name == "image-generation_generate_image":
+                _apply_image_generation_workspace_id(arguments, workspace_id)
             if _tool_is_workspace_plain_read_file(tool_name):
                 _apply_read_file_path_from_user_message(arguments, messages)
             if tool_name == "rename_workspace_file":

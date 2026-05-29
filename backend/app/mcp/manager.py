@@ -221,6 +221,42 @@ def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) 
     return s
 
 
+def _build_stdio_child_env(
+    *,
+    username: Optional[str],
+    raw_env: Optional[Dict[str, Any]],
+    secrets: Optional[Dict[str, str]] = None,
+) -> Optional[Dict[str, str]]:
+    """Build stdio MCP child env, including the stable user identity.
+
+    Stdio MCP servers run in a separate process, so request ContextVars are not
+    available there. Pass the resolved stable user id explicitly so tools that
+    write workspace files do not fall back to the anonymous ``free4inno`` root.
+    """
+    should_create = bool(raw_env) or bool((username or "").strip())
+    if not should_create:
+        return None
+
+    env: Dict[str, str] = {k: str(v) for k, v in os.environ.items()}
+    if isinstance(raw_env, dict):
+        env.update({str(k): _subst_mcp_placeholders(str(v), secrets) for k, v in raw_env.items()})
+
+    uname = (username or "").strip()
+    if uname:
+        try:
+            from app.core.user_context import get_user_context_for
+
+            ctx = get_user_context_for(uname)
+            env["ST49_MCP_USER_ID"] = ctx.user_id or uname
+            env["ST49_MCP_USERNAME"] = ctx.username or uname
+        except Exception:
+            logger.warning("mcp_stdio_user_env_resolve_failed username=%s", uname, exc_info=True)
+            env["ST49_MCP_USER_ID"] = uname
+            env["ST49_MCP_USERNAME"] = uname
+
+    return env
+
+
 def _user_mcp_config_path(username: str) -> str:
     from app.core.user_context import get_user_context_for
 
@@ -369,10 +405,9 @@ class MCPToolManager:
                     command = sys.executable
                 
                 raw_env = transport.get("env")
-                env = None
-                if isinstance(raw_env, dict) and raw_env:
-                    # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
-                    env = {**os.environ, **{k: _subst_mcp_placeholders(v, secrets) for k, v in raw_env.items()}}
+                # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
+                # 同时注入稳定用户身份；stdio 子进程没有请求 ContextVar。
+                env = _build_stdio_child_env(username=self._username, raw_env=raw_env, secrets=secrets)
                 params = StdioServerParameters(
                     command=command,
                     args=args,

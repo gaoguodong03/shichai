@@ -103,6 +103,44 @@ def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkey
     )
 
 
+def test_apply_image_generation_workspace_id_defaults_to_current_workspace():
+    from app.agent import skill_agent_runtime as runtime
+
+    args = {"description": "河南胡辣汤封面", "workspace_id": ""}
+
+    runtime._apply_image_generation_workspace_id(args, "group-image")
+
+    assert args["workspace_id"] == "group-image"
+
+
+def test_apply_image_generation_workspace_id_preserves_explicit_workspace():
+    from app.agent import skill_agent_runtime as runtime
+
+    args = {"description": "河南胡辣汤封面", "workspace_id": "custom-workspace"}
+
+    runtime._apply_image_generation_workspace_id(args, "group-image")
+
+    assert args["workspace_id"] == "custom-workspace"
+
+
+def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
+    import app.mcp.manager as mcp_manager
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setenv("EXISTING_ENV", "keep")
+
+    env = mcp_manager._build_stdio_child_env(
+        username="user-runtime",
+        raw_env={"JENIYA_API_KEY": "${vault:image_key}"},
+        secrets={"image_key": "sk-test"},
+    )
+
+    assert env["EXISTING_ENV"] == "keep"
+    assert env["JENIYA_API_KEY"] == "sk-test"
+    assert env["ST49_MCP_USER_ID"] == "user-runtime"
+    assert env["ST49_MCP_USERNAME"] == "user-runtime"
+
+
 def test_skill_extra_instructions_require_writing_task_file_before_reading():
     from app.agent import skill_agent_runtime as runtime
     from app.agent.tool_spec import ToolSpec

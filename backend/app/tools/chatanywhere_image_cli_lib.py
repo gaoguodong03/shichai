@@ -2,7 +2,7 @@
 
 供 run_skill_script 调用的脚本使用（如 app-icon-generator）。
 - 环境变量 JENIYA_API_KEY（兼容 CHATANYWHERE_IMAGE_API_KEY 作为回退）
-- 可选 JENIYA_IMAGE_BASE_URL，默认 http://jeniya.top
+- 可选 JENIYA_IMAGE_BASE_URL，默认 https://jeniya.top
 - POST {base}/v1beta/models/gemini-3.1-flash-image-preview:generateContent
 """
 import os
@@ -10,14 +10,28 @@ from pathlib import Path
 
 import httpx
 
-_DEFAULT_BASE = "http://jeniya.top"
+_DEFAULT_BASE = "https://jeniya.top"
 _DEFAULT_MODEL = "gemini-3.1-flash-image-preview"
+_DEFAULT_MAX_ATTEMPTS = 2
+_MAX_ATTEMPTS_CAP = 5
 
 
 def _api_url() -> str:
     base = (os.environ.get("JENIYA_IMAGE_BASE_URL") or _DEFAULT_BASE).rstrip("/")
+    if base == "http://jeniya.top" or base.startswith("http://jeniya.top/"):
+        base = "https://" + base[len("http://") :]
     model = (os.environ.get("JENIYA_IMAGE_MODEL") or _DEFAULT_MODEL).strip()
     return f"{base}/v1beta/models/{model}:generateContent"
+
+
+def _max_attempts() -> int:
+    raw = os.environ.get("JENIYA_IMAGE_MAX_ATTEMPTS", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_ATTEMPTS
+    try:
+        return max(1, min(int(raw), _MAX_ATTEMPTS_CAP))
+    except ValueError:
+        return _DEFAULT_MAX_ATTEMPTS
 
 
 def get_api_key() -> str:
@@ -74,9 +88,36 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
         },
     }
 
+    attempts = _max_attempts()
+    resp = None
+    last_network_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+                resp = client.post(_api_url(), json=body, headers=headers)
+            break
+        except (
+            httpx.RemoteProtocolError,
+            httpx.ReadError,
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            OSError,
+        ) as e:
+            last_network_error = e
+            if attempt >= attempts:
+                break
+
+    if resp is None and last_network_error is not None:
+        err_msg = str(last_network_error)
+        if (
+            "nodename" in err_msg
+            or "not known" in err_msg
+            or getattr(last_network_error, "errno", None) == 8
+        ):
+            return "请求失败：无法解析接口域名（网络或 DNS 异常）。请检查本机网络、代理或防火墙。"
+        return f"请求失败（网络连接异常，已尝试 {attempts} 次）: {last_network_error}"
+
     try:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(_api_url(), json=body, headers=headers)
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, dict):
@@ -105,10 +146,5 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
     except httpx.HTTPStatusError as e:
         text_preview = (e.response.text or "")[:200]
         return f"请求失败 HTTP {e.response.status_code}: {text_preview}"
-    except (httpx.ConnectError, OSError) as e:
-        err_msg = str(e)
-        if "nodename" in err_msg or "not known" in err_msg or getattr(e, "errno", None) == 8:
-            return "请求失败：无法解析接口域名（网络或 DNS 异常）。请检查本机网络、代理或防火墙。"
-        return f"请求失败（网络连接异常）: {e}"
     except Exception as e:
         return f"生成图片失败: {e}"
