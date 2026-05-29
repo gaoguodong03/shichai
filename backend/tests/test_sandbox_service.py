@@ -726,26 +726,28 @@ async def test_startup_orphan_cleanup_skips_unreachable_opensandbox_without_list
     assert adapter.cleanup_calls == 0
 
 
-async def test_user_context_creates_default_sandbox_requirements(monkeypatch, tmp_path):
+async def test_user_context_does_not_create_default_sandbox_requirements(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     from app.core.user_context import get_user_context_for
 
     ctx = get_user_context_for("alice")
     req_path = ctx.config_dir / "sandbox" / "requirements.txt"
-    content = req_path.read_text(encoding="utf-8")
-    assert "pandas" in content
-    assert "openpyxl" in content
-    assert "xlrd" in content
+    assert not req_path.exists()
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
-async def test_default_sandbox_requirements_hash_regression(monkeypatch, tmp_path):
+async def test_empty_user_requirements_do_not_trigger_install(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     from app.core.user_context import get_user_context_for
 
     ctx = get_user_context_for("alice")
-    content = (ctx.config_dir / "sandbox" / "requirements.txt").read_text(encoding="utf-8").strip()
-    assert hashlib.sha256(content.encode("utf-8")).hexdigest()[:16] == "5817ace3254dfe26"
+    adapter = FakeAdapter()
+    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+
+    await svc.prewarm_user_sandbox(ctx.user_id, reason="login")
+
+    assert not (ctx.config_dir / "sandbox" / "requirements.txt").exists()
+    assert not any("SANDBOX_REQUIREMENTS_B64" in cmd["env"] for cmd in adapter.exec_commands)
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 

@@ -112,6 +112,25 @@ def test_register_initializes_user_id_directory_layout(env_and_client):
     assert profile["username"] == username
 
 
+def test_register_does_not_seed_sandbox_requirements(env_and_client):
+    client, db_path = env_and_client
+
+    username = "empty-req@example.com"
+    data = _auth_register(client, username=username, password="pw-empty-req-123")
+    user_root = db_path.parent / "users" / data["user_id"]
+
+    assert not (user_root / "config" / "sandbox" / "requirements.txt").exists()
+
+    r = client.get(
+        "/api/settings/sandbox/requirements",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["data"]["content"] == ""
+    assert not (user_root / "config" / "sandbox" / "requirements.txt").exists()
+
+
 def test_register_reuses_existing_resource_user_id_after_auth_db_reset(env_and_client):
     client, db_path = env_and_client
 
