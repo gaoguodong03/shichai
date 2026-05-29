@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -54,11 +54,76 @@ from app.mcp.manager import dispose_mcp_runtime_for_user
 from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user, invalidate_skills_cache_for_user
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
+logger = logging.getLogger(__name__)
 
 
 def _get_session_presets_path() -> Path:
     """根据当前用户返回 session_presets.json 路径。"""
     return session_presets_path()
+
+
+def _request_log_meta(request: Optional[Request]) -> Dict[str, str]:
+    if request is None:
+        return {"client": "", "referer": "", "user_agent": ""}
+    client = getattr(request, "client", None)
+    return {
+        "client": getattr(client, "host", "") or "",
+        "referer": str(request.headers.get("referer") or ""),
+        "user_agent": str(request.headers.get("user-agent") or ""),
+    }
+
+
+def _preset_ids(rows: List[Dict[str, Any]]) -> List[str]:
+    return [str(row.get("id") or "").strip() for row in rows if str(row.get("id") or "").strip()]
+
+
+def _scenario_resource_ids() -> List[str]:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return []
+    root = user_ctx.scenarios_dir.resolve()
+    if not root.is_dir():
+        return []
+    ids: List[str] = []
+    for child in sorted(root.iterdir(), key=lambda p: p.name):
+        if child.is_dir() and (child / "scenario.json").is_file():
+            ids.append(child.name)
+    return ids
+
+
+def _normalize_session_preset_row_for_api(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(item, dict):
+        return None
+    pid = str(item.get("id") or "").strip()
+    name = str(item.get("name") or "").strip()
+    agent_ids = item.get("agent_ids")
+    if not isinstance(agent_ids, list) or not agent_ids:
+        agent_ids = item.get("expert_ids")
+    if not isinstance(agent_ids, list):
+        agent_ids = []
+    normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
+    if not pid or not name or not normalized_ids:
+        return None
+    hc_raw = item.get("host_config")
+    lid = str(item.get("leader_agent_id") or "").strip()
+    if isinstance(hc_raw, dict):
+        lid = VIRTUAL_SCENE_HOST_ID
+    elif not lid:
+        lid = normalized_ids[0]
+    row_out: Dict[str, Any] = {
+        "id": pid,
+        "name": name,
+        "agent_ids": normalized_ids,
+        "leader_agent_id": lid,
+        "description": str(item.get("description") or ""),
+        "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
+    }
+    agent_refs = _normalize_reference_rows(item.get("agent_refs"))
+    if agent_refs:
+        row_out["agent_refs"] = _merge_reference_rows_for_ids(normalized_ids, agent_refs)
+    if isinstance(hc_raw, dict):
+        row_out["host_config"] = normalize_host_config_dict(hc_raw)
+    return row_out
 
 
 def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
@@ -70,48 +135,86 @@ def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(raw, list):
             for item in raw:
-                if not isinstance(item, dict):
-                    continue
-                pid = str(item.get("id") or "").strip()
-                name = str(item.get("name") or "").strip()
-                agent_ids = item.get("agent_ids")
-                if not isinstance(agent_ids, list) or not agent_ids:
-                    agent_ids = item.get("expert_ids")
-                if not isinstance(agent_ids, list):
-                    agent_ids = []
-                normalized_ids = [str(x).strip() for x in agent_ids if str(x).strip()]
-                if not pid or not name or not normalized_ids:
-                    continue
-                hc_raw = item.get("host_config")
-                lid = str(item.get("leader_agent_id") or "").strip()
-                if isinstance(hc_raw, dict):
-                    lid = VIRTUAL_SCENE_HOST_ID
-                elif not lid:
-                    lid = normalized_ids[0]
-                row_out: Dict[str, Any] = {
-                    "id": pid,
-                    "name": name,
-                    "agent_ids": normalized_ids,
-                    "leader_agent_id": lid,
-                    "description": str(item.get("description") or ""),
-                    "discussion_goal_example": str(item.get("discussion_goal_example") or ""),
-                }
-                agent_refs = _normalize_reference_rows(item.get("agent_refs"))
-                if agent_refs:
-                    row_out["agent_refs"] = _merge_reference_rows_for_ids(normalized_ids, agent_refs)
-                if isinstance(hc_raw, dict):
-                    row_out["host_config"] = normalize_host_config_dict(hc_raw)
-                presets.append(row_out)
+                row_out = _normalize_session_preset_row_for_api(item)
+                if row_out is not None:
+                    presets.append(row_out)
     except Exception:
         return []
     return presets
 
 
+def _load_session_preset_rows_from_resource_files() -> List[Dict[str, Any]]:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return []
+    root = user_ctx.scenarios_dir.resolve()
+    if not root.is_dir():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for child in sorted(root.iterdir(), key=lambda p: p.name):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        body = child / "scenario.json"
+        if not body.is_file():
+            continue
+        try:
+            raw = json.loads(body.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        row = _normalize_session_preset_row_for_api(raw if isinstance(raw, dict) else {})
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _merge_session_presets_with_resource_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    resource_rows = _load_session_preset_rows_from_resource_files()
+    if not resource_rows:
+        return rows
+    by_id: Dict[str, Dict[str, Any]] = {str(row.get("id") or ""): dict(row) for row in rows if row.get("id")}
+    order = [str(row.get("id") or "") for row in rows if row.get("id")]
+    changed = False
+    for row in resource_rows:
+        rid = str(row.get("id") or "").strip()
+        if not rid:
+            continue
+        if rid not in by_id:
+            order.append(rid)
+            changed = True
+        elif by_id[rid] != row:
+            changed = True
+        by_id[rid] = row
+    merged = [by_id[rid] for rid in order if rid in by_id]
+    if changed:
+        path = _get_session_presets_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        _mirror_session_presets_to_resources(merged)
+    return merged
+
+
 @router.get("/settings/session-presets")
-async def get_session_presets():
+async def get_session_presets(request: Request = None):
     """读取会话快捷预设（用于前端快捷按钮），兼容历史字段 expert_ids。"""
     path = _get_session_presets_path()
     presets = _load_session_preset_rows_from_file(path)
+    before_ids = _preset_ids(presets)
+    resource_ids = _scenario_resource_ids()
+    presets = _merge_session_presets_with_resource_rows(presets)
+    after_ids = _preset_ids(presets)
+    meta = _request_log_meta(request)
+    user_ctx = get_current_user_context(default_fallback=False)
+    logger.info(
+        "scenario_presets_get user=%s username=%s client=%s aggregate_ids=%s resource_ids=%s returned_ids=%s recovered=%s referer=%s",
+        user_ctx.user_id if user_ctx else "",
+        user_ctx.username if user_ctx else get_current_username() or "",
+        meta["client"],
+        before_ids,
+        resource_ids,
+        after_ids,
+        [rid for rid in after_ids if rid not in before_ids],
+        meta["referer"],
+    )
     return {"status": "ok", "data": {"presets": presets}}
 
 
@@ -292,10 +395,13 @@ def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
 
 
 @router.put("/settings/session-presets")
-async def update_session_presets(body: SessionPresetsBody):
+async def update_session_presets(body: SessionPresetsBody, request: Request = None):
     """保存会话快捷预设（用于前端快捷按钮）。"""
     path = _get_session_presets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    before_rows = _load_session_preset_rows_from_file(path)
+    before_ids = _preset_ids(before_rows)
+    resource_ids_before = _scenario_resource_ids()
     normalized: List[Dict[str, Any]] = []
     seen: Set[str] = set()
     for item in body.presets:
@@ -306,6 +412,24 @@ async def update_session_presets(body: SessionPresetsBody):
         normalized.append(row)
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     _mirror_session_presets_to_resources(normalized)
+    incoming_ids = [str(item.id or "").strip() for item in body.presets if str(item.id or "").strip()]
+    after_ids = _preset_ids(normalized)
+    meta = _request_log_meta(request)
+    user_ctx = get_current_user_context(default_fallback=False)
+    logger.info(
+        "scenario_presets_put user=%s username=%s client=%s incoming_ids=%s before_ids=%s after_ids=%s removed_ids=%s resource_ids_before=%s resource_ids_after=%s referer=%s user_agent=%s",
+        user_ctx.user_id if user_ctx else "",
+        user_ctx.username if user_ctx else get_current_username() or "",
+        meta["client"],
+        incoming_ids,
+        before_ids,
+        after_ids,
+        [rid for rid in before_ids if rid not in after_ids],
+        resource_ids_before,
+        _scenario_resource_ids(),
+        meta["referer"],
+        meta["user_agent"],
+    )
     return {"status": "ok", "data": {"presets": normalized}}
 
 
@@ -442,6 +566,7 @@ async def publish_session_preset_share(preset_id: str):
 
 @router.post("/settings/session-presets/import-bundle")
 async def import_session_preset_bundle(
+    request: Request,
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     overwrite_experts: bool = Form(True),
@@ -518,6 +643,23 @@ async def import_session_preset_bundle(
         )
 
         if dry_run:
+            meta = _request_log_meta(request)
+            user_ctx = get_current_user_context(default_fallback=False)
+            logger.info(
+                "scenario_bundle_import_preview user=%s username=%s client=%s preset_id=%s preset_name=%s existing_ids=%s resource_ids=%s name_conflict_ids=%s skill_ids=%s expert_ids=%s mcp_ids=%s referer=%s",
+                user_ctx.user_id if user_ctx else "",
+                user_ctx.username if user_ctx else get_current_username() or "",
+                meta["client"],
+                norm["id"],
+                norm["name"],
+                _preset_ids(existing_presets),
+                _scenario_resource_ids(),
+                preset_name_conflicts,
+                skill_ids_in_zip,
+                [row["agent_id"] for row in experts_preview if row.get("agent_id")],
+                [row["id"] for row in mcps_preview if row.get("id")],
+                meta["referer"],
+            )
             return {
                 "status": "ok",
                 "data": {
@@ -555,8 +697,33 @@ async def import_session_preset_bundle(
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
 
+        before_import_ids = _preset_ids(_load_session_preset_rows_from_file(_get_session_presets_path()))
+        before_import_resource_ids = _scenario_resource_ids()
         merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file([norm], conflict)
         val_after = _session_preset_validation_payload(norm)
+        meta = _request_log_meta(request)
+        user_ctx = get_current_user_context(default_fallback=False)
+        logger.info(
+            "scenario_bundle_import_commit user=%s username=%s client=%s preset_id=%s preset_name=%s before_ids=%s after_ids=%s imported_ids=%s overwritten_ids=%s skipped_by_name=%s resource_ids_before=%s resource_ids_after=%s skills_imported=%s skills_skipped=%s mcp_added=%s mcp_updated=%s mcp_skipped=%s referer=%s",
+            user_ctx.user_id if user_ctx else "",
+            user_ctx.username if user_ctx else get_current_username() or "",
+            meta["client"],
+            norm["id"],
+            norm["name"],
+            before_import_ids,
+            _preset_ids(merged_presets),
+            imported_ids,
+            overwritten_existing_ids,
+            skipped_by_name,
+            before_import_resource_ids,
+            _scenario_resource_ids(),
+            imported_skills,
+            skipped_skills,
+            mcp_added,
+            mcp_updated,
+            mcp_skipped,
+            meta["referer"],
+        )
 
         return {
             "status": "ok",

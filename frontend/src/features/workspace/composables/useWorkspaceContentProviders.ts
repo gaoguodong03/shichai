@@ -731,6 +731,7 @@ export function useWorkspaceContentProviders(args: {
   }
   const shortcutPresets = ref<ShortcutPreset[]>([])
   const shortcutPresetsLoaded = ref(false)
+  const shortcutPresetsHydrating = ref(false)
   const SHORTCUT_STORAGE_KEY_BASE = 'dha.group.shortcuts.v1'
   const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
 
@@ -820,15 +821,15 @@ export function useWorkspaceContentProviders(args: {
   }
   async function loadShortcutPresets() {
     shortcutPresetsLoaded.value = false
-    const serverPresets = await loadServerShortcutPresets()
-    if (serverPresets !== null) {
-      // 后端成功返回时以服务端为准；空列表也表示当前账号没有场景，不能再套用本地历史缓存。
-      shortcutPresets.value = serverPresets
-      saveShortcutPresets(false)
-      shortcutPresetsLoaded.value = true
-      return
-    }
+    shortcutPresetsHydrating.value = true
     try {
+      const serverPresets = await loadServerShortcutPresets()
+      if (serverPresets !== null) {
+        // 后端成功返回时以服务端为准；空列表也表示当前账号没有场景，不能再套用本地历史缓存。
+        shortcutPresets.value = serverPresets
+        saveShortcutPresets(false)
+        return
+      }
       const storageKey = getCurrentUserShortcutStorageKey()
       let raw = localStorage.getItem(storageKey)
       if (!raw) {
@@ -839,7 +840,6 @@ export function useWorkspaceContentProviders(args: {
       if (!raw) {
         shortcutPresets.value = defaultShortcutPresets()
         saveShortcutPresets(false)
-        shortcutPresetsLoaded.value = true
         return
       }
       const parsed = JSON.parse(raw)
@@ -854,8 +854,11 @@ export function useWorkspaceContentProviders(args: {
     } catch {
       shortcutPresets.value = defaultShortcutPresets()
       saveShortcutPresets(false)
+    } finally {
+      await nextTick()
+      shortcutPresetsHydrating.value = false
+      shortcutPresetsLoaded.value = true
     }
-    shortcutPresetsLoaded.value = true
   }
   function saveShortcutPresets(syncRemote = true) {
     const payload = shortcutPresets.value.map((p) => {
@@ -986,7 +989,9 @@ export function useWorkspaceContentProviders(args: {
   watch(
     () => props.dhaInstances,
     () => {
-      if (!shortcutPresets.value.length) shortcutPresets.value = defaultShortcutPresets()
+      if (shortcutPresets.value.length) return
+      const defaults = defaultShortcutPresets()
+      if (defaults.length) shortcutPresets.value = defaults
     },
     { immediate: true },
   )
@@ -995,6 +1000,7 @@ export function useWorkspaceContentProviders(args: {
     () => shortcutPresets.value,
     () => {
       if (!shortcutPresetsLoaded.value) return
+      if (shortcutPresetsHydrating.value) return
       saveShortcutPresets(true)
     },
     { deep: true },

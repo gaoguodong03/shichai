@@ -186,6 +186,74 @@ def test_scene_share_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
     assert skill_resource.is_file()
 
 
+def test_scene_share_import_endpoint_persists_for_refresh(monkeypatch, tmp_path: Path):
+    import json
+
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.main import app
+
+    user_root_base = tmp_path / "users"
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(user_root_base))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+
+    source_skills = tmp_path / "source_skills"
+    shared_skill = source_skills / "shared-skill"
+    shared_skill.mkdir(parents=True)
+    shared_skill.joinpath("SKILL.md").write_text(
+        "---\nname: Shared Skill\ndescription: new\n---\nnew\n",
+        encoding="utf-8",
+    )
+    bundle_path = tmp_path / "scene-share.zip"
+    bundle_path.write_bytes(
+        build_scenario_bundle_zip_bytes(
+            {
+                "id": "online-scene",
+                "name": "Online Scene",
+                "agent_ids": ["online-expert"],
+                "host_config": {"skill_ids": ["shared-skill"], "mcp_server_ids": ["online-mcp"]},
+            },
+            [
+                {
+                    "agent_id": "online-expert",
+                    "name": "Online Expert",
+                    "skill_ids": ["shared-skill"],
+                    "mcp_server_ids": ["online-mcp"],
+                }
+            ],
+            [{"id": "online-mcp", "name": "Online Tool", "enabled": True}],
+            source_skills,
+            ["shared-skill"],
+        )
+    )
+    monkeypatch.setattr("app.core.scenario_share_store.validate_share_id", lambda _sid: True)
+    monkeypatch.setattr(
+        "app.core.scenario_share_store.get_share_entry",
+        lambda _sid: {"object_type": "scene", "source_ref": "online-scene"},
+    )
+    monkeypatch.setattr("app.core.scenario_share_store.bundle_path_for_share", lambda _sid: bundle_path)
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer test-token"}
+    imported = client.post(
+        "/api/settings/shares/aaaaaaaaaaaa/import",
+        files={"dry_run": (None, "false")},
+        headers=headers,
+    )
+    assert imported.status_code == 200
+
+    refreshed = client.get("/api/settings/session-presets", headers=headers)
+    assert refreshed.status_code == 200
+    presets = refreshed.json()["data"]["presets"]
+    assert [x["id"] for x in presets] == ["online-scene"]
+    assert presets[0]["agent_ids"] == ["online-expert"]
+
+    user_root = user_root_base / "u1"
+    scenario_resource = user_root / "resources" / "scenarios" / "online-scene" / "scenario.json"
+    assert json.loads(scenario_resource.read_text(encoding="utf-8"))["name"] == "Online Scene"
+
+
 def test_scene_share_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path):
     from app.api import settings_presets as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes

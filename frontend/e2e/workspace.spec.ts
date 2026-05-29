@@ -34,6 +34,25 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('问答验收场景', { exact: true }).first()).toBeVisible()
   })
 
+  test('资源文件详情页把编辑、删除、下载集中在顶部操作区', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/files')
+
+    await expect(page.getByRole('heading', { name: '文件' })).toBeVisible()
+    const fileList = page.getByRole('complementary').filter({ hasText: '当前目录：/' })
+    await fileList.getByRole('button', { name: '[FILE] brief.md brief.md' }).click()
+
+    const detailHeader = page.locator('main header').filter({ hasText: 'brief.md' })
+    await expect(detailHeader.getByRole('button', { name: '编辑内容' })).toBeVisible()
+    await expect(detailHeader.getByRole('button', { name: '删除' })).toBeVisible()
+    await expect(detailHeader.getByRole('link', { name: '下载' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '删除文件' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '显示源文件' })).toHaveCount(0)
+
+    await expect(page.getByRole('heading', { name: '验收说明' })).toBeVisible()
+    await detailHeader.getByRole('button', { name: '编辑内容' }).click()
+    await expect(page.locator('textarea')).toHaveValue(/# 验收说明/)
+  })
+
   test('服务端无场景时不会把本地历史快捷场景带给新账号', async ({ page }) => {
     const state = createE2eState()
     state.scenarios = []
@@ -60,6 +79,31 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
     await expect(page.getByPlaceholder('搜索场景（名称/专家）')).toBeVisible()
     await expect(page.getByText('历史本地场景', { exact: true })).toHaveCount(0)
+  })
+
+  test('加载服务端场景列表不会立刻写回覆盖', async ({ page }) => {
+    const state = createE2eState()
+    let sessionPresetPutCount = 0
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/session-presets', async (route) => {
+      if (route.request().method() === 'PUT') {
+        sessionPresetPutCount += 1
+      }
+      await route.fallback()
+    })
+
+    const loadedPresets = page.waitForResponse((response) =>
+      response.url().includes('/api/settings/session-presets')
+      && response.request().method() === 'GET'
+      && response.status() === 200,
+    )
+    await page.goto('/')
+    await loadedPresets
+    await expectMainShell(page)
+    await page.waitForTimeout(300)
+
+    expect(sessionPresetPutCount).toBe(0)
   })
 
   test('空白会话中选择场景会复用当前会话', async ({ page }) => {

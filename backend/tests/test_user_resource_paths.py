@@ -146,6 +146,53 @@ def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tm
         reset_current_user_identity(token)
 
 
+def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    from app.api.settings_presets import get_session_presets
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-recover", username="recover@example.com")
+    try:
+        user_root = tmp_path / "users" / "user-resource-recover"
+        scenario_file = user_root / "resources" / "scenarios" / "online-scene" / "scenario.json"
+        scenario_file.parent.mkdir(parents=True)
+        scenario_file.write_text(
+            json.dumps(
+                {
+                    "id": "online-scene",
+                    "name": "线上导入场景",
+                    "agent_ids": ["online-expert"],
+                    "description": "只剩资源目录镜像时也应能刷新出来",
+                    "leader_agent_id": "online-expert",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        preset_path = user_root / "config" / "session_presets.json"
+        preset_path.parent.mkdir(parents=True)
+        preset_path.write_text("[]", encoding="utf-8")
+
+        result = asyncio.run(get_session_presets())
+
+        assert result["data"]["presets"] == [
+            {
+                "id": "online-scene",
+                "name": "线上导入场景",
+                "agent_ids": ["online-expert"],
+                "leader_agent_id": "online-expert",
+                "description": "只剩资源目录镜像时也应能刷新出来",
+                "discussion_goal_example": "",
+            }
+        ]
+        assert json.loads(preset_path.read_text(encoding="utf-8"))[0]["id"] == "online-scene"
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_save_mcp_config_mirrors_tools_resource_files(monkeypatch, tmp_path):
     import json
 
