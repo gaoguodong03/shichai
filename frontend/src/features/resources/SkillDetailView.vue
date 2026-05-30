@@ -8,6 +8,7 @@
             <h1 class="text-base font-semibold text-primary truncate">技能</h1>
             <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.id }}</p>
           </div>
+          <!-- 技能分享/访问方式入口按产品要求暂时只在前端关闭。
           <div class="min-w-0 flex-1 space-y-1">
             <div v-if="sharePanelOpen && sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
             <p v-else-if="sharePanelOpen && shareError" class="text-sm text-danger">{{ shareError }}</p>
@@ -19,6 +20,7 @@
               rel="noopener noreferrer"
             >{{ shareFullUrl }}</a>
           </div>
+          -->
           <div class="flex flex-shrink-0 items-center gap-2">
             <button
               v-if="activeTab !== 'main'"
@@ -38,6 +40,7 @@
             >
               新建文件夹
             </button>
+            <!-- 技能分享入口按产品要求暂时只在前端关闭。
             <button
               type="button"
               class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
@@ -46,6 +49,7 @@
             >
               {{ sharePublishing ? '生成中...' : '分享' }}
             </button>
+            -->
             <button
               type="button"
               class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"

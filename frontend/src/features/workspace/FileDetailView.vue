@@ -28,6 +28,21 @@
         </button>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
+        <button
+          v-if="isEditableText && !editingContent"
+          type="button"
+          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
+          @click="startEditContent"
+        >
+          编辑内容
+        </button>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm rounded-lg border border-danger text-danger hover:bg-danger-subtle"
+          @click="emit('delete-file')"
+        >
+          删除
+        </button>
         <a
           :href="downloadUrl"
           target="_blank"
@@ -87,8 +102,8 @@
           </div>
         </div>
         <div v-else class="flex flex-col gap-2">
-          <!-- .md 默认渲染为 Markdown，可切换为源文件 -->
-          <div v-if="isMarkdown && !showMdSource" class="file-detail-article-layout">
+          <!-- .md 默认渲染为 Markdown，进入编辑时显示源文件内容。 -->
+          <div v-if="isMarkdown" class="file-detail-article-layout">
             <nav v-if="tocItems.length" class="file-detail-toc" aria-label="文章目录">
               <div class="file-detail-toc-title">目录</div>
               <button
@@ -111,21 +126,6 @@
             />
           </div>
           <pre v-else class="text-sm text-primary whitespace-pre-wrap break-words font-sans">{{ previewText ?? '' }}</pre>
-          <div class="flex flex-wrap items-center gap-2 mt-1">
-            <button
-              v-if="isMarkdown"
-              class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
-              @click="showMdSource = !showMdSource"
-            >
-              {{ showMdSource ? '显示渲染' : '显示源文件' }}
-            </button>
-            <button
-              class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
-              @click="startEditContent"
-            >
-              编辑内容
-            </button>
-          </div>
         </div>
       </template>
       <div v-else class="text-sm text-muted">不支持预览或编辑，请下载查看</div>
@@ -141,7 +141,10 @@ import * as XLSX from 'xlsx'
 import MarkdownIt from 'markdown-it'
 
 const props = defineProps<{ path: string; workspaceId?: string }>()
-const emit = defineEmits<{ (e: 'renamed', newPath: string): void }>()
+const emit = defineEmits<{
+  (e: 'renamed', newPath: string): void
+  (e: 'delete-file'): void
+}>()
 
 const downloadUrl = computed(() => {
   const p = currentPath.value
@@ -170,7 +173,6 @@ const isEditableText = computed(() => {
 })
 
 const isMarkdown = computed(() => /\.md$/i.test(currentPath.value))
-const showMdSource = ref(false)
 // 与对话区保持一致：单个换行当空格处理
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false })
 
@@ -439,7 +441,6 @@ async function saveContent() {
 
 watch(() => props.path, (p) => {
   currentPath.value = p
-  showMdSource.value = false
 }, { immediate: true })
 watch(currentPath, loadContent, { immediate: true })
 watch([currentPath, isDocx], () => {
@@ -451,9 +452,9 @@ watch([currentPath, isExcel], () => {
   else { excelError.value = null; excelHtml.value = '' }
 }, { immediate: true })
 
-watch([previewText, showMdSource, isMarkdown], async () => {
+watch([previewText, isMarkdown], async () => {
   // 只在渲染 markdown 视图时构建 TOC 与高亮
-  if (!isMarkdown.value || showMdSource.value) {
+  if (!isMarkdown.value) {
     tocItems.value = []
     headingsForSpy = []
     activeTocId.value = ''

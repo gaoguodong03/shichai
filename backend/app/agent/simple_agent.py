@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import os
@@ -105,6 +106,50 @@ def _extract_text_content(message: BaseMessage) -> str:
     return str(content or "")
 
 
+def _parse_dsml_tool_calls(text: str) -> list[dict[str, Any]]:
+    """Parse Qwen/DeepSeek-style DSML tool-call text into LangChain tool_calls."""
+    if "<｜｜DSML｜｜tool_calls>" not in (text or ""):
+        return []
+    calls: list[dict[str, Any]] = []
+    invoke_re = re.compile(
+        r'<｜｜DSML｜｜invoke\s+name="([^"]+)">\s*(.*?)</｜｜DSML｜｜invoke>',
+        re.S,
+    )
+    param_re = re.compile(
+        r'<｜｜DSML｜｜parameter\s+name="([^"]+)"(?:\s+[^>]*)?>(.*?)</｜｜DSML｜｜parameter>',
+        re.S,
+    )
+    for idx, match in enumerate(invoke_re.finditer(text or "")):
+        name = html.unescape((match.group(1) or "").strip())
+        if not name:
+            continue
+        args: dict[str, Any] = {}
+        for param in param_re.finditer(match.group(2) or ""):
+            key = html.unescape((param.group(1) or "").strip())
+            if not key:
+                continue
+            args[key] = html.unescape((param.group(2) or "").strip())
+        calls.append({"name": name, "args": args, "id": f"dsml-tool-{idx}"})
+    return calls
+
+
+def _coerce_text_tool_calls_to_structured(message: BaseMessage) -> tuple[BaseMessage, dict[str, Any] | None]:
+    if getattr(message, "tool_calls", None):
+        return message, None
+    text = _extract_text_content(message)
+    calls = _parse_dsml_tool_calls(text)
+    if not calls:
+        return message, None
+    coerced = AIMessage(content="", tool_calls=calls)
+    debug = {
+        "source": "dsml_text_tool_calls",
+        "matched": True,
+        "count": len(calls),
+        "content_preview": text.strip()[:240],
+    }
+    return coerced, debug
+
+
 def _is_llm_failure_message(message: BaseMessage) -> bool:
     text = _extract_text_content(message).strip()
     return text.startswith("抱歉，模型响应失败：") or text.startswith("抱歉，模型响应超时")
@@ -118,6 +163,45 @@ def _has_visible_ai_text(messages: list[BaseMessage]) -> bool:
         if text and not (getattr(msg, "tool_calls", None) or []):
             return True
     return False
+
+
+def _last_user_text(messages: list[BaseMessage]) -> str:
+    for msg in reversed(messages or []):
+        if isinstance(msg, HumanMessage):
+            return _extract_text_content(msg).strip()
+    return ""
+
+
+def _is_bound_skill_introspection_request(text: str) -> bool:
+    s = (text or "").strip().lower().replace(" ", "")
+    if not s:
+        return False
+    asks_scope = any(k in s for k in ("哪些", "有什么", "有啥", "几个", "一共", "列出", "介绍"))
+    asks_skill = any(k in s for k in ("skill", "技能", "能力", "工具包", "tool"))
+    return asks_scope and asks_skill
+
+
+def _bound_skill_introspection_message(system_prompt: str, user_text: str) -> AIMessage | None:
+    if not _is_bound_skill_introspection_request(user_text):
+        return None
+    prompt = system_prompt or ""
+    marker = "## 你当前绑定的 Skill"
+    start = prompt.find(marker)
+    if start < 0:
+        return None
+    rest = prompt[start + len(marker) :].strip()
+    if not rest:
+        return None
+    next_section = re.search(r"\n##\s+", rest)
+    if next_section:
+        rest = rest[: next_section.start()].strip()
+    lines = [line.rstrip() for line in rest.splitlines()]
+    while lines and not lines[0].lstrip().startswith("- "):
+        lines.pop(0)
+    body = "\n".join(lines).strip()
+    if not body:
+        return None
+    return AIMessage(content=f"我当前绑定的 Skill 有：\n\n{body}")
 
 
 def _ai_response_hit_output_limit(message: BaseMessage) -> bool:
@@ -750,6 +834,19 @@ def _fallback_after_llm_failure_message(raw_outputs: list[str], response: BaseMe
     return _deterministic_tool_fallback_message(raw_outputs)
 
 
+def _final_response_or_tool_fallback(
+    response: BaseMessage,
+    raw_outputs: list[str],
+    tool_attempt_debug: list[dict[str, Any]],
+) -> BaseMessage:
+    _, debug = _coerce_text_tool_calls_to_structured(response)
+    if debug is None:
+        return response
+    debug = {**debug, "source": "dsml_text_tool_calls_final_fallback"}
+    tool_attempt_debug.append(debug)
+    return _deterministic_tool_fallback_message(raw_outputs)
+
+
 @dataclass
 class SimpleAgent:
     """
@@ -863,6 +960,20 @@ class SimpleAgent:
         if not messages or not isinstance(messages[0], SystemMessage):
             messages = [SystemMessage(content=self.system_prompt)] + messages
 
+        introspection_message = _bound_skill_introspection_message(self.system_prompt, _last_user_text(messages))
+        if introspection_message is not None:
+            tool_attempt_debug = [
+                {
+                    "source": "bound_skill_introspection_direct_final",
+                    "matched": True,
+                    "content_preview": _extract_text_content(introspection_message)[:240],
+                }
+            ]
+            messages.append(introspection_message)
+            yield {"type": "agent_step", "step": 1, "message": introspection_message}
+            yield {"type": "final_step", "messages": messages, "tool_attempt_debug": tool_attempt_debug}
+            return
+
         client = self.llm.get_client()
         if tools:
             client = bind_tools_compat(client, tools)
@@ -875,6 +986,10 @@ class SimpleAgent:
         output_continuations = 0
         for step in range(self.max_steps):
             response = await self._call_model(client, messages, step=step + 1)
+            if not (getattr(response, "tool_calls", None) or []):
+                response, coerced_debug = _coerce_text_tool_calls_to_structured(response)
+                if coerced_debug is not None:
+                    tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
                 forced = _forced_audio_asr_file_ref_message(messages, tools)
                 if forced is not None:
@@ -1040,6 +1155,11 @@ class SimpleAgent:
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        all_tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -1055,6 +1175,11 @@ class SimpleAgent:
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        all_tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
                     messages.append(final_message)
@@ -1063,6 +1188,11 @@ class SimpleAgent:
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        all_tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
                     messages.append(final_message)
@@ -1125,6 +1255,11 @@ class SimpleAgent:
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
+            synthesis_response = _final_response_or_tool_fallback(
+                synthesis_response,
+                all_tool_raw_outputs,
+                tool_attempt_debug,
+            )
             if not _extract_text_content(synthesis_response).strip():
                 synthesis_response = _deterministic_tool_fallback_message(all_tool_raw_outputs)
             messages.append(synthesis_response)
@@ -1149,6 +1284,24 @@ class SimpleAgent:
         if not messages or not isinstance(messages[0], SystemMessage):
             messages = [SystemMessage(content=self.system_prompt)] + messages
 
+        introspection_message = _bound_skill_introspection_message(self.system_prompt, _last_user_text(messages))
+        if introspection_message is not None:
+            return {
+                "messages": [
+                    *messages,
+                    introspection_message,
+                ],
+                "tool_attempt_debug": [
+                    {
+                        "source": "bound_skill_introspection_direct_final",
+                        "matched": True,
+                        "content_preview": _extract_text_content(introspection_message)[:240],
+                    }
+                ],
+                "tool_calls": [],
+                "tool_raw_outputs": [],
+            }
+
         client = self.llm.get_client()
         if tools:
             client = bind_tools_compat(client, tools)
@@ -1163,6 +1316,10 @@ class SimpleAgent:
         for step in range(self.max_steps):
             t0 = time.perf_counter()
             response = await self._call_model(client, messages, step=step + 1)
+            if not (getattr(response, "tool_calls", None) or []):
+                response, coerced_debug = _coerce_text_tool_calls_to_structured(response)
+                if coerced_debug is not None:
+                    tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
                 forced = _forced_audio_asr_file_ref_message(messages, tools)
                 if forced is not None:
@@ -1310,6 +1467,11 @@ class SimpleAgent:
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -1324,6 +1486,11 @@ class SimpleAgent:
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
                     messages.append(final_message)
@@ -1331,6 +1498,11 @@ class SimpleAgent:
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = _final_response_or_tool_fallback(
+                        final_message,
+                        tool_raw_outputs,
+                        tool_attempt_debug,
+                    )
                     if not _extract_text_content(final_message).strip():
                         final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
                     messages.append(final_message)
@@ -1383,6 +1555,11 @@ class SimpleAgent:
             synthesis_client = self.llm.get_client()
             messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
             synthesis_response = await self._call_model(synthesis_client, messages, step=self.max_steps + 1)
+            synthesis_response = _final_response_or_tool_fallback(
+                synthesis_response,
+                tool_raw_outputs,
+                tool_attempt_debug,
+            )
             if not _extract_text_content(synthesis_response).strip():
                 synthesis_response = _deterministic_tool_fallback_message(tool_raw_outputs)
             messages.append(synthesis_response)

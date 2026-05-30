@@ -46,6 +46,10 @@ def test_pack_1panel_backup_allows_missing_env_file(tmp_path: Path) -> None:
         "free4inno-yuanfang2025/dha:26.05.13"
     ) in env_text
     assert "SANDBOX_PREWARM_ALL_USERS=0" in env_text
+    assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
+    assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
+    assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES=43200" in env_text
 
 
 def test_pack_1panel_backup_tag_build_path_does_not_require_env_file(
@@ -99,3 +103,51 @@ def test_pack_1panel_backup_tag_build_path_does_not_require_env_file(
         "ST49_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/"
         "free4inno-yuanfang2025/dha:26.05.99"
     ) in env_text
+    assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
+
+
+def test_pack_1panel_backup_normalizes_local_auth_paths(tmp_path: Path) -> None:
+    _copy_pack_inputs(tmp_path)
+    env_dir = tmp_path / "backend"
+    env_dir.mkdir()
+    (env_dir / ".env").write_text(
+        "\n".join(
+            [
+                "AUTH_SECRET=keep-this-secret",
+                "AUTH_DB_PATH=/Users/ggd/project/shichai/backend/config/auth_users.sqlite",
+                "AUTH_USERS_FILE=/Users/ggd/project/shichai/backend/config/auth_users.txt",
+                "SHUTONG_USER_DATA_ROOT=/Users/ggd/project/shichai/backend/data/users",
+                "ACCESS_TOKEN_EXPIRE_MINUTES=7",
+                "QWEN_API_KEY=keep-this-key",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    output_tgz = tmp_path / "backup.tar.gz"
+    env = {
+        **os.environ,
+        "ENV_FILE": "backend/.env",
+        "OUT_TGZ": str(output_tgz),
+    }
+
+    result = subprocess.run(
+        ["bash", "pack_1panel_backup.sh"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    env_text = _read_packaged_env(output_tgz)
+
+    assert "AUTH_SECRET=keep-this-secret" in env_text
+    assert "QWEN_API_KEY=keep-this-key" in env_text
+    assert "/Users/ggd/project/shichai" not in env_text
+    assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
+    assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
+    assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES=43200" in env_text

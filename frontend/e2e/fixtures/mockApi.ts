@@ -202,7 +202,7 @@ export function createE2eState(): E2eState {
         { value: 'playwright', label: 'Playwright 版', description: '包含浏览器运行时', image: 'sandbox:playwright' },
       ],
     },
-    sandboxRequirements: 'requests==2.31.0\n',
+    sandboxRequirements: '',
   }
 }
 
@@ -584,6 +584,26 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     if (workspaceContentMatch && method === 'PUT') {
       state.fileContent[fileKey(decodeURIComponent(workspaceContentMatch[1]), url.searchParams.get('path') || '')] = String(readBody<{ content?: string }>(route).content || '')
+      return ok(route)
+    }
+    const workspaceDownloadMatch = path.match(/^\/workspaces\/([^/]+)\/files\/download$/)
+    if (workspaceDownloadMatch && method === 'GET') {
+      const content = state.fileContent[fileKey(decodeURIComponent(workspaceDownloadMatch[1]), url.searchParams.get('path') || '')] || ''
+      return route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+        body: content,
+      })
+    }
+    if (workspaceContentMatch && method === 'DELETE') {
+      const workspaceId = decodeURIComponent(workspaceContentMatch[1])
+      const filePath = url.searchParams.get('path') || ''
+      delete state.fileContent[fileKey(workspaceId, filePath)]
+      for (const key of Object.keys(state.files)) {
+        if (key.startsWith(`${workspaceId}:`)) {
+          state.files[key] = state.files[key].filter((entry) => entry.path !== filePath)
+        }
+      }
       return ok(route)
     }
 

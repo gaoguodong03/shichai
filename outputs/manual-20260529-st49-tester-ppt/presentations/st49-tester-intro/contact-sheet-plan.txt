@@ -1,0 +1,22 @@
+Slide 01: cover with metric rail and source promise
+Slide 02: product operating surface map with three UI zones
+Slide 03: full-bleed architecture image with concise reading notes
+Slide 04: horizontal sequence flow for call relationships
+Slide 05: platform usage journey with screenshot strip
+Slide 06: testing layer ladder with commands and what each layer excludes
+Slide 07: E2E coverage matrix with current spec counts
+Slide 08: workspace critical-flow proof slide with screenshot and assertions
+Slide 09: resource/runtime proof slide with Skill/MCP/LLM flow
+Slide 10: settings/sandbox/share proof slide with risk checklist
+Slide 11: failure evidence and triage protocol
+Slide 12: final tester runbook checklist
+
+Macro-layout families used:
+- cover and KPI rail
+- surface map
+- image-led architecture spread
+- sequence flow
+- screenshot plus assertion table
+- layer ladder
+- coverage matrix
+- runbook checklist

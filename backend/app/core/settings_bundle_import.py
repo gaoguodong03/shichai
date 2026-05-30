@@ -78,13 +78,19 @@ def _reference_items(raw: Any, *, id_keys: Tuple[str, ...] = ("id",), name_keys:
 
 
 def mcp_refs_from_skill_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, str]]:
+    labels = fm.get("reference-labels") if isinstance(fm.get("reference-labels"), dict) else {}
+    label_rows = _reference_items(labels.get("mcp") if isinstance(labels, dict) else None)
+    label_by_id = {row["id"]: row.get("name", "") for row in label_rows if row.get("id")}
     auto = fm.get("auto-tools")
     if isinstance(auto, dict) and "mcp" in auto:
-        return _reference_items(auto.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
+        refs = _reference_items(auto.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
+        return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
     allowed = fm.get("allowed-tools")
     if isinstance(allowed, dict) and "mcp" in allowed:
-        return _reference_items(allowed.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
-    return _reference_items(fm.get("mcp_server_ids"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
+        refs = _reference_items(allowed.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
+        return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
+    refs = _reference_items(fm.get("mcp_server_ids"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
+    return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
 
 
 def mcp_ids_from_skill_frontmatter(fm: Dict[str, Any]) -> List[str]:
@@ -92,7 +98,11 @@ def mcp_ids_from_skill_frontmatter(fm: Dict[str, Any]) -> List[str]:
 
 
 def collect_mcp_ids_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str]) -> List[str]:
-    out: List[str] = []
+    return [ref["id"] for ref in collect_mcp_refs_from_skill_dirs(skills_root, skill_ids)]
+
+
+def collect_mcp_refs_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str]) -> List[Dict[str, str]]:
+    refs: List[Dict[str, str]] = []
     seen: Set[str] = set()
     root = skills_root.resolve()
     for sid in _dedupe_nonempty(skill_ids):
@@ -105,10 +115,52 @@ def collect_mcp_ids_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str])
             continue
         if not (skill_dir / "SKILL.md").is_file():
             continue
-        for mid in mcp_ids_from_skill_frontmatter(_read_skill_frontmatter(skill_dir)):
+        for ref in mcp_refs_from_skill_frontmatter(_read_skill_frontmatter(skill_dir)):
+            mid = ref["id"]
             if mid not in seen:
                 seen.add(mid)
-                out.append(mid)
+                refs.append(ref)
+    return refs
+
+
+def mcp_rows_for_bundle_refs(
+    mcp_refs: Iterable[Dict[str, str]],
+    all_servers: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in all_servers
+        if isinstance(row, dict) and str(row.get("id") or "").strip()
+    }
+    by_name: Dict[str, Dict[str, Any]] = {}
+    for row in all_servers:
+        if not isinstance(row, dict):
+            continue
+        name_key = normalized_name_key(row.get("name"))
+        if name_key and name_key not in by_name:
+            by_name[name_key] = row
+
+    out: List[Dict[str, Any]] = []
+    seen: Set[str] = set()
+    for ref in mcp_refs:
+        rid = str((ref or {}).get("id") or "").strip()
+        if not rid:
+            continue
+        name = str((ref or {}).get("name") or "").strip()
+        row = by_id.get(rid)
+        if row is None and name:
+            row = by_name.get(normalized_name_key(name))
+        if row is None:
+            continue
+        copied = dict(row)
+        if str(copied.get("id") or "").strip() != rid:
+            copied["id"] = rid
+        if name and not str(copied.get("name") or "").strip():
+            copied["name"] = name
+        out_id = str(copied.get("id") or "").strip()
+        if out_id and out_id not in seen:
+            seen.add(out_id)
+            out.append(copied)
     return out
 
 

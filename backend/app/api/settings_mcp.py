@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
-from app.core.scenario_bundle import merge_mcp_servers_for_bundle
+from app.core.scenario_bundle import merge_mcp_servers_for_bundle, sanitize_mcp_servers_for_bundle
 from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import mcp_config_path, skills_dir_path
@@ -173,9 +173,10 @@ def _mark_mcp_id_missing_in_skills(server_id: str, server_name: str = "") -> Non
 
 
 def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
+    safe_rows = sanitize_mcp_servers_for_bundle([server])
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("mcp_servers.json", json.dumps([server], ensure_ascii=False, indent=2) + "\n")
+        zf.writestr("mcp_servers.json", json.dumps(safe_rows, ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
 

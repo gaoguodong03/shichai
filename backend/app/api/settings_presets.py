@@ -36,9 +36,10 @@ from app.core.session_preset_validate import (
     validation_to_api_dict,
 )
 from app.core.settings_bundle_import import (
-    collect_mcp_ids_from_skill_dirs,
+    collect_mcp_refs_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
+    mcp_rows_for_bundle_refs,
     mcp_conflict_id_map as _mcp_conflict_id_map,
     skill_conflict_id_map as _skill_conflict_id_map,
 )
@@ -480,11 +481,11 @@ def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[s
             expert_rows.append(strip_dha_row_for_disk(dict(dha_by_id[a])))
 
     skill_ids, mcp_ids = collect_skill_and_mcp_ids_for_preset(match, dha_by_id)
-    mcp_ids.update(collect_mcp_ids_from_skill_dirs(_get_skills_dir(), skill_ids))
-    mcp_ids.update(collect_mcp_ids_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
+    mcp_refs = [{"id": mid, "name": ""} for mid in sorted(mcp_ids)]
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_get_skills_dir(), skill_ids))
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
     mcp_all = load_mcp_config()
-    mcp_by = {str(s.get("id")): s for s in mcp_all if s.get("id")}
-    mcp_rows = [dict(mcp_by[mid]) for mid in sorted(mcp_ids) if mid in mcp_by]
+    mcp_rows = mcp_rows_for_bundle_refs(mcp_refs, mcp_all)
 
     zip_bytes = build_scenario_bundle_zip_bytes(
         match,

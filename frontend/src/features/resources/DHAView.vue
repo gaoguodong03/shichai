@@ -112,6 +112,7 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
+            <!-- 专家分享/访问方式入口按产品要求暂时只在前端关闭。
             <div
               v-if="selectedDhaId && selectedDhaId !== '__new__'"
               class="pt-4 border-t border-border-light space-y-2"
@@ -128,6 +129,7 @@
               >{{ shareFullUrl }}</a>
               <p v-else class="text-sm text-muted">保存专家后自动生成访问链接。</p>
             </div>
+            -->
 
             <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
               <button
@@ -440,7 +442,8 @@ watch(
   (id) => {
     shareId.value = ''
     shareError.value = ''
-    if (id && id !== '__new__') void ensureDhaSharePublished()
+    // 专家分享入口已按产品要求在前端关闭，不再主动生成分享链接。
+    // if (id && id !== '__new__') void ensureDhaSharePublished()
   },
   { immediate: true },
 )

@@ -88,24 +88,13 @@
         <div v-if="!selectedPath" class="h-full flex items-center justify-center text-sm text-muted">
           选择文件后可预览与编辑
         </div>
-        <div v-else class="h-full flex flex-col min-h-0">
-          <div class="px-3 py-2 border-b border-border bg-card flex items-center justify-end gap-2">
-            <button
-              type="button"
-              class="px-3 py-1.5 text-sm rounded-lg border border-danger text-danger hover:bg-danger-subtle"
-              @click="deleteSelectedFile"
-            >
-              删除文件
-            </button>
-          </div>
-          <div class="flex-1 min-h-0">
-            <FileDetailView
-              :workspace-id="sessionId"
-              :path="selectedPath"
-              @renamed="onRenamed"
-            />
-          </div>
-        </div>
+        <FileDetailView
+          v-else
+          :workspace-id="sessionId"
+          :path="selectedPath"
+          @renamed="onRenamed"
+          @delete-file="deleteSelectedFile"
+        />
       </main>
     </div>
   </div>

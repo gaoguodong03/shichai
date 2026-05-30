@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -19,10 +20,70 @@ MCP_NAME = "mcp_servers.json"
 SKILLS_PREFIX = "skills/"
 
 
+_SENSITIVE_CONFIG_TOKENS = {
+    "apikey",
+    "api_key",
+    "authorization",
+    "cookie",
+    "credential",
+    "key",
+    "passwd",
+    "password",
+    "secret",
+    "token",
+}
+_VAULT_REF_RE = re.compile(r"\$\{vault:[^}]+\}")
+
+
 def _zip_parts_safe(parts: List[str]) -> bool:
     if not parts:
         return False
     return not any(not p or p == "." or p == ".." or ".." in p for p in parts)
+
+
+def _is_sensitive_config_key(raw_key: Any) -> bool:
+    key = str(raw_key or "").strip().casefold()
+    if not key:
+        return False
+    compact = re.sub(r"[^a-z0-9]+", "", key)
+    tokens = [x for x in re.split(r"[^a-z0-9]+", key) if x]
+    if compact in _SENSITIVE_CONFIG_TOKENS:
+        return True
+    if any(token in _SENSITIVE_CONFIG_TOKENS for token in tokens):
+        return True
+    return any(compact.endswith(suffix) for suffix in ("apikey", "token", "secret", "password", "passwd"))
+
+
+def _contains_vault_ref(value: Any) -> bool:
+    return isinstance(value, str) and bool(_VAULT_REF_RE.search(value))
+
+
+def _sanitize_secret_mapping(raw: Any) -> Any:
+    if not isinstance(raw, dict):
+        return raw
+    out: Dict[str, Any] = {}
+    for key, value in raw.items():
+        if _is_sensitive_config_key(key) and not _contains_vault_ref(value):
+            out[str(key)] = ""
+        else:
+            out[str(key)] = value
+    return out
+
+
+def sanitize_mcp_server_for_bundle(server: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a bundle-safe MCP config row: keep wiring, omit plaintext secrets."""
+    copied = json.loads(json.dumps(server, ensure_ascii=False))
+    transport = copied.get("transport")
+    if isinstance(transport, dict):
+        if "env" in transport:
+            transport["env"] = _sanitize_secret_mapping(transport.get("env"))
+        if "headers" in transport:
+            transport["headers"] = _sanitize_secret_mapping(transport.get("headers"))
+    return copied
+
+
+def sanitize_mcp_servers_for_bundle(servers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [sanitize_mcp_server_for_bundle(row) for row in servers if isinstance(row, dict)]
 
 
 def collect_skill_and_mcp_ids_for_preset(
@@ -67,8 +128,9 @@ def build_scenario_bundle_zip_bytes(
         }
         zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
         zf.writestr(DHA_NAME, json.dumps(expert_rows, ensure_ascii=False, indent=2) + "\n")
-        if mcp_rows:
-            zf.writestr(MCP_NAME, json.dumps(mcp_rows, ensure_ascii=False, indent=2) + "\n")
+        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows)
+        if safe_mcp_rows:
+            zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
         for sid in sorted(skill_ids):
             sdir = (skills_root / sid).resolve()

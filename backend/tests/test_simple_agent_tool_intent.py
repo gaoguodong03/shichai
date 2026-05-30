@@ -3,7 +3,7 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agent.simple_agent import SimpleAgent
+from app.agent.simple_agent import SimpleAgent, _parse_dsml_tool_calls
 from app.agent.tool_spec import ToolSpec
 
 
@@ -58,6 +58,79 @@ async def test_simple_agent_calls_tool_runner_for_content_tool_json():
     assert called["n"] == 1
     assert isinstance(out, dict)
     assert out.get("tool_attempt_debug")
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_coerces_dsml_tool_calls_before_displaying_text():
+    response = AIMessage(
+        content=(
+            '<｜｜DSML｜｜tool_calls>\n'
+            '<｜｜DSML｜｜invoke name="image-generation_generate_image">\n'
+            '<｜｜DSML｜｜parameter name="description" string="true">河南胡辣汤封面</｜｜DSML｜｜parameter>\n'
+            '<｜｜DSML｜｜parameter name="pic_size" string="true">1792x1024</｜｜DSML｜｜parameter>\n'
+            '</｜｜DSML｜｜invoke>\n'
+            '</｜｜DSML｜｜tool_calls>'
+        )
+    )
+    called = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        called["n"] += 1
+        last = state["messages"][-1]
+        assert str(last.content) == ""
+        assert last.tool_calls == [
+            {
+                "name": "image-generation_generate_image",
+                "args": {"description": "河南胡辣汤封面", "pic_size": "1792x1024"},
+                "id": "dsml-tool-0",
+            }
+        ]
+        return {
+            "messages": [ToolMessage(content="image ok", tool_call_id="dsml-tool-0")],
+            "tool_attempt_debug": [{"matched": True}],
+            "tool_calls": [
+                {
+                    "tool": "image-generation_generate_image",
+                    "arguments": {"description": "河南胡辣汤封面", "pic_size": "1792x1024"},
+                }
+            ],
+            "tool_raw_outputs": ["image ok"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([response]),
+        tools=[ToolSpec(name="image-generation_generate_image", description="生成图片")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=1,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="生成图片")]})
+
+    assert called["n"] == 1
+    assert "<｜｜DSML｜｜tool_calls>" not in str(out["messages"][-1].content)
+    assert any(
+        item.get("source") == "dsml_text_tool_calls"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+def test_parse_dsml_tool_calls_supports_multiple_invokes():
+    calls = _parse_dsml_tool_calls(
+        '<｜｜DSML｜｜tool_calls>\n'
+        '<｜｜DSML｜｜invoke name="read_file">\n'
+        '<｜｜DSML｜｜parameter name="path" string="true">./output/pages/text.md</｜｜DSML｜｜parameter>\n'
+        '</｜｜DSML｜｜invoke>\n'
+        '<｜｜DSML｜｜invoke name="read_file">\n'
+        '<｜｜DSML｜｜parameter name="path" string="true">./memory/facts.md</｜｜DSML｜｜parameter>\n'
+        '</｜｜DSML｜｜invoke>\n'
+        '</｜｜DSML｜｜tool_calls>'
+    )
+
+    assert calls == [
+        {"name": "read_file", "args": {"path": "./output/pages/text.md"}, "id": "dsml-tool-0"},
+        {"name": "read_file", "args": {"path": "./memory/facts.md"}, "id": "dsml-tool-1"},
+    ]
 
 
 @pytest.mark.asyncio
@@ -181,6 +254,50 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
     assert any(
         item.get("source") == "stop_after_tool_result"
         and item.get("tool") == "write_workspace_file"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_answers_bound_skill_question_without_running_tools():
+    bad_tool_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "transcribe_audio.py"}}],
+    )
+    called = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        called["n"] += 1
+        return {
+            "messages": [ToolMessage(content="错误：文件不存在：transcribe_audio.py", tool_call_id="tc-read")],
+            "tool_calls": [{"tool": "read_file", "arguments": {"path": "transcribe_audio.py"}}],
+            "tool_raw_outputs": ["错误：文件不存在：transcribe_audio.py"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([bad_tool_call]),
+        tools=[ToolSpec(name="read_file", description="读文件")],
+        system_prompt=(
+            "你是一个有用的 AI 助手。\n\n"
+            "## 你当前绑定的 Skill\n"
+            "若用户询问你有哪些 skill、能力或工具包，必须依据下列清单回答，不要编造清单外的名称；"
+            "本轮实际执行时仍以上文完整技能说明为准。\n\n"
+            "- **音频转写 MCP**（标识：`audio-asr-mcp`）\n"
+            "  当用户希望使用本地 audio-asr MCP 转写 backend/data 下的音频文件时使用。"
+        ),
+        tool_runner=_tool_runner,
+        max_steps=2,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="你一共有哪些skill")]})
+
+    assert called["n"] == 0
+    final_text = str(out["messages"][-1].content)
+    assert "音频转写 MCP" in final_text
+    assert "audio-asr-mcp" in final_text
+    assert "transcribe_audio.py" not in final_text
+    assert any(
+        item.get("source") == "bound_skill_introspection_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

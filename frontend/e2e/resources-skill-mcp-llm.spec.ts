@@ -17,25 +17,14 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: /Scripts/ })).toBeVisible()
   })
 
-  test('技能详情页点击分享后展示链接，编辑按钮在编辑态变为保存', async ({ page }) => {
+  test('技能详情页不展示访问方式和分享入口，编辑按钮在编辑态变为保存', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/skill')
 
     await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
     await expect(page.getByText('访问方式', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: '分享', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
     await expect(page.locator('main main').getByText('访问方式', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('link', { name: /\/share\/run\?id=share-skill/ })).toHaveCount(0)
-    await expect.poll(async () =>
-      page.evaluate(() => {
-        const topRow = document.querySelector('header > div:first-child')
-        const share = Array.from(topRow?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '分享')
-        const exportButton = Array.from(topRow?.querySelectorAll('button') || []).find((el) => el.textContent?.trim() === '导出')
-        return Boolean(share && exportButton && (share.compareDocumentPosition(exportButton) & Node.DOCUMENT_POSITION_FOLLOWING))
-      }),
-    ).toBe(true)
-
-    await page.getByRole('button', { name: '分享', exact: true }).click()
-    await expect(page.getByRole('link', { name: /\/share\/run\?id=share-skill/ })).toBeVisible()
 
     await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: '编辑', exact: true }).click()

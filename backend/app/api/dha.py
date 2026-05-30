@@ -256,6 +256,8 @@ async def export_dha_instance_bundle(agent_id: str):
     """导出专家包 ZIP：expert_bundle.json、skills/、可选 mcp_servers.json。"""
     from app.api.settings import load_mcp_config
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
+    from app.core.settings_bundle_import import collect_mcp_refs_from_skill_dirs, mcp_rows_for_bundle_refs
+    from app.skills.loader import get_builtin_skills_dir
 
     row = _find_dha_row(agent_id)
     if row is None:
@@ -263,9 +265,11 @@ async def export_dha_instance_bundle(agent_id: str):
 
     skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
     mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
+    mcp_refs = [{"id": mid, "name": ""} for mid in mcp_ids]
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_dha_skills_dir(), skill_ids))
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
     mcp_all = load_mcp_config()
-    mcp_by = {str(s.get("id")): s for s in mcp_all if s.get("id")}
-    mcp_rows = [dict(mcp_by[mid]) for mid in mcp_ids if mid in mcp_by]
+    mcp_rows = mcp_rows_for_bundle_refs(mcp_refs, mcp_all)
 
     zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
     safe = str(agent_id).replace("..", "").replace("/", "").replace("\\", "") or "expert"
@@ -297,7 +301,7 @@ async def publish_dha_instance_share(agent_id: str):
     from app.api.settings import load_mcp_config
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.scenario_share_store import upsert_public_share
-    from app.core.settings_bundle_import import collect_mcp_ids_from_skill_dirs
+    from app.core.settings_bundle_import import collect_mcp_refs_from_skill_dirs, mcp_rows_for_bundle_refs
     from app.skills.loader import get_builtin_skills_dir
 
     row = _find_dha_row(agent_id)
@@ -305,13 +309,10 @@ async def publish_dha_instance_share(agent_id: str):
         raise HTTPException(status_code=404, detail="DHA instance not found")
     skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
     mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
-    mcp_ids = sorted(
-        set(mcp_ids)
-        | set(collect_mcp_ids_from_skill_dirs(_dha_skills_dir(), skill_ids))
-        | set(collect_mcp_ids_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
-    )
-    mcp_by = {str(s.get("id")): s for s in load_mcp_config() if s.get("id")}
-    mcp_rows = [dict(mcp_by[mid]) for mid in mcp_ids if mid in mcp_by]
+    mcp_refs = [{"id": mid, "name": ""} for mid in mcp_ids]
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_dha_skills_dir(), skill_ids))
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
+    mcp_rows = mcp_rows_for_bundle_refs(mcp_refs, load_mcp_config())
     zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
     name = str(row.get("name") or str(agent_id))
     share_id = upsert_public_share(

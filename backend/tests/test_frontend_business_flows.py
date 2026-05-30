@@ -130,6 +130,73 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     assert restored["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
 
 
+def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend_flow_client: TestClient):
+    client = frontend_flow_client
+    headers = _headers("frontend-export-tools@example.test")
+
+    created_tool = client.post(
+        "/api/settings/mcp",
+        json={
+            "name": "带密钥的工具",
+            "transport": {
+                "type": "stdio",
+                "command": "python",
+                "args": ["app/mcp/stdio/audio_asr.py"],
+                "env": {
+                    "QWEN_AUDIO_API_KEY": "sk-live-secret",
+                    "QWEN_AUDIO_MODEL": "qwen3-asr-1.7b",
+                },
+            },
+        },
+        headers=headers,
+    )
+    assert created_tool.status_code == 200
+    tool_id = created_tool.json()["data"]["id"]
+
+    created_skill = client.post(
+        "/api/settings/skills",
+        json={"name": "导出工具技能", "description": ""},
+        headers=headers,
+    )
+    assert created_skill.status_code == 200
+    skill_id = created_skill.json()["data"]["id"]
+    updated_skill = client.put(
+        f"/api/settings/skills/{skill_id}",
+        json={"allowed_tools": {"mcp": [tool_id], "python": ""}},
+        headers=headers,
+    )
+    assert updated_skill.status_code == 200
+
+    exported_skill = client.get(f"/api/settings/skills/{skill_id}/export-zip", headers=headers)
+    assert exported_skill.status_code == 200
+    with zipfile.ZipFile(BytesIO(exported_skill.content)) as zf:
+        skill_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+    assert [row["id"] for row in skill_tools] == [tool_id]
+    assert skill_tools[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == ""
+    assert skill_tools[0]["transport"]["env"]["QWEN_AUDIO_MODEL"] == "qwen3-asr-1.7b"
+    assert "sk-live-secret" not in exported_skill.content.decode("latin-1")
+
+    created_expert = client.post(
+        "/api/dha/instances",
+        json={
+            "agent_id": "expert-with-skill-tool",
+            "name": "带技能工具的专家",
+            "skill_ids": [skill_id],
+            "mcp_server_ids": [],
+        },
+        headers=headers,
+    )
+    assert created_expert.status_code == 200
+
+    exported_expert = client.get("/api/dha/instances/expert-with-skill-tool/export-bundle", headers=headers)
+    assert exported_expert.status_code == 200
+    with zipfile.ZipFile(BytesIO(exported_expert.content)) as zf:
+        expert_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
+    assert [row["id"] for row in expert_tools] == [tool_id]
+    assert expert_tools[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == ""
+    assert "sk-live-secret" not in exported_expert.content.decode("latin-1")
+
+
 def test_mcp_settings_omits_legacy_enable_and_runtime_state(frontend_flow_client: TestClient):
     client = frontend_flow_client
     headers = _headers("frontend-mcp-legacy@example.test")

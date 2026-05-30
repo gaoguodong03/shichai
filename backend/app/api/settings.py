@@ -123,15 +123,16 @@ def _merge_sandbox_requirements_lines(incoming: List[str]) -> Tuple[List[str], s
 
 
 def _mcp_rows_for_skill_dir(skill_dir: Path) -> List[Dict[str, Any]]:
+    from app.core.settings_bundle_import import mcp_refs_from_skill_frontmatter, mcp_rows_for_bundle_refs
+
     try:
         fm, _ = _read_skill_file(skill_dir)
     except Exception:
         return []
-    mcp_ids = _mcp_ids_from_frontmatter(fm)
-    if not mcp_ids:
+    mcp_refs = mcp_refs_from_skill_frontmatter(fm)
+    if not mcp_refs:
         return []
-    by_id = {str(row.get("id") or "").strip(): row for row in load_mcp_config() if str(row.get("id") or "").strip()}
-    return [dict(by_id[mid]) for mid in mcp_ids if mid in by_id]
+    return mcp_rows_for_bundle_refs(mcp_refs, load_mcp_config())
 
 
 def _parse_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
@@ -957,6 +958,8 @@ def _content_disposition_attachment(filename: str) -> str:
 
 def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, Any]]] = None) -> bytes:
     """将技能目录打包为 ZIP；根目录含 SKILL.md，可选携带 mcp_servers.json。"""
+    from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for fp in sorted(skill_dir.rglob("*")):
@@ -972,8 +975,9 @@ def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, An
             if arcname == "mcp_servers.json":
                 continue
             zf.write(fp, arcname)
-        if mcp_rows:
-            zf.writestr("mcp_servers.json", json.dumps(mcp_rows, ensure_ascii=False, indent=2) + "\n")
+        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows or [])
+        if safe_mcp_rows:
+            zf.writestr("mcp_servers.json", json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
     return buf.getvalue()
 
 

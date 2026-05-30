@@ -99,6 +99,11 @@ services:
     environment:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:8100}
       - AUTH_SECRET=${AUTH_SECRET:-please_change_to_a_long_random_secret}
+      # 认证库必须放在挂载卷内；否则镜像重建/重拉后账号库会回到镜像内默认路径。
+      - AUTH_DB_PATH=${AUTH_DB_PATH:-/app/backend/data/auth_users.sqlite}
+      - AUTH_USERS_FILE=${AUTH_USERS_FILE:-/app/backend/data/auth_users.txt}
+      - SHUTONG_USER_DATA_ROOT=${SHUTONG_USER_DATA_ROOT:-/app/backend/data/users}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}
       # 方案 B：st49 通过宿主机端口访问 OpenSandbox；OpenSandbox 与其创建的沙箱同处默认 bridge，避免 server proxy 连不上 172.17.x.x:44772。
       - OPENSANDBOX_DOMAIN=host.docker.internal:${OPENSANDBOX_HOST_PORT:-8091}
       - OPENSANDBOX_PROTOCOL=http

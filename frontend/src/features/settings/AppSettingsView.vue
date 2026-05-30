@@ -59,7 +59,7 @@
                 class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
               >
                 <button
-                  v-for="s in filteredSkills"
+                  v-for="s in visibleSkills"
                   :key="s.id"
                   type="button"
                   class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
@@ -73,6 +73,12 @@
               </div>
               <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
                 没有匹配的 Skill
+              </p>
+              <p v-else-if="skillsLoading" class="text-xs text-muted">
+                技能加载中...
+              </p>
+              <p v-else-if="hiddenSkillCount > 0" class="text-xs text-muted">
+                已显示 {{ visibleSkills.length }} / {{ filteredSkills.length }} 个 Skill，可搜索更多。
               </p>
               <p v-else-if="!skills.length" class="text-xs text-muted">
                 当前技能库为空，请先到左侧“技能”中新建或导入 Skill。
@@ -88,14 +94,6 @@
             >
               {{ saving ? '保存中...' : '保存' }}
             </button>
-            <button
-              type="button"
-              @click="resetToDefaults"
-              :disabled="saving"
-              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-card border border-border text-primary hover:bg-list-hover disabled:opacity-50"
-            >
-              恢复默认
-            </button>
           </div>
         </form>
       </template>
@@ -104,12 +102,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 
 const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
+const skillsLoading = ref(true)
 const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
+const INITIAL_SKILL_RENDER_LIMIT = 80
 
 type HostForm = {
   host_display_name: string
@@ -166,6 +166,22 @@ const filteredSkills = computed(() => {
   })
 })
 
+const visibleSkills = computed(() => {
+  const list = filteredSkills.value
+  const q = skillSearch.value.trim()
+  if (q || list.length <= INITIAL_SKILL_RENDER_LIMIT) return list
+
+  const selected = new Set(form.value.skill_ids || [])
+  const visible = list.filter((s) => selected.has(s.id))
+  for (const s of list) {
+    if (visible.length >= INITIAL_SKILL_RENDER_LIMIT) break
+    if (!selected.has(s.id)) visible.push(s)
+  }
+  return visible
+})
+
+const hiddenSkillCount = computed(() => Math.max(0, filteredSkills.value.length - visibleSkills.value.length))
+
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
   next.host_display_name = String(d.display_name ?? '四九')
@@ -195,6 +211,7 @@ function toggleSkill(id: string) {
 }
 
 async function loadSkills() {
+  skillsLoading.value = true
   try {
     const r = await fetch('/api/settings/skills')
     const j = await r.json().catch(() => ({}))
@@ -209,6 +226,8 @@ async function loadSkills() {
     }
   } catch {
     skills.value = []
+  } finally {
+    skillsLoading.value = false
   }
 }
 
@@ -279,27 +298,28 @@ async function save() {
   }
 }
 
-async function resetToDefaults() {
-  if (!window.confirm('确定恢复为默认主持人配置？这将覆盖你当前的修改。')) return
-  saving.value = true
-  saved.value = false
-  try {
-    const r = await fetch('/api/settings/host-profile/reset', { method: 'POST' })
-    const j = await r.json().catch(() => ({}))
-    if (j?.status === 'ok' && j?.data) {
-      applyHostData(j.data as Record<string, unknown>)
-      window.dispatchEvent(new CustomEvent(HOST_NAME_UPDATED_EVENT_NAME))
-      saved.value = true
-      setTimeout(() => { saved.value = false }, 2000)
-    } else {
-      alert((j as { detail?: string })?.detail || '恢复默认失败')
-    }
-  } finally {
-    saving.value = false
+let skillLoadTimer: number | null = null
+type IdleCallbackWindow = Window & typeof globalThis & {
+  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number
+  cancelIdleCallback?: (handle: number) => void
+}
+const idleWindow = window as IdleCallbackWindow
+
+function scheduleSkillsLoad() {
+  const run = () => { void loadSkills() }
+  if (idleWindow.requestIdleCallback) {
+    skillLoadTimer = idleWindow.requestIdleCallback(run, { timeout: 800 })
+    return
   }
+  skillLoadTimer = idleWindow.setTimeout(run, 80)
 }
 
 onMounted(load)
-onMounted(loadSkills)
+onMounted(scheduleSkillsLoad)
 onMounted(loadLLMProviders)
+onUnmounted(() => {
+  if (skillLoadTimer === null) return
+  if (idleWindow.cancelIdleCallback) idleWindow.cancelIdleCallback(skillLoadTimer)
+  else idleWindow.clearTimeout(skillLoadTimer)
+})
 </script>

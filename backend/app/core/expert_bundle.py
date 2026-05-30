@@ -94,6 +94,7 @@ def build_expert_bundle_zip_bytes(
     skill_ids: List[str],
 ) -> bytes:
     from app.core.scenario_bundle import strip_dha_row_for_disk
+    from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
 
     buf = io.BytesIO()
     clean = strip_dha_row_for_disk(dict(expert_row))
@@ -104,8 +105,9 @@ def build_expert_bundle_zip_bytes(
     }
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(EXPERT_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        if mcp_rows:
-            zf.writestr(MCP_NAME, json.dumps(mcp_rows, ensure_ascii=False, indent=2) + "\n")
+        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows)
+        if safe_mcp_rows:
+            zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
         for sid in sorted(skill_ids):
             sdir = (skills_root / sid).resolve()

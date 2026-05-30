@@ -188,7 +188,9 @@ mkdir -p "$FILES_DIR"
 
 cp "$COMPOSE_FILE" "$FILES_DIR/00_docker-compose.yml"
 if [[ -f "$ENV_FILE" ]]; then
-  cp "$ENV_FILE" "$FILES_DIR/.env"
+  # Keep user/provider settings, but normalize deployment-owned persistence paths
+  # below so a local backend/.env cannot ship host-only paths into 1Panel.
+  grep -Ev '^[[:space:]]*(AUTH_DB_PATH|AUTH_USERS_FILE|SHUTONG_USER_DATA_ROOT|ACCESS_TOKEN_EXPIRE_MINUTES)[[:space:]]*=' "$ENV_FILE" > "$FILES_DIR/.env" || true
 else
   echo "==> No env file found at $ENV_FILE; generating package env from script defaults"
   {
@@ -212,6 +214,10 @@ fi
   echo "SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE=$SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE"
   echo "SANDBOX_SESSION_ISOLATION=$SANDBOX_SESSION_ISOLATION"
   echo "QWEN_AUDIO_CHUNK_SECONDS=${QWEN_AUDIO_CHUNK_SECONDS:-120}"
+  echo "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite"
+  echo "AUTH_USERS_FILE=/app/backend/data/auth_users.txt"
+  echo "SHUTONG_USER_DATA_ROOT=/app/backend/data/users"
+  echo "ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}"
 } >> "$FILES_DIR/.env"
 
 python3 - <<'PY'

@@ -866,6 +866,7 @@
                     </div>
                   </div>
                 </div>
+                <!-- 场景分享/访问方式入口按产品要求暂时只在前端关闭。
                 <div v-if="!isCreatingScenario" class="space-y-2 pt-1 border-t border-border-light">
                   <div class="text-sm font-medium text-primary">访问方式</div>
                   <div v-if="scenarioShareAutoPublishing" class="text-sm text-muted py-1">
@@ -887,6 +888,7 @@
                     请先填写名称、至少选择一位协作专家并保存，系统将自动生成固定推广链接。
                   </p>
                 </div>
+                -->
                 <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0 flex-wrap">
                   <button
                     type="button"
@@ -2146,18 +2148,24 @@ function onNavClick(moduleId: ModuleId) {
     resourceMenuExpanded.value = !resourceMenuExpanded.value
     return
   }
+  if (moduleId === 'settings') {
+    resourceMenuExpanded.value = false
+    selectedId.value = 'app'
+    ensureMiddleColumnOpen()
+    void router.push('/settings/app')
+    return
+  }
   if (moduleId === 'resource') {
     resourceMenuExpanded.value = true
   } else {
     resourceMenuExpanded.value = false
   }
   if (moduleId !== 'resource') selectedId.value = null
-  if (moduleId === 'resource' || moduleId === 'settings') {
+  if (moduleId === 'resource') {
     ensureMiddleColumnOpen()
   }
   if (moduleId === 'workspace') void router.push('/workspace')
   if (moduleId === 'resource') void router.push('/resources/scenario')
-  if (moduleId === 'settings') void router.push('/settings/app')
 }
 
 function onResourceChildClick(id: ResourceSubModule) {
@@ -2431,7 +2439,8 @@ async function saveScenarioPreset() {
     if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
     scenarioDraftIds.value = scenarioDraftIds.value.filter((id) => id !== cur.id)
     syncScenarioDraftFromSelected()
-    void ensureScenarioSharePublishedSilent()
+    // 场景分享入口已按产品要求在前端关闭，不再主动生成分享链接。
+    // void ensureScenarioSharePublishedSilent()
   } catch (e) {
     window.alert((e as Error).message || '保存场景失败')
   } finally {
@@ -2484,7 +2493,8 @@ async function fetchScenarioPresets() {
         scenarioDraftIds.value = []
       }
       syncScenarioDraftFromSelected()
-      void fetchScenarioShareLink()
+      // 场景分享入口已按产品要求在前端关闭，不再主动拉取分享链接。
+      // void fetchScenarioShareLink()
     }
   } catch {
     scenarioPresets.value = []
@@ -3456,7 +3466,8 @@ watch(resourceSubModule, (sub) => {
 watch(selectedScenarioPreset, () => {
   if (resourceSubModule.value !== 'scenario') return
   syncScenarioDraftFromSelected()
-  void fetchScenarioShareLink()
+  // 场景分享入口已按产品要求在前端关闭，不再主动拉取分享链接。
+  // void fetchScenarioShareLink()
 })
 
 // 初始加载：切到对应模块时再请求数据

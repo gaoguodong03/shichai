@@ -5,9 +5,10 @@ test.describe('验收 5/6：设置中心', () => {
   test('用户可以配置主持人和配色', async ({ page }) => {
     await bootLoggedInApp(page)
 
-    await page.getByRole('button', { name: '设置' }).click()
-    await page.getByRole('button', { name: '主持人设置' }).click()
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await expect(page).toHaveURL(/\/settings\/app$/)
     await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
+    await expect(page.getByRole('button', { name: '恢复默认' })).toHaveCount(0)
     await page.getByPlaceholder('例如：你是群聊主持人，只负责决定下一位发言人与 next_prompt，不代写专家正文。').fill('自动化验收主持人提示词')
     await page.getByRole('button', { name: '保存' }).click()
     await expect(page.getByText('已保存')).toBeVisible()
@@ -15,6 +16,17 @@ test.describe('验收 5/6：设置中心', () => {
     await page.getByRole('button', { name: '配色' }).click()
     await page.getByRole('button', { name: /浅蓝/ }).click()
     await expect(page.locator('body')).toBeVisible()
+  })
+
+  test('设置入口重复点击仍默认停留在主持人设置', async ({ page }) => {
+    await bootLoggedInApp(page, '/settings/app')
+    await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
+
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+
+    await expect(page).toHaveURL(/\/settings\/app$/)
+    await expect(page.getByRole('button', { name: '主持人设置' })).toHaveClass(/bg-accent-subtle/)
+    await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
   })
 
   test('修改全局主持人名称后工作空间同步显示新名称', async ({ page }) => {
@@ -73,7 +85,7 @@ test.describe('验收 5/6：设置中心', () => {
   test('用户可以管理密钥与账号安全', async ({ page }) => {
     await bootLoggedInApp(page)
 
-    await page.getByRole('button', { name: '设置' }).click()
+    await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('button', { name: '密钥' }).click()
     await expect(page.getByRole('heading', { name: '密钥管理' })).toBeVisible()
     await page.getByRole('button', { name: '创建密钥' }).click()
@@ -115,7 +127,7 @@ test.describe('验收 5/6：设置中心', () => {
   test('用户可以切换沙箱版本并维护 requirements', async ({ page }) => {
     await bootLoggedInApp(page)
 
-    await page.getByRole('button', { name: '设置' }).click()
+    await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('button', { name: '沙箱' }).click()
     await expect(page.getByRole('heading', { name: '沙箱' })).toBeVisible()
     await expect(page.getByText('Playwright 版包含浏览器运行时，体积更大；普通版更省资源。')).toBeVisible()
