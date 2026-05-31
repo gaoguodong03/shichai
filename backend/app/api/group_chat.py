@@ -2395,6 +2395,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 host_takeover_requested=host_takeover_requested,
                 override_next_speaker=request.override_next_speaker,
                 ignore_auto_expert_id=ignored_auto_expert_id or "",
+                user_message=user_message,
             )
             if not entry_route.skip_host_dispatch:
                 clear_skill_session_lock(meta_item)

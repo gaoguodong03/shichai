@@ -31,3 +31,24 @@ def test_host_decision_from_scheduler_state_maps_user():
     assert out["next_speaker"] == "user"
     assert out["next_prompt"] == "请补充年级"
     assert out["decision_source"] == "host_scheduler_state"
+
+
+def test_host_decision_from_scheduler_state_maps_name_with_agent_id():
+    out = hd.host_decision_from_scheduler_state(
+        {
+            "current_phase": "阶段1：选题",
+            "next_speaker": "伴学研讨——引导教学的教师 (agent-6ffb9536)",
+            "speaker_task": "请教师给出本轮讨论主题。",
+        },
+        [
+            {
+                "agent_id": "agent-6ffb9536",
+                "name": "伴学研讨——引导教学的教师",
+                "role": "伴学研讨中的教师，负责选题、材料引导、教师追问与最终点评。",
+            }
+        ],
+    )
+
+    assert out is not None
+    assert out["next_speaker"] == "agent-6ffb9536"
+    assert out["next_prompt"] == "请教师给出本轮讨论主题。"

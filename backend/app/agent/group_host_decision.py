@@ -135,6 +135,12 @@ def match_workspace_speaker_to_agent_id(raw_speaker: str, dha_list: List[Dict[st
     raw_lower = raw.lower()
     if not raw:
         return ""
+    raw_agent_ids = [str(x or "").strip().lower() for x in re.findall(r"agent-[a-zA-Z0-9\-]+", raw)]
+    if raw_agent_ids:
+        for dha in dha_list or []:
+            aid = str((dha or {}).get("agent_id") or "").strip()
+            if aid and aid.lower() in raw_agent_ids:
+                return aid
     for dha in dha_list or []:
         aid = str((dha or {}).get("agent_id") or "").strip()
         if aid and aid.lower() == raw_lower:

@@ -14,6 +14,49 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('自动化测试回复：需求已收到。')).toBeVisible()
   })
 
+  test('专家回复结束后刷新会话工作区文件与预览', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].messages = []
+    state.fileContent['session-existing:brief.md'] = '# 验收说明\n\n旧文件内容。\n'
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+      const session = state.sessions.find((s) => s.id === 'session-existing')
+      if (session) {
+        session.messages.push({ message_id: 'assistant-file', role: 'assistant', agent_id: 'agent-qa', content: '我已经更新工作区文件。' } as never)
+      }
+      state.fileContent['session-existing:brief.md'] = '# 验收说明\n\n专家已更新文件内容。\n'
+      state.files['session-existing:'] = [
+        ...(state.files['session-existing:'] || []),
+        { name: 'expert-output.md', path: 'expert-output.md', is_dir: false, size: 64, updated_at: '2026-05-30T09:00:00Z' },
+      ]
+      state.fileContent['session-existing:expert-output.md'] = '# 专家输出\n\n已写入工作区。\n'
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: [
+          `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', role: 'assistant', agent_id: 'agent-qa', content: '我已经更新工作区文件。' })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+        ].join(''),
+      })
+    })
+
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
+    await page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'brief.md' }).click()
+    await expect(page.getByText('旧文件内容。')).toBeVisible()
+
+    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请更新工作区文件')
+    await expect(page.getByPlaceholder('输入 @ 可提及主持人或专家')).toHaveValue('请更新工作区文件')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.getByText('我已经更新工作区文件。')).toBeVisible()
+    await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'expert-output.md' })).toBeVisible()
+    await expect(page.getByText('专家已更新文件内容。')).toBeVisible()
+  })
+
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {
     await bootLoggedInApp(page)
 

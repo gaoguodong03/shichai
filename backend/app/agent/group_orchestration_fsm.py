@@ -34,6 +34,11 @@ def user_requests_exit_skill_session(user_message: str) -> bool:
         return False
     return bool(_USER_SKILL_SESSION_EXIT_RE.search(s))
 
+
+def user_message_is_pass_control(user_message: str) -> bool:
+    """自由研讨里 pass 表示用户本轮不发言，仍应交由主持人推进阶段调度。"""
+    return (user_message or "").strip().lower() == "pass"
+
 ORCHESTRATION_RECRUITMENT = "recruitment"
 ORCHESTRATION_SCENE = "scene"
 
@@ -81,6 +86,7 @@ def resolve_group_entry_route(
     host_takeover_requested: bool,
     override_next_speaker: Optional[str],
     ignore_auto_expert_id: str,
+    user_message: str = "",
 ) -> GroupEntryRoute:
     """
     是否跳过四九调度、直接由锁定专家处理本轮用户消息。
@@ -106,6 +112,13 @@ def resolve_group_entry_route(
 
     ovr = (override_next_speaker or "").strip().lower()
     if ovr:
+        return GroupEntryRoute(
+            skip_host_dispatch=False,
+            direct_expert_id=None,
+            clear_skill_lock_before_host=True,
+        )
+
+    if user_message_is_pass_control(user_message):
         return GroupEntryRoute(
             skip_host_dispatch=False,
             direct_expert_id=None,

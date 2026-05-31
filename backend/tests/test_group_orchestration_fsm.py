@@ -55,6 +55,21 @@ def test_resolve_skip_host_when_skill_lock():
     assert r.direct_expert_id == "agent-a"
 
 
+def test_resolve_pass_control_message_returns_to_host_even_with_skill_lock():
+    meta = {"skill_session_owner_id": "agent-a"}
+    r = resolve_group_entry_route(
+        meta_item=meta,
+        agent_ids=["agent-a"],
+        host_takeover_requested=False,
+        override_next_speaker=None,
+        ignore_auto_expert_id="",
+        user_message=" pass ",
+    )
+    assert r.skip_host_dispatch is False
+    assert r.direct_expert_id is None
+    assert r.clear_skill_lock_before_host is True
+
+
 def test_resolve_no_skip_on_host_takeover():
     meta = {"skill_session_owner_id": "agent-a"}
     r = resolve_group_entry_route(

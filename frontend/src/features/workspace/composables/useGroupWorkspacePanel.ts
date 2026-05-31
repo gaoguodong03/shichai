@@ -84,6 +84,17 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     }
   }
 
+  async function refreshGroupWorkspaceAfterExternalChange() {
+    if (!showGroupWorkspace.value || !workspaceId.value) return
+    const preview = groupWorkspacePreviewPath.value && !groupWorkspacePreviewEditing.value && !groupWorkspacePreviewCollapsed.value
+      ? { name: groupWorkspacePreviewName.value, path: groupWorkspacePreviewPath.value }
+      : null
+    await loadGroupWorkspace()
+    if (preview?.path) {
+      await previewWorkspaceFile(preview)
+    }
+  }
+
   function groupWorkspaceGoRoot() {
     clearGroupWorkspacePreviewState()
     groupWorkspacePath.value = ''
@@ -445,6 +456,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     groupWorkspacePreviewCollapsed,
     groupWorkspacePreviewIsImage,
     loadGroupWorkspace,
+    refreshGroupWorkspaceAfterExternalChange,
     resetGroupWorkspacePanel,
     groupWorkspaceGoRoot,
     groupWorkspaceEnterDir,

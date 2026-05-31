@@ -143,6 +143,7 @@ export function useWorkspaceContentProviders(args: {
     onGroupWorkspaceResizeMouseDown,
     onWorkspaceInnerResizeMouseDown,
     toggleWorkspacePreview,
+    refreshGroupWorkspaceAfterExternalChange,
   } = useGroupWorkspacePanel(groupWorkspaceId)
 
   const USER_PREF_UPDATED_EVENT_NAME = 'dha-user-pref-updated'
@@ -543,7 +544,10 @@ export function useWorkspaceContentProviders(args: {
       if (msg) body.custom_prompt = msg
       if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
-      if (shouldEmitMessageSent) emit('message-sent')
+      if (shouldEmitMessageSent) {
+        await refreshGroupWorkspaceAfterExternalChange()
+        emit('message-sent')
+      }
     } catch (e) {
       console.error('确认下一发言人失败', e)
     } finally {
@@ -2441,7 +2445,10 @@ export function useWorkspaceContentProviders(args: {
       if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
       // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
-      if (shouldEmitMessageSent) emit('message-sent')
+      if (shouldEmitMessageSent) {
+        await refreshGroupWorkspaceAfterExternalChange()
+        emit('message-sent')
+      }
     } catch (e) {
       console.error('群聊发送失败', e)
     } finally {
