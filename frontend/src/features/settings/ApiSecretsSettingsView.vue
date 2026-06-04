@@ -161,6 +161,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
 type Item = { id: string; label: string; key_set: boolean }
 
@@ -212,7 +213,7 @@ async function createSecret() {
       selectedId.value = j.data.id as string
       draftNew.value = { id: '', label: '', api_key: '' }
     } else {
-      alert((j as { detail?: string }).detail || '创建失败')
+      await appAlert({ title: '创建失败', message: (j as { detail?: string }).detail || '创建失败', variant: 'danger' })
     }
   } finally {
     saving.value = false
@@ -239,7 +240,7 @@ async function updateSecret() {
       await load()
       draftEdit.value.api_key = ''
     } else {
-      alert((j as { detail?: string }).detail || '保存失败')
+      await appAlert({ title: '保存失败', message: (j as { detail?: string }).detail || '保存失败', variant: 'danger' })
     }
   } finally {
     saving.value = false
@@ -249,7 +250,13 @@ async function updateSecret() {
 async function removeSecret() {
   const id = selectedId.value
   if (!id || id === '__new__') return
-  if (!confirm(`确定删除密钥「${id}」？引用该密钥的模型配置将需在编辑中重新选择。`)) return
+  const ok = await appConfirm({
+    title: '删除密钥',
+    message: `确定删除密钥「${id}」？引用该密钥的模型配置将需在编辑中重新选择。`,
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   saving.value = true
   try {
     const r = await fetch(`/api/settings/api-secrets/${encodeURIComponent(id)}`, {
@@ -260,7 +267,7 @@ async function removeSecret() {
       selectedId.value = null
       await load()
     } else {
-      alert((j as { detail?: string }).detail || '删除失败')
+      await appAlert({ title: '删除失败', message: (j as { detail?: string }).detail || '删除失败', variant: 'danger' })
     }
   } finally {
     saving.value = false

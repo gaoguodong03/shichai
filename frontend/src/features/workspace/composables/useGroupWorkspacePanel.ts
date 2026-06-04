@@ -1,4 +1,5 @@
 import { computed, onUnmounted, ref, watch, type Ref } from 'vue'
+import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { uploadWorkspaceFile } from '../workspaceUpload'
 
 type WorkspaceEntry = { name: string; path: string; is_dir: boolean }
@@ -142,14 +143,19 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       document.body.removeChild(a)
       URL.revokeObjectURL(objUrl)
     } catch {
-      alert('下载失败，请检查网络或登录状态')
+      await appAlert({ title: '下载失败', message: '下载失败，请检查网络或登录状态', variant: 'danger' })
     }
   }
 
   async function createGroupWorkspaceDir() {
     const id = workspaceId.value
     if (!id) return
-    const name = window.prompt('新建文件夹名称', '新文件夹')?.trim()
+    const name = (await appPrompt({
+      title: '新建文件夹',
+      message: '请输入文件夹名称。',
+      defaultValue: '新文件夹',
+      required: true,
+    }))?.trim()
     if (!name) return
     try {
       const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
@@ -162,10 +168,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       if (j?.status === 'ok') {
         await loadGroupWorkspace()
       } else {
-        alert((j as { detail?: string }).detail || '新建文件夹失败')
+        await appAlert({ title: '新建文件夹失败', message: (j as { detail?: string }).detail || '新建文件夹失败', variant: 'danger' })
       }
     } catch {
-      alert('新建文件夹失败，请检查网络或后端')
+      await appAlert({ title: '新建文件夹失败', message: '新建文件夹失败，请检查网络或后端', variant: 'danger' })
     }
   }
 
@@ -173,7 +179,13 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     const id = workspaceId.value
     if (!id) return
     const defaultName = groupWorkspacePath.value ? 'note.md' : 'novel-workflow-tasks.md'
-    const name = window.prompt('新建文件名（相对当前目录，如 novel-workflow-tasks.md）', defaultName)?.trim()
+    const name = (await appPrompt({
+      title: '新建文件',
+      message: '请输入文件名，可使用相对当前目录的路径。',
+      defaultValue: defaultName,
+      placeholder: 'note.md',
+      required: true,
+    }))?.trim()
     if (!name) return
     try {
       const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
@@ -186,10 +198,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       if (j?.status === 'ok') {
         await loadGroupWorkspace()
       } else {
-        alert((j as { detail?: string }).detail || '新建文件失败')
+        await appAlert({ title: '新建文件失败', message: (j as { detail?: string }).detail || '新建文件失败', variant: 'danger' })
       }
     } catch {
-      alert('新建文件失败，请检查网络或后端')
+      await appAlert({ title: '新建文件失败', message: '新建文件失败，请检查网络或后端', variant: 'danger' })
     }
   }
 
@@ -208,10 +220,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       if (j?.status === 'ok') {
         await loadGroupWorkspace()
       } else {
-        alert((j as { detail?: string }).detail || '上传失败')
+        await appAlert({ title: '上传失败', message: (j as { detail?: string }).detail || '上传失败', variant: 'danger' })
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
+      await appAlert({ title: '上传失败', message: e instanceof Error ? e.message : '上传失败，请检查网络或后端', variant: 'danger' })
     } finally {
       groupWorkspaceUploading.value = false
       groupWorkspaceUploadingName.value = ''
@@ -224,7 +236,12 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     if (e.is_dir) return
     const id = workspaceId.value
     if (!id) return
-    const name = window.prompt('重命名为', e.name)?.trim()
+    const name = (await appPrompt({
+      title: '重命名文件',
+      message: '请输入新的文件名。',
+      defaultValue: e.name,
+      required: true,
+    }))?.trim()
     if (name == null || name === '' || name === e.name) return
     try {
       const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/rename?path=${encodeURIComponent(e.path)}`, {
@@ -237,10 +254,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
         if (groupWorkspacePreviewPath.value === e.path) clearGroupWorkspacePreviewState()
         await loadGroupWorkspace()
       } else {
-        alert((j as { detail?: string }).detail || '重命名失败')
+        await appAlert({ title: '重命名失败', message: (j as { detail?: string }).detail || '重命名失败', variant: 'danger' })
       }
     } catch {
-      alert('重命名失败，请检查网络或后端')
+      await appAlert({ title: '重命名失败', message: '重命名失败，请检查网络或后端', variant: 'danger' })
     }
   }
 
@@ -251,7 +268,13 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     const msg = e.is_dir
       ? '确定要删除该空目录吗？非空目录请先清空内容。'
       : `确定要删除 ${label} 吗？此操作不可恢复。`
-    if (!window.confirm(msg)) return
+    const ok = await appConfirm({
+      title: e.is_dir ? '删除目录' : '删除文件',
+      message: msg,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
     try {
       const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`, {
         method: 'DELETE',
@@ -261,10 +284,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
         if (groupWorkspacePreviewPath.value === e.path) clearGroupWorkspacePreviewState()
         await loadGroupWorkspace()
       } else {
-        alert((j as { detail?: string }).detail || '删除失败')
+        await appAlert({ title: '删除失败', message: (j as { detail?: string }).detail || '删除失败', variant: 'danger' })
       }
     } catch {
-      alert('删除失败，请检查网络或后端')
+      await appAlert({ title: '删除失败', message: '删除失败，请检查网络或后端', variant: 'danger' })
     }
   }
 
@@ -304,10 +327,10 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
         groupWorkspacePreviewContent.value = groupWorkspacePreviewEditContent.value
         groupWorkspacePreviewEditing.value = false
       } else {
-        alert((j as { detail?: string }).detail || '保存失败')
+        await appAlert({ title: '保存失败', message: (j as { detail?: string }).detail || '保存失败', variant: 'danger' })
       }
     } catch {
-      alert('保存失败，请检查网络或后端')
+      await appAlert({ title: '保存失败', message: '保存失败，请检查网络或后端', variant: 'danger' })
     }
   }
 

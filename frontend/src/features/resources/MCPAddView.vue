@@ -204,6 +204,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
+import { appAlert } from '@/composables/useAppDialog'
 
 const emit = defineEmits<{ (e: 'created', id: string): void }>()
 
@@ -301,10 +302,10 @@ async function submit() {
     if (j.status === 'ok' && j.data?.id) {
       emit('created', j.data.id)
     } else {
-      alert(j.detail || '创建失败')
+      await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
     }
   } catch {
-    alert('创建失败')
+    await appAlert({ title: '创建失败', message: '创建失败', variant: 'danger' })
   } finally {
     saving.value = false
   }

@@ -19,3 +19,148 @@ body {
   color: inherit;
   background-color: inherit;
 }
+
+.app-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.app-dialog {
+  width: min(440px, 100%);
+  border: 1px solid var(--color-border-light, #e5e5ea);
+  border-radius: 8px;
+  background: var(--color-card, #ffffff);
+  color: var(--color-text, #000000);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.24);
+  padding: 20px;
+}
+
+.app-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-dialog-mark {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--color-accent, #007aff);
+}
+
+.app-dialog-mark-success {
+  background: #34c759;
+}
+
+.app-dialog-mark-warning {
+  background: #ff9500;
+}
+
+.app-dialog-mark-danger {
+  background: var(--color-danger, #ff3b30);
+}
+
+.app-dialog-title {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.app-dialog-message {
+  margin: 12px 0 0;
+  color: var(--color-text-muted, #8a8a8e);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.app-dialog-field {
+  display: block;
+  margin-top: 16px;
+}
+
+.app-dialog-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-text-muted, #8a8a8e);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-dialog-input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--color-input-border, #c6c6c8);
+  border-radius: 8px;
+  background: var(--color-input-bg, #ffffff);
+  color: var(--color-text, #000000);
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  outline: none;
+}
+
+.app-dialog-input:focus {
+  border-color: var(--color-input-focus-ring, #007aff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-input-focus-ring, #007aff) 18%, transparent);
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.app-dialog-button {
+  min-height: 36px;
+  min-width: 76px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.app-dialog-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.app-dialog-button-secondary {
+  border: 1px solid var(--color-border-light, #e5e5ea);
+  background: var(--color-card, #ffffff);
+  color: var(--color-text, #000000);
+}
+
+.app-dialog-button-secondary:hover:not(:disabled) {
+  background: var(--color-list-hover, #e5e5ea);
+}
+
+.app-dialog-button-primary {
+  border: 1px solid var(--color-accent, #007aff);
+  background: var(--color-accent, #007aff);
+  color: var(--color-text-inverse, #ffffff);
+}
+
+.app-dialog-button-primary:hover:not(:disabled) {
+  background: var(--color-accent-hover, #0051d5);
+  border-color: var(--color-accent-hover, #0051d5);
+}
+
+.app-dialog-button-danger {
+  border-color: var(--color-danger, #ff3b30);
+  background: var(--color-danger, #ff3b30);
+}

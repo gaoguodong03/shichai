@@ -229,6 +229,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
+import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
 const props = defineProps<{ serverId: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
@@ -419,7 +420,7 @@ async function save() {
       emit('updated')
       await load({ silent: true })
     } else {
-      alert(j.detail || '保存失败')
+      await appAlert({ title: '保存失败', message: j.detail || '保存失败', variant: 'danger' })
     }
   } finally {
     saving.value = false
@@ -427,7 +428,14 @@ async function save() {
 }
 
 async function deleteServer() {
-  if (!server.value || !confirm('确定要删除该 MCP Server 吗？')) return
+  if (!server.value) return
+  const ok = await appConfirm({
+    title: '删除 MCP Server',
+    message: '确定要删除该 MCP Server 吗？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   deleting.value = true
   try {
     const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}`, { method: 'DELETE' })
@@ -435,7 +443,7 @@ async function deleteServer() {
     if (j.status === 'ok') {
       emit('deleted')
     } else {
-      alert(j.detail || '删除失败')
+      await appAlert({ title: '删除失败', message: j.detail || '删除失败', variant: 'danger' })
     }
   } finally {
     deleting.value = false
@@ -455,7 +463,7 @@ async function exportZip() {
       } catch {
         /* ignore */
       }
-      alert(msg)
+      await appAlert({ title: '导出失败', message: msg, variant: 'danger' })
       return
     }
     const blob = await r.blob()

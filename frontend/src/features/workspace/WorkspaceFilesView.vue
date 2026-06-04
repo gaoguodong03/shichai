@@ -102,6 +102,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import FileDetailView from './FileDetailView.vue'
 import { uploadWorkspaceFile } from './workspaceUpload'
 
@@ -182,7 +183,13 @@ function onEntryClick(e: Entry) {
 async function createFile() {
   const id = props.sessionId
   if (!id) return
-  const filename = window.prompt('新建文件名（如 note.md）', 'note.md')?.trim()
+  const filename = (await appPrompt({
+    title: '新建文件',
+    message: '请输入文件名。',
+    defaultValue: 'note.md',
+    placeholder: 'note.md',
+    required: true,
+  }))?.trim()
   if (!filename) return
   const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
   const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${query}`, {
@@ -192,7 +199,7 @@ async function createFile() {
   })
   const j = await r.json()
   if (j?.status !== 'ok') {
-    alert(j?.detail || '新建文件失败')
+    await appAlert({ title: '新建文件失败', message: j?.detail || '新建文件失败', variant: 'danger' })
     return
   }
   await loadDir(currentDir.value)
@@ -202,7 +209,12 @@ async function createFile() {
 async function createFolder() {
   const id = props.sessionId
   if (!id) return
-  const dirname = window.prompt('新建文件夹名称', '新文件夹')?.trim()
+  const dirname = (await appPrompt({
+    title: '创建文件夹',
+    message: '请输入文件夹名称。',
+    defaultValue: '新文件夹',
+    required: true,
+  }))?.trim()
   if (!dirname) return
   const query = currentDir.value ? `?path=${encodeURIComponent(currentDir.value)}` : ''
   const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/mkdir${query}`, {
@@ -212,7 +224,7 @@ async function createFolder() {
   })
   const j = await r.json()
   if (j?.status !== 'ok') {
-    alert(j?.detail || '创建文件夹失败')
+    await appAlert({ title: '创建文件夹失败', message: j?.detail || '创建文件夹失败', variant: 'danger' })
     return
   }
   await loadDir(currentDir.value)
@@ -231,13 +243,13 @@ async function onUpload(ev: Event) {
       uploadProgress.value = percent
     })
     if (j?.status !== 'ok') {
-      alert(j?.detail || '上传失败')
+      await appAlert({ title: '上传失败', message: j?.detail || '上传失败', variant: 'danger' })
       return
     }
     await loadDir(currentDir.value)
     if (j?.data?.path) selectedPath.value = j.data.path
   } catch (e) {
-    alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
+    await appAlert({ title: '上传失败', message: e instanceof Error ? e.message : '上传失败，请检查网络或后端', variant: 'danger' })
   } finally {
     uploading.value = false
     uploadingName.value = ''
@@ -250,13 +262,19 @@ async function deleteSelectedFile() {
   const id = props.sessionId
   const path = selectedPath.value
   if (!id || !path) return
-  if (!window.confirm(`确定删除文件「${path}」？`)) return
+  const ok = await appConfirm({
+    title: '删除文件',
+    message: `确定删除文件「${path}」？`,
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(path)}`, {
     method: 'DELETE',
   })
   const j = await r.json()
   if (j?.status !== 'ok') {
-    alert(j?.detail || '删除失败')
+    await appAlert({ title: '删除失败', message: j?.detail || '删除失败', variant: 'danger' })
     return
   }
   await loadDir(currentDir.value)

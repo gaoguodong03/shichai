@@ -339,6 +339,7 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
+import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { EXPERT_PRESET_AVATAR_URLS, pickRandomExpertAvatar } from '@/constants/expertAvatars'
 
 type ReferenceSnapshot = { id: string; name?: string }
@@ -497,7 +498,7 @@ async function saveDha() {
     if (j.status === 'ok') {
       emit('updated')
     } else {
-      alert(j.detail || '更新失败')
+      await appAlert({ title: '更新失败', message: j.detail || '更新失败', variant: 'danger' })
     }
   } else {
     const r = await fetch('/api/agents', {
@@ -509,7 +510,7 @@ async function saveDha() {
     if (j.status === 'ok' && (j.data?.agent_id || j.data?.expert_id || j.data?.agent_id)) {
       emit('created', (j.data.agent_id || j.data.expert_id || j.data.agent_id) as string)
     } else {
-      alert(j.detail || '创建失败')
+      await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
     }
   }
 }
@@ -610,7 +611,7 @@ async function exportDhaBundle() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    window.alert((e as Error).message || '导出失败')
+    await appAlert({ title: '导出失败', message: (e as Error).message || '导出失败', variant: 'danger' })
   }
 }
 
@@ -650,14 +651,20 @@ async function deleteDha() {
     emit('cancel')
     return
   }
-  if (!window.confirm('确定删除该专家？')) return
+  const ok = await appConfirm({
+    title: '删除专家',
+    message: '确定删除该专家？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   const r = await fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     emit('updated')
     emit('cancel')
   } else {
-    alert(j.detail || '删除失败')
+    await appAlert({ title: '删除失败', message: j.detail || '删除失败', variant: 'danger' })
   }
 }
 

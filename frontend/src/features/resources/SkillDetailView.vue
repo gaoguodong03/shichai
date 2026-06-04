@@ -306,6 +306,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
+import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
 type ReferenceSnapshot = { id: string; name?: string }
@@ -753,7 +754,7 @@ async function exportZip() {
       } catch {
         /* ignore */
       }
-      alert(msg)
+      await appAlert({ title: '导出失败', message: msg, variant: 'danger' })
       return
     }
     const blob = await r.blob()
@@ -966,7 +967,7 @@ async function save() {
       await nextTick()
       await load({ silent: true })
     } else {
-      alert(j.detail || '保存失败')
+      await appAlert({ title: '保存失败', message: j.detail || '保存失败', variant: 'danger' })
     }
   } finally {
     saving.value = false
@@ -974,7 +975,14 @@ async function save() {
 }
 
 async function deleteSkill() {
-  if (!skill.value || !confirm('确定要删除该技能吗？')) return
+  if (!skill.value) return
+  const ok = await appConfirm({
+    title: '删除技能',
+    message: '确定要删除该技能吗？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   deleting.value = true
   try {
     const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}`, { method: 'DELETE' })
@@ -982,7 +990,7 @@ async function deleteSkill() {
     if (j.status === 'ok') {
       emit('deleted')
     } else {
-      alert(j.detail || '删除失败')
+      await appAlert({ title: '删除失败', message: j.detail || '删除失败', variant: 'danger' })
     }
   } finally {
     deleting.value = false
@@ -1006,7 +1014,7 @@ async function savePartFile() {
     if (j.status === 'ok') {
       // no-op, content already in partContent
     } else {
-      alert(j.detail || '保存失败')
+      await appAlert({ title: '保存失败', message: j.detail || '保存失败', variant: 'danger' })
     }
   } finally {
     partSaving.value = false
@@ -1014,7 +1022,14 @@ async function savePartFile() {
 }
 
 async function deletePartFile() {
-  if (!selectedPartFile.value || !props.skillId || !confirm('确定删除该文件？')) return
+  if (!selectedPartFile.value || !props.skillId) return
+  const ok = await appConfirm({
+    title: '删除文件',
+    message: '确定删除该文件？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   try {
     const pathEnc = selectedPartFile.value.path.split('/').map(encodeURIComponent).join('/')
     const r = await fetch(
@@ -1032,21 +1047,26 @@ async function deletePartFile() {
         selectPartFile(type, files[0].path)
       }
     } else {
-      alert(j.detail || '删除失败')
+      await appAlert({ title: '删除失败', message: j.detail || '删除失败', variant: 'danger' })
     }
   } catch (e) {
     console.error(e)
-    alert('删除失败')
+    await appAlert({ title: '删除失败', message: '删除失败', variant: 'danger' })
   }
 }
 
 async function addPartFile() {
   if (activeTab.value === 'main' || !props.skillId) return
-  const name = window.prompt('请输入文件名（如 new-doc.md 或 subdir/file.txt）')
+  const name = await appPrompt({
+    title: '新建文件',
+    message: '请输入文件名。',
+    placeholder: 'new-doc.md 或 subdir/file.txt',
+    required: true,
+  })
   if (!name?.trim()) return
   const path = name.trim().replace(/^\/+/, '')
   if (path.includes('..')) {
-    alert('路径不能包含 ..')
+    await appAlert({ title: '路径不合法', message: '路径不能包含 ..', variant: 'warning' })
     return
   }
   try {
@@ -1063,21 +1083,26 @@ async function addPartFile() {
       await loadParts()
       selectPartFile(activeTab.value as PartType, j.data.path)
     } else {
-      alert(j.detail || '新建失败')
+      await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }
   } catch (e) {
     console.error(e)
-    alert('新建失败')
+    await appAlert({ title: '新建失败', message: '新建失败', variant: 'danger' })
   }
 }
 
 async function addPartFolder() {
   if (activeTab.value === 'main' || !props.skillId) return
-  const name = window.prompt('请输入文件夹名（如 a 或 subdir/a）')?.trim()
+  const name = (await appPrompt({
+    title: '新建文件夹',
+    message: '请输入文件夹名。',
+    placeholder: 'a 或 subdir/a',
+    required: true,
+  }))?.trim()
   if (!name) return
   const path = name.replace(/^\/+/, '').replace(/\/+$/, '')
   if (!path || path.includes('..')) {
-    alert('路径不能包含 ..，且不能为空')
+    await appAlert({ title: '路径不合法', message: '路径不能包含 ..，且不能为空', variant: 'warning' })
     return
   }
   try {
@@ -1094,11 +1119,11 @@ async function addPartFolder() {
       await loadParts()
       partDirPath.value = path
     } else {
-      alert(j.detail || '新建文件夹失败')
+      await appAlert({ title: '新建文件夹失败', message: j.detail || '新建文件夹失败', variant: 'danger' })
     }
   } catch (e) {
     console.error(e)
-    alert('新建文件夹失败')
+    await appAlert({ title: '新建文件夹失败', message: '新建文件夹失败', variant: 'danger' })
   }
 }
 

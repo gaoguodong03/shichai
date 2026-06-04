@@ -142,6 +142,7 @@ import VuePdfEmbed from 'vue-pdf-embed'
 import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
 import MarkdownIt from 'markdown-it'
+import { appAlert } from '@/composables/useAppDialog'
 
 const props = defineProps<{ path: string; workspaceId?: string }>()
 const emit = defineEmits<{
@@ -368,7 +369,7 @@ async function downloadFile() {
     document.body.removeChild(a)
     URL.revokeObjectURL(objUrl)
   } catch {
-    alert('下载失败，请检查网络或登录状态')
+    await appAlert({ title: '下载失败', message: '下载失败，请检查网络或登录状态', variant: 'danger' })
   }
 }
 
@@ -494,11 +495,11 @@ async function saveContent() {
       previewText.value = editContent.value
       editingContent.value = false
     } else {
-      alert('保存失败：' + (j.detail || '未知错误'))
+      await appAlert({ title: '保存失败', message: '保存失败：' + (j.detail || '未知错误'), variant: 'danger' })
     }
   } catch (e) {
     console.error('保存失败', e)
-    alert('保存失败，请检查网络或后端服务')
+    await appAlert({ title: '保存失败', message: '保存失败，请检查网络或后端服务', variant: 'danger' })
   }
 }
 

@@ -103,6 +103,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { appAlert } from '@/composables/useAppDialog'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -291,7 +292,7 @@ async function save() {
       saved.value = true
       setTimeout(() => { saved.value = false }, 2000)
     } else {
-      alert((j as { detail?: string })?.detail || '保存失败')
+      await appAlert({ title: '保存失败', message: (j as { detail?: string })?.detail || '保存失败', variant: 'danger' })
     }
   } finally {
     saving.value = false

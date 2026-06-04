@@ -670,7 +670,7 @@
             @click="router.push(settingsRoutePath(c.id))"
             :class="[
               'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-              selectedId === c.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+              settingsSection === c.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
             ]"
           >
             {{ c.label }}
@@ -975,12 +975,11 @@
       </template>
       <!-- 设置 -->
       <template v-if="currentModule === 'settings'">
-        <AppSettingsView v-if="selectedId === 'app'" />
-        <ThemeSettingsView v-else-if="selectedId === 'theme'" />
-        <ApiSecretsSettingsView v-else-if="selectedId === 'secrets'" />
-        <UserPreferenceSettingsView v-else-if="selectedId === 'user'" />
-        <AccountSecuritySettingsView v-else-if="selectedId === 'account-security'" />
-        <SandboxSettingsView v-else-if="selectedId === 'sandbox'" />
+        <AppSettingsView v-if="settingsSection === 'app'" />
+        <ThemeSettingsView v-else-if="settingsSection === 'theme'" />
+        <ApiSecretsSettingsView v-else-if="settingsSection === 'secrets'" />
+        <AccountSecuritySettingsView v-else-if="settingsSection === 'account-security'" />
+        <SandboxSettingsView v-else-if="settingsSection === 'sandbox'" />
         <div v-else class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
           <p>请从左侧选择设置项</p>
         </div>
@@ -1440,10 +1439,10 @@ import MCPAddView from '@/features/resources/MCPAddView.vue'
 import LLMSettingsView from '@/features/resources/LLMSettingsView.vue'
 import AppSettingsView from '@/features/settings/AppSettingsView.vue'
 import ThemeSettingsView from '@/features/settings/ThemeSettingsView.vue'
-import UserPreferenceSettingsView from '@/features/settings/UserPreferenceSettingsView.vue'
 import AccountSecuritySettingsView from '@/features/settings/AccountSecuritySettingsView.vue'
 import SandboxSettingsView from '@/features/settings/SandboxSettingsView.vue'
 import ApiSecretsSettingsView from '@/features/settings/ApiSecretsSettingsView.vue'
+import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
@@ -1459,8 +1458,14 @@ const USER_STORAGE_KEY = 'dha_user'
 const USER_ID_STORAGE_KEY = 'dha_user_id'
 const TOKEN_STORAGE_KEY = 'dha_token'
 
-function logout() {
-  if (!window.confirm('确定要登出吗？')) return
+async function logout() {
+  const ok = await appConfirm({
+    title: '退出账号',
+    message: '确定要退出当前账号吗？',
+    variant: 'warning',
+    confirmText: '退出',
+  })
+  if (!ok) return
   localStorage.removeItem(LOGIN_STORAGE_KEY)
   localStorage.removeItem(USER_STORAGE_KEY)
   localStorage.removeItem(USER_ID_STORAGE_KEY)
@@ -2395,11 +2400,11 @@ async function saveScenarioPreset() {
   const name = (scenarioDraft.value.name || '').trim()
   const rawIds = [...(scenarioDraft.value.agent_ids || [])]
   if (!name) {
-    window.alert('场景名称不能为空')
+    await appAlert({ title: '无法保存场景', message: '场景名称不能为空', variant: 'warning' })
     return
   }
   if (!rawIds.length) {
-    window.alert('请至少选择 1 位协作专家')
+    await appAlert({ title: '无法保存场景', message: '请至少选择 1 位协作专家', variant: 'warning' })
     return
   }
   const skillIds = normalizeScenarioLeaderSkillIds(
@@ -2442,7 +2447,7 @@ async function saveScenarioPreset() {
     // 场景分享入口已按产品要求在前端关闭，不再主动生成分享链接。
     // void ensureScenarioSharePublishedSilent()
   } catch (e) {
-    window.alert((e as Error).message || '保存场景失败')
+    await appAlert({ title: '保存场景失败', message: (e as Error).message || '保存场景失败', variant: 'danger' })
   } finally {
     scenarioSaving.value = false
   }
@@ -2452,7 +2457,13 @@ async function deleteScenarioPreset(id: string) {
   if (!id) return
   const target = (scenarioPresets.value || []).find((x) => x.id === id)
   const label = target?.name || id
-  if (!window.confirm(`确定删除场景「${label}」吗？`)) return
+  const ok = await appConfirm({
+    title: '删除场景',
+    message: `确定删除场景「${label}」吗？`,
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   scenarioSaving.value = true
   try {
     const next = (scenarioPresets.value || []).filter((p) => p.id !== id)
@@ -2465,7 +2476,7 @@ async function deleteScenarioPreset(id: string) {
     }
     syncScenarioDraftFromSelected()
   } catch (e) {
-    window.alert((e as Error).message || '删除场景失败')
+    await appAlert({ title: '删除场景失败', message: (e as Error).message || '删除场景失败', variant: 'danger' })
   } finally {
     scenarioSaving.value = false
   }
@@ -2567,7 +2578,7 @@ async function onScenarioImportFile(ev: Event) {
   if (!file) return
   const lower = file.name.toLowerCase()
   if (!lower.endsWith('.zip')) {
-    window.alert('请上传 ZIP 场景包（.zip）')
+    await appAlert({ title: '文件格式不支持', message: '请上传 ZIP 场景包（.zip）', variant: 'warning' })
     return
   }
   pendingBundleFile.value = file
@@ -2592,7 +2603,7 @@ async function onScenarioImportFile(ev: Event) {
     scenarioBundlePreview.value = j.data || null
     scenarioImportModalOpen.value = true
   } catch (e) {
-    window.alert((e as Error).message || '无法读取场景包')
+    await appAlert({ title: '无法读取场景包', message: (e as Error).message || '无法读取场景包', variant: 'danger' })
     pendingBundleFile.value = null
   }
 }
@@ -2681,7 +2692,7 @@ async function exportScenarioBundle() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    window.alert((e as Error).message || '导出失败')
+    await appAlert({ title: '导出失败', message: (e as Error).message || '导出失败', variant: 'danger' })
   }
 }
 
@@ -2753,13 +2764,13 @@ async function tryOpenScenarioShareFromRoute() {
       // 兼容旧链接：直接走场景分享
       const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
       if (!metaR.ok) {
-        window.alert('分享链接无效或已失效')
+        await appAlert({ title: '无法打开分享', message: '分享链接无效或已失效', variant: 'warning' })
         router.replace('/workspace')
         return
       }
       const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
       if (!bundleR.ok) {
-        window.alert('无法下载场景包')
+        await appAlert({ title: '无法打开分享', message: '无法下载场景包', variant: 'danger' })
         router.replace('/workspace')
         return
       }
@@ -2792,7 +2803,7 @@ async function tryOpenScenarioShareFromRoute() {
 
     const metaR = await fetch(`/api/public/shares/${encodeURIComponent(id)}/meta`)
     if (!metaR.ok) {
-      window.alert('分享链接无效或已失效')
+      await appAlert({ title: '无法打开分享', message: '分享链接无效或已失效', variant: 'warning' })
       router.replace('/workspace')
       return
     }
@@ -2824,7 +2835,7 @@ async function tryOpenScenarioShareFromRoute() {
     sharePreviewResult.value = null
     sharePreviewModalOpen.value = true
   } catch (e) {
-    window.alert((e as Error).message || '无法加载分享场景')
+    await appAlert({ title: '无法加载分享场景', message: (e as Error).message || '无法加载分享场景', variant: 'danger' })
     router.replace('/workspace')
   } finally {
     scenarioShareRouteImportLoading.value = false
@@ -2870,7 +2881,7 @@ async function onDhaImportFile(ev: Event) {
   if (!file) return
   const lower = file.name.toLowerCase()
   if (!lower.endsWith('.zip')) {
-    window.alert('请上传 ZIP 专家包（.zip）')
+    await appAlert({ title: '文件格式不支持', message: '请上传 ZIP 专家包（.zip）', variant: 'warning' })
     return
   }
   pendingDhaBundleFile.value = file
@@ -2894,7 +2905,7 @@ async function onDhaImportFile(ev: Event) {
     dhaBundlePreview.value = j.data || null
     dhaImportModalOpen.value = true
   } catch (e) {
-    window.alert((e as Error).message || '无法读取专家包')
+    await appAlert({ title: '无法读取专家包', message: (e as Error).message || '无法读取专家包', variant: 'danger' })
     pendingDhaBundleFile.value = null
   }
 }
@@ -3107,7 +3118,7 @@ async function createNewSession() {
       selectedGroupSessionId.value = j.data.id
       await fetchGroupSessions()
     } else {
-      alert(j.detail || '新建会话失败')
+      await appAlert({ title: '新建会话失败', message: j.detail || '新建会话失败', variant: 'danger' })
     }
   } finally {
     creatingSession.value = false
@@ -3127,7 +3138,13 @@ watch(
 )
 
 async function deleteGroupSession(id: string) {
-  if (!confirm('确定删除该会话？')) return
+  const ok = await appConfirm({
+    title: '删除会话',
+    message: '确定删除该会话？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
@@ -3136,7 +3153,7 @@ async function deleteGroupSession(id: string) {
     }
     fetchGroupSessions()
   } else {
-    alert(j.detail || '删除失败')
+    await appAlert({ title: '删除会话失败', message: j.detail || '删除失败', variant: 'danger' })
   }
 }
 
@@ -3174,14 +3191,20 @@ function onDHACreated(dhaId: string) {
 }
 
 async function deleteDhaInstance(dhaId: string) {
-  if (!confirm('确定删除该专家？')) return
+  const ok = await appConfirm({
+    title: '删除专家',
+    message: '确定删除该专家？',
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
   const r = await fetch(`/api/agents/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     if (selectedId.value === dhaId) selectedId.value = null
     fetchDHA()
   } else {
-    alert(j.detail || '删除失败')
+    await appAlert({ title: '删除专家失败', message: j.detail || '删除失败', variant: 'danger' })
   }
 }
 
@@ -3365,7 +3388,7 @@ async function onMcpZipSelected(e: Event) {
   if (!file || mcpZipImporting.value) return
   const isZip = file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
   if (!isZip) {
-    window.alert('仅支持导入 ZIP 文件')
+    await appAlert({ title: '文件格式不支持', message: '仅支持导入 ZIP 文件', variant: 'warning' })
     return
   }
   mcpZipImporting.value = true
@@ -3382,9 +3405,13 @@ async function onMcpZipSelected(e: Event) {
     }
     await fetchMCP()
     const summary = j?.data?.summary || {}
-    window.alert(`导入成功：新增 ${summary.mcp_added ?? 0} 个，更新 ${summary.mcp_updated ?? 0} 个，跳过 ${summary.mcp_skipped ?? 0} 个`)
+    await appAlert({
+      title: '导入成功',
+      message: `新增 ${summary.mcp_added ?? 0} 个，更新 ${summary.mcp_updated ?? 0} 个，跳过 ${summary.mcp_skipped ?? 0} 个`,
+      variant: 'success',
+    })
   } catch (err) {
-    window.alert((err as Error).message || '导入工具失败，请检查网络或 ZIP 格式')
+    await appAlert({ title: '导入工具失败', message: (err as Error).message || '导入工具失败，请检查网络或 ZIP 格式', variant: 'danger' })
   } finally {
     mcpZipImporting.value = false
   }
@@ -3405,11 +3432,11 @@ async function createEmptySkill() {
       selectedId.value = j.data.id
       await fetchSkills()
     } else {
-      alert(j.detail || '新建 Skill 失败')
+      await appAlert({ title: '新建 Skill 失败', message: j.detail || '新建 Skill 失败', variant: 'danger' })
     }
   } catch (e) {
     console.error(e)
-    alert('新建 Skill 失败')
+    await appAlert({ title: '新建 Skill 失败', message: '新建 Skill 失败', variant: 'danger' })
   }
 }
 

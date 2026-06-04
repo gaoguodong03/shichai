@@ -8,6 +8,7 @@ import {
 import { useGroupWorkspacePanel } from './useGroupWorkspacePanel'
 import { createGroupChatStreamRunner } from './useGroupChatStreamRunner'
 import { streamSessionEvents } from '@/api/chat'
+import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { uploadWorkspaceFile } from '../workspaceUpload'
 import {
   dhaBodyContent,
@@ -306,10 +307,10 @@ export function useWorkspaceContentProviders(args: {
         if (groupDetail.value) groupDetail.value = { ...groupDetail.value, title: t }
         emit('message-sent')
       } else {
-        alert((j as { detail?: string }).detail || '保存标题失败')
+        await appAlert({ title: '保存标题失败', message: (j as { detail?: string }).detail || '保存标题失败', variant: 'danger' })
       }
     } catch {
-      alert('保存标题失败，请检查网络')
+      await appAlert({ title: '保存标题失败', message: '保存标题失败，请检查网络', variant: 'danger' })
     } finally {
       titleSaving.value = false
     }
@@ -572,10 +573,10 @@ export function useWorkspaceContentProviders(args: {
         emit('dha-added')
         await loadGroupDetail()
       } else {
-        alert((j as { detail?: string }).detail || '邀请失败')
+        await appAlert({ title: '邀请失败', message: (j as { detail?: string }).detail || '邀请失败', variant: 'danger' })
       }
     } catch {
-      alert('邀请失败，请检查网络')
+      await appAlert({ title: '邀请失败', message: '邀请失败，请检查网络', variant: 'danger' })
     }
   }
 
@@ -584,7 +585,14 @@ export function useWorkspaceContentProviders(args: {
     const leader = (groupDetail.value?.leader_agent_id || '').trim()
     if (dhaId === 'host') return
     if (leader && dhaId === leader) return
-    if (!id || !window.confirm('确定将该成员移出群聊？')) return
+    if (!id) return
+    const ok = await appConfirm({
+      title: '移出成员',
+      message: '确定将该成员移出群聊？',
+      variant: 'danger',
+      confirmText: '移出',
+    })
+    if (!ok) return
     try {
       const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
@@ -597,10 +605,10 @@ export function useWorkspaceContentProviders(args: {
         await loadGroupDetail()
         if (groupNextSpeakerOverride.value === dhaId) groupNextSpeakerOverride.value = ''
       } else {
-        alert((j as { detail?: string }).detail || '移出失败')
+        await appAlert({ title: '移出失败', message: (j as { detail?: string }).detail || '移出失败', variant: 'danger' })
       }
     } catch {
-      alert('移出失败，请检查网络')
+      await appAlert({ title: '移出失败', message: '移出失败，请检查网络', variant: 'danger' })
     }
   }
 
@@ -634,10 +642,10 @@ export function useWorkspaceContentProviders(args: {
         showInsertFile.value = false
         showInsertFileModal.value = false
       } else {
-        alert((j as { detail?: string })?.detail || '上传失败')
+        await appAlert({ title: '上传失败', message: (j as { detail?: string })?.detail || '上传失败', variant: 'danger' })
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : '上传失败，请检查网络或后端')
+      await appAlert({ title: '上传失败', message: e instanceof Error ? e.message : '上传失败，请检查网络或后端', variant: 'danger' })
     } finally {
       insertLocalFileUploading.value = false
       insertLocalFileUploadingName.value = ''
@@ -925,11 +933,11 @@ export function useWorkspaceContentProviders(args: {
       availableAgentIds.has(id),
     )
     if (!targetExperts.length) {
-      window.alert('该场景中的专家在当前账号下不可用，请先编辑场景后重试')
+      await appAlert({ title: '无法创建会话', message: '该场景中的专家在当前账号下不可用，请先编辑场景后重试', variant: 'warning' })
       return null
     }
     if (targetExperts.length < (p.agent_ids || []).length) {
-      window.alert('已自动跳过当前账号下不可用的专家')
+      await appAlert({ title: '已跳过部分专家', message: '已自动跳过当前账号下不可用的专家', variant: 'warning' })
     }
     const title = (p.name || '').trim() || '新对话'
     const body: Record<string, unknown> = {
@@ -956,7 +964,7 @@ export function useWorkspaceContentProviders(args: {
       })
       const j = (await r.json().catch(() => ({}))) as { status?: string; data?: { id?: string; title?: string; updated_at?: string; agent_ids?: string[] }; detail?: string }
       if (j.status !== 'ok' || !j.data?.id) {
-        window.alert(typeof j.detail === 'string' ? j.detail : '创建会话失败')
+        await appAlert({ title: '创建会话失败', message: typeof j.detail === 'string' ? j.detail : '创建会话失败', variant: 'danger' })
         return null
       }
       const newId = j.data.id
@@ -975,7 +983,7 @@ export function useWorkspaceContentProviders(args: {
       emit('scenario-new-session', newId, j.data.id ? { id: newId, title: j.data.title, updated_at: j.data.updated_at, agent_ids: j.data.agent_ids } : undefined)
       return newId
     } catch {
-      window.alert('创建会话失败，请检查网络')
+      await appAlert({ title: '创建会话失败', message: '创建会话失败，请检查网络', variant: 'danger' })
       return null
     }
   }
@@ -1500,10 +1508,10 @@ export function useWorkspaceContentProviders(args: {
         emit('dha-added')
         await loadGroupDetail()
       } else {
-        alert((j as { detail?: string }).detail || '邀请失败')
+        await appAlert({ title: '邀请失败', message: (j as { detail?: string }).detail || '邀请失败', variant: 'danger' })
       }
     } catch {
-      alert('邀请失败，请检查网络')
+      await appAlert({ title: '邀请失败', message: '邀请失败，请检查网络', variant: 'danger' })
     } finally {
       suggestedInviteLoading.value = false
     }
@@ -1528,10 +1536,10 @@ export function useWorkspaceContentProviders(args: {
         emit('dha-added')
         await loadGroupDetail()
       } else {
-        alert((j as { detail?: string }).detail || '邀请失败')
+        await appAlert({ title: '邀请失败', message: (j as { detail?: string }).detail || '邀请失败', variant: 'danger' })
       }
     } catch {
-      alert('邀请失败，请检查网络')
+      await appAlert({ title: '邀请失败', message: '邀请失败，请检查网络', variant: 'danger' })
     } finally {
       suggestedInviteLoading.value = false
     }
@@ -1997,7 +2005,12 @@ export function useWorkspaceContentProviders(args: {
     const content = (msg.content || '').trim()
     if (!id || !content) return
     const defaultName = defaultDhaFilename(msg)
-    const filename = window.prompt('保存为工作区文件', defaultName)?.trim() || defaultName
+    const filename = (await appPrompt({
+      title: '保存为工作区文件',
+      message: '请输入文件名。',
+      defaultValue: defaultName,
+      required: true,
+    }))?.trim() || defaultName
     if (!filename) return
     try {
       const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files`, {
@@ -2010,10 +2023,10 @@ export function useWorkspaceContentProviders(args: {
         showGroupWorkspace.value = true
         loadGroupWorkspace()
       } else {
-        alert(j?.detail || '保存失败')
+        await appAlert({ title: '保存失败', message: j?.detail || '保存失败', variant: 'danger' })
       }
     } catch {
-      alert('保存失败')
+      await appAlert({ title: '保存失败', message: '保存失败', variant: 'danger' })
     }
   }
 
@@ -2021,7 +2034,13 @@ export function useWorkspaceContentProviders(args: {
     const id = groupDetail.value?.id
     const messageId = msg?.message_id
     if (!id || !messageId) return
-    if (!window.confirm('确定从会话中彻底删除该条发言？删除后下一轮专家将不再看到这条内容。')) return
+    const ok = await appConfirm({
+      title: '删除发言',
+      message: '确定从会话中彻底删除该条发言？删除后下一轮专家将不再看到这条内容。',
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
     try {
       const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
         method: 'DELETE',
@@ -2030,10 +2049,10 @@ export function useWorkspaceContentProviders(args: {
       if (r.ok && j?.status === 'ok') {
         await loadGroupDetail()
       } else {
-        alert(j?.detail || '删除失败')
+        await appAlert({ title: '删除失败', message: j?.detail || '删除失败', variant: 'danger' })
       }
     } catch {
-      alert('删除失败')
+      await appAlert({ title: '删除失败', message: '删除失败', variant: 'danger' })
     }
   }
 
@@ -2344,7 +2363,11 @@ export function useWorkspaceContentProviders(args: {
         attachedFiles.value = []
       }
       if (groupTurnLimitReached.value) {
-        window.alert('已自动暂停：本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。')
+        void appAlert({
+          title: '已自动暂停',
+          message: '本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。',
+          variant: 'warning',
+        })
       }
       if (!endData.turns_limit_reached) {
         const suggestedNext = endData.suggested_next_speaker

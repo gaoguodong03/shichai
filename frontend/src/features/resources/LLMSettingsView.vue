@@ -318,6 +318,7 @@
 <script setup lang="ts">
 
 import { ref, computed, onMounted, watch } from 'vue'
+import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
 
 
@@ -519,7 +520,7 @@ function buildAdvancedConfig() {
     assignIfPresent(advanced, 'top_k', optionalInteger(params.top_k, 'top_k'))
     assignIfPresent(advanced, 'gemini_thinking_level', params.gemini_thinking_level)
   } catch (err) {
-    alert(err instanceof Error ? err.message : String(err))
+    void appAlert({ title: '参数不合法', message: err instanceof Error ? err.message : String(err), variant: 'warning' })
     return null
   }
   return advanced
@@ -641,7 +642,7 @@ async function saveAll(nextSelectedId?: string) {
 
     } else {
 
-      alert((j as { detail?: string }).detail || '保存失败')
+      await appAlert({ title: '保存失败', message: (j as { detail?: string }).detail || '保存失败', variant: 'danger' })
 
     }
 
@@ -729,7 +730,7 @@ async function saveProvider() {
 
   if (!nid) {
 
-    alert('请填写标识')
+    await appAlert({ title: '无法保存模型', message: '请填写标识', variant: 'warning' })
 
     return
 
@@ -749,7 +750,7 @@ async function saveProvider() {
 
     if (form.value.llm_providers[nid]) {
 
-      alert('该标识已存在')
+      await appAlert({ title: '无法保存模型', message: '该标识已存在', variant: 'warning' })
 
       return
 
@@ -789,7 +790,7 @@ async function saveProvider() {
 
   if (nid !== pid && form.value.llm_providers[nid]) {
 
-    alert('该标识已存在')
+    await appAlert({ title: '无法保存模型', message: '该标识已存在', variant: 'warning' })
 
     return
 
@@ -857,7 +858,13 @@ async function removeProvider() {
 
   if (!pid || pid === '__new__') return
 
-  if (!confirm(`确定删除模型「${pid}」？`)) return
+  const ok = await appConfirm({
+    title: '删除模型',
+    message: `确定删除模型「${pid}」？`,
+    variant: 'danger',
+    confirmText: '删除',
+  })
+  if (!ok) return
 
   const next = { ...form.value.llm_providers }
 
