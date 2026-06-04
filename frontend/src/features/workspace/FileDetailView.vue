@@ -43,27 +43,30 @@
         >
           删除
         </button>
-        <a
-          :href="downloadUrl"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
           class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
+          @click="downloadFile"
         >
           下载
-        </a>
+        </button>
       </div>
     </header>
     <div ref="scrollContainerRef" class="flex-1 overflow-auto p-4 flex flex-col">
       <!-- 图片预览 -->
       <img
-        v-if="isImage"
-        :src="downloadUrl"
+        v-if="isImage && previewBlobUrl"
+        :src="previewBlobUrl"
         :alt="path"
         class="max-w-full h-auto rounded border border-border"
       />
+      <div v-else-if="isImage && previewBlobLoading" class="text-sm text-muted py-8">加载中...</div>
+      <div v-else-if="isImage" class="text-sm text-red-500 py-4">{{ previewBlobError || '图片预览失败，请下载查看' }}</div>
       <!-- PDF 预览 -->
       <div v-else-if="isPDF" class="flex-1 min-h-0">
-        <VuePdfEmbed :source="downloadUrl" class="pdf-viewer" />
+        <div v-if="previewBlobLoading" class="text-sm text-muted py-8">加载中...</div>
+        <div v-else-if="previewBlobError" class="text-sm text-red-500 py-4">{{ previewBlobError }}</div>
+        <VuePdfEmbed v-else-if="previewBlobUrl" :source="previewBlobUrl" class="pdf-viewer" />
       </div>
       <!-- DOCX 预览 -->
       <div v-else-if="isDocx" class="flex-1 min-h-0">
@@ -217,6 +220,11 @@ const displayName = computed(() => {
 const previewText = ref<string | null>(null)
 const markdownContainerRef = ref<HTMLElement | null>(null)
 const scrollContainerRef = ref<HTMLElement | null>(null)
+const previewBlobUrl = ref('')
+const previewBlobLoading = ref(false)
+const previewBlobError = ref('')
+let previewBlobObjectUrl: string | null = null
+let previewBlobLoadSeq = 0
 
 type TocItem = { id: string; text: string }
 const tocItems = ref<TocItem[]>([])
@@ -308,6 +316,61 @@ const docxError = ref<string | null>(null)
 const excelHtml = ref('')
 const excelLoading = ref(false)
 const excelError = ref<string | null>(null)
+
+function revokePreviewBlobUrl() {
+  if (previewBlobObjectUrl) {
+    URL.revokeObjectURL(previewBlobObjectUrl)
+    previewBlobObjectUrl = null
+  }
+  previewBlobUrl.value = ''
+}
+
+async function loadBlobPreview() {
+  const seq = ++previewBlobLoadSeq
+  if (!currentPath.value || (!isImage.value && !isPDF.value)) {
+    revokePreviewBlobUrl()
+    previewBlobLoading.value = false
+    previewBlobError.value = ''
+    return
+  }
+  previewBlobLoading.value = true
+  previewBlobError.value = ''
+  try {
+    const r = await fetch(downloadUrl.value, { cache: 'no-store' })
+    if (!r.ok) throw new Error(`加载失败：HTTP ${r.status}`)
+    const blob = await r.blob()
+    if (seq !== previewBlobLoadSeq) return
+    revokePreviewBlobUrl()
+    previewBlobObjectUrl = URL.createObjectURL(blob)
+    previewBlobUrl.value = previewBlobObjectUrl
+  } catch (e) {
+    if (seq !== previewBlobLoadSeq) return
+    revokePreviewBlobUrl()
+    previewBlobError.value = e instanceof Error ? e.message : '预览失败，请下载查看'
+  } finally {
+    if (seq === previewBlobLoadSeq) previewBlobLoading.value = false
+  }
+}
+
+async function downloadFile() {
+  try {
+    const r = await fetch(downloadUrl.value, { cache: 'no-store' })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const blob = await r.blob()
+    const objUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objUrl
+    a.download = displayName.value || 'download'
+    a.rel = 'noopener'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objUrl)
+  } catch {
+    alert('下载失败，请检查网络或登录状态')
+  }
+}
 
 async function loadDocx() {
   if (!currentPath.value || !isDocx.value) return
@@ -442,6 +505,7 @@ async function saveContent() {
 watch(() => props.path, (p) => {
   currentPath.value = p
 }, { immediate: true })
+watch([currentPath, isImage, isPDF], loadBlobPreview, { immediate: true })
 watch(currentPath, loadContent, { immediate: true })
 watch([currentPath, isDocx], () => {
   if (isDocx.value) loadDocx()
@@ -473,6 +537,8 @@ onBeforeUnmount(() => {
   stopScrollSpy?.()
   stopScrollSpy = null
   if (tocScrollRaf) cancelAnimationFrame(tocScrollRaf)
+  previewBlobLoadSeq += 1
+  revokePreviewBlobUrl()
 })
 </script>
 
