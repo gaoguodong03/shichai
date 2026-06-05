@@ -2,550 +2,210 @@
 
 ## 概述
 
-本文档描述了 DHA 项目的 RESTful API 设计规范，包括所有端点的详细说明、请求/响应格式和错误处理。
+本文记录书童四九当前后端 API 的设计边界、认证约定、主要端点和响应格式。更细的字段以 `backend/app/api/` 下的 FastAPI 路由和 Pydantic 模型为准。
+
+所有业务 API 统一挂载在 `/api` 下；健康检查和前端静态入口除外。
 
 ## API 基础
 
 ### 基础 URL
 
-- **开发环境**: `http://localhost:8000`
-- **生产环境**: `https://api.yourdomain.com`
+- 本地后端开发：`http://localhost:8000`
+- 1Panel/Docker 默认主应用：`http://<server-ip>:8100`
+- 前端同源部署：浏览器访问前端页面后，通过相对路径 `/api/...` 调用后端。
 
 ### 认证方式
 
-当前版本暂不实现用户认证，所有 API 为公开访问。未来版本将支持：
+当前系统已经实现账号登录和用户上下文隔离，不再是公开 API。
 
-- JWT Token 认证
-- API Key 认证
+前端登录后保存会话凭据，后续请求携带认证信息。测试和本地开发中也支持通过 `X-User-Name` 请求头指定用户上下文。生产环境应关闭匿名 API：
+
+```bash
+ALLOW_ANONYMOUS_API=0
+```
+
+关键约束：
+
+- 受保护路由通过 `user_context_dependency` 注入当前用户。
+- 用户资源、会话、工作区文件、Skill、MCP、模型、密钥和沙箱配置都按用户隔离。
+- API Key 等敏感字段返回前端时必须脱敏。
 
 ### 响应格式
 
-所有 API 响应使用 JSON 格式：
+多数 JSON API 使用以下格式：
 
 ```json
 {
-  "data": {...},
-  "message": "Success",
-  "status": "ok"
+  "status": "ok",
+  "data": {}
 }
 ```
+
+部分导出接口直接返回文件流；流式会话接口返回 Server-Sent Events (SSE)。
 
 ### 错误处理
 
-错误响应格式：
-
-```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Error message",
-    "details": {...}
-  },
-  "status": "error"
-}
-```
-
 常见 HTTP 状态码：
 
-- `200 OK`: 请求成功
-- `201 Created`: 资源创建成功
-- `400 Bad Request`: 请求参数错误
-- `404 Not Found`: 资源不存在
-- `500 Internal Server Error`: 服务器内部错误
-
-## API 端点
-
-### 对话 API
-
-#### 发送消息（流式响应）
-
-```http
-POST /api/chat/stream
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "message": "Hello, how can you help me?",
-  "session_id": "session-123",
-  "model_id": "model-1",
-  "stream": true
-}
-```
-
-**响应**: Server-Sent Events (SSE) 流
-
-```
-event: react_step
-data: {"type": "thought", "content": "用户询问如何帮助..."}
-
-event: react_step
-data: {"type": "tool_call", "tool": "search", "args": {...}}
-
-event: content
-data: {"text": "我可以帮助您..."}
-```
-
-#### 发送消息（非流式）
-
-```http
-POST /api/chat
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "message": "Hello",
-  "session_id": "session-123",
-  "model_id": "model-1"
-}
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "response": "Hello! How can I help you?",
-    "session_id": "session-123",
-    "steps": [
-      {
-        "type": "thought",
-        "content": "..."
-      }
-    ]
-  },
-  "status": "ok"
-}
-```
-
-### Session API
-
-#### 获取 Session 列表
-
-```http
-GET /api/sessions?status=active&limit=20&offset=0
-```
-
-**查询参数**:
-- `status`: Session 状态（active, archived, deleted）
-- `limit`: 每页数量（默认 20）
-- `offset`: 偏移量（默认 0）
-
-**响应**:
-```json
-{
-  "data": {
-    "sessions": [
-      {
-        "id": "session-123",
-        "title": "Python 编程讨论",
-        "status": "active",
-        "message_count": 10,
-        "created_at": "2024-01-01T00:00:00Z",
-        "updated_at": "2024-01-01T00:05:00Z"
-      }
-    ],
-    "total": 50,
-    "limit": 20,
-    "offset": 0
-  },
-  "status": "ok"
-}
-```
-
-#### 创建 Session
-
-```http
-POST /api/sessions
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "title": "新对话",
-  "metadata": {
-    "model": "gpt-4",
-    "temperature": 0.7
-  }
-}
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "id": "session-123",
-    "title": "新对话",
-    "status": "active",
-    "messages": [],
-    "metadata": {
-      "model": "gpt-4",
-      "temperature": 0.7
-    },
-    "created_at": "2024-01-01T00:00:00Z",
-    "updated_at": "2024-01-01T00:00:00Z"
-  },
-  "status": "ok"
-}
-```
-
-#### 获取 Session 详情
-
-```http
-GET /api/sessions/{session_id}
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "id": "session-123",
-    "title": "Python 编程讨论",
-    "status": "active",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello",
-        "timestamp": "2024-01-01T00:00:00Z"
-      },
-      {
-        "role": "assistant",
-        "content": "Hi! How can I help you?",
-        "timestamp": "2024-01-01T00:00:01Z"
-      }
-    ],
-    "metadata": {},
-    "created_at": "2024-01-01T00:00:00Z",
-    "updated_at": "2024-01-01T00:05:00Z"
-  },
-  "status": "ok"
-}
-```
-
-#### 更新 Session
-
-```http
-PUT /api/sessions/{session_id}
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "title": "更新后的标题",
-  "metadata": {
-    "model": "gpt-4"
-  }
-}
-```
-
-#### 删除 Session
-
-```http
-DELETE /api/sessions/{session_id}
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "id": "session-123",
-    "deleted": true
-  },
-  "status": "ok"
-}
-```
-
-#### 归档 Session
-
-```http
-POST /api/sessions/{session_id}/archive
-```
-
-### 模型配置 API
-
-#### 获取模型列表
-
-```http
-GET /api/settings/models
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "models": [
-      {
-        "id": "model-1",
-        "name": "GPT-4",
-        "provider": "openai",
-        "model_name": "gpt-4",
-        "enabled": true,
-        "status": "connected"
-      }
-    ],
-    "default_model_id": "model-1"
-  },
-  "status": "ok"
-}
-```
-
-#### 添加模型配置
-
-```http
-POST /api/settings/models
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "name": "GPT-4",
-  "provider": "openai",
-  "model_name": "gpt-4",
-  "api_key": "sk-...",
-  "default_params": {
-    "temperature": 0.7,
-    "max_tokens": 2000
-  }
-}
-```
-
-#### 更新模型配置
-
-```http
-PUT /api/settings/models/{model_id}
-Content-Type: application/json
-```
-
-#### 删除模型配置
-
-```http
-DELETE /api/settings/models/{model_id}
-```
-
-#### 设置默认模型
-
-```http
-POST /api/settings/models/{model_id}/set-default
-```
-
-#### 测试模型连接
-
-```http
-POST /api/settings/models/{model_id}/test
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "connected": true,
-    "response_time": 123,
-    "error": null
-  },
-  "status": "ok"
-}
-```
-
-### MCP 配置 API
-
-#### 获取 MCP Server 列表
-
-```http
-GET /api/settings/mcp
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "servers": [
-      {
-        "id": "mcp-server-1",
-        "name": "文件系统 MCP",
-        "enabled": true,
-        "tool_count": 5,
-        "status": "connected"
-      }
-    ]
-  },
-  "status": "ok"
-}
-```
-
-#### 添加 MCP Server
-
-```http
-POST /api/settings/mcp
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "name": "文件系统 MCP",
-  "transport": {
-    "type": "stdio",
-    "command": "python",
-    "args": ["-m", "mcp_server_fs"]
-  }
-}
-```
-
-#### 更新 MCP Server
-
-```http
-PUT /api/settings/mcp/{server_id}
-Content-Type: application/json
-```
-
-#### 删除 MCP Server
-
-```http
-DELETE /api/settings/mcp/{server_id}
-```
-
-#### 启用/禁用 MCP Server
-
-```http
-POST /api/settings/mcp/{server_id}/enable
-POST /api/settings/mcp/{server_id}/disable
-```
-
-#### 获取 MCP Server 工具列表
-
-```http
-GET /api/settings/mcp/{server_id}/tools
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "tools": [
-      {
-        "name": "file-reader_read_pdf",
-        "description": "读取 PDF 文件内容（示例，实际工具名以 MCP 为准）",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "path": {
-              "type": "string",
-              "description": "文件路径"
-            }
-          }
-        }
-      }
-    ]
-  },
-  "status": "ok"
-}
-```
-
-#### 测试 MCP Server 连接
-
-```http
-POST /api/settings/mcp/{server_id}/test
-```
-
-### Skills 配置 API
-
-#### 获取 Skills 列表
-
-```http
-GET /api/settings/skills
-```
-
-**响应**:
-```json
-{
-  "data": {
-    "skills": [
-      {
-        "id": "skill-1",
-        "name": "数据分析",
-        "description": "数据分析技能",
-        "path": "/path/to/skill",
-        "allowed_tools": {
-          "mcp": ["file-reader"],
-          "python": "requests==2.32.3"
-        }
-      }
-    ]
-  },
-  "status": "ok"
-}
-```
-
-#### 添加 Skill
-
-```http
-POST /api/settings/skills
-Content-Type: application/json
-```
-
-**请求体**:
-```json
-{
-  "name": "数据分析",
-  "description": "用于分析数据并生成报告"
-}
-```
-
-#### 更新 Skill
-
-```http
-PUT /api/settings/skills/{skill_id}
-Content-Type: application/json
-```
-
-#### 删除 Skill
-
-```http
-DELETE /api/settings/skills/{skill_id}
-```
-
-## 错误码
-
-| 错误码 | HTTP 状态码 | 说明 |
-|--------|------------|------|
-| `INVALID_REQUEST` | 400 | 请求参数无效 |
-| `RESOURCE_NOT_FOUND` | 404 | 资源不存在 |
-| `MODEL_NOT_AVAILABLE` | 503 | 模型不可用 |
-| `MCP_SERVER_ERROR` | 500 | MCP Server 错误 |
-| `INTERNAL_ERROR` | 500 | 服务器内部错误 |
+| 状态码 | 场景 |
+|--------|------|
+| `400` | 请求结构、导入包、路径或配置不合法 |
+| `401` | 未登录或凭据无效 |
+| `403` | 当前用户无权访问该资源 |
+| `404` | 会话、资源、文件或配置不存在 |
+| `500` | 服务内部错误 |
+| `503` | 外部服务、模型、MCP 或沙箱不可用 |
+
+## 主要端点
+
+### 认证与账号
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `POST` | `/api/auth/login` | 登录 |
+| `POST` | `/api/auth/register` | 注册 |
+| `PUT` / `POST` | `/api/auth/account` | 修改账号 |
+| `PUT` / `POST` | `/api/auth/password` | 修改密码 |
+
+### 统一会话
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/sessions` | 当前用户会话列表 |
+| `POST` | `/api/sessions` | 创建普通会话或带专家/场景成员的会话 |
+| `GET` | `/api/sessions/{session_id}` | 会话详情、历史、成员、meta |
+| `PUT` | `/api/sessions/{session_id}` | 更新会话标题、成员或场景信息 |
+| `DELETE` | `/api/sessions/{session_id}` | 删除会话 |
+| `POST` | `/api/sessions/{session_id}/chat/stream` | SSE 流式发送消息 |
+| `POST` | `/api/sessions/{session_id}/chat` | 非流式兜底聚合响应 |
+| `POST` | `/api/sessions/{session_id}/chat/stop` | 停止当前会话回复 |
+| `DELETE` | `/api/sessions/{session_id}/messages/{message_id}` | 删除单条消息 |
+| `GET` | `/api/sessions/{session_id}/events/stream` | 会话事件流 |
+| `POST` | `/api/sessions/{session_id}/export` | 导出会话到工作区 Markdown |
+| `POST` | `/api/sessions/{session_id}/prompt-preview` | 预览提示词 |
+| `GET` | `/api/sessions/{session_id}/archive` | 下载会话归档 |
+
+`/api/sessions/{session_id}/chat/stream` 是主入口，单人对话和多人专家协作都复用同一套带主持人的会话模型。
+
+### SSE 事件
+
+流式会话以 SSE 返回，前端按事件类型消费。常见事件：
+
+| 事件 | 说明 |
+|------|------|
+| `route` | 本轮路由到的专家、Skill 和工具信息 |
+| `content` | 增量文本片段 |
+| `message` | 完整消息气泡 |
+| `tool_start` / `tool_result` | 工具调用开始和结果 |
+| `end` | 本轮结束，包含调度阶段和下一步状态 |
+| `error` | 可展示错误 |
+
+非流式 `/chat` 会内部消费同一条 SSE 流，并优先返回 `route.agent_id` 对应的专家消息。
+
+### 专家与资源
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/dha/instances` | 专家列表 |
+| `POST` | `/api/dha/instances` | 创建专家 |
+| `PUT` | `/api/dha/instances/{agent_id}` | 更新专家 |
+| `DELETE` | `/api/dha/instances/{agent_id}` | 删除专家 |
+| `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 |
+| `POST` | `/api/dha/instances/import-bundle` | 导入专家资源包 |
+
+`/api/agents/*` 与 `/api/experts/*` 是兼容别名，新的前端和文档优先使用 `/api/dha/instances/*` 或 `/api/agents/*` 的 Agent 语义。
+
+### 场景和会话预设
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/settings/session-presets` | 场景/会话预设列表 |
+| `PUT` | `/api/settings/session-presets` | 保存场景/会话预设 |
+| `GET` | `/api/settings/session-presets/{preset_id}/export-bundle` | 导出场景资源包 |
+| `POST` | `/api/settings/session-presets/import-bundle` | 导入场景资源包 |
+
+公开分享链接、分享预览页和公共分享 API 已下线。跨账号复用使用 ZIP 资源包导入导出。
+
+### Skill
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/settings/skills` | Skill 列表 |
+| `POST` | `/api/settings/skills` | 创建 Skill |
+| `PUT` | `/api/settings/skills/{skill_id}` | 更新 Skill 元信息 |
+| `DELETE` | `/api/settings/skills/{skill_id}` | 删除 Skill |
+| `GET` | `/api/settings/skills/{skill_id}/content` | 读取 `SKILL.md` |
+| `GET` | `/api/settings/skills/{skill_id}/parts` | 读取 Skill 文件分区 |
+| `GET` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 读取 Skill 文件 |
+| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}` | 新建 Skill 文件 |
+| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}/mkdir` | 新建目录 |
+| `PUT` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 保存 Skill 文件 |
+| `DELETE` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 删除 Skill 文件 |
+| `GET` | `/api/settings/skills/{skill_id}/export-zip` | 导出 Skill ZIP |
+| `POST` | `/api/settings/skills/import-zip` | 导入 Skill ZIP |
+
+脚本路径、工作区路径和沙箱约束见 [Skill 脚本路径手册](../skills/skill-script-paths.md)。
+
+### MCP
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/settings/mcp` | MCP Server 列表 |
+| `POST` | `/api/settings/mcp` | 创建 MCP Server |
+| `PUT` | `/api/settings/mcp/{server_id}` | 更新 MCP Server |
+| `DELETE` | `/api/settings/mcp/{server_id}` | 删除 MCP Server |
+| `POST` | `/api/settings/mcp/{server_id}/test` | 测试连接 |
+| `GET` | `/api/settings/mcp/{server_id}/tools` | 工具列表 |
+| `POST` | `/api/settings/mcp/{server_id}/tools/{tool_name}/call` | 直接测试工具调用 |
+| `POST` | `/api/settings/mcp/{server_id}/sandbox-call` | 沙箱内测试调用 |
+| `GET` | `/api/settings/mcp/{server_id}/export-zip` | 导出 MCP 配置 |
+| `POST` | `/api/settings/mcp/import-zip` | 导入 MCP 配置 |
+
+### 工作区文件
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/api/workspaces/sessions-with-files` | 有文件的会话列表 |
+| `GET` | `/api/workspaces/{workspace_id}/files` | 文件列表 |
+| `POST` | `/api/workspaces/{workspace_id}/files` | 创建文件 |
+| `POST` | `/api/workspaces/{workspace_id}/files/upload` | 上传文件 |
+| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 创建目录 |
+| `GET` | `/api/workspaces/{workspace_id}/files/content` | 读取文件内容 |
+| `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存文件内容 |
+| `DELETE` | `/api/workspaces/{workspace_id}/files/content` | 删除文件 |
+| `PUT` | `/api/workspaces/{workspace_id}/files/rename` | 重命名 |
+| `GET` | `/api/workspaces/{workspace_id}/files/download` | 下载 |
+
+所有工作区路径都必须经过后端归一化和路径穿越检查。
+
+### LLM、密钥、主持人和应用设置
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` / `PUT` | `/api/settings/app` | 应用级设置 |
+| `GET` / `PUT` | `/api/settings/host-profile` | 默认主持人配置 |
+| `GET` | `/api/settings/host-profile/defaults` | 主持人默认值 |
+| `POST` | `/api/settings/host-profile/reset` | 重置主持人 |
+| `GET` / `POST` | `/api/settings/api-secrets` | 密钥列表与新增 |
+| `PUT` / `DELETE` | `/api/settings/api-secrets/{secret_id}` | 更新或删除密钥 |
+
+模型供应商配置保存在应用设置中，具体解析逻辑见 `backend/app/agent/llm_client.py`。
+
+### 沙箱设置
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` / `PUT` | `/api/settings/sandbox` | 沙箱版本与策略设置 |
+| `GET` / `PUT` | `/api/settings/sandbox/requirements` | 当前用户 Python requirements |
+| `POST` | `/api/settings/sandbox/requirements/merge` | 合并依赖 |
 
 ## 版本控制
 
-当前 API 版本：`v1`
+当前 API 未引入 URL 版本号，统一使用 `/api` 前缀。若后续引入破坏性变更，再通过 `/api/v2` 或请求头约定迁移。
 
-未来版本将通过 URL 路径或请求头指定：
+## 相关文档
 
-```
-/api/v1/chat
-```
-
-或
-
-```
-/api/chat
-X-API-Version: v1
-```
-
-## 限流
-
-当前版本暂不实现限流。未来版本将支持：
-
-- 基于 IP 的限流
-- 基于用户的限流
-- 基于 API Key 的限流
-
-## 参考资源
-
-- [FastAPI 文档](https://fastapi.tiangolo.com/)
-- [OpenAPI 规范](https://swagger.io/specification/)
-- [RESTful API 设计最佳实践](https://restfulapi.net/)
+- [系统架构图](system-architecture.md)
+- [运行架构说明](runtime-architecture.md)
+- [项目结构文档](project-structure.md)
+- [需求说明与验收测试](../requirements/acceptance-and-tests.md)

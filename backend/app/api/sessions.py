@@ -158,13 +158,21 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
         logger.exception("session_chat_once 聚合流失败: session=%s err=%s", session_id, e)
         error_event = error_event or {"error": str(e)}
 
+    primary_message = message_events[-1] if message_events else None
+    route_agent_id = route_event.get("agent_id") if isinstance(route_event, dict) else None
+    if route_agent_id:
+        primary_message = next(
+            (msg for msg in reversed(message_events) if msg.get("agent_id") == route_agent_id),
+            primary_message,
+        )
+
     return {
         "status": "ok",
         "data": {
             "route": route_event,
             "contents": content_events,
             "messages": message_events,
-            "message": message_events[-1] if message_events else None,
+            "message": primary_message,
             "end": end_event,
             "error": error_event,
             "interrupted": interrupted or (end_event is None),

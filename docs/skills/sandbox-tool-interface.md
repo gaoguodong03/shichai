@@ -146,7 +146,7 @@
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
 - 脚本 stdout 应尽量输出单个 JSON 对象；若脚本能确定当前 Skill 会话是否结束，使用 `skill_session_over: true|false`。专家状态块或脚本 stdout 任一明确为 `false` 时，平台会保留群聊 Skill 会话锁；`done/final` 只表示工具循环收束，不释放会话锁。
-- 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/书童四九Skill规范.md` 的“给 Skill 作者的脚本函数调用建议”。
+- 给 Skill 作者的依赖声明、`argparse` 模板、计数字段（如 `segment_count` / `chunk_count`）与 stdout 字段建议，见 `docs/skills/skill-standard.md` 的“给 Skill 作者的脚本函数调用建议”。
 
 何时使用：
 

@@ -2,7 +2,7 @@
 
 ./scripts/test-layer1.sh  
 
-完整业务链路入口见 `docs/全流程业务测试汇总.md` 与 `./scripts/test-full-flow.sh`。
+完整业务链路入口见 `docs/testing/full-flow-business-tests.md` 与 `./scripts/test-full-flow.sh`。
 
 本文档用于回答两个问题：
 
@@ -32,6 +32,24 @@
 - 覆盖核心业务链路：编排、群聊、沙箱、鉴权、工作区、runtime/工具/MCP 网关；
 - 保持执行速度与稳定性；
 - 不追求一次性覆盖全部路由与全部运行时分支。
+
+## 用户需求覆盖索引
+
+本节承接 `docs/requirements/user-requirements.md` 与 `docs/requirements/acceptance-and-tests.md` 的 UR 编号，用于判断第一层回归是否覆盖对应核心需求。自动化测试不能替代全部手工验收；涉及真实浏览器、真实模型、Docker/OpenSandbox 部署或外部网络的路径，应继续按上线前手册补充验证。
+
+| 用户需求 | 第一层自动化覆盖 | 仍需手工或专项验证 |
+|----------|------------------|--------------------|
+| UR-01 账号与用户隔离 | `test_auth_sqlite.py`、`test_sessions_api.py` | 未登录页面跳转、浏览器刷新登录态 |
+| UR-02 工作区与统一会话 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`test_frontend_business_flows.py` | 长回答流式体验、真实文件预览体验 |
+| UR-03 主持人与专家协作 | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 真实 LLM 下主持人可读性与用户等待状态 |
+| UR-04 资源中心 | `test_dha_api.py`、`test_frontend_business_flows.py`、`test_bundle_import_api.py` | 前端资源详情页完整点击路径 |
+| UR-05 Skill 与脚本执行 | `test_file_ref_and_gateway.py`、`test_group_chat_skill_script_cli_flow.py`、`test_skill_agent_tool_resolution.py` | 真实沙箱依赖安装、长耗时脚本错误展示 |
+| UR-06 MCP 工具能力 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 真实远程 MCP 鉴权、断连、网络异常 |
+| UR-07 沙箱运行环境 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | Docker/OpenSandbox 镜像、Playwright 版沙箱冒烟 |
+| UR-08 工作区文件管理 | `test_workspace_files.py`、`test_file_ref_and_gateway.py`、`test_frontend_business_flows.py` | 图片、PDF、Office 等文件前端预览 |
+| UR-09 导出与导入 | `test_bundle_import_api.py`、`test_scenario_bundle.py`、`test_expert_bundle.py` | 跨账号导入、冲突确认和导入后页面检查 |
+| UR-10 模型、密钥与个人设置 | `test_llm_config.py`、`test_frontend_business_flows.py` | 设置页保存反馈、真实模型 Key 连通性 |
+| UR-11 部署与运维 | `test_lifespan.py`、`test_sandbox_service.py`、前端构建 | 1Panel/Docker 健康检查、数据卷持久化、日志排查 |
 
 ## 已纳入第一层的测试文件（当前 31 个）
 

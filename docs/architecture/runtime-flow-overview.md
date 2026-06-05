@@ -1,6 +1,6 @@
 # 书童四九：程序运行逻辑梳理
 
-本文从「进程如何起来」到「一次对话如何走完」，概括整个仓库的运行逻辑，便于新人建立心智模型。细节与接口以源码及 [技术架构详解.md](./技术架构详解.md)、[书童四九.md](./书童四九.md)、[backend/README.md](../backend/README.md) 为准。
+本文从「进程如何起来」到「一次对话如何走完」，概括整个仓库的运行逻辑，便于新人建立心智模型。细节与接口以源码及 [runtime-architecture.md](./runtime-architecture.md)、[文档中心](../README.md)、[backend/README.md](../../backend/README.md) 为准。
 
 ---
 
@@ -124,7 +124,7 @@
 8. **群聊记忆**（若开启）：可向工作区 `memory/` 写日志、归档、事实表，供下一轮派发上下文（见 `group_memory_store.py`）。
 9. **推 `end`**：带阶段 `phase`、是否等待用户、`interrupt_reason` 等，前端据此决定是否展示表单或继续。
 
-编排阶段与 `OrchestrationPhase` 的对应关系见 [技术架构详解.md](./技术架构详解.md) 中的状态机示意。
+编排阶段与 `OrchestrationPhase` 的对应关系见 [runtime-architecture.md](./runtime-architecture.md) 中的状态机示意。
 
 ### 5.3.1 专家回合（实现要点）
 
@@ -176,9 +176,9 @@
 
 | 主题 | 建议阅读 |
 |------|----------|
-| 框架级前后端协作与 SSE | [技术架构详解.md](./技术架构详解.md) |
-| 数据目录与认证约定 | [书童四九.md](./书童四九.md) |
-| 后端环境变量与接口迁移说明 | [backend/README.md](../backend/README.md) |
+| 框架级前后端协作与 SSE | [runtime-architecture.md](./runtime-architecture.md) |
+| 数据目录与认证约定 | [user-resource-store/README.md](user-resource-store/README.md) |
+| 后端环境变量与接口迁移说明 | [backend/README.md](../../backend/README.md) |
 | FastAPI 入口与静态站 | `backend/app/main.py` |
 | 会话路由 | `backend/app/api/sessions.py` |
 | 群聊流与编排实现 | `backend/app/api/group_chat.py` |

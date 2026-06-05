@@ -2,7 +2,7 @@
 
 面向听众：**技术同行 / 面试**。与 PDF《书童四九：面向教学研用的多专家智能体应用环境》叙事一致：**教学、科研、教研协作场景下的私有化多专家 Agent 环境**。
 
-更细的架构与流程图见 [技术架构详解.md](./技术架构详解.md)；实现级链路见 [梳理.md](./梳理.md)。
+更细的架构与流程图见 [runtime-architecture.md](../architecture/runtime-architecture.md)；实现级链路见 [session-logic-current.md](../architecture/session-logic-current.md)。
 
 ---
 
@@ -12,10 +12,10 @@
 |------|------|------|
 | 开场 + 问题 | ~1.5 min | 一句话产品 + 为什么需要「多专家 + 工具 + 可私有化」 |
 | 能力边界（3 点） | ~2 min | 多用户隔离、会话形态、专家 / Skill / MCP |
-| 架构一张图 | ~2 min | 浏览器 ↔ FastAPI ↔ 用户目录 ↔ LLM / 工具（用 [技术架构详解.md](./技术架构详解.md) 前两段 `flowchart LR`） |
+| 架构一张图 | ~2 min | 浏览器 ↔ FastAPI ↔ 用户目录 ↔ LLM / 工具（用 [runtime-architecture.md](../architecture/runtime-architecture.md) 前两段 `flowchart LR`） |
 | 一次请求怎么走 | ~3 min | `POST /api/sessions/.../chat/stream`、鉴权、读会话、编排、SSE（第 4、5 节口头版） |
-| **编排状态机** | **~2.5 min** | 嵌入 [技术架构详解.md](./技术架构详解.md) **约 53–80 行**图；`OrchestrationPhase` 与 `end.phase`；「常见跳转≠全部代码分支」 |
-| 实现要点（可压缩） | ~2 min | `build_tools_for_group_chat`、SimpleAgent 流式转 SSE、落盘（[梳理.md](./梳理.md) 2.3–2.4，两句带过即可） |
+| **编排状态机** | **~2.5 min** | 嵌入 [runtime-architecture.md](../architecture/runtime-architecture.md) **约 53–80 行**图；`OrchestrationPhase` 与 `end.phase`；「常见跳转≠全部代码分支」 |
+| 实现要点（可压缩） | ~2 min | `build_tools_for_group_chat`、SimpleAgent 流式转 SSE、落盘（[session-logic-current.md](../architecture/session-logic-current.md) 2.3–2.4，两句带过即可） |
 | 扩展与局限 | ~1 min | 加 MCP / Skill / 专家；不展开商业对比 |
 | 收尾 | ~1 min | 总结一句 + 欢迎提问 |
 
@@ -45,12 +45,12 @@
 ## 三、状态机这一页怎么讲（对应文档 53–80 行）
 
 1. **先讲角色**：后端内存里维护编排上下文；前端收到的 **`end` 事件带 `phase`（英文枚举）**，与 `backend/app/agent/orchestrator_state.py` 中 `OrchestrationPhase` 一致。
-2. **再亮图**：`stateDiagram-v2`（规划中 → 执行中 → 等待用户 → … → 已结束），见 [技术架构详解.md](./技术架构详解.md) 该节。
+2. **再亮图**：`stateDiagram-v2`（规划中 → 执行中 → 等待用户 → … → 已结束），见 [runtime-architecture.md](../architecture/runtime-architecture.md) 该节。
 3. **三句人话**  
    - **执行中**：专家在跑 LLM / 工具。  
    - **等待用户**：本轮流结束或要你补充信息。  
    - **招募中**：与需要拉新专家相关（与 `build_end_payload` 里对 `NEED_RECRUIT_EXPERT` 等的归一化一致，不必背枚举）。
-4. **诚实一句**：图上箭头是**常见路径**；源码里还有钩子、中断、pending 专家续跑等，追问再展开 [梳理.md](./梳理.md) 或 `group_chat.py`。
+4. **诚实一句**：图上箭头是**常见路径**；源码里还有钩子、中断、pending 专家续跑等，追问再展开 [session-logic-current.md](../architecture/session-logic-current.md) 或 `group_chat.py`。
 
 **衔接语（可用）**：状态机页连接「产品里谁先说话」与「后端推给前端的 `end` 契约」。
 
@@ -74,7 +74,7 @@
    按第三节讲；补充 `end` 里还有 `waiting_for_user`、`suggested_next_speaker`、`interrupt_reason`（不全展开）。
 
 6. **实现层（~1.5 min）**  
-   工具组装、SimpleAgent 流式转 SSE、落盘——各一句，后端岗可指 [梳理.md](./梳理.md)。
+   工具组装、SimpleAgent 流式转 SSE、落盘——各一句，后端岗可指 [session-logic-current.md](../architecture/session-logic-current.md)。
 
 7. **扩展与收尾（~1 min）**  
    新能力：加 MCP / Skill / 专家实例；局限：依赖外部 LLM、部署形态等诚实一句。

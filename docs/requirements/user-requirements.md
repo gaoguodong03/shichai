@@ -8,7 +8,7 @@
 
 本文从用户视角定义书童四九的产品需求，用于对齐项目目标、功能边界、验收口径和后续迭代优先级。
 
-本文不替代实现说明、接口文档或测试清单。实现细节参考 `docs/技术架构详解.md`、`docs/需求说明与验收测试.md`、`docs/用户使用说明.md` 和 `docs/architecture/` 下的架构文档。
+本文不替代实现说明、接口文档或测试清单。实现细节参考 `docs/architecture/runtime-architecture.md`、`docs/requirements/acceptance-and-tests.md`、`docs/user-manual/user-guide.md` 和 `docs/architecture/` 下的架构文档。
 
 ## 2. 产品定位
 
@@ -303,10 +303,10 @@
 
 | 文档 | 用途 |
 |------|------|
-| `docs/需求说明与验收测试.md` | 将本文需求拆成模块化验收点和推荐测试命令 |
-| `docs/用户使用说明.md` | 面向最终用户的操作步骤说明 |
+| `docs/requirements/acceptance-and-tests.md` | 将本文需求拆成模块化验收点和推荐测试命令 |
+| `docs/user-manual/user-guide.md` | 面向最终用户的操作步骤说明 |
 | `docs/user-manual/书童四九上线验收操作手册.pdf` | 面向上线验收人员的图文操作手册 |
-| `docs/技术架构详解.md` | 解释一次会话从前端到后端再流式返回的运行链路 |
+| `docs/architecture/runtime-architecture.md` | 解释一次会话从前端到后端再流式返回的运行链路 |
 | `docs/architecture/project-structure.md` | 说明项目目录、模块职责和扩展点 |
 | `README.md` | 提供项目定位、部署方式和常见运行问题 |
 

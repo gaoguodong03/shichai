@@ -88,9 +88,9 @@
 ### 任务 4：文档与全量相关验证
 
 **文件：**
-- 修改：`docs/技术架构详解.md`
+- 修改：`docs/architecture/runtime-architecture.md`
 - 修改：`docs/梳理.md`
-- 修改：`docs/测试清单与第一层回归说明.md`
+- 修改：`docs/testing/layer1-regression.md`
 
 - [x] **步骤 1：更新文档**
 

@@ -90,7 +90,7 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 
 ## 5. 脚本型 Skill 规范
 
-脚本路径、工作区路径、Skill 资源路径与数据库文件设计的详细说明见 `docs/Skill脚本相对路径操作手册.md`。
+脚本路径、工作区路径、Skill 资源路径与数据库文件设计的详细说明见 `docs/skills/skill-script-paths.md`。
 
 ### 5.1 调用契约
 

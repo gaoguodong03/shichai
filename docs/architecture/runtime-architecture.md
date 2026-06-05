@@ -1,6 +1,6 @@
 # 书童四九：程序怎么跑起来（框架说明）
 
-本文用**尽量少术语**的方式说明：开发时前后端如何启动、登录后页面怎么工作、以及你在工作区和**专家（Agent）**对话时，请求从前端走到后端再流式回来，大致经过哪些环节。更短的概览见 [书童四九.md](./书童四九.md)。
+本文用**尽量少术语**的方式说明：开发时前后端如何启动、登录后页面怎么工作、以及你在工作区和**专家（Agent）**对话时，请求从前端走到后端再流式回来，大致经过哪些环节。文档总入口见 [文档中心](../README.md)。
 
 ---
 
@@ -33,7 +33,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   FE[前端界面]
-  Req[POST chat/stream]
+  Req[POST /api/sessions/{id}/chat/stream]
   GW[FastAPI]
   Disk[读会话与专家配置]
   Orch[编排主持人或专家]
@@ -206,7 +206,7 @@ stateDiagram-v2
 
 ### 6.1 群聊记忆（`memory` 目录结构）
 
-群聊「记忆」不是单独的数据库表，而是落在**该会话对应工作区**下的一块 Markdown 文件树，由 [`group_memory_store.py`](../backend/app/agent/group_memory_store.py) 读写。会话 id 与前端里的会话一致时，工作区根路径为：
+群聊「记忆」不是单独的数据库表，而是落在**该会话对应工作区**下的一块 Markdown 文件树，由 [`group_memory_store.py`](../../backend/app/agent/group_memory_store.py) 读写。会话 id 与前端里的会话一致时，工作区根路径为：
 
 `data/users/{user_id}/sessions/workspaces/{会话id}/`
 
@@ -226,7 +226,7 @@ flowchart TB
 | **`memory/facts.md`** | **事实清单**：从专家回复里抽取的短句事实，合并成 `- ` 开头的列表，去重并截断到 `max_facts` 条，供下一轮主持人/专家派发时拼进提示。 |
 | **`memory/llm_roundtrips.jsonl`** | **排障日志**：完整追加当前会话每次 LLM 调用的输入消息、输出、阶段、专家、Skill、模型等信息。不参与下一轮提示词，不截断、不轮转。 |
 
-**何时写入**：在 [`group_chat.py`](../backend/app/api/group_chat.py) 里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后只从回复里抽取事实调用 `upsert_facts`。LLM 排障信息由 `append_llm_roundtrip` 写入 `llm_roundtrips.jsonl`。写入失败只打日志，不阻断主对话。
+**何时写入**：在 [`group_chat.py`](../../backend/app/api/group_chat.py) 里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后只从回复里抽取事实调用 `upsert_facts`。LLM 排障信息由 `append_llm_roundtrip` 写入 `llm_roundtrips.jsonl`。写入失败只打日志，不阻断主对话。
 
 **何时读出**：构造下一轮给专家的提示时，若记忆开启，会调用 `build_dispatch_context`：只读取 `facts.md`，拼成 **【关键事实】** 段落。`llm_roundtrips.jsonl` 只供排查问题，不会被塞进下一轮专家提示词。
 
@@ -238,7 +238,7 @@ flowchart TB
 
 - **存哪里**：每个用户一份 JSON，路径为  
   `data/users/{user_id}/config/dha_instances.json`
-  内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**（与 `/dha/instances`、`/experts` 等别名并存，见仓库 README）。
+  内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**（与 `/api/dha/instances/*`、`/api/experts/*` 等别名并存，见仓库 README）。
 
 - **主要字段（理解用）**
 
@@ -261,7 +261,7 @@ flowchart TB
 
 - **全局配置在哪**：应用设置（如 `app_settings.json`）里通常有 **`default_llm`**（默认 provider  id，代码里常见回退为 `qwen`）和 **`llm_providers`**：一个**字典**，键是 provider id（字符串），值里一般有 `base_url`、`model`，以及 **`api_key`** 或 **`api_key_env`**（从环境变量读密钥）。
 
-- **创建客户端**：[`llm_client.py`](../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
+- **创建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
 
 - **何时用哪套模型**：群聊里通过 **`_get_llm_for_dha(dha, app_settings)`**（见 `group_chat.py`）统一决定：
 
@@ -279,7 +279,7 @@ flowchart TB
 - **存哪里**：`data/users/{user_id}/resources/skills/{skill_id}/`
   `skill_id` 一般与目录名一致；资源中心里创建/导入的技能会落在此路径。
 
-- **加载与缓存**：[`loader.py`](../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
+- **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
 
 - **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、创建、导入 zip、读写内容、删除等），见 `settings.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
 
@@ -289,12 +289,12 @@ flowchart TB
 
 ### 6.5 工具模块（MCP、文件、HTTP、技能脚本）
 
-这里的「工具」指 **模型在对话里可调用的 function**，统一在群聊路径里由 **`build_tools_for_group_chat`**（[`tools_for_skill.py`](../backend/app/agent/tools_for_skill.py)）组装，再交给执行图（如第 4 节中的专家 Agent）。
+这里的「工具」指 **模型在对话里可调用的 function**，统一在群聊路径里由 **`build_tools_for_group_chat`**（[`tools_for_skill.py`](../../backend/app/agent/tools_for_skill.py)）组装，再交给执行图（如第 4 节中的专家 Agent）。
 
 **组装顺序（理解即可）**
 
 1. **MCP 工具**  
-   - 配置来自当前用户的 **`mcp_servers.json`**；启动时只预加载有配置用户的 MCP 配置，不主动连接 Server。运行时由 [`mcp/manager.py`](../backend/app/mcp/manager.py) 按用户维护 **`MCPToolManager`**（对话需要工具、测试连接或查看工具列表时再连接，进程退出时清理）。  
+   - 配置来自当前用户的 **`mcp_servers.json`**；启动时只预加载有配置用户的 MCP 配置，不主动连接 Server。运行时由 [`mcp/manager.py`](../../backend/app/mcp/manager.py) 按用户维护 **`MCPToolManager`**（对话需要工具、测试连接或查看工具列表时再连接，进程退出时清理）。
    - 专家若配置了 **`mcp_server_ids`**，则只加载这些 server 上的工具；若为空，则根据各 Skill 的 **`allowed-tools.mcp`** 合并 server id；必要时对历史 id 做兼容。  
    - 工具名一般为 **`{server_id}_{工具名}`** 形式，便于区分来源。
 
@@ -307,7 +307,7 @@ flowchart TB
 
 4. **技能脚本**  
    - 对专家 **`skill_ids`** 里每一项，若磁盘上存在对应 `SKILL.md`，则 **`create_run_skill_script_tool`** 注册一个 **`run_skill_script_<skill_id>`**（名称会做安全化与哈希后缀，满足部分模型对 function 名的字符集要求）。  
-   - 实际执行逻辑在 [`run_skill_script.py`](../backend/app/tools/run_skill_script.py)：在会话工作区与技能目录约束下起子进程/解释器，返回结构化 JSON 字符串给模型。
+   - 实际执行逻辑在 [`run_skill_script.py`](../../backend/app/tools/run_skill_script.py)：在会话工作区与技能目录约束下起子进程/解释器，返回结构化 JSON 字符串给模型。
 
 **执行与治理**：部分 MCP 调用与脚本会经过 **`UnifiedToolGateway`**、**`SandboxPolicy`** 等（见 `tool_gateway`、`sandbox_adapter`），用于超时、策略与调试信息聚合；细节以源码为准。
 
@@ -338,10 +338,10 @@ flowchart TB
 | 群聊工具组装（MCP/文件/脚本） | `backend/app/agent/tools_for_skill.py` |
 | Skill 脚本执行 | `backend/app/tools/run_skill_script.py` |
 | MCP 运行时（每用户） | `backend/app/mcp/manager.py` |
-| 前端群聊与解析流 | `frontend/src/views/WorkspaceContent.vue` |
+| 前端群聊与解析流 | `frontend/src/features/workspace/WorkspaceContent.vue` |
 | 前端主壳与模块切换 | `frontend/src/views/MainView.vue` |
 
-更细的模块表、环境变量表、SSE 事件名列表等，以源码与 [backend/README.md](../backend/README.md) 为准。
+更细的模块表、环境变量表、SSE 事件名列表等，以源码与 [backend/README.md](../../backend/README.md) 为准。
 
 ---
 

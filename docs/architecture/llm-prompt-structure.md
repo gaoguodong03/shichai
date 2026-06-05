@@ -6,7 +6,7 @@
 
 ## 一、两阶段流程概览
 
-DHA 采用**两阶段**设计（见 [skill-mcp-design-draft.md](./skill-mcp-design-draft.md)）：
+DHA 采用**两阶段**设计（见 [Skill 规范](../skills/skill-standard.md) 与 [运行流程概览](./runtime-flow-overview.md)）：
 
 1. **第一次调用**：技能选择，仅输入用户消息 + 各 skill 的 name（+ description，若有）
 2. **第二次调用**：技能执行，输入选中 skill 的完整内容 + 用户问题 + 历史摘要（若有）
@@ -90,7 +90,7 @@ DHA 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messag
 
 - **轮对话（Session）**：新建对话、历史会话的粒度，对应 `session_id`
 - **轮内对话（Turn）**：每轮中的一次「用户消息 + 助手回复」
-- **记忆**：传给 LLM 的应是本轮各 Turn 的**摘要或关键内容**，而非原始全文。详见 [会话、轮对话与记忆设计](./session-round-memory.md)。
+- **记忆**：传给 LLM 的应是本轮各 Turn 的**摘要或关键内容**，而非原始全文。详见 [运行架构说明](./runtime-architecture.md) 中的群聊记忆说明。
 
 ### 4.2 消息来源
 
@@ -193,8 +193,7 @@ skill_execution 的 system_prompt =
 
 ## 七、相关文档
 
-- [会话、轮对话与记忆设计](./session-round-memory.md)：轮 vs Turn、记忆设计
-- [运行流程](./runtime-flow.md)：两阶段流程与 ReAct 循环
+- [运行架构说明](./runtime-architecture.md)：会话、记忆与 ReAct 执行链路
+- [运行流程概览](./runtime-flow-overview.md)：两阶段流程与 ReAct 循环
 - [API 设计](./api-design.md)：chat 接口与请求参数
-- [Skill + MCP 设计](./skill-mcp-design-draft.md)：两阶段设计说明
-- [Skills 配置](../features/skills-config.md)：技能加载与筛选
+- [Skill 规范](../skills/skill-standard.md)：Skill 目录结构、触发条件与脚本契约

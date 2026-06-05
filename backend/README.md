@@ -79,7 +79,7 @@ backend/
 - 支持后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`
 - 线上路径走 OpenSandbox：脚本在 `/workspace/<session_id>` 下执行，Skill 资源通过 `/skills/<skill_id>` 只读挂载。
 - 调用协议：CLI-only（仅 `cli_args_json`），不再支持 `input_json`/stdin JSON
-- 相对路径手册：`docs/Skill脚本相对路径操作手册.md`
+- 相对路径手册：`docs/skills/skill-script-paths.md`
 - 工具返回统一 JSON 字符串：`ok/code/message/stdout/stderr/...`
 - 推荐 stdout JSON 字段：`ok`、`code`、`message`、`result/text/output`，以及可选 `skill_session_over`。成功完成且不需要同一 Skill 继续处理时设 `skill_session_over: true`；仍需用户补充或确认时设 `false`。
 - 内置调试命令：

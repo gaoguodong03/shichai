@@ -25,7 +25,7 @@
 - 运行入口固定为 `/skills/<skill_id>/scripts/<script_path>`；历史 `/skill/scripts/<script_path>` 路径仍做兼容回退。
 - 脚本执行 `cwd` 固定为 `/workspace/<session_id>`。
 - 脚本输入输出文件统一在 `/workspace/<session_id>` 下。
-- 详细相对路径约定见 `docs/Skill脚本相对路径操作手册.md`。
+- 详细相对路径约定见 `docs/skills/skill-script-paths.md`。
 - 对历史技能提示中的 `scripts/config.json` 做兼容映射到会话根 `config.json`。
 - 支持脚本后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`；沙箱内分别使用 `python3/python`、`bash`、`pwsh`、`cmd.exe` 执行。
 

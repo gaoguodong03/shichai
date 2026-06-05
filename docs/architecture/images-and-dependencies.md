@@ -73,7 +73,7 @@
 - 主应用依赖、沙箱基础能力、用户 Skill 依赖分开管理。
 - 镜像 tag 不使用 `latest`，避免上游漂移。
 - 代码里只保留默认值，生产差异尽量通过 `.env` 或 1Panel 环境变量覆盖。
-- 新增镜像或依赖相关功能时，同步更新本文和 `docs/需求说明与验收测试.md`。
+- 新增镜像或依赖相关功能时，同步更新本文和 `docs/requirements/acceptance-and-tests.md`。
 
 ## 1Panel 日志关键词
 
