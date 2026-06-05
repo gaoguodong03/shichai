@@ -105,6 +105,7 @@ from app.core.security import user_context_dependency, get_current_user
 from app.core.scene_scheduler import finalize_host_scheduler_decision, RECRUIT_FIXED_MESSAGE
 from app.agent.scene_runtime import SceneRuntime, pick_scene_host_skill_id
 from app.agent.group_orchestration_fsm import (
+    ORCHESTRATION_SCENE,
     clear_skill_session_lock,
     default_orchestration_profile_for_new_session,
     persist_skill_session_lock,
@@ -168,10 +169,64 @@ def _tool_names_from_history_message(msg: Dict[str, Any]) -> List[str]:
     return names
 
 
+def _has_bound_skill_introspection_direct_final(debug_items: Any) -> bool:
+    if not isinstance(debug_items, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("source") == "bound_skill_introspection_direct_final"
+        and item.get("matched") is True
+        for item in debug_items
+    )
+
+
+def _message_is_bound_skill_introspection_direct_final(msg: Dict[str, Any]) -> bool:
+    debug = msg.get("tool_debug")
+    items = debug.get("tool_attempt_debug") if isinstance(debug, dict) else None
+    return _has_bound_skill_introspection_direct_final(items)
+
+
+def _store_skill_session_lock_for_turn(
+    meta_item: Dict[str, Any],
+    *,
+    owner_agent_id: str,
+    skill_id: str,
+    skill_session_over: Optional[bool],
+    force_keep: bool = False,
+) -> None:
+    """Persist cross-request Skill routing only for explicit continuation states."""
+    if skill_session_over is True:
+        clear_skill_session_lock(meta_item)
+    elif skill_session_over is False or force_keep:
+        persist_skill_session_lock(meta_item, owner_agent_id=owner_agent_id, skill_id=skill_id)
+    else:
+        clear_skill_session_lock(meta_item)
+
+
+def _should_handoff_to_host_after_expert(
+    *,
+    orchestration_profile: str,
+    skill_session_over: Optional[bool],
+    has_auto_continue_signal: bool,
+) -> bool:
+    """Decide whether an expert turn should immediately return to the host scheduler."""
+    if skill_session_over is False:
+        return False
+    if str(orchestration_profile or "").strip().lower() == ORCHESTRATION_SCENE:
+        return True
+    return skill_session_over is True or has_auto_continue_signal
+
+
 def _clear_completed_skill_session_lock_from_history(
     meta_item: Dict[str, Any],
     messages: List[Dict[str, Any]],
 ) -> bool:
+    """Clear stale locks unless the last matching expert turn explicitly asked to continue.
+
+    Older turns could persist a Skill lock when the model omitted an explicit
+    state block. Under the current contract, only `over=false` means "route the
+    next user message back to the same expert".
+    """
     owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
     skill_id = str(meta_item.get("skill_session_skill_id") or "").strip()
     if not owner or not skill_id:
@@ -183,6 +238,20 @@ def _clear_completed_skill_session_lock_from_history(
             continue
         if str(msg.get("skill_id") or "").strip() != skill_id:
             continue
+        if _message_is_bound_skill_introspection_direct_final(msg):
+            clear_skill_session_lock(meta_item)
+            return True
+        debug = msg.get("tool_debug")
+        state = debug.get("skill_session_state") if isinstance(debug, dict) else None
+        if isinstance(state, dict):
+            parsed = state.get("over")
+            if isinstance(parsed, bool):
+                if parsed is False:
+                    return False
+                clear_skill_session_lock(meta_item)
+                return True
+        if msg.get("required_user_fields"):
+            return False
         raw_results = msg.get("tool_raw_results")
         tool_names = _tool_names_from_history_message(msg)
         resolved = resolve_skill_session_state(
@@ -190,10 +259,10 @@ def _clear_completed_skill_session_lock_from_history(
             raw_results if isinstance(raw_results, list) else None,
             tool_names=tool_names or None,
         )
-        if resolved.over is True:
-            clear_skill_session_lock(meta_item)
-            return True
-        return False
+        if resolved.over is False:
+            return False
+        clear_skill_session_lock(meta_item)
+        return True
     return False
 
 
@@ -598,11 +667,11 @@ def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
         f"【群聊讨论目标】\n{discussion_goal}\n\n"
         f"【最近几轮讨论内容（按时间顺序，含用户与各位专家的发言要点）】\n{context}\n\n"
         "【你这一轮的任务】\n"
-        "1. 先用 1～3 句话总结当前讨论已达成的结论或共识。\n"
+        "1. 直接进入你的角色发言或交付结果，不要先写任务说明。\n"
         "2. 结合你的角色与专长，完成本轮的 1～2 个具体子任务；可从上方「最近几轮讨论内容」中摘取关键信息（链接、主题、用户偏好、已有文案等）直接使用。\n"
         "3. 若涉及生成图片/配图/封面：请根据讨论中的文案或要点确定配图主题与风格，并说明所需尺寸或数量（若已提及）。\n"
         "4. 仅输出你本轮可交付结果，不要在正文中安排下一位角色。\n\n"
-        "【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行。"
+        "【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行；不要用任务说明式开头。"
     )
 
 
@@ -705,7 +774,7 @@ def _build_next_prompt_with_memory(
         chunks.extend(
             [
                 f"【群聊讨论目标】\n{discussion_goal}",
-                "【任务要求】\n请先用 1-2 句复述当前你要完成的子任务，再输出可执行结果；若信息不足，先提出最小补充问题（最多 2 个）。",
+                "【任务要求】\n直接进入本轮角色发言或可执行结果，不要先说明当前子任务；若信息不足，先提出最小补充问题（最多 2 个）。",
                 str(dispatch.get("rendered") or "").strip(),
             ]
         )
@@ -769,8 +838,8 @@ def _ensure_structured_next_prompt(
                 f"【群聊讨论目标】\n{discussion_goal}",
                 f"【输入依据】\n{context_excerpt}",
                 "【你本轮要完成的事情】\n"
-                "1. 先用 1-2 句确认你理解的子任务；\n"
-                "2. 直接输出可执行结果（不是泛泛解释）；\n"
+                "1. 直接输出本轮角色发言或可执行结果，不要先说明你理解的子任务；\n"
+                "2. 聚焦具体内容，不要泛泛解释；\n"
                 "3. 只交付本轮结果，不要在正文中指定下一位角色。",
             ]
         )
@@ -881,6 +950,7 @@ def _evaluate_soft_stop(
     if int(state.get("low_increment_streak", 0)) >= 2:
         return "连续两轮内容增量较低，建议暂停并由用户确认下一步。"
     return None
+
 
 def _append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
     """若工具结果中包含工作区图片下载链接，则自动补一段 Markdown 图片预览。"""
@@ -1095,7 +1165,51 @@ def _host_decision_from_workspace_files(session_id: str, dha_list: List[Dict[str
         phase_text = phase_file.read_text(encoding="utf-8").strip() if phase_file.exists() else ""
     except OSError:
         return None
-    if not raw_speaker or not task:
+    if not raw_speaker:
+        return None
+    raw_lower = raw_speaker.lower()
+    user_speakers = {"user", "用户", "用户输入", "学生", "student"}
+    if raw_lower in {"end", "结束", "结束研讨", "研讨结束", "终止研讨", "完成"}:
+        reason = "主持人已将调度状态写入工作区"
+        if phase_text:
+            reason += f"（{phase_text}）"
+        return {
+            "task_done": True,
+            "next_speaker": "end",
+            "reason": reason,
+            "announcement": task or "教师总结已完成，本次研讨结束。",
+            "next_prompt": None,
+            "suggested_order": None,
+            "suggested_add_agent_ids": None,
+            "suggested_add_expert_ids": None,
+            "phase": None,
+            "owner_agent_id": None,
+            "interrupt_reason": None,
+            "decision_source": "workspace_state",
+            "handoff_reason": reason,
+            "required_user_fields": [],
+        }
+    if raw_lower in user_speakers:
+        reason = "主持人已将调度状态写入工作区"
+        if phase_text:
+            reason += f"（{phase_text}）"
+        return {
+            "task_done": True,
+            "next_speaker": "user",
+            "reason": reason,
+            "announcement": task or "请用户继续发言。",
+            "next_prompt": task or None,
+            "suggested_order": None,
+            "suggested_add_agent_ids": None,
+            "suggested_add_expert_ids": None,
+            "phase": None,
+            "owner_agent_id": None,
+            "interrupt_reason": None,
+            "decision_source": "workspace_state",
+            "handoff_reason": reason,
+            "required_user_fields": [],
+        }
+    if not task:
         return None
     agent_id = _match_workspace_speaker_to_agent_id(raw_speaker, dha_list)
     if not agent_id:
@@ -1140,6 +1254,9 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 ```
 
 `next_speaker` 可以写参与者 agent_id，也可以写主持人 Skill 中的角色名；`speaker_task` 会被写入 speaker_task.txt 并交给下一位发言人执行。
+你必须先判断讨论目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
+任务已完成时，`next_speaker` 写 `"user"`/`"用户"` 表示等待用户继续；若整个讨论应结束，写 `"end"`/`"结束研讨"`。
+只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 `next_speaker` 设为某个专家。
 不要生成角色正文。
 """
 
@@ -2327,6 +2444,164 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 except Exception:
                     logger.warning("group memory write failed for host turn", exc_info=True)
 
+            async def _handoff_to_host_scheduler_after_expert() -> Tuple[str, List[str]]:
+                """After a completed expert turn, let the host choose the next owner in the same stream."""
+                nonlocal scheduler_next_prompt
+                emitted: List[str] = []
+                recent = _scheduler_recent_context(group_session_id, messages)
+                decision = None
+                logger.info(
+                    "group_chat_post_expert_scheduler_enter session=%s profile=%s agent_count=%s has_host=%s last_speaker=%s",
+                    group_session_id,
+                    orch_profile,
+                    len(agent_ids or []),
+                    bool(host_dha),
+                    last_speaker_agent_id,
+                )
+                if leader_agent_id and host_dha:
+                    llm_host = _get_llm_for_dha(host_dha, app_settings)
+                    decision = await _host_decide_by_dha(
+                        llm_host,
+                        host_dha,
+                        dha_list,
+                        discussion_goal,
+                        recent,
+                        last_speaker_agent_id,
+                        extra_system_prompt,
+                        available_for_scheduler,
+                        group_session_id=group_session_id,
+                        messages=messages,
+                        app_settings=app_settings,
+                        pending_owner_agent_id=str(meta_item.get("skill_session_owner_id") or "").strip().lower(),
+                        pending_skill_id=str(meta_item.get("skill_session_skill_id") or "").strip(),
+                        user_message="",
+                        orphan_session_agent_ids=orphan_session_agent_ids,
+                        orchestration_profile=orch_profile,
+                    )
+                    logger.info(
+                        "group_chat_post_expert_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",
+                        group_session_id,
+                        decision is None,
+                        (decision or {}).get("next_speaker") if isinstance(decision, dict) else "",
+                        (decision or {}).get("reason") if isinstance(decision, dict) else "",
+                    )
+                if decision is None:
+                    logger.info("group_chat_post_expert_fallback_to_leader_decide session=%s", group_session_id)
+                    default_llm_provider_id = str(app_settings.get("default_llm") or "")
+                    llm_default = _get_llm_for_dha(None, app_settings)
+                    decision = await leader_decide(
+                        llm_default,
+                        dha_list,
+                        discussion_goal,
+                        recent,
+                        last_speaker_agent_id,
+                        available_for_scheduler,
+                        orchestration_profile=orch_profile,
+                        group_session_id=group_session_id,
+                        llm_provider_id=default_llm_provider_id,
+                    )
+                decision = finalize_host_scheduler_decision(
+                    decision,
+                    agent_ids=agent_ids,
+                    dha_list=dha_list,
+                    available_to_add=available_for_scheduler,
+                    last_speaker_agent_id=last_speaker_agent_id,
+                    user_message="",
+                    explicit_requested_agent_ids=[],
+                    orchestration_profile=orch_profile,
+                )
+                logger.info(
+                    "group_chat_post_expert_decision_finalized session=%s next_speaker=%s interrupt_reason=%s suggested_add=%s",
+                    group_session_id,
+                    (decision or {}).get("next_speaker") if isinstance(decision, dict) else "",
+                    (decision or {}).get("interrupt_reason") if isinstance(decision, dict) else "",
+                    len(list((decision or {}).get("suggested_add_agent_ids") or [])) if isinstance(decision, dict) else 0,
+                )
+                _apply_decision_to_ctx(decision)
+                announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
+                suggested_add = list(decision.get("suggested_add_agent_ids") or [])
+                resolved_next = str(decision.get("next_speaker") or "user").strip().lower() or "user"
+                np_auto = decision.get("next_prompt") if isinstance(decision, dict) else None
+                if isinstance(np_auto, str) and np_auto.strip():
+                    scheduler_next_prompt = np_auto.strip()
+
+                if suggested_add:
+                    resolved_next = "user"
+                    orch_ctx.phase = OrchestrationPhase.RECRUITING
+                    host_msg = {
+                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                        "role": "host",
+                        "content": RECRUIT_FIXED_MESSAGE,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "skill_id": _host_bubble_skill_id(),
+                        "suggested_add_agent_ids": suggested_add,
+                        "suggested_add_expert_ids": suggested_add,
+                    }
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
+                    messages.append(host_msg)
+                    _save_group_history(group_session_id, messages)
+                    _persist_host_memory(host_msg)
+                    emitted.append(f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n")
+                    return resolved_next, emitted
+
+                _generic_host = frozenset({"", "请下一位发言。", "请下一位发言", "请下一位发言。 "})
+                if resolved_next in agent_ids:
+                    next_dha = dha_map.get(resolved_next)
+                    next_name = (next_dha.get("name") or resolved_next) if next_dha else resolved_next
+                    _ann = (announcement or "").strip()
+                    host_content = f"下面由 {next_name} 发言。" if not _ann or _ann in _generic_host else _ann
+                    host_msg = {
+                        "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                        "role": "host",
+                        "content": host_content,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "skill_id": _host_bubble_skill_id(),
+                        "next_dha_name": next_name,
+                    }
+                    if leader_agent_id:
+                        host_msg["agent_id"] = leader_agent_id
+                    if decision.get("suggested_order"):
+                        host_msg["suggested_order"] = decision["suggested_order"]
+                    messages.append(host_msg)
+                    _save_group_history(group_session_id, messages)
+                    _persist_host_memory(host_msg)
+                    emitted.append(f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n")
+                    orch_ctx.phase = OrchestrationPhase.EXECUTING
+                    orch_ctx.owner_agent_id = resolved_next
+                    return resolved_next, emitted
+
+                if resolved_next in ("user", "end"):
+                    _ann = (announcement or "").strip()
+                    if (not _ann or _ann in _generic_host) and resolved_next == "user":
+                        reason_text = str(decision.get("reason") or "").strip()
+                        _ann = (
+                            f"已暂停自动推进：{reason_text}\n\n请补充更具体要求，或直接指定下一位专家继续。"
+                            if reason_text
+                            else "已暂停自动推进，请补充更具体要求，或直接指定下一位专家继续。"
+                        )
+                    if _ann and _ann not in _generic_host:
+                        host_msg = {
+                            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+                            "role": "host",
+                            "content": _ann,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "skill_id": _host_bubble_skill_id(),
+                        }
+                        if leader_agent_id:
+                            host_msg["agent_id"] = leader_agent_id
+                        messages.append(host_msg)
+                        _save_group_history(group_session_id, messages)
+                        _persist_host_memory(host_msg)
+                        emitted.append(f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n")
+                    if resolved_next == "user":
+                        orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+                    elif resolved_next == "end":
+                        orch_ctx.phase = OrchestrationPhase.COMPLETED
+                    return resolved_next, emitted
+
+                return "user", emitted
+
             next_speaker = None
             expert_route_debug_for_turn: Dict[str, Any] = {}
             scheduler_next_prompt: Optional[str] = None
@@ -2873,6 +3148,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     task_text_for_workspace = "请紧扣讨论目标发言，不要偏离主题。"
                     user_content = (
                         f"【群聊讨论目标】\n{discussion_goal}\n\n"
+                        f"【本轮用户输入】\n{user_message or '（无）'}\n\n"
                         f"【最近讨论】\n{context}\n\n"
                         "请紧扣讨论目标发言，不要偏离主题。"
                     )
@@ -3040,6 +3316,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 )
                 skill_session_completed = skill_session_state.over is True
                 full_content = skill_session_state.display_content
+                skill_session_signals = skill_session_state.signals
+                skill_introspection_meta_answer = _has_bound_skill_introspection_direct_final(tool_attempt_debug)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = resolved_skill_id if dha else "default"
                 current_skill_id_for_pending = skill_id
@@ -3080,6 +3358,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "skill_session_state": {
                         "over": skill_session_state.over,
                         "source": skill_session_state.source,
+                        "signals": {
+                            "assistant_state_block": skill_session_signals.assistant_state_block
+                            if skill_session_signals
+                            else None,
+                            "script_stdout": skill_session_signals.script_stdout if skill_session_signals else None,
+                            "legacy_end_marker": bool(skill_session_signals.legacy_end_marker)
+                            if skill_session_signals
+                            else False,
+                            "audio_transcription_success": bool(skill_session_signals.audio_transcription_success)
+                            if skill_session_signals
+                            else False,
+                        },
                     },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
@@ -3124,6 +3414,25 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 except Exception:
                     logger.warning("group memory write failed", exc_info=True)
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
+                if skill_introspection_meta_answer:
+                    clear_skill_session_lock(meta_item)
+                    meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    _save_group_meta(meta)
+                    orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+                    end_data = build_end_payload(
+                        waiting_for_user=True,
+                        suggested_next_speaker="user",
+                        phase=OrchestrationPhase.AWAITING_USER,
+                        interrupt_reason=InterruptReason.NONE,
+                        resume_target_agent_id=None,
+                        required_user_fields=required_user_fields,
+                        turn_id=orch_ctx.turn_id,
+                        token_version=orch_ctx.token_version,
+                        handoff_reason=latest_handoff_reason,
+                    )
+                    _persist_pending_state(end_data)
+                    yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
+                    return
                 # skill 输出命中“需要用户补充/确认”时，立即中断并保持当前专家 owner；
                 # 不再回到主持人二次分发，避免出现“skill 未结束却断链”。
                 if inferred_required_fields:
@@ -3141,10 +3450,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         handoff_reason=latest_handoff_reason,
                     )
                     _persist_pending_state(end_data)
-                    if skill_session_completed:
-                        clear_skill_session_lock(meta_item)
-                    else:
-                        persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
+                    _store_skill_session_lock_for_turn(
+                        meta_item,
+                        owner_agent_id=next_speaker,
+                        skill_id=skill_id,
+                        skill_session_over=skill_session_state.over,
+                        force_keep=True,
+                    )
                     _save_group_meta(meta)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
@@ -3182,10 +3494,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         handoff_reason=hook_output.message or latest_handoff_reason,
                     )
                     _persist_pending_state(end_data)
-                    if skill_session_completed:
-                        clear_skill_session_lock(meta_item)
-                    else:
-                        persist_skill_session_lock(meta_item, owner_agent_id=resume_target_agent_id or next_speaker, skill_id=skill_id)
+                    _store_skill_session_lock_for_turn(
+                        meta_item,
+                        owner_agent_id=resume_target_agent_id or next_speaker,
+                        skill_id=skill_id,
+                        skill_session_over=skill_session_state.over,
+                        force_keep=True,
+                    )
                     _save_group_meta(meta)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
@@ -3221,22 +3536,44 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         extra={"soft_stop": True, "soft_stop_reason": soft_stop_reason},
                     )
                     _persist_pending_state(end_data)
-                    if skill_session_completed:
-                        clear_skill_session_lock(meta_item)
-                    else:
-                        persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
+                    _store_skill_session_lock_for_turn(
+                        meta_item,
+                        owner_agent_id=next_speaker,
+                        skill_id=skill_id,
+                        skill_session_over=skill_session_state.over,
+                    )
                     _save_group_meta(meta)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
 
                 last_speaker_agent_id = next_speaker
-                if skill_session_completed:
-                    clear_skill_session_lock(meta_item)
-                else:
-                    persist_skill_session_lock(meta_item, owner_agent_id=next_speaker, skill_id=skill_id)
+                _store_skill_session_lock_for_turn(
+                    meta_item,
+                    owner_agent_id=next_speaker,
+                    skill_id=skill_id,
+                    skill_session_over=skill_session_state.over,
+                )
                 _save_group_meta(meta)
-                if _has_auto_continue_signal(full_content):
-                    continue
+                if _should_handoff_to_host_after_expert(
+                    orchestration_profile=orch_profile,
+                    skill_session_over=skill_session_state.over,
+                    has_auto_continue_signal=_has_auto_continue_signal(full_content),
+                ):
+                    previous_speaker = next_speaker
+                    handoff_next, handoff_events = await _handoff_to_host_scheduler_after_expert()
+                    for chunk in handoff_events:
+                        yield chunk
+                    if handoff_next in agent_ids:
+                        if handoff_next != previous_speaker:
+                            clear_skill_session_lock(meta_item)
+                            _save_group_meta(meta)
+                        next_speaker = handoff_next
+                        continue
+                    if handoff_next == "end":
+                        clear_skill_session_lock(meta_item)
+                        _save_group_meta(meta)
+                    next_speaker = handoff_next or "user"
+                    break
                 orch_ctx.phase = OrchestrationPhase.AWAITING_USER
                 end_data = build_end_payload(
                     waiting_for_user=True,

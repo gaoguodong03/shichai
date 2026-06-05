@@ -309,6 +309,139 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
 
 
 @pytest.mark.asyncio
+async def test_simple_agent_does_not_treat_discussion_ability_terms_as_skill_introspection():
+    final_answer = AIMessage(content="材料包正文")
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([final_answer]),
+        tools=[],
+        system_prompt=(
+            "你是一个有用的 AI 助手。\n\n"
+            "## 你当前绑定的 Skill\n"
+            "- **材料研究**（标识：`skill-material`）\n"
+            "  整理材料"
+        ),
+        tool_runner=lambda *_args, **_kwargs: None,
+        max_steps=2,
+    )
+
+    prompt = (
+        "围绕教师刚细化的题目，整理材料包：聚焦“AI 在学生竞赛中是提高公平效率，"
+        "还是模糊原创与能力边界”。如果两位同学都完成作品，一位大量使用 AI 做检索、"
+        "生成和润色，另一位主要靠自己完成，我们该怎样判断他们的真实能力和竞赛结果的公正性？"
+    )
+    out = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+
+    final_text = str(out["messages"][-1].content)
+    assert final_text == "材料包正文"
+    assert "我当前绑定的 Skill 有" not in final_text
+    assert not any(
+        item.get("source") == "bound_skill_introspection_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_does_not_treat_named_skill_execution_as_introspection():
+    final_answer = AIMessage(content="开始检查开发环境")
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([final_answer]),
+        tools=[],
+        system_prompt=(
+            "你是一个有用的 AI 助手。\n\n"
+            "## 你当前绑定的 Skill\n"
+            "- **check-dev-env**（标识：`check-dev-env`）\n"
+            "  检查本地开发环境。\n"
+            "- **skill-builder**（标识：`skill-builder`）\n"
+            "  创建 Skill。"
+        ),
+        tool_runner=lambda *_args, **_kwargs: None,
+        max_steps=2,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="使用 check-dev-env 检查一下有没有安装好")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert final_text == "开始检查开发环境"
+    assert "我当前绑定的 Skill 有" not in final_text
+    assert not any(
+        item.get("source") == "bound_skill_introspection_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_ignores_history_sections_for_bound_skill_introspection():
+    final_answer = AIMessage(content="开始检查开发环境")
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([final_answer]),
+        tools=[],
+        system_prompt=(
+            "你是一个有用的 AI 助手。\n\n"
+            "## 你当前绑定的 Skill\n"
+            "- **check-dev-env**（标识：`check-dev-env`）\n"
+            "  检查本地开发环境。\n"
+            "- **skill-builder**（标识：`skill-builder`）\n"
+            "  创建 Skill。"
+        ),
+        tool_runner=lambda *_args, **_kwargs: None,
+        max_steps=2,
+    )
+
+    wrapped = (
+        "【群聊讨论目标】\n默认即可\n\n"
+        "【本轮用户输入】\n检查我的开发环境\n\n"
+        "【最近讨论】\n"
+        "【用户】@导入 Skill 测试专家 你都有哪些技能\n"
+        "【agent】我当前绑定的 Skill 有：check-dev-env、skill-builder\n\n"
+        "【关键事实】\n- 用户刚才问过专家有哪些技能\n\n"
+        "请紧扣讨论目标发言，不要偏离主题。"
+    )
+    out = await agent.ainvoke({"messages": [HumanMessage(content=wrapped)]})
+
+    final_text = str(out["messages"][-1].content)
+    assert final_text == "开始检查开发环境"
+    assert "我当前绑定的 Skill 有" not in final_text
+    assert not any(
+        item.get("source") == "bound_skill_introspection_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_uses_current_user_section_for_bound_skill_introspection():
+    agent = SimpleAgent(
+        llm=_FakeLLM([AIMessage(content="不应调用模型")]),
+        tools=[],
+        system_prompt=(
+            "你是一个有用的 AI 助手。\n\n"
+            "## 你当前绑定的 Skill\n"
+            "- **check-dev-env**（标识：`check-dev-env`）\n"
+            "  检查本地开发环境。"
+        ),
+        tool_runner=lambda *_args, **_kwargs: None,
+        max_steps=2,
+    )
+
+    wrapped = (
+        "【群聊讨论目标】\n默认即可\n\n"
+        "【本轮用户输入】\n你都有哪些技能\n\n"
+        "【最近讨论】\n【用户】检查我的开发环境\n"
+    )
+    out = await agent.ainvoke({"messages": [HumanMessage(content=wrapped)]})
+
+    final_text = str(out["messages"][-1].content)
+    assert "我当前绑定的 Skill 有" in final_text
+    assert "check-dev-env" in final_text
+    assert any(
+        item.get("source") == "bound_skill_introspection_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
 async def test_simple_agent_synthesizes_immediately_after_configured_read_file_path():
     read_call = AIMessage(
         content="",
@@ -830,5 +963,70 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
     )
     assert any(
         item.get("source") == "script_dependency_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_skill_script_playwright_browser_missing_direct_final_without_success_hallucination():
+    script_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-crawl",
+                "name": "run_skill_script_shixiseng_dedicated_crawler",
+                "args": {"script_path": "crawl_jobs.py"},
+            }
+        ],
+    )
+    hallucinated_success = AIMessage(content="爬取成功，共写入 55 条岗位。")
+    tool_round = {"n": 0}
+    stderr = (
+        "BrowserType.launch: Executable doesn't exist at /ms-playwright/chromium-1161/chrome-linux/chrome\n"
+        "Looks like Playwright was just installed or updated. Please run the following command to download new browsers:\n"
+        "    playwright install"
+    )
+    raw = json.dumps(
+        {
+            "ok": False,
+            "code": "script_exit_nonzero",
+            "message": "脚本退出码 1",
+            "returncode": 1,
+            "stdout": "",
+            "stderr": stderr,
+        },
+        ensure_ascii=False,
+    )
+
+    async def _tool_runner(state, tools):
+        tool_round["n"] += 1
+        return {
+            "messages": [ToolMessage(content=raw, tool_call_id="tc-crawl")],
+            "tool_calls": [
+                {
+                    "tool": "run_skill_script_shixiseng_dedicated_crawler",
+                    "arguments": {"script_path": "crawl_jobs.py"},
+                }
+            ],
+            "tool_raw_outputs": [raw],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([script_call, hallucinated_success]),
+        tools=[],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="爬岗位")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert tool_round["n"] == 1
+    assert "Playwright 运行环境不可用" in final_text
+    assert "本轮爬取没有成功" in final_text
+    assert "爬取成功，共写入 55 条岗位" not in final_text
+    assert any(
+        item.get("source") == "playwright_runtime_failure_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )

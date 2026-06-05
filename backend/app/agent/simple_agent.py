@@ -172,13 +172,67 @@ def _last_user_text(messages: list[BaseMessage]) -> str:
     return ""
 
 
+_WRAPPED_USER_CONTEXT_MARKERS = (
+    "【最近讨论】",
+    "【历史对话（供参考）】",
+    "【最近几轮讨论内容",
+    "【关键事实】",
+    "memory/facts.md",
+    "facts.md",
+)
+
+
+def _section_text(text: str, heading: str) -> str:
+    raw = text or ""
+    start = raw.find(heading)
+    if start < 0:
+        return ""
+    body = raw[start + len(heading) :]
+    body = body.lstrip("\n\r\t ")
+    next_heading = re.search(r"\n【[^】]+】", body)
+    if next_heading:
+        body = body[: next_heading.start()]
+    return body.strip()
+
+
+def _user_text_for_bound_skill_introspection(messages: list[BaseMessage]) -> str:
+    """Use only the current user request for self-awareness routing, never reference/history blocks."""
+    text = _last_user_text(messages)
+    if not text:
+        return ""
+    current = _section_text(text, "【本轮用户输入】")
+    if current:
+        return "" if current in {"（无）", "(无)"} else current
+    if any(marker in text for marker in _WRAPPED_USER_CONTEXT_MARKERS):
+        return ""
+    return text
+
+
 def _is_bound_skill_introspection_request(text: str) -> bool:
-    s = (text or "").strip().lower().replace(" ", "")
+    raw = (text or "").strip().lower()
+    s = raw.replace(" ", "")
     if not s:
         return False
-    asks_scope = any(k in s for k in ("哪些", "有什么", "有啥", "几个", "一共", "列出", "介绍"))
-    asks_skill = any(k in s for k in ("skill", "技能", "能力", "工具包", "tool"))
-    return asks_scope and asks_skill
+    explicit_skill_terms = ("skill", "技能", "工具包", "tool")
+    explicit_scope_terms = ("哪些", "有什么", "有啥", "几个", "一共", "列出", "介绍")
+    owner_terms = ("你", "当前", "绑定", "拥有", "会什么", "能做什么")
+    if (
+        any(term in s for term in explicit_skill_terms)
+        and any(term in s for term in explicit_scope_terms)
+        and any(term in s for term in owner_terms)
+    ):
+        return True
+    if re.search(r"(你|当前).{0,12}(绑定|拥有).{0,12}(skill|技能|工具包|tool)", s):
+        return True
+    if re.search(r"你.{0,8}(有哪些|有什么|有啥).{0,4}能力", s):
+        return True
+    if re.search(r"你.{0,8}(会什么|能做什么)", s):
+        return True
+    if re.search(r"(what|which|list).{0,30}(your|you).{0,30}(skills?|tools?)", raw):
+        return True
+    if re.search(r"(what|which).{0,30}(skills?|tools?).{0,30}(do you have|can you use)", raw):
+        return True
+    return False
 
 
 def _bound_skill_introspection_message(system_prompt: str, user_text: str) -> AIMessage | None:
@@ -687,6 +741,43 @@ def _script_dependency_direct_final_message(tool_out: dict[str, Any]) -> AIMessa
     return AIMessage(content=message)
 
 
+def _playwright_runtime_failure_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return None
+    combined = "\n".join(str(raw or "") for raw in raw_outputs)
+    if not combined.strip():
+        return None
+
+    lower = combined.lower()
+    missing_package = bool(
+        re.search(r"no module named ['\"](?:playwright|patchright)['\"]", combined, re.I)
+        or re.search(r"cannot find module ['\"](?:playwright|@playwright/test|patchright)['\"]", combined, re.I)
+        or re.search(r"modulenotfounderror:.*(?:playwright|patchright)", combined, re.I | re.S)
+    )
+    missing_browser = bool(
+        (
+            "executable doesn't exist" in lower
+            and ("playwright" in lower or "chromium" in lower or "ms-playwright" in lower)
+        )
+        or "looks like playwright was just installed or updated" in lower
+        or ("playwright install" in lower and ("chromium" in lower or "browser" in lower))
+    )
+    if not missing_package and not missing_browser:
+        return None
+
+    reason = "未安装 playwright/patchright 依赖" if missing_package else "缺少 Playwright 浏览器可执行文件/Chromium 缓存"
+    detail = _compact_multiline_text(combined, limit=1200)
+    content = (
+        f"Playwright 运行环境不可用：{reason}，本轮爬取没有成功。\n\n"
+        "请先在沙箱设置中切换到 Playwright 版并重建/预热沙箱；如果使用用户 requirements，"
+        "确认其中包含 playwright 或 patchright。若错误是缺少 Chromium 浏览器缓存，请使用内置 Playwright 沙箱镜像，"
+        "或启用浏览器安装后重建沙箱。\n\n"
+        f"错误摘要：\n{detail}"
+    )
+    return AIMessage(content=content)
+
+
 def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[str, Any]) -> bool:
     if not _env_truthy("SKILL_AGENT_FORCE_FINAL_ON_SUCCESS", "1"):
         return False
@@ -968,7 +1059,10 @@ class SimpleAgent:
         if not messages or not isinstance(messages[0], SystemMessage):
             messages = [SystemMessage(content=self.system_prompt)] + messages
 
-        introspection_message = _bound_skill_introspection_message(self.system_prompt, _last_user_text(messages))
+        introspection_message = _bound_skill_introspection_message(
+            self.system_prompt,
+            _user_text_for_bound_skill_introspection(messages),
+        )
         if introspection_message is not None:
             tool_attempt_debug = [
                 {
@@ -1123,6 +1217,18 @@ class SimpleAgent:
                         }
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": dependency_final_message}
+                    break
+                playwright_failure_message = _playwright_runtime_failure_message(tool_out)
+                if playwright_failure_message is not None:
+                    messages.append(playwright_failure_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "playwright_runtime_failure_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(playwright_failure_message)[:240],
+                        }
+                    )
+                    yield {"type": "agent_step", "step": step + 2, "message": playwright_failure_message}
                     break
                 tool_error_message = _tool_error_direct_final_message(tool_out)
                 if tool_error_message is not None:
@@ -1292,7 +1398,10 @@ class SimpleAgent:
         if not messages or not isinstance(messages[0], SystemMessage):
             messages = [SystemMessage(content=self.system_prompt)] + messages
 
-        introspection_message = _bound_skill_introspection_message(self.system_prompt, _last_user_text(messages))
+        introspection_message = _bound_skill_introspection_message(
+            self.system_prompt,
+            _user_text_for_bound_skill_introspection(messages),
+        )
         if introspection_message is not None:
             return {
                 "messages": [
@@ -1436,6 +1545,17 @@ class SimpleAgent:
                             "source": "script_dependency_direct_final",
                             "matched": True,
                             "content_preview": _extract_text_content(dependency_final_message)[:240],
+                        }
+                    )
+                    break
+                playwright_failure_message = _playwright_runtime_failure_message(tool_out)
+                if playwright_failure_message is not None:
+                    messages.append(playwright_failure_message)
+                    tool_attempt_debug.append(
+                        {
+                            "source": "playwright_runtime_failure_direct_final",
+                            "matched": True,
+                            "content_preview": _extract_text_content(playwright_failure_message)[:240],
                         }
                     )
                     break

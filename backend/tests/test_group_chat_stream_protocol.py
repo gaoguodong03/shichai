@@ -152,6 +152,135 @@ def test_clears_completed_audio_skill_lock_from_history():
     assert "skill_session_skill_id" not in meta_item
 
 
+def test_clears_implicit_skill_lock_from_history():
+    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_id": "agent-teacher",
+        "skill_session_skill_id": "seminar-teacher",
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "agent_id": "agent-teacher",
+            "skill_id": "seminar-teacher",
+            "content": "大家先围绕这个问题说说自己的判断。",
+            "tool_debug": {
+                "skill_session_state": {
+                    "over": None,
+                    "source": "none",
+                },
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
+    assert "skill_session_owner_id" not in meta_item
+    assert "skill_session_skill_id" not in meta_item
+
+
+def test_keeps_explicit_continue_skill_lock_from_history():
+    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_id": "agent-teacher",
+        "skill_session_skill_id": "seminar-teacher",
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "agent_id": "agent-teacher",
+            "skill_id": "seminar-teacher",
+            "content": "请先补充一个例子。",
+            "tool_debug": {
+                "skill_session_state": {
+                    "over": False,
+                    "source": "assistant_state_block",
+                },
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is False
+    assert meta_item["skill_session_owner_id"] == "agent-teacher"
+    assert meta_item["skill_session_skill_id"] == "seminar-teacher"
+
+
+def test_clears_bound_skill_introspection_lock_from_history():
+    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_id": "agent-skill",
+        "skill_session_skill_id": "skill-builder",
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "agent_id": "agent-skill",
+            "skill_id": "skill-builder",
+            "content": "我当前绑定的 Skill 有：\n\n- **check-dev-env**（标识：`check-dev-env`）",
+            "tool_debug": {
+                "tool_attempt_debug": [
+                    {
+                        "source": "bound_skill_introspection_direct_final",
+                        "matched": True,
+                    }
+                ],
+                "skill_session_state": {
+                    "over": None,
+                    "source": "none",
+                },
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
+    assert "skill_session_owner_id" not in meta_item
+    assert "skill_session_skill_id" not in meta_item
+
+
+def test_store_skill_session_lock_only_for_explicit_continue_or_forced_wait():
+    from app.api.group_chat import _store_skill_session_lock_for_turn
+
+    meta_item = {"skill_session_owner_id": "agent-old", "skill_session_skill_id": "old"}
+    _store_skill_session_lock_for_turn(
+        meta_item,
+        owner_agent_id="agent-teacher",
+        skill_id="seminar-teacher",
+        skill_session_over=None,
+    )
+    assert "skill_session_owner_id" not in meta_item
+    assert "skill_session_skill_id" not in meta_item
+
+    _store_skill_session_lock_for_turn(
+        meta_item,
+        owner_agent_id="agent-teacher",
+        skill_id="seminar-teacher",
+        skill_session_over=False,
+    )
+    assert meta_item["skill_session_owner_id"] == "agent-teacher"
+    assert meta_item["skill_session_skill_id"] == "seminar-teacher"
+
+    _store_skill_session_lock_for_turn(
+        meta_item,
+        owner_agent_id="agent-teacher",
+        skill_id="seminar-teacher",
+        skill_session_over=True,
+    )
+    assert "skill_session_owner_id" not in meta_item
+    assert "skill_session_skill_id" not in meta_item
+
+    _store_skill_session_lock_for_turn(
+        meta_item,
+        owner_agent_id="agent-teacher",
+        skill_id="seminar-teacher",
+        skill_session_over=None,
+        force_keep=True,
+    )
+    assert meta_item["skill_session_owner_id"] == "agent-teacher"
+    assert meta_item["skill_session_skill_id"] == "seminar-teacher"
+
+
 @pytest.mark.asyncio
 async def test_astream_emits_unified_protocol_events():
     first = AIMessage(
