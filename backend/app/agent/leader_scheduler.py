@@ -80,6 +80,8 @@ def _build_leader_prompt(
 ## 本轮约束（与上文契约一致）
 - next_speaker：在场 agent_id | \"user\" | \"end\"。
 - 点专家时须给出可执行的 next_prompt。
+- 先判断讨论目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，next_speaker 应为 \"user\" 或 \"end\"，不要再安排专家做“总结答复”或复述同一结果。
+- 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 next_speaker 设为某个专家。
 {recruit_rule}{scene_extra}
 {recruit_output}
 **本路径要求：仅输出一段 JSON**（可含 task_done、next_speaker、reason、announcement、next_prompt、suggested_add_agent_ids）。"""

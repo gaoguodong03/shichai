@@ -396,6 +396,8 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         parts.append(
             "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
             "`agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。\n\n"
+            "- 如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或【文件引用】，"
+            "上一位专家的可见发言在最近讨论中；不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`。\n\n"
             "若工具返回「文件不存在」，你可以根据工具返回的候选路径列表请用户确认，但**不要凭空猜测文件内容**。\n\n"
         )
     if "call_api" in names:
@@ -511,10 +513,7 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 )
 
 _WORKSPACE_TASK_FILE_RULE = (
-    "- 需要创建任务文件时，必须先调用 `write_workspace_file` 创建或覆盖该文件；"
-    "path 固定使用 `speaker_task.txt` 或 `memory/speaker_task.txt`。"
-    "确认写入成功后，才允许再调用 `read_file` 读取；"
-    "不要在未写入成功前猜测或读取 `speaker_task.txt`。\n"
+    "- 调度任务由平台通过本轮提示词传入，不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
 )
 
 
@@ -615,7 +614,7 @@ def create_react_agent(
 **强制规则（优先级很高）：**
 - 当用户消息中出现“读取/打开/查看/查/展示 + 某个路径或文件名”（例如 `读取 note/test.md`、`查看 output/pages/xxx/text.md`），你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；path 必须用**用户本条消息里的路径**，不要沿用会话中较早提到的旧路径。
 - 当用户让你“保存/写入/覆盖某个文件”时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说“请手动保存”。
-- 需要创建任务文件时，必须先调用 `write_workspace_file` 创建或覆盖该文件；path 固定使用 `speaker_task.txt` 或 `memory/speaker_task.txt`。确认写入成功后，才允许再调用 `read_file` 读取；不要在未写入成功前猜测或读取 `speaker_task.txt`。
+    - 调度任务由平台通过本轮提示词传入，不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。
 - 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
 - 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
 

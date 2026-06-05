@@ -340,14 +340,18 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 - 状态块必须放在全部正文之后，不能混入正文解释。
 - 状态块只给系统使用，展示给用户时会被剥离。
 
-状态优先级：
+状态决策规则：
 
-1. 专家最终回复中的 `[[SKILL_SESSION_STATE]]` 状态块；
-2. 专家最终回复中的旧标记 `[[SKILL_SESSION_END]]` / `【技能会话结束】`；
-3. 脚本 stdout JSON 中的 `skill_session_over` / `over`；
-4. 都没有时默认保留当前 Skill 会话锁。
+| 信号 | 平台动作 |
+| --- | --- |
+| 专家状态块 `over=false` | 保留当前 Skill 会话锁 |
+| 脚本 stdout `skill_session_over=false` / `over=false` | 保留当前 Skill 会话锁 |
+| 专家状态块 `over=true`，且没有任何明确 `false` | 释放 Skill 会话锁 |
+| 脚本 stdout `skill_session_over=true` / `over=true`，且专家状态块未给出明确状态 | 释放 Skill 会话锁 |
+| 旧标记 `[[SKILL_SESSION_END]]` / `【技能会话结束】`，且没有任何明确结构化信号 | 兼容释放 Skill 会话锁 |
+| 都没有 | 默认保留当前 Skill 会话锁 |
 
-兼容规则：如果未输出状态块，系统会按上面优先级回退识别旧标记或脚本字段，但新 Skill 必须使用状态块；脚本型 Skill 应同时输出 `skill_session_over` 作为确定性兜底。
+兼容规则：新 Skill 必须使用状态块；脚本型 Skill 应同时输出 `skill_session_over`。平台按“继续优先”处理冲突，只要专家状态块或脚本 stdout 任一明确要求继续，就不会释放会话锁。
 
 ### 7.2 `over=true` 的判定
 

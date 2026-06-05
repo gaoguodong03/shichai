@@ -33,6 +33,21 @@ def test_host_decision_from_scheduler_state_maps_user():
     assert out["decision_source"] == "host_scheduler_state"
 
 
+def test_host_decision_from_scheduler_state_maps_end():
+    out = hd.host_decision_from_scheduler_state(
+        {
+            "current_phase": "阶段8：结束研讨",
+            "next_speaker": "结束研讨",
+            "speaker_task": "教师总结已完成，本次研讨结束。",
+        },
+        [],
+    )
+
+    assert out["next_speaker"] == "end"
+    assert out["announcement"] == "教师总结已完成，本次研讨结束。"
+    assert out["decision_source"] == "host_scheduler_state"
+
+
 def test_host_decision_from_scheduler_state_maps_name_with_agent_id():
     out = hd.host_decision_from_scheduler_state(
         {

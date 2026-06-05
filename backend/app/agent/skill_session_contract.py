@@ -13,14 +13,17 @@ SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
 GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
 
 ## Skill 会话状态
-本轮回复末尾追加：
-[[SKILL_SESSION_STATE]]
-{"over": true}
-[[/SKILL_SESSION_STATE]]
-`over=true` 表示任务已完成并交回主持人；仍需用户补充或继续处理时用 `false`。
+场景协作中，专家本轮发言完成后默认交回主持人调度；不要为了交回主持人而输出 `over=true`。
 
-脚本型 Skill 若能确定当前 Skill 会话是否结束，可在 stdout JSON 中输出
-`skill_session_over: true|false`；专家最终回复中的状态块优先级更高。
+只有当本轮明确还需要同一专家等待用户补充或继续处理时，才在回复末尾追加：
+[[SKILL_SESSION_STATE]]
+{"over": false}
+[[/SKILL_SESSION_STATE]]
+
+脚本型 Skill 若确实需要继续等待同一专家处理，可在 stdout JSON 中输出
+`skill_session_over: false`。平台遇到专家状态块或脚本 stdout 任一明确
+`false` 时，会保留 Skill 会话锁。旧版 `over=true` / `skill_session_over=true`
+仍兼容为“已结束”，但新 Skill 不需要输出它。
 """
 
 SCRIPT_SKILL_SESSION_OVER_KEYS = ("skill_session_over", "over")
@@ -33,6 +36,17 @@ class SkillSessionStateResolution:
     over: Optional[bool]
     display_content: str
     source: str
+    signals: Optional["SkillSessionSignals"] = None
+
+
+@dataclass(frozen=True)
+class SkillSessionSignals:
+    """Explicit finish-state signals collected from one expert turn."""
+
+    assistant_state_block: Optional[bool]
+    script_stdout: Optional[bool]
+    legacy_end_marker: bool
+    audio_transcription_success: bool
 
 
 def _json_loads_maybe(value: Any) -> Any:
@@ -157,28 +171,46 @@ def audio_transcription_success_from_tool_outputs(
     return False
 
 
+def _choose_skill_session_state(signals: SkillSessionSignals) -> tuple[Optional[bool], str]:
+    """Apply the product rule: continuing the Skill session beats ending it."""
+    if signals.assistant_state_block is False:
+        return False, "assistant_state_block"
+    if signals.script_stdout is False:
+        return False, "script_stdout"
+    if signals.assistant_state_block is True:
+        return True, "assistant_state_block"
+    if signals.script_stdout is True:
+        return True, "script_stdout"
+    if signals.legacy_end_marker:
+        return True, "legacy_end_marker"
+    if signals.audio_transcription_success:
+        return True, "audio_transcription_success"
+    return None, "none"
+
+
 def resolve_skill_session_state(
     raw_content: str,
     tool_raw_outputs: Iterable[str] | None = None,
     tool_names: Iterable[str] | None = None,
 ) -> SkillSessionStateResolution:
-    """Resolve the Skill-session finish state with one explicit precedence order.
+    """Resolve the Skill-session finish state conservatively.
 
     Precedence:
-    1. Expert final-answer state block.
-    2. Legacy expert final-answer end markers.
-    3. Script stdout JSON field `skill_session_over` / `over`.
-    4. No explicit state.
+    1. Any explicit false from expert state block or script stdout keeps the lock.
+    2. Expert final-answer state block true.
+    3. Script stdout JSON field `skill_session_over` / `over` true.
+    4. Legacy expert final-answer end markers.
+    5. No explicit state: ordinary one-turn expert speech; do not create a
+       cross-request lock.
     """
     over_from_content, content_without_state = strip_skill_session_state_blocks_and_get_over(raw_content)
     display_content = strip_skill_session_end_markers_for_display(content_without_state)
-    if over_from_content is not None:
-        return SkillSessionStateResolution(over_from_content, display_content, "assistant_state_block")
-    if skill_session_ended_by_expert_output(content_without_state):
-        return SkillSessionStateResolution(True, display_content, "legacy_end_marker")
     over_from_script = skill_session_over_from_tool_outputs(tool_raw_outputs, tool_names)
-    if over_from_script is not None:
-        return SkillSessionStateResolution(over_from_script, display_content, "script_stdout")
-    if audio_transcription_success_from_tool_outputs(tool_raw_outputs, tool_names):
-        return SkillSessionStateResolution(True, display_content, "audio_transcription_success")
-    return SkillSessionStateResolution(None, display_content, "none")
+    signals = SkillSessionSignals(
+        assistant_state_block=over_from_content,
+        script_stdout=over_from_script,
+        legacy_end_marker=skill_session_ended_by_expert_output(content_without_state),
+        audio_transcription_success=audio_transcription_success_from_tool_outputs(tool_raw_outputs, tool_names),
+    )
+    over, source = _choose_skill_session_state(signals)
+    return SkillSessionStateResolution(over, display_content, source, signals)

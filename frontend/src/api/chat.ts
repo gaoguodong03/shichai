@@ -6,7 +6,6 @@ export interface ChatStreamRequestPayload {
   session_id: string
   client_message_id?: string
   skill_ids?: string[]
-  override_next_speaker?: string
   action?: string
   custom_prompt?: string
   host_takeover_requested?: boolean
@@ -87,7 +86,6 @@ export async function chatStreamRequest(payload: ChatStreamRequestPayload): Prom
       message: payload.message ?? '',
       client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
-      override_next_speaker: payload.override_next_speaker,
       action: payload.action,
       custom_prompt: payload.custom_prompt,
       host_takeover_requested: payload.host_takeover_requested,
@@ -108,7 +106,6 @@ export async function streamSessionChat(
     message: payload.message ?? '',
     client_message_id: payload.client_message_id,
     skill_ids: payload.skill_ids,
-    override_next_speaker: payload.override_next_speaker,
     action: payload.action,
     custom_prompt: payload.custom_prompt,
     host_takeover_requested: payload.host_takeover_requested,
@@ -168,7 +165,6 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
       message: payload.message ?? '',
       client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
-      override_next_speaker: payload.override_next_speaker,
       action: payload.action,
       custom_prompt: payload.custom_prompt,
       host_takeover_requested: payload.host_takeover_requested,

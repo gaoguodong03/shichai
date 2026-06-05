@@ -97,6 +97,9 @@ backend/logs/
 /audit.json
 .worktrees/
 /outputs/
+/.claude/
+/.codex/
+/data/
 
 # Generated presentation artifacts; keep final decks local unless explicitly requested.
 /docs/presentations/
@@ -106,6 +109,7 @@ backend/logs/
 # -----------------------------------------------------------------------------
 /.st49-mount-ready
 **/.st49-mount-ready
+backend/data/
 backend/.tmp-test-user-data/
 backend/data/agent-outputs/
 backend/data/users/

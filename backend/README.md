@@ -67,8 +67,9 @@ backend/
 - 推荐格式：在完整回复正文之后另起一段输出 `[[SKILL_SESSION_STATE]]`、`{"over": true}` 或 `{"over": false}`、`[[/SKILL_SESSION_STATE]]`；状态块会被后端解析并从展示正文中移除。
 - 字段含义：`over: true` 表示当前 skill 流程已完成，应清除会话锁并交回主持人（四九）重新调度；`over: false` 表示继续保持当前专家/skill 锁，下一轮用户消息仍优先进入同一 skill 会话。
 - 兼容字段：解析器也接受 `skill_session_over` 作为 `over` 的别名，且接受 `true/false` 字符串或 `0/1` 数值。
-- 旧版标记：如果没有状态块，后端回退识别正文中的 `[[SKILL_SESSION_END]]` 或 `【技能会话结束】`，命中后同样清除 skill 会话锁；这些标记也会从展示正文中移除。
-- 脚本辅助字段：脚本型 Skill 可在 stdout JSON 中输出 `skill_session_over: true|false`（兼容 `over`）让后端确定性处理会话锁；专家最终回复中的状态块和旧版正文标记优先级更高。
+- 脚本辅助字段：脚本型 Skill 可在 stdout JSON 中输出 `skill_session_over: true|false`（兼容 `over`）让后端确定性处理会话锁。
+- 冲突规则：平台按“继续优先”决策；专家状态块或脚本 stdout 任一明确为 `false` 时保留锁，没有明确 `false` 时再按专家状态块 `true`、脚本 `true`、旧标记的顺序释放锁。
+- 旧版标记：正文中的 `[[SKILL_SESSION_END]]` 或 `【技能会话结束】` 仅作为兼容释放 skill 会话锁；这些标记也会从展示正文中移除。
 - 注意：脚本 stdout 中的 `done` / `final` 只表示“本轮工具循环可以收束并生成最终答复”，不会直接释放群聊 Skill 会话锁。
 - 用户侧退出：用户消息命中「你的任务完成了」「任务结束」「不用继续了」「到此为止」「交/还给主持人」「请主持人」「换/叫/请其他专家」「下一个专家」「退出/结束 skill/技能」等表达时，会清除当前 skill 会话锁，本轮重新进入主持人调度。
 

@@ -643,12 +643,17 @@ def _large_run_skill_script_success_direct_final_message(tool_out: dict[str, Any
     return AIMessage(content="\n\n".join(part for part in parts if part).strip())
 
 
-_RECOVERABLE_COORDINATION_READ_PATHS = {
-    "speaker_task.txt",
-    "memory/speaker_task.txt",
-    "current_phase.txt",
-    "next_speaker.txt",
-}
+_RECOVERABLE_COORDINATION_READ_PATHS: frozenset[str] = frozenset()
+
+
+def _last_group_current_user_section(messages: list[BaseMessage]) -> str:
+    text = _last_user_text(messages)
+    if not text or not any(marker in text for marker in _WRAPPED_USER_CONTEXT_MARKERS):
+        return ""
+    current = _section_text(text, "【本轮用户输入】")
+    if current and current not in {"（无）", "(无)"}:
+        return current
+    return ""
 
 
 def _tool_call_display_name(tool_call: Any) -> str:
@@ -676,7 +681,12 @@ def _tool_call_error_label(tool_out: dict[str, Any], idx: int) -> str:
     return f"{name}: {path}" if path else name
 
 
-def _is_recoverable_coordination_tool_error(tool_out: dict[str, Any], idx: int, text: str) -> bool:
+def _is_recoverable_coordination_tool_error(
+    tool_out: dict[str, Any],
+    idx: int,
+    text: str,
+    messages: list[BaseMessage] | None = None,
+) -> bool:
     if "文件不存在" not in text:
         return False
     calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
@@ -686,7 +696,17 @@ def _is_recoverable_coordination_tool_error(tool_out: dict[str, Any], idx: int, 
     if _tool_call_display_name(call) not in {"read_file", "file-reader_read_file"}:
         return False
     path = _normalize_workspace_path_for_compare(_tool_call_display_path(call))
-    return path in _RECOVERABLE_COORDINATION_READ_PATHS
+    if path in _RECOVERABLE_COORDINATION_READ_PATHS:
+        return True
+    if not path or messages is None:
+        return False
+    last_user = _last_user_text(messages)
+    if not last_user or not any(marker in last_user for marker in _WRAPPED_USER_CONTEXT_MARKERS):
+        return False
+    current_user = _last_group_current_user_section(messages)
+    if path in current_user or path.split("/")[-1] in current_user:
+        return False
+    return True
 
 
 def _error_text_from_raw_tool_output(raw: Any) -> str | None:
@@ -714,7 +734,11 @@ def _error_text_from_raw_tool_output(raw: Any) -> str | None:
     return None
 
 
-def _tool_error_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+def _tool_error_direct_final_message(
+    tool_out: dict[str, Any],
+    messages: list[BaseMessage] | None = None,
+    tool_attempt_debug: list[dict[str, Any]] | None = None,
+) -> AIMessage | None:
     raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
     if not isinstance(raw_outputs, list):
         return None
@@ -725,7 +749,15 @@ def _tool_error_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | No
         error_text = _error_text_from_raw_tool_output(raw)
         if not error_text:
             continue
-        if _is_recoverable_coordination_tool_error(tool_out, idx, error_text):
+        if _is_recoverable_coordination_tool_error(tool_out, idx, error_text, messages):
+            if tool_attempt_debug is not None:
+                tool_attempt_debug.append(
+                    {
+                        "source": "recoverable_context_read_file_missing",
+                        "matched": True,
+                        "label": label,
+                    }
+                )
             continue
         return AIMessage(content=f"当前步骤失败：{label}\n\n{_compact_multiline_text(error_text, limit=2400)}")
     return None
@@ -852,6 +884,7 @@ def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
     parts = [
         "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
         "不要再次调用任何工具；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
+        "如果 read_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，不要把内部读文件失败作为最终答复，直接基于已有上下文完成发言。",
     ]
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     if summary:
@@ -1230,7 +1263,7 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": playwright_failure_message}
                     break
-                tool_error_message = _tool_error_direct_final_message(tool_out)
+                tool_error_message = _tool_error_direct_final_message(tool_out, messages, tool_attempt_debug)
                 if tool_error_message is not None:
                     messages.append(tool_error_message)
                     tool_attempt_debug.append(
@@ -1559,7 +1592,7 @@ class SimpleAgent:
                         }
                     )
                     break
-                tool_error_message = _tool_error_direct_final_message(tool_out)
+                tool_error_message = _tool_error_direct_final_message(tool_out, messages, tool_attempt_debug)
                 if tool_error_message is not None:
                     messages.append(tool_error_message)
                     tool_attempt_debug.append(

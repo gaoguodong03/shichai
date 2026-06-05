@@ -201,17 +201,13 @@ async def test_simple_agent_stops_after_terminal_sandbox_environment_failure():
 
 @pytest.mark.asyncio
 async def test_simple_agent_can_stop_after_configured_write_tool_without_final_llm():
-    read_call = AIMessage(
-        content="",
-        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
-    )
     write_call = AIMessage(
         content="",
         tool_calls=[
             {
                 "id": "tc-write",
                 "name": "write_workspace_file",
-                "args": {"path": "speaker_task.txt", "content": "任务"},
+                "args": {"path": "notes/task.txt", "content": "任务"},
             }
         ],
     )
@@ -220,25 +216,19 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
 
     async def _tool_runner(state, tools):
         tool_round["n"] += 1
-        if tool_round["n"] == 1:
-            return {
-                "messages": [HumanMessage(content="missing")],
-                "tool_calls": [{"tool": "read_file", "arguments": {"path": "speaker_task.txt"}}],
-                "tool_raw_outputs": ["错误：文件不存在：speaker_task.txt"],
-            }
         return {
             "messages": [HumanMessage(content="written")],
             "tool_calls": [
                 {
                     "tool": "write_workspace_file",
-                    "arguments": {"path": "speaker_task.txt", "content": "任务"},
+                    "arguments": {"path": "notes/task.txt", "content": "任务"},
                 }
             ],
-            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：speaker_task.txt"],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：notes/task.txt"],
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([read_call, write_call, should_not_call]),
+        llm=_FakeLLM([write_call, should_not_call]),
         tools=[],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -249,7 +239,7 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="go")]})
 
-    assert tool_round["n"] == 2
+    assert tool_round["n"] == 1
     assert all("不应该" not in str(getattr(msg, "content", "")) for msg in out["messages"])
     assert any(
         item.get("source") == "stop_after_tool_result"
@@ -892,6 +882,66 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
     assert "tc-list" not in str(getattr(out["messages"][-1], "tool_calls", ""))
     assert any(
         item.get("source") == "tool_error_direct_final"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_recovers_from_invented_group_read_file_missing_path():
+    read_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-read",
+                "name": "read_file",
+                "args": {"path": "材料包_AI在学生竞赛中的应用.md"},
+            }
+        ],
+    )
+    final_answer = AIMessage(content="我会直接基于最近讨论中的材料包继续发言。")
+    tool_round = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        tool_round["n"] += 1
+        return {
+            "messages": [
+                ToolMessage(
+                    content="错误：文件不存在：材料包_AI在学生竞赛中的应用.md",
+                    tool_call_id="tc-read",
+                )
+            ],
+            "tool_calls": [
+                {
+                    "tool": "read_file",
+                    "arguments": {"path": "材料包_AI在学生竞赛中的应用.md"},
+                }
+            ],
+            "tool_raw_outputs": ["错误：文件不存在：材料包_AI在学生竞赛中的应用.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([read_call, final_answer]),
+        tools=[ToolSpec(name="read_file", description="读文件")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    user_content = (
+        "【群聊讨论目标】\n伴学研讨\n\n"
+        "【本轮用户输入】\n（无）\n\n"
+        "【最近讨论】\n"
+        "材料包已整理：AI 在学生竞赛中的应用可以从公平、原创性和能力评估展开。\n"
+        "下面由引导教学的教师发言。"
+    )
+    out = await agent.ainvoke({"messages": [HumanMessage(content=user_content)]})
+
+    final_text = str(out["messages"][-1].content)
+    assert tool_round["n"] == 1
+    assert final_text == "我会直接基于最近讨论中的材料包继续发言。"
+    assert "当前步骤失败" not in final_text
+    assert any(
+        item.get("source") == "recoverable_context_read_file_missing"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

@@ -136,6 +136,7 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
 async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path):
     gc = _get_group_chat_module()
     calls = {}
+    meta_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
@@ -188,6 +189,7 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         group_session_id="group-1",
         app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
         orchestration_profile="scene",
+        meta_item=meta_item,
     )
 
     assert out is not None
@@ -196,11 +198,15 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
     assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
+    assert "先判断讨论目标是否已经完成" in calls["agent_factory"]["skill_content"]
+    assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
+    assert meta_item["scheduler_state"]["next_speaker"] == "agent-a"
 
 
-async def test_host_decide_persists_scheduler_files_from_model_text_without_tool_round(monkeypatch, tmp_path):
+async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypatch, tmp_path):
     gc = _get_group_chat_module()
     calls = {}
+    meta_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
@@ -253,6 +259,7 @@ async def test_host_decide_persists_scheduler_files_from_model_text_without_tool
         group_session_id="group-fast",
         app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
         orchestration_profile="scene",
+        meta_item=meta_item,
     )
 
     assert out is not None
@@ -261,9 +268,14 @@ async def test_host_decide_persists_scheduler_files_from_model_text_without_tool
     assert out["decision_source"] == "host_scheduler_state"
     assert calls["agent_factory"]["tools"] == []
     assert "不要调用 read_file/write_workspace_file" in calls["agent_factory"]["skill_content"]
-    assert (tmp_path / "current_phase.txt").read_text(encoding="utf-8") == "阶段1：选题\n"
-    assert (tmp_path / "next_speaker.txt").read_text(encoding="utf-8") == "教师\n"
-    assert (tmp_path / "speaker_task.txt").read_text(encoding="utf-8") == "请提出本轮研讨主题。\n"
+    assert not (tmp_path / "current_phase.txt").exists()
+    assert not (tmp_path / "next_speaker.txt").exists()
+    assert not (tmp_path / "speaker_task.txt").exists()
+    assert meta_item["scheduler_state"] == {
+        "current_phase": "阶段1：选题",
+        "next_speaker": "教师",
+        "speaker_task": "请提出本轮研讨主题。",
+    }
 
 
 def test_leader_prompt_hides_skill_details_from_host():
@@ -278,3 +290,5 @@ def test_leader_prompt_hides_skill_details_from_host():
     )
     assert "skills=" not in prompt
     assert "skill-x" not in prompt
+    assert "先判断讨论目标是否已经完成" in prompt
+    assert "不要再安排专家做“总结答复”" in prompt

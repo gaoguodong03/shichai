@@ -71,7 +71,6 @@ from app.agent.group_host_decision import (
     heuristic_recommend_dhas as _heuristic_recommend_dhas,
     host_decision_from_scheduler_state as _host_decision_from_scheduler_state,
     host_text_field as _host_text_field,
-    match_workspace_speaker_to_agent_id as _match_workspace_speaker_to_agent_id,
     parse_host_response as _parse_host_response,
     user_requests_host_takeover as _user_requests_host_takeover,
 )
@@ -898,17 +897,8 @@ def _persist_expert_turn_task_files(
     task_text: str,
     dha_map: Dict[str, Dict[str, Any]],
 ) -> None:
-    """Materialize scheduler dispatch into workspace files that Skills read."""
-    root = get_workspace_root_path(session_id)
-    root.mkdir(parents=True, exist_ok=True)
-    speaker = str(next_speaker or "").strip()
-    dha = dha_map.get(speaker) if isinstance(dha_map, dict) else None
-    label = str((dha or {}).get("name") or speaker or "unknown").strip()
-    if label:
-        (root / "next_speaker.txt").write_text(label + "\n", encoding="utf-8")
-    task = str(task_text or "").strip()
-    if task:
-        (root / "speaker_task.txt").write_text(task + "\n", encoding="utf-8")
+    """Deprecated compatibility shim: dispatch state is no longer written to workspace files."""
+    _ = session_id, next_speaker, task_text, dha_map
 
 
 def _evaluate_soft_stop(
@@ -1152,97 +1142,12 @@ def _resolve_dha_skill_id_and_content(
     return (skill_ids[0] if skill_ids else "default"), c, debug_info
 
 
-def _host_decision_from_workspace_files(session_id: str, dha_list: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    root = get_workspace_root_path(session_id)
-    next_speaker_file = root / "next_speaker.txt"
-    speaker_task_file = root / "speaker_task.txt"
-    if not next_speaker_file.exists() or not speaker_task_file.exists():
-        return None
-    try:
-        raw_speaker = next_speaker_file.read_text(encoding="utf-8").strip()
-        task = speaker_task_file.read_text(encoding="utf-8").strip()
-        phase_file = root / "current_phase.txt"
-        phase_text = phase_file.read_text(encoding="utf-8").strip() if phase_file.exists() else ""
-    except OSError:
-        return None
-    if not raw_speaker:
-        return None
-    raw_lower = raw_speaker.lower()
-    user_speakers = {"user", "用户", "用户输入", "学生", "student"}
-    if raw_lower in {"end", "结束", "结束研讨", "研讨结束", "终止研讨", "完成"}:
-        reason = "主持人已将调度状态写入工作区"
-        if phase_text:
-            reason += f"（{phase_text}）"
-        return {
-            "task_done": True,
-            "next_speaker": "end",
-            "reason": reason,
-            "announcement": task or "教师总结已完成，本次研讨结束。",
-            "next_prompt": None,
-            "suggested_order": None,
-            "suggested_add_agent_ids": None,
-            "suggested_add_expert_ids": None,
-            "phase": None,
-            "owner_agent_id": None,
-            "interrupt_reason": None,
-            "decision_source": "workspace_state",
-            "handoff_reason": reason,
-            "required_user_fields": [],
-        }
-    if raw_lower in user_speakers:
-        reason = "主持人已将调度状态写入工作区"
-        if phase_text:
-            reason += f"（{phase_text}）"
-        return {
-            "task_done": True,
-            "next_speaker": "user",
-            "reason": reason,
-            "announcement": task or "请用户继续发言。",
-            "next_prompt": task or None,
-            "suggested_order": None,
-            "suggested_add_agent_ids": None,
-            "suggested_add_expert_ids": None,
-            "phase": None,
-            "owner_agent_id": None,
-            "interrupt_reason": None,
-            "decision_source": "workspace_state",
-            "handoff_reason": reason,
-            "required_user_fields": [],
-        }
-    if not task:
-        return None
-    agent_id = _match_workspace_speaker_to_agent_id(raw_speaker, dha_list)
-    if not agent_id:
-        return None
-    dha = next((d for d in dha_list if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
-    name = str((dha or {}).get("name") or raw_speaker or agent_id).strip()
-    reason = "主持人已将调度状态写入工作区"
-    if phase_text:
-        reason += f"（{phase_text}）"
-    return {
-        "task_done": True,
-        "next_speaker": agent_id,
-        "reason": reason,
-        "announcement": f"下面由 {name} 发言。",
-        "next_prompt": task,
-        "suggested_order": None,
-        "suggested_add_agent_ids": None,
-        "suggested_add_expert_ids": None,
-        "phase": None,
-        "owner_agent_id": None,
-        "interrupt_reason": None,
-        "decision_source": "workspace_state",
-        "handoff_reason": reason,
-        "required_user_fields": [],
-    }
-
-
 _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
-## 平台调度状态落盘规则
+## 平台调度状态规则
 
 你仍按主持人 Skill 判断当前阶段和下一位发言人，但不要调用 read_file/write_workspace_file/edit_workspace_file/list_workspace_directory 等工具。
-平台后端会负责把调度状态写入工作区文件。你只需要在本轮回复中给出以下结构化结果：
+平台后端会在内存/会话 meta 中保存调度状态，不会把 `next_speaker.txt`、`speaker_task.txt` 写到用户工作区。你只需要在本轮回复中给出以下结构化结果：
 
 ```json
 {
@@ -1253,7 +1158,7 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 }
 ```
 
-`next_speaker` 可以写参与者 agent_id，也可以写主持人 Skill 中的角色名；`speaker_task` 会被写入 speaker_task.txt 并交给下一位发言人执行。
+`next_speaker` 可以写参与者 agent_id，也可以写主持人 Skill 中的角色名；`speaker_task` 会作为后台任务文本交给下一位发言人执行。
 你必须先判断讨论目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
 任务已完成时，`next_speaker` 写 `"user"`/`"用户"` 表示等待用户继续；若整个讨论应结束，写 `"end"`/`"结束研讨"`。
 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 `next_speaker` 设为某个专家。
@@ -1261,30 +1166,23 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 """
 
 
-def _persist_host_scheduler_state_files(session_id: str, state: Dict[str, str]) -> None:
-    if not session_id:
+def _persist_host_scheduler_state_meta(meta_item: Optional[Dict[str, Any]], state: Dict[str, str]) -> None:
+    if not isinstance(meta_item, dict):
         return
-    phase = str((state or {}).get("current_phase") or "").strip()
-    speaker = str((state or {}).get("next_speaker") or "").strip()
-    task = str((state or {}).get("speaker_task") or "").strip()
-    if not any((phase, speaker, task)):
-        return
-    started = time.perf_counter()
-    root = get_workspace_root_path(session_id)
-    root.mkdir(parents=True, exist_ok=True)
-    if phase:
-        (root / "current_phase.txt").write_text(phase + "\n", encoding="utf-8")
-    if speaker:
-        (root / "next_speaker.txt").write_text(speaker + "\n", encoding="utf-8")
-    if task:
-        (root / "speaker_task.txt").write_text(task + "\n", encoding="utf-8")
+    clean = {
+        "current_phase": str((state or {}).get("current_phase") or "").strip(),
+        "next_speaker": str((state or {}).get("next_speaker") or "").strip(),
+        "speaker_task": str((state or {}).get("speaker_task") or "").strip(),
+    }
+    if any(clean.values()):
+        meta_item["scheduler_state"] = clean
+    else:
+        meta_item.pop("scheduler_state", None)
     logger.info(
-        "group_chat_scheduler_host_state_persisted session=%s phase_len=%s speaker_len=%s task_len=%s elapsed_ms=%s",
-        session_id,
-        len(phase),
-        len(speaker),
-        len(task),
-        int((time.perf_counter() - started) * 1000),
+        "group_chat_scheduler_host_state_saved_to_meta phase_len=%s speaker_len=%s task_len=%s",
+        len(clean["current_phase"]),
+        len(clean["next_speaker"]),
+        len(clean["speaker_task"]),
     )
 
 
@@ -1335,6 +1233,7 @@ async def _host_decide_by_dha(
     user_message: str = "",
     orphan_session_agent_ids: Optional[List[str]] = None,
     orchestration_profile: str = "recruitment",
+    meta_item: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     由主持人 DHA 执行主持技能，返回 {task_done, next_speaker, reason, announcement, next_prompt?}。
@@ -1422,6 +1321,18 @@ async def _host_decide_by_dha(
         user_content += f"【刚发言的专家】{last_speaker_agent_id}\n\n"
     else:
         user_content += "【当前为首轮】尚无上一位专家发言。\n\n"
+    scheduler_state_meta = meta_item.get("scheduler_state") if isinstance(meta_item, dict) else None
+    if isinstance(scheduler_state_meta, dict):
+        phase = str(scheduler_state_meta.get("current_phase") or "").strip()
+        speaker = str(scheduler_state_meta.get("next_speaker") or "").strip()
+        task = str(scheduler_state_meta.get("speaker_task") or "").strip()
+        if any((phase, speaker, task)):
+            user_content += (
+                "【后台调度状态】\n"
+                f"current_phase: {phase or '（空）'}\n"
+                f"next_speaker: {speaker or '（空）'}\n"
+                f"speaker_task: {task or '（空）'}\n\n"
+            )
 
     try:
         agent = create_skill_execution_agent(
@@ -1455,8 +1366,7 @@ async def _host_decide_by_dha(
         )
         scheduler_state = _extract_host_scheduler_state(content_str)
         if any((scheduler_state.get("current_phase"), scheduler_state.get("next_speaker"), scheduler_state.get("speaker_task"))):
-            if group_session_id:
-                _persist_host_scheduler_state_files(group_session_id, scheduler_state)
+            _persist_host_scheduler_state_meta(meta_item, scheduler_state)
             state_decision = _host_decision_from_scheduler_state(scheduler_state, dha_list)
             if state_decision:
                 logger.info(
@@ -1468,14 +1378,6 @@ async def _host_decide_by_dha(
         parsed = _parse_host_response(content_str)
         if parsed:
             return parsed
-        workspace_decision = _host_decision_from_workspace_files(group_session_id, dha_list) if group_session_id else None
-        if workspace_decision:
-            logger.info(
-                "group_chat_scheduler_workspace_state_decision session=%s next_speaker=%s",
-                group_session_id,
-                workspace_decision.get("next_speaker"),
-            )
-            return workspace_decision
         return None
     except Exception as e:
         logger.warning("主持人 DHA 调用失败，将回退到默认调度: %s", e)
@@ -1673,7 +1575,6 @@ class GroupSessionUpdate(BaseModel):
 class GroupChatRequest(BaseModel):
     message: Optional[str] = None
     client_message_id: Optional[str] = None
-    override_next_speaker: Optional[str] = None  # agent_id | "user" | null
     action: Optional[str] = None  # "continue" 继续下一轮
     custom_prompt: Optional[str] = None  # 手动模式下，可由前端传入自定义给下一发言人的提示词（覆盖默认生成）
     host_takeover_requested: Optional[bool] = None  # 仅在用户明确提到主持人时才允许主持人调度
@@ -2167,11 +2068,10 @@ async def delete_group_message(group_session_id: str, message_id: str):
 
 
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
-    """群聊流式对话：用户消息或继续下一轮，支持 override_next_speaker"""
+    """群聊流式对话：用户消息或继续下一轮。"""
     logger.debug(
-        "group_chat_stream_enter session=%s override=%r action=%r has_message=%s",
+        "group_chat_stream_enter session=%s action=%r has_message=%s",
         group_session_id,
-        request.override_next_speaker,
         request.action,
         bool((request.message or "").strip()),
     )
@@ -2477,6 +2377,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         user_message="",
                         orphan_session_agent_ids=orphan_session_agent_ids,
                         orchestration_profile=orch_profile,
+                        meta_item=meta_item,
                     )
                     logger.info(
                         "group_chat_post_expert_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",
@@ -2668,7 +2569,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 meta_item=meta_item,
                 agent_ids=agent_ids,
                 host_takeover_requested=host_takeover_requested,
-                override_next_speaker=request.override_next_speaker,
                 ignore_auto_expert_id=ignored_auto_expert_id or "",
                 user_message=user_message,
             )
@@ -2730,57 +2630,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "fsm_skip_host_dispatch",
                     {"next_speaker": next_speaker, "ctx": orch_ctx.to_dict()},
                 )
-            elif request.override_next_speaker is not None and str(request.override_next_speaker).strip():
-                logger.debug(
-                    "group_chat_route_branch=override session=%s override=%s",
-                    group_session_id,
-                    str(request.override_next_speaker).strip().lower(),
-                )
-                next_speaker = str(request.override_next_speaker).strip().lower()
-                if next_speaker == "user":
-                    orch_ctx.phase = OrchestrationPhase.AWAITING_USER
-                    payload = build_end_payload(
-                        waiting_for_user=True,
-                        phase=orch_ctx.phase,
-                        interrupt_reason=InterruptReason.NONE,
-                        resume_target_agent_id=resume_target_agent_id,
-                        required_user_fields=required_user_fields,
-                        turn_id=orch_ctx.turn_id,
-                        token_version=orch_ctx.token_version,
-                        handoff_reason=latest_handoff_reason,
-                    )
-                    _persist_pending_state(payload)
-                    yield f"event: end\ndata: {json_module.dumps(payload)}\n\n"
-                    return
-                if next_speaker == "end":
-                    orch_ctx.phase = OrchestrationPhase.COMPLETED
-                    payload = build_end_payload(
-                        waiting_for_user=False,
-                        discussion_ended=True,
-                        phase=orch_ctx.phase,
-                        interrupt_reason=InterruptReason.NONE,
-                        resume_target_agent_id=resume_target_agent_id,
-                        required_user_fields=required_user_fields,
-                        turn_id=orch_ctx.turn_id,
-                        token_version=orch_ctx.token_version,
-                        handoff_reason=latest_handoff_reason,
-                    )
-                    _persist_pending_state(payload)
-                    yield f"event: end\ndata: {json_module.dumps(payload)}\n\n"
-                    return
-                if next_speaker and next_speaker not in agent_ids:
-                    next_speaker = None
-                if next_speaker in agent_ids:
-                    orch_ctx.phase = OrchestrationPhase.EXECUTING
-                    orch_ctx.owner_agent_id = next_speaker
-            elif request.override_next_speaker is not None:
-                # 兼容前端偶发传入空串：应视作“未指定 override”，继续走主持人正常调度，
-                # 而不是让 next_speaker 落成空值导致后续无可执行专家。
-                logger.debug(
-                    "group_chat_stream 忽略空 override_next_speaker: session=%s raw=%r",
-                    group_session_id,
-                    request.override_next_speaker,
-                )
             else:
                 logger.debug("group_chat_route_branch=host_scheduler session=%s", group_session_id)
                 # 唯一调度路径（不再区分 speak_mode manual/auto；流程由 Skill 锁与主持人 JSON 表达）
@@ -2815,6 +2664,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         user_message=user_message,
                         orphan_session_agent_ids=orphan_session_agent_ids,
                         orchestration_profile=orch_profile,
+                        meta_item=meta_item,
                     )
                     logger.info(
                         "group_chat_scheduler_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",

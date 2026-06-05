@@ -29,5 +29,5 @@ def internal_diagnostic_path_error(path: str) -> str:
     rel = normalize_workspace_rel_path(path)
     return (
         f"错误：{rel or path} 是平台内部排障日志，不作为专家工作区输入。"
-        "请读取 speaker_task.txt、next_speaker.txt、memory/facts.md，或用户明确提供的工作区文件。"
+        "请读取用户明确提供的工作区文件；调度任务会由平台直接放在本轮提示词中。"
     )

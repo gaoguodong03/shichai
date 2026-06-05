@@ -48,7 +48,6 @@ def test_resolve_skip_host_when_skill_lock():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        override_next_speaker=None,
         ignore_auto_expert_id="",
     )
     assert r.skip_host_dispatch is True
@@ -61,7 +60,6 @@ def test_resolve_pass_control_message_returns_to_host_even_with_skill_lock():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        override_next_speaker=None,
         ignore_auto_expert_id="",
         user_message=" pass ",
     )
@@ -76,7 +74,6 @@ def test_resolve_no_skip_on_host_takeover():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=True,
-        override_next_speaker=None,
         ignore_auto_expert_id="",
     )
     assert r.skip_host_dispatch is False
@@ -88,7 +85,6 @@ def test_resolve_no_skip_on_ignore_auto_same_expert():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        override_next_speaker=None,
         ignore_auto_expert_id="agent-a",
     )
     assert r.skip_host_dispatch is False
@@ -151,6 +147,24 @@ def test_resolve_skill_session_state_reads_script_stdout_over():
     assert resolved.display_content == "已转写完成"
 
 
+def test_resolve_skill_session_state_reads_travel_script_stdout_over():
+    raw_tool_outputs = [
+        (
+            '{"ok": true, "stdout": "{\\"ok\\": true, '
+            '\\"skill_session_over\\": true, '
+            '\\"matched_records\\": 1, '
+            '\\"description\\": \\"西安市住宿费标准：其他人员350元/人·天。\\"}"}'
+        )
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "西安市住宿费标准：其他人员350元/人·天。",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_travel-expense-calculator"],
+    )
+    assert resolved.over is True
+    assert resolved.source == "script_stdout"
+
+
 def test_resolve_skill_session_state_ignores_done_final_for_session_lock():
     raw_tool_outputs = ['{"ok": true, "stdout": "{\\"ok\\": true, \\"done\\": true, \\"final\\": true}"}']
     resolved = skill_session_contract.resolve_skill_session_state("脚本完成", raw_tool_outputs)
@@ -184,7 +198,7 @@ def test_resolve_skill_session_state_ignores_non_script_tool_over_when_named():
     assert resolved.source == "none"
 
 
-def test_resolve_skill_session_state_prefers_assistant_block_over_script_stdout():
+def test_resolve_skill_session_state_false_assistant_block_beats_script_stdout_true():
     raw_tool_outputs = [
         '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
     ]
@@ -195,14 +209,55 @@ def test_resolve_skill_session_state_prefers_assistant_block_over_script_stdout(
     assert resolved.display_content == "还需要你确认"
 
 
-def test_resolve_skill_session_state_legacy_marker_beats_script_stdout():
+def test_resolve_skill_session_state_script_false_beats_assistant_block_true():
+    raw_tool_outputs = [
+        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": false}"}'
+    ]
+    raw = '已完成\n[[SKILL_SESSION_STATE]]{"over": true}[[/SKILL_SESSION_STATE]]'
+    resolved = skill_session_contract.resolve_skill_session_state(raw, raw_tool_outputs)
+    assert resolved.over is False
+    assert resolved.source == "script_stdout"
+    assert resolved.display_content == "已完成"
+    assert resolved.signals is not None
+    assert resolved.signals.assistant_state_block is True
+    assert resolved.signals.script_stdout is False
+
+
+def test_resolve_skill_session_state_script_false_beats_legacy_marker():
     raw_tool_outputs = [
         '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": false}"}'
     ]
     resolved = skill_session_contract.resolve_skill_session_state("完成 [[SKILL_SESSION_END]]", raw_tool_outputs)
+    assert resolved.over is False
+    assert resolved.source == "script_stdout"
+    assert resolved.signals is not None
+    assert resolved.signals.legacy_end_marker is True
+    assert "SKILL_SESSION_END" not in resolved.display_content
+
+
+def test_resolve_skill_session_state_legacy_marker_releases_without_explicit_signal():
+    resolved = skill_session_contract.resolve_skill_session_state("完成 [[SKILL_SESSION_END]]")
     assert resolved.over is True
     assert resolved.source == "legacy_end_marker"
     assert "SKILL_SESSION_END" not in resolved.display_content
+
+
+def test_resolve_skill_session_state_explicit_false_beats_audio_success_fallback():
+    raw_tool_outputs = [
+        (
+            '{"ok": true, "stdout": "{\\"ok\\": true, '
+            '\\"code\\": \\"transcribed\\", '
+            '\\"skill_session_over\\": false, '
+            '\\"text\\": \\"转写文本\\"}"}'
+        )
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "转写文本",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_audio-transcription"],
+    )
+    assert resolved.over is False
+    assert resolved.source == "script_stdout"
 
 
 def test_user_requests_exit_skill_session_phrases():

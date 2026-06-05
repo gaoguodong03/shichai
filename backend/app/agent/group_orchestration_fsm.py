@@ -84,7 +84,6 @@ def resolve_group_entry_route(
     meta_item: Dict[str, Any],
     agent_ids: List[str],
     host_takeover_requested: bool,
-    override_next_speaker: Optional[str],
     ignore_auto_expert_id: str,
     user_message: str = "",
 ) -> GroupEntryRoute:
@@ -92,7 +91,7 @@ def resolve_group_entry_route(
     是否跳过四九调度、直接由锁定专家处理本轮用户消息。
     （@ 点名由 group_chat 更前序分支处理，此处不再判断。）
 
-    规则：存在 skill_session_owner_id 且仍在本场 agent_ids 内，且用户未显式改派/未要求主持人接管/
+    规则：存在 skill_session_owner_id 且仍在本场 agent_ids 内，且用户未要求主持人接管/
     未使用 ignore 排除该专家时，跳过主持人。
     """
     lock = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
@@ -104,14 +103,6 @@ def resolve_group_entry_route(
         )
 
     if host_takeover_requested:
-        return GroupEntryRoute(
-            skip_host_dispatch=False,
-            direct_expert_id=None,
-            clear_skill_lock_before_host=True,
-        )
-
-    ovr = (override_next_speaker or "").strip().lower()
-    if ovr:
         return GroupEntryRoute(
             skip_host_dispatch=False,
             direct_expert_id=None,

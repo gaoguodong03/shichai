@@ -104,10 +104,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     assert "技能正文" in runtime.skill_content
     assert "Skill 会话状态" in runtime.skill_content
     assert calls["agent_factory"]["tools"] == runtime.tools
-    assert calls["agent_factory"]["synthesize_after_read_file_paths"] == (
-        "speaker_task.txt",
-        "memory/speaker_task.txt",
-    )
+    assert calls["agent_factory"]["synthesize_after_read_file_paths"] == ()
 
 
 def test_build_expert_turn_runtime_blocks_when_skill_content_missing():

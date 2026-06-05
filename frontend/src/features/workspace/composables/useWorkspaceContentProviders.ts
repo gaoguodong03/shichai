@@ -514,7 +514,7 @@ export function useWorkspaceContentProviders(args: {
   }
 
   async function confirmGroupNext(
-    override: string,
+    _nextSpeaker: string,
     extra?: { ignoreAutoExpertId?: string; ignoreAutoSkillId?: string },
   ) {
     const detail = groupDetail.value
@@ -525,13 +525,12 @@ export function useWorkspaceContentProviders(args: {
     groupSuggestedNextSpeaker.value = null
     const { runToken, abort } = beginGroupStream(id, '正在确认…')
     const body: {
-      override_next_speaker?: string
+      action?: string
       custom_prompt?: string
       host_takeover_requested?: boolean
       ignore_auto_expert_id?: string
       ignore_auto_skill_id?: string
-    } = {}
-    if (override && override !== '__auto__') body.override_next_speaker = override
+    } = { action: 'continue' }
     if (extra?.ignoreAutoExpertId) body.ignore_auto_expert_id = extra.ignoreAutoExpertId
     if (extra?.ignoreAutoSkillId) body.ignore_auto_skill_id = extra.ignoreAutoSkillId
     const base = builtMessage()
@@ -604,7 +603,6 @@ export function useWorkspaceContentProviders(args: {
       if ((j as { status?: string }).status === 'ok') {
         emit('dha-added')
         await loadGroupDetail()
-        if (groupNextSpeakerOverride.value === dhaId) groupNextSpeakerOverride.value = ''
       } else {
         await appAlert({ title: '移出失败', message: (j as { detail?: string }).detail || '移出失败', variant: 'danger' })
       }
@@ -1238,7 +1236,6 @@ export function useWorkspaceContentProviders(args: {
   const groupInterruptReason = ref('')
   const groupResumeTargetDhaId = ref<string | null>(null)
   const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
-  const groupNextSpeakerOverride = ref<string>('')
   const showAddMember = ref(false)
   const showAddMemberModal = ref(false)
   const showMoreMenu = ref(false)
@@ -1574,68 +1571,33 @@ export function useWorkspaceContentProviders(args: {
     }
   }
 
-  /** 跳过成员进出场等系统条，取最后一条实质消息（用于无 suggested_next_speaker 时的推断） */
-  function lastNonSystemGroupMessageForToolbar(): GroupMessage | null {
-    const list = groupDisplayMessages.value || []
-    for (let i = list.length - 1; i >= 0; i--) {
-      const m = list[i] as GroupMessage & { event_type?: string }
-      const et = m.event_type
-      if (m.role === 'host' && (et === 'member_joined' || et === 'member_left')) continue
-      return m as GroupMessage
-    }
-    return null
-  }
-
-  /** 输入区旁「发言焦点」：流式中=正在输出者；空闲时=服务端建议的下一位（含 user/host/end），避免误显示上一轮专家或 ids[0] 抖动 */
+  /** 输入区旁「发言焦点」：显示后端编排出的当前/下一执行者；user/end/空映射为待恢复专家或主持人。 */
   const effectiveNextSpeaker = computed(() => {
-    const override = (groupNextSpeakerOverride.value || '').trim()
     const suggested = groupSuggestedNextSpeaker.value
     const active = activeStreamingDhaId.value
     const ids = orderedMemberIds.value
 
-    if (override) {
-      if (override === 'user' || override === 'end') return override
-      if (override === 'host' || ids.includes(override)) return override
-    }
-
     if (groupStreaming.value) {
       if (active && (active === 'host' || ids.includes(active))) return active
-      return ''
+      return 'host'
     }
 
     if (suggested != null && String(suggested).trim() !== '') {
       const s = String(suggested).trim().toLowerCase()
-      if (s === 'user' || s === 'end') return s
       if (s === 'host') return 'host'
       if (ids.includes(suggested)) return suggested
     }
 
-    // 无服务端建议时：根据最后一条可见消息推断（兼容历史会话/旧 end 载荷未带 suggested 的情况）
-    const lastMsg = lastNonSystemGroupMessageForToolbar()
-    if (lastMsg?.role === 'host') {
-      return 'user'
-    }
-    if (lastMsg?.role === 'user' && !currentGroupStreaming.value) {
-      const lid = (leaderDisplayId.value || '').trim()
-      if (lid === 'host' || !lid) return 'host'
-      if (ids.includes(lid)) return lid
-      return 'host'
-    }
-
-    // 空闲态且无服务端建议：默认回到主持人（四九），避免一直显示上一轮专家造成误导。
-    const lid = (leaderDisplayId.value || '').trim()
-    if (!lid || lid === 'host') return 'host'
-    if (ids.includes(lid)) return lid
+    const resume = (groupResumeTargetDhaId.value || '').trim()
+    if (ids.includes(resume)) return resume
     return 'host'
   })
 
-  /** 暂停态「下一位」文案：保留 user/end 的语义。 */
+  /** 暂停态「下一位」文案：只展示专家或主持人，不展示 user/end。 */
   const nextSpeakerLabelText = computed(() => {
     const eff = effectiveNextSpeaker.value
     const ids = orderedMemberIds.value
     if (!eff) return effectiveHostDisplayName.value || '四九'
-    if (eff === 'user') return '你'
-    if (eff === 'end') return '已结束'
     if (eff === 'host') return effectiveHostDisplayName.value || '四九'
     if (ids.includes(eff)) return displayGroupSpeakerName(eff)
     return effectiveHostDisplayName.value || '四九'
@@ -1645,13 +1607,6 @@ export function useWorkspaceContentProviders(args: {
     if (!id) return false
     if (id === 'host') return true
     return orderedMemberIds.value.includes(id)
-  }
-
-  function toolbarLeaderFallbackId(): string {
-    const lid = (leaderDisplayId.value || '').trim()
-    if (!lid || lid === 'host') return 'host'
-    if (orderedMemberIds.value.includes(lid)) return lid
-    return 'host'
   }
 
   /** @ 提及：输入 @ 后显示的候选（主持人 + 当前群内专家），按输入过滤 */
@@ -1942,7 +1897,6 @@ export function useWorkspaceContentProviders(args: {
       groupTurnLimitReached.value = false
       groupSuggestedNextSpeaker.value = null
       groupSuggestedAddDhaIds.value = []
-      groupNextSpeakerOverride.value = ''
       resetGroupWorkspacePanel()
     }
   )
@@ -2171,7 +2125,7 @@ export function useWorkspaceContentProviders(args: {
   /**
    * 工具栏「当前焦点角色」：
    * - 流式中：当前执行者（active -> lastRoute）
-   * - 空闲中：下一位；若为 user，则显示待续跑专家（无则主持人）
+   * - 空闲中：后端建议的下一执行者；等待用户/结束语义映射为待恢复专家或主持人
    */
   const focusRoleForToolbar = computed(() => {
     if (groupStreaming.value) {
@@ -2183,11 +2137,6 @@ export function useWorkspaceContentProviders(args: {
     }
 
     const eff = effectiveNextSpeaker.value
-    if (eff === 'user') {
-      const resume = (groupResumeTargetDhaId.value || '').trim()
-      if (isToolbarRoleValid(resume)) return resume
-      return toolbarLeaderFallbackId()
-    }
     if (isToolbarRoleValid(eff)) return eff
     return 'host'
   })
@@ -2439,9 +2388,7 @@ export function useWorkspaceContentProviders(args: {
     const detail = groupDetail.value
     if (!detail) return
     const rawInput = String(groupDiscussionGoal.value || '')
-    const directive = parseAtSpeakerDirective(rawInput, detail)
     const hostTakeoverRequested = detectHostTakeoverIntent(rawInput)
-    if (directive.override_next_speaker) groupNextSpeakerOverride.value = directive.override_next_speaker
     const base = builtMessage()
     const hasFiles = attachedFiles.value.length > 0
     if (!detail || groupStreaming.value || (!base && !hasFiles)) return
@@ -2466,7 +2413,6 @@ export function useWorkspaceContentProviders(args: {
         client_message_id: createClientMessageId(),
         host_takeover_requested: hostTakeoverRequested,
       }
-      if (groupNextSpeakerOverride.value) body.override_next_speaker = groupNextSpeakerOverride.value
       // 不在流开始时 emit，避免父组件提前 refresh 覆盖当前流式展示
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
       if (shouldEmitMessageSent) {
@@ -2478,36 +2424,9 @@ export function useWorkspaceContentProviders(args: {
     } finally {
       if (isCurrentGroupRun(detail.id, runToken)) {
         clearStreamingPlaceholders()
-        groupNextSpeakerOverride.value = ''
         finishGroupStream(detail.id, runToken)
       }
     }
-  }
-
-  function parseAtSpeakerDirective(raw: string, detail: GroupDetail): { override_next_speaker: string; cleaned_goal: string } {
-    const s = (raw || '').trimStart()
-    if (!s.startsWith('@')) return { override_next_speaker: '', cleaned_goal: raw }
-    const firstLine = s.split('\n')[0] || ''
-    const m = firstLine.match(/^@([^\s]+)\s+/)
-    if (!m) return { override_next_speaker: '', cleaned_goal: raw }
-    const token = (m[1] || '').trim()
-    const rest = s.slice(m[0].length)
-    if (!token) return { override_next_speaker: '', cleaned_goal: raw }
-
-    if (token === '主持人' || token === (effectiveHostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME)) {
-      // @主持人 用于触发“主持人按需接管”，不做 override，也不从用户输入中移除该标记。
-      return { override_next_speaker: '', cleaned_goal: raw }
-    }
-    if (token === '下一位') {
-      const next = effectiveNextSpeaker.value
-      return { override_next_speaker: next || '', cleaned_goal: rest }
-    }
-    const map = detail.agent_map || {}
-    const hit = Object.entries(map).find(([, v]) => (v?.name || '').trim() === token)
-    if (hit) return { override_next_speaker: hit[0], cleaned_goal: rest }
-    const maybeId = token
-    if ((detail.agent_ids || []).includes(maybeId)) return { override_next_speaker: maybeId, cleaned_goal: rest }
-    return { override_next_speaker: '', cleaned_goal: raw }
   }
 
   function detectHostTakeoverIntent(raw: string): boolean {

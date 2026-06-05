@@ -48,6 +48,25 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     assert "关键事实" in out
     assert "补充要求" in out
     assert "主持人本轮指派" in out
+    assert "复述当前你要完成的子任务" not in out
+    assert "复述" not in out
+    assert "我这轮要做" not in out
+    assert "直接进入本轮角色发言" in out
+
+
+def test_next_prompt_short_fallback_avoids_meta_task_preface():
+    gc = _get_group_chat_module()
+
+    out = gc._ensure_structured_next_prompt(
+        prompt="请说明边界",
+        discussion_goal="伴学研讨",
+        context="学生正在讨论 AI 是否替代了本来该被考察的能力。",
+        target_agent_id="agent-peer",
+    )
+
+    assert "先用 1-2 句确认你理解的子任务" not in out
+    assert "复述" not in out
+    assert "不要先说明你理解的子任务" in out
 
 
 def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
@@ -135,7 +154,7 @@ def test_expert_turn_model_name_uses_runtime_llm_not_free_variable():
     assert gc._expert_runtime_model_name(runtime) == "runtime-model"
 
 
-def test_persist_expert_turn_task_files_materializes_speaker_task(tmp_path, monkeypatch):
+def test_persist_expert_turn_task_files_no_longer_materializes_workspace_files(tmp_path, monkeypatch):
     gc = _get_group_chat_module()
     monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
 
@@ -146,32 +165,9 @@ def test_persist_expert_turn_task_files_materializes_speaker_task(tmp_path, monk
         dha_map={"agent-teacher": {"name": "教师"}},
     )
 
-    assert (tmp_path / "speaker_task.txt").read_text(encoding="utf-8") == "请正式开启研讨并提出首个问题。\n"
-    assert (tmp_path / "next_speaker.txt").read_text(encoding="utf-8") == "教师\n"
-
-
-def test_host_decision_from_workspace_files_uses_persisted_state(tmp_path, monkeypatch):
-    gc = _get_group_chat_module()
-    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
-    (tmp_path / "current_phase.txt").write_text("阶段1：选题\n", encoding="utf-8")
-    (tmp_path / "next_speaker.txt").write_text("伴学研讨——引导教学的教师\n", encoding="utf-8")
-    (tmp_path / "speaker_task.txt").write_text("请开场并提出引导性问题。\n", encoding="utf-8")
-
-    decision = gc._host_decision_from_workspace_files(
-        "group-test",
-        [
-            {
-                "agent_id": "agent-teacher",
-                "name": "伴学研讨——引导教学的教师",
-                "role": "教师",
-            }
-        ],
-    )
-
-    assert decision is not None
-    assert decision["next_speaker"] == "agent-teacher"
-    assert decision["next_prompt"] == "请开场并提出引导性问题。"
-    assert "阶段1：选题" in decision["reason"]
+    assert not (tmp_path / "speaker_task.txt").exists()
+    assert not (tmp_path / "next_speaker.txt").exists()
+    assert not (tmp_path / "current_phase.txt").exists()
 
 
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():

@@ -141,7 +141,7 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     assert env["ST49_MCP_USERNAME"] == "user-runtime"
 
 
-def test_skill_extra_instructions_require_writing_task_file_before_reading():
+def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     from app.agent import skill_agent_runtime as runtime
     from app.agent.tool_spec import ToolSpec
 
@@ -152,10 +152,12 @@ def test_skill_extra_instructions_require_writing_task_file_before_reading():
         ]
     )
 
-    assert "speaker_task.txt" in instructions
-    assert "memory/speaker_task.txt" in instructions
-    assert "必须先调用 `write_workspace_file` 创建或覆盖该文件" in instructions
-    assert "确认写入成功后，才允许再调用 `read_file` 读取" in instructions
+    assert "调度任务由平台通过本轮提示词传入" in instructions
+    assert "不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`" in instructions
+    assert "不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`" in instructions
+    assert "上一位专家的可见发言在最近讨论中" in instructions
+    assert "memory/speaker_task.txt" not in instructions
+    assert "必须先调用 `write_workspace_file` 创建或覆盖该文件" not in instructions
 
 
 def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths():

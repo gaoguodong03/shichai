@@ -442,6 +442,16 @@ resources/skills/<skill_id>/
 - `skill_session_over: true` 表示当前 Skill 流程已经结束。
 - 如果还需要用户补充参数或确认，使用 `skill_session_over: false`。
 
+专家最终回复末尾必须输出状态块：
+
+```text
+[[SKILL_SESSION_STATE]]
+{"over": true}
+[[/SKILL_SESSION_STATE]]
+```
+
+脚本型 Skill 同时输出 `skill_session_over`。平台按“继续优先”处理冲突：专家状态块或脚本 stdout 任一明确给出 `false` 时，保留 Skill 会话锁；没有明确 `false` 时，再按专家状态块 `true`、脚本 stdout `skill_session_over=true` / `over=true`、旧标记 `[[SKILL_SESSION_END]]` / `【技能会话结束】` 的顺序释放锁。
+
 ## 安全边界
 
 脚本必须遵守这些边界：
