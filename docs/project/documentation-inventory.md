@@ -12,6 +12,7 @@
 | `docs/requirements/acceptance-and-tests.md` | 当前有效 | UR 到模块、测试、手工验收的追踪矩阵 |
 | `docs/architecture/overview.md` | 当前有效 | 系统架构总览 |
 | `docs/architecture/system-architecture.md` | 当前有效 | 架构图和 UR 到架构层映射 |
+| `docs/architecture/detailed-design.md` | 当前有效 | UR 到模块、代码入口、接口、前端和测试的详细设计 |
 | `docs/architecture/api-design.md` | 当前有效 | 当前后端 API 总览、认证和主要端点 |
 | `docs/architecture/project-structure.md` | 当前有效 | 代码目录、文档目录和模块职责 |
 | `docs/architecture/runtime-architecture.md` | 当前有效 | 面向新人理解的一次会话运行链路 |
@@ -22,6 +23,7 @@
 | `docs/architecture/images-and-dependencies.md` | 当前有效 | 镜像、依赖和沙箱边界 |
 | `docs/architecture/llm-provider-switch.md` | 当前有效 | LLM Provider 切换说明 |
 | `docs/architecture/llm-prompt-structure.md` | 当前有效 | LLM 输入消息结构和提示词来源 |
+| `docs/testing/test-case-catalog.md` | 当前有效 | UR 级测试用例目录和自动化入口 |
 | `docs/testing/layer1-regression.md` | 当前有效 | 第一层回归范围和 UR 覆盖 |
 | `docs/testing/pre-release-testing.md` | 当前有效 | 上线前模块化测试和按 UR 验收 |
 | `docs/testing/full-flow-business-tests.md` | 当前有效 | 全流程业务测试汇总 |
@@ -32,6 +34,7 @@
 | `docs/skills/sandbox-tool-interface.md` | 当前有效 | 沙箱工具调用接口 |
 | `docs/operations/single-user-single-sandbox.md` | 当前有效 | 单用户单沙箱运行约束 |
 | `docs/project/worklist.md` | 当前有效 | 项目工作清单 |
+| `docs/project/implementation-task-breakdown.md` | 当前有效 | 按 UR 拆分的工程任务池、状态和验收点 |
 | `docs/project/documentation-audit.md` | 当前有效 | 文档整理审计记录 |
 | `docs/project/documentation-inventory.md` | 当前有效 | 本清单 |
 | `docs/presentations/15-minute-technical-brief.md` | 当前有效 | 介绍讲稿 |

@@ -9,12 +9,12 @@
 | 文档类型 | 放置目录 | 命名示例 |
 |----------|----------|----------|
 | 用户需求、验收追踪 | `docs/requirements/` | `user-requirements.md`、`acceptance-and-tests.md` |
-| 架构、运行链路、接口 | `docs/architecture/` | `system-architecture.md`、`runtime-architecture.md` |
-| 测试、回归、上线验收 | `docs/testing/` | `layer1-regression.md`、`pre-release-testing.md` |
+| 架构、详细设计、运行链路、接口 | `docs/architecture/` | `system-architecture.md`、`detailed-design.md`、`runtime-architecture.md` |
+| 测试用例、回归、上线验收 | `docs/testing/` | `test-case-catalog.md`、`layer1-regression.md`、`pre-release-testing.md` |
 | 用户教程、验收手册、截图 | `docs/user-manual/` | `user-guide.md`、`README.md` |
 | Skill、MCP、沙箱工具契约 | `docs/skills/` | `skill-standard.md`、`sandbox-tool-interface.md` |
 | 部署和运维约束 | `docs/operations/` | `single-user-single-sandbox.md` |
-| 项目管理和汇报材料 | `docs/project/`、`docs/presentations/` | `worklist.md`、`15-minute-technical-brief.md` |
+| 项目管理、任务拆分和汇报材料 | `docs/project/`、`docs/presentations/` | `implementation-task-breakdown.md`、`worklist.md`、`15-minute-technical-brief.md` |
 | Superpowers 规格和计划 | `docs/superpowers/specs/`、`docs/superpowers/plans/` | `YYYY-MM-DD-topic-design.md` |
 
 ## 命名规则
@@ -28,9 +28,9 @@
 
 | 变更类型 | 必须同步 |
 |----------|----------|
-| 用户需求新增或删除 | `requirements/user-requirements.md`、`requirements/acceptance-and-tests.md` |
-| 验收标准变化 | `requirements/acceptance-and-tests.md`、`testing/layer1-regression.md`、`testing/pre-release-testing.md` |
-| API 或模块边界变化 | `architecture/project-structure.md`、相关 `architecture/*.md` |
+| 用户需求新增或删除 | `requirements/user-requirements.md`、`requirements/acceptance-and-tests.md`、`architecture/detailed-design.md`、`project/implementation-task-breakdown.md` |
+| 验收标准变化 | `requirements/acceptance-and-tests.md`、`testing/test-case-catalog.md`、`testing/layer1-regression.md`、`testing/pre-release-testing.md` |
+| API 或模块边界变化 | `architecture/detailed-design.md`、`architecture/project-structure.md`、相关 `architecture/*.md` |
 | Skill/MCP/沙箱契约变化 | `skills/*.md`、必要时同步 `operations/*.md` |
 | 用户操作路径变化 | `user-manual/user-guide.md`、`user-manual/README.md` 和截图脚本 |
 | 部署方式变化 | `README.md`、`operations/*.md`、`testing/pre-release-testing.md` |
