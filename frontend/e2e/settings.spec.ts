@@ -124,6 +124,32 @@ test.describe('验收 5/6：设置中心', () => {
     await expect(page.getByText('修改密码')).toBeVisible()
   })
 
+  test('修改密码当前密码错误时停留在账号页', async ({ page }) => {
+    await bootLoggedInApp(page, '/settings/account-security')
+    await page.route('**/api/auth/password', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: '当前密码错误' }),
+      })
+    })
+
+    await page.locator('#current-password').fill('wrong-pass-123')
+    await page.locator('#new-password').fill('new-pass-456')
+    await page.locator('#confirm-password').fill('new-pass-456')
+    await page
+      .locator('section')
+      .filter({ hasText: '修改密码' })
+      .getByRole('button', { name: '保存' })
+      .click()
+
+    await expect(page.getByText('当前密码错误')).toBeVisible()
+    await expect(page).toHaveURL(/\/settings\/account-security$/)
+    await expect
+      .poll(async () => page.evaluate(() => localStorage.getItem('dha_token')))
+      .toBe('test-token')
+  })
+
   test('用户可以切换沙箱版本并维护 requirements', async ({ page }) => {
     await bootLoggedInApp(page)
 

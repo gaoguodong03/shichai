@@ -129,7 +129,7 @@ async def change_account(body: ChangeAccountBody, current_user: CurrentUser = De
     if old_name == new_name:
         raise HTTPException(status_code=400, detail="新账号与当前账号相同")
     if not verify_user(username=old_name, password=current_password):
-        raise HTTPException(status_code=401, detail="当前密码错误")
+        raise HTTPException(status_code=400, detail="当前密码错误")
     if user_exists(username=new_name):
         raise HTTPException(status_code=400, detail="账号已存在")
 
@@ -166,7 +166,7 @@ async def change_password(body: ChangePasswordBody, current_user: CurrentUser = 
     if len(new_password) < 6:
         raise HTTPException(status_code=400, detail="新密码至少 6 位")
     if not verify_user(username=username, password=current_password):
-        raise HTTPException(status_code=401, detail="当前密码错误")
+        raise HTTPException(status_code=400, detail="当前密码错误")
     if current_password == new_password:
         raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
 

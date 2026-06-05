@@ -362,6 +362,26 @@ def test_change_account_and_password(env_and_client):
     assert r.status_code == 200
 
 
+def test_wrong_current_password_is_business_error_and_keeps_session(env_and_client):
+    client, _ = env_and_client
+
+    username = "password-error@example.com"
+    password = "old-pass-123"
+    data = _auth_register(client, username=username, password=password)
+    headers = {"Authorization": f"Bearer {data['access_token']}"}
+
+    r = client.put(
+        "/api/auth/password",
+        headers=headers,
+        json={"current_password": "wrong-pass-123", "new_password": "new-pass-456"},
+    )
+    assert r.status_code == 400
+    assert r.json()["detail"] == "当前密码错误"
+
+    r = client.get("/api/settings/mcp", headers=headers)
+    assert r.status_code == 200
+
+
 def test_change_account_keeps_user_id_resource_directory(env_and_client):
     client, db_path = env_and_client
 
