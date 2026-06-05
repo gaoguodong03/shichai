@@ -93,6 +93,10 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
     await expect(page.getByRole('heading', { name: '验收说明' })).toBeVisible()
     await detailHeader.getByRole('button', { name: '编辑内容' }).click()
+    await expect(detailHeader.getByRole('button', { name: '保存' })).toBeVisible()
+    await expect(detailHeader.getByRole('button', { name: '取消' })).toBeVisible()
+    await expect(detailHeader.getByRole('button', { name: '删除' })).toBeVisible()
+    await expect(detailHeader.getByRole('link', { name: '下载' })).toHaveCount(0)
     await expect(page.locator('textarea')).toHaveValue(/# 验收说明/)
   })
 

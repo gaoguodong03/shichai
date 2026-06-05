@@ -37,19 +37,37 @@
           编辑内容
         </button>
         <button
+          v-if="editingContent"
+          type="button"
+          class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
+          @click="saveContent"
+        >
+          保存
+        </button>
+        <button
+          v-if="editingContent"
+          type="button"
+          class="px-3 py-1.5 text-sm border border-input-border rounded-lg hover:bg-list-hover"
+          @click="cancelEditContent"
+        >
+          取消
+        </button>
+        <button
           type="button"
           class="px-3 py-1.5 text-sm rounded-lg border border-danger text-danger hover:bg-danger-subtle"
           @click="emit('delete-file')"
         >
           删除
         </button>
-        <button
-          type="button"
+        <a
+          v-if="!editingContent"
+          :href="downloadUrl"
           class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
-          @click="downloadFile"
+          :download="displayName || 'download'"
+          @click.prevent="downloadFile"
         >
           下载
-        </button>
+        </a>
       </div>
     </header>
     <div ref="scrollContainerRef" class="flex-1 overflow-auto p-4 flex flex-col">
@@ -89,20 +107,6 @@
             class="flex-1 w-full p-3 text-sm font-sans border border-input-border bg-input-bg text-primary rounded resize-none focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             spellcheck="false"
           />
-          <div class="mt-2 flex justify-end gap-2 px-4 py-3 flex-shrink-0">
-            <button
-              class="px-4 py-2 bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
-              @click="saveContent"
-            >
-              保存
-            </button>
-            <button
-              class="px-4 py-2 border border-input-border rounded-lg hover:bg-list-hover"
-              @click="cancelEditContent"
-            >
-              取消
-            </button>
-          </div>
         </div>
         <div v-else class="flex flex-col gap-2">
           <!-- .md 默认渲染为 Markdown，进入编辑时显示源文件内容。 -->

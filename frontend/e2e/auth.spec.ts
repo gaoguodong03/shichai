@@ -44,6 +44,7 @@ test.describe('验收 1/6：登录与账号入口', () => {
     await expect(page.locator('html')).toHaveClass(/dark/)
 
     await page.getByRole('button', { name: '登出' }).click()
+    await page.getByRole('dialog', { name: '退出账号' }).getByRole('button', { name: '退出' }).click()
     await expect(page).toHaveURL(/\/login$/)
     await expect(page.locator('html')).not.toHaveClass(/dark/)
 
