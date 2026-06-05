@@ -286,7 +286,9 @@ class QwenLLM:
                 extra_body["enable_thinking"] = enable_thinking
             if thinking_budget is not None:
                 extra_body["thinking_budget"] = thinking_budget
-        if _is_provider_like(fingerprint, "deepseek", "glm", "zhipu", "bigmodel") and isinstance(thinking, bool):
+        if _is_provider_like(fingerprint, "deepseek"):
+            extra_body["thinking"] = {"type": "enabled" if thinking is True else "disabled"}
+        elif _is_provider_like(fingerprint, "glm", "zhipu", "bigmodel") and isinstance(thinking, bool):
             extra_body["thinking"] = {"type": "enabled" if thinking else "disabled"}
         if _is_provider_like(fingerprint, "glm", "zhipu", "bigmodel") and isinstance(do_sample, bool):
             extra_body["do_sample"] = do_sample

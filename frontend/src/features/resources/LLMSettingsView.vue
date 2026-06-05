@@ -427,10 +427,14 @@ const edit = ref({
 
 const providerFingerprint = computed(() => `${edit.value.id} ${edit.value.base_url} ${edit.value.model}`.toLowerCase())
 const isQwenLike = computed(() => /qwen|dashscope|aliyun|百炼|bailian/.test(providerFingerprint.value))
-const isDeepSeekLike = computed(() => /deepseek/.test(providerFingerprint.value))
+const isDeepSeekLike = computed(() => isDeepSeekFingerprint(providerFingerprint.value))
 const isGlmLike = computed(() => /glm|zhipu|bigmodel|智谱/.test(providerFingerprint.value))
 const isGeminiLike = computed(() => /gemini|googleapis|generativelanguage|google/.test(providerFingerprint.value))
 const isClaudeLike = computed(() => /claude|anthropic/.test(providerFingerprint.value))
+
+function isDeepSeekFingerprint(fingerprint: string) {
+  return /deepseek/.test(fingerprint.toLowerCase())
+}
 
 function valueToParam(value: unknown): string {
   if (value === undefined || value === null || value === '') return ''
@@ -696,6 +700,11 @@ watch(
 
     if (!meta) return
 
+    const params = paramsFromMeta(meta as Record<string, unknown>)
+    if (isDeepSeekFingerprint(`${pid} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
+      params.thinking = 'false'
+    }
+
     edit.value = {
 
       id: pid,
@@ -708,7 +717,7 @@ watch(
 
       api_key_ref: (meta.api_key_ref || '').trim(),
 
-      params: paramsFromMeta(meta as Record<string, unknown>),
+      params,
 
     }
 
@@ -716,6 +725,15 @@ watch(
 
   { deep: true },
 
+)
+
+watch(
+  () => providerFingerprint.value,
+  () => {
+    if (isDeepSeekLike.value && edit.value.params.thinking === '') {
+      edit.value.params.thinking = 'false'
+    }
+  },
 )
 
 

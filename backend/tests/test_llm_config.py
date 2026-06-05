@@ -451,3 +451,20 @@ def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatc
 
     assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "enabled"}}}
     assert bind_tools_compat(client, [object()]) == {}
+
+
+def test_get_client_deepseek_defaults_to_thinking_disabled(monkeypatch):
+    """DeepSeek 未显式设置 thinking 时默认关闭，避免网关走不可用默认模式。"""
+    from app.agent.llm_client import QwenLLM
+
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(
+            api_key="test-key",
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-chat",
+            provider_config={},
+        ),
+    )
+
+    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "disabled"}}}

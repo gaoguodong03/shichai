@@ -53,6 +53,7 @@ _DEFAULT_LLM_PROVIDERS = {
         "base_url": _JENIYA_BASE,
         "model": "deepseek-chat",
         "api_key_env": _JENIYA_KEY,
+        "thinking": False,
     },
     "kimi": {
         "base_url": _JENIYA_BASE,

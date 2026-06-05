@@ -29,7 +29,8 @@
     "deepseek": {
       "base_url": "https://jeniya.top/v1",
       "model": "deepseek-chat",
-      "api_key_env": "JENIYA_API_KEY"
+      "api_key_env": "JENIYA_API_KEY",
+      "thinking": false
     },
     "kimi": {
       "base_url": "https://jeniya.top/v1",
