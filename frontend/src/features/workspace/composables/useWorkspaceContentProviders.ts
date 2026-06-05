@@ -9,6 +9,7 @@ import { useGroupWorkspacePanel } from './useGroupWorkspacePanel'
 import { createGroupChatStreamRunner } from './useGroupChatStreamRunner'
 import { streamSessionEvents } from '@/api/chat'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
+import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import { uploadWorkspaceFile } from '../workspaceUpload'
 import {
   dhaBodyContent,
@@ -1049,10 +1050,10 @@ export function useWorkspaceContentProviders(args: {
     if (!dhaId) return null
     const fromList = (props.dhaInstances || []).find((x) => x.agent_id === dhaId)?.avatar_url
     const u1 = fromList && String(fromList).trim()
-    if (u1) return u1
+    if (u1) return expertAvatarDisplayUrl(u1)
     const fromMap = groupDetail.value?.agent_map?.[dhaId]?.avatar_url
     const u2 = fromMap && String(fromMap).trim()
-    return u2 || null
+    return expertAvatarDisplayUrl(u2)
   }
 
   const groupWaitingForUser = ref(false)

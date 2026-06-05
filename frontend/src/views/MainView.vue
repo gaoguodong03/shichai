@@ -175,6 +175,9 @@
                         :src="dhaAvatarImgUrlForSession(id)!"
                         alt=""
                         class="w-full h-full object-cover"
+                        width="20"
+                        height="20"
+                        decoding="async"
                       />
                       <template v-else>{{ dhaAvatarCharForId(id) }}</template>
                     </span>
@@ -390,9 +393,12 @@
               >
                 <img
                   v-if="d.avatar_url"
-                  :src="d.avatar_url"
+                  :src="expertAvatarDisplayUrl(d.avatar_url)!"
                   alt=""
                   class="w-full h-full object-cover"
+                  width="36"
+                  height="36"
+                  decoding="async"
                 />
                 <span v-else>{{ (d.name || d.agent_id || '?').trim().charAt(0) || '?' }}</span>
               </div>
@@ -1444,6 +1450,7 @@ import SandboxSettingsView from '@/features/settings/SandboxSettingsView.vue'
 import ApiSecretsSettingsView from '@/features/settings/ApiSecretsSettingsView.vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
+import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import logoUrl from '@/assets/49logo.png'
 import './MainView.css'
 
@@ -1962,6 +1969,8 @@ const filteredDhaInstances = computed(() => {
   })
 })
 
+const dhaInstanceById = computed(() => new Map((dhaInstances.value || []).map((d) => [d.agent_id, d])))
+
 const filteredSkills = computed(() => {
   const q = _q(skillSearch.value)
   const list = skills.value || []
@@ -2126,15 +2135,13 @@ function dhaAvatarColorForId(dhaId: string): string {
 }
 
 function dhaAvatarCharForId(dhaId: string): string {
-  const list = dhaInstances.value || []
-  const found = list.find((d) => d.agent_id === dhaId)
+  const found = dhaInstanceById.value.get(dhaId)
   const name = (found?.name || dhaId || '?').trim()
   return name ? name.slice(0, 1).toUpperCase() : '?'
 }
 
 function dhaAvatarImgUrlForSession(dhaId: string): string | null {
-  const u = (dhaInstances.value || []).find((d) => d.agent_id === dhaId)?.avatar_url
-  return u && String(u).trim() ? String(u).trim() : null
+  return expertAvatarDisplayUrl(dhaInstanceById.value.get(dhaId)?.avatar_url)
 }
 
 

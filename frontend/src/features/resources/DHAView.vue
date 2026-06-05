@@ -189,9 +189,12 @@
                     >
                       <img
                         v-if="avatarPreview"
-                        :src="avatarPreview"
+                        :src="expertAvatarDisplayUrl(avatarPreview)!"
                         alt="Expert Avatar"
                         class="w-full h-full object-cover"
+                        width="128"
+                        height="128"
+                        decoding="async"
                       />
                       <div
                         v-else
@@ -305,7 +308,15 @@
               :class="form.avatar_url === url ? 'border-accent ring-1 ring-accent/30' : 'border-border-light hover:border-muted'"
               @click="selectPresetAvatar(url)"
             >
-              <img :src="url" alt="" class="w-full h-full object-cover" />
+              <img
+                :src="expertAvatarDisplayUrl(url)!"
+                alt=""
+                class="w-full h-full object-cover"
+                width="48"
+                height="48"
+                loading="lazy"
+                decoding="async"
+              />
             </button>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -340,7 +351,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
-import { EXPERT_PRESET_AVATAR_URLS, pickRandomExpertAvatar } from '@/constants/expertAvatars'
+import { EXPERT_PRESET_AVATAR_URLS, expertAvatarDisplayUrl, pickRandomExpertAvatar } from '@/constants/expertAvatars'
 
 type ReferenceSnapshot = { id: string; name?: string }
 
