@@ -182,19 +182,6 @@
           </div>
         </div>
       </template>
-      <div class="pt-4 border-t border-border-light space-y-2">
-        <div class="text-sm font-medium text-primary">访问方式</div>
-        <div v-if="sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
-        <p v-else-if="shareError" class="text-sm text-danger">{{ shareError }}</p>
-        <a
-          v-else-if="shareFullUrl"
-          class="block w-full rounded-xl border border-border-light bg-page px-4 py-3 font-mono text-sm text-accent break-all hover:underline"
-          :href="shareFullUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-        >{{ shareFullUrl }}</a>
-        <p v-else class="text-sm text-muted">保存工具后自动生成访问链接。</p>
-      </div>
       <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
         <button
           type="submit"
@@ -262,12 +249,6 @@ const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const exporting = ref(false)
-const shareId = ref('')
-const sharePublishing = ref(false)
-const shareError = ref('')
-const shareFullUrl = computed(() =>
-  shareId.value ? `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId.value)}` : '',
-)
 const form = ref({
   name: '',
   transport: {
@@ -478,43 +459,10 @@ async function exportZip() {
   }
 }
 
-function publicAppOriginForShareLink(): string {
-  const raw = import.meta.env.VITE_PUBLIC_APP_ORIGIN
-  if (typeof raw === 'string' && raw.trim()) return raw.trim().replace(/\/$/, '')
-  return window.location.origin
-}
-
-async function ensureServerSharePublished() {
-  if (!props.serverId) return
-  const id = props.serverId
-  sharePublishing.value = true
-  shareError.value = ''
-  try {
-    let nextShareId: string | null = null
-    const r0 = await fetch(`/api/settings/mcp/${encodeURIComponent(id)}/share-link`)
-    const j0 = await r0.json().catch(() => ({}))
-    if (j0?.status === 'ok' && j0?.data?.share_id) nextShareId = String(j0.data.share_id)
-    if (!nextShareId) {
-      const r1 = await fetch(`/api/settings/mcp/${encodeURIComponent(id)}/publish-share`, { method: 'POST' })
-      const j1 = await r1.json().catch(() => ({}))
-      if (j1?.status === 'ok' && j1?.data?.share_id) nextShareId = String(j1.data.share_id)
-    }
-    if (!nextShareId) throw new Error('生成访问链接失败')
-    if (props.serverId === id) shareId.value = nextShareId
-  } catch (e) {
-    if (props.serverId === id) shareError.value = (e as Error).message || '生成访问链接失败'
-  } finally {
-    if (props.serverId === id) sharePublishing.value = false
-  }
-}
-
 watch(
   () => props.serverId,
   async () => {
-    shareId.value = ''
-    shareError.value = ''
     await load()
-    if (props.serverId) void ensureServerSharePublished()
   },
   { immediate: true },
 )
