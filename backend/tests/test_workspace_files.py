@@ -120,6 +120,21 @@ def test_workspace_path_traversal_blocked(client):
     assert r.status_code in (400, 404)
 
 
+def test_workspace_id_traversal_blocked(temp_user_data_root):
+    """workspace_id 不能逃逸当前用户的 workspaces 根目录。"""
+    from fastapi import HTTPException
+
+    from app.api.files import get_workspace_root_path
+    from app.core.security import get_current_user
+
+    user = get_current_user()
+
+    with pytest.raises(HTTPException) as exc:
+        get_workspace_root_path("..", user=user)
+
+    assert exc.value.status_code == 400
+
+
 def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     """write_workspace_file 写入当前 workspace"""
     from app.api.files import get_workspace_root

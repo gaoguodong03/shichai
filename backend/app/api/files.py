@@ -37,13 +37,20 @@ def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) 
     """
     返回指定 workspace 的根目录路径（不保证已创建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
     """
+    wid = (workspace_id or "").strip().replace("\\", "/")
+    if not wid or wid.startswith("/") or "/" in wid or ".." in wid:
+        raise HTTPException(status_code=400, detail="Invalid workspace_id")
     if user is None:
         # 按当前请求上下文用户推导（Agent 工具与 files API 共用）
         from app.core.security import get_current_user as _get_user
 
         user = _get_user()
     root = _get_agent_outputs_root_for_user(user)
-    return (root / WORKSPACES_SUBDIR / workspace_id).resolve()
+    workspaces_root = (root / WORKSPACES_SUBDIR).resolve()
+    workspace_root = (workspaces_root / wid).resolve()
+    if workspace_root != workspaces_root and workspaces_root not in workspace_root.parents:
+        raise HTTPException(status_code=400, detail="Invalid workspace_id")
+    return workspace_root
 
 
 def get_workspace_root(workspace_id: str, user: CurrentUser | None = None) -> Path:
