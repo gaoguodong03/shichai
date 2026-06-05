@@ -27,6 +27,15 @@ def test_main_view_uses_route_as_navigation_source():
     assert "type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'" in src
 
 
+def test_settings_view_uses_route_section_for_active_panel():
+    src = read("frontend/src/views/MainView.vue")
+    assert "const settingsSection = computed<SettingsCategoryId>" in src
+    assert "void router.push('/settings/app')" in src
+    assert "<AppSettingsView v-if=\"settingsSection === 'app'\"" in src
+    assert "settingsSection === c.id" in src
+    assert "selectedId === 'app'" not in src
+
+
 def test_group_chat_context_is_split_and_typed():
     src = read("frontend/src/features/workspace/components/group-chat/groupChatWorkspaceContext.ts")
     assert "Record<string, any>" not in src
