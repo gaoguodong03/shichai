@@ -11,6 +11,7 @@
                 :streaming-speaker-name="currentActiveStreamingMessage ? activeStreamingSpeakerName : ''"
                 :streaming-pulse="streamingPulse"
                 :waiting-for-user="groupWaitingForUser"
+                :turn-limit-reached="groupTurnLimitReached"
                 :next-speaker-text="nextSpeakerLabelText"
                 :interrupt-hint="orchestrationInterruptHint"
                 :current-streaming="currentGroupStreaming"

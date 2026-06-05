@@ -257,6 +257,31 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('四九已帮您切换专家：agent-writer')).toHaveCount(0)
   })
 
+  test('达到轮次上限时显示自动暂停提示', async ({ page }) => {
+    await bootLoggedInApp(page)
+    await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        body: [
+          `event: end\ndata: ${JSON.stringify({
+            waiting_for_user: true,
+            turns_limit_reached: true,
+            suggested_next_speaker: 'agent-qa',
+            interrupted: false,
+          })}\n\n`,
+        ].join(''),
+      })
+    })
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请连续处理到暂停')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await expect(page.getByText('已达轮次上限')).toBeVisible()
+    await expect(page.getByRole('button', { name: '确认并继续' })).toBeVisible()
+  })
+
   test('场景会话工作空间显示场景主持人名称', async ({ page }) => {
     const state = createE2eState()
     state.hostProfile.display_name = '全局主持'

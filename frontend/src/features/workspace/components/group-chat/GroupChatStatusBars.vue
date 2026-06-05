@@ -54,7 +54,9 @@
     class="group-chat-speaker-status-input group-chat-speaker-status-paused"
   >
     <span class="group-chat-speaker-status-dot group-chat-speaker-status-dot-muted" aria-hidden="true" />
-    <span class="group-chat-speaker-status-text">已暂停：等待你的确认</span>
+    <span class="group-chat-speaker-status-text">
+      {{ turnLimitReached ? '已暂停：已达轮次上限' : '已暂停：等待你的确认' }}
+    </span>
     <span class="group-chat-speaker-status-sub">下一位：{{ nextSpeakerText }}</span>
     <span v-if="interruptHint" class="group-chat-speaker-status-sub">{{ interruptHint }}</span>
   </div>
@@ -75,6 +77,7 @@ defineProps<{
   streamingSpeakerName: string
   streamingPulse: string
   waitingForUser: boolean
+  turnLimitReached: boolean
   nextSpeakerText: string
   interruptHint: string
   currentStreaming: boolean
