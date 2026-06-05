@@ -264,36 +264,18 @@ await shot('settings-theme.png', [
   { label: 4, selector: 'text=绿色' },
 ])
 
-const presets = await api('/settings/session-presets', {
-  headers: { Authorization: `Bearer ${token}` },
-})
-const scenario = presets?.data?.presets?.find((p) => p.name === '问答验收场景')
-let sharePath = '/share/run?id=acceptance-manual'
-if (scenario?.id) {
-  const published = await api(`/settings/session-presets/${encodeURIComponent(scenario.id)}/publish-share`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  sharePath = published?.data?.open_path || sharePath
-}
-await goto(sharePath)
-await shot('share-preview.png', [
-  { label: 1, selector: 'text=分享预览' },
+await goto('/resources/scenario')
+await shot('import-preview.png', [
+  { label: 1, selector: 'text=场景' },
   { label: 2, selector: 'text=问答验收场景' },
-  { label: 3, selector: 'text=依赖' },
-  { label: 4, selector: 'button:has-text("确认导入")' },
+  { label: 3, selector: 'button[title="导入场景包（ZIP）"]' },
+  { label: 4, selector: 'button[title="导出场景包（ZIP）"]' },
 ])
-const importButton = page.locator('button:has-text("确认导入")')
-if (await importButton.count()) {
-  await importButton.first().click()
-  await page.waitForTimeout(8000)
-  await page.waitForLoadState('domcontentloaded')
-}
-await shot('share-import-result.png', [
-  { label: 1, selector: 'text=导入' },
-  { label: 2, selector: 'text=问答验收场景' },
-  { label: 3, selector: 'button:has-text("进入")' },
-  { label: 4, selector: 'button:has-text("返回")' },
+await shot('import-result.png', [
+  { label: 1, selector: 'text=资源中心' },
+  { label: 2, selector: 'text=场景' },
+  { label: 3, selector: 'button[title="导入场景包（ZIP）"]' },
+  { label: 4, selector: 'button[title="导出场景包（ZIP）"]' },
 ])
 
 await browser.close()

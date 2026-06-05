@@ -999,55 +999,6 @@ async def export_skill_zip(skill_id: str):
     )
 
 
-@router.get("/settings/skills/{skill_id}/share-link")
-async def get_skill_share_link(skill_id: str):
-    from app.core.scenario_share_store import find_share_id_for_object
-
-    sid = str(skill_id or "").strip()
-    if not sid:
-        raise HTTPException(status_code=400, detail="skill_id required")
-    base = _get_skills_dir().resolve()
-    sdir = (base / sid).resolve()
-    if not sdir.is_dir() or sdir.parent != base or not (sdir / "SKILL.md").is_file():
-        raise HTTPException(status_code=404, detail="Skill not found")
-    share_id = find_share_id_for_object(get_current_username() or "", "skill", sid)
-    if not share_id:
-        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
-    return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
-
-
-@router.post("/settings/skills/{skill_id}/publish-share")
-async def publish_skill_share(skill_id: str):
-    from app.core.scenario_share_store import upsert_public_share
-
-    sid = str(skill_id or "").strip()
-    if not sid:
-        raise HTTPException(status_code=400, detail="skill_id required")
-    base = _get_skills_dir().resolve()
-    sdir = (base / sid).resolve()
-    if not sdir.is_dir() or sdir.parent != base or not (sdir / "SKILL.md").is_file():
-        raise HTTPException(status_code=404, detail="Skill not found")
-    mcp_rows = _mcp_rows_for_skill_dir(sdir)
-    zip_bytes = _build_skill_zip_bytes(sdir, mcp_rows)
-    fm, _body = _read_skill_file(sdir)
-    title = str(fm.get("name") or sid)
-    share_id = upsert_public_share(
-        zip_bytes,
-        {
-            "object_type": "skill",
-            "source_ref": sid,
-            "title": title,
-            "skill_name": title,
-            "created_by": get_current_username() or "",
-            "summary": {"skill_count": 1, "mcp_count": len(mcp_rows)},
-        },
-    )
-    return {
-        "status": "ok",
-        "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}", "skill_id": sid, "skill_name": title},
-    }
-
-
 def _read_skill_file(skill_dir: Path) -> tuple[Dict, str]:
     """读取 SKILL.md，返回 (frontmatter_dict, body)"""
     path = skill_dir / "SKILL.md"

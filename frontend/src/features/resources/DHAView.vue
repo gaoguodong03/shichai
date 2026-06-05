@@ -112,25 +112,6 @@
 
             <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
 
-            <!-- 专家分享/访问方式入口按产品要求暂时只在前端关闭。
-            <div
-              v-if="selectedDhaId && selectedDhaId !== '__new__'"
-              class="pt-4 border-t border-border-light space-y-2"
-            >
-              <div class="text-sm font-medium text-primary">访问方式</div>
-              <div v-if="sharePublishing" class="text-sm text-muted py-1">正在生成访问链接...</div>
-              <p v-else-if="shareError" class="text-sm text-danger">{{ shareError }}</p>
-              <a
-                v-else-if="shareFullUrl"
-                class="block w-full rounded-xl border border-border-light bg-page px-4 py-3 font-mono text-sm text-accent break-all hover:underline"
-                :href="shareFullUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-              >{{ shareFullUrl }}</a>
-              <p v-else class="text-sm text-muted">保存专家后自动生成访问链接。</p>
-            </div>
-            -->
-
             <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
               <button
                 type="submit"
@@ -372,12 +353,6 @@ const llmProviders = ref<Record<string, { label: string }>>({})
 const avatarPreview = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 const showAvatarModal = ref(false)
-const shareId = ref('')
-const sharePublishing = ref(false)
-const shareError = ref('')
-const shareFullUrl = computed(() =>
-  shareId.value ? `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(shareId.value)}` : '',
-)
 
 const defaultFileCaps = () => ({
   read: true,
@@ -447,17 +422,6 @@ watch(
     }
   },
   { immediate: true }
-)
-
-watch(
-  () => props.selectedDhaId,
-  (id) => {
-    shareId.value = ''
-    shareError.value = ''
-    // 专家分享入口已按产品要求在前端关闭，不再主动生成分享链接。
-    // if (id && id !== '__new__') void ensureDhaSharePublished()
-  },
-  { immediate: true },
 )
 
 async function fetchSkills() {
@@ -623,36 +587,6 @@ async function exportDhaBundle() {
     URL.revokeObjectURL(url)
   } catch (e) {
     await appAlert({ title: '导出失败', message: (e as Error).message || '导出失败', variant: 'danger' })
-  }
-}
-
-function publicAppOriginForShareLink(): string {
-  const raw = import.meta.env.VITE_PUBLIC_APP_ORIGIN
-  if (typeof raw === 'string' && raw.trim()) return raw.trim().replace(/\/$/, '')
-  return window.location.origin
-}
-
-async function ensureDhaSharePublished() {
-  const id = props.selectedDhaId
-  if (!id || id === '__new__') return
-  sharePublishing.value = true
-  shareError.value = ''
-  try {
-    let nextShareId: string | null = null
-    const r0 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/share-link`)
-    const j0 = await r0.json().catch(() => ({}))
-    if (j0?.status === 'ok' && j0?.data?.share_id) nextShareId = String(j0.data.share_id)
-    if (!nextShareId) {
-      const r1 = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/publish-share`, { method: 'POST' })
-      const j1 = await r1.json().catch(() => ({}))
-      if (j1?.status === 'ok' && j1?.data?.share_id) nextShareId = String(j1.data.share_id)
-    }
-    if (!nextShareId) throw new Error('生成访问链接失败')
-    if (props.selectedDhaId === id) shareId.value = nextShareId
-  } catch (e) {
-    if (props.selectedDhaId === id) shareError.value = (e as Error).message || '生成访问链接失败'
-  } finally {
-    if (props.selectedDhaId === id) sharePublishing.value = false
   }
 }
 

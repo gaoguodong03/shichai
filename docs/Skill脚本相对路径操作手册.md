@@ -27,7 +27,7 @@ backend/data/users/<user_id>/
 | 类型 | 宿主机路径 | 用途 |
 | --- | --- | --- |
 | 用户根目录 | `backend/data/users/<user_id>/` | 当前用户全部运行时数据 |
-| 资源中心 | `backend/data/users/<user_id>/resources/` | 可导入、导出、分享的资源 |
+| 资源中心 | `backend/data/users/<user_id>/resources/` | 可导入、导出、迁移的资源 |
 | Skill | `backend/data/users/<user_id>/resources/skills/<skill_id>/` | `SKILL.md`、`scripts/`、`assets/`、`config/` 等 |
 | 会话数据 | `backend/data/users/<user_id>/sessions/` | 会话历史、运行状态、workspace |
 | 工作区根 | `backend/data/users/<user_id>/sessions/workspaces/<session_id>/` | 用户上传文件、脚本输入输出、可下载结果 |

@@ -383,10 +383,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       state.agents = state.agents.filter((a) => a.agent_id !== decodeURIComponent(agentMatch[1]))
       return ok(route)
     }
-    if (path.match(/^\/dha\/instances\/[^/]+\/(share-link|publish-share)$/)) {
-      return ok(route, { share_id: 'share-expert' })
-    }
-
     if (path === '/settings/session-presets' && method === 'GET') {
       return ok(route, { presets: state.scenarios })
     }
@@ -405,7 +401,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, {
         bundle_preview: {
           preset_id: 'scenario-public',
-          preset_name: '公开分享场景',
+          preset_name: '导入资源包场景',
           agents: [{ id: 'agent-qa', name: '问答专家' }],
           skills: [{ id: 'skill-qa', name: '问答技能' }],
           mcp_servers: [{ id: 'mcp-files', name: '文件系统工具' }],
@@ -420,13 +416,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         },
       })
     }
-    if (path.match(/^\/settings\/session-presets\/[^/]+\/share-link$/)) {
-      return ok(route, { share_id: 'share-scenario' })
-    }
-    if (path.match(/^\/settings\/session-presets\/[^/]+\/publish-share$/)) {
-      return ok(route, { share_id: 'share-scenario' })
-    }
-
     if (path === '/settings/skills' && method === 'GET') {
       return ok(route, { skills: state.skills })
     }
@@ -477,10 +466,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       skill.allowed_tools = (body.allowed_tools as Skill['allowed_tools']) || skill.allowed_tools
       return ok(route, skill)
     }
-    if (path.match(/^\/settings\/skills\/[^/]+\/(share-link|publish-share)$/)) {
-      return ok(route, { share_id: 'share-skill' })
-    }
-
     if (path === '/settings/mcp' && method === 'GET') {
       return ok(route, { servers: state.mcpServers })
     }
@@ -502,10 +487,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       Object.assign(server, readBody(route))
       return ok(route, server)
     }
-    if (path.match(/^\/settings\/mcp\/[^/]+\/(share-link|publish-share)$/)) {
-      return ok(route, { share_id: 'share-mcp' })
-    }
-
     if (path === '/settings/app' && method === 'GET') {
       return ok(route, state.appSettings)
     }
@@ -605,42 +586,6 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         }
       }
       return ok(route)
-    }
-
-    if (path === '/public/scenarios/scenario-public' && method === 'GET') {
-      return ok(route, { id: 'scenario-public', title: '公开分享场景' })
-    }
-    if (path === '/public/scenarios/scenario-public/bundle' && method === 'GET') {
-      return route.fulfill({
-        status: 200,
-        headers: { 'Content-Type': 'application/zip' },
-        body: 'PK\u0003\u0004mock-scenario-bundle',
-      })
-    }
-    if (path === '/public/shares/share-scenario/meta' && method === 'GET') {
-      return ok(route, {
-        object_type: 'scene',
-        title: '问答验收场景',
-        summary: { scenario: '问答验收场景', experts: ['问答专家'], skills: ['问答技能'] },
-      })
-    }
-    if (path === '/settings/shares/share-scenario/import' && method === 'POST') {
-      return ok(route, {
-        preview: {
-          preset_id: 'scenario-qa',
-          preset_name: '问答验收场景',
-          experts: [{ agent_id: 'agent-qa', name: '问答专家' }],
-          skills: ['skill-qa'],
-          mcps: [{ id: 'mcp-files', name: '文件系统工具' }],
-          name_conflict_existing_ids: [],
-          would_overwrite_skills: [],
-          would_remap_skill_ids: {},
-          would_remap_mcp_server_ids: {},
-          would_overwrite_experts: {},
-          missing_references: {},
-        },
-        summary: { scenario: '问答验收场景', experts: ['问答专家'], skills: ['问答技能'] },
-      })
     }
 
     return ok(route)

@@ -283,63 +283,6 @@ async def export_dha_instance_bundle(agent_id: str):
     )
 
 
-@router.get("/dha/instances/{agent_id}/share-link")
-async def get_dha_instance_share_link(agent_id: str):
-    from app.core.scenario_share_store import find_share_id_for_object
-
-    row = _find_dha_row(agent_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
-    share_id = find_share_id_for_object(get_current_username() or "", "expert", str(agent_id))
-    if not share_id:
-        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
-    return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
-
-
-@router.post("/dha/instances/{agent_id}/publish-share")
-async def publish_dha_instance_share(agent_id: str):
-    from app.api.settings import load_mcp_config
-    from app.core.expert_bundle import build_expert_bundle_zip_bytes
-    from app.core.scenario_share_store import upsert_public_share
-    from app.core.settings_bundle_import import collect_mcp_refs_from_skill_dirs, mcp_rows_for_bundle_refs
-    from app.skills.loader import get_builtin_skills_dir
-
-    row = _find_dha_row(agent_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
-    skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
-    mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
-    mcp_refs = [{"id": mid, "name": ""} for mid in mcp_ids]
-    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_dha_skills_dir(), skill_ids))
-    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
-    mcp_rows = mcp_rows_for_bundle_refs(mcp_refs, load_mcp_config())
-    zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
-    name = str(row.get("name") or str(agent_id))
-    share_id = upsert_public_share(
-        zip_bytes,
-        {
-            "object_type": "expert",
-            "source_ref": str(agent_id),
-            "title": name,
-            "expert_name": name,
-            "created_by": get_current_username() or "",
-            "summary": {
-                "skill_count": len(skill_ids),
-                "mcp_count": len(mcp_rows),
-            },
-        },
-    )
-    return {
-        "status": "ok",
-        "data": {
-            "share_id": share_id,
-            "open_path": f"/share/run?id={share_id}",
-            "agent_id": str(agent_id),
-            "name": name,
-        },
-    }
-
-
 @router.post("/dha/instances/import-bundle")
 async def import_dha_instance_bundle(
     file: UploadFile = File(...),

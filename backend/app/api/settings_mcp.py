@@ -226,22 +226,6 @@ async def get_mcp_servers():
     }
 
 
-@router.get("/settings/mcp/{server_id}/share-link")
-async def get_mcp_share_link(server_id: str):
-    from app.core.scenario_share_store import find_share_id_for_object
-
-    sid = str(server_id or "").strip()
-    if not sid:
-        raise HTTPException(status_code=400, detail="server_id required")
-    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
-    if not hit:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
-    share_id = find_share_id_for_object(get_current_username() or "", "mcp", sid)
-    if not share_id:
-        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
-    return {"status": "ok", "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}"}}
-
-
 @router.get("/settings/mcp/{server_id}/export-zip")
 async def export_mcp_server_zip(server_id: str):
     sid = str(server_id or "").strip()
@@ -256,35 +240,6 @@ async def export_mcp_server_zip(server_id: str):
         media_type="application/zip",
         headers={"Content-Disposition": _content_disposition_attachment(f"{sid}.zip")},
     )
-
-
-@router.post("/settings/mcp/{server_id}/publish-share")
-async def publish_mcp_share(server_id: str):
-    from app.core.scenario_share_store import upsert_public_share
-
-    sid = str(server_id or "").strip()
-    if not sid:
-        raise HTTPException(status_code=400, detail="server_id required")
-    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
-    if not hit:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
-    zip_bytes = _build_single_mcp_bundle_zip_bytes(dict(hit))
-    name = str(hit.get("name") or sid)
-    share_id = upsert_public_share(
-        zip_bytes,
-        {
-            "object_type": "mcp",
-            "source_ref": sid,
-            "title": name,
-            "mcp_name": name,
-            "created_by": get_current_username() or "",
-            "summary": {"mcp_count": 1},
-        },
-    )
-    return {
-        "status": "ok",
-        "data": {"share_id": share_id, "open_path": f"/share/run?id={share_id}", "server_id": sid, "server_name": name},
-    }
 
 
 @router.post("/settings/mcp/import-zip")

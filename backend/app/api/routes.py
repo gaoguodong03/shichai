@@ -1,7 +1,7 @@
 """API 路由注册入口。"""
 from fastapi import FastAPI
 
-from app.api import auth, dha, files, group_chat, public_scenario, sandbox_settings, sessions, settings, settings_app, settings_mcp, settings_presets, settings_secrets
+from app.api import auth, dha, files, group_chat, sandbox_settings, sessions, settings, settings_app, settings_mcp, settings_presets, settings_secrets
 
 
 def register_api_routes(app: FastAPI) -> None:
@@ -16,5 +16,4 @@ def register_api_routes(app: FastAPI) -> None:
     app.include_router(dha.router, prefix="/api")
     app.include_router(group_chat.router, prefix="/api")
     app.include_router(sessions.router, prefix="/api")
-    app.include_router(public_scenario.router, prefix="/api")
     app.include_router(sandbox_settings.router, prefix="/api")

@@ -4,7 +4,7 @@
 
 1. **HTTP 接口**（[`backend/app/api/settings_presets.py`](../../backend/app/api/settings_presets.py)）
    - `GET /settings/session-presets/{preset_id}/export-bundle`：流式返回 ZIP，下载文件名 `scenario-bundle-{safe_name}.zip`。
-   - `POST .../publish-share`：先复用同一套逻辑生成 ZIP，再写入公开分享目录（见下文「分享 ID」）。
+   - `POST /settings/session-presets/import-bundle`：上传 ZIP 场景包，支持 dry run 预览和确认导入。
 
 2. **组装 ZIP 的核心函数**
    - [`_session_preset_bundle_zip_for_preset(preset_id)`](../../backend/app/api/settings_presets.py)：按 `preset_id` 从当前用户的 `session_presets.json` 里找场景行；拉全量 `dha_instances`，按场景里的 `agent_ids` 挑出专家行；用 [`collect_skill_and_mcp_ids_for_preset`](../../backend/app/core/scenario_bundle.py) 收集技能/MCP 引用；从 `load_mcp_config()` 里按 id 取出 MCP 行；最后调用 [`build_scenario_bundle_zip_bytes`](../../backend/app/core/scenario_bundle.py)。
@@ -60,16 +60,10 @@ flowchart LR
 - 收集的是一串 **字符串 id**，再从 [`load_mcp_config()`](../../backend/app/api/settings_mcp.py) 里按 id 取完整条目写入 `mcp_servers.json`（本地没有的 id 不会出现）。
 - 导入时 [`merge_mcp_servers_for_bundle`](../../backend/app/core/scenario_bundle.py) 按 MCP 的 `id` 合并，`mcp_skip_existing` 控制同名是跳过还是覆盖。
 
-### 5. 公开发布时的「分享 ID」（`share_id`）— 与场景 id 不同
-
-- 逻辑在 [`backend/app/core/scenario_share_store.py`](../../backend/app/core/scenario_share_store.py)。
-- **新建**：`secrets.token_hex(6)` → **12 位十六进制**；文件名 `{share_id}.zip`；写入 `registry.json` 的 `entries`。
-- **复用**：同一 `created_by`（用户名）+ 同一 `source_preset_id`（场景预设的 `id`）再次发布时，**沿用已有 `share_id`**，只覆盖 ZIP 与元数据，保证链接不变（[`upsert_public_share`](../../backend/app/core/scenario_share_store.py)）。
-
-### 6. 导入场景包时预设 id 冲突
+### 5. 导入场景包时预设 id 冲突
 
 - [`_merge_session_presets_into_file`](../../backend/app/api/settings_presets.py)：若本地已有同 id 且 `preset_id_conflict == "new_id"`，会把导入的场景 id 改成 `scenario-{uuid 前 10 位}`；`overwrite` 则覆盖同 id 条目（具体以该函数与 `normalize_preset_dict_for_validation` 为准）。
 
 ---
 
-**一句话**：导出包是「按场景 id 取行 + 按引用收集专家/技能/MCP 快照」打成 ZIP；包内 id 保持原样；公开链接用的是另一套 **12 位 hex 分享 id**，并在同一用户、同一场景预设 id 下保持稳定复用。
+**一句话**：导出包是「按场景 id 取行 + 按引用收集专家/技能/MCP 快照」打成 ZIP；包内 id 保持原样；导入时按冲突策略决定覆盖、跳过或重命名。

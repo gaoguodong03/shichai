@@ -49,18 +49,6 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/scenario/run',
-      name: 'scenario-run',
-      component: MainView,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/share/run',
-      name: 'share-run',
-      component: MainView,
-      meta: { requiresAuth: true }
-    },
-    {
       path: '/login',
       name: 'login',
       component: LoginView

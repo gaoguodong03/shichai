@@ -11,7 +11,7 @@ DHA/
 ├── backend/                 # Python 后端
 │   ├── app/
 │   │   ├── main.py          # FastAPI 入口组装（create_app / health / 启动）
-│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha、public_scenario
+│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha
 │   │   ├── agent/           # ReAct 工作流、工具组装、技能选择、LLM 客户端
 │   │   ├── core/            # 生命周期、运行环境、静态挂载、用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化

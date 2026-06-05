@@ -510,61 +510,6 @@ async def export_session_preset_bundle(preset_id: str):
     )
 
 
-@router.get("/settings/session-presets/{preset_id}/share-link")
-async def get_session_preset_share_link(preset_id: str):
-    """若当前用户已发布过该场景，返回固定 share_id 与路径（未发布则 share_id 为 null）。"""
-    from app.core.scenario_share_store import find_share_id_for_object
-
-    key = str(preset_id or "").strip()
-    if not key:
-        raise HTTPException(status_code=400, detail="preset_id required")
-    path = _get_session_presets_path()
-    rows = _load_session_preset_rows_from_file(path)
-    if not next((r for r in rows if r.get("id") == key), None):
-        raise HTTPException(status_code=404, detail="Session preset not found")
-    uid = get_current_username() or ""
-    sid = find_share_id_for_object(uid, "scene", key)
-    if not sid:
-        return {"status": "ok", "data": {"share_id": None, "open_path": None}}
-    return {
-        "status": "ok",
-        "data": {
-            "share_id": sid,
-            "open_path": f"/share/run?id={sid}",
-        },
-    }
-
-
-@router.post("/settings/session-presets/{preset_id}/publish-share")
-async def publish_session_preset_share(preset_id: str):
-    """将场景包发布到服务器公开目录；同一账号下同一场景 id 复用同一分享编号（链接固定）。"""
-    from app.core.scenario_share_store import upsert_public_share
-
-    zip_bytes, match, _safe = _session_preset_bundle_zip_for_preset(preset_id)
-    share_id = upsert_public_share(
-        zip_bytes,
-        {
-            "object_type": "scene",
-            "source_ref": str(match.get("id") or ""),
-            "title": str(match.get("name") or ""),
-            "summary": {
-                "agent_count": len(match.get("agent_ids") or []),
-            },
-            "preset_name": str(match.get("name") or ""),
-            "source_preset_id": str(match.get("id") or ""),
-            "created_by": get_current_username() or "",
-        },
-    )
-    return {
-        "status": "ok",
-        "data": {
-            "share_id": share_id,
-            "open_path": f"/share/run?id={share_id}",
-            "preset_name": str(match.get("name") or ""),
-        },
-    }
-
-
 @router.post("/settings/session-presets/import-bundle")
 async def import_session_preset_bundle(
     request: Request,
@@ -757,7 +702,6 @@ async def import_session_preset_bundle(
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
 
-
 async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
     from app.api.dha import load_dha_instances, save_dha_instances
     from app.api.settings import _merge_imported_skill_requirements_and_prewarm
@@ -872,36 +816,3 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     finally:
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
-
-
-@router.post("/settings/shares/{share_id}/import")
-async def import_public_share_bundle(share_id: str, dry_run: bool = Form(True)):
-    from app.api.settings import (
-        _import_expert_from_bundle_bytes,
-        _import_mcp_from_bundle_bytes,
-        _import_skill_from_bundle_bytes,
-    )
-    from app.core.scenario_share_store import bundle_path_for_share, get_share_entry, validate_share_id
-
-    sid = str(share_id or "").strip()
-    if not validate_share_id(sid):
-        raise HTTPException(status_code=404, detail="分享不存在")
-    entry = get_share_entry(sid)
-    if not isinstance(entry, dict):
-        raise HTTPException(status_code=404, detail="分享不存在")
-    p = bundle_path_for_share(sid)
-    if not p:
-        raise HTTPException(status_code=404, detail="分享包不存在")
-    raw = p.read_bytes()
-    obj_type = str(entry.get("object_type") or "scene").strip().lower()
-    if obj_type == "scene":
-        data = await _import_scene_from_bundle_bytes(raw, dry_run=dry_run)
-    elif obj_type == "expert":
-        data = await _import_expert_from_bundle_bytes(raw, dry_run=dry_run)
-    elif obj_type == "skill":
-        data = await _import_skill_from_bundle_bytes(raw, dry_run=dry_run)
-    elif obj_type == "mcp":
-        data = await _import_mcp_from_bundle_bytes(raw, dry_run=dry_run)
-    else:
-        raise HTTPException(status_code=400, detail="不支持的分享对象类型")
-    return {"status": "ok", "data": {"share_id": sid, "dry_run": dry_run, **data}}

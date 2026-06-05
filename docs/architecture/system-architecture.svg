@@ -67,7 +67,7 @@
   <rect class="chip" x="1398" y="382" width="160" height="42"/>
   <text class="chip-text" x="1428" y="408">Agent API</text>
   <rect class="chip" x="1220" y="442" width="338" height="42"/>
-  <text class="chip-text" x="1260" y="468">设置 / 文件 / 分享 API</text>
+  <text class="chip-text" x="1260" y="468">设置 / 文件 / 导入导出 API</text>
   <rect class="chip" x="228" y="402" width="250" height="48"/>
   <text class="chip-text" x="278" y="432">Bearer Token → 用户身份</text>
 

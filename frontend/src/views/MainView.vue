@@ -1,10 +1,4 @@
 <template>
-  <div
-    v-if="scenarioShareRouteImportLoading"
-    class="fixed top-0 left-0 right-0 z-[300] px-4 py-2 text-center text-sm bg-accent text-text-inverse shadow"
-  >
-    正在加载分享场景…
-  </div>
   <div class="flex flex-1 min-h-0 min-w-0 bg-page">
     <!-- 最左侧：导航（图标 + 名称） -->
     <nav class="w-28 flex-shrink-0 flex flex-col bg-sidebar py-3">
@@ -872,29 +866,6 @@
                     </div>
                   </div>
                 </div>
-                <!-- 场景分享/访问方式入口按产品要求暂时只在前端关闭。
-                <div v-if="!isCreatingScenario" class="space-y-2 pt-1 border-t border-border-light">
-                  <div class="text-sm font-medium text-primary">访问方式</div>
-                  <div v-if="scenarioShareAutoPublishing" class="text-sm text-muted py-1">
-                    正在生成推广链接…
-                  </div>
-                  <template v-else-if="scenarioShareFullUrl">
-                    <div
-                      class="rounded-lg bg-accent-subtle/80 dark:bg-input-bg/40 border border-border-light px-3 py-2.5"
-                    >
-                      <a
-                        :href="scenarioShareFullUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-blue-600 dark:text-blue-400 hover:underline break-all text-sm leading-relaxed"
-                      >{{ scenarioShareFullUrl }}</a>
-                    </div>
-                  </template>
-                  <p v-else class="text-xs text-muted">
-                    请先填写名称、至少选择一位协作专家并保存，系统将自动生成固定推广链接。
-                  </p>
-                </div>
-                -->
                 <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0 flex-wrap">
                   <button
                     type="button"
@@ -996,139 +967,6 @@
         </div>
       </template>
     </main>
-
-    <!-- 通用分享预览与导入 -->
-    <div
-      v-if="sharePreviewModalOpen"
-      class="fixed inset-0 z-[320] flex items-center justify-center p-4 bg-black/50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="share-preview-title"
-      @click.self="onSharePreviewBackdropClick"
-    >
-      <div
-        class="max-w-2xl w-full max-h-[88vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
-        @click.stop
-      >
-        <div
-          v-if="sharePreviewCommitting"
-          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <span class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin" aria-hidden="true" />
-          <p class="text-sm font-medium text-primary">正在导入分享内容…</p>
-        </div>
-        <template v-if="sharePreviewResult">
-          <h3 id="share-preview-title" class="text-lg font-semibold mb-3">
-            {{ sharePreviewResult.ok ? '导入成功' : '导入失败' }}
-          </h3>
-          <p
-            class="text-sm mb-4 whitespace-pre-wrap"
-            :class="sharePreviewResult.ok ? 'text-primary' : 'text-danger'"
-          >
-            {{ sharePreviewResult.message }}
-          </p>
-          <div class="flex justify-start">
-            <button
-              type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
-              @click="closeSharePreviewModal"
-            >
-              关闭
-            </button>
-          </div>
-        </template>
-        <template v-else>
-          <h3 id="share-preview-title" class="text-lg font-semibold mb-3">分享预览</h3>
-          <div class="mb-4 space-y-3 text-sm border border-border-light rounded-lg p-3 bg-page">
-            <div class="flex items-center gap-2">
-              <span class="text-xs px-2 py-0.5 rounded-full bg-accent-subtle text-accent-subtle-text">
-                {{ sharePreviewData?.meta?.object_type || 'unknown' }}
-              </span>
-              <span class="font-medium text-primary truncate">{{ sharePreviewData?.meta?.title || '未命名分享' }}</span>
-            </div>
-            <div class="text-xs text-muted">分享 ID：<span class="font-mono text-primary">{{ sharePreviewData?.share_id || '-' }}</span></div>
-            <div v-if="isShareScenePreview(sharePreviewData)" class="space-y-2">
-              <div class="font-medium text-primary">{{ shareScenePreview(sharePreviewData)?.preset_name || sharePreviewData?.meta?.title || '未命名场景' }}</div>
-              <div class="text-xs text-muted">场景名称：{{ shareScenePreview(sharePreviewData)?.preset_name || sharePreviewData?.meta?.title || '未命名场景' }}</div>
-              <div v-if="(shareScenePreview(sharePreviewData)?.experts || []).length" class="pt-2">
-                <div class="text-xs font-medium text-muted mb-1">包内专家</div>
-                <ul class="list-disc pl-4 text-muted space-y-0.5">
-                  <li v-for="ex in shareScenePreview(sharePreviewData)?.experts || []" :key="ex.agent_id">
-                    <span class="text-primary">{{ ex.name || ex.agent_id }}</span>
-                  </li>
-                </ul>
-              </div>
-              <div v-if="(shareScenePreview(sharePreviewData)?.skills || []).length" class="pt-2">
-                <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-                <p class="text-xs text-primary">{{ displaySkillNames(shareScenePreview(sharePreviewData)?.skills || []).join('，') }}</p>
-              </div>
-              <div v-if="(shareScenePreview(sharePreviewData)?.mcps || []).length" class="pt-2">
-                <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
-                <ul class="list-disc pl-4 text-muted space-y-0.5">
-                  <li v-for="m in shareScenePreview(sharePreviewData)?.mcps || []" :key="m.id">
-                    <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
-                  </li>
-                </ul>
-              </div>
-              <p v-if="shareSceneOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
-                将覆盖已有内容：{{ shareSceneOverwriteSummary }}
-              </p>
-            </div>
-            <div v-else class="rounded-md border border-border-light p-3 bg-card">
-              <div class="text-xs font-medium text-muted mb-2">分享内容</div>
-              <ul v-if="sharePreviewSummaryItems.length" class="space-y-1 text-xs text-primary">
-                <li v-for="item in sharePreviewSummaryItems" :key="item.label">
-                  <span class="text-muted">{{ item.label }}：</span>{{ item.value }}
-                </li>
-              </ul>
-              <p v-else class="text-xs text-muted">该分享可导入到当前账号。</p>
-            </div>
-            <div
-              v-if="hasImportMissingReferences(sharePreviewMissingReferences)"
-              class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-700 dark:bg-red-950/20 dark:border-red-500/50 dark:text-red-300"
-            >
-              <div class="text-xs font-medium mb-1">缺失内容</div>
-              <div class="space-y-2">
-                <div v-for="group in missingReferenceGroups(sharePreviewMissingReferences)" :key="group.key">
-                  <div class="text-xs font-medium">{{ group.label }}</div>
-                  <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
-                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
-                      <span>{{ missingReferenceTitle(group, item) }}</span>
-                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
-                      <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
-                        ，被 {{ missingRequiredByText(item) }} 依赖
-                      </span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-              <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
-            </div>
-          </div>
-          <div class="flex justify-start gap-2">
-            <button
-              type="button"
-              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-              :disabled="sharePreviewLoading || sharePreviewCommitting"
-              @click="commitSharePreviewImport"
-            >
-              {{ sharePreviewCommitting ? '导入中…' : '确认导入' }}
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
-              :disabled="sharePreviewCommitting"
-              @click="closeSharePreviewModal"
-            >
-              取消
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
-
     <!-- 场景导入：依赖校验与确认 -->
     <div
       v-if="scenarioImportModalOpen"
@@ -1433,7 +1271,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, inject, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, inject, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import WorkspaceContent from '@/features/workspace/WorkspaceContent.vue'
@@ -1631,60 +1469,6 @@ const scenarioBundlePreview = ref<{
     name_conflict_mode?: 'skip' | 'overwrite'
   }
 } | null>(null)
-type ShareScenePreview = {
-  preset_id?: string
-  preset_name?: string
-  experts?: { agent_id: string; name: string }[]
-  skills?: string[]
-  mcps?: { id: string; name: string }[]
-  missing_references?: ImportMissingReferences
-  would_overwrite_skills?: string[]
-  would_skip_skills?: string[]
-  name_conflict_existing_ids?: string[]
-  would_overwrite_experts?: Record<string, string[]>
-  would_remap_skill_ids?: Record<string, string>
-  would_remap_mcp_server_ids?: Record<string, string>
-}
-const scenarioShareAutoPublishing = ref(false)
-const scenarioShareRouteImportLoading = ref(false)
-const scenarioShareLinkData = ref<{ share_id: string | null }>({ share_id: null })
-function publicAppOriginForShareLink(): string {
-  const raw = import.meta.env.VITE_PUBLIC_APP_ORIGIN
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw.trim().replace(/\/$/, '')
-  }
-  return window.location.origin
-}
-
-const scenarioShareFullUrl = computed(() => {
-  const id = scenarioShareLinkData.value.share_id
-  if (!id) return ''
-  return `${publicAppOriginForShareLink()}/share/run?id=${encodeURIComponent(id)}`
-})
-const scenarioShareRouteHandled = ref('')
-const scenarioShareOpenInFlight = ref(false)
-const sharePreviewModalOpen = ref(false)
-const sharePreviewLoading = ref(false)
-const sharePreviewCommitting = ref(false)
-const sharePreviewData = ref<{
-  share_id: string
-  meta: { object_type: string; title: string; summary?: Record<string, unknown> }
-  preview?: (Record<string, unknown> & { missing_references?: ImportMissingReferences }) | ShareScenePreview
-} | null>(null)
-const sharePreviewResult = ref<{ ok: boolean; message: string } | null>(null)
-const sharePreviewMissingReferences = computed(
-  () => sharePreviewData.value?.preview?.missing_references || null,
-)
-const sharePreviewSummaryItems = computed(() => {
-  const summary = sharePreviewData.value?.meta?.summary || {}
-  return Object.entries(summary)
-    .map(([key, value]) => ({
-      label: shareSummaryLabel(key),
-      value: shareSummaryValue(value),
-    }))
-    .filter((item) => item.value)
-})
-
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
 const dhaImportModalOpen = ref(false)
 const pendingDhaBundleFile = ref<File | null>(null)
@@ -1721,42 +1505,6 @@ const hasDhaNameConflict = computed(
 function displaySkillNames(skillIds: string[]): string[] {
   const byId = new Map((skills.value || []).map((s) => [s.id, s.name || s.id]))
   return (skillIds || []).map((sid) => byId.get(sid) || sid)
-}
-function isShareScenePreview(
-  data: typeof sharePreviewData.value,
-): data is NonNullable<typeof sharePreviewData.value> & { preview: ShareScenePreview } {
-  if (!data?.preview) return false
-  const type = String(data.meta?.object_type || '').trim().toLowerCase()
-  return (type === 'scene' || type === 'scenario') && typeof (data.preview as ShareScenePreview).preset_name === 'string'
-}
-function shareScenePreview(data: typeof sharePreviewData.value): ShareScenePreview | null {
-  return isShareScenePreview(data) ? data.preview : null
-}
-function shareSummaryLabel(key: string): string {
-  const labels: Record<string, string> = {
-    agent_count: '专家数量',
-    scenario: '场景',
-    experts: '专家',
-    skills: '技能',
-    mcps: 'MCP',
-    tools: '工具',
-    skill_count: '技能数量',
-    mcp_count: 'MCP 数量',
-  }
-  return labels[key] || key
-}
-function shareSummaryValue(value: unknown): string {
-  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join('，')
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).join('，')
-  return String(value)
-}
-function formatShareJson(obj: unknown): string {
-  try {
-    return JSON.stringify(obj ?? {}, null, 2)
-  } catch {
-    return String(obj ?? '')
-  }
 }
 function hasImportMissingReferences(refs: ImportMissingReferences | null | undefined): boolean {
   if (!refs) return false
@@ -1796,29 +1544,6 @@ const scenarioOverwriteSummary = computed(() => {
   if ((bp.mcps || []).length) {
     const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
     if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
-  }
-  return parts.join('\n')
-})
-const shareSceneOverwriteSummary = computed(() => {
-  const bp = shareScenePreview(sharePreviewData.value)
-  if (!bp) return ''
-  const parts: string[] = []
-  if ((bp.name_conflict_existing_ids || []).length) {
-    parts.push(`场景：${bp.preset_name || bp.preset_id || '未命名场景'}`)
-  }
-  if (bp.would_overwrite_experts && Object.keys(bp.would_overwrite_experts).length) {
-    const expertNames = (bp.experts || []).map((x) => x.name || x.agent_id).filter(Boolean)
-    parts.push(`专家：${expertNames.join('，') || Object.keys(bp.would_overwrite_experts).join('，')}`)
-  }
-  const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
-  if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
-  const remapMcpIds = Object.values(bp.would_remap_mcp_server_ids || {})
-  if (remapMcpIds.length) {
-    const mcpNames = (bp.mcps || [])
-      .filter((x) => remapMcpIds.includes(x.id))
-      .map((x) => x.name || x.id)
-      .filter(Boolean)
-    parts.push(`工具：${mcpNames.join('，') || remapMcpIds.join('，')}`)
   }
   return parts.join('\n')
 })
@@ -2451,8 +2176,6 @@ async function saveScenarioPreset() {
     if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
     scenarioDraftIds.value = scenarioDraftIds.value.filter((id) => id !== cur.id)
     syncScenarioDraftFromSelected()
-    // 场景分享入口已按产品要求在前端关闭，不再主动生成分享链接。
-    // void ensureScenarioSharePublishedSilent()
   } catch (e) {
     await appAlert({ title: '保存场景失败', message: (e as Error).message || '保存场景失败', variant: 'danger' })
   } finally {
@@ -2511,8 +2234,6 @@ async function fetchScenarioPresets() {
         scenarioDraftIds.value = []
       }
       syncScenarioDraftFromSelected()
-      // 场景分享入口已按产品要求在前端关闭，不再主动拉取分享链接。
-      // void fetchScenarioShareLink()
     }
   } catch {
     scenarioPresets.value = []
@@ -2531,46 +2252,6 @@ function closeScenarioImportModal() {
   pendingBundleFile.value = null
   scenarioBundlePreview.value = null
   scenarioImportResult.value = null
-}
-
-function closeSharePreviewModal() {
-  sharePreviewModalOpen.value = false
-  sharePreviewResult.value = null
-  sharePreviewData.value = null
-  if (route.path === '/share/run') {
-    router.replace('/workspace')
-  }
-}
-
-function onSharePreviewBackdropClick() {
-  if (sharePreviewCommitting.value) return
-  closeSharePreviewModal()
-}
-
-async function commitSharePreviewImport() {
-  const d = sharePreviewData.value
-  if (!d?.share_id) return
-  sharePreviewCommitting.value = true
-  sharePreviewResult.value = null
-  try {
-    const fd = new FormData()
-    fd.append('dry_run', 'false')
-    const importR = await fetch(`/api/settings/shares/${encodeURIComponent(d.share_id)}/import`, { method: 'POST', body: fd })
-    const importJ = (await importR.json().catch(() => ({}))) as { status?: string; detail?: string; data?: any }
-    if (importJ?.status !== 'ok') throw new Error(importJ?.detail || '导入失败')
-    await fetchScenarioPresets()
-    await fetchDHA()
-    await fetchSkills()
-    await fetchMCP()
-    window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
-    const summary = importJ?.data?.summary || {}
-    sharePreviewResult.value = { ok: true, message: `导入完成\n${formatShareJson(summary)}` }
-    scenarioShareRouteHandled.value = d.share_id
-  } catch (e) {
-    sharePreviewResult.value = { ok: false, message: (e as Error).message || '导入失败' }
-  } finally {
-    sharePreviewCommitting.value = false
-  }
 }
 
 function onScenarioImportBackdropClick() {
@@ -2655,26 +2336,6 @@ async function commitScenarioImport() {
     await fetchMCP()
     window.dispatchEvent(new CustomEvent('dha-session-presets-updated'))
     scenarioImportResult.value = { ok: true, message: msg }
-    if (route.path === '/scenario/run') {
-      const importedPid = (s?.preset_imported_ids || [])[0]
-      if (importedPid) {
-        const preset = scenarioPresets.value.find((x) => x.id === importedPid)
-        if (preset && (preset.agent_ids || []).length) {
-          await router.push('/workspace')
-          await nextTick()
-          await workspaceContentRef.value?.createSessionFromScenarioPreset?.({
-            id: preset.id,
-            name: preset.name,
-            agent_ids: preset.agent_ids,
-            leader_agent_id: preset.leader_agent_id,
-            host_config: preset.host_config,
-            description: preset.description || '',
-            discussion_goal_example: preset.discussion_goal_example || '',
-          })
-        }
-      }
-      router.replace('/workspace')
-    }
   } catch (e) {
     scenarioImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
   } finally {
@@ -2702,168 +2363,6 @@ async function exportScenarioBundle() {
     await appAlert({ title: '导出失败', message: (e as Error).message || '导出失败', variant: 'danger' })
   }
 }
-
-function canAutoPublishFromPreset(p: ScenarioPreset | null): boolean {
-  if (!p?.id) return false
-  const name = (p.name || '').trim()
-  const ids = p.agent_ids || []
-  return !!name && ids.length > 0
-}
-
-/** 静默发布/刷新推广包（链接 id 不变），用于打开场景页与保存后自动生成 */
-async function ensureScenarioSharePublishedSilent() {
-  const cur = selectedScenarioPreset.value
-  if (!cur?.id || isCreatingScenario.value || !canAutoPublishFromPreset(cur)) return
-  if (scenarioShareAutoPublishing.value) return
-  scenarioShareAutoPublishing.value = true
-  try {
-    const r = await fetch(
-      `/api/settings/session-presets/${encodeURIComponent(cur.id)}/publish-share`,
-      { method: 'POST' }
-    )
-    const j = (await r.json().catch(() => ({}))) as {
-      status?: string
-      data?: { share_id?: string }
-    }
-    if (r.ok && j?.status === 'ok' && j.data?.share_id) {
-      scenarioShareLinkData.value = { share_id: j.data.share_id }
-    }
-  } catch {
-    // 静默失败，由「访问方式」区提示补充条件
-  } finally {
-    scenarioShareAutoPublishing.value = false
-  }
-}
-
-async function fetchScenarioShareLink() {
-  scenarioShareLinkData.value = { share_id: null }
-  const p = selectedScenarioPreset.value
-  if (!p?.id || isCreatingScenario.value) return
-  try {
-    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(p.id)}/share-link`)
-    const j = (await r.json().catch(() => ({}))) as {
-      status?: string
-      data?: { share_id?: string | null }
-    }
-    if (j?.status === 'ok' && j.data?.share_id) {
-      scenarioShareLinkData.value = { share_id: j.data.share_id }
-      return
-    }
-    if (canAutoPublishFromPreset(p)) {
-      await ensureScenarioSharePublishedSilent()
-    }
-  } catch {
-    scenarioShareLinkData.value = { share_id: null }
-  }
-}
-
-async function tryOpenScenarioShareFromRoute() {
-  if (route.path !== '/scenario/run' && route.path !== '/share/run') return
-  const raw = route.query.id
-  const id = typeof raw === 'string' ? raw.trim() : ''
-  if (!id) return
-  if (scenarioShareRouteHandled.value === id) return
-  if (scenarioShareOpenInFlight.value) return
-  scenarioShareOpenInFlight.value = true
-  scenarioShareRouteImportLoading.value = true
-  try {
-    if (route.path === '/scenario/run') {
-      // 兼容旧链接：直接走场景分享
-      const metaR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}`)
-      if (!metaR.ok) {
-        await appAlert({ title: '无法打开分享', message: '分享链接无效或已失效', variant: 'warning' })
-        router.replace('/workspace')
-        return
-      }
-      const bundleR = await fetch(`/api/public/scenarios/${encodeURIComponent(id)}/bundle`)
-      if (!bundleR.ok) {
-        await appAlert({ title: '无法打开分享', message: '无法下载场景包', variant: 'danger' })
-        router.replace('/workspace')
-        return
-      }
-      const blob = await bundleR.blob()
-      const file = new File([blob], `scenario-share-${id}.zip`, { type: 'application/zip' })
-      pendingBundleFile.value = file
-      scenarioBundlePreview.value = null
-      resourceMenuExpanded.value = true
-      ensureMiddleColumnOpen()
-      await router.replace('/resources/scenario')
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('dry_run', 'true')
-      fd.append('overwrite_experts', 'true')
-      fd.append('overwrite_skills', 'true')
-      fd.append('mcp_skip_existing', 'false')
-      fd.append('preset_id_conflict', 'overwrite')
-      const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
-      const j = (await r.json().catch(() => ({}))) as {
-        status?: string
-        detail?: string
-        data?: typeof scenarioBundlePreview.value
-      }
-      if (j?.status !== 'ok') throw new Error(j.detail || '场景包预览失败')
-      scenarioBundlePreview.value = j.data || null
-      scenarioImportModalOpen.value = true
-      scenarioShareRouteHandled.value = id
-      return
-    }
-
-    const metaR = await fetch(`/api/public/shares/${encodeURIComponent(id)}/meta`)
-    if (!metaR.ok) {
-      await appAlert({ title: '无法打开分享', message: '分享链接无效或已失效', variant: 'warning' })
-      router.replace('/workspace')
-      return
-    }
-    const mj = (await metaR.json().catch(() => ({}))) as {
-      status?: string
-      data?: { object_type?: string; title?: string; summary?: Record<string, unknown> }
-    }
-    if (mj?.status !== 'ok' || !mj.data?.object_type) {
-      throw new Error('无法读取分享元数据')
-    }
-    const fd = new FormData()
-    fd.append('dry_run', 'true')
-    const previewR = await fetch(`/api/settings/shares/${encodeURIComponent(id)}/import`, { method: 'POST', body: fd })
-    const previewJ = (await previewR.json().catch(() => ({}))) as {
-      status?: string
-      detail?: string
-      data?: Record<string, unknown>
-    }
-    if (previewJ?.status !== 'ok') throw new Error(previewJ?.detail || '预览失败')
-    sharePreviewData.value = {
-      share_id: id,
-      meta: {
-        object_type: String(mj.data.object_type || 'unknown'),
-        title: String(mj.data.title || id),
-        summary: (mj.data.summary || {}) as Record<string, unknown>,
-      },
-      preview: (previewJ.data?.preview || previewJ.data || {}) as Record<string, unknown>,
-    }
-    sharePreviewResult.value = null
-    sharePreviewModalOpen.value = true
-  } catch (e) {
-    await appAlert({ title: '无法加载分享场景', message: (e as Error).message || '无法加载分享场景', variant: 'danger' })
-    router.replace('/workspace')
-  } finally {
-    scenarioShareRouteImportLoading.value = false
-    scenarioShareOpenInFlight.value = false
-  }
-}
-
-watch(
-  () => [route.path, typeof route.query.id === 'string' ? route.query.id : ''] as const,
-  () => {
-    void tryOpenScenarioShareFromRoute()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => route.path,
-  (p) => {
-    if (p !== '/scenario/run' && p !== '/share/run') scenarioShareRouteHandled.value = ''
-  }
-)
 
 function pickDhaImportFile() {
   dhaImportFileInputRef.value?.click()
@@ -3500,8 +2999,6 @@ watch(resourceSubModule, (sub) => {
 watch(selectedScenarioPreset, () => {
   if (resourceSubModule.value !== 'scenario') return
   syncScenarioDraftFromSelected()
-  // 场景分享入口已按产品要求在前端关闭，不再主动拉取分享链接。
-  // void fetchScenarioShareLink()
 })
 
 // 初始加载：切到对应模块时再请求数据

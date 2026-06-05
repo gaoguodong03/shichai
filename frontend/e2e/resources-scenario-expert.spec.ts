@@ -12,7 +12,6 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('场景主持人')).toBeVisible()
     await expect(page.getByText('协作专家')).toBeVisible()
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
-    await expect(page.locator('form').getByRole('link', { name: /\/share\/run\?id=/ })).toHaveCount(0)
 
     await page.getByPlaceholder('请输入场景描述').fill('通过 UI 自动化保存的场景说明')
     await page.getByRole('button', { name: '保存' }).click()
@@ -118,12 +117,11 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByRole('complementary').getByText('自动化专家').first()).toBeVisible()
   })
 
-  test('专家详情页不展示访问方式和分享入口', async ({ page }) => {
+  test('专家详情页不展示公开链接入口', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/agent')
 
     await expect(page.getByRole('heading', { name: '配置专家' })).toBeVisible()
     await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
-    await expect(page.locator('form').getByRole('link', { name: /\/share\/run\?id=share-expert/ })).toHaveCount(0)
   })
 })
