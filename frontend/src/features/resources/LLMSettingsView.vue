@@ -84,7 +84,7 @@
 
               type="url"
 
-              placeholder="http://jeniya.top/v1"
+              placeholder="https://jeniya.top/v1"
 
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
 
@@ -680,7 +680,7 @@ watch(
 
         id: '',
 
-        base_url: 'http://jeniya.top/v1',
+        base_url: 'https://jeniya.top/v1',
 
         model: '',
 

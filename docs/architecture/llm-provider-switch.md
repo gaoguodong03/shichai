@@ -29,14 +29,14 @@ QWEN_MODEL=gpt-4o
 
 根据 [jeniya GPTs 对话 API 文档](https://api-jeniya-top.apifox.cn/api-381392203) 的 OpenAPI 规范：
 
-- **Base URL**：`http://jeniya.top/v1`（`servers.url` 为 `http://jeniya.top`，接口路径为 `/v1/chat/completions`）
+- **Base URL**：`https://jeniya.top/v1`（`servers.url` 为 `https://jeniya.top`，接口路径为 `/v1/chat/completions`）
 - **模型**：支持 `gpt-4o` 等标准模型；GPTs 格式为 `gpt-4-gizmo-g-{id}`
 
 在 `backend/.env` 中设置（请将 `你的API_KEY` 替换为实际 Key，勿提交到 Git）：
 
 ```env
 QWEN_API_KEY=你的API_KEY
-QWEN_BASE_URL=http://jeniya.top/v1
+QWEN_BASE_URL=https://jeniya.top/v1
 QWEN_MODEL=gpt-4o
 ```
 

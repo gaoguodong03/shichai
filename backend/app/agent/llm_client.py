@@ -7,18 +7,39 @@ from app.agent.tool_spec import tools_to_openai_tools
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "https://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
-_DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, str]] = {
+_DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, Any]] = {
     "qwen": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3-max",
         "api_key_env": "QWEN_API_KEY",
     },
     "jeniya": {"base_url": _JENIYA_BASE, "model": "gpt-4o", "api_key_env": _JENIYA_KEY},
-    "gemini": {"base_url": _JENIYA_BASE, "model": "gemini-3-pro-preview", "api_key_env": _JENIYA_KEY},
-    "claude": {"base_url": _JENIYA_BASE, "model": "claude-sonnet-4-6", "api_key_env": _JENIYA_KEY},
-    "glm": {"base_url": _JENIYA_BASE, "model": "glm-4.7", "api_key_env": _JENIYA_KEY},
-    "deepseek": {"base_url": _JENIYA_BASE, "model": "deepseek-chat", "api_key_env": _JENIYA_KEY},
-    "kimi": {"base_url": _JENIYA_BASE, "model": "moonshot-v1-128k", "api_key_env": _JENIYA_KEY},
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-3-pro-preview",
+        "api_key_env": "GEMINI_API_KEY",
+    },
+    "claude": {
+        "base_url": _JENIYA_BASE,
+        "model": "claude-sonnet-4-6",
+        "api_key_env": _JENIYA_KEY,
+    },
+    "glm": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "model": "glm-4.7",
+        "api_key_env": "ZHIPUAI_API_KEY",
+    },
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "thinking": False,
+    },
+    "kimi": {
+        "base_url": "https://api.moonshot.cn/v1",
+        "model": "moonshot-v1-128k",
+        "api_key_env": "MOONSHOT_API_KEY",
+    },
 }
 
 

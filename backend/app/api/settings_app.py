@@ -35,9 +35,9 @@ _DEFAULT_LLM_PROVIDERS = {
         "api_key_env": _JENIYA_KEY,
     },
     "gemini": {
-        "base_url": _JENIYA_BASE,
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-3-pro-preview",
-        "api_key_env": _JENIYA_KEY,
+        "api_key_env": "GEMINI_API_KEY",
     },
     "claude": {
         "base_url": _JENIYA_BASE,
@@ -45,22 +45,24 @@ _DEFAULT_LLM_PROVIDERS = {
         "api_key_env": _JENIYA_KEY,
     },
     "glm": {
-        "base_url": _JENIYA_BASE,
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model": "glm-4.7",
-        "api_key_env": _JENIYA_KEY,
+        "api_key_env": "ZHIPUAI_API_KEY",
     },
     "deepseek": {
-        "base_url": _JENIYA_BASE,
+        "base_url": "https://api.deepseek.com",
         "model": "deepseek-chat",
-        "api_key_env": _JENIYA_KEY,
+        "api_key_env": "DEEPSEEK_API_KEY",
         "thinking": False,
     },
     "kimi": {
-        "base_url": _JENIYA_BASE,
+        "base_url": "https://api.moonshot.cn/v1",
         "model": "moonshot-v1-128k",
-        "api_key_env": _JENIYA_KEY,
+        "api_key_env": "MOONSHOT_API_KEY",
     },
 }
+
+_PROVIDER_IDS_MIGRATED_FROM_JENIYA_PRESET = {"gemini", "glm", "deepseek", "kimi"}
 
 _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
     "display_name": "四九",
@@ -82,6 +84,42 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
     out = dict(_DEFAULT_HOST_PROFILE)
     out.update(base_cfg)
     out["display_name"] = display_name
+    return out
+
+
+def _refresh_builtin_llm_provider_presets(providers: Any) -> Dict[str, Dict[str, Any]]:
+    """Merge built-in providers and refresh old bundled Jeniya presets only."""
+    if not isinstance(providers, dict):
+        providers = {}
+    out: Dict[str, Dict[str, Any]] = {
+        str(k): dict(v or {}) if isinstance(v, dict) else {}
+        for k, v in providers.items()
+    }
+    for k, v in _DEFAULT_LLM_PROVIDERS.items():
+        if k not in out:
+            out[k] = dict(v)
+            continue
+        meta = out.get(k)
+        if not isinstance(meta, dict):
+            out[k] = dict(v)
+            continue
+        if not meta.get("base_url"):
+            meta["base_url"] = v.get("base_url")
+        if not meta.get("model"):
+            meta["model"] = v.get("model")
+        if not meta.get("api_key_env"):
+            meta["api_key_env"] = v.get("api_key_env")
+        if (
+            k in _PROVIDER_IDS_MIGRATED_FROM_JENIYA_PRESET
+            and str(meta.get("base_url") or "").strip().rstrip("/") == _JENIYA_BASE
+            and str(meta.get("api_key_env") or "").strip() == _JENIYA_KEY
+            and not str(meta.get("api_key") or "").strip()
+            and not str(meta.get("api_key_ref") or "").strip()
+        ):
+            meta["base_url"] = v.get("base_url")
+            meta["api_key_env"] = v.get("api_key_env")
+            if k == "deepseek" and "thinking" not in meta:
+                meta["thinking"] = False
     return out
 
 
@@ -107,7 +145,7 @@ def load_app_settings() -> Dict[str, Any]:
                         loaded["host_profile"] = normalize_host_profile(hp)
                 data.update(loaded)
                 data.pop("router_tfidf", None)
-                providers = data.get("llm_providers") or {}
+                providers = _refresh_builtin_llm_provider_presets(data.get("llm_providers") or {})
                 deleted = {
                     str(x).strip()
                     for x in (data.get("_deleted_llm_providers") or [])

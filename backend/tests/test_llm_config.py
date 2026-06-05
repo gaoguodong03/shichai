@@ -7,6 +7,57 @@ import pytest
 # 测试前设置 env，避免 QwenLLM 初始化报错
 os.environ.setdefault("QWEN_API_KEY", "test-key")
 os.environ.setdefault("JENIYA_API_KEY", "test-jeniya-key")
+os.environ.setdefault("DEEPSEEK_API_KEY", "test-deepseek-key")
+os.environ.setdefault("GEMINI_API_KEY", "test-gemini-key")
+os.environ.setdefault("ZHIPUAI_API_KEY", "test-zhipu-key")
+os.environ.setdefault("MOONSHOT_API_KEY", "test-moonshot-key")
+
+
+def test_builtin_llm_provider_presets_use_compatible_base_urls():
+    """后端运行时兜底与设置页默认 provider 地址必须同步且可被当前 ChatOpenAI 客户端调用。"""
+    from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults
+    from app.api.settings_app import _DEFAULT_LLM_PROVIDERS as settings_defaults
+
+    expected = {
+        "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
+        "jeniya": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
+        "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
+        "claude": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
+        "glm": ("https://open.bigmodel.cn/api/paas/v4", "ZHIPUAI_API_KEY"),
+        "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+        "kimi": ("https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
+    }
+
+    for provider_id, (base_url, api_key_env) in expected.items():
+        assert runtime_defaults[provider_id]["base_url"] == base_url
+        assert runtime_defaults[provider_id]["api_key_env"] == api_key_env
+        assert settings_defaults[provider_id]["base_url"] == base_url
+        assert settings_defaults[provider_id]["api_key_env"] == api_key_env
+
+
+def test_settings_refreshes_old_jeniya_builtin_provider_presets():
+    """旧版本保存下来的内置 Jeniya 中转默认行，应在加载设置时刷新为 provider 原生预设。"""
+    from app.api.settings_app import _refresh_builtin_llm_provider_presets
+
+    providers = {
+        "deepseek": {
+            "base_url": "https://jeniya.top/v1",
+            "model": "deepseek-chat",
+            "api_key_env": "JENIYA_API_KEY",
+        },
+        "custom-jeniya-deepseek": {
+            "base_url": "https://jeniya.top/v1",
+            "model": "deepseek-chat",
+            "api_key_env": "JENIYA_API_KEY",
+            "api_key_ref": "user-vault",
+        },
+    }
+
+    out = _refresh_builtin_llm_provider_presets(providers)
+
+    assert out["deepseek"]["base_url"] == "https://api.deepseek.com"
+    assert out["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert out["custom-jeniya-deepseek"]["base_url"] == "https://jeniya.top/v1"
 
 
 def test_get_llm_from_config_qwen():
@@ -443,7 +494,7 @@ def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatc
         monkeypatch,
         QwenLLM(
             api_key="test-key",
-            base_url="https://api.deepseek.com/v1",
+            base_url="https://api.deepseek.com",
             model="deepseek-reasoner",
             provider_config={"thinking": True},
         ),
@@ -461,7 +512,7 @@ def test_get_client_deepseek_defaults_to_thinking_disabled(monkeypatch):
         monkeypatch,
         QwenLLM(
             api_key="test-key",
-            base_url="https://api.deepseek.com/v1",
+            base_url="https://api.deepseek.com",
             model="deepseek-chat",
             provider_config={},
         ),
