@@ -192,9 +192,17 @@ def _bound_skill_introspection_message(system_prompt: str, user_text: str) -> AI
     rest = prompt[start + len(marker) :].strip()
     if not rest:
         return None
-    next_section = re.search(r"\n##\s+", rest)
-    if next_section:
-        rest = rest[: next_section.start()].strip()
+    section_end = len(rest)
+    for pattern in (
+        r"\n##\s+",
+        r"\n你可以使用以下工具：",
+        r"\n当你需要使用工具时",
+        r"\n当你不需要使用工具时",
+    ):
+        match = re.search(pattern, rest)
+        if match:
+            section_end = min(section_end, match.start())
+    rest = rest[:section_end].strip()
     lines = [line.rstrip() for line in rest.splitlines()]
     while lines and not lines[0].lstrip().startswith("- "):
         lines.pop(0)

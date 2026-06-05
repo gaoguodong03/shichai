@@ -283,7 +283,10 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
             "若用户询问你有哪些 skill、能力或工具包，必须依据下列清单回答，不要编造清单外的名称；"
             "本轮实际执行时仍以上文完整技能说明为准。\n\n"
             "- **音频转写 MCP**（标识：`audio-asr-mcp`）\n"
-            "  当用户希望使用本地 audio-asr MCP 转写 backend/data 下的音频文件时使用。"
+            "  当用户希望使用本地 audio-asr MCP 转写 backend/data 下的音频文件时使用。\n\n"
+            "你可以使用以下工具：\n"
+            "- read_file: 读取工作区内相对路径对应的文件内容。\n\n"
+            "当你需要使用工具时，必须使用模型的结构化工具调用。"
         ),
         tool_runner=_tool_runner,
         max_steps=2,
@@ -296,6 +299,9 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
     assert "音频转写 MCP" in final_text
     assert "audio-asr-mcp" in final_text
     assert "transcribe_audio.py" not in final_text
+    assert "你可以使用以下工具" not in final_text
+    assert "read_file" not in final_text
+    assert "结构化工具调用" not in final_text
     assert any(
         item.get("source") == "bound_skill_introspection_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
