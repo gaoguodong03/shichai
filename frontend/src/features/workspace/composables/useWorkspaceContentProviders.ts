@@ -199,7 +199,7 @@ export function useWorkspaceContentProviders(args: {
   const titleSaving = ref(false)
   // 让“工作区”按钮默认状态也受用户喜好影响
   showGroupWorkspace.value = loadWorkspaceOpenDefault()
-  // TOC 当前高亮条目（key 与 archiveItems.item.key 一致）
+  // TOC 当前高亮条目（key 与 archiveItems.item.key 一致）；打开弹层时不默认选中第一项。
   const tocActiveKey = ref<string>('')
 
   function toSnippet(content: string, limit = 20) {
@@ -366,7 +366,7 @@ export function useWorkspaceContentProviders(args: {
     tocSpyScrollEl = sc
     const offsetTop = 90
 
-    const handler = () => {
+    const updateActiveKey = () => {
       if (tocSpyRaf) cancelAnimationFrame(tocSpyRaf)
       tocSpyRaf = requestAnimationFrame(() => {
         const scRect = sc.getBoundingClientRect()
@@ -376,12 +376,13 @@ export function useWorkspaceContentProviders(args: {
           const relTop = r.top - scRect.top
           if (relTop <= offsetTop) best = entry
         }
-        tocActiveKey.value = best?.key || tocSpyEntries[0]?.key || ''
+        tocActiveKey.value = best?.key || ''
       })
     }
 
-    tocSpyScrollHandler = handler
-    sc.addEventListener('scroll', handler, { passive: true })
+    tocSpyScrollHandler = updateActiveKey
+    sc.addEventListener('scroll', updateActiveKey, { passive: true })
+    updateActiveKey()
   }
 
   watch(
@@ -392,7 +393,6 @@ export function useWorkspaceContentProviders(args: {
       if (!open) return
       await nextTick()
       rebuildTocSpyEntries()
-      if (tocSpyEntries.length) tocActiveKey.value = tocSpyEntries[0].key
       startTocScrollSpy()
     },
   )
