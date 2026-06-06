@@ -12,6 +12,10 @@ export function apiUrl(path: string): string {
   return p.startsWith(apiBase) ? p : `${apiBase}${p}`
 }
 
+export function apiRequest(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(path), options)
+}
+
 export interface ApiResult<T = unknown> {
   status: 'ok' | 'error'
   data?: T

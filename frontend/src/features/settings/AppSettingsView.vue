@@ -102,6 +102,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { appAlert } from '@/composables/useAppDialog'
 
@@ -214,7 +215,7 @@ function toggleSkill(id: string) {
 async function loadSkills() {
   skillsLoading.value = true
   try {
-    const r = await fetch('/api/settings/skills')
+    const r = await apiRequest('/settings/skills')
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && Array.isArray(j?.data?.skills)) {
       skills.value = (j.data.skills as Array<Record<string, unknown>>).map((s) => ({
@@ -234,7 +235,7 @@ async function loadSkills() {
 
 async function loadLLMProviders() {
   try {
-    const r = await fetch('/api/settings/app')
+    const r = await apiRequest('/settings/app')
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data?.llm_providers) {
       llmProviders.value = { ...(j.data.llm_providers as Record<string, { label?: string; model?: string }>) }
@@ -249,14 +250,14 @@ async function loadLLMProviders() {
 async function load() {
   loading.value = true
   try {
-    const r = await fetch('/api/settings/host-profile')
+    const r = await apiRequest('/settings/host-profile')
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data) {
       const d = j.data as Record<string, unknown>
       applyHostData(d)
       const hasAny = Boolean(form.value.host_display_name || form.value.system_prompt || form.value.skill_ids.length)
       if (!hasAny) {
-        const rd = await fetch('/api/settings/host-profile/defaults')
+        const rd = await apiRequest('/settings/host-profile/defaults')
         const jd = await rd.json().catch(() => ({}))
         if (jd?.status === 'ok' && jd?.data) {
           applyHostData(jd.data as Record<string, unknown>)
@@ -273,7 +274,7 @@ async function save() {
   saved.value = false
   try {
     const skillIds = (form.value.skill_ids || []).map((s) => String(s || '').trim()).filter(Boolean)
-    const r = await fetch('/api/settings/host-profile', {
+    const r = await apiRequest('/settings/host-profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -1280,6 +1280,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, computed, watch, inject, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
@@ -2147,7 +2148,7 @@ async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
       return row
     }),
   }
-  const r = await fetch('/api/settings/session-presets', {
+  const r = await apiRequest('/settings/session-presets', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -2249,7 +2250,7 @@ async function deleteScenarioPreset(id: string) {
 async function fetchScenarioPresets() {
   scenarioLoading.value = true
   try {
-    const r = await fetch('/api/settings/session-presets')
+    const r = await apiRequest('/settings/session-presets')
     const j = await r.json()
     if (j?.status === 'ok' && j?.data?.presets) {
       scenarioPresets.value = j.data.presets
@@ -2313,7 +2314,7 @@ async function onScenarioImportFile(ev: Event) {
     fd.append('overwrite_skills', 'true')
     fd.append('mcp_skip_existing', 'false')
     fd.append('preset_id_conflict', 'overwrite')
-    const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+    const r = await apiRequest('/settings/session-presets/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
       detail?: string
@@ -2342,7 +2343,7 @@ async function commitScenarioImport() {
     fd.append('overwrite_skills', 'true')
     fd.append('mcp_skip_existing', 'false')
     fd.append('preset_id_conflict', 'overwrite')
-    const r = await fetch('/api/settings/session-presets/import-bundle', { method: 'POST', body: fd })
+    const r = await apiRequest('/settings/session-presets/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
       detail?: string
@@ -2381,7 +2382,7 @@ async function exportScenarioBundle() {
   const cur = selectedScenarioPreset.value
   if (!cur?.id || isCreatingScenario.value) return
   try {
-    const r = await fetch(`/api/settings/session-presets/${encodeURIComponent(cur.id)}/export-bundle`)
+    const r = await apiRequest(`/settings/session-presets/${encodeURIComponent(cur.id)}/export-bundle`)
     if (!r.ok) {
       const j = (await r.json().catch(() => ({}))) as { detail?: string }
       throw new Error(j.detail || '导出失败')
@@ -2433,7 +2434,7 @@ async function onDhaImportFile(ev: Event) {
     fd.append('overwrite_skills', 'true')
     fd.append('mcp_skip_existing', 'false')
     fd.append('id_conflict', 'overwrite')
-    const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
+    const r = await apiRequest('/dha/instances/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
       detail?: string
@@ -2461,7 +2462,7 @@ async function commitDhaImport() {
     fd.append('overwrite_skills', 'true')
     fd.append('mcp_skip_existing', 'false')
     fd.append('id_conflict', 'overwrite')
-    const r = await fetch('/api/dha/instances/import-bundle', { method: 'POST', body: fd })
+    const r = await apiRequest('/dha/instances/import-bundle', { method: 'POST', body: fd })
     const j = (await r.json().catch(() => ({}))) as {
       status?: string
       detail?: string
@@ -2499,7 +2500,7 @@ async function fetchSkills(options: { silent?: boolean } = {}) {
   const showLoading = !options.silent && skills.value.length === 0
   if (showLoading) skillsLoading.value = true
   try {
-    const r = await fetch('/api/settings/skills')
+    const r = await apiRequest('/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
       skills.value = j.data.skills
@@ -2584,7 +2585,7 @@ async function fetchGroupSessions() {
   const seq = ++groupSessionsFetchSeq
   groupSessionsLoading.value = true
   try {
-    const r = await fetch('/api/sessions')
+    const r = await apiRequest('/sessions')
     const j = await r.json()
     if (seq !== groupSessionsFetchSeq) return
     if (j.status === 'ok' && j.data?.sessions) {
@@ -2646,7 +2647,7 @@ async function createNewSession() {
   if (creatingSession.value) return
   creatingSession.value = true
   try {
-    const r = await fetch('/api/sessions', {
+    const r = await apiRequest('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: '新对话', agent_ids: [] }),
@@ -2685,7 +2686,7 @@ async function deleteGroupSession(id: string) {
     confirmText: '删除',
   })
   if (!ok) return
-  const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const r = await apiRequest(`/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     if (selectedGroupSessionId.value === id) {
@@ -2702,7 +2703,7 @@ async function deleteGroupSession(id: string) {
 async function fetchDHA() {
   dhaInstancesLoading.value = true
   try {
-    const r = await fetch('/api/agents')
+    const r = await apiRequest('/agents')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.instances) {
       dhaInstances.value = j.data.instances
@@ -2738,7 +2739,7 @@ async function deleteDhaInstance(dhaId: string) {
     confirmText: '删除',
   })
   if (!ok) return
-  const r = await fetch(`/api/agents/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
+  const r = await apiRequest(`/agents/${encodeURIComponent(dhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     if (selectedId.value === dhaId) selectedId.value = null
@@ -2752,7 +2753,7 @@ async function fetchMCP(options: { silent?: boolean } = {}) {
   const showLoading = !options.silent && mcpServers.value.length === 0
   if (showLoading) mcpLoading.value = true
   try {
-    const r = await fetch('/api/settings/mcp')
+    const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
       mcpServers.value = j.data.servers
@@ -2776,7 +2777,7 @@ async function fetchMCP(options: { silent?: boolean } = {}) {
 async function fetchLLM() {
   llmLoading.value = true
   try {
-    const r = await fetch('/api/settings/app')
+    const r = await apiRequest('/settings/app')
     const j = await r.json()
     if (j?.status === 'ok' && j?.data) {
       llmDefault.value = j.data.default_llm || 'qwen'
@@ -2805,7 +2806,7 @@ async function fetchLLM() {
 async function fetchFileSessions() {
   fileSessionsLoading.value = true
   try {
-    const r = await fetch('/api/workspaces/sessions-with-files')
+    const r = await apiRequest('/workspaces/sessions-with-files')
     if (r.ok) {
       const j = await r.json()
       if (j?.status === 'ok' && j?.data?.sessions) {
@@ -2815,12 +2816,12 @@ async function fetchFileSessions() {
       }
     } else {
       // 兼容后端尚未重启到新路由的场景：前端本地回退计算“有文件会话”
-      const sRes = await fetch('/api/sessions')
+      const sRes = await apiRequest('/sessions')
       const sJson = await sRes.json()
       const sessions = (sJson?.status === 'ok' ? (sJson?.data?.sessions || []) : []) as Array<{ id: string; title?: string; updated_at?: string }>
       const withFiles: { id: string; title: string; updated_at: string; file_count: number }[] = []
       for (const s of sessions) {
-        const fr = await fetch(`/api/workspaces/${encodeURIComponent(s.id)}/files`)
+        const fr = await apiRequest(`/workspaces/${encodeURIComponent(s.id)}/files`)
         if (!fr.ok) continue
         const fj = await fr.json()
         const entries = (fj?.status === 'ok' ? (fj?.data?.entries || []) : []) as Array<{ is_dir?: boolean }>
@@ -2891,7 +2892,7 @@ async function commitSkillZipImport() {
     const fd = new FormData()
     fd.append('file', pendingSkillZipFile.value)
     fd.append('name_conflict', 'overwrite')
-    const r = await fetch('/api/settings/skills/import-zip', {
+    const r = await apiRequest('/settings/skills/import-zip', {
       method: 'POST',
       body: fd,
     })
@@ -2935,7 +2936,7 @@ async function onMcpZipSelected(e: Event) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const r = await fetch('/api/settings/mcp/import-zip', {
+    const r = await apiRequest('/settings/mcp/import-zip', {
       method: 'POST',
       body: fd,
     })
@@ -2959,7 +2960,7 @@ async function onMcpZipSelected(e: Event) {
 
 async function createEmptySkill() {
   try {
-    const r = await fetch('/api/settings/skills', {
+    const r = await apiRequest('/settings/skills', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

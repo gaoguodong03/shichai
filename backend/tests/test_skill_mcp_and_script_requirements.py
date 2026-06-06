@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from app.api import settings as settings_mod
+from app.api import settings_skills as settings_skills_mod
 from app.api.settings import (
     ALLOWED_TOOLS_FM_KEY,
     AUTO_TOOLS_FM_KEY,
@@ -61,11 +61,11 @@ def test_get_mcp_servers_reads_skill_md(tmp_path: Path, monkeypatch):
     def fake_get_skills_dir():
         return skills_root
 
-    monkeypatch.setattr(settings_mod, "_get_skills_dir", fake_get_skills_dir)
-    monkeypatch.setattr(settings_mod, "get_builtin_skills_dir", lambda: tmp_path / "none")
+    monkeypatch.setattr("app.api.settings_skill_store._get_skills_dir", fake_get_skills_dir)
+    monkeypatch.setattr("app.api.settings_skill_store.get_builtin_skills_dir", lambda: tmp_path / "none")
 
     with patch(
-        "app.api.settings.load_mcp_config",
+        "app.api.settings_skill_store.load_mcp_config",
         return_value=[{"id": "exa", "enabled": True}, {"id": "other", "enabled": True}],
     ):
         assert get_mcp_servers_for_skill("my-skill") == ["exa"]
@@ -74,7 +74,7 @@ def test_get_mcp_servers_reads_skill_md(tmp_path: Path, monkeypatch):
 def test_validate_skill_mcp_server_ids_unknown():
     from app.api.settings import _validate_skill_mcp_server_ids
 
-    with patch("app.api.settings.load_mcp_config", return_value=[{"id": "ok", "enabled": True}]):
+    with patch("app.api.settings_skill_store.load_mcp_config", return_value=[{"id": "ok", "enabled": True}]):
         assert _validate_skill_mcp_server_ids(["ok"]) == ["ok"]
         with pytest.raises(HTTPException) as ei:
             _validate_skill_mcp_server_ids(["nope"])
@@ -105,7 +105,7 @@ def test_merge_sandbox_requirements_lines_dedupes_by_package(tmp_path: Path, mon
     req_path = tmp_path / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True)
     req_path.write_text("requests==2.31.0\n", encoding="utf-8")
-    monkeypatch.setattr(settings_mod, "_get_sandbox_requirements_path", lambda: req_path)
+    monkeypatch.setattr(settings_skills_mod, "_get_sandbox_requirements_path", lambda: req_path)
 
     added, merged = _merge_sandbox_requirements_lines(["requests>=2", "pandas==2.2.0"])
     assert added == ["pandas==2.2.0"]

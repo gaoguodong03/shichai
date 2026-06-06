@@ -1,3 +1,5 @@
+import { apiUrl } from '@/api/base'
+
 export type WorkspaceUploadProgress = {
   loaded: number
   total: number | null
@@ -25,7 +27,7 @@ export function uploadWorkspaceFile(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : ''
-    xhr.open('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/files/upload${query}`)
+    xhr.open('POST', apiUrl(`/workspaces/${encodeURIComponent(workspaceId)}/files/upload${query}`))
     const token = localStorage.getItem(TOKEN_STORAGE_KEY)
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
 

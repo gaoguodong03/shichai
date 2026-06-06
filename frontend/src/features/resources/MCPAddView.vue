@@ -202,6 +202,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, computed, onMounted } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
 import { appAlert } from '@/composables/useAppDialog'
@@ -293,7 +294,7 @@ async function submit() {
       transport,
       metadata: form.value.metadata,
     }
-    const r = await fetch('/api/settings/mcp', {
+    const r = await apiRequest('/settings/mcp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

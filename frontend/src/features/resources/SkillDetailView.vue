@@ -281,6 +281,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
@@ -649,7 +650,7 @@ function renderMarkdown(text: string): string {
 
 async function loadMcpServers() {
   try {
-    const r = await fetch('/api/settings/mcp')
+    const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
       mcpServers.value = j.data.servers.map((s: { id: string; name?: string; enabled?: boolean }) => ({
@@ -665,7 +666,7 @@ async function loadMcpServers() {
 
 async function loadSandboxRequirements() {
   try {
-    const r = await fetch('/api/settings/sandbox/requirements')
+    const r = await apiRequest('/settings/sandbox/requirements')
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok') {
       sandboxRequirementsContent.value = String(j?.data?.content ?? '')
@@ -682,7 +683,7 @@ async function addMissingPythonDependenciesToSandbox() {
   sandboxDependencyMessage.value = ''
   sandboxDependencyError.value = false
   try {
-    const r = await fetch('/api/settings/sandbox/requirements/merge', {
+    const r = await apiRequest('/settings/sandbox/requirements/merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ requirements }),
@@ -714,7 +715,7 @@ async function exportZip() {
   if (!props.skillId || !skill.value) return
   exporting.value = true
   try {
-    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/export-zip`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/export-zip`)
     if (!r.ok) {
       let msg = '导出失败'
       try {
@@ -744,7 +745,7 @@ async function load(options: { silent?: boolean } = {}) {
   if (showPageLoading) loading.value = true
   try {
     await Promise.all([loadMcpServers(), loadSandboxRequirements()])
-    const r = await fetch('/api/settings/skills')
+    const r = await apiRequest('/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
       const s = j.data.skills.find((x: { id: string }) => x.id === props.skillId) || null
@@ -779,7 +780,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
   const showContentLoading = !options.silent && !hasLoadedSkillContent()
   if (showContentLoading) contentLoading.value = true
   try {
-    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/content`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/content`)
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
       const at = j.data.allowed_tools
@@ -805,7 +806,7 @@ async function loadParts() {
   if (!props.skillId) return
   partsLoading.value = true
   try {
-    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}/parts`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/parts`)
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
       parts.value = {
@@ -828,9 +829,7 @@ async function selectPartFile(type: PartType, path: string) {
   partContent.value = ''
   try {
     const pathEnc = path.split('/').map(encodeURIComponent).join('/')
-    const r = await fetch(
-      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${type}/${pathEnc}`
-    )
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/parts/${type}/${pathEnc}`)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.content != null) {
       partContent.value = j.data.content
@@ -848,7 +847,7 @@ async function save() {
   if (!skill.value || !editMode.value) return
   saving.value = true
   try {
-    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}`, {
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -919,7 +918,7 @@ async function deleteSkill() {
   if (!ok) return
   deleting.value = true
   try {
-    const r = await fetch(`/api/settings/skills/${encodeURIComponent(props.skillId)}`, { method: 'DELETE' })
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, { method: 'DELETE' })
     const j = await r.json()
     if (j.status === 'ok') {
       emit('deleted')
@@ -936,8 +935,8 @@ async function savePartFile() {
   partSaving.value = true
   try {
     const pathEnc = selectedPartFile.value.path.split('/').map(encodeURIComponent).join('/')
-    const r = await fetch(
-      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
+    const r = await apiRequest(
+      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -966,8 +965,8 @@ async function deletePartFile() {
   if (!ok) return
   try {
     const pathEnc = selectedPartFile.value.path.split('/').map(encodeURIComponent).join('/')
-    const r = await fetch(
-      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
+    const r = await apiRequest(
+      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
       { method: 'DELETE' }
     )
     const j = await r.json()
@@ -1004,8 +1003,8 @@ async function addPartFile() {
     return
   }
   try {
-    const r = await fetch(
-      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}`,
+    const r = await apiRequest(
+      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1040,8 +1039,8 @@ async function addPartFolder() {
     return
   }
   try {
-    const r = await fetch(
-      `/api/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}/mkdir`,
+    const r = await apiRequest(
+      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}/mkdir`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

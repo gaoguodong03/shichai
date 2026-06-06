@@ -214,6 +214,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, computed, watch } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
@@ -347,7 +348,7 @@ async function load(options: { silent?: boolean } = {}) {
   if (showPageLoading) loading.value = true
   try {
     await loadApiSecrets()
-    const r = await fetch('/api/settings/mcp')
+    const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
       const s = j.data.servers.find((x: { id: string }) => x.id === props.serverId) || null
@@ -386,7 +387,7 @@ async function save() {
       transport,
       metadata: form.value.metadata,
     }
-    const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}`, {
+    const r = await apiRequest(`/settings/mcp/${encodeURIComponent(props.serverId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -419,7 +420,7 @@ async function deleteServer() {
   if (!ok) return
   deleting.value = true
   try {
-    const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}`, { method: 'DELETE' })
+    const r = await apiRequest(`/settings/mcp/${encodeURIComponent(props.serverId)}`, { method: 'DELETE' })
     const j = await r.json()
     if (j.status === 'ok') {
       emit('deleted')
@@ -435,7 +436,7 @@ async function exportZip() {
   if (!props.serverId || !server.value) return
   exporting.value = true
   try {
-    const r = await fetch(`/api/settings/mcp/${encodeURIComponent(props.serverId)}/export-zip`)
+    const r = await apiRequest(`/settings/mcp/${encodeURIComponent(props.serverId)}/export-zip`)
     if (!r.ok) {
       let msg = '导出失败'
       try {

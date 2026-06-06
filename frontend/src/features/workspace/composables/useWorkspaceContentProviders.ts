@@ -1,3 +1,4 @@
+import { apiRequest } from '@/api/base'
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import {
   provideGroupChatComposerContext,
@@ -298,7 +299,7 @@ export function useWorkspaceContentProviders(args: {
     if (!t) return
     titleSaving.value = true
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: t }),
@@ -563,7 +564,7 @@ export function useWorkspaceContentProviders(args: {
     const id = groupDetail.value?.id
     if (!id) return
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ add_agent_ids: [dhaId] }),
@@ -594,7 +595,7 @@ export function useWorkspaceContentProviders(args: {
     })
     if (!ok) return
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ remove_agent_ids: [dhaId] }),
@@ -820,7 +821,7 @@ export function useWorkspaceContentProviders(args: {
   }
   async function loadServerShortcutPresets(): Promise<ShortcutPreset[] | null> {
     try {
-      const r = await fetch('/api/settings/session-presets')
+      const r = await apiRequest('/settings/session-presets')
       const j = await r.json().catch(() => ({}))
       if (!r.ok || (j as { status?: string })?.status !== 'ok') return null
       const list = (j as { data?: { presets?: unknown } })?.data?.presets
@@ -892,7 +893,7 @@ export function useWorkspaceContentProviders(args: {
       localStorage.setItem(getCurrentUserShortcutStorageKey(), JSON.stringify(payload))
     } catch {}
     if (!syncRemote) return
-    fetch('/api/settings/session-presets', {
+    apiRequest('/settings/session-presets', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ presets: payload }),
@@ -956,7 +957,8 @@ export function useWorkspaceContentProviders(args: {
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {
-      const r = await fetch(reusableSessionId ? `/api/sessions/${encodeURIComponent(reusableSessionId)}` : '/api/sessions', {
+      const sessionPath = reusableSessionId ? `/sessions/${encodeURIComponent(reusableSessionId)}` : '/sessions'
+      const r = await apiRequest(sessionPath, {
         method: reusableSessionId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -1476,7 +1478,7 @@ export function useWorkspaceContentProviders(args: {
 
   async function loadHostDisplayName() {
     try {
-      const r = await fetch('/api/settings/host-profile')
+      const r = await apiRequest('/settings/host-profile')
       const j = await r.json().catch(() => ({}))
       const next = String((j as { data?: { display_name?: string } })?.data?.display_name || '').trim()
       hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
@@ -1491,7 +1493,7 @@ export function useWorkspaceContentProviders(args: {
     if (!ids.length || !groupId) return
     suggestedInviteLoading.value = true
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(groupId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ add_agent_ids: ids }),
@@ -1520,7 +1522,7 @@ export function useWorkspaceContentProviders(args: {
     if (!groupId || !dhaId) return
     suggestedInviteLoading.value = true
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(groupId)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(groupId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ add_agent_ids: [dhaId] }),
@@ -1921,7 +1923,7 @@ export function useWorkspaceContentProviders(args: {
     insertFileEntries.value = []
     try {
       const path = insertFileBrowsePath.value ? `?path=${encodeURIComponent(insertFileBrowsePath.value)}` : ''
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${path}`)
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${path}`)
       const j = await r.json().catch(() => null)
       const raw = (j?.status === 'ok' && Array.isArray(j?.data?.entries)) ? j.data.entries : []
       const mapped = (raw as { name: string; path: string; is_dir?: boolean }[])
@@ -1968,7 +1970,7 @@ export function useWorkspaceContentProviders(args: {
     }))?.trim() || defaultName
     if (!filename) return
     try {
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, content }),
@@ -1997,7 +1999,7 @@ export function useWorkspaceContentProviders(args: {
     })
     if (!ok) return
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
+      const r = await apiRequest(`/sessions/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}`, {
         method: 'DELETE',
       })
       const j = await r.json().catch(() => null)
@@ -2451,7 +2453,7 @@ export function useWorkspaceContentProviders(args: {
     if (!id) return
     abortGroupStream(id)
     try {
-      await fetch(`/api/sessions/${encodeURIComponent(id)}/chat/stop`, { method: 'POST' })
+      await apiRequest(`/sessions/${encodeURIComponent(id)}/chat/stop`, { method: 'POST' })
     } catch {
       // 本地先停止 UI；后端失败时下一次请求会重新同步状态。
     }
@@ -2538,7 +2540,7 @@ export function useWorkspaceContentProviders(args: {
       groupError.value = null
     }
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(id)}`)
+      const r = await apiRequest(`/sessions/${encodeURIComponent(id)}`)
       const body = await r.json().catch(() => null)
       const parsed = parseGroupResponse(id, body)
       // 仅当当前选中的仍是本次请求的 id 时才更新，避免竞态覆盖

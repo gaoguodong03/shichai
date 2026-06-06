@@ -97,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { onMounted, ref } from 'vue'
 
 type SandboxImageOption = {
@@ -132,8 +133,8 @@ async function load() {
   diagnostic.value = ''
   try {
     const [settingsR, requirementsR] = await Promise.all([
-      fetch('/api/settings/sandbox'),
-      fetch('/api/settings/sandbox/requirements'),
+      apiRequest('/settings/sandbox'),
+      apiRequest('/settings/sandbox/requirements'),
     ])
     const settingsJ = await settingsR.json().catch(() => ({}))
     const requirementsJ = await requirementsR.json().catch(() => ({}))
@@ -162,7 +163,7 @@ async function saveSettings() {
   saved.value = false
   diagnostic.value = ''
   try {
-    const r = await fetch('/api/settings/sandbox', {
+    const r = await apiRequest('/settings/sandbox', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_variant: imageVariant.value }),
@@ -189,7 +190,7 @@ async function save() {
   saved.value = false
   diagnostic.value = ''
   try {
-    const r = await fetch('/api/settings/sandbox/requirements', {
+    const r = await apiRequest('/settings/sandbox/requirements', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: content.value }),

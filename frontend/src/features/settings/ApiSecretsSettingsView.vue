@@ -160,6 +160,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
@@ -178,7 +179,7 @@ const currentKeySet = ref(false)
 async function load() {
   loading.value = true
   try {
-    const r = await fetch('/api/settings/api-secrets')
+    const r = await apiRequest('/settings/api-secrets')
     const j = await r.json()
     if (j?.status === 'ok' && j?.data?.items) {
       items.value = j.data.items as Item[]
@@ -198,7 +199,7 @@ function selectNew() {
 async function createSecret() {
   saving.value = true
   try {
-    const r = await fetch('/api/settings/api-secrets', {
+    const r = await apiRequest('/settings/api-secrets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -230,7 +231,7 @@ async function updateSecret() {
     }
     const nk = (draftEdit.value.api_key || '').trim()
     if (nk) body.api_key = nk
-    const r = await fetch(`/api/settings/api-secrets/${encodeURIComponent(id)}`, {
+    const r = await apiRequest(`/settings/api-secrets/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -259,7 +260,7 @@ async function removeSecret() {
   if (!ok) return
   saving.value = true
   try {
-    const r = await fetch(`/api/settings/api-secrets/${encodeURIComponent(id)}`, {
+    const r = await apiRequest(`/settings/api-secrets/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     })
     const j = await r.json()

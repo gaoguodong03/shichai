@@ -330,6 +330,7 @@
 </template>
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted, computed } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { EXPERT_PRESET_AVATAR_URLS, expertAvatarDisplayUrl, pickRandomExpertAvatar } from '@/constants/expertAvatars'
@@ -425,7 +426,7 @@ watch(
 )
 
 async function fetchSkills() {
-  const r = await fetch('/api/settings/skills')
+  const r = await apiRequest('/settings/skills')
   const j = await r.json()
   if (j.status === 'ok' && j.data?.skills) {
     skills.value = j.data.skills
@@ -434,7 +435,7 @@ async function fetchSkills() {
 
 function persistAvatarQuiet() {
   if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-    fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, {
+    apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ avatar_url: form.value.avatar_url }),
@@ -464,7 +465,7 @@ async function saveDha() {
     avatarPreview.value = url
   }
   if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-    const r = await fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, {
+    const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
@@ -476,7 +477,7 @@ async function saveDha() {
       await appAlert({ title: '更新失败', message: j.detail || '更新失败', variant: 'danger' })
     }
   } else {
-    const r = await fetch('/api/agents', {
+    const r = await apiRequest('/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
@@ -573,7 +574,7 @@ async function exportDhaBundle() {
   const id = props.selectedDhaId
   if (!id || id === '__new__') return
   try {
-    const r = await fetch(`/api/dha/instances/${encodeURIComponent(id)}/export-bundle`)
+    const r = await apiRequest(`/dha/instances/${encodeURIComponent(id)}/export-bundle`)
     if (!r.ok) {
       const j = (await r.json().catch(() => ({}))) as { detail?: string }
       throw new Error(j.detail || '导出失败')
@@ -603,7 +604,7 @@ async function deleteDha() {
     confirmText: '删除',
   })
   if (!ok) return
-  const r = await fetch(`/api/agents/${encodeURIComponent(props.selectedDhaId)}`, { method: 'DELETE' })
+  const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     emit('updated')
@@ -630,7 +631,7 @@ function onAvatarChange(e: Event) {
 }
 
 async function fetchAppSettings() {
-  const r = await fetch('/api/settings/app')
+  const r = await apiRequest('/settings/app')
   const j = await r.json()
   if (j.status === 'ok' && j.data?.llm_providers) {
     llmProviders.value = Object.fromEntries(

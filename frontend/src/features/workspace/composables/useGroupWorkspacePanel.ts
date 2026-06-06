@@ -1,3 +1,4 @@
+import { apiRequest, apiUrl } from '@/api/base'
 import { computed, onUnmounted, ref, watch, type Ref } from 'vue'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { uploadWorkspaceFile } from '../workspaceUpload'
@@ -65,7 +66,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     groupWorkspaceError.value = ''
     try {
       const path = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${path}`)
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${path}`)
       const j = await r.json().catch(() => null)
       if (j?.status === 'ok' && Array.isArray(j?.data?.entries)) {
         groupWorkspaceEntries.value = j.data.entries.map((e: { name: string; path: string; is_dir?: boolean }) => ({
@@ -120,7 +121,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
   function groupWorkspaceDownloadUrl(filePath: string) {
     const id = workspaceId.value
     if (!id) return '#'
-    return `/api/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`
+    return apiUrl(`/workspaces/${encodeURIComponent(id)}/files/download?path=${encodeURIComponent(filePath)}`)
   }
 
   async function downloadGroupWorkspaceFile(e: { name: string; path: string; is_dir?: boolean }) {
@@ -159,7 +160,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     if (!name) return
     try {
       const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/mkdir${pathParam}`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/mkdir${pathParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dirname: name }),
@@ -189,7 +190,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     if (!name) return
     try {
       const pathParam = groupWorkspacePath.value ? `?path=${encodeURIComponent(groupWorkspacePath.value)}` : ''
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files${pathParam}`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files${pathParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: name, content: '' }),
@@ -244,7 +245,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     }))?.trim()
     if (name == null || name === '' || name === e.name) return
     try {
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/rename?path=${encodeURIComponent(e.path)}`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/rename?path=${encodeURIComponent(e.path)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_name: name }),
@@ -276,7 +277,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     })
     if (!ok) return
     try {
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(e.path)}`, {
         method: 'DELETE',
       })
       const j = await r.json().catch(() => ({}))
@@ -317,7 +318,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     const id = workspaceId.value
     if (!id || !groupWorkspacePreviewPath.value) return
     try {
-      const r = await fetch(`/api/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(groupWorkspacePreviewPath.value)}`, {
+      const r = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files/content?path=${encodeURIComponent(groupWorkspacePreviewPath.value)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: groupWorkspacePreviewEditContent.value }),

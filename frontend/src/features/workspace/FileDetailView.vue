@@ -147,8 +147,9 @@ import { renderAsync } from 'docx-preview'
 import * as XLSX from 'xlsx'
 import MarkdownIt from 'markdown-it'
 import { appAlert } from '@/composables/useAppDialog'
+import { apiRequest, apiUrl } from '@/api/base'
 
-const props = defineProps<{ path: string; workspaceId?: string }>()
+const props = defineProps<{ path: string; workspaceId: string }>()
 const emit = defineEmits<{
   (e: 'renamed', newPath: string): void
   (e: 'delete-file'): void
@@ -156,10 +157,7 @@ const emit = defineEmits<{
 
 const downloadUrl = computed(() => {
   const p = currentPath.value
-  if (props.workspaceId) {
-    return `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/download?path=${encodeURIComponent(p)}`
-  }
-  return `/api/files/download?path=${encodeURIComponent(p)}`
+  return apiUrl(`/workspaces/${encodeURIComponent(props.workspaceId)}/files/download?path=${encodeURIComponent(p)}`)
 })
 
 const imageExtensions = /\.(jpe?g|png|gif|webp|bmp|svg)$/i
@@ -453,10 +451,8 @@ async function saveName() {
   }
   try {
     const path = currentPath.value
-    const url = props.workspaceId
-      ? `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/rename?path=${encodeURIComponent(path)}`
-      : `/api/files/rename?path=${encodeURIComponent(path)}`
-    const r = await fetch(url, {
+    const url = `/workspaces/${encodeURIComponent(props.workspaceId)}/files/rename?path=${encodeURIComponent(path)}`
+    const r = await apiRequest(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ new_name: newName }),
@@ -486,10 +482,8 @@ function cancelEditContent() {
 async function saveContent() {
   try {
     const path = currentPath.value
-    const url = props.workspaceId
-      ? `/api/workspaces/${encodeURIComponent(props.workspaceId)}/files/content?path=${encodeURIComponent(path)}`
-      : `/api/files/content?path=${encodeURIComponent(path)}`
-    const r = await fetch(url, {
+    const url = `/workspaces/${encodeURIComponent(props.workspaceId)}/files/content?path=${encodeURIComponent(path)}`
+    const r = await apiRequest(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: editContent.value }),

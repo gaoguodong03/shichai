@@ -1,3 +1,4 @@
+import { apiRequest } from '@/api/base'
 import { ref, type Ref } from 'vue'
 
 export type ApiSecretItem = { id: string; label: string; key_set: boolean }
@@ -7,7 +8,7 @@ export function useApiSecrets() {
 
   async function loadApiSecrets() {
     try {
-      const r = await fetch('/api/settings/api-secrets')
+      const r = await apiRequest('/settings/api-secrets')
       const j = await r.json()
       if (j?.status === 'ok' && j?.data?.items) {
         secretItems.value = j.data.items

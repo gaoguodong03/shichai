@@ -107,6 +107,7 @@ import { useRouter, useRoute } from 'vue-router'
 import landingImageUrl from '@/assets/landing.png'
 import logoUrl from '@/assets/49logo.png'
 import { THEME_AUTH_CHANGED_EVENT } from '@/composables/useTheme'
+import { apiRequest } from '@/api/base'
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
@@ -169,8 +170,8 @@ async function onSubmit() {
   }
   loading.value = true
   try {
-    const endpoint = isRegister.value ? '/api/auth/register' : '/api/auth/login'
-    const r = await fetch(endpoint, {
+    const endpoint = isRegister.value ? '/auth/register' : '/auth/login'
+    const r = await apiRequest(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: name, password: pwd }),

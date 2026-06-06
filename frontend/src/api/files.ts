@@ -17,10 +17,9 @@ export async function listWorkspaceFiles(
   return apiFetch(url)
 }
 
-/** 构建导出/下载链接：优先 download_url，否则 /api/files/download?path= */
+/** 构建后端返回的导出/下载链接。 */
 export function downloadUrl(data: { download_url?: string; path?: string }): string {
   const base = typeof window !== 'undefined' ? window.location.origin : ''
   if (data.download_url) return `${base}${data.download_url}`
-  if (data.path) return `${base}/api/files/download?path=${encodeURIComponent(data.path)}`
   return ''
 }

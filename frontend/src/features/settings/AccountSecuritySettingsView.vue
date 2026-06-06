@@ -106,6 +106,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { apiRequest } from '@/api/base'
 
 const USER_STORAGE_KEY = 'dha_user'
 const USER_ID_STORAGE_KEY = 'dha_user_id'
@@ -143,10 +144,10 @@ async function requestWithMethodFallback(path: string, payload: Record<string, s
     headers: { 'Content-Type': 'application/json' },
     body,
   }
-  let r = await fetch(path, { method: 'PUT', ...common })
+  let r = await apiRequest(path, { method: 'PUT', ...common })
   let j = await r.json().catch(() => ({}))
   if (r.status === 405) {
-    r = await fetch(path, { method: 'POST', ...common })
+    r = await apiRequest(path, { method: 'POST', ...common })
     j = await r.json().catch(() => ({}))
   }
   return { r, j }
@@ -171,7 +172,7 @@ async function onChangeAccount() {
   }
   savingAccount.value = true
   try {
-    const { r, j } = await requestWithMethodFallback('/api/auth/account', {
+    const { r, j } = await requestWithMethodFallback('/auth/account', {
       new_username: account,
       current_password: currentPwd,
     })
@@ -214,7 +215,7 @@ async function onChangePassword() {
   }
   savingPassword.value = true
   try {
-    const { r, j } = await requestWithMethodFallback('/api/auth/password', {
+    const { r, j } = await requestWithMethodFallback('/auth/password', {
       current_password: currentPwd,
       new_password: nextPwd,
     })

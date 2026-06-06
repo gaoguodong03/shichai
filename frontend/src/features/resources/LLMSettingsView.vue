@@ -316,6 +316,7 @@
 
 
 <script setup lang="ts">
+import { apiRequest } from '@/api/base'
 
 import { ref, computed, onMounted, watch } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
@@ -550,7 +551,7 @@ async function loadSecrets() {
 
   try {
 
-    const r = await fetch('/api/settings/api-secrets')
+    const r = await apiRequest('/settings/api-secrets')
 
     const j = await r.json()
 
@@ -576,7 +577,7 @@ async function load() {
 
   try {
 
-    const r = await fetch('/api/settings/app')
+    const r = await apiRequest('/settings/app')
 
     const j = await r.json()
 
@@ -612,7 +613,7 @@ async function saveAll(nextSelectedId?: string) {
 
   try {
 
-    const r = await fetch('/api/settings/app', {
+    const r = await apiRequest('/settings/app', {
 
       method: 'PUT',
 
