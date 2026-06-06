@@ -82,6 +82,9 @@ def network_allowed_for_tool(tool_name: str) -> bool:
             return True
         if name in allowlist:
             return True
+        for item in allowlist:
+            if item.endswith("*") and name.startswith(item[:-1]):
+                return True
         if name.startswith("run_skill_script_") and "run_skill_script" in allowlist:
             return True
         return False

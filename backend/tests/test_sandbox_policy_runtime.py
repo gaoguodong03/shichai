@@ -9,6 +9,15 @@ def test_network_allowed_for_tool_matches_run_skill_script_prefix(monkeypatch):
     assert policy.network_allowed_for_tool("read_file") is False
 
 
+def test_network_allowed_for_tool_supports_prefix_wildcard(monkeypatch):
+    monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script_*, call_*")
+    monkeypatch.setenv("SANDBOX_ALLOW_NETWORK", "0")
+
+    assert policy.network_allowed_for_tool("run_skill_script_demo") is True
+    assert policy.network_allowed_for_tool("call_api") is True
+    assert policy.network_allowed_for_tool("read_file") is False
+
+
 def test_network_allowed_for_tool_allows_global_when_no_allowlist(monkeypatch):
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
     monkeypatch.setenv("SANDBOX_ALLOW_NETWORK", "1")
