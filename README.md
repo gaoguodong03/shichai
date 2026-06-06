@@ -14,6 +14,7 @@
 - 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/project/worklist.md](docs/project/worklist.md)
 - 15 分钟技术介绍讲稿（时间轴、状态机页讲法、三问备用答法）：见 [docs/presentations/15-minute-technical-brief.md](docs/presentations/15-minute-technical-brief.md)
 - 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/testing/pre-release-testing.md](docs/testing/pre-release-testing.md)
+- 版本说明：见 [CHANGELOG.md](CHANGELOG.md)
 docker buildx build --platform linux/amd64 \
   -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.13 \
   -f Dockerfile \
