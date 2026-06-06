@@ -81,8 +81,8 @@
 - `test_expert_runtime.py`：专家 runtime 入口、技能选择与工具组装。
 - `test_scene_scheduler.py`：场景调度收敛与建议专家逻辑。
 - `test_host_takeover.py`：主持人接管语义、`@专家` 强制路由、主持人输出解析。
-- `test_host_plan.py`：`memory/host_plan.md` 读写保护与预留路径规则。
-- `test_orchestrator_audit.py`：调度审计日志格式化。
+- `test_group_chat_cleanup_contract.py`：不再生成旧版 `host_plan`、`orchestrator_audit` 运行期文件。
+- `test_orchestration_contracts.py`：调度和终止事件合同约束。
 
 ### 群聊记忆与协议
 

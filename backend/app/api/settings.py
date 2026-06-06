@@ -26,8 +26,11 @@ from app.api.settings_skill_store import (
 )
 from app.api.settings_skill_parts import PartDirCreate, PartFileCreate, PartFileUpdate
 from app.api.settings_skills import (
+    _build_skill_zip_bytes,
     _content_disposition_attachment,
     _invalidate_mcp_runtime_after_config_change,
+    _import_expert_from_bundle_bytes,
+    _import_skill_from_bundle_bytes,
     _merge_imported_skill_requirements_and_prewarm,
     _merge_sandbox_requirements_lines,
     _python_requirements_from_skill_dir,

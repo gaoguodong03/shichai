@@ -80,7 +80,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 | 设置-API 密钥 | 密钥新增、列表隐藏明文、更新、删除 | `tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-沙箱 | 镜像 variant 保存、requirements 保存/merge、用户级沙箱复用/重建、网络策略、预热去重 | `tests/test_sandbox_service.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 编排与场景运行时 | 场景 runtime、专家 runtime、主持人接管、轮次状态机、need-user-input 合约 | `tests/test_scene_runtime.py`、`tests/test_expert_runtime.py`、`tests/test_group_orchestration_fsm.py`、`tests/test_orchestration_contracts.py` |
-| 记忆与审计 | 群聊记忆注入、事实存储、运行审计写入 | `tests/test_group_chat_group_memory.py`、`tests/test_group_memory_store.py`、`tests/test_orchestrator_audit.py` |
+| 记忆与审计 | 群聊记忆注入、事实存储、旧版运行审计文件清理合同 | `tests/test_group_chat_group_memory.py`、`tests/test_group_memory_store.py`、`tests/test_group_chat_cleanup_contract.py` |
 | 启动与生命周期 | FastAPI 生命周期、懒加载初始化、预热开关 | `tests/test_lifespan.py` |
 
 ## 聚合业务流

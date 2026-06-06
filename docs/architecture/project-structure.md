@@ -12,7 +12,7 @@ shichai/
 │   ├── app/
 │   │   ├── main.py          # FastAPI 入口组装（create_app / health / 启动）
 │   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha
-│   │   ├── agent/           # ReAct 工作流、工具组装、技能选择、LLM 客户端
+│   │   ├── agent/           # ReAct 工作流、专家 Skill 选型、工具组装、LLM 客户端
 │   │   ├── core/            # 生命周期、运行环境、静态挂载、用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化
 │   │   ├── skills/          # Skills 加载（SKILL.md 扫描与内容获取）
@@ -66,7 +66,7 @@ shichai/
 |------|------|
 | `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
 | `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(all_tools, dha, workspace_id)`，按 DHA 的 mcp_server_ids/skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每 skill 的 `run_skill_script_<skill_id>`。 |
-| `skill_selector.py` | 技能选择：根据用户消息与 name+description 选出 skill_id。 |
+| `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |
 | `leader_scheduler.py` | 群聊主持人调度。 |
 | `types.py` | Agent 状态等类型定义。 |
@@ -103,7 +103,6 @@ shichai/
 | `filesystem_session_wrapper.py` | `wrap_filesystem_tools(tools, session_id)`，按会话限定工作区路径。 |
 | `read_file.py` | 遗留读文件工具（已由 MCP file-reader/filesystem 替代，若仍存在则仅兼容）。 |
 | `write_workspace_file.py` | 写工作区文件（若被其他模块使用）。 |
-| `volces_image_cli_lib.py` | 火山图像等辅助。 |
 
 当前项目**未使用**独立 `models/`、`storage/`、`utils/` 目录；数据与持久化分散在 api/skills/core 及本地文件（如 `backend/data/users/{user_id}/sessions`）。
 

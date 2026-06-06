@@ -1,5 +1,6 @@
 import { apiRequest } from '@/api/base'
 import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
+import MarkdownIt from 'markdown-it'
 import {
   provideGroupChatComposerContext,
   provideGroupChatMessageContext,
@@ -230,23 +231,6 @@ export function useWorkspaceContentProviders(args: {
           snippet: toSnippet(String(m.content || ''), 50),
         }
       })
-  })
-
-  const groupFileCapabilitySummary = computed(() => {
-    const detail = groupDetail.value
-    const out = { read: false, edit: false, write: false, rename: false, mkdir: false, list_dir: false, url: false }
-    if (!detail?.agent_map) return out
-    for (const agentId of detail.agent_ids || []) {
-      const caps = detail.agent_map?.[agentId]?.file_capabilities || {}
-      out.read = out.read || !!caps.read
-      out.edit = out.edit || !!caps.edit
-      out.write = out.write || !!caps.write
-      out.rename = out.rename || !!caps.rename
-      out.mkdir = out.mkdir || !!caps.mkdir
-      out.list_dir = out.list_dir || !!caps.list_dir
-      out.url = out.url || !!detail.agent_map?.[agentId]?.url_capability
-    }
-    return out
   })
 
   function scrollToMessage(messageId: string) {
@@ -698,10 +682,7 @@ export function useWorkspaceContentProviders(args: {
     window.addEventListener(USER_PREF_UPDATED_EVENT_NAME, onUserPrefUpdated as EventListener)
     window.addEventListener(SESSION_PRESETS_UPDATED_EVENT_NAME, onSessionPresetsUpdated)
     window.addEventListener(HOST_NAME_UPDATED_EVENT_NAME, onHostDisplayNameUpdated as EventListener)
-    import('markdown-it').then((M) => {
-      const Md = M.default as new (opts?: { breaks?: boolean }) => { render: (s: string) => string }
-      mdRef.value = new Md({ breaks: true })
-    }).catch(() => {})
+    mdRef.value = new MarkdownIt({ breaks: true })
     loadShortcutPresets()
     loadHostDisplayName()
   })
@@ -899,16 +880,6 @@ export function useWorkspaceContentProviders(args: {
       body: JSON.stringify({ presets: payload }),
     }).catch(() => {})
   }
-  function deleteShortcutPreset(id: string) {
-    shortcutPresets.value = shortcutPresets.value.filter((p) => p.id !== id)
-    if (editingShortcutId.value === id) {
-      editingShortcutId.value = ''
-      newShortcutName.value = ''
-      newShortcutDhaIds.value = []
-    }
-    saveShortcutPresets()
-  }
-
   function reusableBlankSessionIdForScenario(): string {
     const detail = groupDetail.value
     const selectedId = props.selectedGroupSessionId || ''
@@ -1250,10 +1221,6 @@ export function useWorkspaceContentProviders(args: {
   const showShortcutEditorModal = ref(false)
   const shortcutEditorRef = ref<HTMLElement | null>(null)
   const shortcutPresetSearch = ref('')
-  const editingShortcutId = ref('')
-  const newShortcutName = ref('')
-  const newShortcutDhaIds = ref<string[]>([])
-  const shortcutExpertSearch = ref('')
   const showInsertFile = ref(false)
   const showInsertFileModal = ref(false)
   const insertFileRef = ref<HTMLElement | null>(null)
@@ -1408,17 +1375,6 @@ export function useWorkspaceContentProviders(args: {
   const invitableDhas = computed(() => {
     const inGroup = new Set(groupDetail.value?.agent_ids || [])
     return (props.dhaInstances || []).filter((d) => !inGroup.has(d.agent_id))
-  })
-
-  const filteredShortcutExperts = computed(() => {
-    const q = (shortcutExpertSearch.value || '').trim().toLowerCase()
-    const all = props.dhaInstances || []
-    if (!q) return all
-    return all.filter((d) => {
-      const name = (d.name || '').toLowerCase()
-      const id = (d.agent_id || '').toLowerCase()
-      return name.includes(q) || id.includes(q)
-    })
   })
 
   const leaderDhaId = computed(() => (groupDetail.value?.leader_agent_id || '').trim())
@@ -1953,7 +1909,7 @@ export function useWorkspaceContentProviders(args: {
 
   function defaultDhaFilename(msg: MsgExt & { agent_id?: string }): string {
     const name = (groupDetail.value?.agent_map || {})[msg.agent_id || '']?.name || 'dha'
-    const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '').slice(0, 12)
+    const ts = new Date().toISOString().slice(0, 19).replace('T', '').replace(/[-:]/g, '').slice(0, 12)
     return `dha-${name}-${ts}.md`
   }
 

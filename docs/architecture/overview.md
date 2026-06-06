@@ -18,7 +18,7 @@
 flowchart TB
   UI["Vue 单页应用<br/>工作区 / 资源中心 / 设置 / 用户手册"]
   API["FastAPI API 层<br/>认证 / 会话 / 资源 / 文件 / 设置"]
-  Agent["Agent 编排层<br/>主持人调度 / 专家 runtime / SimpleAgent / Skill 选择"]
+  Agent["Agent 编排层<br/>主持人调度 / 专家 runtime / SimpleAgent / Skill 选型"]
   Tools["工具运行层<br/>MCP / Skill 脚本 / 文件工具 / 内部 API"]
   Data["用户隔离数据<br/>backend/data/users/{user_id}/..."]
   External["外部服务<br/>LLM Provider / MCP Server / OpenSandbox / 沙箱镜像"]
@@ -54,7 +54,7 @@ flowchart TB
 - `api/dha.py`：专家 CRUD 与专家资源包导入导出。
 - `api/settings*.py`：Skill、MCP、场景、密钥、主持人、应用设置。
 - `api/files.py`：工作区文件管理。
-- `agent/`：SimpleAgent、专家 runtime、Skill 选择、主持人调度。
+- `agent/`：SimpleAgent、专家 runtime、Skill 选型、主持人调度。
 - `mcp/`：MCP 连接、工具列表、参数归一化。
 - `tools/`：Skill 脚本执行、文件工具、内部 API 工具。
 - `core/`：用户上下文、安全、资源路径、启动生命周期和 bundle 处理。

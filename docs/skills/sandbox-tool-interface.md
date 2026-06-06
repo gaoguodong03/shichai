@@ -6,7 +6,7 @@
 
 - 工具必须通过模型结构化工具调用（`tool_calls` / function calling）调用，不要把 JSON 工具调用写进正文。
 - 所有工作区路径都使用“当前会话工作区相对路径”，例如 `notes/report.md`，不要带 `/workspace`、`agent-outputs/`、`workspaces/<session_id>/` 等内部前缀。
-- 不确定文件名时，先调用 `list_workspace_directory`；如果 `read_file` 返回候选路径，下一步必须使用候选中的真实路径，不要继续猜文件名。
+- 不确定文件名时，先调用 `list_workspace_directory`；`read_file` 只读取调用方提供的精确相对路径，不负责遍历工作区猜候选路径。
 - 文件读写、脚本执行都经 OpenSandbox 挂载的 `/workspace` 与 `/skills` 完成；模型不需要也不应该感知宿主机绝对路径。
 - 工具返回值是给模型继续推理用的内部结果；最终回复应总结用户关心的结论，不要原样倾倒长 JSON/stdout，除非用户明确要求。
 
@@ -30,7 +30,7 @@
 
 - `path` 必须是工作区相对路径。
 - 只能读取 UTF-8 文本；非文本会返回错误。
-- 文件不存在时会返回候选路径或工作区真实文件列表。收到这类错误后，应改用真实路径或先询问用户，不要继续猜测。
+- 文件不存在时只返回缺失错误。收到这类错误后，应先调用 `list_workspace_directory` 查看真实路径，或向用户确认路径，不要继续猜测。
 
 推荐：
 

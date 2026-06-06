@@ -86,7 +86,8 @@ if [[ -f "$ENV_FILE" ]]; then
   unset -f load_env_default
 fi
 
-ST49_VERSION="${ST49_VERSION:-26.06.06}"
+DEFAULT_ST49_VERSION="26.06.06"
+ST49_VERSION="$DEFAULT_ST49_VERSION"
 # Sandbox images are intentionally versioned independently from ST49.
 # Do not derive them from IMAGE_TAG by default: otherwise a normal app release like
 # `bash pack_1panel_backup.sh 26.05.12.23` would make 1Panel point to
@@ -107,7 +108,7 @@ if [[ -n "$IMAGE_TAG" ]]; then
   ST49_VERSION="$IMAGE_TAG"
   ST49_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
 else
-  ST49_IMAGE="${ST49_IMAGE:-${IMAGE_REPO}:$ST49_VERSION}"
+  ST49_IMAGE="${IMAGE_REPO}:$ST49_VERSION"
 fi
 SANDBOX_STANDARD_IMAGE="${ST49_SANDBOX_STANDARD_IMAGE:-${SANDBOX_STANDARD_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_STANDARD_VERSION}-standard}}"
 SANDBOX_PLAYWRIGHT_IMAGE="${ST49_SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_PLAYWRIGHT_IMAGE:-${SANDBOX_IMAGE_REPO}:${SANDBOX_PLAYWRIGHT_VERSION}-playwright}}"

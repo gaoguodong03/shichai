@@ -8,7 +8,7 @@
 
 DHA 采用**两阶段**设计（见 [Skill 规范](../skills/skill-standard.md) 与 [运行流程概览](./runtime-flow-overview.md)）：
 
-1. **第一次调用**：技能选择，仅输入用户消息 + 各 skill 的 name（+ description，若有）
+1. **第一次调用**：专家 Skill 选型，仅输入用户消息 + 当前专家候选 Skill 的 name（+ description，若有）
 2. **第二次调用**：技能执行，输入选中 skill 的完整内容 + 用户问题 + 历史摘要（若有）
 
 ---
@@ -28,7 +28,7 @@ DHA 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messag
 
 ## 三、系统提示词（System Prompt）结构
 
-以下为**技能执行阶段**（第二次调用）的系统提示词结构，对应 `create_skill_execution_agent`。技能选择阶段（第一次调用）见 `skill_selector.py`。
+以下为**技能执行阶段**（第二次调用）的系统提示词结构，对应 `create_skill_execution_agent`。专家 Skill 选型阶段（第一次调用）见 `expert_runtime.py`。
 
 ### 3.1 用户自定义系统提示词（可选）
 

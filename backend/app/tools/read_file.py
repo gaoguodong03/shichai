@@ -1,6 +1,5 @@
 """读取引用文件工具 - 经 OpenSandbox 挂载的工作区路径读取（不经宿主直读）。"""
 import json
-from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -107,36 +106,6 @@ def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
                 tool_call_id=f"read_file:{rel}",
             )
         except FileNotFoundError:
-            try:
-                hints: list[str] = []
-                all_files: list[str] = []
-                target_name = Path(rel).name.lower()
-                for p in ws_root.rglob("*"):
-                    if not p.is_file():
-                        continue
-                    rr = str(p.relative_to(ws_root)).replace("\\", "/")
-                    if is_internal_diagnostic_workspace_path(rr):
-                        continue
-                    all_files.append(rr)
-                    if target_name and p.name.lower() == target_name:
-                        hints.append(rr)
-                    elif target_name and target_name in p.name.lower():
-                        hints.append(rr)
-                    if len(hints) >= 5:
-                        break
-                if hints:
-                    return (
-                        f"错误：文件不存在：{raw}\n"
-                        "你可能想读取以下路径（均在当前工作区）：\n- " + "\n- ".join(hints)
-                    )
-                if all_files:
-                    preview = sorted(set(all_files))[:20]
-                    return (
-                        f"错误：文件不存在：{raw}\n"
-                        "不要继续猜测文件名；请改用以下当前工作区真实路径之一：\n- " + "\n- ".join(preview)
-                    )
-            except Exception:
-                pass
             return f"错误：文件不存在：{raw}。不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。"
         except UnicodeDecodeError:
             return f"错误：{raw} 不是 UTF-8 文本。"

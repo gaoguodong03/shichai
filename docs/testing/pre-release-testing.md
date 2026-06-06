@@ -255,9 +255,9 @@ http://<server-ip>:8100
 当前包含：
 
 - 鉴权与用户数据：`test_auth_sqlite`、`test_sessions_api`；
-- 编排与主持人状态机：`test_group_orchestration_fsm`、`test_orchestration_contracts`、`test_orchestrator_audit`；
+- 编排与主持人状态机：`test_group_orchestration_fsm`、`test_orchestration_contracts`、`test_group_chat_cleanup_contract`；
 - 群聊协议与记忆：`test_group_chat_stream_protocol`、`test_group_chat_group_memory`、`test_group_memory_store`；
-- Agent/专家/DHA：`test_dha_api`、`test_expert_bundle`、`test_host_plan`、`test_host_takeover`；
+- Agent/专家/DHA：`test_dha_api`、`test_expert_bundle`、`test_expert_runtime`、`test_host_takeover`；
 - 沙箱与技能脚本：`test_sandbox_service`、`test_group_chat_skill_script_cli_flow`；
 - 文件与工作区：`test_workspace_files`、`test_file_ref_and_gateway`；
 - Runtime/MCP/工具网关切片：`test_skill_agent_tool_resolution`、`test_call_api_tool`、`test_frontend_business_flows`；

@@ -194,7 +194,7 @@
 | 层级 | 范围 | 推荐命令 |
 |------|------|----------|
 | 配置/校验层 | session preset、DHA import、Skill contract | `pytest tests/test_session_preset_validate.py tests/test_dha_import_validate.py` |
-| 核心编排层 | FSM、scheduler、orchestrator reducer/audit | `pytest tests/test_group_orchestration_fsm.py tests/test_scene_scheduler.py tests/test_orchestrator_audit.py` |
+| 核心编排层 | FSM、scheduler、orchestrator reducer/contracts | `pytest tests/test_group_orchestration_fsm.py tests/test_scene_scheduler.py tests/test_orchestration_contracts.py` |
 | 工具/沙箱层 | gateway、workspace、sandbox service | `pytest tests/test_file_ref_and_gateway.py tests/test_workspace_files.py tests/test_sandbox_service.py` |
 | API 层 | auth、sessions、bundle import/export | `pytest tests/test_auth_sqlite.py tests/test_sessions_api.py tests/test_bundle_import_api.py` |
 | 集成层 | group chat stream、skill script CLI flow | `pytest tests/test_group_chat_stream_protocol.py tests/test_group_chat_skill_script_cli_flow.py` |

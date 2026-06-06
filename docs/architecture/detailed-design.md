@@ -18,7 +18,7 @@
 | 会话与工作区 | 会话 CRUD、SSE、历史、成员和文件上下文 | `backend/app/api/sessions.py`、`backend/app/api/group_chat.py`、`frontend/src/features/workspace/` | UR-02、UR-03、UR-08 |
 | 编排运行时 | 主持人决策、专家调度、轮次状态、审计 | `backend/app/agent/group_orchestration_fsm.py`、`backend/app/agent/leader_scheduler.py`、`backend/app/agent/orchestrator_runtime.py` | UR-03 |
 | 资源中心 | 场景、专家、Skill、MCP、模型、密钥、文件 | `backend/app/api/dha.py`、`backend/app/api/settings*.py`、`frontend/src/features/resources/` | UR-04、UR-09、UR-10 |
-| Skill、MCP 与工具网关 | Skill 选择、MCP 权限、脚本工具、参数归一化 | `backend/app/agent/skill_selector.py`、`backend/app/agent/tool_gateway.py`、`backend/app/mcp/manager.py` | UR-05、UR-06 |
+| Skill、MCP 与工具网关 | 专家 Skill 选型、MCP 权限、脚本工具、参数归一化 | `backend/app/agent/expert_runtime.py`、`backend/app/agent/tool_gateway.py`、`backend/app/mcp/manager.py` | UR-05、UR-06 |
 | 沙箱 | 镜像选择、挂载、依赖、超时、网络策略 | `backend/app/agent/sandbox_service.py`、`backend/app/agent/sandbox_policy_runtime.py`、`backend/app/api/sandbox_settings.py` | UR-07 |
 | 部署运行 | 应用启动、健康检查、静态资源、1Panel/Docker | `backend/app/main.py`、`backend/app/core/lifespan.py`、`backend/app/core/static_spa.py` | UR-11 |
 
@@ -75,9 +75,9 @@
 |------|------|----------|
 | FSM | 控制发言、等待用户、结束和错误状态 | `backend/app/agent/group_orchestration_fsm.py` |
 | 调度器 | 在普通会话和场景会话中选择发言专家 | `backend/app/agent/leader_scheduler.py`、`backend/app/core/scene_scheduler.py` |
-| 主持人决策 | 生成调度说明和下一步动作 | `backend/app/agent/group_host_decision.py`、`backend/app/agent/host_plan.py` |
+| 主持人决策 | 生成调度说明和下一步动作 | `backend/app/agent/group_host_decision.py`、`backend/app/agent/orchestrator_runtime.py` |
 | 专家运行 | 组装上下文、调用模型、处理 Skill/MCP 工具 | `backend/app/agent/expert_runtime.py`、`backend/app/agent/skill_agent_runtime.py` |
-| 审计 | 记录编排决策和异常原因 | `backend/app/agent/orchestrator_audit.py` |
+| 审计 | 记录编排决策和异常原因 | `backend/app/agent/sandbox_audit.py`、`backend/app/agent/orchestrator_reducer.py` |
 
 设计约束：
 
@@ -92,7 +92,7 @@
 - `backend/tests/test_host_takeover.py`
 - `backend/tests/test_scene_scheduler.py`
 - `backend/tests/test_expert_runtime.py`
-- `backend/tests/test_orchestrator_audit.py`
+- `backend/tests/test_orchestration_contracts.py`
 
 ### 3.4 资源中心
 
@@ -130,7 +130,7 @@ Skill 描述方法，MCP 暴露工具，沙箱提供受控运行环境。专家�
 
 执行链路：
 
-1. `skill_selector.py` 根据用户任务和专家绑定选择 Skill。
+1. `expert_runtime.py` 根据用户任务、专家绑定、会话锁和候选 Skill 描述选定本轮 Skill。
 2. `tools_for_skill.py` 和 `skill_agent_runtime.py` 组装可用工具。
 3. `tool_gateway.py` 统一处理脚本工具、MCP 工具和文件工具调用。
 4. `mcp/manager.py` 管理 MCP Server 和工具列表。

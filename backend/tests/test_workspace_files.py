@@ -205,6 +205,29 @@ def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data
     assert "secret" in out
 
 
+def test_read_file_missing_path_does_not_search_for_candidates(temp_user_data_root, monkeypatch):
+    """read_file 只按调用方给出的工作区相对路径读取；缺失时不再遍历工作区猜路径。"""
+    from app.api.files import get_workspace_root
+    from app.tools import read_file as read_file_module
+    from app.tools.read_file import create_read_file_tool
+
+    class _MissingSandboxService:
+        async def read_workspace_text(self, **_kwargs):
+            raise FileNotFoundError("missing")
+
+    ws = get_workspace_root("sess-missing")
+    (ws / "nested").mkdir(parents=True, exist_ok=True)
+    (ws / "nested" / "report.md").write_text("real file", encoding="utf-8")
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: _MissingSandboxService())
+
+    tool = create_read_file_tool("sess-missing")
+    out = asyncio.run(tool.ainvoke({"path": "report.md"}))
+
+    assert "错误：文件不存在：report.md" in out
+    assert "nested/report.md" not in out
+    assert "list_workspace_directory" in out
+
+
 def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root):
     """Skill 生成在 workspace/scripts 下的结果文件仍然是工作区文件。"""
     from app.tools.read_file import _workspace_relative_for_session
