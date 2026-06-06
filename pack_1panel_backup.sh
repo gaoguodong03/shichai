@@ -62,7 +62,6 @@ if [[ -f "$ENV_FILE" ]]; then
     export "$key=$value"
   }
   for env_key in \
-    ST49_VERSION \
     SANDBOX_VERSION \
     SANDBOX_STANDARD_VERSION \
     SANDBOX_PLAYWRIGHT_VERSION \
@@ -73,7 +72,6 @@ if [[ -f "$ENV_FILE" ]]; then
     SANDBOX_PYTHON_IMAGE \
     INSTALL_APP_NODE_EXTRAS \
     PREWARM_NPX_MCP \
-    ST49_IMAGE \
     ST49_SANDBOX_STANDARD_IMAGE \
     ST49_SANDBOX_PLAYWRIGHT_IMAGE \
     SANDBOX_STANDARD_IMAGE \
@@ -88,7 +86,7 @@ if [[ -f "$ENV_FILE" ]]; then
   unset -f load_env_default
 fi
 
-ST49_VERSION="${ST49_VERSION:-26.05.13}"
+ST49_VERSION="${ST49_VERSION:-26.06.06}"
 # Sandbox images are intentionally versioned independently from ST49.
 # Do not derive them from IMAGE_TAG by default: otherwise a normal app release like
 # `bash pack_1panel_backup.sh 26.05.12.23` would make 1Panel point to

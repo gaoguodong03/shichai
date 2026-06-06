@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-06-06 预发布验收补强
+## 26.06.06 - 2026-06-06 预发布验收补强
 
 ### P0 完成审计
 
@@ -17,7 +17,9 @@
 
 - `pack_1panel_backup.sh` 不再把本地 `.env` 中的密钥、认证库路径、运行输出或缓存打进 1Panel 备份包。
 - 生产 `STATIC_DIR` 存在时，`GET /health` 仍返回 `{"status":"ok"}`，不会被 SPA fallback 遮蔽。
-- 本地容器冒烟使用 `ST49_IMAGE=st49:preflight-local` 验证当前代码镜像；远端发布仍需按目标服务器架构构建并推送正式镜像 tag。
+- 正式主应用镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.06.06`。
+- 固定普通沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard`。
+- 固定 Playwright 沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.15-playwright`。
 
 ### 验证
 

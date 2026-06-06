@@ -16,7 +16,7 @@
 - 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/testing/pre-release-testing.md](docs/testing/pre-release-testing.md)
 - 版本说明：见 [CHANGELOG.md](CHANGELOG.md)
 docker buildx build --platform linux/amd64 \
-  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.05.13 \
+  -t crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.06.06 \
   -f Dockerfile \
   --push .
 
@@ -62,11 +62,14 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 - 文件：`docker-compose.1panel.yml`
 - 可选环境变量覆盖模板：`backend/.env.1panel.example`
 - 1Panel 可导入备份包：`1panel-compose-backup.tar.gz`
+- 本次发布主应用镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/dha:26.06.06`
+- 固定普通沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.12.1-standard`
+- 固定 Playwright 沙箱镜像：`crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox:26.05.15-playwright`
 
 ### 三步完成
 
 1. 构建镜像并生成 1Panel 备份包
-   直接运行 `bash pack_1panel_backup.sh 26.05.xx`。脚本不要求存在 `backend/.env`；如果该文件存在，只把其中的镜像/沙箱白名单变量作为覆盖值读取，不会把本地密钥、认证库、运行输出或缓存打进备份包。
+   直接运行 `bash pack_1panel_backup.sh 26.06.06`。脚本不要求存在 `backend/.env`；如果该文件存在，只把其中的沙箱镜像和运行参数白名单变量作为覆盖值读取，不会把本地主应用旧版本、密钥、认证库、运行输出或缓存打进备份包。
 2. 在 1Panel 创建数据卷  
    创建名为 `st49` 的 Docker 卷（后端数据持久化；compose 会把内部卷 `st49_data` 绑定到该外部卷）。
 3. 导入并启动  

@@ -40,10 +40,10 @@ def test_pack_1panel_backup_allows_missing_env_file(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     env_text = _read_packaged_env(output_tgz)
 
-    assert "ST49_VERSION=26.05.13" in env_text
+    assert "ST49_VERSION=26.06.06" in env_text
     assert (
         "ST49_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/"
-        "free4inno-yuanfang2025/dha:26.05.13"
+        "free4inno-yuanfang2025/dha:26.06.06"
     ) in env_text
     assert "SANDBOX_PREWARM_ALL_USERS=0" in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
@@ -123,6 +123,11 @@ def test_pack_1panel_backup_omits_local_secrets_paths_and_runtime_outputs(tmp_pa
                 "SHUTONG_USER_DATA_ROOT=/Users/ggd/project/shichai/backend/data/users",
                 "ACCESS_TOKEN_EXPIRE_MINUTES=7",
                 "QWEN_API_KEY=keep-this-key",
+                "ST49_VERSION=26.05.13",
+                (
+                    "ST49_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/"
+                    "free4inno-yuanfang2025/dha:26.05.13"
+                ),
             ]
         )
         + "\n",
@@ -154,6 +159,12 @@ def test_pack_1panel_backup_omits_local_secrets_paths_and_runtime_outputs(tmp_pa
     assert "keep-this-key" not in env_text
     assert "AUTH_SECRET=" not in env_text
     assert "QWEN_API_KEY=" not in env_text
+    assert "ST49_VERSION=26.06.06" in env_text
+    assert (
+        "ST49_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/"
+        "free4inno-yuanfang2025/dha:26.06.06"
+    ) in env_text
+    assert "dha:26.05.13" not in env_text
     assert "/Users/ggd/project/shichai" not in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
     assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
