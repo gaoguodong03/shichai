@@ -35,6 +35,7 @@
 | `docs/operations/single-user-single-sandbox.md` | 当前有效 | 单用户单沙箱运行约束 |
 | `docs/project/worklist.md` | 当前有效 | 项目工作清单 |
 | `docs/project/implementation-task-breakdown.md` | 当前有效 | 按 UR 拆分的工程任务池、状态和验收点 |
+| `docs/project/p0-completion-audit.md` | 当前有效 | UR-01 到 UR-08 的 P0 完成审计和验证入口 |
 | `docs/project/documentation-audit.md` | 当前有效 | 文档整理审计记录 |
 | `docs/project/documentation-inventory.md` | 当前有效 | 本清单 |
 | `docs/presentations/15-minute-technical-brief.md` | 当前有效 | 介绍讲稿 |

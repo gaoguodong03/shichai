@@ -12,7 +12,7 @@
 | `user-manual/` | 面向用户和验收人员的操作手册、截图、PDF | [user-guide.md](user-manual/user-guide.md)、[README.md](user-manual/README.md) |
 | `skills/` | Skill 规范、脚本路径、沙箱工具接口 | [skill-standard.md](skills/skill-standard.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md) |
 | `operations/` | 部署、运行、沙箱和运维约束 | [single-user-single-sandbox.md](operations/single-user-single-sandbox.md) |
-| `project/` | 项目工作清单、工程任务拆分、里程碑、文档审计和管理性材料 | [worklist.md](project/worklist.md)、[implementation-task-breakdown.md](project/implementation-task-breakdown.md)、[documentation-audit.md](project/documentation-audit.md)、[documentation-inventory.md](project/documentation-inventory.md) |
+| `project/` | 项目工作清单、工程任务拆分、P0 完成审计、里程碑、文档审计和管理性材料 | [worklist.md](project/worklist.md)、[implementation-task-breakdown.md](project/implementation-task-breakdown.md)、[p0-completion-audit.md](project/p0-completion-audit.md)、[documentation-audit.md](project/documentation-audit.md)、[documentation-inventory.md](project/documentation-inventory.md) |
 | `presentations/` | 对外介绍、讲稿、PPT 和演示素材 | [15-minute-technical-brief.md](presentations/15-minute-technical-brief.md) |
 | `superpowers/` | Superpowers 规格、实施计划和阶段性工程计划 | `superpowers/specs/`、`superpowers/plans/` |
 
