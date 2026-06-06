@@ -37,11 +37,27 @@ class SkillsLoader:
             env = os.getenv("SKILLS_DIR")
             self.skills_dir = Path(env) if env else _singleton_skills_dir_placeholder()
         self.skills: Dict[str, Skill] = {}
+        self.diagnostics: List[Dict[str, Any]] = []
+
+    def _record_diagnostic(self, skill_path: Path, code: str, message: str) -> None:
+        self.diagnostics.append(
+            {
+                "skill_id": skill_path.name,
+                "path": str(skill_path),
+                "code": code,
+                "message": message,
+            }
+        )
+
+    def get_diagnostics(self) -> List[Dict[str, Any]]:
+        """返回最近一次加载时发现的 Skill 契约问题。"""
+        return [dict(item) for item in self.diagnostics]
 
     def load_skill(self, skill_path: Path) -> Optional[Skill]:
         """加载单个 Skill"""
         skill_file = skill_path / "SKILL.md"
         if not skill_file.exists():
+            self._record_diagnostic(skill_path, "missing_skill_md", "Skill 目录缺少 SKILL.md")
             return None
 
         try:
@@ -53,6 +69,10 @@ class SkillsLoader:
                 parts = content.split("---", 2)
                 if len(parts) >= 3:
                     frontmatter = yaml.safe_load(parts[1])
+                    if frontmatter is None:
+                        frontmatter = {}
+                    if not isinstance(frontmatter, dict):
+                        raise ValueError("frontmatter must be a mapping")
                     body = parts[2].strip()
                 else:
                     frontmatter = {}
@@ -66,12 +86,17 @@ class SkillsLoader:
             metadata = frontmatter
             skill_id = skill_path.name  # 目录名
             return Skill(name, description, body, metadata, skill_id)
+        except (yaml.YAMLError, ValueError) as e:
+            self._record_diagnostic(skill_path, "invalid_frontmatter", f"Invalid SKILL.md frontmatter: {e}")
+            return None
         except Exception as e:
+            self._record_diagnostic(skill_path, "load_failed", f"Failed to load SKILL.md: {e}")
             print(f"Failed to load skill from {skill_path}: {e}")
             return None
 
     def load_all_skills(self) -> Dict[str, Skill]:
         """加载所有 Skills"""
+        self.diagnostics = []
         if not self.skills_dir.exists():
             return {}
 

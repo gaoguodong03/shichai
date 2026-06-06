@@ -15,6 +15,7 @@ from app.api.settings import (
     _normalized_allowed_tools_dict,
     get_mcp_servers_for_skill,
 )
+from app.skills.loader import SkillsLoader
 
 
 def test_mcp_ids_from_allowed_tools():
@@ -174,3 +175,31 @@ def test_skill_import_zip_merges_root_mcp_servers(monkeypatch, tmp_path: Path):
     mcp_path = tmp_path / "users" / "u1" / "config" / "mcp_servers.json"
     assert json.loads(mcp_path.read_text(encoding="utf-8"))[0]["id"] == "tool-a"
     assert not (tmp_path / "users" / "u1" / "skills" / data["id"] / "mcp_servers.json").exists()
+
+
+def test_skills_loader_reports_contract_diagnostics(tmp_path: Path):
+    skills_root = tmp_path / "skills"
+    valid_dir = skills_root / "valid-skill"
+    missing_dir = skills_root / "missing-skill-md"
+    invalid_dir = skills_root / "invalid-frontmatter"
+    valid_dir.mkdir(parents=True)
+    missing_dir.mkdir()
+    invalid_dir.mkdir()
+    (valid_dir / "SKILL.md").write_text(
+        "---\nname: Valid\ndescription: ok\n---\nbody\n",
+        encoding="utf-8",
+    )
+    (invalid_dir / "SKILL.md").write_text(
+        "---\nname: [unterminated\n---\nbody\n",
+        encoding="utf-8",
+    )
+
+    loader = SkillsLoader(str(skills_root))
+    assert sorted(loader.load_all_skills()) == ["valid-skill"]
+
+    diagnostics = loader.get_diagnostics()
+    by_id = {item["skill_id"]: item for item in diagnostics}
+    assert by_id["missing-skill-md"]["code"] == "missing_skill_md"
+    assert "SKILL.md" in by_id["missing-skill-md"]["message"]
+    assert by_id["invalid-frontmatter"]["code"] == "invalid_frontmatter"
+    assert "frontmatter" in by_id["invalid-frontmatter"]["message"]
