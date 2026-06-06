@@ -1063,6 +1063,15 @@
             <p v-if="scenarioOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
               将覆盖已有内容：{{ scenarioOverwriteSummary }}
             </p>
+            <div
+              v-if="scenarioConflictPreviewRows.length"
+              class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
+            >
+              <div class="text-xs font-medium mb-1">冲突预览</div>
+              <ul class="list-disc pl-4 text-xs space-y-0.5">
+                <li v-for="row in scenarioConflictPreviewRows" :key="row">{{ row }}</li>
+              </ul>
+            </div>
           </div>
         </template>
         <div class="flex justify-start gap-2">
@@ -1467,6 +1476,9 @@ const scenarioBundlePreview = ref<{
     would_skip_skills?: string[]
     name_conflict_existing_ids?: string[]
     name_conflict_mode?: 'skip' | 'overwrite'
+    would_overwrite_experts?: Record<string, string[]>
+    would_remap_skill_ids?: Record<string, string>
+    would_remap_mcp_server_ids?: Record<string, string>
   }
 } | null>(null)
 const dhaImportFileInputRef = ref<HTMLInputElement | null>(null)
@@ -1546,6 +1558,28 @@ const scenarioOverwriteSummary = computed(() => {
     if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
   }
   return parts.join('\n')
+})
+const scenarioConflictPreviewRows = computed(() => {
+  const bp = scenarioBundlePreview.value?.bundle_preview
+  if (!bp) return []
+  const rows: string[] = []
+  const scenarioConflicts = bp.name_conflict_existing_ids || []
+  if (scenarioConflicts.length) {
+    rows.push(`已有场景：${scenarioConflicts.join('，')}`)
+  }
+  const expertNames = new Map((bp.experts || []).map((item) => [item.agent_id, item.name || item.agent_id]))
+  for (const [incomingId, existingIds] of Object.entries(bp.would_overwrite_experts || {})) {
+    const ids = (existingIds || []).filter(Boolean)
+    if (!ids.length) continue
+    rows.push(`专家：${expertNames.get(incomingId) || incomingId} → 覆盖 ${ids.join('，')}`)
+  }
+  for (const [oldId, newId] of Object.entries(bp.would_remap_skill_ids || {})) {
+    if (oldId && newId) rows.push(`Skill：${oldId} → ${newId}`)
+  }
+  for (const [oldId, newId] of Object.entries(bp.would_remap_mcp_server_ids || {})) {
+    if (oldId && newId) rows.push(`MCP：${oldId} → ${newId}`)
+  }
+  return rows
 })
 const dhaOverwriteSummary = computed(() => {
   const bp = dhaBundlePreview.value?.bundle_preview

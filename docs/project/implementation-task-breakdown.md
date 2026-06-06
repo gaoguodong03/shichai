@@ -133,7 +133,7 @@ P0 完成审计见：[p0-completion-audit.md](p0-completion-audit.md)。
 ### T-UR09-01：资源包导入冲突预览
 
 - 对应需求：UR-09
-- 状态：`ready`
+- 状态：`verify`
 - 修改范围：`backend/app/core/scenario_bundle.py`、`backend/app/core/expert_bundle.py`、`backend/app/core/settings_bundle_import.py`、`frontend/src/features/resources/`
 - 测试入口：`backend/tests/test_bundle_import_api.py`、`backend/tests/test_scenario_bundle.py`、`backend/tests/test_expert_bundle.py`、`frontend/e2e/resources-scenario-expert.spec.ts`
 - 验收点：

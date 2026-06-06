@@ -102,6 +102,55 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     expect(state.scenarios.map((item) => item.id)).toEqual(['scenario-imported'])
   })
 
+  test('导入场景包预览展示冲突和依赖信息', async ({ page }) => {
+    const state = createE2eState()
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/session-presets/import-bundle', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: {
+            bundle_preview: {
+              preset_id: 'scene-imported',
+              preset_name: '冲突场景',
+              experts: [{ agent_id: 'agent-new', name: '导入专家' }],
+              skills: ['skill-new'],
+              mcps: [{ id: 'mcp-new', name: '导入工具' }],
+              name_conflict_existing_ids: ['scene-local'],
+              would_overwrite_experts: { 'agent-new': ['agent-local'] },
+              would_remap_skill_ids: { 'skill-local': 'skill-new' },
+              would_remap_mcp_server_ids: { 'mcp-local': 'mcp-new' },
+              missing_references: {
+                experts: [],
+                skills: [{ id: 'skill-missing', display_name: '技能 缺失技能', required_by: ['专家 导入专家'], type_label: '技能' }],
+                tools: [],
+              },
+            },
+          },
+        }),
+      })
+    })
+
+    await page.goto('/resources/scenario')
+    await page.setInputFiles('input[type="file"][accept=".zip,application/zip"]', {
+      name: 'scenario.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from('mock zip'),
+    })
+
+    await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
+    await expect(page.getByText('冲突预览')).toBeVisible()
+    await expect(page.getByText('已有场景：scene-local')).toBeVisible()
+    await expect(page.getByText('专家：导入专家 → 覆盖 agent-local')).toBeVisible()
+    await expect(page.getByText('Skill：skill-local → skill-new')).toBeVisible()
+    await expect(page.getByText('MCP：mcp-local → mcp-new')).toBeVisible()
+    await expect(page.getByText('技能 缺失技能')).toBeVisible()
+    await expect(page.getByRole('button', { name: '确认覆盖导入' })).toBeVisible()
+  })
+
   test('用户可以创建专家并保存专家配置', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/agent')
 
