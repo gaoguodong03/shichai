@@ -403,6 +403,31 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert put_settings.status_code == 200
     assert put_settings.json()["data"]["default_llm"] == "qwen"
+    secret_settings = client.put(
+        "/api/settings/app",
+        json={
+            "default_llm": "qwen",
+            "llm_providers": {
+                "qwen": {
+                    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "model": "qwen3-max",
+                    "api_key": "sk-inline-secret",
+                }
+            },
+        },
+        headers=headers,
+    )
+    assert secret_settings.status_code == 200
+    provider = secret_settings.json()["data"]["llm_providers"]["qwen"]
+    assert provider["api_key_set"] is True
+    assert "api_key" not in provider
+
+    app_settings_after_secret = client.get("/api/settings/app", headers=headers)
+    assert app_settings_after_secret.status_code == 200
+    provider_after = app_settings_after_secret.json()["data"]["llm_providers"]["qwen"]
+    assert provider_after["api_key_set"] is True
+    assert "api_key" not in provider_after
+    assert "sk-inline-secret" not in app_settings_after_secret.text
 
     host_profile = client.put(
         "/api/settings/host-profile",

@@ -50,7 +50,7 @@
 | TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名冲突和覆盖/重映射项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | TC-UR09-02 | UR-09 | API | ZIP 结构错误 | 上传导入 | 返回明确结构错误 | `backend/tests/test_scenario_bundle.py` |
 | TC-UR09-03 | UR-09 | API | 专家资源包 | 导入专家包 | 专家、Skill 和工具引用按规则落库 | `backend/tests/test_expert_bundle.py` |
-| TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型和 API Key | 新会话可引用，前端脱敏展示 | `backend/tests/test_llm_config.py`、`frontend/e2e/settings.spec.ts` |
+| TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型、API Key 和默认主持人 | 新会话可引用最新配置，设置响应和前端均不泄露完整 Key | `backend/tests/test_llm_config.py`、`backend/tests/test_sessions_api.py`、`backend/tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | TC-UR10-02 | UR-10 | E2E | 已登录 | 切换主题后刷新 | 主题保持 | `frontend/e2e/settings.spec.ts` |
 | TC-UR10-03 | UR-10 | API/E2E | 已登录 | 修改密码或账号安全项 | 保存反馈明确，错误不触发误登出 | `backend/tests/test_auth_sqlite.py`、`frontend/e2e/settings.spec.ts` |
 | TC-UR11-01 | UR-11 | API | 后端启动 | 请求 `/health` | 返回 `{ "status": "ok" }` | `backend/tests/test_lifespan.py` |

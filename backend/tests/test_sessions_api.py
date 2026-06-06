@@ -118,6 +118,25 @@ def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     assert detail["host_config"]["display_name"] == "场景主持"
 
 
+def test_new_regular_session_uses_latest_default_host_profile(client: TestClient):
+    host_resp = client.put(
+        "/api/settings/host-profile",
+        json={"display_name": "上线默认主持", "skill_ids": [], "mcp_server_ids": []},
+    )
+    assert host_resp.status_code == 200
+
+    create_resp = client.post("/api/sessions", json={"title": "默认主持链路"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()["data"]
+    assert detail["leader_agent_id"] == "agent-scene-host"
+    assert detail["agent_map"]["agent-scene-host"]["name"] == "上线默认主持"
+    assert "host_config" not in detail or detail["host_config"] in ({}, None)
+
+
 def test_sessions_get_returns_404_for_missing_id(client: TestClient):
     resp = client.get("/api/sessions/group-not-exist-123456")
     assert resp.status_code == 404

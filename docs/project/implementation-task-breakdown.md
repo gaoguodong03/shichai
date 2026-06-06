@@ -143,7 +143,7 @@ P0 完成审计见：[p0-completion-audit.md](p0-completion-audit.md)。
 ### T-UR10-01：模型、密钥和默认主持人配置链路
 
 - 对应需求：UR-10
-- 状态：`ready`
+- 状态：`verify`
 - 修改范围：`backend/app/api/settings.py`、`backend/app/api/settings_secrets.py`、`backend/app/core/host_config.py`、`frontend/src/features/settings/`
 - 测试入口：`backend/tests/test_llm_config.py`、`frontend/e2e/settings.spec.ts`
 - 验收点：
