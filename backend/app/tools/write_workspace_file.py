@@ -4,7 +4,6 @@ import json
 from pydantic import BaseModel, Field
 
 from app.agent.tool_spec import ToolSpec
-from app.agent.host_plan import is_host_plan_reserved_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
@@ -59,11 +58,6 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         path_value = path_value.strip()
         if not path_value:
             return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report.md）。"
-        if is_host_plan_reserved_path(path_value):
-            return (
-                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止覆盖；"
-                "请用户在侧边栏工作区中打开该文件编辑。"
-            )
         if not content_value:
             return (
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"

@@ -13,7 +13,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
-from app.agent.group_memory_store import append_llm_roundtrip
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.group_orchestration_fsm import clear_skill_session_lock, locked_skill_id_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
@@ -119,26 +118,6 @@ async def expert_llm_pick_skill_id(
         raw = out.content if hasattr(out, "content") else str(out)
         if isinstance(raw, list):
             raw = "".join(str(x) for x in raw)
-        if group_session_id:
-            try:
-                append_llm_roundtrip(
-                    session_id=group_session_id,
-                    phase="expert_skill_pick",
-                    input_messages=[
-                        {"role": "system", "content": sys_msg},
-                        {"role": "user", "content": human},
-                    ],
-                    output={"content": str(raw)},
-                    agent_id=agent_id,
-                    llm_provider_id=llm_provider_id,
-                    model=str(getattr(llm, "model", "") or ""),
-                )
-            except Exception as trace_err:
-                logger.warning(
-                    "写入会话 LLM roundtrip 失败(tag=expert_skill_pick session=%s): %s",
-                    group_session_id,
-                    trace_err,
-                )
         parsed = _extract_json_object_from_llm_text(str(raw))
         if parsed:
             picked = str(parsed.get("selected_skill_id") or "").strip()
@@ -152,23 +131,6 @@ async def expert_llm_pick_skill_id(
             debug["strategy"] = "expert_llm_pick_parse_fail"
     except Exception as e:
         logger.warning("专家 Skill 选型 LLM 失败，将回退关键词路由: %s", e)
-        if group_session_id:
-            try:
-                append_llm_roundtrip(
-                    session_id=group_session_id,
-                    phase="expert_skill_pick",
-                    input_messages=[
-                        {"role": "system", "content": sys_msg},
-                        {"role": "user", "content": human},
-                    ],
-                    output={},
-                    agent_id=agent_id,
-                    llm_provider_id=llm_provider_id,
-                    model=str(getattr(llm, "model", "") or ""),
-                    error={"type": type(e).__name__, "message": str(e)},
-                )
-            except Exception:
-                pass
         debug["strategy"] = "expert_llm_pick_error"
         debug["error"] = str(e)
     return None, debug

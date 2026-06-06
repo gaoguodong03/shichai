@@ -7,7 +7,6 @@ export interface ChatStreamRequestPayload {
   client_message_id?: string
   skill_ids?: string[]
   action?: string
-  custom_prompt?: string
   host_takeover_requested?: boolean
   ignore_auto_expert_id?: string
   ignore_auto_skill_id?: string
@@ -87,7 +86,6 @@ export async function chatStreamRequest(payload: ChatStreamRequestPayload): Prom
       client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
       action: payload.action,
-      custom_prompt: payload.custom_prompt,
       host_takeover_requested: payload.host_takeover_requested,
       ignore_auto_expert_id: payload.ignore_auto_expert_id,
       ignore_auto_skill_id: payload.ignore_auto_skill_id,
@@ -107,7 +105,6 @@ export async function streamSessionChat(
     client_message_id: payload.client_message_id,
     skill_ids: payload.skill_ids,
     action: payload.action,
-    custom_prompt: payload.custom_prompt,
     host_takeover_requested: payload.host_takeover_requested,
     ignore_auto_expert_id: payload.ignore_auto_expert_id,
     ignore_auto_skill_id: payload.ignore_auto_skill_id,
@@ -166,7 +163,6 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
       client_message_id: payload.client_message_id,
       skill_ids: payload.skill_ids,
       action: payload.action,
-      custom_prompt: payload.custom_prompt,
       host_takeover_requested: payload.host_takeover_requested,
       ignore_auto_expert_id: payload.ignore_auto_expert_id,
       ignore_auto_skill_id: payload.ignore_auto_skill_id,

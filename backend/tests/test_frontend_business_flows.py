@@ -327,7 +327,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
 
 
 def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient, monkeypatch):
-    from app.api import group_chat
+    from app.agent import group_chat_runtime as group_chat
 
     client = frontend_flow_client
     headers = _headers("frontend-chat@example.test")

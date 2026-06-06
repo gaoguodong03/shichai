@@ -119,7 +119,7 @@ print(f'{args.package}==3.0.0')
 
 
 def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env, monkeypatch):
-    from app.api import group_chat
+    from app.agent import group_chat_runtime as group_chat
     from app.main import app
     from app.tools import run_skill_script
 

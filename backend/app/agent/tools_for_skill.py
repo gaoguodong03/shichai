@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional
 from app.api.settings import get_mcp_servers_for_skill
 from app.api.dha import merge_file_capabilities
 from app.api.files import get_workspace_root
-from app.agent.host_plan import is_host_plan_reserved_path
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_config_loaded
 from app.agent.session_workspace_policy import sandbox_session_dir
@@ -88,11 +87,6 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         return normalized
 
     async def _edit_workspace_file(path: str, old_text: str, new_text: str) -> str:
-        if is_host_plan_reserved_path(path):
-            return (
-                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止修改；"
-                "请用户在侧边栏工作区中编辑。"
-            )
         rel = _rel_safe(path)
         svc = get_shared_sandbox_service()
         try:
@@ -123,14 +117,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         return f"已编辑文件：{path}"
 
     async def _rename_workspace_file(path: str, new_name: str) -> str:
-        if is_host_plan_reserved_path(path):
-            return (
-                "错误：memory/host_plan.md 为用户可编辑的任务清单，智能体工具禁止移动或重命名；"
-                "请用户在侧边栏工作区中操作。"
-            )
         cleaned = str(new_name or "").strip().replace("\\", "/")
-        if is_host_plan_reserved_path(cleaned) or is_host_plan_reserved_path(cleaned.lstrip("/")):
-            return "错误：不能将文件移动或重命名为 memory/host_plan.md（该路径保留给用户任务清单）。"
         if not cleaned:
             return "错误：new_name 不能为空。"
         if ".." in cleaned:
@@ -164,8 +151,6 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             return "错误：path 不能为空。"
         if ".." in cleaned:
             return "错误：path 非法。"
-        if is_host_plan_reserved_path(cleaned):
-            return "错误：不能创建保留路径 memory/host_plan.md。"
         rel = _rel_safe(cleaned)
         svc = get_shared_sandbox_service()
         try:

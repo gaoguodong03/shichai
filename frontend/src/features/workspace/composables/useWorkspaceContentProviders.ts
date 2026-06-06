@@ -526,7 +526,7 @@ export function useWorkspaceContentProviders(args: {
     const { runToken, abort } = beginGroupStream(id, '正在确认…')
     const body: {
       action?: string
-      custom_prompt?: string
+      message?: string
       host_takeover_requested?: boolean
       ignore_auto_expert_id?: string
       ignore_auto_skill_id?: string
@@ -542,7 +542,7 @@ export function useWorkspaceContentProviders(args: {
     const hasFiles = attachedFiles.value.length > 0
     try {
       const msg = hasFiles ? await buildMessageWithFiles(detail, base) : base
-      if (msg) body.custom_prompt = msg
+      if (msg) body.message = msg
       if (msg) body.host_takeover_requested = detectHostTakeoverIntent(msg)
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
       if (shouldEmitMessageSent) {

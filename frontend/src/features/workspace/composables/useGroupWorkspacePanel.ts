@@ -129,7 +129,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     if (!url || url === '#') return
 
     try {
-      const r = await fetch(url)
+      const r = await fetch(url, { cache: 'no-store' })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const blob = await r.blob()
       const objUrl = URL.createObjectURL(blob)
@@ -349,7 +349,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
       groupWorkspacePreviewLoading.value = true
       try {
         const url = groupWorkspaceDownloadUrl(e.path)
-        const r = await fetch(url)
+        const r = await fetch(url, { cache: 'no-store' })
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const blob = await r.blob()
         const objUrl = URL.createObjectURL(blob)
@@ -370,7 +370,7 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     groupWorkspacePreviewLoading.value = true
     try {
       const url = groupWorkspaceDownloadUrl(e.path)
-      const r = await fetch(url)
+      const r = await fetch(url, { cache: 'no-store' })
       const text = await r.text()
       groupWorkspacePreviewContent.value = text || '(空)'
     } catch {

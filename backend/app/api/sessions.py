@@ -20,10 +20,8 @@ from app.api.group_chat import (
     stop_group_session_run,
     group_chat_stream,
     group_session_events_stream,
-    preview_next_speaker_prompt,
     GroupSessionUpdate,
     GroupChatRequest,
-    GroupPromptPreviewRequest,
 )
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
@@ -56,7 +54,6 @@ async def create_session(body: SessionCreate):
         title=body.title or "新对话",
         agent_ids=body.agent_ids,
         expert_ids=body.expert_ids,
-        speak_mode="auto",
         leader_agent_id=body.leader_agent_id,
         host_config=body.host_config,
     )
@@ -77,7 +74,7 @@ async def session_events_stream(session_id: str):
 
 @router.put("/sessions/{session_id}")
 async def update_session(session_id: str, body: GroupSessionUpdate):
-    """更新会话（标题、发言模式、增删 DHA）"""
+    """更新会话（标题、主持人配置、增删 DHA）"""
     return await update_group_session(session_id, body)
 
 
@@ -191,9 +188,3 @@ async def session_export(session_id: str):
         return {"status": "ok", "data": {"path": rel_path, "download_url": download_url}}
     except HTTPException:
         raise
-
-
-@router.post("/sessions/{session_id}/prompt-preview")
-async def session_prompt_preview(session_id: str, body: GroupPromptPreviewRequest):
-    """预览指定 DHA 作为下一发言人时的提示词"""
-    return await preview_next_speaker_prompt(session_id, body)

@@ -1,9 +1,10 @@
 """Structured sandbox audit helpers."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
-from app.agent.orchestrator_audit import append_audit_event
+logger = logging.getLogger(__name__)
 
 
 def append_sandbox_event(
@@ -13,9 +14,11 @@ def append_sandbox_event(
     payload: Dict[str, Any],
     turn_id: str = "",
 ) -> None:
-    append_audit_event(
-        session_id=session_id,
-        event_type=event_type,
-        payload=payload,
-        turn_id=turn_id or None,
+    """Keep sandbox audit events in logs without writing workspace memory files."""
+    logger.debug(
+        "sandbox_event session=%s turn=%s event=%s payload=%s",
+        session_id,
+        turn_id,
+        event_type,
+        payload,
     )

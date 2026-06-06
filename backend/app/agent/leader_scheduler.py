@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
-from app.agent.group_memory_store import append_llm_roundtrip
 
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -75,7 +74,7 @@ def _build_leader_prompt(
 {discussion_goal}
 
 ## 最近讨论（摘要）
-若开头另有「用户任务清单」段落，来自工作区 `memory/host_plan.md`（用户可编辑）；可对照讨论目标判断进度与 task_done。其余为对话与发言摘录，合起来视为唯一上下文。
+以下内容为对话与发言摘录，合起来视为唯一上下文。
 
 ## 本轮约束（与上文契约一致）
 - next_speaker：在场 agent_id | \"user\" | \"end\"。
@@ -133,22 +132,6 @@ async def leader_decide(
         response = await asyncio.wait_for(client.ainvoke(messages), timeout=30.0)
         content = (response.content or "").strip()
         logger.info("[LLM_ROUNDTRIP][leader_decide] model_output:\n%s", content)
-        if group_session_id:
-            try:
-                append_llm_roundtrip(
-                    session_id=group_session_id,
-                    workspace_root=workspace_root,
-                    phase="leader_decide",
-                    input_messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_content},
-                    ],
-                    output={"content": content},
-                    model=str(getattr(llm, "model", "") or ""),
-                    llm_provider_id=llm_provider_id,
-                )
-            except Exception as e:
-                logger.warning("写入会话 LLM roundtrip 失败(tag=leader_decide session=%s): %s", group_session_id, e)
 
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()

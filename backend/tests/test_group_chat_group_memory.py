@@ -1,5 +1,4 @@
 """群聊记忆开关与回退路径测试。"""
-import json
 import os
 from types import SimpleNamespace
 
@@ -7,7 +6,7 @@ os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
 
 def _get_group_chat_module():
-    from app.api import group_chat
+    from app.agent import group_chat_runtime as group_chat
 
     return group_chat
 
@@ -118,7 +117,7 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assert not (ws / "memory" / "logs").exists()
 
 
-def test_log_llm_roundtrip_writes_session_workspace_jsonl(tmp_path):
+def test_log_llm_roundtrip_does_not_write_session_workspace_jsonl(tmp_path):
     gc = _get_group_chat_module()
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
@@ -133,18 +132,7 @@ def test_log_llm_roundtrip_writes_session_workspace_jsonl(tmp_path):
         extra={"agent_id": "agent-host", "model": "qwen3"},
     )
 
-    trace_file = ws / "memory" / "llm_roundtrips.jsonl"
-    rows = [json.loads(line) for line in trace_file.read_text(encoding="utf-8").splitlines()]
-    assert len(rows) == 1
-    assert rows[0]["phase"] == "host_decide"
-    assert rows[0]["session_id"] == "group-test"
-    assert rows[0]["input_messages"] == [
-        {"role": "system", "content": "系统提示"},
-        {"role": "user", "content": "用户提示"},
-    ]
-    assert rows[0]["output"] == {"content": "模型输出"}
-    assert rows[0]["agent_id"] == "agent-host"
-    assert rows[0]["model"] == "qwen3"
+    assert not (ws / "memory" / "llm_roundtrips.jsonl").exists()
 
 
 def test_expert_turn_model_name_uses_runtime_llm_not_free_variable():

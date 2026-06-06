@@ -40,7 +40,7 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     created = create_resp.json()["data"]
     session_id = created["id"]
     assert created["title"] == "回归测试会话"
-    assert created["speak_mode"] == "auto"
+    assert "speak_mode" not in created
 
     list_resp = client.get("/api/sessions")
     assert list_resp.status_code == 200

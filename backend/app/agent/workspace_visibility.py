@@ -2,10 +2,7 @@
 from __future__ import annotations
 
 
-_INTERNAL_DIAGNOSTIC_FILES = {
-    "memory/llm_roundtrips.jsonl",
-    "memory/orchestrator_audit.jsonl",
-}
+_INTERNAL_DIAGNOSTIC_FILES: set[str] = set()
 
 _INTERNAL_DIAGNOSTIC_PREFIXES = (
     "memory/messages/",

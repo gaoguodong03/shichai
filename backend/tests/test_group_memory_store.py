@@ -1,9 +1,7 @@
 """群聊记忆文件存储与派发上下文测试。"""
-import json
 from pathlib import Path
 
 from app.agent.group_memory_store import (
-    append_llm_roundtrip,
     upsert_facts,
     build_dispatch_context,
 )
@@ -69,44 +67,3 @@ def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
     )
 
     assert ctx == {"facts": [], "logs": [], "refs": [], "rendered": "", "has_memory": False}
-
-
-def test_append_llm_roundtrip_writes_jsonl_without_truncation(tmp_path: Path):
-    session_id = "group-test"
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True, exist_ok=True)
-    long_text = "输入" * 8000
-
-    append_llm_roundtrip(
-        session_id=session_id,
-        workspace_root=ws,
-        phase="host_decide",
-        input_messages=[{"role": "system", "content": long_text}],
-        output={"content": "输出1"},
-        agent_id="agent-host",
-        skill_id="group-host-general",
-        llm_provider_id="qwen",
-        model="qwen3",
-        run_id="run-1",
-        client_message_id="client-1",
-        tool_specs=[{"name": "tool-a", "description": "工具A"}],
-    )
-    append_llm_roundtrip(
-        session_id=session_id,
-        workspace_root=ws,
-        phase="expert_turn",
-        input_messages=[{"role": "user", "content": "继续"}],
-        output={"content": "输出2"},
-    )
-
-    trace_file = ws / "memory" / "llm_roundtrips.jsonl"
-    rows = [json.loads(line) for line in trace_file.read_text(encoding="utf-8").splitlines()]
-    assert len(rows) == 2
-    assert rows[0]["schema_version"] == 1
-    assert rows[0]["session_id"] == session_id
-    assert rows[0]["phase"] == "host_decide"
-    assert rows[0]["agent_id"] == "agent-host"
-    assert rows[0]["input_messages"][0]["content"] == long_text
-    assert rows[0]["output"] == {"content": "输出1"}
-    assert rows[0]["tool_specs"] == [{"name": "tool-a", "description": "工具A"}]
-    assert rows[1]["phase"] == "expert_turn"

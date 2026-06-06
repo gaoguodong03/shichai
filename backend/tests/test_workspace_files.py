@@ -77,6 +77,29 @@ def test_workspace_download(client):
     assert r.text == "content"
 
 
+def test_workspace_text_responses_disable_browser_cache(client):
+    """工作区文本预览/下载不能被浏览器缓存成旧内容。"""
+    client.post(
+        "/api/workspaces/ws-cache/files",
+        json={"filename": "facts.md", "content": "before"},
+    )
+    client.put(
+        "/api/workspaces/ws-cache/files/content",
+        params={"path": "facts.md"},
+        json={"content": "after"},
+    )
+
+    content = client.get("/api/workspaces/ws-cache/files/content", params={"path": "facts.md"})
+    assert content.status_code == 200
+    assert content.headers.get("Cache-Control") == "no-store"
+    assert content.json()["data"]["content"] == "after"
+
+    download = client.get("/api/workspaces/ws-cache/files/download", params={"path": "facts.md"})
+    assert download.status_code == 200
+    assert download.headers.get("Cache-Control") == "no-store"
+    assert download.text == "after"
+
+
 def test_workspace_upload_and_rename(client):
     """workspace 上传、重命名"""
     r = client.post(
@@ -167,8 +190,8 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
-def test_read_file_hides_internal_diagnostic_memory_files(temp_user_data_root):
-    """read_file 不应把内部排障 JSONL 暴露给专家。"""
+def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data_root):
+    """废弃诊断 JSONL 不再是平台保留文件，存在时按普通工作区文件读取。"""
     from app.api.files import get_workspace_root
     from app.tools.read_file import create_read_file_tool
 
@@ -179,8 +202,7 @@ def test_read_file_hides_internal_diagnostic_memory_files(temp_user_data_root):
     tool = create_read_file_tool("sess-r")
     out = asyncio.run(tool.ainvoke({"path": "memory/llm_roundtrips.jsonl"}))
 
-    assert "内部排障日志" in out
-    assert "secret" not in out
+    assert "secret" in out
 
 
 def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root):
@@ -196,8 +218,8 @@ def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root
     assert rel == "scripts/saved_data/result_20260523_123036/analysis_report.txt"
 
 
-def test_list_workspace_directory_hides_internal_diagnostic_memory_files(temp_user_data_root, monkeypatch):
-    """list_workspace_directory 只暴露用户/任务可用文件，不列出内部 JSONL 日志。"""
+def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user_data_root, monkeypatch):
+    """废弃诊断 JSONL 不再被工具层隐藏。"""
     from app.agent import tools_for_skill as tool_module
     from app.agent.session_workspace_policy import sandbox_session_dir
     from app.agent.tools_for_skill import _create_builtin_workspace_tools
@@ -228,5 +250,5 @@ def test_list_workspace_directory_hides_internal_diagnostic_memory_files(temp_us
 
     assert "speaker_task.txt" in out
     assert "memory/facts.md" in out
-    assert "llm_roundtrips" not in out
-    assert "orchestrator_audit" not in out
+    assert "llm_roundtrips" in out
+    assert "orchestrator_audit" in out

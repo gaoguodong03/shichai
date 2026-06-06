@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.core.security import CurrentUser, user_context_dependency
@@ -14,6 +14,7 @@ router = APIRouter(tags=["files"])
 # 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{user_id}/sessions
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+NO_STORE_HEADERS = {"Cache-Control": "no-store"}
 
 
 def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:
@@ -168,10 +169,6 @@ async def list_workspace_files(
     if (path or "").strip() == "":
         if not ws_root_path.exists() or not ws_root_path.is_dir():
             return {"status": "ok", "data": {"path": "/", "entries": []}}
-        # 延迟导入：确保用户侧可见可编辑的 host_plan.md 模板
-        from app.agent.host_plan import ensure_host_plan_stub
-
-        ensure_host_plan_stub(workspace_id)
     try:
         target = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
@@ -220,6 +217,7 @@ async def download_workspace_file(
         path=str(target),
         filename=target.name,
         media_type="application/octet-stream",
+        headers=NO_STORE_HEADERS,
     )
 
 
@@ -248,7 +246,10 @@ async def get_workspace_file_content(
         content = target.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="文件不是 UTF-8 文本，无法作为提示词插入")
-    return {"status": "ok", "data": {"path": path, "content": content}}
+    return JSONResponse(
+        {"status": "ok", "data": {"path": path, "content": content}},
+        headers=NO_STORE_HEADERS,
+    )
 
 
 class FileCreateBody(BaseModel):

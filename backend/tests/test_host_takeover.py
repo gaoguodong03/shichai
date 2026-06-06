@@ -6,7 +6,7 @@ os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
 
 def _get_group_chat_module():
-    from app.api import group_chat
+    from app.agent import group_chat_runtime as group_chat
 
     return group_chat
 
