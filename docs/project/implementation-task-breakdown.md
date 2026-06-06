@@ -154,7 +154,7 @@ P0 完成审计见：[p0-completion-audit.md](p0-completion-audit.md)。
 ### T-UR11-01：部署健康检查和 1Panel 冒烟
 
 - 对应需求：UR-11
-- 状态：`ready`
+- 状态：`verify`
 - 修改范围：`backend/app/main.py`、`backend/app/core/lifespan.py`、`backend/app/core/static_spa.py`、`docker-compose.1panel.yml`、`scripts/`
 - 测试入口：`backend/tests/test_lifespan.py`、`backend/tests/test_static_spa.py`、`backend/tests/test_pack_1panel_backup.py`
 - 验收点：

@@ -55,7 +55,7 @@
 | TC-UR10-03 | UR-10 | API/E2E | 已登录 | 修改密码或账号安全项 | 保存反馈明确，错误不触发误登出 | `backend/tests/test_auth_sqlite.py`、`frontend/e2e/settings.spec.ts` |
 | TC-UR11-01 | UR-11 | API | 后端启动 | 请求 `/health` | 返回 `{ "status": "ok" }` | `backend/tests/test_lifespan.py` |
 | TC-UR11-02 | UR-11 | API | `STATIC_DIR` 存在 | 请求根路径和非 API 路由 | 返回前端入口和 SPA fallback | `backend/tests/test_static_spa.py` |
-| TC-UR11-03 | UR-11 | 脚本 | 准备 1Panel 打包 | 运行打包测试 | 包内不含本地输出和敏感文件 | `backend/tests/test_pack_1panel_backup.py` |
+| TC-UR11-03 | UR-11 | 脚本 | 准备 1Panel 打包 | 运行打包测试 | 包内不含本地输出、缓存、认证库和本地密钥 | `backend/tests/test_pack_1panel_backup.py` |
 
 ## 4. 新增测试规则
 

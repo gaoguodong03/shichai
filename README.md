@@ -65,7 +65,7 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
 ### 三步完成
 
 1. 构建镜像并生成 1Panel 备份包
-   直接运行 `bash pack_1panel_backup.sh 26.05.xx`。脚本不要求存在 `backend/.env`；如果该文件存在，只把其中的镜像/沙箱白名单变量作为覆盖值读取。
+   直接运行 `bash pack_1panel_backup.sh 26.05.xx`。脚本不要求存在 `backend/.env`；如果该文件存在，只把其中的镜像/沙箱白名单变量作为覆盖值读取，不会把本地密钥、认证库、运行输出或缓存打进备份包。
 2. 在 1Panel 创建数据卷  
    创建名为 `st49` 的 Docker 卷（后端数据持久化；compose 会把内部卷 `st49_data` 绑定到该外部卷）。
 3. 导入并启动  

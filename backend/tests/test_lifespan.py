@@ -1,5 +1,18 @@
+from fastapi.testclient import TestClient
+
+from app.main import create_app
 from app.core.lifespan import _startup_prewarm_all_users_enabled, _startup_prewarm_timeout_ms
 from app.core.security import _prewarm_on_user_request_enabled
+
+
+def test_health_endpoint_returns_ok(monkeypatch):
+    monkeypatch.delenv("STATIC_DIR", raising=False)
+    client = TestClient(create_app())
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
 
 
 def test_startup_prewarm_all_users_disabled_by_default(monkeypatch):

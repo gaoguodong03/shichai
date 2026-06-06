@@ -13,6 +13,16 @@ os.environ.setdefault("ZHIPUAI_API_KEY", "test-zhipu-key")
 os.environ.setdefault("MOONSHOT_API_KEY", "test-moonshot-key")
 
 
+@pytest.fixture(autouse=True)
+def _llm_test_keys(monkeypatch):
+    monkeypatch.setenv("QWEN_API_KEY", "test-key")
+    monkeypatch.setenv("JENIYA_API_KEY", "test-jeniya-key")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("ZHIPUAI_API_KEY", "test-zhipu-key")
+    monkeypatch.setenv("MOONSHOT_API_KEY", "test-moonshot-key")
+
+
 def test_builtin_llm_provider_presets_use_compatible_base_urls():
     """后端运行时兜底与设置页默认 provider 地址必须同步且可被当前 ChatOpenAI 客户端调用。"""
     from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults

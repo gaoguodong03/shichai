@@ -106,10 +106,14 @@ def test_pack_1panel_backup_tag_build_path_does_not_require_env_file(
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
 
 
-def test_pack_1panel_backup_normalizes_local_auth_paths(tmp_path: Path) -> None:
+def test_pack_1panel_backup_omits_local_secrets_paths_and_runtime_outputs(tmp_path: Path) -> None:
     _copy_pack_inputs(tmp_path)
     env_dir = tmp_path / "backend"
     env_dir.mkdir()
+    (env_dir / "data" / "agent-outputs").mkdir(parents=True)
+    (env_dir / "data" / "agent-outputs" / "local.txt").write_text("runtime output", encoding="utf-8")
+    (env_dir / "config").mkdir()
+    (env_dir / "config" / "auth_users.sqlite").write_text("sqlite", encoding="utf-8")
     (env_dir / ".env").write_text(
         "\n".join(
             [
@@ -143,11 +147,17 @@ def test_pack_1panel_backup_normalizes_local_auth_paths(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr + result.stdout
     env_text = _read_packaged_env(output_tgz)
+    with tarfile.open(output_tgz, "r:gz") as archive:
+        names = archive.getnames()
 
-    assert "AUTH_SECRET=keep-this-secret" in env_text
-    assert "QWEN_API_KEY=keep-this-key" in env_text
+    assert "keep-this-secret" not in env_text
+    assert "keep-this-key" not in env_text
+    assert "AUTH_SECRET=" not in env_text
+    assert "QWEN_API_KEY=" not in env_text
     assert "/Users/ggd/project/shichai" not in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
     assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
     assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text
     assert "ACCESS_TOKEN_EXPIRE_MINUTES=43200" in env_text
+    assert all("agent-outputs" not in name for name in names)
+    assert all("auth_users.sqlite" not in name for name in names)

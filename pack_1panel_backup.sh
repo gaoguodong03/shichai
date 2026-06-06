@@ -188,9 +188,12 @@ mkdir -p "$FILES_DIR"
 
 cp "$COMPOSE_FILE" "$FILES_DIR/00_docker-compose.yml"
 if [[ -f "$ENV_FILE" ]]; then
-  # Keep user/provider settings, but normalize deployment-owned persistence paths
-  # below so a local backend/.env cannot ship host-only paths into 1Panel.
-  grep -Ev '^[[:space:]]*(AUTH_DB_PATH|AUTH_USERS_FILE|SHUTONG_USER_DATA_ROOT|ACCESS_TOKEN_EXPIRE_MINUTES)[[:space:]]*=' "$ENV_FILE" > "$FILES_DIR/.env" || true
+  # Do not copy local secrets or host-only paths into the distributable package.
+  # Allowed release knobs were already loaded above and are emitted below.
+  {
+    echo "# Generated env because $ENV_FILE was present."
+    echo "# Local secrets are intentionally not copied; set them in 1Panel environment variables."
+  } > "$FILES_DIR/.env"
 else
   echo "==> No env file found at $ENV_FILE; generating package env from script defaults"
   {
