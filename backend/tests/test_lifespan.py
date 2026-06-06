@@ -15,6 +15,19 @@ def test_health_endpoint_returns_ok(monkeypatch):
     assert resp.json() == {"status": "ok"}
 
 
+def test_health_endpoint_is_not_shadowed_by_static_spa(monkeypatch, tmp_path):
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<!doctype html><div id='app'></div>", encoding="utf-8")
+    monkeypatch.setenv("STATIC_DIR", str(tmp_path))
+    client = TestClient(create_app())
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json() == {"status": "ok"}
+
+
 def test_startup_prewarm_all_users_disabled_by_default(monkeypatch):
     monkeypatch.delenv("SANDBOX_PREWARM_ALL_USERS", raising=False)
 

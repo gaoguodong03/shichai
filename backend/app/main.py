@@ -34,14 +34,14 @@ def create_app() -> FastAPI:
 
     register_api_routes(app)
 
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
     if not mount_static_spa(app):
         @app.get("/")
         async def root():
             return {"message": "书童四九 API", "version": "0.1.0"}
-
-    @app.get("/health")
-    async def health():
-        return {"status": "ok"}
 
     return app
 
