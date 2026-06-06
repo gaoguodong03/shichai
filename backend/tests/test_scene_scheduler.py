@@ -108,3 +108,28 @@ def test_finalize_scene_profile_strips_suggested_add():
         orchestration_profile="scene",
     )
     assert out.get("suggested_add_agent_ids") == []
+
+
+def test_finalize_scene_profile_rejects_outside_next_speaker():
+    """场景会话参与者固定：主持人不能把下一发言人指向场景外专家。"""
+    raw = {
+        "task_done": False,
+        "next_speaker": "agent-outside-1",
+        "next_prompt": "请场外专家继续。",
+        "suggested_add_agent_ids": ["agent-outside-1"],
+    }
+    dha_list = [{"agent_id": "agent-a", "name": "写作", "role": "文字"}]
+    available = [{"agent_id": "agent-outside-1", "name": "外", "role": "x"}]
+    out = finalize_host_scheduler_decision(
+        raw,
+        agent_ids=["agent-a"],
+        dha_list=dha_list,
+        available_to_add=available,
+        last_speaker_agent_id=None,
+        user_message="继续",
+        explicit_requested_agent_ids=[],
+        orchestration_profile="scene",
+    )
+    assert out.get("suggested_add_agent_ids") == []
+    assert out.get("next_speaker") == "user"
+    assert out.get("interrupt_reason") == "conflict_detected"
