@@ -578,6 +578,34 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mcp_tool_normalization_error_reports_server_and_tool(monkeypatch):
+    from types import SimpleNamespace
+
+    import app.mcp.manager as mcp_manager
+
+    mgr = mcp_manager.MCPToolManager()
+
+    def _raise_normalization_error(*_args, **_kwargs):
+        raise ValueError("bad argument shape")
+
+    monkeypatch.setattr(mcp_manager, "normalize_mcp_kwargs_for_call", _raise_normalization_error)
+
+    mcp_tool = SimpleNamespace(
+        name="search",
+        description="search",
+        inputSchema={"type": "object", "properties": {"query": {"type": "string"}}},
+    )
+    tool = mgr._create_tool_spec(mcp_tool, session=object(), server_id="mcp-exa")
+    out = await tool.acall(query={"nested": "bad"})
+
+    assert "Error:" in out
+    assert "MCP tool argument normalization failed" in out
+    assert "server=mcp-exa" in out
+    assert "tool=search" in out
+    assert "bad argument shape" in out
+
+
+@pytest.mark.asyncio
 async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monkeypatch):
     import app.mcp.manager as mcp_manager
 

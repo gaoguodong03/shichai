@@ -558,9 +558,24 @@ class MCPToolManager:
         async def tool_func(**kwargs):
             """异步执行 MCP 工具。直接使用 session.call_tool，与主事件循环同任务，避免 sync 包装带来的额外开销与 anyio 跨任务错误。"""
             try:
-                call_kwargs = normalize_mcp_kwargs_for_call(
-                    server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
-                )
+                try:
+                    call_kwargs = normalize_mcp_kwargs_for_call(
+                        server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
+                    )
+                except Exception as e:
+                    detail = _exception_detail(e)
+                    sid = server_id or ""
+                    logger.warning(
+                        "MCP tool argument normalization failed server=%s tool=%s %s",
+                        sid,
+                        original_tool_name,
+                        detail,
+                        exc_info=True,
+                    )
+                    return (
+                        "Error: MCP tool argument normalization failed: "
+                        f"server={sid} tool={original_tool_name} {detail}"
+                    )
                 logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
                 active_session = self.sessions.get(server_id or "", session)
                 ok, result, err = await execute_mcp_call(
