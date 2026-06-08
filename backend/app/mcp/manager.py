@@ -14,6 +14,7 @@ import threading
 import time
 from typing import List, Dict, Any, Optional
 from contextlib import AsyncExitStack
+from urllib.parse import urlsplit, urlunsplit
 
 from app.agent.tool_spec import ToolSpec
 
@@ -112,6 +113,53 @@ def _looks_like_protocol_mismatch_error(err: str) -> bool:
     if not s:
         return False
     return ("invalid response format" in s) or ("parse error" in s) or ("invalid json-rpc" in s)
+
+
+def _redact_mcp_url(raw_url: Any) -> str:
+    raw = str(raw_url or "").strip()
+    if not raw:
+        return "<empty>"
+    try:
+        parts = urlsplit(raw)
+    except Exception:
+        return raw.split("?", 1)[0].split("#", 1)[0] or "<invalid>"
+    if not parts.scheme or not parts.netloc:
+        return raw.split("?", 1)[0].split("#", 1)[0] or "<invalid>"
+    host = parts.hostname or ""
+    if not host:
+        return "<invalid>"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parts.port:
+        netloc = f"{netloc}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path or "", "", ""))
+
+
+def _mcp_connection_log_context(
+    server_id: str,
+    config: Dict[str, Any],
+    *,
+    transport: Optional[Dict[str, Any]] = None,
+    url: Optional[str] = None,
+    headers: Optional[Dict[str, Any]] = None,
+) -> str:
+    transport_cfg = transport if isinstance(transport, dict) else config.get("transport", {})
+    if not isinstance(transport_cfg, dict):
+        transport_cfg = {}
+    raw_headers = headers if isinstance(headers, dict) else transport_cfg.get("headers")
+    header_names = sorted(str(k) for k in (raw_headers or {}).keys())
+    raw_url = url if url is not None else (transport_cfg.get("url") or transport_cfg.get("base_url") or "")
+    parts = [
+        f"server_id={server_id}",
+        f"name={str(config.get('name') or '').strip() or '<unnamed>'}",
+        f"transport={str(transport_cfg.get('type') or 'stdio').strip() or 'stdio'}",
+    ]
+    if raw_url:
+        parts.append(f"url={_redact_mcp_url(raw_url)}")
+    if header_names:
+        parts.append(f"headers={','.join(header_names)}")
+    return " ".join(parts)
 
 
 def normalize_mcp_kwargs_for_call(
@@ -376,7 +424,11 @@ class MCPToolManager:
         blocked_until = float(self._server_retry_not_before.get(server_id, 0.0) or 0.0)
         if blocked_until > now:
             remain = blocked_until - now
-            logger.warning("MCP Server %s 处于失败冷却期，跳过重连（剩余 %.1fs）", server_id, remain)
+            logger.warning(
+                "MCP Server 处于失败冷却期，跳过重连（剩余 %.1fs） context=%s",
+                remain,
+                _mcp_connection_log_context(server_id, config),
+            )
             return False
         try:
             transport = config.get("transport", {})
@@ -484,10 +536,19 @@ class MCPToolManager:
                     session = await self.exit_stack.enter_async_context(ClientSession(read_stream, write_stream))
                     await asyncio.wait_for(session.initialize(), timeout=session_init_timeout)
                 except asyncio.TimeoutError:
-                    logger.error("MCP Server %s Streamable HTTP 初始化超时（%.1fs）", server_id, session_init_timeout)
+                    logger.error(
+                        "MCP Server Streamable HTTP 初始化超时（%.1fs） context=%s",
+                        session_init_timeout,
+                        _mcp_connection_log_context(server_id, config, transport=transport, url=url, headers=headers),
+                    )
                     raise
                 except Exception as e:
-                    logger.error(f"MCP Server {server_id} Streamable HTTP 连接失败: {e}", exc_info=True)
+                    logger.error(
+                        "MCP Server Streamable HTTP 连接失败: %s context=%s",
+                        _exception_detail(e),
+                        _mcp_connection_log_context(server_id, config, transport=transport, url=url, headers=headers),
+                        exc_info=True,
+                    )
                     raise
                 self.sessions[server_id] = session
                 await self._load_tools_from_server(server_id, session)
@@ -503,14 +564,20 @@ class MCPToolManager:
         except Exception as e:
             # 遇到远端协议/返回格式不兼容时，短暂熔断，避免每次请求都重复打满错误日志并拖慢路径
             cooldown_sec = int(os.getenv("MCP_CONNECT_RETRY_COOLDOWN_SEC", "300"))
-            if cooldown_sec > 0 and _looks_like_protocol_mismatch_error(str(e)):
+            error_detail = _exception_detail(e)
+            if cooldown_sec > 0 and _looks_like_protocol_mismatch_error(error_detail):
                 self._server_retry_not_before[server_id] = time.time() + cooldown_sec
                 logger.warning(
-                    "MCP Server %s 连接出现协议不兼容，进入冷却 %ss（可用 MCP_CONNECT_RETRY_COOLDOWN_SEC 调整）",
-                    server_id,
+                    "MCP Server 连接出现协议不兼容，进入冷却 %ss（可用 MCP_CONNECT_RETRY_COOLDOWN_SEC 调整） context=%s",
                     cooldown_sec,
+                    _mcp_connection_log_context(server_id, config),
                 )
-            logger.error(f"Failed to connect MCP server {server_id}: {e}", exc_info=True)
+            logger.error(
+                "Failed to connect MCP server: %s context=%s",
+                error_detail,
+                _mcp_connection_log_context(server_id, config),
+                exc_info=True,
+            )
             return False
     
     async def _load_tools_from_server(self, server_id: str, session: ClientSession):

@@ -624,6 +624,94 @@ async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monk
     assert connected == [("mcp-legacy-off", mgr.server_configs[0])]
 
 
+def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():
+    from app.mcp.manager import _mcp_connection_log_context
+
+    context = _mcp_connection_log_context(
+        "mcp-f0e12d4e",
+        {
+            "id": "mcp-f0e12d4e",
+            "name": "Remote Search",
+            "transport": {
+                "type": "streamable_http",
+                "url": "https://user:secret@example.com/mcp?token=secret-token",
+                "headers": {
+                    "Authorization": "Bearer secret-token",
+                    "X-Trace": "trace-id",
+                },
+            },
+        },
+    )
+
+    assert "server_id=mcp-f0e12d4e" in context
+    assert "name=Remote Search" in context
+    assert "transport=streamable_http" in context
+    assert "url=https://example.com/mcp" in context
+    assert "headers=Authorization,X-Trace" in context
+    assert "secret-token" not in context
+    assert "user:secret" not in context
+
+
+@pytest.mark.asyncio
+async def test_mcp_streamable_http_protocol_error_logs_connection_context(monkeypatch, caplog):
+    import logging
+
+    import app.mcp.manager as mcp_manager
+
+    class _AsyncContext:
+        def __init__(self, value):
+            self.value = value
+
+        async def __aenter__(self):
+            return self.value
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _FailingSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def initialize(self):
+            raise RuntimeError("MCP error -32603: Invalid response format")
+
+    monkeypatch.setattr(mcp_manager, "_streamable_http_available", True)
+    monkeypatch.setattr(
+        mcp_manager,
+        "streamable_http_client",
+        lambda *_args, **_kwargs: _AsyncContext((object(), object(), lambda: "session-id")),
+    )
+    monkeypatch.setattr(mcp_manager, "ClientSession", lambda *_args, **_kwargs: _FailingSession())
+    monkeypatch.setenv("MCP_CONNECT_RETRY_COOLDOWN_SEC", "300")
+
+    mgr = mcp_manager.MCPToolManager()
+    config = {
+        "id": "mcp-f0e12d4e",
+        "name": "Remote Search",
+        "transport": {
+            "type": "streamable_http",
+            "url": "https://user:secret@example.com/mcp?token=secret-token",
+            "headers": {"Authorization": "Bearer secret-token"},
+        },
+    }
+
+    with caplog.at_level(logging.WARNING, logger="app.mcp.manager"):
+        ok = await mgr.connect_server("mcp-f0e12d4e", config)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert ok is False
+    assert "连接出现协议不兼容" in messages
+    assert "server_id=mcp-f0e12d4e" in messages
+    assert "name=Remote Search" in messages
+    assert "url=https://example.com/mcp" in messages
+    assert "secret-token" not in messages
+    assert "user:secret" not in messages
+    assert mgr._server_retry_not_before["mcp-f0e12d4e"] > 0
+
+
 @pytest.mark.asyncio
 async def test_execute_mcp_call_serializes_same_session(temp_user_data_root, monkeypatch):
     from app.mcp.manager import execute_mcp_call
