@@ -1,22 +1,19 @@
 <template>
   <div class="flex flex-col h-full p-4 overflow-y-auto themed-scrollbar">
-    <!-- 未选择时 -->
-    <div v-if="!selectedDhaId" class="flex flex-col h-full items-center justify-center text-muted text-sm">
+    <div v-if="!selectedAgentId" class="flex flex-col h-full items-center justify-center text-muted text-sm">
       <p>请在左侧选择或新建专家</p>
     </div>
 
-    <!-- 表单：新建或编辑 -->
     <template v-else>
       <div class="max-w-5xl w-full mx-auto">
         <div class="mb-4">
           <h2 class="text-2xl font-semibold text-primary mb-1">
-            {{ selectedDhaId === '__new__' ? '创建专家' : '配置专家' }}
+            {{ selectedAgentId === '__new__' ? '创建专家' : '配置专家' }}
           </h2>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)] gap-6 items-start">
-          <!-- 左侧表单 -->
-          <form @submit.prevent="saveDha" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
+          <form @submit.prevent="saveAgent" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-primary mb-1">名称</label>
@@ -41,8 +38,6 @@
                 </select>
               </div>
             </div>
-
-            <!-- 头像：在右侧工牌大图点击打开弹窗选择 -->
 
             <div>
               <label class="block text-sm font-medium text-primary mb-1">描述</label>
@@ -110,8 +105,6 @@
               </div>
             </div>
 
-            <!-- MCP 已移除：若 skill 的 step 使用 MCP，DHA 自动可用全部 MCP -->
-
             <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
               <button
                 type="submit"
@@ -120,28 +113,26 @@
                 保存
               </button>
               <button
-                v-if="selectedDhaId && selectedDhaId !== '__new__'"
+                v-if="selectedAgentId && selectedAgentId !== '__new__'"
                 type="button"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
                 title="导出 ZIP 专家包（含技能等）"
-                @click="exportDhaBundle"
+                @click="exportAgentBundle"
               >
                 导出
               </button>
               <button
                 type="button"
                 class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
-                @click="deleteDha"
+                @click="deleteAgent"
               >
                 删除
               </button>
             </div>
           </form>
 
-          <!-- 右侧工牌预览 -->
           <div class="flex justify-center lg:justify-end">
             <div class="relative">
-              <!-- 吊绳 -->
               <div class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center">
                 <div class="h-8 w-1 bg-border rounded-full" />
                 <div class="w-9 h-3 bg-card rounded-b-xl flex items-center justify-center border border-border-light">
@@ -149,9 +140,7 @@
                 </div>
               </div>
 
-              <!-- 工牌卡片 -->
               <div class="relative w-[400px] aspect-[5/6] rounded-3xl bg-gradient-to-b from-page to-card border border-border-light shadow-xl pt-5 pb-5 px-5 flex flex-col gap-4">
-                <!-- 顶部条 -->
                 <div class="rounded-xl bg-black text-white text-xs font-medium px-3 py-1 inline-flex items-center justify-between">
                   <span class="uppercase tracking-[0.16em]">
                     Expert
@@ -161,7 +150,6 @@
                   </span>
                 </div>
 
-                <!-- 中部头像和名称 + 角色 -->
                 <div class="flex gap-4 mt-3">
                   <div class="shrink-0">
                     <div
@@ -205,7 +193,6 @@
                   </div>
                 </div>
 
-                <!-- 技能标签 -->
                 <div>
                   <p class="text-sm text-muted mb-1.5">核心技能</p>
                   <div class="flex flex-wrap gap-2">
@@ -231,7 +218,6 @@
                   </div>
                 </div>
 
-                <!-- 品牌区 -->
                 <div class="mt-auto pt-4 border-t border-dashed border-border-light flex items-center justify-between">
                   <div class="flex flex-col">
                     <span class="text-xs tracking-[0.18em] text-muted">
@@ -240,7 +226,7 @@
                     <span class="text-sm font-semibold text-primary mt-0.5">
                       ID
                       <span class="text-muted">
-                        {{ selectedDhaId && selectedDhaId !== '__new__' ? selectedDhaId : 'Pending' }}
+                        {{ selectedAgentId && selectedAgentId !== '__new__' ? selectedAgentId : 'Pending' }}
                       </span>
                     </span>
                   </div>
@@ -334,16 +320,17 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted, computed } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { EXPERT_PRESET_AVATAR_URLS, expertAvatarDisplayUrl, pickRandomExpertAvatar } from '@/constants/expertAvatars'
+import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
 
-type ReferenceSnapshot = { id: string; name?: string }
+const AGENT_REFERENCE_ID_KEYS = ['id', 'skill_id']
 
 const props = defineProps<{
-  selectedDhaId: string | null
-  dhaInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; skill_refs?: ReferenceSnapshot[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
+  selectedAgentId: string | null
+  agentInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; skill_refs?: ReferenceSnapshot[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
 }>()
 
 const emit = defineEmits<{
-  (e: 'created', dhaId: string): void
+  (e: 'created', agentId: string): void
   (e: 'updated'): void
   (e: 'cancel'): void
 }>()
@@ -378,9 +365,9 @@ const form = ref({
 })
 
 watch(
-  () => [props.selectedDhaId, props.dhaInstances],
+  () => [props.selectedAgentId, props.agentInstances],
   () => {
-    if (props.selectedDhaId === '__new__') {
+    if (props.selectedAgentId === '__new__') {
       const randomAv = pickRandomExpertAvatar()
       form.value = {
         name: '',
@@ -395,8 +382,8 @@ watch(
         url_capability: true,
       }
       avatarPreview.value = randomAv
-    } else if (props.selectedDhaId) {
-      const d = props.dhaInstances.find((x) => x.agent_id === props.selectedDhaId)
+    } else if (props.selectedAgentId) {
+      const d = props.agentInstances.find((x) => x.agent_id === props.selectedAgentId)
       if (d) {
         const fc = d.file_capabilities || {}
         form.value = {
@@ -404,7 +391,7 @@ watch(
           role: d.role || '',
           system_prompt: d.system_prompt || '',
           skill_ids: d.skill_ids || [],
-          skill_refs: mergeReferenceRowsForIds(d.skill_ids || [], d.skill_refs || [], skillNameLookup()),
+          skill_refs: mergeReferenceRowsForIds(d.skill_ids || [], d.skill_refs || [], skillNameLookup(), AGENT_REFERENCE_ID_KEYS),
           is_leader: d.is_leader || false,
           llm_provider_id: d.llm_provider_id || '',
           avatar_url: (d as any).avatar_url || '',
@@ -434,8 +421,8 @@ async function fetchSkills() {
 }
 
 function persistAvatarQuiet() {
-  if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-    apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, {
+  if (props.selectedAgentId && props.selectedAgentId !== '__new__') {
+    apiRequest(`/agents/${encodeURIComponent(props.selectedAgentId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ avatar_url: form.value.avatar_url }),
@@ -458,14 +445,14 @@ function randomizePresetAvatar() {
   showAvatarModal.value = false
 }
 
-async function saveDha() {
-  if (props.selectedDhaId === '__new__' && !String(form.value.avatar_url || '').trim()) {
+async function saveAgent() {
+  if (props.selectedAgentId === '__new__' && !String(form.value.avatar_url || '').trim()) {
     const url = pickRandomExpertAvatar()
     form.value.avatar_url = url
     avatarPreview.value = url
   }
-  if (props.selectedDhaId && props.selectedDhaId !== '__new__') {
-    const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, {
+  if (props.selectedAgentId && props.selectedAgentId !== '__new__') {
+    const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedAgentId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
@@ -483,8 +470,8 @@ async function saveDha() {
       body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
     })
     const j = await r.json()
-    if (j.status === 'ok' && (j.data?.agent_id || j.data?.expert_id || j.data?.agent_id)) {
-      emit('created', (j.data.agent_id || j.data.expert_id || j.data.agent_id) as string)
+    if (j.status === 'ok' && j.data?.agent_id) {
+      emit('created', j.data.agent_id as string)
     } else {
       await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
     }
@@ -498,46 +485,22 @@ function toggleSkill(id: string) {
   } else {
     form.value.skill_ids = [...current, id]
   }
-  form.value.skill_refs = mergeReferenceRowsForIds(form.value.skill_ids, form.value.skill_refs, skillNameLookup())
-}
-
-function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
-  if (!Array.isArray(raw)) return []
-  const out: ReferenceSnapshot[] = []
-  const seen = new Set<string>()
-  for (const item of raw) {
-    const row = item && typeof item === 'object' ? item as Record<string, unknown> : null
-    const id = String(row?.id || row?.skill_id || '').trim()
-    const name = String(row?.name || row?.display_name || row?.label || '').trim()
-    if (!id || seen.has(id)) continue
-    out.push(name ? { id, name } : { id })
-    seen.add(id)
-  }
-  return out
+  form.value.skill_refs = mergeReferenceRowsForIds(
+    form.value.skill_ids,
+    form.value.skill_refs,
+    skillNameLookup(),
+    AGENT_REFERENCE_ID_KEYS,
+  )
 }
 
 function skillNameLookup(): Record<string, string> {
   return Object.fromEntries((skills.value || []).map((s) => [s.id, s.name || s.id]))
 }
 
-function mergeReferenceRowsForIds(ids: string[], refs?: ReferenceSnapshot[], lookup?: Record<string, string>): ReferenceSnapshot[] {
-  const old = new Map(normalizeReferenceRows(refs || []).map((row) => [row.id, row.name || '']))
-  const seen = new Set<string>()
-  const out: ReferenceSnapshot[] = []
-  for (const raw of ids || []) {
-    const id = String(raw || '').trim()
-    if (!id || seen.has(id)) continue
-    const name = String((lookup || {})[id] || old.get(id) || '').trim()
-    out.push(name ? { id, name } : { id })
-    seen.add(id)
-  }
-  return out
-}
-
 function skillLabel(id: string): string {
   const current = (skills.value || []).find((s) => s.id === id)
   if (current) return current.name || current.id
-  return normalizeReferenceRows(form.value.skill_refs).find((row) => row.id === id)?.name || id
+  return normalizeReferenceRows(form.value.skill_refs, AGENT_REFERENCE_ID_KEYS).find((row) => row.id === id)?.name || id
 }
 
 function skillMissing(id: string): boolean {
@@ -570,8 +533,8 @@ const filteredSkills = computed(() => {
   })
 })
 
-async function exportDhaBundle() {
-  const id = props.selectedDhaId
+async function exportAgentBundle() {
+  const id = props.selectedAgentId
   if (!id || id === '__new__') return
   try {
     const r = await apiRequest(`/dha/instances/${encodeURIComponent(id)}/export-bundle`)
@@ -591,9 +554,9 @@ async function exportDhaBundle() {
   }
 }
 
-async function deleteDha() {
-  if (!props.selectedDhaId) return
-  if (props.selectedDhaId === '__new__') {
+async function deleteAgent() {
+  if (!props.selectedAgentId) return
+  if (props.selectedAgentId === '__new__') {
     emit('cancel')
     return
   }
@@ -604,7 +567,7 @@ async function deleteDha() {
     confirmText: '删除',
   })
   if (!ok) return
-  const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedDhaId)}`, { method: 'DELETE' })
+  const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedAgentId)}`, { method: 'DELETE' })
   const j = await r.json()
   if (j.status === 'ok') {
     emit('updated')

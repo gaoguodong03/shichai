@@ -82,8 +82,8 @@ P0 完成审计见：[p0-completion-audit.md](p0-completion-audit.md)。
 
 - 对应需求：UR-04、UR-10
 - 状态：`verify`
-- 修改范围：`backend/app/api/dha.py`、`backend/app/api/settings.py`、`backend/app/core/resource_store.py`、`frontend/src/features/resources/`
-- 测试入口：`backend/tests/test_dha_api.py`、`backend/tests/test_llm_config.py`、`frontend/e2e/resources-scenario-expert.spec.ts`
+- 修改范围：`backend/app/api/agents.py`、`backend/app/api/settings_skills.py`、`backend/app/core/resource_store.py`、`frontend/src/features/resources/`
+- 测试入口：`backend/tests/test_agents_api.py`、`backend/tests/test_llm_config.py`、`frontend/e2e/resources-scenario-expert.spec.ts`
 - 验收点：
   - 专家、模型、Skill、MCP 修改后新会话读取最新配置。
   - 删除资源后列表同步，历史会话不崩溃。
@@ -144,7 +144,7 @@ P0 完成审计见：[p0-completion-audit.md](p0-completion-audit.md)。
 
 - 对应需求：UR-10
 - 状态：`verify`
-- 修改范围：`backend/app/api/settings.py`、`backend/app/api/settings_secrets.py`、`backend/app/core/host_config.py`、`frontend/src/features/settings/`
+- 修改范围：`backend/app/api/settings_skills.py`、`backend/app/api/settings_secrets.py`、`backend/app/core/host_config.py`、`frontend/src/features/settings/`
 - 测试入口：`backend/tests/test_llm_config.py`、`frontend/e2e/settings.spec.ts`
 - 验收点：
   - 新会话使用最新默认主持人和模型配置。

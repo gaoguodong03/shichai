@@ -2,7 +2,7 @@
                 <div class="group-chat-input-wrap">
               <div class="group-chat-input-inner">
               <GroupChatStatusBars
-                :suggested-dhas="pendingSuggestedDhaItems"
+                :suggested-agents="pendingSuggestedAgentItems"
                 :host-display-name="hostDisplayName"
                 :suggested-invite-loading="suggestedInviteLoading"
                 :auto-switch-visible="Boolean(currentAutoSwitchHint)"
@@ -16,9 +16,9 @@
                 :interrupt-hint="orchestrationInterruptHint"
                 :current-streaming="currentGroupStreaming"
                 :streaming-phase="currentGroupStreamingPhase"
-                @invite-one-suggested="inviteOneSuggestedDha"
-                @invite-suggested="inviteSuggestedDha"
-                @dismiss-suggested="groupSuggestedAddDhaIds = []"
+                @invite-one-suggested="inviteOneSuggestedAgent"
+                @invite-suggested="inviteSuggestedAgents"
+                @dismiss-suggested="groupSuggestedAddAgentIds = []"
                 @ignore-auto-switch="ignoreAutoSwitchAndPause"
               />
               <div class="group-chat-input-blocks">
@@ -73,7 +73,7 @@
                           :style="
                             expertAvatarUrl(opt.id)
                               ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                              : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
                           "
                         >
                           <img
@@ -82,7 +82,7 @@
                             alt=""
                             class="group-chat-avatar-photo"
                           />
-                          <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                          <template v-else>{{ agentAvatarChar(opt.id) }}</template>
                         </span>
                         <span class="group-chat-at-label">{{ opt.label }}</span>
                       </li>
@@ -130,7 +130,7 @@
                             :style="
                               expertAvatarUrl(opt.id)
                                 ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
                             "
                           >
                             <img
@@ -139,7 +139,7 @@
                               alt=""
                               class="group-chat-avatar-photo"
                             />
-                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                            <template v-else>{{ agentAvatarChar(opt.id) }}</template>
                           </span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
@@ -188,7 +188,7 @@
                             :style="
                               expertAvatarUrl(opt.id)
                                 ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: dhaAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
                             "
                           >
                             <img
@@ -197,7 +197,7 @@
                               alt=""
                               class="group-chat-avatar-photo"
                             />
-                            <template v-else>{{ dhaAvatarChar(opt.id) }}</template>
+                            <template v-else>{{ agentAvatarChar(opt.id) }}</template>
                           </span>
                           <span class="group-chat-at-label">{{ opt.label }}</span>
                         </li>
@@ -231,7 +231,7 @@
                         :style="
                           expertAvatarUrl(toolbarDisplaySpeakerId)
                             ? { background: 'transparent', overflow: 'hidden' }
-                            : { backgroundColor: dhaAvatarColor(dhaIndex(toolbarDisplaySpeakerId)) }
+                            : { backgroundColor: agentAvatarColor(agentIndex(toolbarDisplaySpeakerId)) }
                         "
                       >
                         <img
@@ -240,7 +240,7 @@
                           alt=""
                           class="group-chat-avatar-photo"
                         />
-                        <template v-else>{{ dhaAvatarChar(toolbarDisplaySpeakerId) }}</template>
+                        <template v-else>{{ agentAvatarChar(toolbarDisplaySpeakerId) }}</template>
                       </span>
                       <span class="group-chat-next-speaker-name">
                         {{ toolbarDisplayLabelText }}
@@ -444,7 +444,7 @@
                                 :style="
                                   expertAvatarUrl(id)
                                     ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: dhaAvatarColor(dhaIndex(id)) }
+                                    : { backgroundColor: agentAvatarColor(agentIndex(id)) }
                                 "
                               >
                                 <img
@@ -453,7 +453,7 @@
                                   alt=""
                                   class="group-chat-avatar-photo"
                                 />
-                                <template v-else>{{ dhaAvatarChar(id) }}</template>
+                                <template v-else>{{ agentAvatarChar(id) }}</template>
                               </span>
                               <span
                                 v-else
@@ -479,14 +479,14 @@
                         </section>
                         <section class="group-chat-add-remove-section">
                           <p class="group-chat-members-dropdown-title">可邀请的专家</p>
-                          <ul v-if="invitableDhas.length" class="group-chat-members-list">
-                            <li v-for="d in invitableDhas" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
+                          <ul v-if="invitableAgents.length" class="group-chat-members-list">
+                            <li v-for="d in invitableAgents" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
                               <span
                                 class="group-chat-avatar group-chat-avatar-sm"
                                 :style="
                                   expertAvatarUrl(d.agent_id)
                                     ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: dhaAvatarColor(dhaIndex(d.agent_id)) }
+                                    : { backgroundColor: agentAvatarColor(agentIndex(d.agent_id)) }
                                 "
                               >
                                 <img
@@ -545,7 +545,7 @@ import { useGroupChatComposerContext } from './groupChatWorkspaceContext'
 import GroupChatStatusBars from './GroupChatStatusBars.vue'
 
 const {
-  pendingSuggestedDhaItems,
+  pendingSuggestedAgentItems,
   hostDisplayName,
   suggestedInviteLoading,
   currentAutoSwitchHint,
@@ -559,9 +559,9 @@ const {
   orchestrationInterruptHint,
   currentGroupStreaming,
   currentGroupStreamingPhase,
-  inviteOneSuggestedDha,
-  inviteSuggestedDha,
-  groupSuggestedAddDhaIds,
+  inviteOneSuggestedAgent,
+  inviteSuggestedAgents,
+  groupSuggestedAddAgentIds,
   ignoreAutoSwitchAndPause,
   attachedFiles,
   removeAttachedFile,
@@ -606,12 +606,12 @@ const {
   shortcutPresetExpertNamesText,
   orderedMemberIds,
   expertAvatarUrl,
-  dhaAvatarColor,
-  dhaIndex,
-  dhaAvatarChar,
+  agentAvatarColor,
+  agentIndex,
+  agentAvatarChar,
   leaderDisplayId,
   removeMember,
-  invitableDhas,
+  invitableAgents,
   inviteSingleMember,
   insertLocalFileInputRef,
   onInsertLocalFile,

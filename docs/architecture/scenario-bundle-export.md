@@ -28,7 +28,7 @@ flowchart LR
 | 路径 | 内容 |
 |------|------|
 | `scenario_bundle.json` | `bundle_version`、`exported_at`（UTC ISO）、`preset`（**整份场景行原样**，含 `id`、`agent_ids`、`host_config` 等） |
-| `dha_instances.json` | 场景中每个 `agent_id` 对应专家的一条记录（经 `strip_dha_row_for_disk` 处理） |
+| `dha_instances.json` | 场景中每个 `agent_id` 对应专家的一条记录（经 `strip_agent_row_for_disk` 处理） |
 | `mcp_servers.json` | **仅当**收集到的 `mcp_ids` 非空时写入；为当前用户配置里这些 id 的 MCP 条目 |
 | `skills/<skill_id>/...` | 每个技能目录下含 `SKILL.md` 才会打包；路径为 `skills/{skill_id}/相对文件` |
 
@@ -44,8 +44,8 @@ flowchart LR
 ### 2. 专家 id（`agent_id`）
 
 - 包内 `dha_instances.json` 只包含场景 `agent_ids` 里、且在本地 `dha_instances` 里能找到的专家。
-- [`strip_dha_row_for_disk`](../../backend/app/core/scenario_bundle.py) 会去掉 `expert_id`、`file_capability_labels`，**保留 `agent_id` 等其余字段**。
-- 导入时用 [`merge_dha_instances_for_bundle`](../../backend/app/core/scenario_bundle.py)：**以 `agent_id` 为键**合并；冲突时是否覆盖由 `overwrite_experts` 决定。
+- [`strip_agent_row_for_disk`](../../backend/app/core/scenario_bundle.py) 会去掉 `expert_id`、`file_capability_labels`，**保留 `agent_id` 等其余字段**。
+- 导入时用 [`merge_agent_instances_for_bundle`](../../backend/app/core/scenario_bundle.py)：**以 `agent_id` 为键**合并；冲突时是否覆盖由 `overwrite_experts` 决定。
 
 ### 3. 技能 id（目录名 = skill_id）
 

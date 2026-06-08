@@ -1,9 +1,9 @@
-"""场景虚拟主持人配置（与 DHA 字段对齐，存于会话 meta / 场景预设）。"""
+"""场景虚拟主持人配置（与 Agent 字段对齐，存于会话 meta / 场景预设）。"""
 from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.api.dha import merge_file_capabilities
+from app.api.agents import merge_file_capabilities
 from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 
 
@@ -11,7 +11,7 @@ LEGACY_DEFAULT_HOST_SKILL_ID = "group-host"
 
 
 def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
-    """与群聊 build_tools / LLM 使用的 DHA 形状对齐。"""
+    """与群聊 build_tools / LLM 使用的 Agent 形状对齐。"""
     if not isinstance(raw, dict):
         raw = {}
     skill_ids = [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()]

@@ -7,7 +7,7 @@ export const EXPERT_PRESET_AVATAR_URLS: readonly string[] = Array.from({ length:
   return `${BASE}/expert-${n}.png`
 })
 
-export const EXPERT_PRESET_AVATAR_THUMB_URLS: readonly string[] = Array.from({ length: 11 }, (_, i) => {
+const EXPERT_PRESET_AVATAR_THUMB_URLS: readonly string[] = Array.from({ length: 11 }, (_, i) => {
   const n = String(i + 1).padStart(2, '0')
   return `${THUMB_BASE}/expert-${n}.png`
 })
@@ -19,11 +19,6 @@ const PRESET_AVATAR_THUMB_BY_URL = new Map<string, string>(
 export function pickRandomExpertAvatar(): string {
   const list = EXPERT_PRESET_AVATAR_URLS
   return list[Math.floor(Math.random() * list.length)]!
-}
-
-export function isPresetExpertAvatar(url: string | null | undefined): boolean {
-  if (!url || url.startsWith('data:')) return false
-  return EXPERT_PRESET_AVATAR_URLS.includes(url)
 }
 
 export function expertAvatarDisplayUrl(url: string | null | undefined): string | null {

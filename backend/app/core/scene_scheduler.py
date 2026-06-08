@@ -34,7 +34,7 @@ def user_explicitly_requests_recruit(user_message: str) -> bool:
 def _suppress_misleading_recruitment_when_room_configured(
     suggested_add: List[str],
     *,
-    dha_list: List[Dict[str, Any]],
+    agent_profiles: List[Dict[str, Any]],
     agent_ids: List[str],
     user_message: str,
     explicit_requested_agent_ids: List[str],
@@ -46,7 +46,7 @@ def _suppress_misleading_recruitment_when_room_configured(
     此前在「已有专家发言」后不再抑制（last_speaker 早退），会导致每轮 LLM 仍带 suggested_add，
     界面反复出现招募气泡。
 
-    真实 0 成员（agent_ids 与 dha_list 皆空）时保留 suggested_add，便于组队。
+    真实 0 成员（agent_ids 与 agent_profiles 皆空）时保留 suggested_add，便于组队。
     """
     if not suggested_add:
         return suggested_add, False
@@ -54,7 +54,7 @@ def _suppress_misleading_recruitment_when_room_configured(
         return suggested_add, False
     if user_explicitly_requests_recruit(user_message):
         return suggested_add, False
-    if not dha_list and not agent_ids:
+    if not agent_profiles and not agent_ids:
         return suggested_add, False
     return [], True
 
@@ -62,7 +62,6 @@ def _suppress_misleading_recruitment_when_room_configured(
 def _recover_next_speaker_after_suppress(data: Dict[str, Any]) -> None:
     """清空误招募后：不猜测下一位专家，固定交还 user，由下一轮四九按流程图重新调度（步骤 6/2）。"""
     data["suggested_add_agent_ids"] = []
-    data["suggested_add_expert_ids"] = []
     data["next_speaker"] = "user"
     data["task_done"] = True
     if not str(data.get("reason") or "").strip():
@@ -73,7 +72,7 @@ def finalize_host_scheduler_decision(
     raw: Optional[Dict[str, Any]],
     *,
     agent_ids: List[str],
-    dha_list: List[Dict[str, Any]],
+    agent_profiles: List[Dict[str, Any]],
     available_to_add: List[Dict[str, Any]],
     last_speaker_agent_id: Optional[str],
     user_message: str,
@@ -91,14 +90,13 @@ def finalize_host_scheduler_decision(
     data = dict(raw or {})
     if orchestration_profile == "scene":
         data["suggested_add_agent_ids"] = []
-        data["suggested_add_expert_ids"] = []
     announcement = data.get("announcement") if isinstance(data.get("announcement"), str) else None
     recruitable_ids = {d.get("agent_id") for d in available_to_add if d.get("agent_id")}
-    raw_suggested = data.get("suggested_add_expert_ids") or data.get("suggested_add_agent_ids") or []
+    raw_suggested = data.get("suggested_add_agent_ids") or []
     suggested_add = list(dict.fromkeys([x for x in raw_suggested if x in recruitable_ids]))[:3]
-    # 仅从主持词抠 id：仅「真实 0 成员」场景（meta 里也没有 agent_ids）。若 meta 有 id 但 dha_list 空，
+    # 仅从主持词抠 id：仅「真实 0 成员」场景（meta 里也没有 agent_ids）。若 meta 有 id 但 agent_profiles 空，
     # 说明孤儿/失效 id，抠名字会误伤，交给 suppress 清掉 suggested_add。
-    if not suggested_add and isinstance(announcement, str) and not dha_list and not agent_ids:
+    if not suggested_add and isinstance(announcement, str) and not agent_profiles and not agent_ids:
         suggested_add = extract_valid_agent_ids_from_text_or_names(
             announcement, recruitable_ids, available_to_add, max_n=3
         )
@@ -110,13 +108,12 @@ def finalize_host_scheduler_decision(
     )
     suggested_add, stripped = _suppress_misleading_recruitment_when_room_configured(
         suggested_add,
-        dha_list=dha_list,
+        agent_profiles=agent_profiles,
         agent_ids=agent_ids,
         user_message=user_message,
         explicit_requested_agent_ids=explicit_requested_agent_ids,
     )
     data["suggested_add_agent_ids"] = suggested_add
-    data["suggested_add_expert_ids"] = suggested_add
     if stripped:
         _recover_next_speaker_after_suppress(data)
 

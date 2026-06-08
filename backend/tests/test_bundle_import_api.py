@@ -220,7 +220,7 @@ def test_scene_bundle_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path
 
 
 def test_expert_bundle_dry_run_reports_missing_skill(monkeypatch, tmp_path: Path):
-    from app.api import settings as api
+    from app.api import settings_skills as api
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -256,7 +256,7 @@ def test_expert_bundle_dry_run_reports_missing_skill(monkeypatch, tmp_path: Path
 def test_skill_bundle_dry_run_reports_missing_mcp_and_ignores_existing(monkeypatch, tmp_path: Path):
     import json
 
-    from app.api import settings as api
+    from app.api import settings_skills as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -302,7 +302,7 @@ def test_skill_bundle_dry_run_reports_missing_mcp_and_ignores_existing(monkeypat
 
 
 def test_skill_bundle_missing_mcp_uses_name_hint_when_declared(monkeypatch, tmp_path: Path):
-    from app.api import settings as api
+    from app.api import settings_skills as api
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -346,7 +346,7 @@ def test_skill_bundle_missing_mcp_uses_name_hint_when_declared(monkeypatch, tmp_
 def test_skill_bundle_import_merges_bundled_mcp(monkeypatch, tmp_path: Path):
     import json
 
-    from app.api import settings as api
+    from app.api import settings_skills as api
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))

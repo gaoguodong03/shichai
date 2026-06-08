@@ -1,6 +1,5 @@
 """Host-on-demand routing tests."""
 import os
-from types import SimpleNamespace
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
@@ -9,6 +8,24 @@ def _get_group_chat_module():
     from app.agent import group_chat_runtime as group_chat
 
     return group_chat
+
+
+def _get_host_decision_module():
+    from app.agent import group_host_decision
+
+    return group_host_decision
+
+
+def _get_host_runtime_module():
+    from app.agent import group_chat_host_runtime
+
+    return group_chat_host_runtime
+
+
+def _get_expert_resolution_module():
+    from app.agent import group_chat_expert_resolution
+
+    return group_chat_expert_resolution
 
 
 def test_user_requests_host_takeover_with_at_syntax():
@@ -30,26 +47,26 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
 
 
 def test_parse_host_response_extracts_next_prompt():
-    gc = _get_group_chat_module()
+    gc = _get_host_decision_module()
     raw = """开场白
 ```json
 {"task_done": false, "next_speaker": "agent-a", "next_prompt": "请结合上文补充要点", "reason": "继续"}
 ```
 """
-    out = gc._parse_host_response(raw)
+    out = gc.parse_host_response(raw)
     assert out is not None
     assert out.get("next_prompt") == "请结合上文补充要点"
     assert out.get("next_speaker") == "agent-a"
 
 
 def test_parse_host_response_without_next_prompt():
-    gc = _get_group_chat_module()
+    gc = _get_host_decision_module()
     raw = """说明
 ```json
 {"task_done": true, "next_speaker": "user"}
 ```
 """
-    out = gc._parse_host_response(raw)
+    out = gc.parse_host_response(raw)
     assert out is not None
     assert out.get("next_prompt") is None
 
@@ -71,7 +88,7 @@ def test_preferred_agent_id_map_prefers_agent_namespace():
     assert out == ["agent-seminar-guide", "agent-d92e733e"]
 
 
-def test_preferred_agent_id_map_generates_agent_id_for_dha_only():
+def test_preferred_agent_id_map_generates_agent_id_for_legacy_expert_only():
     gc = _get_group_chat_module()
     instances = [
         {"agent_id": "agent-web-fetch", "name": "网页爬取专家"},
@@ -125,7 +142,7 @@ def test_prioritize_suggested_add_ids_prefers_user_requested_experts():
 
 
 def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
-    gc = _get_group_chat_module()
+    gc = _get_expert_resolution_module()
     pick = gc._pick_resolved_host_skill_id
     assert pick(["group-host", "group-host-webnovel"]) == "group-host-webnovel"
     assert pick(["group-host-webnovel", "group-host"]) == "group-host-webnovel"
@@ -134,7 +151,7 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
 
 
 async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path):
-    gc = _get_group_chat_module()
+    gc = _get_host_runtime_module()
     calls = {}
     meta_item = {}
 
@@ -169,19 +186,17 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         return FakeAgent()
 
     monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
-    monkeypatch.setattr(gc, "build_tools_for_group_chat", fake_tool_builder)
     monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
-    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
 
-    out = await gc._host_decide_by_dha(
+    out = await gc._host_decide_by_agent(
         llm=object(),
-        host_dha={
+        host_agent={
             "agent_id": "agent-scene-host",
             "name": "四九场景主持",
             "role": "群聊场景主持人",
             "skill_ids": ["group-host", "group-host-webnovel"],
         },
-        dha_list=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
+        agent_profiles=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
         discussion_goal="写网文",
         recent_messages="",
         last_speaker_agent_id=None,
@@ -204,7 +219,7 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
 
 
 async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypatch, tmp_path):
-    gc = _get_group_chat_module()
+    gc = _get_host_runtime_module()
     calls = {}
     meta_item = {}
 
@@ -239,19 +254,17 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
         return FakeAgent()
 
     monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
-    monkeypatch.setattr(gc, "build_tools_for_group_chat", fake_tool_builder)
     monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
-    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
 
-    out = await gc._host_decide_by_dha(
+    out = await gc._host_decide_by_agent(
         llm=object(),
-        host_dha={
+        host_agent={
             "agent_id": "agent-scene-host",
             "name": "四九场景主持",
             "role": "群聊场景主持人",
             "skill_ids": ["group-host"],
         },
-        dha_list=[{"agent_id": "agent-teacher", "name": "伴学研讨——引导教学的教师", "role": "教师"}],
+        agent_profiles=[{"agent_id": "agent-teacher", "name": "伴学研讨——引导教学的教师", "role": "教师"}],
         discussion_goal="开始研讨",
         recent_messages="【用户】开始研讨",
         last_speaker_agent_id=None,

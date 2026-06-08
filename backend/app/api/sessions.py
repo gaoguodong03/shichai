@@ -8,20 +8,18 @@ from typing import Optional, List, Dict, Any
 
 from app.core.security import user_context_dependency
 
-from app.api.group_chat import (
-    _load_group_meta,
-    _build_session_payload,
+from app.api.group_chat_state import build_session_payload, load_group_meta
+from app.agent.group_chat_runtime import GroupChatRequest, group_chat_stream
+from app.agent.group_session_service import (
+    GroupSessionUpdate,
     create_session_internal,
+    delete_group_message,
+    delete_group_session,
     export_session_to_markdown,
     get_group_session,
-    update_group_session,
-    delete_group_session,
-    delete_group_message,
-    stop_group_session_run,
-    group_chat_stream,
     group_session_events_stream,
-    GroupSessionUpdate,
-    GroupChatRequest,
+    stop_group_session_run,
+    update_group_session,
 )
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
@@ -31,18 +29,17 @@ logger = logging.getLogger(__name__)
 class SessionCreate(BaseModel):
     title: str = "新对话"
     agent_ids: List[str] = []
-    expert_ids: List[str] = []  # 兼容字段：expert_ids
-    leader_agent_id: Optional[str] = None  # 虚拟主持人 id 或兼容旧版真实 DHA
+    leader_agent_id: Optional[str] = None  # 虚拟主持人 id
     host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
 
 
 @router.get("/sessions")
 async def list_sessions():
     """统一会话列表（群聊与会话共用存储）"""
-    meta = _load_group_meta()
+    meta = load_group_meta()
     sessions = []
     for gsid, gm in meta.items():
-        sessions.append(_build_session_payload(gsid, gm))
+        sessions.append(build_session_payload(gsid, gm))
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
 
@@ -53,7 +50,6 @@ async def create_session(body: SessionCreate):
     data = create_session_internal(
         title=body.title or "新对话",
         agent_ids=body.agent_ids,
-        expert_ids=body.expert_ids,
         leader_agent_id=body.leader_agent_id,
         host_config=body.host_config,
     )
@@ -74,7 +70,7 @@ async def session_events_stream(session_id: str):
 
 @router.put("/sessions/{session_id}")
 async def update_session(session_id: str, body: GroupSessionUpdate):
-    """更新会话（标题、主持人配置、增删 DHA）"""
+    """更新会话（标题、主持人配置、增删 Agent）"""
     return await update_group_session(session_id, body)
 
 
@@ -92,7 +88,7 @@ async def stop_session_chat(session_id: str):
 
 @router.delete("/sessions/{session_id}/messages/{message_id}")
 async def delete_session_message(session_id: str, message_id: str):
-    """从会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 DHA 的上下文。"""
+    """从会话历史中彻底删除一条消息（含 Agent 发言），避免污染下一轮上下文。"""
     return await delete_group_message(session_id, message_id)
 
 
@@ -180,7 +176,7 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
 @router.post("/sessions/{session_id}/export")
 async def session_export(session_id: str):
     """将会话导出为 Markdown 到该会话工作区"""
-    meta = _load_group_meta()
+    meta = load_group_meta()
     if session_id not in meta:
         raise HTTPException(status_code=404, detail="Session not found")
     try:

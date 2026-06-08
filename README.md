@@ -4,7 +4,7 @@
 
 当前架构已统一为：
 - 会话主入口：`/api/sessions/*`（单人与多人共用同一套带主持人的会话模型）
-- Agent 主入口：`/api/agents/*`（`/api/dha/instances/*` 与 `/api/experts/*` 为兼容别名）
+- Agent 主入口：`/api/agents/*`（专家资源包导入导出沿用 `/api/dha/instances/*`）
 
 - 前端：见 [frontend/README.md](frontend/README.md)
 - 后端：见 [backend/README.md](backend/README.md)
@@ -111,7 +111,7 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
      - Linux 上默认不一定有 `host.docker.internal`，需要 `extra_hosts: host.docker.internal:host-gateway`
      - OpenSandbox 配置里要设置 `docker.host_ip = "host.docker.internal"`，否则 endpoint 可能返回空。
 
-6. **`/skill/scripts/*.py` 不存在（但你明明有技能）**
+6. **`/skills/<skill_id>/scripts/*.py` 不存在（但你明明有技能）**
    - 根因：OpenSandbox 的 `host_path` 挂载需要“宿主机可见路径”，但技能脚本目录在 `st49` 容器内部（例如 `/app/backend/data/...`），宿主机并没有这个路径。
    - 解决：配置容器路径到宿主路径映射：
      - `SANDBOX_HOST_PATH_MAP=/app/backend/data=/var/lib/docker/volumes/st49/_data`
@@ -204,7 +204,6 @@ export SANDBOX_PLAYWRIGHT_IMAGE=st49-skill-sandbox:local-playwright
    - 沙箱用 `SANDBOX_STANDARD_IMAGE` / `SANDBOX_PLAYWRIGHT_IMAGE` 指向统一模板镜像。OpenSandbox 创建用户沙箱时按 `image_ref` 使用这两个模板；镜像层由 Docker daemon 缓存，同一个 tag 已下载后不会为每个用户重复下载。
    - 如果希望部署后提前下载模板镜像但不创建用户沙箱，可在宿主机执行 `docker pull <SANDBOX_STANDARD_IMAGE>` 和需要时 `docker pull <SANDBOX_PLAYWRIGHT_IMAGE>`。
    - 推荐配置（`docker-compose.yml` / `docker-compose.1panel.yml`）：
-     - `SANDBOX_ALWAYS_ON=1`：用户沙箱创建后保持常驻，减少后续工具调用冷启动。
      - `SANDBOX_PREWARM_ALL_USERS=0`：默认关闭启动期全用户预热，避免部署后瞬间创建大量沙箱。
      - `SANDBOX_PREWARM_ON_USER_REQUEST=0`：默认关闭普通接口触发预热，避免打开页面就创建当前用户沙箱；确实需要时显式设为 1。
      - `SANDBOX_LOGIN_PREWARM_TIMEOUT_MS=600000`：登录预热超时，默认 10 分钟。

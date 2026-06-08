@@ -25,9 +25,9 @@
 - backend/app/core/user_context.py
 - backend/app/core/user_settings_paths.py
 - backend/app/api/auth.py
-- backend/app/api/settings.py
+- backend/app/api/settings_skills.py
 - backend/app/api/settings_presets.py
-- backend/app/api/dha.py
+- backend/app/api/agents.py
 - backend/app/api/group_chat.py
 - backend/app/skills/loader.py
 - backend/app/tools/run_skill_script.py

@@ -2,7 +2,7 @@
  * 统一 API 基址：相对当前域名，便于开发时代理与生产同源。
  * 开发时 Vite 可将 /api 代理到后端；生产为同源。
  */
-export const apiBase =
+const apiBase =
   typeof import.meta.env?.VITE_API_BASE === 'string' && import.meta.env.VITE_API_BASE
     ? import.meta.env.VITE_API_BASE.replace(/\/$/, '')
     : '/api'

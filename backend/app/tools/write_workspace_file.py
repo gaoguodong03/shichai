@@ -63,10 +63,6 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
             )
         normalized = path_value.strip("/").replace("\\", "/")
-        # Backward compatibility for old skill prompts:
-        # under user-single-sandbox layout, scripts config lives at session root.
-        if normalized in {"scripts/config.json"} or normalized.endswith("/scripts/config.json"):
-            normalized = "config.json"
         if ".." in normalized:
             return "错误：路径不能包含 ..。"
         ws_root = get_workspace_root(workspace_id)
@@ -82,7 +78,6 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
                 workspace_path=ws_root,
                 rel_path=normalized,
                 content=str(content_value),
-                tool_call_id=f"write:{normalized}",
             )
         except Exception as e:
             return f"错误：写入工作区文件失败 - {e}"

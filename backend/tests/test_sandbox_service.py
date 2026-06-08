@@ -240,7 +240,7 @@ async def _ok_runner():
 async def test_session_isolation_one_session_one_sandbox(monkeypatch):
     monkeypatch.setenv("SANDBOX_SESSION_ISOLATION", "1")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     req_a1 = SandboxExecutionRequest(
         user_id="u1",
@@ -279,7 +279,7 @@ async def test_session_isolation_one_session_one_sandbox(monkeypatch):
 async def test_dispose_session_releases_sandbox(monkeypatch):
     monkeypatch.setenv("SANDBOX_SESSION_ISOLATION", "1")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="u2",
         session_id="s3",
@@ -300,7 +300,7 @@ async def test_dispose_session_releases_sandbox(monkeypatch):
 
 async def test_recreate_when_sandbox_not_found_during_execute():
     adapter = FlakyNotFoundAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="u3",
         session_id="s1",
@@ -320,7 +320,7 @@ async def test_recreate_when_sandbox_not_found_during_execute():
 
 async def test_ignore_not_found_when_dispose_stale_handle():
     adapter = DisposeNotFoundAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req1 = SandboxExecutionRequest(
         user_id="u4",
         session_id="s1",
@@ -350,38 +350,11 @@ async def test_ignore_not_found_when_dispose_stale_handle():
     assert out.get("ok") is True
     assert len(adapter.created) == 1
 
-
-async def test_always_on_skips_ttl_recycle(monkeypatch):
-    monkeypatch.setenv("SANDBOX_ALWAYS_ON", "1")
-    adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=60)
-    req = SandboxExecutionRequest(
-        user_id="u5",
-        session_id="s1",
-        turn_id="t1",
-        tool_call_id="c1",
-        tool_name="tool_a",
-        tool_kind="script",
-        payload={},
-        timeout_ms=1000,
-        runner=_ok_runner,
-        workspace_path=Path("."),
-    )
-    await svc.execute(req)
-    key = "u5"
-    handle, _touched = svc._user_handles[key]
-    svc._user_handles[key] = (handle, 0.0)
-    out = await svc.execute(req)
-    assert out.get("ok") is True
-    assert len(adapter.created) == 1
-    monkeypatch.delenv("SANDBOX_ALWAYS_ON", raising=False)
-
-
 async def test_fixed_resource_env_applies_to_policy(monkeypatch):
     monkeypatch.setenv("SANDBOX_FIXED_CPU", "2.5")
     monkeypatch.setenv("SANDBOX_FIXED_MEMORY_MB", "2048")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="u6",
         session_id="s1",
@@ -407,7 +380,7 @@ async def test_prewarm_all_known_users_scans_user_root(monkeypatch, tmp_path):
     (tmp_path / "bob").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     out = await svc.prewarm_all_known_users(reason="test")
     assert out["users_total"] == 2
     assert out["ok"] == 2
@@ -423,7 +396,7 @@ async def test_build_policy_mounts_workspace_and_all_skills(monkeypatch, tmp_pat
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -451,7 +424,7 @@ async def test_build_policy_creates_missing_workspace_mount_root(monkeypatch, tm
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -481,7 +454,7 @@ async def test_create_host_path_mount_failure_reports_docker_desktop_hint(monkey
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = HostPathMountFailAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -511,7 +484,7 @@ async def test_create_lifecycle_connect_failure_is_non_retryable_environment_err
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     adapter = LifecycleConnectFailAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -544,7 +517,7 @@ async def test_read_workspace_text_falls_back_to_host_when_opensandbox_unreachab
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello from host workspace", encoding="utf-8")
     adapter = LifecycleConnectFailAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     text = await svc.read_workspace_text(
         user_id="alice",
@@ -559,8 +532,6 @@ async def test_read_workspace_text_falls_back_to_host_when_opensandbox_unreachab
 
 
 async def test_read_workspace_text_skips_opensandbox_create_when_target_unreachable(monkeypatch, tmp_path):
-    from app.agent import sandbox_service as sandbox_service_module
-
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
@@ -568,12 +539,7 @@ async def test_read_workspace_text_skips_opensandbox_create_when_target_unreacha
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello without opensandbox logs", encoding="utf-8")
     adapter = UnreachableOpenSandboxWorkspaceAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
-    monkeypatch.setattr(
-        sandbox_service_module,
-        "_opensandbox_lifecycle_reachable",
-        lambda: (False, "127.0.0.1:8091"),
-    )
+    svc = SandboxService(sandbox_adapter=adapter)
 
     text = await svc.read_workspace_text(
         user_id="alice",
@@ -592,7 +558,7 @@ async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     user_root = tmp_path / "alice"
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     out = await svc.prewarm_user_sandbox("alice", reason="test")
     assert out["status"] == "ok"
     _sid, policy = adapter.created[0]
@@ -611,7 +577,7 @@ async def test_prewarm_reads_saved_playwright_variant(monkeypatch, tmp_path):
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text('{"image_variant": "playwright"}\n', encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="test")
 
@@ -629,7 +595,7 @@ async def test_prewarm_infers_playwright_from_browser_requirements(monkeypatch, 
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("playwright>=1.52.0\npatchright>=1.52.5\n", encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="test")
 
@@ -689,7 +655,7 @@ async def test_startup_orphan_cleanup_passes_active_ids_and_known_images(monkeyp
     user_root = tmp_path / "alice"
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     adapter = CleanupAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     await svc.prewarm_user_sandbox("alice", reason="test")
 
     result = await svc.cleanup_orphan_sandboxes_on_startup()
@@ -710,7 +676,7 @@ async def test_startup_orphan_cleanup_skips_unreachable_opensandbox_without_list
     from app.agent import sandbox_service as sandbox_service_module
 
     adapter = UnreachableOpenSandboxCleanupAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     monkeypatch.setattr(
         sandbox_service_module,
         "_opensandbox_lifecycle_reachable",
@@ -742,7 +708,7 @@ async def test_empty_user_requirements_do_not_trigger_install(monkeypatch, tmp_p
 
     ctx = get_user_context_for("alice")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox(ctx.user_id, reason="login")
 
@@ -759,7 +725,7 @@ async def test_prewarm_installs_user_requirements_with_network(monkeypatch, tmp_
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
     _sid, policy = adapter.created[0]
     assert policy.allow_network is True
@@ -778,7 +744,7 @@ async def test_playwright_variant_does_not_install_browsers_by_default(monkeypat
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("patchright>=1.52.5\n", encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
 
@@ -810,7 +776,7 @@ async def test_requirements_install_survives_command_env_drop(monkeypatch, tmp_p
     req_path.write_text("xlrd\n", encoding="utf-8")
     dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
     adapter = EnvDroppingAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
 
@@ -829,7 +795,7 @@ async def test_incomplete_requirements_install_does_not_mark_verified(monkeypatc
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
     adapter = IncompleteRequirementsAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     with pytest.raises(RuntimeError, match="requirements 安装未完成"):
         await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
@@ -848,7 +814,7 @@ async def test_execute_injects_user_requirements_env_when_payload_missing(monkey
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("pendulum==3.0.0\n", encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="s1",
@@ -881,7 +847,7 @@ async def test_unverified_requirements_hash_reinstalls(monkeypatch, tmp_path):
     req_path.write_text("xlrd\n", encoding="utf-8")
     dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
     handle, touched = svc._user_handles["alice"]
     handle.metadata.pop("verified_requirements_hash", None)
@@ -904,7 +870,7 @@ async def test_metadata_hit_but_real_import_missing_reinstalls(monkeypatch, tmp_
     req_path.write_text("xlrd\n", encoding="utf-8")
     dep_hash = hashlib.sha256("xlrd".encode("utf-8")).hexdigest()[:16]
     adapter = MissingPackageAfterMetadataHitAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="requirements_saved")
     handle, touched = svc._user_handles["alice"]
@@ -933,7 +899,7 @@ async def test_fresh_prewarm_skips_repeated_real_requirements_verify(monkeypatch
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("xlrd\n", encoding="utf-8")
     adapter = MissingPackageAfterMetadataHitAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="login")
     before = len(adapter.exec_commands)
@@ -957,7 +923,7 @@ async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_p
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="request")
     req = SandboxExecutionRequest(
@@ -998,7 +964,7 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "note.txt").write_text("hello", encoding="utf-8")
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.prewarm_user_sandbox("alice", reason="request")
     install_count_after_prewarm = len(adapter.exec_commands)
@@ -1040,20 +1006,13 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
 
 
 async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreachable(monkeypatch, tmp_path):
-    from app.agent import sandbox_service as sandbox_service_module
-
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
     (user_root / "resources" / "skills").mkdir(parents=True, exist_ok=True)
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = UnreachableOpenSandboxWorkspaceAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
-    monkeypatch.setattr(
-        sandbox_service_module,
-        "_opensandbox_lifecycle_reachable",
-        lambda: (False, "127.0.0.1:8091"),
-    )
+    svc = SandboxService(sandbox_adapter=adapter)
 
     await svc.write_workspace_text(
         user_id="alice",
@@ -1094,7 +1053,7 @@ async def test_cached_user_sandbox_recreated_when_network_policy_changes(monkeyp
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     base = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -1134,7 +1093,7 @@ async def test_build_policy_fills_mounts_when_req_policy_missing_them(monkeypatc
     workspace_root = user_root / "sessions" / "workspaces" / "sess-1"
     workspace_root.mkdir(parents=True, exist_ok=True)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="alice",
         session_id="sess-1",
@@ -1161,7 +1120,7 @@ async def test_build_policy_fills_mounts_when_req_policy_missing_them(monkeypatc
 
 async def test_execute_uses_workspace_cwd_after_policy_fills_mounts():
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="u7",
         session_id="s1",
@@ -1186,31 +1145,6 @@ async def test_execute_uses_workspace_cwd_after_policy_fills_mounts():
     assert adapter.last_tool_request.get("cwd") == "/workspace"
 
 
-def test_resolve_cwd_falls_back_when_workspace_not_mounted():
-    req = SandboxExecutionRequest(
-        user_id="u7",
-        session_id="s1",
-        turn_id="t1",
-        tool_call_id="c1",
-        tool_name="tool_a",
-        tool_kind="script",
-        payload={},
-        timeout_ms=1000,
-        runner=_ok_runner,
-        workspace_path=Path("."),
-        policy=SandboxPolicy(
-            fs_root=".",
-            timeout_ms=1000,
-            tool_allowlist=["tool_a"],
-            volume_mounts=[],
-        ),
-        cwd="/workspace",
-    )
-    policy = req.policy
-    assert policy is not None
-    assert SandboxService._resolve_cwd(policy, req) == "/"
-
-
 async def test_sandbox_events_include_mount_diagnostic_fields(monkeypatch):
     events = []
 
@@ -1219,7 +1153,7 @@ async def test_sandbox_events_include_mount_diagnostic_fields(monkeypatch):
 
     monkeypatch.setattr("app.agent.sandbox_service.append_sandbox_event", _capture)
     adapter = FakeAdapter()
-    svc = SandboxService(sandbox_adapter=adapter, session_ttl_sec=3600)
+    svc = SandboxService(sandbox_adapter=adapter)
     req = SandboxExecutionRequest(
         user_id="u8",
         session_id="s1",

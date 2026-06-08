@@ -15,7 +15,7 @@ from app.core.host_config import normalize_host_config_dict
 
 BUNDLE_VERSION = 1
 MANIFEST_NAME = "scenario_bundle.json"
-DHA_NAME = "dha_instances.json"
+AGENTS_BUNDLE_FILE_NAME = "dha_instances.json"
 MCP_NAME = "mcp_servers.json"
 SKILLS_PREFIX = "skills/"
 
@@ -87,7 +87,7 @@ def sanitize_mcp_servers_for_bundle(servers: List[Dict[str, Any]]) -> List[Dict[
 
 
 def collect_skill_and_mcp_ids_for_preset(
-    preset: Dict[str, Any], dha_by_id: Dict[str, Any]
+    preset: Dict[str, Any], agent_by_id: Dict[str, Any]
 ) -> Tuple[Set[str], Set[str]]:
     skill_ids: Set[str] = set()
     mcp_ids: Set[str] = set()
@@ -98,7 +98,7 @@ def collect_skill_and_mcp_ids_for_preset(
         mcp_ids.update(str(x).strip() for x in (hc.get("mcp_server_ids") or []) if str(x).strip())
     for aid in preset.get("agent_ids") or []:
         aid = str(aid).strip()
-        d = dha_by_id.get(aid)
+        d = agent_by_id.get(aid)
         if not isinstance(d, dict):
             continue
         for x in d.get("skill_ids") or []:
@@ -127,7 +127,7 @@ def build_scenario_bundle_zip_bytes(
             "preset": preset_row,
         }
         zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        zf.writestr(DHA_NAME, json.dumps(expert_rows, ensure_ascii=False, indent=2) + "\n")
+        zf.writestr(AGENTS_BUNDLE_FILE_NAME, json.dumps(expert_rows, ensure_ascii=False, indent=2) + "\n")
         safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows)
         if safe_mcp_rows:
             zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
@@ -196,12 +196,12 @@ def read_bundle_manifest_and_lists(
     if not isinstance(preset, dict):
         raise ValueError("missing_preset_in_manifest")
 
-    dha_list: List[Dict[str, Any]] = []
-    dha_path = bundle_dir / DHA_NAME
-    if dha_path.is_file():
-        raw = json.loads(dha_path.read_text(encoding="utf-8"))
+    agent_list: List[Dict[str, Any]] = []
+    agent_path = bundle_dir / AGENTS_BUNDLE_FILE_NAME
+    if agent_path.is_file():
+        raw = json.loads(agent_path.read_text(encoding="utf-8"))
         if isinstance(raw, list):
-            dha_list = [x for x in raw if isinstance(x, dict)]
+            agent_list = [x for x in raw if isinstance(x, dict)]
 
     mcp_list: List[Dict[str, Any]] = []
     mcp_path = bundle_dir / MCP_NAME
@@ -210,7 +210,7 @@ def read_bundle_manifest_and_lists(
         if isinstance(raw, list):
             mcp_list = [x for x in raw if isinstance(x, dict)]
 
-    return manifest, preset, dha_list, mcp_list
+    return manifest, preset, agent_list, mcp_list
 
 
 def list_skill_ids_in_bundle_skills_dir(bundle_dir: Path) -> List[str]:
@@ -265,7 +265,7 @@ def copy_bundle_skills_to_user(
     return imported, skipped
 
 
-def strip_dha_row_for_disk(row: Dict[str, Any]) -> Dict[str, Any]:
+def strip_agent_row_for_disk(row: Dict[str, Any]) -> Dict[str, Any]:
     out = {k: v for k, v in row.items() if k not in ("expert_id", "file_capability_labels")}
     return out
 
@@ -274,7 +274,7 @@ def _name_key(raw: Any) -> str:
     return str(raw or "").strip().lower()
 
 
-def merge_dha_instances_for_bundle(
+def merge_agent_instances_for_bundle(
     user_instances: List[Dict[str, Any]],
     bundle_instances: List[Dict[str, Any]],
     *,
@@ -286,13 +286,13 @@ def merge_dha_instances_for_bundle(
         aid = str(row.get("agent_id") or "").strip()
         if not aid:
             continue
-        by_id[aid] = strip_dha_row_for_disk(dict(row))
+        by_id[aid] = strip_agent_row_for_disk(dict(row))
         order.append(aid)
     for row in bundle_instances:
         aid = str(row.get("agent_id") or "").strip()
         if not aid:
             continue
-        cleaned = strip_dha_row_for_disk(dict(row))
+        cleaned = strip_agent_row_for_disk(dict(row))
         incoming_name_key = _name_key(cleaned.get("name"))
         conflict_ids = []
         if aid in by_id:

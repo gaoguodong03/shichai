@@ -31,7 +31,7 @@ def pick_scene_host_skill_id(skill_ids: List[str]) -> str:
 def resolve_scene_host_profile(
     meta_item: Mapping[str, Any],
     *,
-    dha_map: Mapping[str, Dict[str, Any]],
+    agent_map: Mapping[str, Dict[str, Any]],
     app_host_profile: Mapping[str, Any],
     agent_ids: List[str],
     orchestration_profile: str,
@@ -59,8 +59,8 @@ def resolve_scene_host_profile(
     if leader == VIRTUAL_SCENE_HOST_ID:
         return _virtual(base_profile, name=default_display_name)
 
-    if leader and leader in dha_map:
-        return dict(dha_map[leader])
+    if leader and leader in agent_map:
+        return dict(agent_map[leader])
 
     return None
 
@@ -91,7 +91,7 @@ class SceneRuntime:
         session_id: str,
         meta_item: Mapping[str, Any],
         agent_ids: List[str],
-        dha_map: Mapping[str, Dict[str, Any]],
+        agent_map: Mapping[str, Dict[str, Any]],
         app_host_profile: Mapping[str, Any],
         available_to_add: List[Dict[str, Any]],
     ) -> "SceneRuntime":
@@ -99,7 +99,7 @@ class SceneRuntime:
         profile = effective_orchestration_profile(dict(meta_item or {}), agent_ids=ids)
         host = resolve_scene_host_profile(
             meta_item,
-            dha_map=dha_map,
+            agent_map=agent_map,
             app_host_profile=app_host_profile,
             agent_ids=ids,
             orchestration_profile=profile,

@@ -27,7 +27,7 @@ def test_validate_missing_agent():
     preset = {"id": "p", "name": "P", "agent_ids": ["missing"], "host_config": {"skill_ids": ["s1"]}}
     v = validate_session_preset(
         preset,
-        dha_by_id={},
+        agent_by_id={},
         skill_has_content=lambda sid: sid == "s1",
         mcp_servers=[{"id": "m1", "enabled": True}],
     )
@@ -43,10 +43,10 @@ def test_validate_host_skill_and_mcp():
         "agent_ids": ["a1"],
         "host_config": {"skill_ids": ["hs"], "mcp_server_ids": ["hm"]},
     }
-    dha = {"a1": {"skill_ids": ["es"], "mcp_server_ids": ["em"]}}
+    agents = {"a1": {"skill_ids": ["es"], "mcp_server_ids": ["em"]}}
     v = validate_session_preset(
         preset,
-        dha_by_id=dha,
+        agent_by_id=agents,
         skill_has_content=lambda sid: sid in ("hs", "es"),
         mcp_servers=[{"id": "hm", "enabled": True}, {"id": "em", "enabled": True}],
     )
@@ -60,10 +60,10 @@ def test_validate_empty_host_skill_ids_do_not_create_missing_group_host():
         "agent_ids": ["a1"],
         "host_config": {"skill_ids": []},
     }
-    dha = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
+    agents = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
     v = validate_session_preset(
         preset,
-        dha_by_id=dha,
+        agent_by_id=agents,
         skill_has_content=lambda _: False,
         mcp_servers=[],
     )
@@ -85,10 +85,10 @@ def test_validate_host_mcp_ignores_legacy_enabled_false():
         "agent_ids": ["a1"],
         "host_config": {"mcp_server_ids": ["off"]},
     }
-    dha = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
+    agents = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
     v = validate_session_preset(
         preset,
-        dha_by_id=dha,
+        agent_by_id=agents,
         skill_has_content=lambda _: True,
         mcp_servers=[{"id": "off", "enabled": False}],
     )
@@ -100,7 +100,7 @@ def test_skip_agent_skills_when_agent_missing():
     preset = {"id": "p", "name": "P", "agent_ids": ["ghost"]}
     v = validate_session_preset(
         preset,
-        dha_by_id={},
+        agent_by_id={},
         skill_has_content=lambda _: False,
         mcp_servers=[],
     )

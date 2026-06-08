@@ -1,7 +1,5 @@
 """读取引用文件工具 - 经 OpenSandbox 挂载的工作区路径读取（不经宿主直读）。"""
 import json
-from typing import Optional
-
 from pydantic import BaseModel, Field
 
 from app.agent.tool_spec import ToolSpec
@@ -47,10 +45,6 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     cleaned = strip_llm_junk_from_read_path(raw) or raw
     root = get_agent_outputs_root().resolve()
     normalized = cleaned.lstrip("/")
-    # Backward compatibility for old skill prompts:
-    # under user-single-sandbox layout, scripts config lives at session root.
-    if normalized in {"scripts/config.json"} or normalized.endswith("/scripts/config.json"):
-        normalized = "config.json"
     if ".." in normalized:
         return "", "错误：路径不能包含 ..。"
     pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
@@ -60,16 +54,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
             "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_file。"
         )
     if not session_id:
-        if not normalized:
-            return "", "错误：未提供文件路径。"
-        full = (root / normalized).resolve()
-        if not str(full).startswith(str(root)):
-            return "", f"错误：路径 {path} 不在允许的目录内。"
-        try:
-            rel = str(full.relative_to(root)).replace("\\", "/")
-        except ValueError:
-            return "", f"错误：路径 {path} 不在允许的目录内。"
-        return rel, None
+        return "", "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
 
     prefix = f"{WORKSPACES_SUBDIR}/{session_id}"
     if not normalized.startswith(prefix + "/") and normalized != prefix:
@@ -82,7 +67,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     return rel, None
 
 
-def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
+def create_read_file_tool(session_id: str) -> ToolSpec:
     """创建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
 
     async def _read_file(path: str = "", **kwargs) -> str:
@@ -92,8 +77,6 @@ def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
             return err
         if is_internal_diagnostic_workspace_path(rel):
             return internal_diagnostic_path_error(rel)
-        if not session_id:
-            return "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
         ws_root = get_workspace_root_path(session_id)
         svc = get_shared_sandbox_service()
         try:
@@ -103,7 +86,6 @@ def create_read_file_tool(session_id: Optional[str] = None) -> ToolSpec:
                 session_id=session_id,
                 workspace_path=ws_root,
                 rel_path=rel,
-                tool_call_id=f"read_file:{rel}",
             )
         except FileNotFoundError:
             return f"错误：文件不存在：{raw}。不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。"

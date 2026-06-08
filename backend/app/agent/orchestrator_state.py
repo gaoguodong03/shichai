@@ -89,7 +89,6 @@ class OrchestrationDecision:
             "announcement": self.announcement or self.reason or "",
             "next_prompt": self.next_prompt,
             "suggested_add_agent_ids": list(self.suggested_add_agent_ids or []),
-            "suggested_add_expert_ids": list(self.suggested_add_agent_ids or []),
             "phase": self.phase.value,
             "owner_agent_id": self.owner_agent_id,
             "interrupt_reason": self.interrupt_reason.value,

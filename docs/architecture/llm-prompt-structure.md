@@ -1,12 +1,12 @@
-# DHA 输入大模型的提示词结构
+# Agent 输入大模型的提示词结构
 
-本文档说明 DHA 每次请求大模型时，实际发送的**完整提示词内容**及其组成结构。
+本文档说明 Agent 每次请求大模型时，实际发送的**完整提示词内容**及其组成结构。
 
 ---
 
 ## 一、两阶段流程概览
 
-DHA 采用**两阶段**设计（见 [Skill 规范](../skills/skill-standard.md) 与 [运行流程概览](./runtime-flow-overview.md)）：
+Agent 采用**两阶段**设计（见 [Skill 规范](../skills/skill-standard.md) 与 [运行流程概览](./runtime-flow-overview.md)）：
 
 1. **第一次调用**：专家 Skill 选型，仅输入用户消息 + 当前专家候选 Skill 的 name（+ description，若有）
 2. **第二次调用**：技能执行，输入选中 skill 的完整内容 + 用户问题 + 历史摘要（若有）
@@ -15,7 +15,7 @@ DHA 采用**两阶段**设计（见 [Skill 规范](../skills/skill-standard.md) 
 
 ## 二、消息格式概览
 
-DHA 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messages` 是一个有序列表，可能包含：
+Agent 使用 LangChain 的 `messages` 格式调用 LLM。每次调用时，`messages` 是一个有序列表，可能包含：
 
 | 序号 | 角色 | 说明 |
 |-----|------|------|

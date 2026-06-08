@@ -23,9 +23,9 @@
   - `backend/app/core/static_spa.py`
   - `backend/app/core/dev_bootstrap.py`
 
-### settings.py 拆分状态
+### settings 路由拆分状态
 
-`backend/app/api/settings.py` 仍存在，但已从约 3000+ 行降到约 1770 行。已拆出：
+`backend/app/api/settings.py` 已移除，设置相关路由直接由拆分后的模块注册：
 
 - `backend/app/api/settings_app.py`
   - `/settings/app`
@@ -37,6 +37,16 @@
 - `backend/app/api/settings_mcp.py`
   - `/settings/mcp*`
   - MCP CRUD、测试、工具列表、工具调用、sandbox-call、分享发布
+- `backend/app/api/settings_skills.py`
+  - `/settings/skills*`
+  - Skill CRUD、zip 导入导出、share 导入、requirements 合并
+- `backend/app/api/settings_skill_store.py`
+  - Skill 文件读写、目录定位、MCP 引用校验等存储 helper
+- `backend/app/api/settings_skill_parts.py`
+  - Skill 分片文件与目录管理路由
+- `backend/app/api/settings_presets.py`
+  - `/settings/session-presets*`
+  - 场景预设、场景包导入导出、分享包导入
 - `backend/app/api/sandbox_settings.py`
   - `/settings/sandbox`
   - `/settings/sandbox/requirements*`
@@ -51,14 +61,7 @@
   - bundle 导入时的 Skill/MCP 冲突检测
   - `copy_bundle_skills_to_user_by_name`
 
-`settings.py` 目前主要还剩：
-
-- session presets / share import
-- Skill CRUD / zip import-export / share
-- Skill parts 文件管理
-- 一些 import bundle 编排逻辑
-
-下一步建议：继续拆 `settings_skills.py` 与 `settings_presets.py`，但要谨慎处理 Skill、MCP、DHA、session preset 之间的交叉引用。
+下一步建议：继续收敛 `settings_skills.py` 与 `settings_presets.py` 内部的 bundle 编排逻辑，但要谨慎处理 Skill、MCP、Agent、session preset 之间的交叉引用。
 
 ## 沙箱当前业务链路
 
@@ -126,7 +129,7 @@
 - `backend/app/agent/sandbox_service.py`
 - `backend/tests/test_sandbox_service.py`
 
-已修复：默认 `SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE=1` 时，用户沙箱复用现在额外检查：
+已修复：用户沙箱复用现在额外检查：
 
 - requirements hash
 - verified requirements hash
@@ -191,7 +194,7 @@
 ```
 
 ```bash
-/Users/ggd/.local/bin/rtk conda run -n st49 bash -lc 'cd backend && python -m py_compile app/agent/sandbox_service.py app/tools/run_skill_script.py app/api/settings.py app/api/settings_mcp.py app/api/sandbox_settings.py'
+/Users/ggd/.local/bin/rtk conda run -n st49 bash -lc 'cd backend && python -m py_compile app/agent/sandbox_service.py app/tools/run_skill_script.py app/api/settings_skills.py app/api/settings_mcp.py app/api/sandbox_settings.py'
 ```
 
 测试后清理缓存：

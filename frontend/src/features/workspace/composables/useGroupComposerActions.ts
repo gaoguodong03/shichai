@@ -1,0 +1,189 @@
+import { apiRequest } from '@/api/base'
+import type { ComputedRef, Ref } from 'vue'
+import { createGroupChatStreamRunner } from './useGroupChatStreamRunner'
+import type { AttachedFile } from './useGroupFileReferences'
+import type { GroupDetail } from './useGroupDetailLoader'
+import type { GroupMessage } from './useGroupMessageList'
+import {
+  buildGroupDraftMessage,
+  createClientMessageId,
+  detectHostTakeoverIntent,
+} from './groupMessageDraft'
+
+type LastSentDraft = {
+  goal: string
+  nextPrompt: string
+  files: AttachedFile[]
+}
+
+type StreamState = { sawExpertAssistantMessageThisRun: boolean }
+type StreamContent = { text?: string; agent_id?: string; meta?: { phase?: string } }
+
+export function useGroupComposerActions(args: {
+  selectedGroupSessionId: () => string | null
+  groupDetail: Ref<GroupDetail | null>
+  groupDisplayMessages: Ref<GroupMessage[]>
+  groupDiscussionGoal: Ref<string | null>
+  groupNextPrompt: Ref<string>
+  groupStreaming: ComputedRef<boolean>
+  groupWaitingForUser: Ref<boolean>
+  groupSuggestedNextSpeaker: Ref<string | null>
+  attachedFiles: Ref<AttachedFile[]>
+  effectiveHostDisplayName: ComputedRef<string>
+  defaultHostDisplayName: string
+  lastSentDraft: Ref<LastSentDraft | null>
+  beginGroupStream: (sessionId: string, phase: string) => { runToken: number; abort: AbortController }
+  isCurrentGroupRun: (sessionId: string, runToken: number) => boolean
+  finishGroupStream: (sessionId: string, runToken: number, phase?: string) => void
+  abortGroupStream: (sessionId: string) => void
+  patchGroupStreamState: (sessionId: string, patch: Record<string, unknown>) => void
+  updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
+  consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
+  appendStreamingContent: (agentId: string, text: string) => void
+  handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
+  handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
+  buildMessageWithFileReferences: (base: string) => string
+  clearAutoSwitchHint: () => void
+  clearStreamingPlaceholders: () => void
+  scrollGroupToBottom: () => void
+  refreshGroupWorkspaceAfterExternalChange: () => Promise<unknown>
+  emitMessageSent: () => void
+}) {
+  const runGroupStream = createGroupChatStreamRunner({
+    isSelectedSession: (sessionId) => args.selectedGroupSessionId() === sessionId,
+    setStreamingPhase: (text, sessionId) => {
+      args.patchGroupStreamState(sessionId || args.selectedGroupSessionId() || '', { phase: text })
+    },
+    appendHostError: (content) => {
+      args.groupDisplayMessages.value = [
+        ...args.groupDisplayMessages.value,
+        { message_id: `msg-${Date.now()}`, role: 'host', content } as unknown as GroupMessage,
+      ]
+    },
+    updateAutoSwitchHint: args.updateAutoSwitchHint,
+    consumeStreamingStatusContent: args.consumeStreamingStatusContent,
+    appendStreamingContent: args.appendStreamingContent,
+    handleStreamMessageEvent: args.handleStreamMessageEvent,
+    handleStreamEndEvent: args.handleStreamEndEvent,
+  })
+
+  function builtMessage(): string {
+    return buildGroupDraftMessage(args.groupDiscussionGoal.value || '', args.groupNextPrompt.value || '')
+  }
+
+  async function confirmGroupNext(
+    _nextSpeaker: string,
+    extra?: { ignoreAutoAgentId?: string; ignoreAutoSkillId?: string },
+  ) {
+    const detail = args.groupDetail.value
+    const id = detail?.id
+    if (!detail || !id || args.groupStreaming.value) return
+    args.clearAutoSwitchHint()
+    args.groupWaitingForUser.value = false
+    args.groupSuggestedNextSpeaker.value = null
+    const { runToken, abort } = args.beginGroupStream(id, '正在确认…')
+    const body: {
+      action?: string
+      message?: string
+      host_takeover_requested?: boolean
+      ignore_auto_agent_id?: string
+      ignore_auto_skill_id?: string
+    } = { action: 'continue' }
+    if (extra?.ignoreAutoAgentId) body.ignore_auto_agent_id = extra.ignoreAutoAgentId
+    if (extra?.ignoreAutoSkillId) body.ignore_auto_skill_id = extra.ignoreAutoSkillId
+    const base = builtMessage()
+    args.lastSentDraft.value = {
+      goal: String(args.groupDiscussionGoal.value || ''),
+      nextPrompt: String(args.groupNextPrompt.value || ''),
+      files: [...(args.attachedFiles.value || [])],
+    }
+    const hasFiles = args.attachedFiles.value.length > 0
+    try {
+      const msg = hasFiles ? args.buildMessageWithFileReferences(base) : base
+      if (msg) body.message = msg
+      if (msg) {
+        body.host_takeover_requested = detectHostTakeoverIntent(
+          msg,
+          args.effectiveHostDisplayName.value,
+          args.defaultHostDisplayName,
+        )
+      }
+      const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
+      if (shouldEmitMessageSent) {
+        await args.refreshGroupWorkspaceAfterExternalChange()
+        args.emitMessageSent()
+      }
+    } catch (e) {
+      console.error('确认下一发言人失败', e)
+    } finally {
+      if (args.isCurrentGroupRun(id, runToken)) {
+        args.clearStreamingPlaceholders()
+        args.finishGroupStream(id, runToken)
+      }
+    }
+  }
+
+  async function sendGroupMessage() {
+    const detail = args.groupDetail.value
+    if (!detail) return
+    const rawInput = String(args.groupDiscussionGoal.value || '')
+    const hostTakeoverRequested = detectHostTakeoverIntent(
+      rawInput,
+      args.effectiveHostDisplayName.value,
+      args.defaultHostDisplayName,
+    )
+    const base = builtMessage()
+    const hasFiles = args.attachedFiles.value.length > 0
+    if (!detail || args.groupStreaming.value || (!base && !hasFiles)) return
+    args.clearAutoSwitchHint()
+    args.lastSentDraft.value = {
+      goal: String(args.groupDiscussionGoal.value || ''),
+      nextPrompt: String(args.groupNextPrompt.value || ''),
+      files: [...(args.attachedFiles.value || [])],
+    }
+    args.groupDiscussionGoal.value = ''
+    args.groupNextPrompt.value = ''
+    const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
+    try {
+      const msg = args.buildMessageWithFileReferences(base)
+      const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
+      args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
+      args.scrollGroupToBottom()
+      const body: Record<string, unknown> = {
+        message: msg,
+        client_message_id: createClientMessageId(),
+        host_takeover_requested: hostTakeoverRequested,
+      }
+      const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
+      if (shouldEmitMessageSent) {
+        await args.refreshGroupWorkspaceAfterExternalChange()
+        args.emitMessageSent()
+      }
+    } catch (e) {
+      console.error('群聊发送失败', e)
+    } finally {
+      if (args.isCurrentGroupRun(detail.id, runToken)) {
+        args.clearStreamingPlaceholders()
+        args.finishGroupStream(detail.id, runToken)
+      }
+    }
+  }
+
+  async function stopGroupStream() {
+    const id = args.selectedGroupSessionId() || ''
+    if (!id) return
+    args.abortGroupStream(id)
+    try {
+      await apiRequest(`/sessions/${encodeURIComponent(id)}/chat/stop`, { method: 'POST' })
+    } catch {
+      // UI has already stopped locally; the next request will resync backend state.
+    }
+    args.clearStreamingPlaceholders()
+  }
+
+  return {
+    confirmGroupNext,
+    sendGroupMessage,
+    stopGroupStream,
+  }
+}

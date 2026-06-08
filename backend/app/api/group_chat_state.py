@@ -237,7 +237,6 @@ def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[st
         "id": session_id,
         "title": meta_item.get("title", "新对话"),
         "agent_ids": ids,
-        "expert_ids": ids,
         "leader_agent_id": leader_id,
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),

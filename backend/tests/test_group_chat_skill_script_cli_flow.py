@@ -144,7 +144,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
         ]
     )
 
-    monkeypatch.setattr(group_chat, "_get_llm_for_dha", lambda dha, app_settings: fake_llm)
+    monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: fake_llm)
     monkeypatch.setattr(run_skill_script, "_SCRIPT_GATEWAY", fake_gateway)
 
     client = TestClient(app)

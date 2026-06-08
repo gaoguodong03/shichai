@@ -1,5 +1,4 @@
 """Skills 加载器（按用户目录缓存，避免多租户下全局单例竞态）"""
-import os
 import threading
 import yaml
 from pathlib import Path
@@ -22,20 +21,11 @@ class Skill:
         return self.content
 
 
-def _singleton_skills_dir_placeholder() -> Path:
-    """无 SKILLS_DIR 且未传入路径时的占位目录（可不创建）；业务请求请用 get_skills_loader_for_user。"""
-    return Path(__file__).resolve().parents[2] / "data" / ".skills_singleton_unused"
-
-
 class SkillsLoader:
     """Skills 加载器"""
 
-    def __init__(self, skills_dir: str = None):
-        if skills_dir is not None:
-            self.skills_dir = Path(skills_dir)
-        else:
-            env = os.getenv("SKILLS_DIR")
-            self.skills_dir = Path(env) if env else _singleton_skills_dir_placeholder()
+    def __init__(self, skills_dir: str | Path):
+        self.skills_dir = Path(skills_dir)
         self.skills: Dict[str, Skill] = {}
         self.diagnostics: List[Dict[str, Any]] = []
 
@@ -108,56 +98,6 @@ class SkillsLoader:
                     self.skills[skill.skill_id] = skill  # 用 skill_id（目录名）作为 key
 
         return self.skills
-
-    def get_active_skills_instructions(self) -> str:
-        """获取技能指令（目录存在即启用）。"""
-        instructions = []
-        for skill in self.skills.values():
-            instructions.append(f"## {skill.name}\n{skill.description}\n\n{skill.get_instruction()}")
-        return "\n\n".join(instructions)
-
-    def get_active_skills_index(self, skill_ids: Optional[List[str]] = None) -> str:
-        """获取技能索引。skill_ids 为空则全部；否则仅包含指定 id 的技能。"""
-        items = []
-        for skill in self.skills.values():
-            if skill_ids and skill.skill_id not in skill_ids:
-                continue
-            desc = (skill.description or "").strip()
-            items.append(f"## {skill.name}\n{desc}")
-        return "\n\n".join(items)
-
-    def get_skill_routing_rules(self, skill_ids: Optional[List[str]] = None) -> str:
-        """根据各技能的 description 动态生成技能选择规则。skill_ids 为空则全部。"""
-        rules = []
-        for skill in self.skills.values():
-            if skill_ids and skill.skill_id not in skill_ids:
-                continue
-            desc = skill.description
-            if desc:
-                if len(desc) > 120:
-                    desc = desc[:117] + "..."
-                rules.append(f"- **{desc}** → 使用 **{skill.name}**，按该技能说明执行。")
-        return "\n".join(rules) if rules else ""
-
-    def infer_skill_from_message(self, message: str) -> Optional[str]:
-        """根据用户消息与各技能的 description 推断应使用的 skill（用于 meta 展示）"""
-        if not message or not message.strip():
-            return None
-        t = message.strip()
-        for skill in self.skills.values():
-            desc = skill.description
-            if not desc:
-                continue
-            # 从 description 提取关键词（按 /、。（） 等分割）
-            desc_clean = str(desc).split("。")[0].split("（")[0].split("(")[0]
-            keywords = [
-                k.strip()
-                for k in desc_clean.replace("、", "/").replace("，", "/").split("/")
-                if k.strip() and len(k.strip()) >= 2
-            ]
-            if any(kw in t for kw in keywords):
-                return skill.name
-        return None
 
     @staticmethod
     def _keywords_from_description_line(desc: str) -> List[str]:
@@ -245,37 +185,6 @@ class SkillsLoader:
         """
         return self.pick_best_skill_with_debug(combined_text, candidate_ids).get("selected_skill_id")
 
-    def get_skills_metadata(self) -> List[Dict[str, Any]]:
-        """获取所有技能的元数据"""
-        return [
-            {
-                "name": skill.name,
-                "description": skill.description,
-                "metadata": skill.metadata,
-            }
-            for skill in self.skills.values()
-        ]
-
-    def get_skills_for_selection(self, skill_ids: Optional[List[str]] = None) -> List[Dict[str, str]]:
-        """获取用于技能选择的精简列表，仅含 name、description（若有）。
-        skill_ids 为空则全部；否则仅包含指定 id 的技能。
-        default 技能始终放在最后，作为无法确定时的备用选项。"""
-        items = []
-        default_item = None
-        for skill in self.skills.values():
-            if skill_ids and skill.skill_id not in skill_ids:
-                continue
-            d: Dict[str, str] = {"skill_id": skill.skill_id, "name": skill.name}
-            if skill.description and str(skill.description).strip():
-                d["description"] = str(skill.description).strip()
-            if skill.skill_id == "default":
-                default_item = d
-            else:
-                items.append(d)
-        if default_item:
-            items.append(default_item)
-        return items
-
     def get_skill_full_content(self, skill_id: str) -> Optional[str]:
         """获取指定技能的完整内容（含 frontmatter 后的正文）。"""
         skill = self.skills.get(skill_id)
@@ -353,20 +262,3 @@ def invalidate_skills_cache_for_user(username: str) -> None:
         return
     with _cache_lock:
         _user_skill_cache.pop(key, None)
-
-
-def invalidate_all_skills_cache() -> None:
-    with _cache_lock:
-        _user_skill_cache.clear()
-
-
-# 仅用于无用户上下文场景（例如旧测试）；业务路径请用 get_skills_loader_for_user。
-_skills_loader: Optional[SkillsLoader] = None
-
-
-def get_skills_loader() -> SkillsLoader:
-    """进程级默认 SkillsLoader（可选 SKILLS_DIR；未设置则空目录）。勿在多用户请求路径依赖此单例。"""
-    global _skills_loader
-    if _skills_loader is None:
-        _skills_loader = SkillsLoader()
-    return _skills_loader

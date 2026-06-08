@@ -386,7 +386,7 @@ class MCPToolManager:
             secrets: Dict[str, str] = {}
             if self._username:
                 try:
-                    from app.api.settings import load_api_secret_values_for_user
+                    from app.api.settings_secrets import load_api_secret_values_for_user
 
                     secrets = load_api_secret_values_for_user(self._username)
                 except Exception:

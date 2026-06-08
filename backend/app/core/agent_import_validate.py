@@ -1,4 +1,4 @@
-"""专家（DHA）导入依赖校验：技能、MCP。"""
+"""专家导入依赖校验：技能、MCP。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Mapping, Sequence
 
 
 @dataclass
-class DhaImportValidation:
+class AgentImportValidation:
     missing_skills: List[Dict[str, str]] = field(default_factory=list)
     missing_mcp_servers: List[Dict[str, str]] = field(default_factory=list)
     disabled_mcp_servers: List[Dict[str, str]] = field(default_factory=list)
@@ -26,13 +26,13 @@ def _mcp_id_maps(servers: Sequence[Mapping[str, Any]]) -> Dict[str, bool]:
     return by_id
 
 
-def validate_dha_instance_row(
+def validate_agent_instance_row(
     row: Mapping[str, Any],
     *,
     skill_has_content: Callable[[str], bool],
     mcp_servers: Sequence[Mapping[str, Any]],
-) -> DhaImportValidation:
-    out = DhaImportValidation()
+) -> AgentImportValidation:
+    out = AgentImportValidation()
     mcp_map = _mcp_id_maps(mcp_servers)
 
     for sid in row.get("skill_ids") or []:
@@ -54,7 +54,7 @@ def validate_dha_instance_row(
     return out
 
 
-def dha_validation_to_api_dict(v: DhaImportValidation) -> Dict[str, Any]:
+def agent_validation_to_api_dict(v: AgentImportValidation) -> Dict[str, Any]:
     return {
         "valid": v.valid,
         "missing_skills": list(v.missing_skills),

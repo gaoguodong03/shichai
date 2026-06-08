@@ -372,7 +372,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path === '/agents' && method === 'POST') {
       const id = `agent-${state.agents.length + 1}`
       const agent = upsertAgent(state, id, readBody(route))
-      return ok(route, { agent_id: agent.agent_id, expert_id: agent.agent_id })
+      return ok(route, { agent_id: agent.agent_id })
     }
     const agentMatch = path.match(/^\/agents\/([^/]+)$/)
     if (agentMatch && method === 'PUT') {

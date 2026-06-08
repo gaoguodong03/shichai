@@ -56,22 +56,22 @@
   --color-loading-dot: #8a8a8e;
   --color-placeholder: #8a8a8e;
   /* 专家消息框（按 hash 轮换，克制配色） */
-  --color-dha-box-0: #8e8e93;
-  --color-dha-box-0-bg: #e5e5ea;
-  --color-dha-box-1: #af52de;
-  --color-dha-box-1-bg: #f5e6fa;
-  --color-dha-box-2: #34c759;
-  --color-dha-box-2-bg: #e8f8ec;
-  --color-dha-box-3: #ff9500;
-  --color-dha-box-3-bg: #fff4e6;
-  --color-dha-box-4: #5856d6;
-  --color-dha-box-4-bg: #ebe9f8;
-  --color-dha-box-5: #ff2d55;
-  --color-dha-box-5-bg: #ffebef;
-  --color-dha-box-6: #00c7be;
-  --color-dha-box-6-bg: #e6f7f6;
-  --color-dha-box-7: #007aff;
-  --color-dha-box-7-bg: #e8f0fe;
+  --color-agent-box-0: #8e8e93;
+  --color-agent-box-0-bg: #e5e5ea;
+  --color-agent-box-1: #af52de;
+  --color-agent-box-1-bg: #f5e6fa;
+  --color-agent-box-2: #34c759;
+  --color-agent-box-2-bg: #e8f8ec;
+  --color-agent-box-3: #ff9500;
+  --color-agent-box-3-bg: #fff4e6;
+  --color-agent-box-4: #5856d6;
+  --color-agent-box-4-bg: #ebe9f8;
+  --color-agent-box-5: #ff2d55;
+  --color-agent-box-5-bg: #ffebef;
+  --color-agent-box-6: #00c7be;
+  --color-agent-box-6-bg: #e6f7f6;
+  --color-agent-box-7: #007aff;
+  --color-agent-box-7-bg: #e8f0fe;
 }
 
 .dark {
@@ -111,22 +111,22 @@
   --color-skill: #5e5ce6;
   --color-loading-dot: #8e8e93;
   --color-placeholder: #8e8e93;
-  --color-dha-box-0: #8e8e93;
-  --color-dha-box-0-bg: #2c2c2e;
-  --color-dha-box-1: #bf5af2;
-  --color-dha-box-1-bg: #2d1b3d;
-  --color-dha-box-2: #32d74b;
-  --color-dha-box-2-bg: #0d2818;
-  --color-dha-box-3: #ff9f0a;
-  --color-dha-box-3-bg: #332200;
-  --color-dha-box-4: #5e5ce6;
-  --color-dha-box-4-bg: #1c1a2e;
-  --color-dha-box-5: #ff375f;
-  --color-dha-box-5-bg: #2d1218;
-  --color-dha-box-6: #64d2ff;
-  --color-dha-box-6-bg: #0d2230;
-  --color-dha-box-7: #0a84ff;
-  --color-dha-box-7-bg: #001a33;
+  --color-agent-box-0: #8e8e93;
+  --color-agent-box-0-bg: #2c2c2e;
+  --color-agent-box-1: #bf5af2;
+  --color-agent-box-1-bg: #2d1b3d;
+  --color-agent-box-2: #32d74b;
+  --color-agent-box-2-bg: #0d2818;
+  --color-agent-box-3: #ff9f0a;
+  --color-agent-box-3-bg: #332200;
+  --color-agent-box-4: #5e5ce6;
+  --color-agent-box-4-bg: #1c1a2e;
+  --color-agent-box-5: #ff375f;
+  --color-agent-box-5-bg: #2d1218;
+  --color-agent-box-6: #64d2ff;
+  --color-agent-box-6-bg: #0d2230;
+  --color-agent-box-7: #0a84ff;
+  --color-agent-box-7-bg: #001a33;
 }
 
 /* 强调色预设（在设置中切换） */

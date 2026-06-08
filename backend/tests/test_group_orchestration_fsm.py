@@ -48,10 +48,10 @@ def test_resolve_skip_host_when_skill_lock():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        ignore_auto_expert_id="",
+        ignore_auto_agent_id="",
     )
     assert r.skip_host_dispatch is True
-    assert r.direct_expert_id == "agent-a"
+    assert r.direct_agent_id == "agent-a"
 
 
 def test_resolve_pass_control_message_returns_to_host_even_with_skill_lock():
@@ -60,11 +60,11 @@ def test_resolve_pass_control_message_returns_to_host_even_with_skill_lock():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        ignore_auto_expert_id="",
+        ignore_auto_agent_id="",
         user_message=" pass ",
     )
     assert r.skip_host_dispatch is False
-    assert r.direct_expert_id is None
+    assert r.direct_agent_id is None
     assert r.clear_skill_lock_before_host is True
 
 
@@ -74,7 +74,7 @@ def test_resolve_no_skip_on_host_takeover():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=True,
-        ignore_auto_expert_id="",
+        ignore_auto_agent_id="",
     )
     assert r.skip_host_dispatch is False
 
@@ -85,7 +85,7 @@ def test_resolve_no_skip_on_ignore_auto_same_expert():
         meta_item=meta,
         agent_ids=["agent-a"],
         host_takeover_requested=False,
-        ignore_auto_expert_id="agent-a",
+        ignore_auto_agent_id="agent-a",
     )
     assert r.skip_host_dispatch is False
 

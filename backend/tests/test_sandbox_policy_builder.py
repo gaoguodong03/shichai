@@ -1,4 +1,4 @@
-from app.agent.sandbox_adapter import SandboxHandle, SandboxPolicy, SandboxVolumeMount
+from app.agent.sandbox_adapter import SandboxPolicy
 from app.agent import sandbox_policy_builder as builder
 
 
@@ -24,25 +24,3 @@ def test_resolve_cwd_falls_back_when_workspace_is_not_mounted():
     policy = SandboxPolicy(fs_root="/tmp/ws", volume_mounts=[])
 
     assert builder.resolve_cwd(policy, session_id="sess-1", cwd="/workspace/sess-1") == "/"
-
-
-def test_cached_handle_still_valid_rejects_image_change():
-    handle = SandboxHandle(
-        session_id="s",
-        runtime="docker",
-        root="/tmp/ws",
-        metadata={
-            "mount_fingerprint": "fp",
-            "image_ref": "old",
-            "policy_allow_network": False,
-        },
-    )
-    policy = SandboxPolicy(
-        image_ref="new",
-        fs_root="/tmp/ws",
-        volume_mounts=[SandboxVolumeMount(source="/tmp/ws", target="/workspace", read_only=False)],
-        allow_network=False,
-    )
-    handle.metadata["mount_fingerprint"] = builder.policy_mount_fingerprint(policy)
-
-    assert builder.cached_handle_still_valid(handle, policy, "tool") is False

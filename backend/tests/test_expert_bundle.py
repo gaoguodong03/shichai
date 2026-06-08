@@ -9,7 +9,7 @@ from app.core.expert_bundle import read_expert_bundle_manifest
 
 def test_merge_single_expert_skip_on_same_name():
     user = [{"agent_id": "a1", "name": "Old", "role": "", "system_prompt": "", "skill_ids": [], "mcp_server_ids": [], "is_leader": False, "llm_provider_id": "", "avatar_url": ""}]
-    # minimal fields strip_dha may need file_capabilities - merge uses strip from scenario
+    # minimal fields strip_agent_row_for_disk may need file_capabilities - merge uses strip from scenario
     bundle_row = {
         "agent_id": "a9",
         "name": "Old",

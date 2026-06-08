@@ -49,7 +49,7 @@ def normalize_scheduler_decision(
     next_prompt = (data.get("next_prompt") or None)
 
     suggested = _clean_ids(
-        data.get("suggested_add_agent_ids") or data.get("suggested_add_expert_ids") or [],
+        data.get("suggested_add_agent_ids") or [],
         recruitable_ids or [],
     )
     if suggested:

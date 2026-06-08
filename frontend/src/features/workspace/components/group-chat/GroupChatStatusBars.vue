@@ -1,20 +1,20 @@
 <template>
   <div
-    v-if="suggestedDhas.length && !currentStreaming"
+    v-if="suggestedAgents.length && !currentStreaming"
     class="group-chat-suggested-invite-bar"
   >
     <span class="group-chat-suggested-invite-text">
       {{ hostDisplayName }} 建议邀请
-      <template v-for="(dha, idx) in suggestedDhas" :key="dha.id">
+      <template v-for="(agent, idx) in suggestedAgents" :key="agent.id">
         <button
           type="button"
           class="group-chat-invite-inline-btn"
           :disabled="suggestedInviteLoading"
-          @click="$emit('invite-one-suggested', dha.id)"
+          @click="$emit('invite-one-suggested', agent.id)"
         >
-          {{ dha.name }}
+          {{ agent.name }}
         </button>
-        <span v-if="idx < suggestedDhas.length - 1" class="group-chat-suggested-sep">、</span>
+        <span v-if="idx < suggestedAgents.length - 1" class="group-chat-suggested-sep">、</span>
       </template>
       加入讨论
     </span>
@@ -68,7 +68,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  suggestedDhas: Array<{ id: string; name: string }>
+  suggestedAgents: Array<{ id: string; name: string }>
   hostDisplayName: string
   suggestedInviteLoading: boolean
   autoSwitchVisible: boolean

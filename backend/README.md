@@ -104,6 +104,6 @@ python backend/scripts/validate_skill_cli_contract.py
 
 - 会话主入口：`/api/sessions/*`（已不再提供 `/api/group-sessions/*` 别名）
 - Agent 主入口：`/api/agents/*`
-- 兼容别名：`/api/dha/instances/*`、`/api/experts/*`
+- 专家资源包导入导出：`/api/dha/instances/*`
 - 字段主命名：`agent_ids`、`leader_agent_id`
-- 兼容字段：`dha_ids`、`expert_ids`、`leader_dha_id`
+- 新接口不再写出 `expert_ids` 等旧别名；历史场景包和旧磁盘配置只在导入/读取边界做兼容转换。

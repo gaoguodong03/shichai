@@ -20,20 +20,25 @@ def test_router_exposes_canonical_business_routes():
 
 
 def test_main_view_uses_route_as_navigation_source():
-    src = read("frontend/src/views/MainView.vue")
-    assert "const currentModule = computed<ModuleId>" in src
-    assert "router.push(resourceRoutePath(id))" in src
-    assert "router.push(settingsRoutePath(" in src
-    assert "type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'" in src
+    main = read("frontend/src/views/MainView.vue")
+    navigation = read("frontend/src/features/shell/mainNavigation.ts")
+    lifecycle = read("frontend/src/features/shell/useMainModuleLifecycle.ts")
+    assert "useMainRouteState(route)" in main
+    assert "const currentModule = computed<ModuleId>" in navigation
+    assert "router.push(resourceRoutePath(id))" in lifecycle
+    assert "router.push(settingsRoutePath(" in main
+    assert "type ResourceSubModule = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm' | 'files'" in navigation
 
 
 def test_settings_view_uses_route_section_for_active_panel():
-    src = read("frontend/src/views/MainView.vue")
-    assert "const settingsSection = computed<SettingsCategoryId>" in src
-    assert "void router.push('/settings/app')" in src
-    assert "<AppSettingsView v-if=\"settingsSection === 'app'\"" in src
-    assert "settingsSection === c.id" in src
-    assert "selectedId === 'app'" not in src
+    main = read("frontend/src/views/MainView.vue")
+    navigation = read("frontend/src/features/shell/mainNavigation.ts")
+    lifecycle = read("frontend/src/features/shell/useMainModuleLifecycle.ts")
+    assert "const settingsSection = computed<SettingsCategoryId>" in navigation
+    assert "void router.push('/settings/app')" in lifecycle
+    assert "<AppSettingsView v-if=\"settingsSection === 'app'\"" in main
+    assert "settingsSection === c.id" in main
+    assert "selectedId === 'app'" not in main
 
 
 def test_group_chat_context_is_split_and_typed():
@@ -95,15 +100,24 @@ def test_workspace_content_is_standard_size_shell():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     composable = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
     assert len(src.splitlines()) <= 1000
+    assert len(composable.splitlines()) <= 900
     assert "useWorkspaceContentProviders" in src
     assert "export function useWorkspaceContentProviders" in composable
-    for name in [
-        "async function sendGroupMessage",
-        "async function loadGroupDetail",
-        "function handleStreamMessageEvent",
-        "function onAtInput",
-        "async function loadShortcutPresets",
-        "async function onInsertLocalFile",
-    ]:
-        assert name not in src
-        assert name in composable
+
+
+def test_main_view_stays_as_shell_without_thin_helper_files():
+    main = read("frontend/src/views/MainView.vue")
+    component = read("frontend/src/features/shell/SessionMemberAvatars.vue")
+    collections = read("frontend/src/features/resources/useResourceCollections.ts")
+
+    assert len(main.splitlines()) <= 1600
+    assert "SessionMemberAvatars" in main
+    assert "useGroupSessions" in main
+    assert "useResourceCollections" in main
+    assert "useScenarioEditor" in main
+    assert "useMainModuleLifecycle" in main
+    assert "v-for=\"avatar in visibleAvatars\"" in component
+    assert "dhaAvatarImgUrlForSession(" not in component.split("<script", 1)[0]
+    assert "function syncSelectedResourceId" in collections
+    assert not (ROOT / "frontend/src/features/resources/resourceSelection.ts").exists()
+    assert not (ROOT / "frontend/src/features/shell/sessionAvatarDisplay.ts").exists()

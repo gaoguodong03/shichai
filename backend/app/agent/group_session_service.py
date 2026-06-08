@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.dha import enrich_dha_instances, load_dha_instances
+from app.api.agents import enrich_agent_instances, load_agent_instances
 from app.api.files import get_workspace_root_path
 from app.api.group_chat_state import (
     GROUP_HISTORY_PREFIX,
@@ -28,19 +28,23 @@ from app.api.group_chat_state import (
     save_group_history as _save_group_history,
     save_group_meta as _save_group_meta,
 )
-from app.api.settings import load_app_settings, normalize_host_profile
+from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import get_current_user
 from app.agent.group_orchestration_fsm import default_orchestration_profile_for_new_session
-from app.agent.group_chat_runtime import (
-    _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
+from app.agent.group_chat_expert_resolution import (
     _build_preferred_agent_id_map,
     _build_preferred_instances,
-    _maybe_upgrade_meta_to_scene_profile,
     _normalize_agent_ids,
     _normalize_to_preferred_agent_ids,
     _to_agent_style_id,
+)
+from app.agent.group_chat_streaming import (
+    SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
+)
+from app.agent.group_chat_title_meta import (
+    _maybe_upgrade_meta_to_scene_profile,
 )
 
 
@@ -50,27 +54,21 @@ class GroupSessionUpdate(BaseModel):
     host_config: Optional[Dict[str, Any]] = None  # 虚拟主持人配置（skill_ids / system_prompt / llm 等）
     orchestration_profile: Optional[str] = None  # recruitment | scene
     agent_ids: Optional[List[str]] = None  # 直接替换成员；用于空白会话转换为场景，不写入邀请系统消息
-    expert_ids: Optional[List[str]] = None  # 兼容字段：expert_ids
     add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
     remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
-    add_expert_ids: Optional[List[str]] = None  # 兼容字段：add_expert_ids
-    remove_expert_ids: Optional[List[str]] = None  # 兼容字段：remove_expert_ids
 
 def create_session_internal(
     title: str = "新对话",
     agent_ids: Optional[List[str]] = None,
-    expert_ids: Optional[List[str]] = None,
     leader_agent_id: Optional[str] = None,
     host_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """创建一条会话（默认虚拟场景主持人 + host_config；兼容旧版真实 DHA leader）。"""
-    instances = load_dha_instances()
+    """创建一条会话（默认虚拟场景主持人 + host_config）。"""
+    instances = load_agent_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     valid_ids = set(id_to_preferred.values())
     resolved_ids = _normalize_agent_ids(
-        legacy_ids=agent_ids,
         agent_ids=agent_ids,
-        expert_ids=expert_ids,
     )
     resolved_ids = _normalize_to_preferred_agent_ids(resolved_ids, id_to_preferred=id_to_preferred)
     for did in resolved_ids:
@@ -156,10 +154,10 @@ async def get_group_session(group_session_id: str):
     if _maybe_upgrade_meta_to_scene_profile(m):
         _save_group_meta(meta)
     messages = _load_group_history(group_session_id)
-    instances = load_dha_instances()
+    instances = load_agent_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
-    preferred_instances = await enrich_dha_instances(preferred_instances, workspace_id=group_session_id)
+    preferred_instances = await enrich_agent_instances(preferred_instances, workspace_id=group_session_id)
     agent_map_raw = {d.get("agent_id"): d for d in preferred_instances if d.get("agent_id")}
     # 统一输出 agent-*。
     normalized_messages = []
@@ -212,7 +210,6 @@ async def get_group_session(group_session_id: str):
             **_build_session_payload(group_session_id, m),
             "messages": messages,
             "agent_map": agent_map,
-            "expert_map": agent_map,
             "runtime_state": _runtime_state_for_session(group_session_id, m),
         },
     }
@@ -259,7 +256,7 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、主持人配置、追加 DHA 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
+    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
         if body.add_agent_ids:
@@ -294,7 +291,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         # 写入场景型 host_config 即视为「场景协作」，避免仍停留在 recruitment 导致误招募
         meta[group_session_id]["orchestration_profile"] = "scene"
     elif body.leader_agent_id is not None:
-        instances = load_dha_instances()
+        instances = load_agent_instances()
         id_to_preferred = _build_preferred_agent_id_map(instances)
         raw_l = str(body.leader_agent_id).strip()
         if not raw_l:
@@ -314,9 +311,9 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         if op not in ("recruitment", "scene"):
             raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
         meta[group_session_id]["orchestration_profile"] = op
-    direct_ids = body.expert_ids if body.expert_ids is not None else body.agent_ids
+    direct_ids = body.agent_ids
     if direct_ids is not None:
-        instances = load_dha_instances()
+        instances = load_agent_instances()
         id_to_preferred = _build_preferred_agent_id_map(instances)
         preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
         valid_ids = {d.get("agent_id") for d in preferred_instances if d.get("agent_id")}
@@ -330,18 +327,10 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         meta[group_session_id]["agent_ids"] = deduped
         if deduped and str(meta[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
             meta[group_session_id]["orchestration_profile"] = "scene"
-    add_ids = (
-        body.add_expert_ids
-        if body.add_expert_ids is not None
-        else body.add_agent_ids
-    )
-    remove_ids = (
-        body.remove_expert_ids
-        if body.remove_expert_ids is not None
-        else body.remove_agent_ids
-    )
+    add_ids = body.add_agent_ids
+    remove_ids = body.remove_agent_ids
     if add_ids or remove_ids:
-        instances = load_dha_instances()
+        instances = load_agent_instances()
         id_to_preferred = _build_preferred_agent_id_map(instances)
         preferred_instances = _build_preferred_instances(instances, id_to_preferred=id_to_preferred)
         id_to_name = {
@@ -464,7 +453,7 @@ async def stop_group_session_run(group_session_id: str):
     return {"status": "ok", "data": {"id": group_session_id, "cancelled": cancelled}}
 
 async def delete_group_message(group_session_id: str, message_id: str):
-    """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 DHA 的上下文。"""
+    """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 Agent 的上下文。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
         raise HTTPException(status_code=404, detail="Group session not found")

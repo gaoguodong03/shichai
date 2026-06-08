@@ -8,7 +8,7 @@
 
 - **用户**：通过 `POST /api/sessions/{id}/chat/stream` 触发一轮会话。
 - **主持人（Host）**：负责决定下一位发言专家、是否建议增援专家、是否暂停等待用户。
-- **专家（DHA）**：绑定 `skill_ids`，执行具体任务，可调用工具（scripts / MCP / 文件系统等）。
+- **专家（Agent）**：绑定 `skill_ids`，执行具体任务，可调用工具（scripts / MCP / 文件系统等）。
 - **SimpleAgent**：当前实际执行器，识别工具意图并驱动工具调用。
 - **工具网关**：`UnifiedToolGateway` + `SandboxAdapter`，统一承载 script 与 MCP 调用。
 - **会话存储**：
@@ -48,7 +48,7 @@
 
 1. **0 个专家**：仅主持人推荐可邀请 id，结束本轮流。
 2. **`@` 点名**、**Skill 会话锁短路**（`skip_host_dispatch`）：按分支直接定人，可能不调主持人 LLM。
-3. 否则：**`_host_decide_by_dha`**（虚拟主持 + `host_config` 优先）→ 失败则 **`leader_decide`**；结果经 **`finalize_host_scheduler_decision(..., orchestration_profile=...)`** 与 `normalize_scheduler_decision` 归一化。`scene` 档会抑制招募相关字段。
+3. 否则：**`_host_decide_by_agent`**（虚拟主持 + `host_config` 优先）→ 失败则 **`leader_decide`**；结果经 **`finalize_host_scheduler_decision(..., orchestration_profile=...)`** 与 `normalize_scheduler_decision` 归一化。`scene` 档会抑制招募相关字段。
 
 ### 2.3 专家执行与流式事件
 
@@ -111,7 +111,7 @@ flowchart TD
 主流程在 `group_chat.py`，与 **`orchestration_profile`（recruitment / scene）** 及 **Skill 锁** 联动：
 
 1. **硬路由优先**：`@` 点名、Skill 锁导致的 **`skip_host_dispatch`**。
-2. **主持人**：`_host_decide_by_dha()` → **`leader_decide()`**；`recruitment` 时可含建议增援，`scene` 时 `available_to_add` 与招募输出被压掉。
+2. **主持人**：`_host_decide_by_agent()` → **`leader_decide()`**；`recruitment` 时可含建议增援，`scene` 时 `available_to_add` 与招募输出被压掉。
 3. **归一化**：`finalize_host_scheduler_decision` + `normalize_scheduler_decision`。
 4. **可中断**：`AWAITING_USER` / `RECRUITING`（招募语义主要在 recruitment 或显式拉新时）经 `event: end` 给前端。
 

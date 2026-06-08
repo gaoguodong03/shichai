@@ -24,7 +24,7 @@ def test_scene_runtime_resolves_virtual_host_and_hides_recruitment_list():
             "orchestration_profile": "scene",
         },
         agent_ids=["agent-a"],
-        dha_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
+        agent_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
         app_host_profile={"display_name": "四九", "skill_ids": ["group-host"]},
         available_to_add=[{"agent_id": "agent-b", "name": "外部专家"}],
     )
@@ -44,7 +44,7 @@ def test_scene_runtime_keeps_recruitment_list_for_empty_room():
         session_id="g1",
         meta_item={},
         agent_ids=[],
-        dha_map={},
+        agent_map={},
         app_host_profile={"display_name": "四九", "skill_ids": ["group-host"]},
         available_to_add=available,
     )
@@ -63,7 +63,7 @@ def test_scene_runtime_preserves_empty_host_skill_ids():
             "orchestration_profile": "scene",
         },
         agent_ids=["agent-a"],
-        dha_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
+        agent_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
         app_host_profile={"display_name": "四九", "skill_ids": []},
         available_to_add=[],
     )

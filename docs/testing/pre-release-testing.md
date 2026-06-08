@@ -24,7 +24,7 @@
 | UR-01 账号与用户隔离 | 第一层回归中的鉴权与会话测试 | 浏览器检查未登录跳转、登录刷新、跨账号资源隔离 |
 | UR-02 工作区与统一会话 | 第一层回归中的会话、SSE、前端业务流测试 | 手工创建会话、上传文件、刷新后继续对话 |
 | UR-03 主持人与专家协作 | 第一层回归中的调度 FSM、专家 runtime、主持人接管测试 | 普通会话、场景会话、`@专家` 三种路径各跑一轮 |
-| UR-04 资源中心 | 第一层回归中的 DHA、资源配置和业务流测试 | 资源中心检查场景、专家、Skill、MCP、LLM 保存反馈 |
+| UR-04 资源中心 | 第一层回归中的 Agent、资源配置和业务流测试 | 资源中心检查场景、专家、Skill、MCP、LLM 保存反馈 |
 | UR-05 Skill 与脚本执行 | 第一层回归中的 Skill 脚本和工具网关测试 | 真实沙箱执行一个脚本型 Skill，检查成功和失败提示 |
 | UR-06 MCP 工具能力 | 第一层回归中的 MCP 权限和工具解析测试 | 用一个已配置 MCP 做连通性、鉴权失败和断连诊断检查 |
 | UR-07 沙箱运行环境 | 第一层回归中的沙箱服务和生命周期测试 | 普通版/Playwright 版镜像各做一次启动或冒烟 |
@@ -257,7 +257,7 @@ http://<server-ip>:8100
 - 鉴权与用户数据：`test_auth_sqlite`、`test_sessions_api`；
 - 编排与主持人状态机：`test_group_orchestration_fsm`、`test_orchestration_contracts`、`test_group_chat_cleanup_contract`；
 - 群聊协议与记忆：`test_group_chat_stream_protocol`、`test_group_chat_group_memory`、`test_group_memory_store`；
-- Agent/专家/DHA：`test_dha_api`、`test_expert_bundle`、`test_expert_runtime`、`test_host_takeover`；
+- Agent/专家：`test_agents_api`、`test_expert_bundle`、`test_expert_runtime`、`test_host_takeover`；
 - 沙箱与技能脚本：`test_sandbox_service`、`test_group_chat_skill_script_cli_flow`；
 - 文件与工作区：`test_workspace_files`、`test_file_ref_and_gateway`；
 - Runtime/MCP/工具网关切片：`test_skill_agent_tool_resolution`、`test_call_api_tool`、`test_frontend_business_flows`；

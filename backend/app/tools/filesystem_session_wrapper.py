@@ -1,4 +1,4 @@
-"""为 filesystem / file-reader MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 workspaces/{session_id}/ 下。"""
+"""为 filesystem MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 workspaces/{session_id}/ 下。"""
 import os
 import json
 import asyncio
@@ -132,12 +132,12 @@ def wrap_filesystem_tool_for_session(tool: ToolSpec, session_id: str) -> ToolSpe
 
 
 def wrap_filesystem_tools(tools: List[ToolSpec], session_id: Optional[str]) -> List[ToolSpec]:
-    """对工具列表中所有 filesystem_ 或 file-reader_ 开头的工具按 session_id 包装，path 限定到当前会话工作区；session_id 为空则不包装。"""
+    """对工具列表中所有 filesystem_ 开头的工具按 session_id 包装，path 限定到当前会话工作区；session_id 为空则不包装。"""
     if not session_id:
         return tools
     out = []
     for t in tools:
-        if getattr(t, "name", "").startswith("filesystem_") or getattr(t, "name", "").startswith("file-reader_"):
+        if getattr(t, "name", "").startswith("filesystem_"):
             out.append(wrap_filesystem_tool_for_session(t, session_id))
         else:
             out.append(t)

@@ -23,10 +23,10 @@ from app.core.scenario_bundle import (
     copy_bundle_skills_to_user,
     extract_scenario_bundle_dir,
     list_skill_ids_in_bundle_skills_dir,
-    merge_dha_instances_for_bundle,
+    merge_agent_instances_for_bundle,
     merge_mcp_servers_for_bundle,
     read_bundle_manifest_and_lists,
-    strip_dha_row_for_disk,
+    strip_agent_row_for_disk,
 )
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import user_context_dependency
@@ -196,7 +196,7 @@ def _merge_session_presets_with_resource_rows(rows: List[Dict[str, Any]]) -> Lis
 
 @router.get("/settings/session-presets")
 async def get_session_presets(request: Request = None):
-    """读取会话快捷预设（用于前端快捷按钮），兼容历史字段 expert_ids。"""
+    """读取会话快捷预设（用于前端快捷按钮）。"""
     path = _get_session_presets_path()
     presets = _load_session_preset_rows_from_file(path)
     before_ids = _preset_ids(presets)
@@ -236,7 +236,7 @@ class SessionPresetsBody(BaseModel):
 
 def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[str, Any]]:
     """与 update_session_presets 落盘格式一致；无效项返回 None。"""
-    from app.api.dha import load_dha_instances
+    from app.api.agents import load_agent_instances
 
     pid = str(item.id or "").strip()
     name = str(item.name or "").strip()
@@ -245,15 +245,15 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         return None
     hc_norm: Optional[Dict[str, Any]] = None
     try:
-        dha_name_by_id = {
+        agent_name_by_id = {
             str(d.get("agent_id")).strip(): str(d.get("name") or "").strip()
-            for d in load_dha_instances()
+            for d in load_agent_instances()
             if d.get("agent_id")
         }
-        valid_dha_ids = set(dha_name_by_id)
+        valid_agent_ids = set(agent_name_by_id)
     except RuntimeError:
-        dha_name_by_id = {}
-        valid_dha_ids = set()
+        agent_name_by_id = {}
+        valid_agent_ids = set()
     if item.host_config is not None:
         hc_norm = normalize_host_config_dict(item.host_config)
         lid = VIRTUAL_SCENE_HOST_ID
@@ -261,18 +261,17 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         lid = str(item.leader_agent_id or "").strip() if item.leader_agent_id is not None else ""
         if not lid:
             lid = agent_ids[0]
-        elif lid not in valid_dha_ids and lid != VIRTUAL_SCENE_HOST_ID:
+        elif lid not in valid_agent_ids and lid != VIRTUAL_SCENE_HOST_ID:
             lid = agent_ids[0]
     row: Dict[str, Any] = {
         "id": pid,
         "name": name,
         "agent_ids": agent_ids,
-        "expert_ids": agent_ids,
         "leader_agent_id": lid,
         "description": str(item.description or ""),
         "discussion_goal_example": str(item.discussion_goal_example or ""),
     }
-    row["agent_refs"] = _merge_reference_rows_for_ids(agent_ids, item.agent_refs, dha_name_by_id)
+    row["agent_refs"] = _merge_reference_rows_for_ids(agent_ids, item.agent_refs, agent_name_by_id)
     if hc_norm is not None:
         row["host_config"] = hc_norm
     return row
@@ -280,7 +279,7 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
 
 def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]:
     """当前登录用户下校验场景预设依赖。"""
-    from app.api.dha import load_dha_instances
+    from app.api.agents import load_agent_instances
     from app.core.user_settings_paths import skills_dir_path
 
     un = get_current_username() or ""
@@ -289,12 +288,12 @@ def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]
     def skill_ok(sid: str) -> bool:
         return bool(sl.get_skill_full_content(sid))
 
-    dha_by_id: Dict[str, Any] = {
-        str(d.get("agent_id")): d for d in load_dha_instances() if d.get("agent_id")
+    agent_by_id: Dict[str, Any] = {
+        str(d.get("agent_id")): d for d in load_agent_instances() if d.get("agent_id")
     }
     v = validate_session_preset(
         preset,
-        dha_by_id=dha_by_id,
+        agent_by_id=agent_by_id,
         skill_has_content=skill_ok,
         mcp_servers=load_mcp_config(),
     )
@@ -461,7 +460,7 @@ def _content_disposition_attachment(filename: str) -> str:
 
 def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[str, Any], str]:
     """构建场景包 ZIP；返回 (zip_bytes, preset_row, safe_name)。"""
-    from app.api.dha import load_dha_instances
+    from app.api.agents import load_agent_instances
 
     key = str(preset_id or "").strip()
     if not key:
@@ -472,15 +471,15 @@ def _session_preset_bundle_zip_for_preset(preset_id: str) -> Tuple[bytes, Dict[s
     if match is None:
         raise HTTPException(status_code=404, detail="Session preset not found")
 
-    dha_all = load_dha_instances()
-    dha_by_id = {str(d.get("agent_id")): d for d in dha_all if d.get("agent_id")}
+    agent_rows_all = load_agent_instances()
+    agent_by_id = {str(d.get("agent_id")): d for d in agent_rows_all if d.get("agent_id")}
     expert_rows: List[Dict[str, Any]] = []
     for aid in match.get("agent_ids") or []:
         a = str(aid).strip()
-        if a in dha_by_id:
-            expert_rows.append(strip_dha_row_for_disk(dict(dha_by_id[a])))
+        if a in agent_by_id:
+            expert_rows.append(strip_agent_row_for_disk(dict(agent_by_id[a])))
 
-    skill_ids, mcp_ids = collect_skill_and_mcp_ids_for_preset(match, dha_by_id)
+    skill_ids, mcp_ids = collect_skill_and_mcp_ids_for_preset(match, agent_by_id)
     mcp_refs = [{"id": mid, "name": ""} for mid in sorted(mcp_ids)]
     mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_get_skills_dir(), skill_ids))
     mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
@@ -522,8 +521,8 @@ async def import_session_preset_bundle(
     preset_id_conflict: str = Form("overwrite"),
 ):
     """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单与将覆盖的技能提示。"""
-    from app.api.dha import load_dha_instances, save_dha_instances
-    from app.api.settings import _merge_imported_skill_requirements_and_prewarm
+    from app.api.agents import load_agent_instances, save_agent_instances
+    from app.api.settings_skills import _merge_imported_skill_requirements_and_prewarm
 
     fn = (file.filename or "").strip().lower()
     if not fn.endswith(".zip"):
@@ -540,7 +539,7 @@ async def import_session_preset_bundle(
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
-        _manifest, preset, dha_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
+        _manifest, preset, agent_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
         norm = normalize_preset_dict_for_validation(preset)
         if norm is None:
             raise HTTPException(status_code=400, detail="场景包内 preset 无效（需 id、name、agent_ids）")
@@ -548,7 +547,7 @@ async def import_session_preset_bundle(
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
         experts_preview = [
             {"agent_id": str(x.get("agent_id") or ""), "name": str(x.get("name") or "")}
-            for x in dha_bundle
+            for x in agent_bundle
             if str(x.get("agent_id") or "").strip()
         ]
         mcps_preview = [
@@ -575,15 +574,15 @@ async def import_session_preset_bundle(
             if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
             and str(r.get("id") or "").strip()
         ]
-        existing_dha = load_dha_instances()
+        existing_agents = load_agent_instances()
         existing_mcp = load_mcp_config()
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
-            dha_bundle,
+            agent_bundle,
             mcp_bundle,
             tmp,
             user_skills,
-            existing_dha,
+            existing_agents,
             existing_mcp,
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
@@ -632,10 +631,10 @@ async def import_session_preset_bundle(
         invalidate_skills_cache_for_user(get_current_username() or "")
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
 
-        merged_dha = merge_dha_instances_for_bundle(
-            existing_dha, dha_bundle, overwrite=overwrite_experts
+        merged_agents = merge_agent_instances_for_bundle(
+            existing_agents, agent_bundle, overwrite=overwrite_experts
         )
-        save_dha_instances(merged_dha)
+        save_agent_instances(merged_agents)
 
         merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
             existing_mcp, mcp_bundle, skip_existing=mcp_skip_existing
@@ -683,7 +682,7 @@ async def import_session_preset_bundle(
                     "skills_skipped": skipped_skills,
                     "missing_references": missing_references,
                     **requirements_result,
-                    "experts_total_after": len(merged_dha),
+                    "experts_total_after": len(merged_agents),
                     "mcp_added": mcp_added,
                     "mcp_skipped": mcp_skipped,
                     "mcp_updated": mcp_updated,
@@ -703,13 +702,13 @@ async def import_session_preset_bundle(
             shutil.rmtree(tmp, ignore_errors=True)
 
 async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
-    from app.api.dha import load_dha_instances, save_dha_instances
-    from app.api.settings import _merge_imported_skill_requirements_and_prewarm
+    from app.api.agents import load_agent_instances, save_agent_instances
+    from app.api.settings_skills import _merge_imported_skill_requirements_and_prewarm
 
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
-        _manifest, preset, dha_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
+        _manifest, preset, agent_bundle, mcp_bundle = read_bundle_manifest_and_lists(tmp)
         norm = normalize_preset_dict_for_validation(preset)
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
@@ -717,16 +716,16 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         user_skills = _get_skills_dir()
         skill_id_map = _skill_conflict_id_map(tmp, user_skills, skill_ids_in_zip)
         mcp_id_map = _mcp_conflict_id_map(load_mcp_config(), mcp_bundle)
-        remapped_preset, remapped_dha_bundle = _remap_bundle_references(
+        remapped_preset, remapped_agent_bundle = _remap_bundle_references(
             norm,
-            dha_bundle,
+            agent_bundle,
             skill_id_map=skill_id_map,
             mcp_id_map=mcp_id_map,
         )
         norm = normalize_preset_dict_for_validation(remapped_preset)
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
-        dha_bundle = remapped_dha_bundle
+        agent_bundle = remapped_agent_bundle
         existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
         preset_name_conflicts = [
             str(r.get("id") or "")
@@ -734,9 +733,9 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             if _normalized_name_key(r.get("name")) == _normalized_name_key(norm.get("name"))
             and str(r.get("id") or "").strip()
         ]
-        existing_experts = load_dha_instances()
+        existing_experts = load_agent_instances()
         expert_conflicts: Dict[str, List[str]] = {}
-        for incoming in dha_bundle:
+        for incoming in agent_bundle:
             incoming_id = str(incoming.get("agent_id") or "").strip()
             incoming_name_key = _normalized_name_key(incoming.get("name"))
             conflicts = [
@@ -752,11 +751,11 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 expert_conflicts[incoming_id or str(incoming.get("name") or "")] = list(dict.fromkeys(conflicts))
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
-            dha_bundle,
+            agent_bundle,
             mcp_bundle,
             tmp,
             user_skills,
-            load_dha_instances(),
+            load_agent_instances(),
             load_mcp_config(),
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
@@ -768,7 +767,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     "preset_name": norm["name"],
                     "experts": [
                         {"agent_id": str(x.get("agent_id") or ""), "name": str(x.get("name") or "")}
-                        for x in dha_bundle
+                        for x in agent_bundle
                         if str(x.get("agent_id") or "").strip()
                     ],
                     "skills": skill_ids_in_zip,
@@ -785,8 +784,8 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         invalidate_skills_cache_for_user(get_current_username() or "")
         for old_id, new_id in mcp_id_map.items():
             _replace_mcp_server_id_in_user_configs(old_id, new_id)
-        merged_dha = merge_dha_instances_for_bundle(load_dha_instances(), dha_bundle, overwrite=True)
-        save_dha_instances(merged_dha)
+        merged_agents = merge_agent_instances_for_bundle(load_agent_instances(), agent_bundle, overwrite=True)
+        save_agent_instances(merged_agents)
         merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
             load_mcp_config(), mcp_bundle, skip_existing=False
         )

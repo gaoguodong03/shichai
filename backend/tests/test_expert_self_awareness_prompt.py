@@ -21,9 +21,9 @@ def test_build_expert_self_awareness_block_with_multi_skills():
             "skill-b": _FakeSkill("技能B", "负责B能力"),
         }
     )
-    dha = {"skill_ids": ["skill-a", "skill-b"]}
+    agent_profile = {"skill_ids": ["skill-a", "skill-b"]}
 
-    block = build_expert_self_awareness_block(dha, loader)
+    block = build_expert_self_awareness_block(agent_profile, loader)
 
     assert "## 你当前绑定的 Skill" in block
     assert "技能A" in block and "负责A能力" in block
@@ -32,9 +32,9 @@ def test_build_expert_self_awareness_block_with_multi_skills():
 
 def test_build_expert_self_awareness_block_fallback_when_description_missing():
     loader = _FakeSkillsLoader({"skill-a": _FakeSkill("技能A", "")})
-    dha = {"skill_ids": ["skill-a"]}
+    agent_profile = {"skill_ids": ["skill-a"]}
 
-    block = build_expert_self_awareness_block(dha, loader)
+    block = build_expert_self_awareness_block(agent_profile, loader)
 
     assert "技能A" in block
     assert "无描述，仅按技能名称推断能力边界。" in block

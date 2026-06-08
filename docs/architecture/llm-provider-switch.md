@@ -102,7 +102,7 @@ QWEN_MODEL=gpt-4o
    - `provider_id = app_settings.get("default_llm", "qwen")`
    - `llm = get_llm_from_config(provider_id)`
 
-3. **`settings.py`**
+3. **`settings_skills.py`**
    - `GET/PUT /settings/app` 支持读写 `default_llm`、`llm_providers`
 
 ---

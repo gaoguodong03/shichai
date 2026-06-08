@@ -1,5 +1,4 @@
 import { apiFetch, apiUrl, type ApiResult } from './base'
-import { getSkillsList } from './settings'
 
 export interface ChatStreamRequestPayload {
   message?: string
@@ -8,11 +7,11 @@ export interface ChatStreamRequestPayload {
   skill_ids?: string[]
   action?: string
   host_takeover_requested?: boolean
-  ignore_auto_expert_id?: string
+  ignore_auto_agent_id?: string
   ignore_auto_skill_id?: string
 }
 
-export interface StreamChatEventHandlers {
+interface StreamChatEventHandlers {
   onRoute?: (data: Record<string, unknown>) => void
   onContent?: (data: { text?: string; agent_id?: string; meta?: { phase?: string } }) => void
   onMessage?: (data: Record<string, unknown>) => void
@@ -20,13 +19,13 @@ export interface StreamChatEventHandlers {
   onError?: (error: unknown) => void
 }
 
-export interface SessionEventHandlers {
+interface SessionEventHandlers {
   onUpdate?: (data: Record<string, unknown>) => void
   onKeepalive?: (data: Record<string, unknown>) => void
   onError?: (error: unknown) => void
 }
 
-export interface ChatOnceResponseData {
+interface ChatOnceResponseData {
   route?: Record<string, unknown> | null
   contents?: Array<{ text?: string; agent_id?: string; meta?: { phase?: string } }>
   messages?: Record<string, unknown>[]
@@ -75,24 +74,6 @@ async function readEventStream(
   if (buffer.trim()) dispatchBlock(buffer)
 }
 
-/** 兼容旧调用：返回原始 Response（建议改用 streamSessionChat） */
-export async function chatStreamRequest(payload: ChatStreamRequestPayload): Promise<Response> {
-  const sessionId = encodeURIComponent(payload.session_id || 'default')
-  return fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: payload.message ?? '',
-      client_message_id: payload.client_message_id,
-      skill_ids: payload.skill_ids,
-      action: payload.action,
-      host_takeover_requested: payload.host_takeover_requested,
-      ignore_auto_expert_id: payload.ignore_auto_expert_id,
-      ignore_auto_skill_id: payload.ignore_auto_skill_id,
-    }),
-  })
-}
-
 /** POST /api/sessions/:id/chat/stream 并分发 SSE 事件 */
 export async function streamSessionChat(
   payload: ChatStreamRequestPayload,
@@ -106,7 +87,7 @@ export async function streamSessionChat(
     skill_ids: payload.skill_ids,
     action: payload.action,
     host_takeover_requested: payload.host_takeover_requested,
-    ignore_auto_expert_id: payload.ignore_auto_expert_id,
+    ignore_auto_agent_id: payload.ignore_auto_agent_id,
     ignore_auto_skill_id: payload.ignore_auto_skill_id,
   }
   const response = await fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
@@ -164,21 +145,8 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
       skill_ids: payload.skill_ids,
       action: payload.action,
       host_takeover_requested: payload.host_takeover_requested,
-      ignore_auto_expert_id: payload.ignore_auto_expert_id,
+      ignore_auto_agent_id: payload.ignore_auto_agent_id,
       ignore_auto_skill_id: payload.ignore_auto_skill_id,
     }),
   })
-}
-
-/** POST /api/sessions/:id/export */
-export async function exportSession(sessionId: string): Promise<ApiResult<{ path?: string; download_url?: string }>> {
-  const id = encodeURIComponent(sessionId || 'default')
-  return apiFetch(`/sessions/${id}/export`, { method: 'POST' })
-}
-
-/** 兼容旧调用：技能列表来自 settings/skills */
-export async function getSkills(): Promise<
-  ApiResult<{ skills: Array<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp?: string[]; python?: string } }> }>
-> {
-  return getSkillsList()
 }

@@ -2,18 +2,14 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
-import hashlib
 import logging
 import os
-import shlex
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from app.agent.path_whitelist_guard import normalize_rel_path
 from app.agent.sandbox_adapter import OpenSandboxAdapter, SandboxAdapter, SandboxHandle, SandboxPolicy
 from app.agent.sandbox_audit import append_sandbox_event
 from app.agent.sandbox_handle_keys import (
@@ -22,7 +18,6 @@ from app.agent.sandbox_handle_keys import (
     request_handle_cache_key,
     request_needs_user_requirements,
 )
-from app.agent.sandbox_image_policy import configured_sandbox_images
 from app.agent.sandbox_lifecycle_errors import (
     SandboxEnvironmentError,
     is_host_path_mount_source_error as _is_host_path_mount_source_error,
@@ -35,10 +30,7 @@ from app.agent.sandbox_policy_builder import (
     apply_fixed_resource_policy,
     apply_user_image_policy,
     build_mounts_for_request,
-    cached_handle_still_valid,
     resolve_cwd,
-    workspace_only_policy,
-    workspace_with_skills_policy,
 )
 from app.agent.sandbox_policy_runtime import (
     env_csv as _env_csv,
@@ -48,28 +40,15 @@ from app.agent.sandbox_policy_runtime import (
     network_allowed_for_tool as _network_allowed_for_tool,
     sandbox_default_environment as _sandbox_default_environment,
 )
-from app.agent.sandbox_requirements_runtime import (
-    command_exit_code as _command_exit_code,
-    command_output as _command_output,
-    requirements_b64 as _requirements_b64,
-    requirements_imply_playwright as _requirements_imply_playwright,
-    requirements_package_summary as _requirements_package_summary,
-    tail as _tail,
+from app.agent.sandbox_prewarm import SandboxPrewarmMixin
+from app.agent.sandbox_requirements import REQUIREMENTS_VERIFIER_VERSION, SandboxRequirementsMixin
+from app.agent.sandbox_requirements_verifier import (
+    REQUIREMENTS_REAL_VERIFIED_AT_KEY as _REQUIREMENTS_REAL_VERIFIED_AT_KEY,
+    verify_installed_user_requirements,
 )
-from app.agent.sandbox_workspace_fs import (
-    exec_workspace_shell_on_host,
-    list_workspace_files_on_host,
-    mkdir_workspace_on_host,
-    read_workspace_text_on_host,
-    write_workspace_text_on_host,
-)
-from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir
-from app.core.user_context import get_user_context_for, users_data_root
+from app.agent.sandbox_workspace_ops import SandboxWorkspaceMixin
 
 logger = logging.getLogger(__name__)
-
-_REQUIREMENTS_VERIFIER_VERSION = "import-v2"
-_REQUIREMENTS_REAL_VERIFIED_AT_KEY = "requirements_real_verified_at"
 
 
 @dataclass
@@ -93,22 +72,15 @@ class SandboxExecutionRequest:
     cwd: str = ""
 
 
-class SandboxService:
+class SandboxService(SandboxRequirementsMixin, SandboxPrewarmMixin, SandboxWorkspaceMixin):
     """Manage user sandbox lifecycle and OpenSandbox request mapping."""
 
     def __init__(
         self,
         sandbox_adapter: Optional[SandboxAdapter] = None,
-        session_ttl_sec: int = 1800,
     ):
         self._adapter = sandbox_adapter or OpenSandboxAdapter()
         logger.info("sandbox_backend_selected backend=%s", self._describe_adapter(self._adapter))
-        self._session_ttl_sec = max(60, int(session_ttl_sec))
-        self._always_on = _env_truthy("SANDBOX_ALWAYS_ON", default="0")
-        # 默认启用：仅在首次创建或 requirements 变更时重建用户级沙箱。
-        self._restart_only_on_requirements_update = _env_truthy(
-            "SANDBOX_RESTART_ONLY_ON_REQUIREMENTS_UPDATE", default="1"
-        )
         try:
             self._requirements_real_verify_ttl_sec = max(
                 0,
@@ -152,171 +124,6 @@ class SandboxService:
             return False
         return ("not found" in msg) or ("no such" in msg) or ("invalid sandbox" in msg)
 
-    @staticmethod
-    def _resolve_cwd(policy: SandboxPolicy, req: SandboxExecutionRequest) -> str:
-        return resolve_cwd(policy, session_id=req.session_id, cwd=req.cwd)
-
-    def _requirements_hash_for_user(self, user_id: str) -> str:
-        txt = self._read_user_sandbox_requirements(user_id)
-        normalized = (txt or "").strip()
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-
-    def _requirements_b64_for_user(self, user_id: str) -> str:
-        return _requirements_b64(self._read_user_sandbox_requirements(user_id))
-
-    def _requirements_real_verify_is_fresh(
-        self,
-        handle: SandboxHandle,
-        *,
-        dep_hash: str,
-        now: float,
-    ) -> bool:
-        if self._requirements_real_verify_ttl_sec <= 0:
-            return True
-        if not isinstance(handle.metadata, dict):
-            return False
-        if dep_hash and str(handle.metadata.get("verified_requirements_hash") or "").strip() != dep_hash:
-            return False
-        verified_at_raw = handle.metadata.get(_REQUIREMENTS_REAL_VERIFIED_AT_KEY)
-        try:
-            verified_at = float(verified_at_raw)
-        except (TypeError, ValueError):
-            return False
-        if verified_at <= 0:
-            return False
-        return (now - verified_at) <= self._requirements_real_verify_ttl_sec
-
-    async def _verify_installed_user_requirements(
-        self,
-        handle: SandboxHandle,
-        *,
-        user_id: str,
-        policy: SandboxPolicy,
-    ) -> bool:
-        """Verify installed Python packages match the user's requirements metadata."""
-        normalized = (self._read_user_sandbox_requirements(user_id) or "").strip()
-        dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-        if not normalized:
-            return True
-        if not hasattr(self._adapter, "exec_command"):
-            logger.warning(
-                "st49_sandbox_requirements_verify_failed code=adapter_no_exec_command user_id=%s dep_hash=%s sandbox_id=%s",
-                user_id,
-                dep_hash,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-            )
-            return False
-        quoted_requirements = shlex.quote(normalized)
-        cmd = [
-            "sh",
-            "-lc",
-            (
-                f"set -e; SANDBOX_REQUIREMENTS_TEXT={quoted_requirements}; export SANDBOX_REQUIREMENTS_TEXT; "
-                "python3 - <<'PY'\n"
-                "import importlib, importlib.metadata as md, os, re, sys\n"
-                "from packaging.requirements import InvalidRequirement, Requirement\n"
-                "from packaging.version import InvalidVersion, Version\n"
-                "raw=os.environ.get('SANDBOX_REQUIREMENTS_TEXT','')\n"
-                "if not raw.strip():\n"
-                "    raise SystemExit('requirements verify received empty requirements text')\n"
-                "print('requirements_verify_start')\n"
-                "import_names={'xlrd':['xlrd'], 'openpyxl':['openpyxl'], 'pandas':['pandas']}\n"
-                "min_versions={'xlrd':'2.0.1'}\n"
-                "missing=[]\n"
-                "version_too_low=[]\n"
-                "version_mismatch=[]\n"
-                "import_missing=[]\n"
-                "seen=[]\n"
-                "for raw_line in raw.splitlines():\n"
-                "    line=raw_line.strip()\n"
-                "    if not line or line.startswith('#') or line.startswith(('-', '--')) or '://' in line or line.startswith(('git+', 'http:')):\n"
-                "        continue\n"
-                "    try:\n"
-                "        req=Requirement(line)\n"
-                "        name=req.name\n"
-                "        specifier=req.specifier\n"
-                "    except InvalidRequirement:\n"
-                "        name=line.split(';',1)[0].split('[',1)[0].strip()\n"
-                "        name=re.split(r'===|==|>=|<=|~=|!=|>|<', name, 1)[0].strip()\n"
-                "        specifier=None\n"
-                "    if not name:\n"
-                "        continue\n"
-                "    try:\n"
-                "        version=md.version(name)\n"
-                "        seen.append(f'{name}=={version}')\n"
-                "        if specifier:\n"
-                "            try:\n"
-                "                if Version(version) not in specifier:\n"
-                "                    version_mismatch.append(f'{name}=={version} not in {specifier}')\n"
-                "            except InvalidVersion:\n"
-                "                version_mismatch.append(f'{name}=={version} invalid version for {specifier}')\n"
-                "        minimum=min_versions.get(name.lower())\n"
-                "        if minimum and Version(version) < Version(minimum):\n"
-                "            version_too_low.append(f'{name}=={version} < {minimum}')\n"
-                "        for mod in import_names.get(name.lower(), []):\n"
-                "            try:\n"
-                "                importlib.import_module(mod)\n"
-                "                print(f'import_ok:{mod}')\n"
-                "            except Exception as exc:\n"
-                "                import_missing.append(f'{mod}: {exc}')\n"
-                "    except md.PackageNotFoundError:\n"
-                "        missing.append(name)\n"
-                "for item in seen:\n"
-                "    print(item)\n"
-                "print('requirements_verify_end')\n"
-                "if missing:\n"
-                "    raise SystemExit('missing packages after metadata hit: ' + ', '.join(missing))\n"
-                "if version_too_low:\n"
-                "    raise SystemExit('packages installed but version too low: ' + '; '.join(version_too_low))\n"
-                "if version_mismatch:\n"
-                "    raise SystemExit('packages installed but specifier mismatch: ' + '; '.join(version_mismatch))\n"
-                "if import_missing:\n"
-                "    raise SystemExit('packages installed but import failed: ' + '; '.join(import_missing))\n"
-                "PY"
-            ),
-        ]
-        try:
-            verify_result = await self._adapter.exec_command(  # type: ignore[attr-defined]
-                handle,
-                cmd,
-                cwd="/",
-                timeout_ms=min(max(30_000, int(policy.timeout_ms or 120_000)), 120_000),
-                env={**_sandbox_default_environment(), "SANDBOX_REQUIREMENTS_TEXT": normalized},
-            )
-            exit_code = _command_exit_code(verify_result)
-            stdout, stderr = _command_output(verify_result)
-            if isinstance(exit_code, int) and exit_code == 0:
-                if isinstance(handle.metadata, dict):
-                    handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
-                logger.info(
-                    "st49_sandbox_requirements_verify_done code=requirements_real_verify_done user_id=%s dep_hash=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
-                    user_id,
-                    dep_hash,
-                    str((handle.metadata or {}).get("sandbox_id") or ""),
-                    _tail(stdout, 2000),
-                    _tail(stderr, 2000),
-                )
-                return True
-            logger.warning(
-                "st49_sandbox_requirements_verify_failed code=requirements_real_verify_nonzero user_id=%s dep_hash=%s exit_code=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
-                user_id,
-                dep_hash,
-                exit_code,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-                _tail(stdout),
-                _tail(stderr),
-            )
-            return False
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                "st49_sandbox_requirements_verify_failed code=requirements_real_verify_exception user_id=%s dep_hash=%s sandbox_id=%s err=%s",
-                user_id,
-                dep_hash,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-                str(e)[:500],
-            )
-            return False
-
     def _prepare_command_env(self, req: SandboxExecutionRequest, raw_env: Any) -> Dict[str, str]:
         env: Dict[str, str] = {}
         if isinstance(raw_env, dict):
@@ -350,10 +157,6 @@ class SandboxService:
                 self._requirements_hash_for_user(user_id),
             )
         return env
-
-    def requirements_hash_for_user(self, user_id: str) -> str:
-        """Public diagnostic wrapper for the current user's sandbox requirements hash."""
-        return self._requirements_hash_for_user(user_id)
 
     @staticmethod
     def _installed_requirements_hash(handle: SandboxHandle) -> str:
@@ -445,136 +248,120 @@ class SandboxService:
         async with self._lock:
             existing = self._user_handles.get(key)
             if existing is not None:
-                handle, touched = existing
-                if self._restart_only_on_requirements_update:
-                    current_req_hash = self._requirements_hash_for_user(user_id)
-                    installed_req_hash = self._installed_requirements_hash(handle)
-                    verified_req_hash = str((handle.metadata or {}).get("verified_requirements_hash") or "").strip()
-                    verifier_version = str((handle.metadata or {}).get("requirements_verifier_version") or "").strip()
-                    old_mount_fp = str((handle.metadata or {}).get("mount_fingerprint") or "").strip()
-                    new_mount_fp = policy_mount_fingerprint(policy)
-                    old_image_ref = str((handle.metadata or {}).get("image_ref") or "").strip()
-                    new_image_ref = str(policy.image_ref or "").strip()
-                    stored_net = (handle.metadata or {}).get("policy_allow_network")
-                    network_policy_matches = stored_net is None or bool(stored_net) == bool(policy.allow_network)
-                    logger.info(
-                        "st49_sandbox_cache_check code=user_handle_cache_check user_id=%s session_id=%s cache_key=%s sandbox_id=%s current_hash=%s installed_hash=%s verified_hash=%s verifier=%s old_image=%s new_image=%s old_mount_fp=%s new_mount_fp=%s old_allow_network=%s new_allow_network=%s",
-                        user_id,
-                        req.session_id,
-                        key,
-                        str((handle.metadata or {}).get("sandbox_id") or ""),
-                        current_req_hash,
-                        installed_req_hash,
-                        verified_req_hash,
-                        verifier_version,
-                        old_image_ref,
-                        new_image_ref,
-                        old_mount_fp,
-                        new_mount_fp,
-                        bool(stored_net) if stored_net is not None else "",
-                        bool(policy.allow_network),
-                    )
-                    if (
-                        current_req_hash == installed_req_hash
-                        and current_req_hash == verified_req_hash
-                        and verifier_version == _REQUIREMENTS_VERIFIER_VERSION
-                        and old_image_ref == new_image_ref
-                        and old_mount_fp == new_mount_fp
-                        and network_policy_matches
-                    ):
-                        self._user_handles[key] = (handle, now)
-                        if not needs_requirements:
-                            logger.info(
-                                "st49_sandbox_requirements_skip code=requirements_not_needed user_id=%s session_id=%s cache_key=%s tool_name=%s sandbox_id=%s",
-                                user_id,
-                                req.session_id,
-                                key,
-                                req.tool_name,
-                                str((handle.metadata or {}).get("sandbox_id") or ""),
-                            )
-                            return handle
-                        if self._requirements_real_verify_is_fresh(handle, dep_hash=current_req_hash, now=now):
-                            logger.info(
-                                "st49_sandbox_requirements_skip code=requirements_real_verify_ttl_hit user_id=%s session_id=%s dep_hash=%s sandbox_id=%s ttl_sec=%s",
-                                user_id,
-                                req.session_id,
-                                current_req_hash,
-                                str((handle.metadata or {}).get("sandbox_id") or ""),
-                                self._requirements_real_verify_ttl_sec,
-                            )
-                            return handle
-                        real_verified = await self._verify_installed_user_requirements(
-                            handle,
-                            user_id=user_id,
-                            policy=policy,
-                        )
-                        if real_verified:
-                            return handle
-                        if isinstance(handle.metadata, dict):
-                            handle.metadata.pop("installed_requirements_hash", None)
-                            handle.metadata.pop("verified_requirements_hash", None)
-                            handle.metadata.pop("requirements_verifier_version", None)
-                            handle.metadata.pop(_REQUIREMENTS_REAL_VERIFIED_AT_KEY, None)
+                handle, _touched = existing
+                current_req_hash = self._requirements_hash_for_user(user_id)
+                installed_req_hash = self._installed_requirements_hash(handle)
+                verified_req_hash = str((handle.metadata or {}).get("verified_requirements_hash") or "").strip()
+                verifier_version = str((handle.metadata or {}).get("requirements_verifier_version") or "").strip()
+                old_mount_fp = str((handle.metadata or {}).get("mount_fingerprint") or "").strip()
+                new_mount_fp = policy_mount_fingerprint(policy)
+                old_image_ref = str((handle.metadata or {}).get("image_ref") or "").strip()
+                new_image_ref = str(policy.image_ref or "").strip()
+                stored_net = (handle.metadata or {}).get("policy_allow_network")
+                network_policy_matches = stored_net is None or bool(stored_net) == bool(policy.allow_network)
+                logger.info(
+                    "st49_sandbox_cache_check code=user_handle_cache_check user_id=%s session_id=%s cache_key=%s sandbox_id=%s current_hash=%s installed_hash=%s verified_hash=%s verifier=%s old_image=%s new_image=%s old_mount_fp=%s new_mount_fp=%s old_allow_network=%s new_allow_network=%s",
+                    user_id,
+                    req.session_id,
+                    key,
+                    str((handle.metadata or {}).get("sandbox_id") or ""),
+                    current_req_hash,
+                    installed_req_hash,
+                    verified_req_hash,
+                    verifier_version,
+                    old_image_ref,
+                    new_image_ref,
+                    old_mount_fp,
+                    new_mount_fp,
+                    bool(stored_net) if stored_net is not None else "",
+                    bool(policy.allow_network),
+                )
+                if (
+                    current_req_hash == installed_req_hash
+                    and current_req_hash == verified_req_hash
+                    and verifier_version == REQUIREMENTS_VERIFIER_VERSION
+                    and old_image_ref == new_image_ref
+                    and old_mount_fp == new_mount_fp
+                    and network_policy_matches
+                ):
+                    self._user_handles[key] = (handle, now)
+                    if not needs_requirements:
                         logger.info(
-                            "st49_sandbox_reinstall code=user_requirements_real_verify_failed user_id=%s session_id=%s dep_hash=%s sandbox_id=%s",
+                            "st49_sandbox_requirements_skip code=requirements_not_needed user_id=%s session_id=%s cache_key=%s tool_name=%s sandbox_id=%s",
+                            user_id,
+                            req.session_id,
+                            key,
+                            req.tool_name,
+                            str((handle.metadata or {}).get("sandbox_id") or ""),
+                        )
+                        return handle
+                    if self._requirements_real_verify_is_fresh(handle, dep_hash=current_req_hash, now=now):
+                        logger.info(
+                            "st49_sandbox_requirements_skip code=requirements_real_verify_ttl_hit user_id=%s session_id=%s dep_hash=%s sandbox_id=%s ttl_sec=%s",
                             user_id,
                             req.session_id,
                             current_req_hash,
                             str((handle.metadata or {}).get("sandbox_id") or ""),
+                            self._requirements_real_verify_ttl_sec,
                         )
-                        await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
-                        self._user_handles[key] = (handle, now)
                         return handle
-                    if old_image_ref != new_image_ref:
-                        logger.info(
-                            "st49_sandbox_recreate code=user_image_updated user_id=%s session_id=%s old_image=%s new_image=%s",
-                            user_id,
-                            req.session_id,
-                            old_image_ref,
-                            new_image_ref,
-                        )
-                    elif old_mount_fp != new_mount_fp:
-                        logger.info(
-                            "st49_sandbox_recreate code=user_mount_policy_updated user_id=%s session_id=%s old_mount_fp=%s new_mount_fp=%s",
-                            user_id,
-                            req.session_id,
-                            old_mount_fp,
-                            new_mount_fp,
-                        )
-                    elif not network_policy_matches:
-                        logger.info(
-                            "st49_sandbox_recreate code=user_network_policy_updated user_id=%s session_id=%s old_allow_network=%s new_allow_network=%s",
-                            user_id,
-                            req.session_id,
-                            bool(stored_net),
-                            bool(policy.allow_network),
-                        )
-                    else:
-                        logger.info(
-                            "st49_sandbox_recreate code=user_requirements_updated user_id=%s session_id=%s old_hash=%s new_hash=%s",
-                            user_id,
-                            req.session_id,
-                            installed_req_hash,
-                            current_req_hash,
-                        )
+                    real_verified = await verify_installed_user_requirements(
+                        self._adapter,
+                        handle,
+                        user_id=user_id,
+                        policy=policy,
+                        normalized_requirements=self._read_user_sandbox_requirements(user_id),
+                        dep_hash=current_req_hash,
+                    )
+                    if real_verified:
+                        return handle
+                    if isinstance(handle.metadata, dict):
+                        handle.metadata.pop("installed_requirements_hash", None)
+                        handle.metadata.pop("verified_requirements_hash", None)
+                        handle.metadata.pop("requirements_verifier_version", None)
+                        handle.metadata.pop(_REQUIREMENTS_REAL_VERIFIED_AT_KEY, None)
+                    logger.info(
+                        "st49_sandbox_reinstall code=user_requirements_real_verify_failed user_id=%s session_id=%s dep_hash=%s sandbox_id=%s",
+                        user_id,
+                        req.session_id,
+                        current_req_hash,
+                        str((handle.metadata or {}).get("sandbox_id") or ""),
+                    )
+                    await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
+                    self._user_handles[key] = (handle, now)
+                    return handle
+                if old_image_ref != new_image_ref:
+                    logger.info(
+                        "st49_sandbox_recreate code=user_image_updated user_id=%s session_id=%s old_image=%s new_image=%s",
+                        user_id,
+                        req.session_id,
+                        old_image_ref,
+                        new_image_ref,
+                    )
+                elif old_mount_fp != new_mount_fp:
+                    logger.info(
+                        "st49_sandbox_recreate code=user_mount_policy_updated user_id=%s session_id=%s old_mount_fp=%s new_mount_fp=%s",
+                        user_id,
+                        req.session_id,
+                        old_mount_fp,
+                        new_mount_fp,
+                    )
+                elif not network_policy_matches:
+                    logger.info(
+                        "st49_sandbox_recreate code=user_network_policy_updated user_id=%s session_id=%s old_allow_network=%s new_allow_network=%s",
+                        user_id,
+                        req.session_id,
+                        bool(stored_net),
+                        bool(policy.allow_network),
+                    )
                 else:
-                    ttl_ok = self._always_on or (now - touched <= self._session_ttl_sec)
-                    if ttl_ok and cached_handle_still_valid(
-                        handle, policy, req.tool_name
-                    ):
-                        self._user_handles[key] = (handle, now)
-                        if needs_requirements:
-                            await self._maybe_install_user_requirements(handle, user_id=user_id, policy=policy)
-                        else:
-                            logger.info(
-                                "st49_sandbox_requirements_skip code=requirements_not_needed user_id=%s session_id=%s cache_key=%s tool_name=%s sandbox_id=%s",
-                                user_id,
-                                req.session_id,
-                                key,
-                                req.tool_name,
-                                str((handle.metadata or {}).get("sandbox_id") or ""),
-                            )
-                        return handle
+                    logger.info(
+                        "st49_sandbox_recreate code=user_requirements_updated user_id=%s session_id=%s old_hash=%s new_hash=%s",
+                        user_id,
+                        req.session_id,
+                        installed_req_hash,
+                        current_req_hash,
+                    )
                 try:
                     await self._adapter.dispose_sandbox(handle)
                 except Exception as e:  # noqa: BLE001
@@ -728,564 +515,6 @@ class SandboxService:
             if not self._is_sandbox_not_found_error(e):
                 logger.warning("sandbox_invalidate_dispose_failed user_id=%s err=%s", user_id, e)
 
-    def _read_user_sandbox_requirements(self, user_id: str) -> str:
-        """读取当前用户的沙箱 requirements.txt 内容（允许为空）。"""
-        try:
-            ctx = get_user_context_for(user_id)
-        except Exception as e:
-            logger.warning(
-                "st49_sandbox_requirements_read_failed code=user_context_error user_id=%s err=%s",
-                user_id,
-                str(e)[:500],
-            )
-            return ""
-        path = (ctx.config_dir / "sandbox" / "requirements.txt").resolve()
-        try:
-            if not path.exists():
-                logger.info(
-                    "st49_sandbox_requirements_absent code=requirements_file_missing user_id=%s path=%s",
-                    user_id,
-                    str(path),
-                )
-                return ""
-            content = path.read_text(encoding="utf-8")
-            logger.debug(
-                "st49_sandbox_requirements_loaded code=requirements_file_loaded user_id=%s path=%s bytes=%s non_comment_lines=%s",
-                user_id,
-                str(path),
-                len(content.encode("utf-8")),
-                sum(1 for line in content.splitlines() if line.strip() and not line.strip().startswith("#")),
-            )
-            return content
-        except Exception as e:
-            logger.warning(
-                "st49_sandbox_requirements_read_failed code=requirements_file_read_error user_id=%s path=%s err=%s",
-                user_id,
-                str(path),
-                str(e)[:500],
-            )
-            return ""
-
-    async def _maybe_install_user_requirements(
-        self,
-        handle: SandboxHandle,
-        *,
-        user_id: str,
-        policy: SandboxPolicy,
-    ) -> None:
-        """按内容 hash 在沙箱内安装 requirements（变更时才执行一次）。仅用户级 config/sandbox/requirements.txt。"""
-        started_at = time.perf_counter()
-        if not isinstance(handle.metadata, dict):
-            logger.info("sandbox_requirements_skip reason=metadata_not_dict user_id=%s", user_id)
-            return
-        user_txt = self._read_user_sandbox_requirements(user_id)
-        normalized = (user_txt or "").strip()
-        dep_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-        req_summary = _requirements_package_summary(normalized)
-        last = str(handle.metadata.get("installed_requirements_hash") or "")
-        verified = str(handle.metadata.get("verified_requirements_hash") or "")
-        verifier_version = str(handle.metadata.get("requirements_verifier_version") or "")
-        logger.info(
-            "st49_sandbox_requirements_check code=requirements_check user_id=%s dep_hash=%s installed_hash=%s verified_hash=%s verifier_version=%s required_verifier=%s has_requirements=%s req_bytes=%s package_count=%s package_preview=%s has_playwright=%s has_patchright=%s sandbox_id=%s image_ref=%s variant=%s allow_network=%s timeout_ms=%s",
-            user_id,
-            dep_hash,
-            last,
-            verified,
-            verifier_version,
-            _REQUIREMENTS_VERIFIER_VERSION,
-            bool(normalized),
-            len(normalized.encode("utf-8")),
-            req_summary["count"],
-            ",".join(req_summary["preview"]),
-            req_summary["has_playwright"],
-            req_summary["has_patchright"],
-            str((handle.metadata or {}).get("sandbox_id") or ""),
-            str((handle.metadata or {}).get("image_ref") or ""),
-            str((policy.environment or {}).get("SANDBOX_IMAGE_VARIANT") or ""),
-            bool(policy.allow_network),
-            int(policy.timeout_ms or 0),
-        )
-        if dep_hash == last and dep_hash == verified and verifier_version == _REQUIREMENTS_VERIFIER_VERSION:
-            handle.metadata.setdefault(_REQUIREMENTS_REAL_VERIFIED_AT_KEY, time.time())
-            logger.info(
-                "st49_sandbox_requirements_skip code=requirements_hash_verified user_id=%s dep_hash=%s sandbox_id=%s",
-                user_id,
-                dep_hash,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-            )
-            return
-        # 空清单：只更新 hash，不执行 pip
-        if not normalized:
-            handle.metadata["installed_requirements_hash"] = dep_hash
-            handle.metadata["verified_requirements_hash"] = dep_hash
-            handle.metadata["requirements_verifier_version"] = _REQUIREMENTS_VERIFIER_VERSION
-            handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
-            logger.info(
-                "st49_sandbox_requirements_skip code=requirements_empty user_id=%s dep_hash=%s sandbox_id=%s",
-                user_id,
-                dep_hash,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-            )
-            return
-        # 若禁网，很可能装不成；仍尝试一次并把错误抛出（方便测试验证）。
-        b64 = base64.b64encode(normalized.encode("utf-8")).decode("ascii")
-        quoted_b64 = shlex.quote(b64)
-        cmd = [
-            "sh",
-            "-lc",
-            (
-                f"set -eux; SANDBOX_REQUIREMENTS_B64={quoted_b64}; export SANDBOX_REQUIREMENTS_B64; "
-                "echo '=== sandbox requirements diagnostics ==='; "
-                "echo python3_path=$(command -v python3 || true); "
-                "python3 -V; "
-                "python3 -m pip --version; "
-                'REQ_B64="${SANDBOX_REQUIREMENTS_B64:-}"; '
-                'python3 - <<\'PY\'\n'
-                "import base64,os,sys\n"
-                "b=os.environ.get('SANDBOX_REQUIREMENTS_B64','')\n"
-                "data=base64.b64decode(b.encode('ascii')) if b else b''\n"
-                "open('/tmp/requirements.txt','wb').write(data)\n"
-                "print('wrote_requirements_bytes', len(data))\n"
-                "if not data.strip():\n"
-                "    raise SystemExit('requirements install received empty requirements payload')\n"
-                "print('requirements_preview_start')\n"
-                "for line in data.decode('utf-8', 'replace').splitlines():\n"
-                "    text=line.strip()\n"
-                "    if text and not text.startswith('#'):\n"
-                "        print(text)\n"
-                "print('requirements_preview_end')\n"
-                "PY\n"
-                "rm -f /tmp/requirements.preinstalled\n"
-                "python3 - <<'PY'\n"
-                "import importlib, importlib.metadata as md, re\n"
-                "from pathlib import Path\n"
-                "from packaging.requirements import InvalidRequirement, Requirement\n"
-                "from packaging.version import InvalidVersion, Version\n"
-                "print('requirements_precheck_start')\n"
-                "import_names={'xlrd':['xlrd'], 'openpyxl':['openpyxl'], 'pandas':['pandas']}\n"
-                "min_versions={'xlrd':'2.0.1'}\n"
-                "missing=[]\n"
-                "version_too_low=[]\n"
-                "version_mismatch=[]\n"
-                "import_missing=[]\n"
-                "seen=[]\n"
-                "for raw in open('/tmp/requirements.txt', encoding='utf-8'):\n"
-                "    line=raw.strip()\n"
-                "    if not line or line.startswith('#') or line.startswith(('-', '--')) or '://' in line or line.startswith(('git+', 'http:')):\n"
-                "        continue\n"
-                "    try:\n"
-                "        req=Requirement(line)\n"
-                "        name=req.name\n"
-                "        specifier=req.specifier\n"
-                "    except InvalidRequirement:\n"
-                "        name=line.split(';',1)[0].split('[',1)[0].strip()\n"
-                "        name=re.split(r'===|==|>=|<=|~=|!=|>|<', name, 1)[0].strip()\n"
-                "        specifier=None\n"
-                "    if not name:\n"
-                "        continue\n"
-                "    try:\n"
-                "        version=md.version(name)\n"
-                "        seen.append(f'{name}=={version}')\n"
-                "        if specifier:\n"
-                "            try:\n"
-                "                if Version(version) not in specifier:\n"
-                "                    version_mismatch.append(f'{name}=={version} not in {specifier}')\n"
-                "            except InvalidVersion:\n"
-                "                version_mismatch.append(f'{name}=={version} invalid version for {specifier}')\n"
-                "        minimum=min_versions.get(name.lower())\n"
-                "        if minimum and Version(version) < Version(minimum):\n"
-                "            version_too_low.append(f'{name}=={version} < {minimum}')\n"
-                "        for mod in import_names.get(name.lower(), []):\n"
-                "            try:\n"
-                "                importlib.import_module(mod)\n"
-                "            except Exception as exc:\n"
-                "                import_missing.append(f'{mod}: {exc}')\n"
-                "    except md.PackageNotFoundError:\n"
-                "        missing.append(name)\n"
-                "for item in seen:\n"
-                "    print(item)\n"
-                "print('requirements_precheck_end')\n"
-                "if not missing and not version_too_low and not version_mismatch and not import_missing:\n"
-                "    Path('/tmp/requirements.preinstalled').write_text('1', encoding='utf-8')\n"
-                "    print('requirements_precheck_satisfied')\n"
-                "else:\n"
-                "    if missing:\n"
-                "        print('requirements_precheck_missing:' + ', '.join(missing))\n"
-                "    if version_too_low:\n"
-                "        print('requirements_precheck_version_too_low:' + '; '.join(version_too_low))\n"
-                "    if version_mismatch:\n"
-                "        print('requirements_precheck_version_mismatch:' + '; '.join(version_mismatch))\n"
-                "    if import_missing:\n"
-                "        print('requirements_precheck_import_missing:' + '; '.join(import_missing))\n"
-                "PY\n"
-                "if [ -f /tmp/requirements.preinstalled ]; then\n"
-                "  echo 'requirements_install_skip reason=already_satisfied';\n"
-                "else\n"
-                "  python3 -m pip install --disable-pip-version-check --no-input -r /tmp/requirements.txt;\n"
-                "fi\n"
-                "python3 - <<'PY'\n"
-                "import importlib, importlib.metadata as md\n"
-                "from packaging.requirements import InvalidRequirement, Requirement\n"
-                "from packaging.version import InvalidVersion, Version\n"
-                "import re\n"
-                "print('requirements_verify_start')\n"
-                "missing=[]\n"
-                "import_missing=[]\n"
-                "version_too_low=[]\n"
-                "version_mismatch=[]\n"
-                "seen=[]\n"
-                "import_names={'xlrd':['xlrd'], 'openpyxl':['openpyxl'], 'pandas':['pandas']}\n"
-                "min_versions={'xlrd':'2.0.1'}\n"
-                "for raw in open('/tmp/requirements.txt', encoding='utf-8'):\n"
-                "    line=raw.strip()\n"
-                "    if not line or line.startswith('#') or line.startswith(('-', '--')) or '://' in line or line.startswith(('git+', 'http:')):\n"
-                "        continue\n"
-                "    try:\n"
-                "        req=Requirement(line)\n"
-                "        name=req.name\n"
-                "        specifier=req.specifier\n"
-                "    except InvalidRequirement:\n"
-                "        name=line.split(';',1)[0].split('[',1)[0].strip()\n"
-                "        name=re.split(r'===|==|>=|<=|~=|!=|>|<', name, 1)[0].strip()\n"
-                "        specifier=None\n"
-                "    if not name:\n"
-                "        continue\n"
-                "    try:\n"
-                "        version=md.version(name)\n"
-                "        seen.append(f'{name}=={version}')\n"
-                "        if specifier:\n"
-                "            try:\n"
-                "                if Version(version) not in specifier:\n"
-                "                    version_mismatch.append(f'{name}=={version} not in {specifier}')\n"
-                "            except InvalidVersion:\n"
-                "                version_mismatch.append(f'{name}=={version} invalid version for {specifier}')\n"
-                "        minimum=min_versions.get(name.lower())\n"
-                "        if minimum and Version(version) < Version(minimum):\n"
-                "            version_too_low.append(f'{name}=={version} < {minimum}')\n"
-                "        for mod in import_names.get(name.lower(), []):\n"
-                "            try:\n"
-                "                importlib.import_module(mod)\n"
-                "                print(f'import_ok:{mod}')\n"
-                "            except Exception as exc:\n"
-                "                import_missing.append(f'{mod}: {exc}')\n"
-                "    except md.PackageNotFoundError:\n"
-                "        missing.append(name)\n"
-                "for item in seen:\n"
-                "    print(item)\n"
-                "print('requirements_verify_end')\n"
-                "if missing:\n"
-                "    raise SystemExit('missing packages after pip install: ' + ', '.join(missing))\n"
-                "if version_too_low:\n"
-                "    raise SystemExit('packages installed but version too low: ' + '; '.join(version_too_low))\n"
-                "if version_mismatch:\n"
-                "    raise SystemExit('packages installed but specifier mismatch: ' + '; '.join(version_mismatch))\n"
-                "if import_missing:\n"
-                "    raise SystemExit('packages installed but import failed: ' + '; '.join(import_missing))\n"
-                "PY\n"
-                "if [ \"${SANDBOX_AUTO_INSTALL_BROWSERS:-0}\" = \"1\" ] && grep -Eiq '^(playwright|patchright)([<=> ]|$)' /tmp/requirements.txt; then\n"
-                "  echo 'browser_install_start variant='\"${SANDBOX_IMAGE_VARIANT:-}\";\n"
-                "  if python3 -m patchright --help >/dev/null 2>&1; then\n"
-                "    python3 -m patchright install chromium || python3 -m playwright install chromium\n"
-                "  else\n"
-                "    python3 -m playwright install chromium\n"
-                "  fi\n"
-                "  echo 'browser_install_done'\n"
-                "fi"
-            ),
-        ]
-        env = {**_sandbox_default_environment(), **dict(policy.environment or {}), "SANDBOX_REQUIREMENTS_B64": b64}
-        will_install_browsers = bool(
-            str(env.get("SANDBOX_AUTO_INSTALL_BROWSERS") or "").strip() == "1"
-            and (req_summary["has_playwright"] or req_summary["has_patchright"])
-        )
-        logger.info(
-            "st49_sandbox_requirements_install_start code=requirements_install_start user_id=%s dep_hash=%s sandbox_id=%s image_ref=%s variant=%s req_bytes=%s package_count=%s package_preview=%s will_install_browsers=%s timeout_ms=%s",
-            user_id,
-            dep_hash,
-            str((handle.metadata or {}).get("sandbox_id") or ""),
-            str((handle.metadata or {}).get("image_ref") or ""),
-            str(env.get("SANDBOX_IMAGE_VARIANT") or ""),
-            len(normalized.encode("utf-8")),
-            req_summary["count"],
-            ",".join(req_summary["preview"]),
-            will_install_browsers,
-            max(120_000, int(policy.timeout_ms or 120_000)),
-        )
-        try:
-            if hasattr(self._adapter, "exec_command"):
-                install_result = await self._adapter.exec_command(
-                    handle,
-                    cmd,
-                    cwd="/",
-                    timeout_ms=max(120_000, int(policy.timeout_ms or 120_000)),
-                    env=env,
-                )  # type: ignore[attr-defined]
-                exit_code = _command_exit_code(install_result)
-                stdout, stderr = _command_output(install_result)
-                if "requirements_verify_end" not in stdout:
-                    logger.warning(
-                        "st49_sandbox_requirements_install_failed code=requirements_install_incomplete user_id=%s dep_hash=%s sandbox_id=%s complete=%s stdout_tail=%r stderr_tail=%r",
-                        user_id,
-                        dep_hash,
-                        str((handle.metadata or {}).get("sandbox_id") or ""),
-                        install_result.get("complete") if isinstance(install_result, dict) else "",
-                        _tail(stdout),
-                        _tail(stderr),
-                    )
-                    raise RuntimeError(
-                        "沙箱 requirements 安装未完成或输出不完整"
-                        f"。stdout_tail={_tail(stdout)} stderr_tail={_tail(stderr)}"
-                    )
-                if isinstance(exit_code, int) and exit_code != 0:
-                    logger.warning(
-                        "st49_sandbox_requirements_install_failed code=requirements_install_nonzero user_id=%s dep_hash=%s exit_code=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
-                        user_id,
-                        dep_hash,
-                        exit_code,
-                        str((handle.metadata or {}).get("sandbox_id") or ""),
-                        _tail(stdout),
-                        _tail(stderr),
-                    )
-                    raise RuntimeError(
-                        "沙箱 requirements 安装失败"
-                        f"（exit_code={exit_code}）。stdout_tail={_tail(stdout)} stderr_tail={_tail(stderr)}"
-                    )
-                handle.metadata["installed_requirements_hash"] = dep_hash
-                handle.metadata["verified_requirements_hash"] = dep_hash
-                handle.metadata["requirements_verifier_version"] = _REQUIREMENTS_VERIFIER_VERSION
-                handle.metadata[_REQUIREMENTS_REAL_VERIFIED_AT_KEY] = time.time()
-                elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-                logger.info(
-                    "st49_sandbox_requirements_install_done code=requirements_install_done user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s",
-                    user_id,
-                    dep_hash,
-                    elapsed_ms,
-                    str((handle.metadata or {}).get("sandbox_id") or ""),
-                    str((handle.metadata or {}).get("image_ref") or ""),
-                )
-                logger.debug(
-                    "st49_sandbox_requirements_install_output code=requirements_install_output user_id=%s dep_hash=%s sandbox_id=%s stdout_tail=%r stderr_tail=%r",
-                    user_id,
-                    dep_hash,
-                    str((handle.metadata or {}).get("sandbox_id") or ""),
-                    _tail(stdout, 2000),
-                    _tail(stderr, 2000),
-                )
-            else:
-                logger.warning(
-                    "st49_sandbox_requirements_install_skipped code=adapter_no_exec_command user_id=%s dep_hash=%s sandbox_id=%s image_ref=%s",
-                    user_id,
-                    dep_hash,
-                    str((handle.metadata or {}).get("sandbox_id") or ""),
-                    str((handle.metadata or {}).get("image_ref") or ""),
-                )
-        except Exception as e:
-            # 不更新 hash：下次仍会重试，便于用户修复 requirements 后再次验证
-            elapsed_ms = int((time.perf_counter() - started_at) * 1000)
-            logger.warning(
-                "st49_sandbox_requirements_install_failed code=requirements_install_exception user_id=%s dep_hash=%s elapsed_ms=%s sandbox_id=%s image_ref=%s err=%s",
-                user_id,
-                dep_hash,
-                elapsed_ms,
-                str((handle.metadata or {}).get("sandbox_id") or ""),
-                str((handle.metadata or {}).get("image_ref") or ""),
-                str(e),
-            )
-            raise
-
-    async def _ensure_workspace_handle(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        turn_id: str,
-        tool_call_id: str,
-        timeout_ms: int,
-    ) -> SandboxHandle:
-        host_sessions_root = host_sessions_root_from_workspace(workspace_path)
-        policy = workspace_only_policy(host_sessions_root, timeout_ms=timeout_ms)
-        req = SandboxExecutionRequest(
-            user_id=user_id,
-            session_id=session_id,
-            turn_id=turn_id,
-            tool_call_id=tool_call_id,
-            tool_name="__sandbox_workspace_fs__",
-            tool_kind="internal",
-            payload={},
-            timeout_ms=policy.timeout_ms,
-            runner=lambda: asyncio.sleep(0),
-            workspace_path=workspace_path,
-            policy=policy,
-        )
-        return await self._ensure_user_handle(req, policy)
-
-    async def read_workspace_text(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        rel_path: str,
-        turn_id: str = "workspace-fs",
-        tool_call_id: str = "read",
-    ) -> str:
-        started_at = time.perf_counter()
-        session_rel = normalize_rel_path(rel_path)
-        text = read_workspace_text_on_host(workspace_path=workspace_path, rel_path=session_rel)
-        logger.info(
-            "sandbox_workspace_read_host_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s",
-            user_id,
-            session_id,
-            session_rel,
-            len(text.encode("utf-8")),
-            int((time.perf_counter() - started_at) * 1000),
-        )
-        return text
-
-    async def write_workspace_text(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        rel_path: str,
-        content: str,
-        turn_id: str = "workspace-fs",
-        tool_call_id: str = "write",
-    ) -> None:
-        started_at = time.perf_counter()
-        session_rel = normalize_rel_path(rel_path)
-        session_rel, byte_count = write_workspace_text_on_host(
-            workspace_path=workspace_path,
-            rel_path=session_rel,
-            content=content,
-        )
-        logger.info(
-            "sandbox_workspace_write_host_done user_id=%s session_id=%s path=%s bytes=%s elapsed_ms=%s",
-            user_id,
-            session_id,
-            session_rel,
-            byte_count,
-            int((time.perf_counter() - started_at) * 1000),
-        )
-
-    async def mkdir_workspace(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        rel_path: str,
-        turn_id: str = "workspace-fs",
-    ) -> None:
-        started_at = time.perf_counter()
-        session_rel = normalize_rel_path(rel_path)
-        session_rel = mkdir_workspace_on_host(workspace_path=workspace_path, rel_path=session_rel)
-        logger.info(
-            "sandbox_workspace_mkdir_host_done user_id=%s session_id=%s path=%s elapsed_ms=%s",
-            user_id,
-            session_id,
-            session_rel,
-            int((time.perf_counter() - started_at) * 1000),
-        )
-
-    async def list_workspace_files_flat(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        rel_prefix: str = "",
-        turn_id: str = "workspace-fs",
-    ) -> List[Dict[str, Any]]:
-        started_at = time.perf_counter()
-        root_rel = normalize_rel_path(rel_prefix)
-        items = list_workspace_files_on_host(
-            workspace_path=workspace_path,
-            session_id=session_id,
-            rel_prefix=root_rel,
-        )
-        logger.info(
-            "sandbox_workspace_list_host_done user_id=%s session_id=%s path=%s count=%s elapsed_ms=%s",
-            user_id,
-            session_id,
-            root_rel or ".",
-            len(items or []),
-            int((time.perf_counter() - started_at) * 1000),
-        )
-        return items
-
-    async def exec_workspace_shell(
-        self,
-        *,
-        user_id: str,
-        session_id: str,
-        workspace_path: Path,
-        argv: List[str],
-        turn_id: str = "workspace-fs",
-        tool_call_id: str = "exec",
-        timeout_ms: int = 120_000,
-    ) -> Dict[str, Any]:
-        started_at = time.perf_counter()
-        host_result = exec_workspace_shell_on_host(
-            session_id=session_id,
-            workspace_path=workspace_path,
-            argv=argv,
-        )
-        if host_result is not None:
-            logger.info(
-                "sandbox_workspace_exec_host_done user_id=%s session_id=%s argv0=%s argc=%s exit_code=%s elapsed_ms=%s",
-                user_id,
-                session_id,
-                str(argv[0] if argv else ""),
-                len(argv or []),
-                host_result.get("exit_code"),
-                int((time.perf_counter() - started_at) * 1000),
-            )
-            return host_result
-        handle = await self._ensure_workspace_handle(
-            user_id=user_id,
-            session_id=session_id,
-            workspace_path=workspace_path,
-            turn_id=turn_id,
-            tool_call_id=tool_call_id,
-            timeout_ms=timeout_ms,
-        )
-        if hasattr(self._adapter, "exec_command"):
-            sandbox_id = str((handle.metadata or {}).get("sandbox_id") or "")
-            try:
-                result = await self._adapter.exec_command(
-                    handle,
-                    argv,
-                    cwd=sandbox_session_dir(session_id),
-                    timeout_ms=timeout_ms,
-                )  # type: ignore[attr-defined]
-                logger.info(
-                    "sandbox_workspace_exec_done user_id=%s session_id=%s argv0=%s argc=%s exit_code=%s elapsed_ms=%s sandbox_id=%s",
-                    user_id,
-                    session_id,
-                    str(argv[0] if argv else ""),
-                    len(argv or []),
-                    result.get("exit_code") if isinstance(result, dict) else "",
-                    int((time.perf_counter() - started_at) * 1000),
-                    sandbox_id,
-                )
-                return result
-            except Exception as e:
-                logger.warning(
-                    "sandbox_workspace_exec_failed user_id=%s session_id=%s argv0=%s argc=%s elapsed_ms=%s sandbox_id=%s err=%s",
-                    user_id,
-                    session_id,
-                    str(argv[0] if argv else ""),
-                    len(argv or []),
-                    int((time.perf_counter() - started_at) * 1000),
-                    sandbox_id,
-                    str(e)[:500],
-                )
-                raise
-        raise RuntimeError("当前沙箱适配器不支持 exec_command，无法执行目录/重命名等 shell 操作。")
-
     async def execute(self, req: SandboxExecutionRequest) -> Dict[str, Any]:
         policy = await self._build_policy(req)
         cwd = resolve_cwd(policy, session_id=req.session_id, cwd=req.cwd)
@@ -1325,7 +554,7 @@ class SandboxService:
                         "runner": req.runner,
                         "cwd": cwd,
                         "command": command if isinstance(command, list) else None,
-                            "env": env,
+                        "env": env,
                     },
                 )
                 if isinstance(result, dict):
@@ -1434,19 +663,6 @@ class SandboxService:
                 raise RuntimeError(f"{exc} | sandbox_diag={json.dumps(diag, ensure_ascii=False)}") from exc
         raise RuntimeError("sandbox execution failed without terminal error")
 
-    async def dispose_user(self, user_id: str, *, turn_id: str = "") -> None:
-        async with self._lock:
-            keys = [k for k in list(self._user_handles.keys()) if k == user_id or k.startswith(f"{user_id}:")]
-            handles = [(k, self._user_handles.pop(k)) for k in keys]
-        for _k, (_handle, _) in handles:
-            await self._adapter.dispose_sandbox(_handle)
-            append_sandbox_event(
-                session_id=user_id,
-                event_type="sandbox_session_disposed",
-                turn_id=turn_id,
-                payload={"sandbox_id": _handle.metadata.get("sandbox_id", ""), "user_id": user_id},
-            )
-
     async def dispose_session(self, session_id: str, *, turn_id: str = "") -> None:
         if not self._session_isolation:
             append_sandbox_event(
@@ -1476,164 +692,3 @@ class SandboxService:
                     "mode": "user_session_sandbox",
                 },
             )
-
-    async def prewarm_user_sandbox(
-        self,
-        user_id: str,
-        *,
-        reason: str = "manual",
-        timeout_ms: int = 60_000,
-    ) -> Dict[str, Any]:
-        """提前创建并缓存用户级沙箱，减少首次工具调用冷启动延迟。"""
-        uid = (user_id or "").strip()
-        if not uid:
-            raise ValueError("user_id is required")
-        user_ctx = get_user_context_for(uid)
-        workspaces_subdir = (os.getenv("WORKSPACES_SUBDIR") or "workspaces").strip() or "workspaces"
-        workspaces_root = (user_ctx.agent_outputs_dir / workspaces_subdir).resolve()
-        workspaces_root.mkdir(parents=True, exist_ok=True)
-        policy = workspace_with_skills_policy(
-            workspaces_root,
-            skills_root_path=user_ctx.skills_dir.resolve(),
-            timeout_ms=timeout_ms,
-        )
-        policy = apply_fixed_resource_policy(
-            policy,
-            fixed_cpu=self._fixed_cpu,
-            fixed_memory_mb=self._fixed_memory_mb,
-            default_env=_sandbox_default_environment(),
-        )
-        policy = apply_user_image_policy(policy, uid)
-        if (self._read_user_sandbox_requirements(uid) or "").strip() and not policy.allow_network:
-            policy = replace(policy, allow_network=True)
-        req = SandboxExecutionRequest(
-            user_id=uid,
-            session_id=f"prewarm:{uid}",
-            turn_id=f"prewarm:{reason}",
-            tool_call_id=f"prewarm:{reason}",
-            tool_name="__sandbox_prewarm__",
-            tool_kind="internal",
-            payload={},
-            timeout_ms=policy.timeout_ms,
-            runner=lambda: asyncio.sleep(0),
-            workspace_path=workspaces_root,
-            policy=policy,
-        )
-        handle = await self._ensure_user_handle(req, policy)
-        if hasattr(self._adapter, "exec_command"):
-            try:
-                await self._adapter.exec_command(  # type: ignore[attr-defined]
-                    handle,
-                    ["sh", "-lc", "true"],
-                    cwd="/",
-                    timeout_ms=min(10_000, int(policy.timeout_ms)),
-                )
-            except Exception as e:  # noqa: BLE001
-                if self._is_sandbox_not_found_error(e):
-                    await self._invalidate_user_handle(uid, expected_handle=handle)
-                    handle = await self._ensure_user_handle(req, policy)
-                else:
-                    raise
-        return {
-            "status": "ok",
-            "user_id": uid,
-            "sandbox_id": str((handle.metadata or {}).get("sandbox_id") or ""),
-            "image_ref": str((handle.metadata or {}).get("image_ref") or ""),
-            "requirements_hash": self._requirements_hash_for_user(uid),
-            "installed_requirements_hash": str((handle.metadata or {}).get("installed_requirements_hash") or ""),
-            "verified_requirements_hash": str((handle.metadata or {}).get("verified_requirements_hash") or ""),
-            "requirements_verifier_version": str((handle.metadata or {}).get("requirements_verifier_version") or ""),
-            "requirements_real_verified_at": float((handle.metadata or {}).get(_REQUIREMENTS_REAL_VERIFIED_AT_KEY) or 0),
-            "backend": self.backend_label(),
-            "reason": reason,
-        }
-
-    async def prewarm_all_known_users(
-        self,
-        *,
-        reason: str = "startup",
-        timeout_ms: int = 60_000,
-    ) -> Dict[str, Any]:
-        root = users_data_root()
-        if not root.exists():
-            return {"status": "ok", "users_total": 0, "ok": 0, "failed": 0, "errors": []}
-        users = sorted([p.name for p in root.iterdir() if p.is_dir() and p.name.strip()])
-        ok_count = 0
-        errors: List[Dict[str, str]] = []
-        for uid in users:
-            try:
-                await self.prewarm_user_sandbox(uid, reason=reason, timeout_ms=timeout_ms)
-                ok_count += 1
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("sandbox_prewarm_known_user_failed user=%s err=%s", uid, exc)
-                errors.append({"user_id": uid, "error": str(exc)})
-        return {
-            "status": "ok",
-            "users_total": len(users),
-            "ok": ok_count,
-            "failed": len(errors),
-            "errors": errors,
-        }
-
-    async def cleanup_orphan_sandboxes_on_startup(self) -> Dict[str, Any]:
-        """Best-effort cleanup for OpenSandbox containers left by a previous backend process."""
-        if not _env_truthy("SANDBOX_CLEANUP_ORPHANS_ON_START", default="1"):
-            logger.info("sandbox_orphan_cleanup_disabled")
-            return {"enabled": False, "deleted": [], "failed": []}
-        if not hasattr(self._adapter, "cleanup_orphan_sandboxes"):
-            logger.info("sandbox_orphan_cleanup_skipped reason=adapter_unsupported backend=%s", self.backend_label())
-            return {"enabled": True, "skipped": "adapter_unsupported", "deleted": [], "failed": []}
-        if isinstance(self._adapter, OpenSandboxAdapter):
-            reachable, target = _opensandbox_lifecycle_reachable()
-            if not reachable:
-                logger.warning(
-                    "sandbox_orphan_cleanup_skipped reason=opensandbox_unreachable target=%s",
-                    target,
-                )
-                return {
-                    "enabled": True,
-                    "skipped": "opensandbox_unreachable",
-                    "target": target,
-                    "deleted": [],
-                    "failed": [],
-                }
-        min_age_sec = _env_int("SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC") or 60
-        include_legacy = _env_truthy("SANDBOX_ORPHAN_CLEANUP_LEGACY_IMAGE_MATCH", default="1")
-        async with self._lock:
-            active_ids = {
-                str((handle.metadata or {}).get("sandbox_id") or "").strip()
-                for handle, _touched in self._user_handles.values()
-                if isinstance(handle.metadata, dict)
-            }
-        active_ids.discard("")
-        known_images = {
-            str(value or "").strip()
-            for value in configured_sandbox_images().values()
-            if str(value or "").strip()
-        }
-        logger.info(
-            "sandbox_orphan_cleanup_start backend=%s active_count=%s known_image_count=%s min_age_sec=%s legacy_image_match=%s",
-            self.backend_label(),
-            len(active_ids),
-            len(known_images),
-            min_age_sec,
-            include_legacy,
-        )
-        result = await self._adapter.cleanup_orphan_sandboxes(  # type: ignore[attr-defined]
-            active_sandbox_ids=active_ids,
-            known_images=known_images,
-            min_age_sec=min_age_sec,
-            include_legacy_image_match=include_legacy,
-        )
-        deleted = list((result or {}).get("deleted") or [])
-        failed = list((result or {}).get("failed") or [])
-        logger.info(
-            "sandbox_orphan_cleanup_done scanned=%s deleted=%s failed=%s skipped_active=%s skipped_young=%s skipped_unmanaged=%s",
-            int((result or {}).get("scanned") or 0),
-            len(deleted),
-            len(failed),
-            int((result or {}).get("skipped_active") or 0),
-            int((result or {}).get("skipped_young") or 0),
-            int((result or {}).get("skipped_unmanaged") or 0),
-        )
-        return {"enabled": True, **dict(result or {})}

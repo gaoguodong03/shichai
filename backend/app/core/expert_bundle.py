@@ -25,7 +25,7 @@ def merge_single_expert_into_instances(
     合并单条专家。id_conflict: skip | overwrite（按 name 判冲突）。
     返回 (新列表, 最终 agent_id, 是否因同名跳过, 被覆盖的旧 agent_id 列表)。
     """
-    from app.core.scenario_bundle import strip_dha_row_for_disk
+    from app.core.scenario_bundle import strip_agent_row_for_disk
 
     order: List[str] = []
     by_id: Dict[str, Dict[str, Any]] = {}
@@ -35,9 +35,9 @@ def merge_single_expert_into_instances(
             continue
         if aid not in by_id:
             order.append(aid)
-        by_id[aid] = strip_dha_row_for_disk(dict(d))
+        by_id[aid] = strip_agent_row_for_disk(dict(d))
 
-    work = strip_dha_row_for_disk(dict(expert_row))
+    work = strip_agent_row_for_disk(dict(expert_row))
     aid0 = str(work.get("agent_id") or "").strip()
     incoming_name_key = str(work.get("name") or "").strip().lower()
     same_name_ids = [
@@ -93,11 +93,11 @@ def build_expert_bundle_zip_bytes(
     skills_root: Path,
     skill_ids: List[str],
 ) -> bytes:
-    from app.core.scenario_bundle import strip_dha_row_for_disk
+    from app.core.scenario_bundle import strip_agent_row_for_disk
     from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
 
     buf = io.BytesIO()
-    clean = strip_dha_row_for_disk(dict(expert_row))
+    clean = strip_agent_row_for_disk(dict(expert_row))
     manifest = {
         "bundle_version": EXPERT_BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),

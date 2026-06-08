@@ -81,7 +81,7 @@ def _get_skills_dir() -> Path:
 
 
 def skill_has_skill_md(skill_id: str) -> bool:
-    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 DHA 里陈旧 skill_id 指向空壳目录。"""
+    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 Agent 里陈旧 skill_id 指向空壳目录。"""
     sid = (skill_id or "").strip()
     if not sid:
         return False
@@ -166,13 +166,9 @@ def _load_manifest(script_root: Path) -> dict[str, Any]:
 
 
 def _script_meta_for(manifest: dict[str, Any], script_path: str) -> dict[str, Any]:
-    """从 manifest 中取脚本配置（精确匹配文件名，兼容 basename 兜底）。"""
+    """从 manifest 中按脚本相对路径精确读取配置。"""
     meta = manifest.get(script_path)
-    if isinstance(meta, dict):
-        return meta
-    basename = Path(script_path).name
-    fallback = manifest.get(basename)
-    return fallback if isinstance(fallback, dict) else {}
+    return meta if isinstance(meta, dict) else {}
 
 
 def _parse_input_json(input_json: str) -> tuple[Any, str | None]:
@@ -353,18 +349,11 @@ def _build_sandbox_script_command(
     script_path: str,
     suffix: str,
     extra_argv: list[str] | None = None,
-    legacy_script_path: str | None = None,
 ) -> list[str]:
     """构造在沙箱内执行脚本的命令（不依赖宿主机解释器路径）。"""
     argv = list(extra_argv or [])
     quoted_argv = " ".join(shlex.quote(a) for a in argv)
     script_choice = f'echo {shlex.quote(script_path)}'
-    if legacy_script_path:
-        script_choice = (
-            f'if [ -f {shlex.quote(script_path)} ]; then echo {shlex.quote(script_path)}; '
-            f'elif [ -f {shlex.quote(legacy_script_path)} ]; then echo {shlex.quote(legacy_script_path)}; '
-            f'else echo {shlex.quote(script_path)}; fi'
-        )
     if suffix == ".py":
         # 兼容最小镜像：优先 python3，回退 python
         write_requirements = (
@@ -466,12 +455,10 @@ def _build_sandbox_exec_request(
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
     skill_home = f"{SANDBOX_SKILLS_ROOT}/{skill_id}"
     sandbox_script_path = f"{skill_home}/scripts/{script_path.lstrip('/')}"
-    legacy_sandbox_script_path = f"/skill/scripts/{script_path.lstrip('/')}"
     base_argv = _build_sandbox_script_command(
         sandbox_script_path,
         suffix,
         cli_argv,
-        legacy_script_path=legacy_sandbox_script_path,
     )
     quoted = " ".join(shlex.quote(str(x)) for x in base_argv)
     env: dict[str, str] = {}
@@ -613,7 +600,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
     owner_user_id = _get_current_user_id()
     skill_home = (skills_dir / skill_id).resolve()
     script_root = (skill_home / "scripts").resolve()
-    # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 DHA）生成空壳目录
+    # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
@@ -646,7 +633,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         manifest = _load_manifest(script_root)
 
         # 兼容 LLM 把整个 JSON 对象字符串塞进 script_path 的情况，例如：
-        # script_path='{"script_path": "hello_dha.py", "input_json": ""}'
+        # script_path='{"script_path": "hello_agent.py", "input_json": ""}'
         raw_script_param = (script_path or "").strip()
         try:
             if raw_script_param.startswith("{") and raw_script_param.endswith("}"):

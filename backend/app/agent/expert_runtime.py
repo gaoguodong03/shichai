@@ -1,6 +1,6 @@
 """Expert runtime entrypoint.
 
-An expert is stored as a DHA/profile dict, but this module gives one expert
+An expert is stored as an Agent/profile dict, but this module gives one expert
 turn a clear build path: resolve Skill -> build tools -> create executable agent.
 """
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
+from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.group_orchestration_fsm import clear_skill_session_lock, locked_skill_id_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
@@ -30,7 +31,7 @@ class ExpertTurnRuntime:
     """Callable-ish runtime bundle for a single expert turn."""
 
     agent_id: str
-    dha: Dict[str, Any]
+    agent_profile: Dict[str, Any]
     skill_id: str = ""
     skill_content: str = ""
     skill_route_debug: Dict[str, Any] = field(default_factory=dict)
@@ -41,13 +42,6 @@ class ExpertTurnRuntime:
     @property
     def blocked(self) -> bool:
         return not self.skill_id or not self.skill_content or self.agent is None
-
-
-def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:
-    for m in reversed(messages or []):
-        if isinstance(m, dict) and m.get("role") == "user":
-            return str(m.get("content") or "").strip()
-    return ""
 
 
 def _extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
@@ -138,7 +132,7 @@ async def expert_llm_pick_skill_id(
 
 async def resolve_expert_skill(
     *,
-    dha: Dict[str, Any],
+    agent_profile: Dict[str, Any],
     agent_id: str,
     discussion_goal: str,
     messages: List[Dict[str, Any]],
@@ -152,7 +146,7 @@ async def resolve_expert_skill(
 ) -> Tuple[str, str, Dict[str, Any]]:
     """Resolve the Skill for one expert turn; locked Skill sessions win."""
     _ = app_settings, ignored_auto_skill_id
-    skill_ids = [str(x).strip() for x in (dha.get("skill_ids") or []) if str(x).strip()]
+    skill_ids = [str(x).strip() for x in (agent_profile.get("skill_ids") or []) if str(x).strip()]
 
     owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
     locked_raw = str(meta_item.get("skill_session_skill_id") or "").strip()
@@ -186,7 +180,7 @@ async def resolve_expert_skill(
             "candidate_skill_ids": loaded_skill_ids,
         }
 
-    llm = llm_resolver(dha)
+    llm = llm_resolver(agent_profile)
     picked, debug = await expert_llm_pick_skill_id(
         llm,
         skills_loader,
@@ -196,7 +190,7 @@ async def resolve_expert_skill(
         round_user_text,
         group_session_id=group_session_id,
         agent_id=agent_id,
-        llm_provider_id=str(dha.get("llm_provider_id") or app_settings.get("default_llm") or ""),
+        llm_provider_id=str(agent_profile.get("llm_provider_id") or app_settings.get("default_llm") or ""),
     )
     if picked:
         content = skills_loader.get_skill_full_content(picked)
@@ -211,7 +205,7 @@ async def resolve_expert_skill(
 
 async def build_expert_turn_runtime(
     *,
-    dha: Dict[str, Any],
+    agent_profile: Dict[str, Any],
     agent_id: str,
     group_session_id: str,
     discussion_goal: str,
@@ -228,7 +222,7 @@ async def build_expert_turn_runtime(
 ) -> ExpertTurnRuntime:
     """Build the executable expert turn runtime."""
     skill_id, base_skill_content, route_debug = await resolve_expert_skill(
-        dha=dha,
+        agent_profile=agent_profile,
         agent_id=agent_id,
         discussion_goal=discussion_goal,
         messages=messages,
@@ -242,7 +236,7 @@ async def build_expert_turn_runtime(
     )
     runtime = ExpertTurnRuntime(
         agent_id=agent_id,
-        dha=dha,
+        agent_profile=agent_profile,
         skill_id=skill_id,
         skill_content=base_skill_content,
         skill_route_debug=route_debug,
@@ -250,18 +244,18 @@ async def build_expert_turn_runtime(
     if not skill_id or not base_skill_content:
         return runtime
 
-    tools = await tool_builder(dha, group_session_id, skill_id)
+    tools = await tool_builder(agent_profile, group_session_id, skill_id)
     skill_content = base_skill_content
-    dha_system = (dha.get("system_prompt") or "").strip()
-    role = dha.get("role") or ""
-    if dha_system:
-        skill_content = f"{dha_system}\n\n{skill_content}"
+    agent_system = (agent_profile.get("system_prompt") or "").strip()
+    role = agent_profile.get("role") or ""
+    if agent_system:
+        skill_content = f"{agent_system}\n\n{skill_content}"
     if role:
         skill_content = f"你的角色：{role}\n\n{skill_content}"
     skill_content += GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 
-    llm = llm_resolver(dha)
-    expert_self_awareness = build_expert_self_awareness_block(dha, skills_loader)
+    llm = llm_resolver(agent_profile)
+    expert_self_awareness = build_expert_self_awareness_block(agent_profile, skills_loader)
     agent = agent_factory(
         llm,
         tools,

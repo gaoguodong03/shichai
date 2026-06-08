@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 
-def build_expert_self_awareness_block(dha: Dict[str, Any], skills_loader: Any) -> str:
+def build_expert_self_awareness_block(agent_profile: Dict[str, Any], skills_loader: Any) -> str:
     """构建专家“自我认知”提示块，列出绑定技能及描述。"""
-    ids = [str(x).strip() for x in (dha.get("skill_ids") or []) if str(x).strip()]
+    ids = [str(x).strip() for x in (agent_profile.get("skill_ids") or []) if str(x).strip()]
     if not ids:
         return ""
 

@@ -80,15 +80,13 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
         suggested_add_agent_ids = None
-        ids_raw = data.get("suggested_add_expert_ids")
-        if not isinstance(ids_raw, list) or not ids_raw:
-            ids_raw = data.get("suggested_add_agent_ids")
+        ids_raw = data.get("suggested_add_agent_ids")
         if isinstance(ids_raw, list) and ids_raw:
             cleaned = [str(x).strip() for x in ids_raw if str(x).strip()]
             if cleaned:
                 suggested_add_agent_ids = list(dict.fromkeys(cleaned))
         if not suggested_add_agent_ids:
-            sid = (data.get("suggested_add_expert_id") or data.get("suggested_add_agent_id") or "").strip()
+            sid = (data.get("suggested_add_agent_id") or "").strip()
             if sid:
                 suggested_add_agent_ids = [sid]
         suggested_order = data.get("suggested_order")
@@ -118,7 +116,6 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
             "next_prompt": next_prompt_val,
             "suggested_order": suggested_order,
             "suggested_add_agent_ids": suggested_add_agent_ids,
-            "suggested_add_expert_ids": suggested_add_agent_ids,
             "phase": phase,
             "owner_agent_id": owner_agent_id,
             "interrupt_reason": interrupt_reason,
@@ -130,30 +127,30 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def match_workspace_speaker_to_agent_id(raw_speaker: str, dha_list: List[Dict[str, Any]]) -> str:
+def match_workspace_speaker_to_agent_id(raw_speaker: str, agent_profiles: List[Dict[str, Any]]) -> str:
     raw = str(raw_speaker or "").strip()
     raw_lower = raw.lower()
     if not raw:
         return ""
     raw_agent_ids = [str(x or "").strip().lower() for x in re.findall(r"agent-[a-zA-Z0-9\-]+", raw)]
     if raw_agent_ids:
-        for dha in dha_list or []:
-            aid = str((dha or {}).get("agent_id") or "").strip()
+        for profile in agent_profiles or []:
+            aid = str((profile or {}).get("agent_id") or "").strip()
             if aid and aid.lower() in raw_agent_ids:
                 return aid
-    for dha in dha_list or []:
-        aid = str((dha or {}).get("agent_id") or "").strip()
+    for profile in agent_profiles or []:
+        aid = str((profile or {}).get("agent_id") or "").strip()
         if aid and aid.lower() == raw_lower:
             return aid
-    for dha in dha_list or []:
-        aid = str((dha or {}).get("agent_id") or "").strip()
-        name = str((dha or {}).get("name") or "").strip()
+    for profile in agent_profiles or []:
+        aid = str((profile or {}).get("agent_id") or "").strip()
+        name = str((profile or {}).get("name") or "").strip()
         if aid and name and name == raw:
             return aid
-    for dha in dha_list or []:
-        aid = str((dha or {}).get("agent_id") or "").strip()
-        name = str((dha or {}).get("name") or "").strip()
-        role = str((dha or {}).get("role") or "").strip()
+    for profile in agent_profiles or []:
+        aid = str((profile or {}).get("agent_id") or "").strip()
+        name = str((profile or {}).get("name") or "").strip()
+        role = str((profile or {}).get("role") or "").strip()
         if aid and raw and (raw in name or raw in role):
             return aid
     return ""
@@ -211,7 +208,7 @@ def extract_host_scheduler_state(content: str) -> Dict[str, str]:
 
 def host_decision_from_scheduler_state(
     state: Dict[str, str],
-    dha_list: List[Dict[str, Any]],
+    agent_profiles: List[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     raw_speaker = str((state or {}).get("next_speaker") or "").strip()
     task = str((state or {}).get("speaker_task") or "").strip()
@@ -233,7 +230,6 @@ def host_decision_from_scheduler_state(
             "next_prompt": None,
             "suggested_order": None,
             "suggested_add_agent_ids": None,
-            "suggested_add_expert_ids": None,
             "phase": None,
             "owner_agent_id": None,
             "interrupt_reason": None,
@@ -250,7 +246,6 @@ def host_decision_from_scheduler_state(
             "next_prompt": task or None,
             "suggested_order": None,
             "suggested_add_agent_ids": None,
-            "suggested_add_expert_ids": None,
             "phase": None,
             "owner_agent_id": None,
             "interrupt_reason": None,
@@ -260,11 +255,11 @@ def host_decision_from_scheduler_state(
         }
     if not task:
         return None
-    agent_id = match_workspace_speaker_to_agent_id(raw_speaker, dha_list)
+    agent_id = match_workspace_speaker_to_agent_id(raw_speaker, agent_profiles)
     if not agent_id:
         return None
-    dha = next((d for d in dha_list if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
-    name = str((dha or {}).get("name") or raw_speaker or agent_id).strip()
+    profile = next((d for d in agent_profiles if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
+    name = str((profile or {}).get("name") or raw_speaker or agent_id).strip()
     return {
         "task_done": True,
         "next_speaker": agent_id,
@@ -273,7 +268,6 @@ def host_decision_from_scheduler_state(
         "next_prompt": task,
         "suggested_order": None,
         "suggested_add_agent_ids": None,
-        "suggested_add_expert_ids": None,
         "phase": None,
         "owner_agent_id": None,
         "interrupt_reason": None,
@@ -315,10 +309,10 @@ def user_requests_host_takeover(
     return False
 
 
-def heuristic_recommend_dhas(
+def heuristic_recommend_agents(
     discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
 ) -> List[str]:
-    """Recommend DHA ids with simple keyword matching."""
+    """Recommend Agent ids with simple keyword matching."""
     goal = (discussion_goal or "").strip().lower()
     scored = []
     for d in all_instances or []:

@@ -177,7 +177,7 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     assert "sk-live-secret" not in exported_skill.content.decode("latin-1")
 
     created_expert = client.post(
-        "/api/dha/instances",
+        "/api/agents",
         json={
             "agent_id": "expert-with-skill-tool",
             "name": "带技能工具的专家",
@@ -332,7 +332,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     client = frontend_flow_client
     headers = _headers("frontend-chat@example.test")
     answer = "2+2 等于 4。"
-    monkeypatch.setattr(group_chat, "_get_llm_for_dha", lambda dha, app_settings: _FakeLLM([AIMessage(content=answer)]))
+    monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: _FakeLLM([AIMessage(content=answer)]))
 
     skill = client.post(
         "/api/settings/skills",
@@ -342,8 +342,8 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     assert skill.status_code == 200
     skill_id = skill.json()["data"]["id"]
 
-    dha = client.post(
-        "/api/dha/instances",
+    agent_profile = client.post(
+        "/api/agents",
         json={
             "agent_id": "agent-qa-flow",
             "name": "问答专家",
@@ -355,7 +355,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
         },
         headers=headers,
     )
-    assert dha.status_code == 200
+    assert agent_profile.status_code == 200
 
     create = client.post(
         "/api/sessions",
@@ -451,8 +451,8 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert secret_update.status_code == 200
     assert secret_update.json()["data"]["label"] == "测试密钥2"
 
-    dha = client.post(
-        "/api/dha/instances",
+    agent_profile = client.post(
+        "/api/agents",
         json={
             "agent_id": "agent-front-flow",
             "name": "前端流程专家",
@@ -463,14 +463,14 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         },
         headers=headers,
     )
-    assert dha.status_code == 200
-    dha_update = client.put(
-        "/api/dha/instances/agent-front-flow",
+    assert agent_profile.status_code == 200
+    agent_update = client.put(
+        "/api/agents/agent-front-flow",
         json={"role": "已更新角色"},
         headers=headers,
     )
-    assert dha_update.status_code == 200
-    assert dha_update.json()["data"]["role"] == "已更新角色"
+    assert agent_update.status_code == 200
+    assert agent_update.json()["data"]["role"] == "已更新角色"
 
     presets = client.put(
         "/api/settings/session-presets",
@@ -584,5 +584,5 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
 
     assert client.delete(f"/api/settings/mcp/{mcp_id}", headers=headers).status_code == 200
     assert client.delete(f"/api/settings/skills/{skill_id}", headers=headers).status_code == 200
-    assert client.delete("/api/dha/instances/agent-front-flow", headers=headers).status_code == 200
+    assert client.delete("/api/agents/agent-front-flow", headers=headers).status_code == 200
     assert client.delete("/api/settings/api-secrets/TEST_KEY", headers=headers).status_code == 200

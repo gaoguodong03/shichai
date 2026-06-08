@@ -52,16 +52,3 @@ def looks_like_url_or_remote_path(path: str) -> bool:
     if pl.startswith("www."):
         return True
     return False
-
-
-def prefer_more_specific_path(user_path: str, model_path: str) -> bool:
-    """用户路径与模型路径指向同名文件时，用户是否给出了更具体的子路径（如 note/a.md vs a.md）。"""
-    u = (user_path or "").strip().replace("\\", "/")
-    m = (model_path or "").strip().replace("\\", "/")
-    if not u or not m or u == m:
-        return False
-    ub = u.split("/")[-1].lower()
-    mb = m.split("/")[-1].lower()
-    if ub != mb:
-        return False
-    return u.count("/") > m.count("/")

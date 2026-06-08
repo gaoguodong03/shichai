@@ -7,7 +7,7 @@ API Key 通过环境变量 VOLCES_IMAGE_API_KEY 传入，或在 mcp_servers.json
 使用方法：
     python volces_icon.py
 
-配置到 DHA：
+配置到 Agent：
     在 backend/config/mcp_servers.json 中添加 stdio 配置，并在 transport.env 中设置 VOLCES_IMAGE_API_KEY。
 """
 import os

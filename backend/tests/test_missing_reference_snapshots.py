@@ -38,9 +38,9 @@ def test_deleted_skill_reference_keeps_display_name(monkeypatch, tmp_path):
     try:
         ctx = get_current_user_context(default_fallback=False)
         assert ctx is not None
-        dha_path = ctx.config_dir / "dha_instances.json"
+        agents_path = ctx.config_dir / "dha_instances.json"
         preset_path = ctx.config_dir / "session_presets.json"
-        dha_path.write_text(
+        agents_path.write_text(
             json.dumps([{"agent_id": "agent-a", "name": "专家", "skill_ids": ["skill-a"]}], ensure_ascii=False),
             encoding="utf-8",
         )
@@ -54,7 +54,7 @@ def test_deleted_skill_reference_keeps_display_name(monkeypatch, tmp_path):
 
         remove_skill_id_from_user_configs("skill-a", "技能 A")
 
-        experts = json.loads(dha_path.read_text(encoding="utf-8"))
+        experts = json.loads(agents_path.read_text(encoding="utf-8"))
         presets = json.loads(preset_path.read_text(encoding="utf-8"))
         assert experts[0]["skill_ids"] == ["skill-a"]
         assert experts[0]["skill_refs"] == [{"id": "skill-a", "name": "技能 A"}]

@@ -40,15 +40,9 @@ from app.core.settings_bundle_import import (
     skill_conflict_id_map as _skill_conflict_id_map,
 )
 from app.core.scenario_bundle import (
-    build_scenario_bundle_zip_bytes,
-    collect_skill_and_mcp_ids_for_preset,
-    copy_bundle_skills_to_user,
     extract_scenario_bundle_dir,
     list_skill_ids_in_bundle_skills_dir,
-    merge_dha_instances_for_bundle,
     merge_mcp_servers_for_bundle,
-    read_bundle_manifest_and_lists,
-    strip_dha_row_for_disk,
 )
 from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
 from app.core.security import user_context_dependency
@@ -342,7 +336,7 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
 
 
 async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
-    from app.api.dha import load_dha_instances, normalize_expert_row_for_import, save_dha_instances, _dha_skills_dir
+    from app.api.agents import load_agent_instances, normalize_expert_row_for_import, save_agent_instances, _agent_skills_dir
     from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
 
     tmp: Optional[Path] = None
@@ -359,7 +353,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             raw_m = json.loads(mcp_path.read_text(encoding="utf-8"))
             if isinstance(raw_m, list):
                 mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
-        user_skills = _dha_skills_dir()
+        user_skills = _agent_skills_dir()
         skill_id_map = _skill_conflict_id_map(tmp, user_skills, skill_ids_in_zip)
         mcp_id_map = _mcp_conflict_id_map(load_mcp_config(), mcp_bundle)
         _unused_preset, remapped_experts = _remap_bundle_references(
@@ -371,7 +365,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
         norm = remapped_experts[0] if remapped_experts else norm
         same_name_agent_ids = [
             str(x.get("agent_id") or "")
-            for x in load_dha_instances()
+            for x in load_agent_instances()
             if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
         if dry_run:
@@ -415,9 +409,9 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
         instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
-            load_dha_instances(), norm, id_conflict="overwrite"
+            load_agent_instances(), norm, id_conflict="overwrite"
         )
-        save_dha_instances(instances)
+        save_agent_instances(instances)
         return {
             "object_type": "expert",
             "summary": {

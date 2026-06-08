@@ -6,36 +6,36 @@ from app.core.scenario_bundle import (
     BUNDLE_VERSION,
     build_scenario_bundle_zip_bytes,
     extract_scenario_bundle_dir,
-    merge_dha_instances_for_bundle,
+    merge_agent_instances_for_bundle,
     merge_mcp_servers_for_bundle,
     read_bundle_manifest_and_lists,
-    strip_dha_row_for_disk,
+    strip_agent_row_for_disk,
 )
 
 
-def test_merge_dha_upsert_and_append():
+def test_merge_agent_upsert_and_append():
     user = [{"agent_id": "a1", "name": "Old"}]
     bundle = [{"agent_id": "a1", "name": "New"}, {"agent_id": "a2", "name": "B"}]
-    out = merge_dha_instances_for_bundle(user, bundle, overwrite=True)
+    out = merge_agent_instances_for_bundle(user, bundle, overwrite=True)
     by = {r["agent_id"]: r["name"] for r in out}
     assert by["a1"] == "New"
     assert by["a2"] == "B"
 
 
-def test_merge_dha_overwrites_same_name_with_new_id():
+def test_merge_agent_overwrites_same_name_with_new_id():
     user = [{"agent_id": "local-a", "name": "Expert A"}, {"agent_id": "keep", "name": "Keep"}]
     bundle = [{"agent_id": "shared-a", "name": "Expert A"}]
-    out = merge_dha_instances_for_bundle(user, bundle, overwrite=True)
+    out = merge_agent_instances_for_bundle(user, bundle, overwrite=True)
     by = {r["agent_id"]: r["name"] for r in out}
     assert "local-a" not in by
     assert by["shared-a"] == "Expert A"
     assert by["keep"] == "Keep"
 
 
-def test_merge_dha_skip_overwrite():
+def test_merge_agent_skip_overwrite():
     user = [{"agent_id": "a1", "name": "Keep"}]
     bundle = [{"agent_id": "a1", "name": "New"}]
-    out = merge_dha_instances_for_bundle(user, bundle, overwrite=False)
+    out = merge_agent_instances_for_bundle(user, bundle, overwrite=False)
     assert out[0]["name"] == "Keep"
 
 
@@ -69,10 +69,10 @@ def test_roundtrip_zip_manifest():
         raw = build_scenario_bundle_zip_bytes(preset, experts, mcps, skills_root, [])
         ext = extract_scenario_bundle_dir(raw)
         try:
-            man, p, dha, mcp = read_bundle_manifest_and_lists(ext)
+            man, p, agents, mcp = read_bundle_manifest_and_lists(ext)
             assert man.get("bundle_version") == BUNDLE_VERSION
             assert p["id"] == "p1"
-            assert len(dha) == 1
+            assert len(agents) == 1
             assert len(mcp) == 1
         finally:
             shutil.rmtree(ext, ignore_errors=True)
@@ -101,7 +101,7 @@ def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
         raw = build_scenario_bundle_zip_bytes(preset, [], mcps, skills_root, [])
         ext = extract_scenario_bundle_dir(raw)
         try:
-            _man, _p, _dha, mcp = read_bundle_manifest_and_lists(ext)
+            _man, _p, _agents, mcp = read_bundle_manifest_and_lists(ext)
             env = mcp[0]["transport"]["env"]
             assert env["PLAIN_API_KEY"] == ""
             assert env["VAULT_API_KEY"] == "${vault:api-key}"
@@ -191,7 +191,7 @@ def test_session_preset_export_resolves_skill_mcp_by_reference_label_name(monkey
     assert imported_rows[0]["id"] == "stale-exa"
 
 
-def test_strip_dha():
+def test_strip_agent():
     row = {"agent_id": "a", "expert_id": "a", "file_capability_labels": []}
-    s = strip_dha_row_for_disk(row)
+    s = strip_agent_row_for_disk(row)
     assert "expert_id" not in s

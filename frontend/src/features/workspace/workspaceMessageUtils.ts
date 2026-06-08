@@ -1,6 +1,6 @@
-export type ToolRawMeta = { toolName: string; rawReturn: string }
+type ToolRawMeta = { toolName: string; rawReturn: string }
 
-export function parseToolRawResult(raw: string): ToolRawMeta {
+function parseToolRawResult(raw: string): ToolRawMeta {
   const matched = raw.match(/^工具\s+([^\s]+)\s+的执行结果:\s*/)
   if (matched) return { toolName: matched[1], rawReturn: raw.slice(matched[0].length) || raw }
   try {
@@ -41,7 +41,7 @@ export function formatToolPopover(raw: string): string {
   return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
-export function extractToolCallBlocks(content: string): string[] {
+function extractToolCallBlocks(content: string): string[] {
   const text = content || ''
   if (!text.trim()) return []
   const blocks = text.match(/```json\s*([\s\S]*?)```/gi) || []
@@ -67,7 +67,7 @@ export function getToolRawResults(msg: { content?: string; tool_raw_results?: st
   return extractToolCallBlocks(msg.content || '')
 }
 
-export function tryFormatJson(s: string): string {
+function tryFormatJson(s: string): string {
   if (!s?.trim()) return s
   try {
     const parsed = JSON.parse(s.trim())
@@ -77,12 +77,12 @@ export function tryFormatJson(s: string): string {
   }
 }
 
-export function dhaBodyContent(content: string): string {
+export function agentBodyContent(content: string): string {
   if (!content?.trim()) return ''
   return collapseBlankLines(content.trim())
 }
 
-export function escapeHtml(s: string) {
+function escapeHtml(s: string) {
   if (!s) return ''
   return s
     .replace(/&/g, '&amp;')
@@ -91,7 +91,7 @@ export function escapeHtml(s: string) {
     .replace(/"/g, '&quot;')
 }
 
-export function collapseBlankLines(s: string): string {
+function collapseBlankLines(s: string): string {
   if (!s) return ''
   return s
     .replace(/\r\n/g, '\n')
@@ -112,7 +112,7 @@ function unescapeHtmlEntities(s: string) {
     .replace(/&amp;/g, '&')
 }
 
-export function wrapToolCallPreBlocks(html: string) {
+function wrapToolCallPreBlocks(html: string) {
   if (!html) return html
 
   const wrapOne = (rawInner: string) => {
@@ -168,21 +168,21 @@ export function sanitizeWorkspaceDownloadUrl(raw: string): string {
   }
 }
 
-export function sanitizeDownloadUrlsInRenderedHtml(html: string): string {
+function sanitizeDownloadUrlsInRenderedHtml(html: string): string {
   if (!html || !html.includes('files/download')) return html
   return html.replace(/\/api\/workspaces\/[^"'>\s]+\/files\/download\?[^"'>\s]+/gi, (matched) =>
     sanitizeWorkspaceDownloadUrl(matched)
   )
 }
 
-export function rewriteDownloadImagesForAuth(html: string): string {
+function rewriteDownloadImagesForAuth(html: string): string {
   if (!html) return html
   return html.replace(
     /(<img\b[^>]*?)\s+src="([^"]*\/files\/download\?path=[^"]+)"([^>]*?>)/gi,
     (_matched, prefix, src, suffix) => {
       const clean = sanitizeWorkspaceDownloadUrl(src)
       const escaped = clean.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-      return `${prefix} data-dha-auth-src="${escaped}" src=""${suffix}`
+      return `${prefix} data-agent-auth-src="${escaped}" src=""${suffix}`
     }
   )
 }

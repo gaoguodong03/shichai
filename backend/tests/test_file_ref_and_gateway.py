@@ -52,30 +52,22 @@ def test_looks_like_url_or_remote_path():
     assert not looks_like_url_or_remote_path("memory/facts.md")
 
 
-def test_extract_path_prefers_file_ref_tag():
-    from langchain_core.messages import HumanMessage
+def test_normalize_read_file_path_argument_only_cleans_existing_argument():
+    from app.agent import skill_agent_paths
 
-    from app.agent import skill_agent_runtime as runtime
+    args = {"path": "路径是 memory/facts.md"}
+    skill_agent_paths._normalize_read_file_path_argument(args)
+    assert args.get("path") == "memory/facts.md"
 
-    msgs = [HumanMessage(content="请看【文件引用：快照｜github-weekly-snapshot.md】")]
-    assert runtime._extract_path_from_last_user_for_read(msgs) == "github-weekly-snapshot.md"
-
-
-def test_apply_read_file_replaces_url_with_file_ref_path():
-    from langchain_core.messages import HumanMessage
-
-    from app.agent import skill_agent_runtime as runtime
-
-    args = {"path": "//github.com/OpenGithubs/github-weekly-rank/blob/main/2026/04/20260406.md"}
-    msgs = [HumanMessage(content="【文件引用：github-weekly-snapshot.md｜github-weekly-snapshot.md】")]
-    runtime._apply_read_file_path_from_user_message(args, msgs)
-    assert args.get("path") == "github-weekly-snapshot.md"
+    missing = {}
+    skill_agent_paths._normalize_read_file_path_argument(missing)
+    assert missing == {}
 
 
 def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkeypatch, tmp_path):
     from langchain_core.messages import HumanMessage
 
-    from app.agent import skill_agent_runtime as runtime
+    from app.agent import skill_agent_paths
     from app.api.files import get_workspace_root_path
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
@@ -93,7 +85,7 @@ def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkey
             )
         ]
 
-        runtime._apply_audio_asr_path_from_user_message(args, msgs, "group-audio")
+        skill_agent_paths._apply_audio_asr_path_from_user_message(args, msgs, "group-audio")
     finally:
         reset_current_user_identity(token)
 
@@ -104,21 +96,21 @@ def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkey
 
 
 def test_apply_image_generation_workspace_id_defaults_to_current_workspace():
-    from app.agent import skill_agent_runtime as runtime
+    from app.agent import skill_agent_paths
 
     args = {"description": "河南胡辣汤封面", "workspace_id": ""}
 
-    runtime._apply_image_generation_workspace_id(args, "group-image")
+    skill_agent_paths._apply_image_generation_workspace_id(args, "group-image")
 
     assert args["workspace_id"] == "group-image"
 
 
 def test_apply_image_generation_workspace_id_preserves_explicit_workspace():
-    from app.agent import skill_agent_runtime as runtime
+    from app.agent import skill_agent_paths
 
     args = {"description": "河南胡辣汤封面", "workspace_id": "custom-workspace"}
 
-    runtime._apply_image_generation_workspace_id(args, "group-image")
+    skill_agent_paths._apply_image_generation_workspace_id(args, "group-image")
 
     assert args["workspace_id"] == "custom-workspace"
 

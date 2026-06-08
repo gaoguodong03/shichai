@@ -28,7 +28,7 @@ def test_resolve_expert_skill_uses_locked_skill_first():
 
     skill_id, content, debug = asyncio.run(
         resolve_expert_skill(
-            dha={"agent_id": "agent-a", "skill_ids": ["sk1", "sk2"]},
+            agent_profile={"agent_id": "agent-a", "skill_ids": ["sk1", "sk2"]},
             agent_id="agent-a",
             discussion_goal="goal",
             messages=[],
@@ -36,7 +36,7 @@ def test_resolve_expert_skill_uses_locked_skill_first():
             app_settings={},
             round_user_text="",
             skills_loader=loader,
-            llm_resolver=lambda _dha: FakeLlm(),
+            llm_resolver=lambda _agent_profile: FakeLlm(),
         )
     )
 
@@ -49,8 +49,8 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     loader = FakeSkillsLoader({"sk1": "技能正文"})
     calls = {}
 
-    async def fake_tool_builder(dha, workspace_id, resolved_skill_id):
-        calls["tool_builder"] = (dha["agent_id"], workspace_id, resolved_skill_id)
+    async def fake_tool_builder(agent_profile, workspace_id, resolved_skill_id):
+        calls["tool_builder"] = (agent_profile["agent_id"], workspace_id, resolved_skill_id)
         return [SimpleNamespace(name="read_file", description="读文件")]
 
     def fake_agent_factory(
@@ -73,7 +73,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
 
     runtime = asyncio.run(
         build_expert_turn_runtime(
-            dha={
+            agent_profile={
                 "agent_id": "agent-a",
                 "name": "专家A",
                 "role": "写作专家",
@@ -89,7 +89,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
             round_user_text="",
             extra_system_prompt="",
             skills_loader=loader,
-            llm_resolver=lambda _dha: FakeLlm(),
+            llm_resolver=lambda _agent_profile: FakeLlm(),
             tool_builder=fake_tool_builder,
             agent_factory=fake_agent_factory,
         )
@@ -117,7 +117,7 @@ def test_build_expert_turn_runtime_blocks_when_skill_content_missing():
 
     runtime = asyncio.run(
         build_expert_turn_runtime(
-            dha={"agent_id": "agent-a", "skill_ids": ["missing"]},
+            agent_profile={"agent_id": "agent-a", "skill_ids": ["missing"]},
             agent_id="agent-a",
             group_session_id="g1",
             discussion_goal="goal",
@@ -127,7 +127,7 @@ def test_build_expert_turn_runtime_blocks_when_skill_content_missing():
             round_user_text="",
             extra_system_prompt="",
             skills_loader=loader,
-            llm_resolver=lambda _dha: FakeLlm(),
+            llm_resolver=lambda _agent_profile: FakeLlm(),
             tool_builder=fake_tool_builder,
             agent_factory=lambda *_args, **_kwargs: SimpleNamespace(kind="agent"),
         )

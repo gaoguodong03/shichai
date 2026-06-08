@@ -17,7 +17,7 @@
                           :style="
                             expertAvatarUrl(msg.agent_id)
                               ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: dhaAvatarColor(dhaIndex(msg.agent_id)) }
+                              : { backgroundColor: agentAvatarColor(agentIndex(msg.agent_id)) }
                           "
                         >
                           <img
@@ -26,7 +26,7 @@
                             alt=""
                             class="group-chat-avatar-photo"
                           />
-                          <template v-else>{{ dhaAvatarChar(msg.agent_id) }}</template>
+                          <template v-else>{{ agentAvatarChar(msg.agent_id) }}</template>
                         </span>
                         <div
                           v-else
@@ -41,7 +41,7 @@
                           'group-chat-bubble',
                           isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
                           msg.role === 'user' && 'group-chat-bubble-user',
-                          msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-dha',
+                          msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
                         ]"
                       >
                         <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
@@ -80,7 +80,7 @@
                             <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
                           </template>
                           <template v-else-if="msg.role !== 'user'">
-                            <div class="group-chat-markdown" v-html="renderMarkdown(dhaBodyContent(msg.content || ''))"></div>
+                            <div class="group-chat-markdown" v-html="renderMarkdown(agentBodyContent(msg.content || ''))"></div>
                           </template>
                           <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
                           <template v-else>
@@ -120,7 +120,7 @@
                           <button
                             type="button"
                             class="group-chat-save-file-btn"
-                            @click="saveDhaMessageToFile(msg)"
+                            @click="saveAgentMessageToFile(msg)"
                           >
                             保存为文件
                           </button>
@@ -144,10 +144,10 @@ const {
   isMemberJoinedMessage,
   isHostBubbleMessage,
   expertAvatarUrl,
-  dhaAvatarColor,
-  dhaIndex,
+  agentAvatarColor,
+  agentIndex,
   hostLogoUrl,
-  dhaAvatarChar,
+  agentAvatarChar,
   bubbleDisplayName,
   activeStreamingSpeakerName,
   streamingPulse,
@@ -158,11 +158,11 @@ const {
   formatToolPopover,
   formatGroupMsgTime,
   renderMarkdown,
-  dhaBodyContent,
+  agentBodyContent,
   isShortSingleLine,
   formatUserBubbleForDisplay,
   extractUserFileReferenceNames,
   deleteGroupMessage,
-  saveDhaMessageToFile,
+  saveAgentMessageToFile,
 } = useGroupChatMessageContext()
 </script>

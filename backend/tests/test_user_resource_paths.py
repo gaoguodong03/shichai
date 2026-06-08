@@ -78,16 +78,16 @@ def test_api_secret_values_use_current_user_context_dir(monkeypatch, tmp_path):
         reset_current_user_identity(token)
 
 
-def test_save_dha_instances_mirrors_agents_resource_files(monkeypatch, tmp_path):
+def test_save_agent_instances_mirrors_agents_resource_files(monkeypatch, tmp_path):
     import json
 
-    from app.api.dha import save_dha_instances
+    from app.api.agents import save_agent_instances
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
     token = set_current_user_identity(user_id="user-resource-save", username="save@example.com")
     try:
-        save_dha_instances(
+        save_agent_instances(
             [
                 {
                     "agent_id": "agent-resource-flow",
@@ -106,7 +106,7 @@ def test_save_dha_instances_mirrors_agents_resource_files(monkeypatch, tmp_path)
         assert agent_data["id"] == "agent-resource-flow"
         assert agent_data["name"] == "资源目录专家"
 
-        save_dha_instances([])
+        save_agent_instances([])
         assert not agent_file.exists()
     finally:
         reset_current_user_identity(token)

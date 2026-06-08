@@ -11,7 +11,7 @@ shichai/
 ├── backend/                 # Python 后端
 │   ├── app/
 │   │   ├── main.py          # FastAPI 入口组装（create_app / health / 启动）
-│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、dha
+│   │   ├── api/             # 路由：sessions、group_chat、settings、files、auth、agents
 │   │   ├── agent/           # ReAct 工作流、专家 Skill 选型、工具组装、LLM 客户端
 │   │   ├── core/            # 生命周期、运行环境、静态挂载、用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化
@@ -41,7 +41,7 @@ shichai/
 
 ### `backend/app/main.py`
 
-- FastAPI 应用入口；注册路由：`sessions`、`settings`、`files`、`auth`、`dha`、`group_chat`（均挂载在 `/api` 下）。
+- FastAPI 应用入口；注册路由：`sessions`、`settings`、`files`、`auth`、`agents`、`group_chat`（均挂载在 `/api` 下）。
 - 会话列表与流式对话由 **`sessions`** 模块提供（如 `/api/sessions`、`/api/sessions/{id}/chat/stream`）；`group_chat` 内含实现函数与会话归档等辅助路由。
 
 ### `api/`
@@ -50,7 +50,8 @@ shichai/
 |------|------|
 | `group_chat.py` | 会话核心实现：主持人调度、`group_chat_stream`、`build_tools_for_group_chat`、流式 SSE、历史/meta 存储；并暴露 `create_session_internal`、`export_session_to_markdown` 等供 `sessions` 复用；另含 `GET /sessions/{id}/archive`。 |
 | `sessions.py` | **统一会话 API**：`GET/POST /sessions`、`GET/PUT/DELETE /sessions/{id}`、`POST /sessions/{id}/chat/stream`、`POST /sessions/{id}/export`；与 group_chat 共用存储，新对话即「仅主持人」会话。 |
-| `settings.py` | Skill 配置与 Skill 文件管理。 |
+| `settings_skills.py` | Skill 配置与导入导出主路由。 |
+| `settings_skill_store.py` / `settings_skill_parts.py` | Skill 文件读写、分片资源管理。 |
 | `settings_mcp.py` | MCP Server 配置、工具列表、测试调用与导入导出。 |
 | `settings_presets.py` | 场景/会话预设与场景资源包导入导出。 |
 | `settings_app.py` | 应用设置和主持人配置。 |
@@ -58,18 +59,18 @@ shichai/
 | `sandbox_settings.py` | 用户沙箱版本和 requirements 设置。 |
 | `files.py` | Agent 工作区文件：workspace 路径、上传/下载/列表/重命名/读取。 |
 | `auth.py` | 登录/注册等认证。 |
-| `dha.py` | DHA 实例 CRUD：`/api/dha/instances`。 |
+| `agents.py` | Agent 配置、专家资源包导入导出 API。 |
 
 ### `agent/`
 
 | 文件 | 职责 |
 |------|------|
 | `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
-| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(all_tools, dha, workspace_id)`，按 DHA 的 mcp_server_ids/skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每 skill 的 `run_skill_script_<skill_id>`。 |
+| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, workspace_id)`，按 Agent 的 mcp_server_ids/skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每 skill 的 `run_skill_script_<skill_id>`。 |
 | `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |
 | `leader_scheduler.py` | 群聊主持人调度。 |
-| `types.py` | Agent 状态等类型定义。 |
+| `orchestrator_state.py` | 编排状态、阶段与中断原因定义。 |
 
 ### `core/`
 

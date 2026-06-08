@@ -75,7 +75,7 @@ class GroupEntryRoute:
     """单条用户消息进入流式编排时的入口判定。"""
 
     skip_host_dispatch: bool
-    direct_expert_id: Optional[str]
+    direct_agent_id: Optional[str]
     clear_skill_lock_before_host: bool
 
 
@@ -84,7 +84,7 @@ def resolve_group_entry_route(
     meta_item: Dict[str, Any],
     agent_ids: List[str],
     host_takeover_requested: bool,
-    ignore_auto_expert_id: str,
+    ignore_auto_agent_id: str,
     user_message: str = "",
 ) -> GroupEntryRoute:
     """
@@ -98,34 +98,34 @@ def resolve_group_entry_route(
     if not lock or lock not in agent_ids:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_expert_id=None,
+            direct_agent_id=None,
             clear_skill_lock_before_host=True,
         )
 
     if host_takeover_requested:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_expert_id=None,
+            direct_agent_id=None,
             clear_skill_lock_before_host=True,
         )
 
     if user_message_is_pass_control(user_message):
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_expert_id=None,
+            direct_agent_id=None,
             clear_skill_lock_before_host=True,
         )
 
-    if ignore_auto_expert_id and ignore_auto_expert_id == lock:
+    if ignore_auto_agent_id and ignore_auto_agent_id == lock:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_expert_id=None,
+            direct_agent_id=None,
             clear_skill_lock_before_host=True,
         )
 
     return GroupEntryRoute(
         skip_host_dispatch=True,
-        direct_expert_id=lock,
+        direct_agent_id=lock,
         clear_skill_lock_before_host=False,
     )
 

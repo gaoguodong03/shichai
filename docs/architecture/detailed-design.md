@@ -17,7 +17,7 @@
 | 用户与资源根 | 认证、用户上下文、用户目录隔离 | `backend/app/api/auth.py`、`backend/app/core/user_context.py`、`backend/app/core/user_settings_paths.py` | UR-01 |
 | 会话与工作区 | 会话 CRUD、SSE、历史、成员和文件上下文 | `backend/app/api/sessions.py`、`backend/app/api/group_chat.py`、`frontend/src/features/workspace/` | UR-02、UR-03、UR-08 |
 | 编排运行时 | 主持人决策、专家调度、轮次状态、审计 | `backend/app/agent/group_orchestration_fsm.py`、`backend/app/agent/leader_scheduler.py`、`backend/app/agent/orchestrator_runtime.py` | UR-03 |
-| 资源中心 | 场景、专家、Skill、MCP、模型、密钥、文件 | `backend/app/api/dha.py`、`backend/app/api/settings*.py`、`frontend/src/features/resources/` | UR-04、UR-09、UR-10 |
+| 资源中心 | 场景、专家、Skill、MCP、模型、密钥、文件 | `backend/app/api/agents.py`、`backend/app/api/settings*.py`、`frontend/src/features/resources/` | UR-04、UR-09、UR-10 |
 | Skill、MCP 与工具网关 | 专家 Skill 选型、MCP 权限、脚本工具、参数归一化 | `backend/app/agent/expert_runtime.py`、`backend/app/agent/tool_gateway.py`、`backend/app/mcp/manager.py` | UR-05、UR-06 |
 | 沙箱 | 镜像选择、挂载、依赖、超时、网络策略 | `backend/app/agent/sandbox_service.py`、`backend/app/agent/sandbox_policy_runtime.py`、`backend/app/api/sandbox_settings.py` | UR-07 |
 | 部署运行 | 应用启动、健康检查、静态资源、1Panel/Docker | `backend/app/main.py`、`backend/app/core/lifespan.py`、`backend/app/core/static_spa.py` | UR-11 |
@@ -100,11 +100,11 @@
 
 | 资源 | 前端入口 | 后端入口 | 校验重点 |
 |------|----------|----------|----------|
-| 场景 | `DHAView.vue` 和场景资源页 | `settings_presets.py`、`scenario_bundle.py` | 依赖、冲突、导入预览 |
-| 专家 | `DHAView.vue` | `dha.py`、`expert_bundle.py` | 用户隔离、Skill/MCP 绑定 |
+| 场景 | `MainView.vue` 场景资源页、`useScenarioEditor.ts` | `settings_presets.py`、`scenario_bundle.py` | 依赖、冲突、导入预览 |
+| 专家 | `AgentView.vue` | `agents.py`、`expert_bundle.py` | 用户隔离、Skill/MCP 绑定 |
 | Skill | `SkillDetailView.vue` | `skills/loader.py`、`settings_bundle_import.py` | `SKILL.md`、脚本目录、依赖 |
 | MCP | `MCPAddView.vue`、`MCPDetailView.vue` | `settings_mcp.py`、`mcp/manager.py` | transport、密钥引用、工具权限 |
-| 模型和密钥 | `LLMSettingsView.vue`、设置页 | `settings.py`、`settings_secrets.py` | 脱敏、引用、保存反馈 |
+| 模型和密钥 | `LLMSettingsView.vue`、设置页 | `settings_skills.py`、`settings_secrets.py` | 脱敏、引用、保存反馈 |
 | 文件 | 工作区文件页和资源文件页 | `files.py`、`workspace_files` 相关逻辑 | 预览、下载、权限 |
 
 设计约束：
@@ -116,7 +116,7 @@
 
 测试入口：
 
-- `backend/tests/test_dha_api.py`
+- `backend/tests/test_agents_api.py`
 - `backend/tests/test_bundle_import_api.py`
 - `backend/tests/test_scenario_bundle.py`
 - `backend/tests/test_expert_bundle.py`

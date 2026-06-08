@@ -22,7 +22,7 @@
 
 ## 脚本执行规则
 
-- 运行入口固定为 `/skills/<skill_id>/scripts/<script_path>`；历史 `/skill/scripts/<script_path>` 路径仍做兼容回退。
+- 运行入口固定为 `/skills/<skill_id>/scripts/<script_path>`；不再回退到历史 `/skill/scripts/<script_path>`。
 - 脚本执行 `cwd` 固定为 `/workspace/<session_id>`。
 - 脚本输入输出文件统一在 `/workspace/<session_id>` 下。
 - 详细相对路径约定见 `docs/skills/skill-script-paths.md`。

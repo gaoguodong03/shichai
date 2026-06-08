@@ -23,8 +23,8 @@ test.describe('路由边界', () => {
   })
 
   test('非法资源和设置 section 会归一化', async ({ page }) => {
-    await bootLoggedInApp(page, '/resources/dha')
-    await expect(page).toHaveURL(/\/resources\/agent$/)
+    await bootLoggedInApp(page, '/resources/unknown')
+    await expect(page).toHaveURL(/\/resources\/scenario$/)
 
     await page.goto('/settings/unknown')
     await expect(page).toHaveURL(/\/settings\/app$/)

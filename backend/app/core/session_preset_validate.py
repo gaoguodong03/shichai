@@ -91,12 +91,12 @@ class SessionPresetValidation:
 def validate_session_preset(
     preset: Mapping[str, Any],
     *,
-    dha_by_id: Mapping[str, Mapping[str, Any]],
+    agent_by_id: Mapping[str, Mapping[str, Any]],
     skill_has_content: Callable[[str], bool],
     mcp_servers: Sequence[Mapping[str, Any]],
 ) -> SessionPresetValidation:
     """
-    dha_by_id: agent_id -> 专家配置（需含 skill_ids / mcp_server_ids 列表）
+    agent_by_id: agent_id -> 专家配置（需含 skill_ids / mcp_server_ids 列表）
     skill_has_content: 与群聊一致，能加载 SKILL 正文则 True
     mcp_servers: load_mcp_config() 的列表
     """
@@ -105,7 +105,7 @@ def validate_session_preset(
 
     agent_ids = [str(x).strip() for x in (preset.get("agent_ids") or []) if str(x).strip()]
     for aid in agent_ids:
-        if aid not in dha_by_id:
+        if aid not in agent_by_id:
             out.missing_agent_ids.append(aid)
 
     def check_skills(skill_ids: Sequence[str], *, context: str, agent_id: str = "") -> None:
@@ -142,12 +142,12 @@ def validate_session_preset(
         check_mcps(hc.get("mcp_server_ids") or [], context="host")
 
     for aid in agent_ids:
-        dha = dha_by_id.get(aid)
-        if not isinstance(dha, Mapping):
+        agent_profile = agent_by_id.get(aid)
+        if not isinstance(agent_profile, Mapping):
             continue
-        sids = dha.get("skill_ids") if isinstance(dha.get("skill_ids"), list) else []
+        sids = agent_profile.get("skill_ids") if isinstance(agent_profile.get("skill_ids"), list) else []
         check_skills([str(x) for x in sids], context="agent", agent_id=aid)
-        mids = dha.get("mcp_server_ids") if isinstance(dha.get("mcp_server_ids"), list) else []
+        mids = agent_profile.get("mcp_server_ids") if isinstance(agent_profile.get("mcp_server_ids"), list) else []
         check_mcps([str(x) for x in mids], context="agent", agent_id=aid)
 
     return out

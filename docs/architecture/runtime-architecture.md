@@ -238,7 +238,7 @@ flowchart TB
 
 - **存哪里**：每个用户一份 JSON，路径为  
   `data/users/{user_id}/config/dha_instances.json`
-  内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**（与 `/api/dha/instances/*`、`/api/experts/*` 等别名并存，见仓库 README）。
+  内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**，专家资源包导入导出沿用 `/api/dha/instances/*`。
 
 - **主要字段（理解用）**
 
@@ -263,7 +263,7 @@ flowchart TB
 
 - **创建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
 
-- **何时用哪套模型**：群聊里通过 **`_get_llm_for_dha(dha, app_settings)`**（见 `group_chat.py`）统一决定：
+- **何时用哪套模型**：群聊里通过 **`_get_llm_for_agent(agent_profile, app_settings)`**（见 `group_chat.py`）统一决定：
 
   - 若当前专家配置里 **`llm_provider_id` 非空**，用该 id 去 `llm_providers` 里找；
   - **否则**用 **`default_llm`**。
@@ -281,7 +281,7 @@ flowchart TB
 
 - **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
 
-- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、创建、导入 zip、读写内容、删除等），见 `settings.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
+- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、创建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
 
 - **和「专家」的关系**：专家配置里的 **`skill_ids`** 列出可用技能 id；本轮推理时把选中技能的**正文 + 描述**拼进系统提示，并挂上专家的 `system_prompt` / `role`（见第 4 节专家回合）。
 
@@ -332,7 +332,7 @@ flowchart TB
 | 会话列表与流式对话 API | `backend/app/api/sessions.py`（内部与群聊实现共用） |
 | 群聊编排与推流实现 | `backend/app/api/group_chat.py` |
 | 群聊记忆落盘与派发上下文 | `backend/app/agent/group_memory_store.py` |
-| 专家（Agent）配置 API | `backend/app/api/dha.py`（`/api/agents` 等） |
+| 专家（Agent）配置 API | `backend/app/api/agents.py`（`/api/agents` 等） |
 | LLM 构造与 OpenAI 兼容调用 | `backend/app/agent/llm_client.py` |
 | Skill 加载（SKILL.md） | `backend/app/skills/loader.py` |
 | 群聊工具组装（MCP/文件/脚本） | `backend/app/agent/tools_for_skill.py` |

@@ -9,7 +9,7 @@ export function createGroupChatStreamRunner(deps: {
   appendHostError: (content: string) => void
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
-  appendStreamingContent: (dhaId: string, text: string) => void
+  appendStreamingContent: (agentId: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
 }) {

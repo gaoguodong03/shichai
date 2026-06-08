@@ -98,10 +98,9 @@ async def list_sessions_with_workspace_files(
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """返回有工作区文件的会话列表；空工作区会被自动清理。"""
-    # 延迟导入，避免与 group_chat 形成模块加载循环
-    from app.api.group_chat import _load_group_meta
+    from app.api.group_chat_state import load_group_meta
 
-    meta = _load_group_meta()
+    meta = load_group_meta()
     sessions = []
     for session_id, session_meta in meta.items():
         ws_root = get_workspace_root_path(session_id, user=current_user)

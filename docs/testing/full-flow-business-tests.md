@@ -71,7 +71,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 | 工作区文件 | 新建目录、新建文件、读取内容、更新内容、上传、下载、重命名/移动、删除、路径穿越防护 | `tests/test_workspace_files.py`、`tests/test_file_ref_and_gateway.py`、`tests/test_frontend_business_flows.py` |
 | 文件引用 | `【文件引用：...】` 展开、路径提取、URL/远程路径替换为真实工作区文件 | `tests/test_file_ref_and_gateway.py` |
 | 资源中心-场景 | 场景列表、保存、导出包、上传导入、导入冲突、同名覆盖 | `tests/test_scenario_bundle.py`、`tests/test_session_preset_validate.py`、`tests/test_bundle_import_api.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
-| 资源中心-专家 | DHA/Agent/Expert 创建、列表、更新、删除、别名路由、导入校验、导出包逻辑 | `tests/test_dha_api.py`、`tests/test_dha_import_validate.py`、`tests/test_expert_bundle.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
+| 资源中心-专家 | Agent/Expert 创建、列表、更新、删除、别名路由、导入校验、导出包逻辑 | `tests/test_agents_api.py`、`tests/test_agent_import_validate.py`、`tests/test_expert_bundle.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | 资源中心-Skill | Skill 创建、编辑名称/描述/正文、`auto-tools`/依赖解析、内容读取、parts 文件增删改查、ZIP 导入导出基础链路 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_group_chat_skill_script_cli_flow.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | Skill 脚本执行 | CLI-only 参数、`.py`/`.sh`/`.bash` 命令构造、沙箱路径、requirements 注入、工具成功后自然语言合成链路 | `tests/test_file_ref_and_gateway.py`、`tests/test_sandbox_service.py`、`tests/test_group_chat_skill_script_cli_flow.py` |
 | 资源中心-MCP | MCP 创建、启用、禁用、更新、删除、工具参数归一、沙箱调用入口 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_file_ref_and_gateway.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |

@@ -173,8 +173,6 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
             workspace_path,
             rel_path,
             content,
-            tool_call_id,
-            turn_id="workspace-fs",
         ):
             target = (workspace_path / rel_path).resolve()
             target.parent.mkdir(parents=True, exist_ok=True)

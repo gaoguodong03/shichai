@@ -51,7 +51,7 @@ flowchart TB
 
 - `api/sessions.py`：统一会话 API，包含流式和非流式会话入口。
 - `api/group_chat.py`：会话编排主实现，包含主持人调度、专家回合、SSE 事件和会话持久化。
-- `api/dha.py`：专家 CRUD 与专家资源包导入导出。
+- `api/agents.py`：专家 CRUD 与专家资源包导入导出。
 - `api/settings*.py`：Skill、MCP、场景、密钥、主持人、应用设置。
 - `api/files.py`：工作区文件管理。
 - `agent/`：SimpleAgent、专家 runtime、Skill 选型、主持人调度。

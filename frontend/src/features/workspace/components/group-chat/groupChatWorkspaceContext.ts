@@ -24,10 +24,10 @@ export interface GroupChatMessageContext {
   isMemberJoinedMessage: ContextValue
   isHostBubbleMessage: ContextValue
   expertAvatarUrl: ContextValue
-  dhaAvatarColor: ContextValue
-  dhaIndex: ContextValue
+  agentAvatarColor: ContextValue
+  agentIndex: ContextValue
   hostLogoUrl: ContextValue
-  dhaAvatarChar: ContextValue
+  agentAvatarChar: ContextValue
   bubbleDisplayName: ContextValue
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
@@ -38,16 +38,16 @@ export interface GroupChatMessageContext {
   formatToolPopover: ContextValue
   formatGroupMsgTime: ContextValue
   renderMarkdown: ContextValue
-  dhaBodyContent: ContextValue
+  agentBodyContent: ContextValue
   isShortSingleLine: ContextValue
   formatUserBubbleForDisplay: ContextValue
   extractUserFileReferenceNames: ContextValue
   deleteGroupMessage: ContextValue
-  saveDhaMessageToFile: ContextValue
+  saveAgentMessageToFile: ContextValue
 }
 
 export interface GroupChatComposerContext {
-  pendingSuggestedDhaItems: ContextValue
+  pendingSuggestedAgentItems: ContextValue
   hostDisplayName: ContextValue
   suggestedInviteLoading: ContextValue
   currentAutoSwitchHint: ContextValue
@@ -61,9 +61,9 @@ export interface GroupChatComposerContext {
   orchestrationInterruptHint: ContextValue
   currentGroupStreaming: ContextValue
   currentGroupStreamingPhase: ContextValue
-  inviteOneSuggestedDha: ContextValue
-  inviteSuggestedDha: ContextValue
-  groupSuggestedAddDhaIds: ContextValue
+  inviteOneSuggestedAgent: ContextValue
+  inviteSuggestedAgents: ContextValue
+  groupSuggestedAddAgentIds: ContextValue
   ignoreAutoSwitchAndPause: ContextValue
   attachedFiles: ContextValue
   removeAttachedFile: ContextValue
@@ -108,12 +108,12 @@ export interface GroupChatComposerContext {
   shortcutPresetExpertNamesText: ContextValue
   orderedMemberIds: ContextValue
   expertAvatarUrl: ContextValue
-  dhaAvatarColor: ContextValue
-  dhaIndex: ContextValue
-  dhaAvatarChar: ContextValue
+  agentAvatarColor: ContextValue
+  agentIndex: ContextValue
+  agentAvatarChar: ContextValue
   leaderDisplayId: ContextValue
   removeMember: ContextValue
-  invitableDhas: ContextValue
+  invitableAgents: ContextValue
   inviteSingleMember: ContextValue
   insertLocalFileInputRef: ContextValue
   onInsertLocalFile: ContextValue

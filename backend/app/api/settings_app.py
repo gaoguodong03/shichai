@@ -76,7 +76,7 @@ _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
 
 
 def normalize_host_profile(raw: Any) -> Dict[str, Any]:
-    """主持人独立配置：名称 + DHA 同构能力字段。"""
+    """主持人独立配置：名称 + Agent 同构能力字段。"""
     if not isinstance(raw, dict):
         raw = {}
     base_cfg = normalize_host_config_dict(raw)

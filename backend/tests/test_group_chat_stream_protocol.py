@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.api.group_chat import _iter_with_keepalive
+from app.agent.group_chat_streaming import iter_with_keepalive
 from app.agent.simple_agent import SimpleAgent
 from app.agent.tool_spec import ToolSpec
 
@@ -41,7 +41,7 @@ async def test_keepalive_iter_emits_marker_while_agent_is_idle():
         yield {"type": "final_step"}
 
     events = []
-    async for ev in _iter_with_keepalive(_slow_source(), interval_sec=0.01):
+    async for ev in iter_with_keepalive(_slow_source(), interval_sec=0.01):
         events.append(ev)
 
     assert events[0]["type"] == "agent_step"
@@ -82,21 +82,21 @@ async def test_runtime_state_clears_finished_active_run(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_group_session_event_publisher_notifies_subscriber():
-    from app.api import group_chat
+    from app.api import group_chat_state
 
     queue = asyncio.Queue(maxsize=4)
-    async with group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
-        group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS["session-push"] = [queue]
+    async with group_chat_state.GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+        group_chat_state.GROUP_SESSION_EVENT_SUBSCRIBERS["session-push"] = [queue]
     try:
-        await group_chat._publish_group_session_event(
+        await group_chat_state.publish_group_session_event(
             "session-push",
             "messages_updated",
             {"message_count": 3},
         )
         event = await asyncio.wait_for(queue.get(), timeout=1)
     finally:
-        async with group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
-            group_chat._GROUP_SESSION_EVENT_SUBSCRIBERS.pop("session-push", None)
+        async with group_chat_state.GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
+            group_chat_state.GROUP_SESSION_EVENT_SUBSCRIBERS.pop("session-push", None)
 
     assert event["type"] == "messages_updated"
     assert event["session_id"] == "session-push"
@@ -105,7 +105,7 @@ async def test_group_session_event_publisher_notifies_subscriber():
 
 @pytest.mark.asyncio
 async def test_background_stream_keeps_source_running_after_client_close():
-    from app.api.group_chat import _stream_background_events
+    from app.agent.group_chat_streaming import stream_background_events
 
     source_finished = asyncio.Event()
 
@@ -114,7 +114,7 @@ async def test_background_stream_keeps_source_running_after_client_close():
         await asyncio.sleep(0.01)
         source_finished.set()
 
-    stream = _stream_background_events(source())
+    stream = stream_background_events(source())
     first = await stream.__anext__()
     assert first.startswith("event: content")
 
@@ -124,7 +124,7 @@ async def test_background_stream_keeps_source_running_after_client_close():
 
 
 def test_clears_completed_audio_skill_lock_from_history():
-    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
     meta_item = {
         "skill_session_owner_id": "agent-a",
@@ -153,7 +153,7 @@ def test_clears_completed_audio_skill_lock_from_history():
 
 
 def test_clears_implicit_skill_lock_from_history():
-    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
     meta_item = {
         "skill_session_owner_id": "agent-teacher",
@@ -180,7 +180,7 @@ def test_clears_implicit_skill_lock_from_history():
 
 
 def test_keeps_explicit_continue_skill_lock_from_history():
-    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
     meta_item = {
         "skill_session_owner_id": "agent-teacher",
@@ -207,7 +207,7 @@ def test_keeps_explicit_continue_skill_lock_from_history():
 
 
 def test_clears_bound_skill_introspection_lock_from_history():
-    from app.api.group_chat import _clear_completed_skill_session_lock_from_history
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
     meta_item = {
         "skill_session_owner_id": "agent-skill",
@@ -240,7 +240,7 @@ def test_clears_bound_skill_introspection_lock_from_history():
 
 
 def test_store_skill_session_lock_only_for_explicit_continue_or_forced_wait():
-    from app.api.group_chat import _store_skill_session_lock_for_turn
+    from app.agent.group_chat_skill_session import _store_skill_session_lock_for_turn
 
     meta_item = {"skill_session_owner_id": "agent-old", "skill_session_skill_id": "old"}
     _store_skill_session_lock_for_turn(

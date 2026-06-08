@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.core.security import user_context_dependency
 from app.core.settings_references import mark_agent_id_missing_in_session_presets, merge_reference_rows_for_ids
@@ -29,7 +29,7 @@ _FILE_CAP_LABELS = {
     "list_dir": "列出目录中文件（含子目录）",
 }
 
-def _get_dha_instances_path() -> Path:
+def _get_agent_instances_path() -> Path:
     """根据当前用户返回 Agent 配置文件路径，实现多用户隔离。"""
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
@@ -37,8 +37,8 @@ def _get_dha_instances_path() -> Path:
     return (user_ctx.config_dir / "dha_instances.json").resolve()
 
 
-class DHACreate(BaseModel):
-    """创建 DHA 实例请求"""
+class AgentCreate(BaseModel):
+    """创建 Agent 实例请求"""
     name: str
     role: str = ""
     system_prompt: Optional[str] = None
@@ -46,16 +46,15 @@ class DHACreate(BaseModel):
     skill_refs: Optional[List[Dict[str, Any]]] = None
     mcp_server_ids: List[str] = []
     is_leader: bool = False
-    llm_provider_id: Optional[str] = None  # 该 DHA 使用的 LLM，空则用应用默认
+    llm_provider_id: Optional[str] = None  # 该 Agent 使用的 LLM，空则用应用默认
     avatar_url: Optional[str] = None  # 头像（可选，前端可传 data URL 或远程地址）
     file_capabilities: Optional[Dict[str, bool]] = None  # read/edit/write/rename/mkdir/list_dir
     url_capability: Optional[bool] = None  # 是否可使用 call_api 访问外部 http(s) URL
-    agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
-    expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
+    agent_id: Optional[str] = None
 
 
-class DHAUpdate(BaseModel):
-    """更新 DHA 实例请求"""
+class AgentUpdate(BaseModel):
+    """更新 Agent 实例请求"""
     name: Optional[str] = None
     role: Optional[str] = None
     system_prompt: Optional[str] = None
@@ -67,17 +66,7 @@ class DHAUpdate(BaseModel):
     avatar_url: Optional[str] = None
     file_capabilities: Optional[Dict[str, bool]] = None
     url_capability: Optional[bool] = None
-    agent_id: Optional[str] = Field(default=None, description="兼容字段：agent_id")
-    expert_id: Optional[str] = Field(default=None, description="兼容字段：expert_id")
-
-
-def _attach_expert_alias(instance: Dict[str, Any]) -> Dict[str, Any]:
-    """在响应中附加 expert 别名。"""
-    out = dict(instance or {})
-    did = out.get("agent_id")
-    if did is not None:
-        out["expert_id"] = did
-    return out
+    agent_id: Optional[str] = None
 
 
 _DEFAULT_FILE_CAPS: Dict[str, bool] = {
@@ -117,7 +106,7 @@ def _labels_from_file_capabilities(caps: Dict[str, bool]) -> List[str]:
 
 def _skill_name_lookup() -> Dict[str, str]:
     try:
-        from app.api.settings import load_skills_config
+        from app.api.settings_skill_store import load_skills_config
 
         return {
             str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
@@ -132,9 +121,9 @@ def _skill_refs_for_ids(skill_ids: List[str], existing_refs: Any = None) -> List
     return merge_reference_rows_for_ids(skill_ids, existing_refs, _skill_name_lookup())
 
 
-async def enrich_dha_instance(instance: Dict[str, Any], workspace_id: str = "__capability_probe__") -> Dict[str, Any]:
-    """导出函数：为 DHA 实例附加 expert 别名与内置能力（不触发 MCP 连接）。"""
-    out = _attach_expert_alias(instance)
+async def enrich_agent_instance(instance: Dict[str, Any], workspace_id: str = "__capability_probe__") -> Dict[str, Any]:
+    """导出函数：为 Agent 实例附加内置能力派生字段（不触发 MCP 连接）。"""
+    out = dict(instance or {})
     _ = workspace_id
     file_caps = merge_file_capabilities(instance.get("file_capabilities"))
     out["file_capabilities"] = file_caps
@@ -143,21 +132,21 @@ async def enrich_dha_instance(instance: Dict[str, Any], workspace_id: str = "__c
     return out
 
 
-async def enrich_dha_instances(instances: List[Dict[str, Any]], workspace_id: str = "__capability_probe__") -> List[Dict[str, Any]]:
+async def enrich_agent_instances(instances: List[Dict[str, Any]], workspace_id: str = "__capability_probe__") -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for row in instances or []:
-        out.append(await enrich_dha_instance(row, workspace_id=workspace_id))
+        out.append(await enrich_agent_instance(row, workspace_id=workspace_id))
     return out
 
 
 def _ensure_config_dir() -> Path:
-    path = _get_dha_instances_path()
+    path = _get_agent_instances_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def load_dha_instances() -> List[Dict[str, Any]]:
-    """加载 DHA 实例配置"""
+def load_agent_instances() -> List[Dict[str, Any]]:
+    """加载 Agent 实例配置"""
     path = _ensure_config_dir()
     if path.exists():
         try:
@@ -169,8 +158,8 @@ def load_dha_instances() -> List[Dict[str, Any]]:
     return []
 
 
-def save_dha_instances(instances: List[Dict[str, Any]]) -> None:
-    """保存 DHA 实例配置"""
+def save_agent_instances(instances: List[Dict[str, Any]]) -> None:
+    """保存 Agent 实例配置"""
     normalized: List[Dict[str, Any]] = []
     for row in instances or []:
         if not isinstance(row, dict):
@@ -219,62 +208,62 @@ def normalize_expert_row_for_import(raw: Dict[str, Any]) -> Optional[Dict[str, A
     }
 
 
-def _dha_skills_dir() -> Path:
+def _agent_skills_dir() -> Path:
     ctx = get_current_user_context(default_fallback=False)
     if ctx is None:
         raise HTTPException(status_code=401, detail="未登录")
     return ctx.skills_dir.resolve()
 
 
-def _dha_validation_payload(row: Dict[str, Any]) -> Dict[str, Any]:
-    from app.api.settings import load_mcp_config
-    from app.core.dha_import_validate import validate_dha_instance_row, dha_validation_to_api_dict
+def _agent_validation_payload(row: Dict[str, Any]) -> Dict[str, Any]:
+    from app.api.settings_mcp import load_mcp_config
+    from app.core.agent_import_validate import validate_agent_instance_row, agent_validation_to_api_dict
     from app.skills.loader import get_skills_loader_for_user
 
     un = get_current_username() or ""
-    sl = get_skills_loader_for_user(un, _dha_skills_dir())
+    sl = get_skills_loader_for_user(un, _agent_skills_dir())
 
     def skill_ok(sid: str) -> bool:
         return bool(sl.get_skill_full_content(sid))
 
-    v = validate_dha_instance_row(row, skill_has_content=skill_ok, mcp_servers=load_mcp_config())
-    return dha_validation_to_api_dict(v)
+    v = validate_agent_instance_row(row, skill_has_content=skill_ok, mcp_servers=load_mcp_config())
+    return agent_validation_to_api_dict(v)
 
 
-def _find_dha_row(agent_id: str) -> Optional[Dict[str, Any]]:
+def _find_agent_row(agent_id: str) -> Optional[Dict[str, Any]]:
     key = str(agent_id or "").strip()
     if not key:
         return None
-    for d in load_dha_instances():
+    for d in load_agent_instances():
         if str(d.get("agent_id") or "").strip() == key:
             return dict(d)
     return None
 
 
 @router.get("/dha/instances/{agent_id}/export-bundle")
-async def export_dha_instance_bundle(agent_id: str):
+async def export_agent_instance_bundle(agent_id: str):
     """导出专家包 ZIP：expert_bundle.json、skills/、可选 mcp_servers.json。"""
-    from app.api.settings import load_mcp_config
+    from app.api.settings_mcp import load_mcp_config
     from app.core.expert_bundle import build_expert_bundle_zip_bytes
     from app.core.settings_bundle_import import collect_mcp_refs_from_skill_dirs, mcp_rows_for_bundle_refs
     from app.skills.loader import get_builtin_skills_dir
 
-    row = _find_dha_row(agent_id)
+    row = _find_agent_row(agent_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
+        raise HTTPException(status_code=404, detail="Agent instance not found")
 
     skill_ids = sorted({str(x).strip() for x in (row.get("skill_ids") or []) if str(x).strip()})
     mcp_ids = sorted({str(x).strip() for x in (row.get("mcp_server_ids") or []) if str(x).strip()})
     mcp_refs = [{"id": mid, "name": ""} for mid in mcp_ids]
-    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_dha_skills_dir(), skill_ids))
+    mcp_refs.extend(collect_mcp_refs_from_skill_dirs(_agent_skills_dir(), skill_ids))
     mcp_refs.extend(collect_mcp_refs_from_skill_dirs(get_builtin_skills_dir(), skill_ids))
     mcp_all = load_mcp_config()
     mcp_rows = mcp_rows_for_bundle_refs(mcp_refs, mcp_all)
 
-    zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _dha_skills_dir(), skill_ids)
+    zip_bytes = build_expert_bundle_zip_bytes(row, mcp_rows, _agent_skills_dir(), skill_ids)
     safe = str(agent_id).replace("..", "").replace("/", "").replace("\\", "") or "expert"
     filename = f"expert-bundle-{safe}.zip"
-    from app.api.settings import _content_disposition_attachment
+    from app.api.settings_skills import _content_disposition_attachment
 
     return StreamingResponse(
         io.BytesIO(zip_bytes),
@@ -284,7 +273,7 @@ async def export_dha_instance_bundle(agent_id: str):
 
 
 @router.post("/dha/instances/import-bundle")
-async def import_dha_instance_bundle(
+async def import_agent_instance_bundle(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     overwrite_skills: bool = Form(True),
@@ -293,7 +282,8 @@ async def import_dha_instance_bundle(
     id_conflict: str = Form("overwrite"),
 ):
     """导入专家包：合并技能、MCP 与专家条目。"""
-    from app.api.settings import load_mcp_config, save_mcp_config, _invalidate_mcp_runtime_after_config_change
+    from app.api.settings_mcp import load_mcp_config, save_mcp_config
+    from app.api.settings_skills import _invalidate_mcp_runtime_after_config_change
     from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
     from app.core.settings_bundle_import import find_missing_references_for_expert_bundle
     from app.core.scenario_bundle import (
@@ -323,7 +313,7 @@ async def import_dha_instance_bundle(
         if norm is None:
             raise HTTPException(status_code=400, detail="专家包内 expert 无效（需 name）")
 
-        user_skills = _dha_skills_dir()
+        user_skills = _agent_skills_dir()
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
         would_overwrite: List[str] = []
         would_skip: List[str] = []
@@ -348,7 +338,7 @@ async def import_dha_instance_bundle(
             if str(x.get("id") or "").strip()
         ]
 
-        existing_instances = load_dha_instances()
+        existing_instances = load_agent_instances()
         same_name_agent_ids = [
             str(x.get("agent_id") or "")
             for x in existing_instances
@@ -401,10 +391,10 @@ async def import_dha_instance_bundle(
         instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
             instances, norm, id_conflict=conflict
         )
-        save_dha_instances(instances)
+        save_agent_instances(instances)
         val_after = None
         if final_id:
-            val_after = _dha_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
+            val_after = _agent_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
 
         return {
             "status": "ok",
@@ -432,19 +422,17 @@ async def import_dha_instance_bundle(
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-@router.get("/dha/instances")
-async def get_dha_instances():
-    """获取 DHA 实例列表（按名称排序）"""
-    instances = load_dha_instances()
+async def list_agent_instances_response():
+    """获取 Agent 实例列表（按名称排序）"""
+    instances = load_agent_instances()
     instances = sorted(instances, key=lambda d: (d.get("name") or "").strip())
-    return {"status": "ok", "data": {"instances": await enrich_dha_instances(instances)}}
+    return {"status": "ok", "data": {"instances": await enrich_agent_instances(instances)}}
 
 
-@router.post("/dha/instances")
-async def create_dha_instance(body: DHACreate):
-    """创建 DHA 实例"""
-    instances = load_dha_instances()
-    agent_id = (body.agent_id or body.expert_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
+async def create_agent_instance(body: AgentCreate):
+    """创建 Agent 实例"""
+    instances = load_agent_instances()
+    agent_id = (body.agent_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
     skill_ids = body.skill_ids or []
     new_instance = {
         "agent_id": agent_id,
@@ -461,17 +449,16 @@ async def create_dha_instance(body: DHACreate):
         "url_capability": True if body.url_capability is None else bool(body.url_capability),
     }
     instances.append(new_instance)
-    save_dha_instances(instances)
-    return {"status": "ok", "data": await enrich_dha_instance(new_instance)}
+    save_agent_instances(instances)
+    return {"status": "ok", "data": await enrich_agent_instance(new_instance)}
 
 
-@router.put("/dha/instances/{agent_id}")
-async def update_dha_instance(agent_id: str, body: DHAUpdate):
-    """更新 DHA 实例"""
-    instances = load_dha_instances()
+async def update_agent_instance(agent_id: str, body: AgentUpdate):
+    """更新 Agent 实例"""
+    instances = load_agent_instances()
     idx = next((i for i, d in enumerate(instances) if d.get("agent_id") == agent_id), None)
     if idx is None:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
+        raise HTTPException(status_code=404, detail="Agent instance not found")
     inst = instances[idx]
     if body.name is not None:
         inst["name"] = body.name
@@ -498,67 +485,42 @@ async def update_dha_instance(agent_id: str, body: DHAUpdate):
         inst["file_capabilities"] = merge_file_capabilities(body.file_capabilities)
     if body.url_capability is not None:
         inst["url_capability"] = bool(body.url_capability)
-    save_dha_instances(instances)
-    return {"status": "ok", "data": await enrich_dha_instance(inst)}
+    save_agent_instances(instances)
+    return {"status": "ok", "data": await enrich_agent_instance(inst)}
 
 
-@router.delete("/dha/instances/{agent_id}")
-async def delete_dha_instance(agent_id: str):
-    """删除 DHA 实例"""
-    instances = load_dha_instances()
+async def delete_agent_instance(agent_id: str):
+    """删除 Agent 实例"""
+    instances = load_agent_instances()
     original = len(instances)
     target = next((d for d in instances if d.get("agent_id") == agent_id), None)
     instances = [d for d in instances if d.get("agent_id") != agent_id]
     if len(instances) == original:
-        raise HTTPException(status_code=404, detail="DHA instance not found")
+        raise HTTPException(status_code=404, detail="Agent instance not found")
     mark_agent_id_missing_in_session_presets(agent_id, str((target or {}).get("name") or agent_id))
-    save_dha_instances(instances)
-    return {"status": "ok", "data": {"agent_id": agent_id, "expert_id": agent_id, "deleted": True}}
+    save_agent_instances(instances)
+    return {"status": "ok", "data": {"agent_id": agent_id, "deleted": True}}
 
 
 @router.get("/agents")
 async def get_agents():
     """获取 Agent 列表（主入口）。"""
-    return await get_dha_instances()
+    return await list_agent_instances_response()
 
 
 @router.post("/agents")
-async def create_agent(body: DHACreate):
+async def create_agent(body: AgentCreate):
     """创建 Agent（主入口）。"""
-    return await create_dha_instance(body)
+    return await create_agent_instance(body)
 
 
 @router.put("/agents/{agent_id}")
-async def update_agent(agent_id: str, body: DHAUpdate):
+async def update_agent(agent_id: str, body: AgentUpdate):
     """更新 Agent（主入口）。"""
-    return await update_dha_instance(agent_id, body)
+    return await update_agent_instance(agent_id, body)
 
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str):
     """删除 Agent（主入口）。"""
-    return await delete_dha_instance(agent_id)
-
-
-@router.get("/experts")
-async def get_experts():
-    """专家列表别名接口（兼容到 /dha/instances）。"""
-    return await get_dha_instances()
-
-
-@router.post("/experts")
-async def create_expert(body: DHACreate):
-    """创建专家别名接口（兼容到 /dha/instances）。"""
-    return await create_dha_instance(body)
-
-
-@router.put("/experts/{expert_id}")
-async def update_expert(expert_id: str, body: DHAUpdate):
-    """更新专家别名接口（兼容到 /dha/instances/{agent_id}）。"""
-    return await update_dha_instance(expert_id, body)
-
-
-@router.delete("/experts/{expert_id}")
-async def delete_expert(expert_id: str):
-    """删除专家别名接口（兼容到 /dha/instances/{agent_id}）。"""
-    return await delete_dha_instance(expert_id)
+    return await delete_agent_instance(agent_id)

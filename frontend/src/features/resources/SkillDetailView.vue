@@ -285,9 +285,11 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
+import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
+import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPartPath } from './resourcePartPaths'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
-type ReferenceSnapshot = { id: string; name?: string }
+const MCP_REFERENCE_ID_KEYS = ['id', 'mcp_server_id']
 
 const props = defineProps<{ skillId: string }>()
 const emit = defineEmits<{ (e: 'updated', newSkillId?: string): void; (e: 'deleted'): void }>()
@@ -406,42 +408,13 @@ function isMcpDependencyMissing(id: string) {
   return Boolean(id && !mcpServerIds.value.has(id))
 }
 
-function normalizeReferenceRows(raw: unknown): ReferenceSnapshot[] {
-  if (!Array.isArray(raw)) return []
-  const out: ReferenceSnapshot[] = []
-  const seen = new Set<string>()
-  for (const item of raw) {
-    const row = item && typeof item === 'object' ? item as Record<string, unknown> : null
-    const id = String(row?.id || row?.mcp_server_id || '').trim()
-    const name = String(row?.name || row?.display_name || row?.label || '').trim()
-    if (!id || seen.has(id)) continue
-    out.push(name ? { id, name } : { id })
-    seen.add(id)
-  }
-  return out
-}
-
 function mcpNameLookup(): Record<string, string> {
   return Object.fromEntries((mcpServers.value || []).map((s) => [s.id, s.name || s.id]))
 }
 
-function mergeReferenceRowsForIds(ids: string[], refs?: ReferenceSnapshot[], lookup?: Record<string, string>): ReferenceSnapshot[] {
-  const old = new Map(normalizeReferenceRows(refs || []).map((row) => [row.id, row.name || '']))
-  const out: ReferenceSnapshot[] = []
-  const seen = new Set<string>()
-  for (const raw of ids || []) {
-    const id = String(raw || '').trim()
-    if (!id || seen.has(id)) continue
-    const name = String((lookup || {})[id] || old.get(id) || '').trim()
-    out.push(name ? { id, name } : { id })
-    seen.add(id)
-  }
-  return out
-}
-
 function mcpLabel(id: string) {
   const s = mcpServers.value.find((x) => x.id === id)
-  const snap = normalizeReferenceRows(form.value.allowed_tools.mcp_refs).find((x) => x.id === id)
+  const snap = normalizeReferenceRows(form.value.allowed_tools.mcp_refs, MCP_REFERENCE_ID_KEYS).find((x) => x.id === id)
   return s?.name || snap?.name || `MCP 工具 ${id}`
 }
 
@@ -451,6 +424,7 @@ function removeMcpServer(id: string) {
     form.value.allowed_tools.mcp,
     form.value.allowed_tools.mcp_refs,
     mcpNameLookup(),
+    MCP_REFERENCE_ID_KEYS,
   )
 }
 
@@ -462,6 +436,7 @@ function addMcpServer(id: string) {
     form.value.allowed_tools.mcp,
     form.value.allowed_tools.mcp_refs,
     mcpNameLookup(),
+    MCP_REFERENCE_ID_KEYS,
   )
 }
 
@@ -501,25 +476,6 @@ const currentPartFiles = computed(() => {
   return list.filter((x) => !shouldHideEntryByPath(x.path))
 })
 const partDirPath = ref('')
-
-function normalizePartPath(path: string) {
-  return String(path || '').replace(/^\/+|\/+$/g, '')
-}
-
-function dirnameOfPath(path: string) {
-  const p = normalizePartPath(path)
-  const idx = p.lastIndexOf('/')
-  return idx >= 0 ? p.slice(0, idx) : ''
-}
-
-function shouldHideEntryByPath(path: string) {
-  const p = normalizePartPath(path)
-  if (!p) return false
-  const segs = p.split('/').filter(Boolean)
-  if (segs.some((s) => s === '__pycache__')) return true
-  const base = segs[segs.length - 1] || ''
-  return /\.(pyc|pyo)$/i.test(base)
-}
 
 const partFileBrowser = computed(() => {
   const currentDir = normalizePartPath(partDirPath.value)
@@ -763,6 +719,7 @@ async function load(options: { silent?: boolean } = {}) {
                 s.allowed_tools?.mcp ?? [],
                 s.allowed_tools?.mcp_refs ?? [],
                 mcpNameLookup(),
+                MCP_REFERENCE_ID_KEYS,
               ),
             },
           }
@@ -786,7 +743,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
       const at = j.data.allowed_tools
       const mcp = Array.isArray(at?.mcp) ? at.mcp.map((x: string) => String(x || '').trim()).filter(Boolean) : []
       const python = typeof at?.python === 'string' ? at.python : ''
-      const mcpRefs = mergeReferenceRowsForIds(mcp, at?.mcp_refs || [], mcpNameLookup())
+      const mcpRefs = mergeReferenceRowsForIds(mcp, at?.mcp_refs || [], mcpNameLookup(), MCP_REFERENCE_ID_KEYS)
       skillContent.value = {
         raw: j.data.raw ?? '',
         name: j.data.name ?? '',
@@ -861,6 +818,7 @@ async function save() {
             form.value.allowed_tools.mcp ?? [],
             form.value.allowed_tools.mcp_refs ?? [],
             mcpNameLookup(),
+            MCP_REFERENCE_ID_KEYS,
           ),
         },
       }),
@@ -879,6 +837,7 @@ async function save() {
           form.value.allowed_tools.mcp ?? [],
           form.value.allowed_tools.mcp_refs ?? [],
           mcpNameLookup(),
+          MCP_REFERENCE_ID_KEYS,
         ),
       }
       skillContent.value = {
@@ -997,9 +956,9 @@ async function addPartFile() {
     required: true,
   })
   if (!name?.trim()) return
-  const path = name.trim().replace(/^\/+/, '')
-  if (path.includes('..')) {
-    await appAlert({ title: '路径不合法', message: '路径不能包含 ..', variant: 'warning' })
+  const { path, error } = validateNewPartPath(name, { allowEmpty: false })
+  if (error) {
+    await appAlert({ title: '路径不合法', message: error, variant: 'warning' })
     return
   }
   try {
@@ -1033,9 +992,9 @@ async function addPartFolder() {
     required: true,
   }))?.trim()
   if (!name) return
-  const path = name.replace(/^\/+/, '').replace(/\/+$/, '')
-  if (!path || path.includes('..')) {
-    await appAlert({ title: '路径不合法', message: '路径不能包含 ..，且不能为空', variant: 'warning' })
+  const { path, error } = validateNewPartPath(name, { allowEmpty: false, trimTrailingSlash: true })
+  if (error) {
+    await appAlert({ title: '路径不合法', message: error, variant: 'warning' })
     return
   }
   try {

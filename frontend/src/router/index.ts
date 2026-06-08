@@ -9,7 +9,7 @@ const settingsSections = new Set(['app', 'theme', 'secrets', 'account-security',
 function normalizeSectionRoute(to: RouteLocationNormalized) {
   if (to.path.startsWith('/resources')) {
     const section = String(to.params.section || 'scenario')
-    const target = resourceSections.has(section) ? section : (section === 'dha' ? 'agent' : 'scenario')
+    const target = resourceSections.has(section) ? section : 'scenario'
     if (to.path !== `/resources/${target}`) {
       return { path: `/resources/${target}`, query: to.query, hash: to.hash, replace: true }
     }

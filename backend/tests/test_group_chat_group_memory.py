@@ -1,18 +1,35 @@
 """群聊记忆开关与回退路径测试。"""
 import os
-from types import SimpleNamespace
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
 
-def _get_group_chat_module():
-    from app.agent import group_chat_runtime as group_chat
+def _get_context_module():
+    from app.agent import group_context
 
-    return group_chat
+    return group_context
+
+
+def _get_memory_prompt_module():
+    from app.agent import group_chat_memory_prompt
+
+    return group_chat_memory_prompt
+
+
+def _get_tool_trace_module():
+    from app.agent import group_chat_tool_trace
+
+    return group_chat_tool_trace
+
+
+def _get_host_runtime_module():
+    from app.agent import group_chat_host_runtime
+
+    return group_chat_host_runtime
 
 
 def test_next_prompt_fallback_when_memory_disabled():
-    gc = _get_group_chat_module()
+    gc = _get_memory_prompt_module()
     app_settings = {"group_memory": {"enabled": False}}
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
@@ -27,7 +44,8 @@ def test_next_prompt_fallback_when_memory_disabled():
 
 
 def test_next_prompt_uses_memory_when_available(monkeypatch):
-    gc = _get_group_chat_module()
+    gc = _get_memory_prompt_module()
+    from app.agent import group_chat_memory_prompt
 
     def _fake_dispatch_context(*args, **kwargs):
         return {
@@ -35,7 +53,7 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
             "rendered": "【关键事实】\n- 已确认标题",
         }
 
-    monkeypatch.setattr(gc, "build_dispatch_context", _fake_dispatch_context)
+    monkeypatch.setattr(group_chat_memory_prompt, "build_dispatch_context", _fake_dispatch_context)
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
         target_agent_id="agent-a",
@@ -54,7 +72,7 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
 
 
 def test_next_prompt_short_fallback_avoids_meta_task_preface():
-    gc = _get_group_chat_module()
+    gc = _get_memory_prompt_module()
 
     out = gc._ensure_structured_next_prompt(
         prompt="请说明边界",
@@ -69,7 +87,7 @@ def test_next_prompt_short_fallback_avoids_meta_task_preface():
 
 
 def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
-    gc = _get_group_chat_module()
+    gc = _get_memory_prompt_module()
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
 
@@ -118,7 +136,7 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
 
 
 def test_log_llm_roundtrip_does_not_write_session_workspace_jsonl(tmp_path):
-    gc = _get_group_chat_module()
+    gc = _get_host_runtime_module()
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
 
@@ -134,54 +152,30 @@ def test_log_llm_roundtrip_does_not_write_session_workspace_jsonl(tmp_path):
 
     assert not (ws / "memory" / "llm_roundtrips.jsonl").exists()
 
-
-def test_expert_turn_model_name_uses_runtime_llm_not_free_variable():
-    gc = _get_group_chat_module()
-    runtime = SimpleNamespace(llm=SimpleNamespace(model="runtime-model"))
-
-    assert gc._expert_runtime_model_name(runtime) == "runtime-model"
-
-
-def test_persist_expert_turn_task_files_no_longer_materializes_workspace_files(tmp_path, monkeypatch):
-    gc = _get_group_chat_module()
-    monkeypatch.setattr(gc, "get_workspace_root_path", lambda session_id: tmp_path)
-
-    gc._persist_expert_turn_task_files(
-        session_id="group-test",
-        next_speaker="agent-teacher",
-        task_text="请正式开启研讨并提出首个问题。",
-        dha_map={"agent-teacher": {"name": "教师"}},
-    )
-
-    assert not (tmp_path / "speaker_task.txt").exists()
-    assert not (tmp_path / "next_speaker.txt").exists()
-    assert not (tmp_path / "current_phase.txt").exists()
-
-
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():
-    gc = _get_group_chat_module()
+    gc = _get_tool_trace_module()
     base = "工具执行成功。"
     raw = ['{"ok": true, "stdout": "抓取到正文 markdown ..."}']
-    out = gc._append_workspace_image_preview_markdown(base, raw)
+    out = gc.append_workspace_image_preview_markdown(base, raw)
     assert out == base
 
 
 def test_append_workspace_image_preview_markdown_appends_image_links():
-    gc = _get_group_chat_module()
+    gc = _get_tool_trace_module()
     base = "已生成图片。"
     raw = ['下载链接：/api/workspaces/s1/files/download?path=generated_images/a.jpg']
-    out = gc._append_workspace_image_preview_markdown(base, raw)
+    out = gc.append_workspace_image_preview_markdown(base, raw)
     assert "![生成图片1](/api/workspaces/s1/files/download?path=generated_images/a.jpg)" in out
 
 
 def test_has_auto_continue_signal_detects_continue_intent():
-    gc = _get_group_chat_module()
-    assert gc._has_auto_continue_signal("接下来我会继续执行下一步。") is True
-    assert gc._has_auto_continue_signal("[[AUTO_CONTINUE]] proceeding.") is True
+    gc = _get_context_module()
+    assert gc.has_auto_continue_signal("接下来我会继续执行下一步。") is True
+    assert gc.has_auto_continue_signal("[[AUTO_CONTINUE]] proceeding.") is True
 
 
 def test_has_auto_continue_signal_defaults_to_handoff_user():
-    gc = _get_group_chat_module()
-    assert gc._has_auto_continue_signal("这是当前结论，请你确认是否继续。") is False
-    assert gc._has_auto_continue_signal("想接项目就别上来问这种空话。") is False
-    assert gc._has_auto_continue_signal("你先挑一块具体的，别泛泛而谈。") is False
+    gc = _get_context_module()
+    assert gc.has_auto_continue_signal("这是当前结论，请你确认是否继续。") is False
+    assert gc.has_auto_continue_signal("想接项目就别上来问这种空话。") is False
+    assert gc.has_auto_continue_signal("你先挑一块具体的，别泛泛而谈。") is False

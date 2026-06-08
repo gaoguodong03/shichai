@@ -65,7 +65,7 @@
 ### 5.1 API 表面
 
 - **会话主入口**：`/api/sessions/*`（列表、创建、读写、删除消息、`chat/stream` 等），实现上与群聊共用存储（见 `sessions.py` 转调 `group_chat`）。
-- **Agent（专家）配置**：`/api/agents/*`（`/api/dha/instances/*`、`/api/experts/*` 为兼容别名）。
+- **Agent（专家）配置**：`/api/agents/*`，专家资源包导入导出沿用 `/api/dha/instances/*`。
 
 ### 5.2 编排策略（`next_speaker` 如何决定）
 
@@ -73,36 +73,36 @@
 
 #### 5.2.1 双轨编排与 meta 字段
 
-- **`orchestration_profile`**（会话 meta，取值 **`recruitment` | `scene`**）：  
-  - **`recruitment`**：新建空会话或「招募房间」语义；主持人侧可向模型提供「可邀请专家列表」，并可能产出 `suggested_add_agent_ids`。  
-  - **`scene`**：**场景协作**（如资源中心套用场景、写入 `host_config` 后）；不向调度模型注入可邀请名单（`available_to_add_for_prompt` 为空），`finalize_host_scheduler_decision(..., orchestration_profile="scene")` 会强制清空招募相关字段。  
-  - **缺省迁移**：meta 无该字段时，由 `effective_orchestration_profile` 推断：无场内专家 → `recruitment`；有专家 → `scene`。  
+- **`orchestration_profile`**（会话 meta，取值 **`recruitment` | `scene`**）：
+  - **`recruitment`**：新建空会话或「招募房间」语义；主持人侧可向模型提供「可邀请专家列表」，并可能产出 `suggested_add_agent_ids`。
+  - **`scene`**：**场景协作**（如资源中心套用场景、写入 `host_config` 后）；不向调度模型注入可邀请名单（`available_to_add_for_prompt` 为空），`finalize_host_scheduler_decision(..., orchestration_profile="scene")` 会强制清空招募相关字段。
+  - **缺省迁移**：meta 无该字段时，由 `effective_orchestration_profile` 推断：无场内专家 → `recruitment`；有专家 → `scene`。
   - **升级**：虚拟主持人 + 已配置 `host_config.skill_ids` + 场内有人，且当前为「空/recruitment」时，在 `update_group_session` / `get_group_session` 中会升为 **`scene`**（避免「已套用场景却仍走招募链」）。
 
-- **Skill 会话锁**（跨请求）：`skill_session_owner_id` / `skill_session_skill_id` 由 `group_orchestration_fsm.persist_skill_session_lock` 写入；当用户继续与同一专家推进 Skill、且未显式要求主持人改派时，`resolve_group_entry_route` 可 **`skip_host_dispatch`**，本轮**不调用** `_host_decide_by_dha` / `leader_decide`，直接进入该专家回合（四九不参与本轮用户消息）。
+- **Skill 会话锁**（跨请求）：`skill_session_owner_id` / `skill_session_skill_id` 由 `group_orchestration_fsm.persist_skill_session_lock` 写入；当用户继续与同一专家推进 Skill、且未显式要求主持人改派时，`resolve_group_entry_route` 可 **`skip_host_dispatch`**，本轮**不调用** `_host_decide_by_agent` / `leader_decide`，直接进入该专家回合（四九不参与本轮用户消息）。
 
-- **待恢复（pending）**：若专家需用户补信息，meta 中 `pending_owner_agent_id` / `pending_skill_id` 等仍用于 `_host_decide_by_dha` 的提示注入；与 Skill 锁配合时，以入口路由判定为准。
+- **待恢复（pending）**：若专家需用户补信息，meta 中 `pending_owner_agent_id` / `pending_skill_id` 等仍用于 `_host_decide_by_agent` 的提示注入；与 Skill 锁配合时，以入口路由判定为准。
 
 #### 5.2.2 调度模型与后处理
 
-- **主持人**：虚拟场景主持人时，由 `_resolve_scene_host_profile` 合成「类 DHA」profile，优先走 **`_host_decide_by_dha`**（主持技能 + `host_config` + `app_settings.host_prompts.host_master_prompt`）。  
-- **回退**：主持人失败则 **`leader_decide`**（`leader_scheduler.py`），其提示词按 `orchestration_profile` 区分是否含「可邀请新成员」段落。  
+- **主持人**：虚拟场景主持人时，由 `_resolve_scene_host_profile` 合成「类 Agent」profile，优先走 **`_host_decide_by_agent`**（主持技能 + `host_config` + `app_settings.host_prompts.host_master_prompt`）。
+- **回退**：主持人失败则 **`leader_decide`**（`leader_scheduler.py`），其提示词按 `orchestration_profile` 区分是否含「可邀请新成员」段落。
 - **归一化**：`finalize_host_scheduler_decision` 合并招募抑制；若模型误发「可邀请」且被抑制，**固定** `next_speaker=user`（不猜测下一位专家，由下轮四九按流程图再调度）。`normalize_scheduler_decision` 仅做 id 清洗与非法 id 回落。`speak_mode`（manual/auto）**不再**分支后端逻辑，仅可写入 meta 供前端。
-- **主持人多 Skill**：`_host_decide_by_dha` 固定使用 `skill_ids` **列表第一项**（可预测），不由关键词路由代选。
+- **主持人多 Skill**：`_host_decide_by_agent` 固定使用 `skill_ids` **列表第一项**（可预测），不由关键词路由代选。
 
 #### 5.2.3 有专家时：`if/elif` 决策顺序（源码顺序）
 
 下列为 **互斥分支**（命中一条后同轮内不再走后面的「选下一位」逻辑）：
 
-1. **群内 0 位专家**（在上一节已 `return` 的块）：仅主持人推荐可邀请 id，`end` 等待操作。  
-2. **`entry_route`**：若本轮需要**走四九**，先 **`clear_skill_session_lock`**（见 `group_orchestration_fsm`）。  
-3. **`@` 强制点名** `forced_at_mention_agent_id` 且在群内 → 清锁，`next_speaker` 为该专家，`executing`。  
-4. **Skill 锁短路** `entry_route.skip_host_dispatch` → `next_speaker = direct_expert_id`，**不跑主持人 LLM**。  
-5. **四九调度（唯一路径）**：`_host_decide_by_dha` 或 `leader_decide` → `finalize_host_scheduler_decision`；若点中专家且无招募，主持人气泡后同流进入专家 `while`；若有 `suggested_add` 则 recruiting 语义。
+1. **群内 0 位专家**（在上一节已 `return` 的块）：仅主持人推荐可邀请 id，`end` 等待操作。
+2. **`entry_route`**：若本轮需要**走四九**，先 **`clear_skill_session_lock`**（见 `group_orchestration_fsm`）。
+3. **`@` 强制点名** `forced_at_mention_agent_id` 且在群内 → 清锁，`next_speaker` 为该专家，`executing`。
+4. **Skill 锁短路** `entry_route.skip_host_dispatch` → `next_speaker = direct_expert_id`，**不跑主持人 LLM**。
+5. **四九调度（唯一路径）**：`_host_decide_by_agent` 或 `leader_decide` → `finalize_host_scheduler_decision`；若点中专家且无招募，主持人气泡后同流进入专家 `while`；若有 `suggested_add` 则 recruiting 语义。
 
-专家回合内：多位 Skill 的选型由 **`_resolve_dha_skill_id_and_content`**（`SkillsLoader` 关键词相关度等）与专家模型择一逻辑完成，与旧版「覆盖 next_speaker / 与 pending 抢专家」的路径无关（该路径已移除）。
+专家回合内：多位 Skill 的选型由 **`resolve_expert_skill`**（`SkillsLoader` 关键词相关度等）与专家模型择一逻辑完成，与旧版「覆盖 next_speaker / 与 pending 抢专家」的路径无关（该路径已移除）。
 
-**专家多轮与上限**：同一 HTTP 连接内专家可 `continue` 多轮（如 `_has_auto_continue_signal`）；全局有 **`dha_turns`** 上限（如 32）。回合结束可写 Skill 锁、`pending`，并发 `end`。
+**专家多轮与上限**：同一 HTTP 连接内专家可 `continue` 多轮（如 `_has_auto_continue_signal`）；全局有 **`agent_turns`** 上限（如 32）。回合结束可写 Skill 锁、`pending`，并发 `end`。
 
 #### 5.2.4 与第 5.3 节的关系
 
@@ -130,30 +130,30 @@
 
 以下对应 `group_chat_stream` 中选中某位专家后的路径，源码以 `backend/app/api/group_chat.py`、`backend/app/agent/tools_for_skill.py`、`backend/app/agent/skill_agent_runtime.py`、`backend/app/agent/simple_agent.py` 为准。
 
-1. **按 `agent_id` 读配置**  
-   专家列表来自当前用户的 `data/users/{user_id}/config/dha_instances.json`（`load_dha_instances()`），流内用 `agent_id` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skill_ids`、`mcp_server_ids`、`llm_provider_id`、`file_capabilities`、`url_capability` 等）。若该 `agent_id` 不存在，编排会中断，不继续组工具。
+1. **按 `agent_id` 读配置**
+   专家列表来自当前用户的 `data/users/{user_id}/config/dha_instances.json`（`load_agent_instances()`），流内用 `agent_id` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skill_ids`、`mcp_server_ids`、`llm_provider_id`、`file_capabilities`、`url_capability` 等）。若该 `agent_id` 不存在，编排会中断，不继续组工具。
 
-2. **组装 LLM**  
-   `_get_llm_for_dha`：若专家配置了非空 **`llm_provider_id`** 则用该 provider；否则使用应用设置中的 **`default_llm`**（如缺省 `qwen`），再结合 `llm_providers` 与密钥构造可调用客户端（`get_llm_from_config`）。
+2. **组装 LLM**
+   `_get_llm_for_agent`：若专家配置了非空 **`llm_provider_id`** 则用该 provider；否则使用应用设置中的 **`default_llm`**（如缺省 `qwen`），再结合 `llm_providers` 与密钥构造可调用客户端（`get_llm_from_config`）。
 
-3. **本轮 Skill 与工具列表**  
-   - **选型**：`_resolve_dha_skill_id_and_content` 得到本轮 **`resolved_skill_id`** 与 Skill 正文——无 `skill_ids` 时回退 `default`；仅一个 Skill 时直接用；多个 Skill 时结合讨论目标、最近用户消息等与 `SkillsLoader` 的打分/路由策略选型。  
-   - **MCP**：`build_tools_for_group_chat(dha, workspace_id=会话 id, resolved_skill_id=…)` 仅加载 **`get_mcp_servers_for_skill(resolved_skill_id)`** 允许的服务；若专家配置了 **`mcp_server_ids`**，再与上式**取交集**，做实例级收紧；按需 `ensure_servers_loaded` 后从 `MCPToolManager` 取工具（名通常带 server 前缀）。  
-   - **工作区**：内置读/写/编辑/删/改名等，按专家的 **`file_capabilities`** 过滤；工作区根与会话绑定。  
-   - **HTTP**：`call_api` 仅在 `url_capability` 为真时附加（默认常为真）。  
-   - **脚本**：对 `skill_ids` 中磁盘上存在 `SKILL.md` 的每项注入 **`run_skill_script_<规范化 skill_id>`**，在会话工作区内执行技能脚本。  
+3. **本轮 Skill 与工具列表**
+   - **选型**：`resolve_expert_skill` 得到本轮 **`resolved_skill_id`** 与 Skill 正文——无 `skill_ids` 时回退 `default`；仅一个 Skill 时直接用；多个 Skill 时结合讨论目标、最近用户消息等与 `SkillsLoader` 的打分/路由策略选型。
+   - **MCP**：`build_tools_for_group_chat(agent_profile, workspace_id=会话 id, resolved_skill_id=…)` 仅加载 **`get_mcp_servers_for_skill(resolved_skill_id)`** 允许的服务；若专家配置了 **`mcp_server_ids`**，再与上式**取交集**，做实例级收紧；按需 `ensure_servers_loaded` 后从 `MCPToolManager` 取工具（名通常带 server 前缀）。
+   - **工作区**：内置读/写/编辑/删/改名等，按专家的 **`file_capabilities`** 过滤；工作区根与会话绑定。
+   - **HTTP**：`call_api` 仅在 `url_capability` 为真时附加（默认常为真）。
+   - **脚本**：对 `skill_ids` 中磁盘上存在 `SKILL.md` 的每项注入 **`run_skill_script_<规范化 skill_id>`**，在会话工作区内执行技能脚本。
    - 最后经 **`wrap_filesystem_tools`** 等与文件系统相关的包装，与实现一致。
 
-4. **Skill 正文与专家人设**  
+4. **Skill 正文与专家人设**
    注入模型侧的不只是 SKILL 文件：在 `resolved_skill_id` 对应正文前，会拼接专家的 **`system_prompt`** 与 **`role`**（「你的角色：…」），再交给 `create_skill_execution_agent`。
 
-5. **构造用户侧提示**  
-   - **讨论目标 `discussion_goal`**：一般取**首条用户消息**经规范化后的摘要；若无则使用占位「待用户提出讨论主题」。  
-   - **默认用户内容**：包含「群聊讨论目标」「最近讨论」（由历史消息转成的上下文字符串）；若本次请求带 **`custom_prompt`**，仅在**本轮请求中第一位专家**消耗一次。  
-   - 若内容中已含「最近讨论 / 历史对话」等区块，则避免再重复追加同一段上下文。  
-   - **`extra_system_prompt`** 在群聊流中通常为空；全局 system 已废弃，主持人人设改在主持人 DHA 与主持技能上维护。
+5. **构造用户侧提示**
+   - **讨论目标 `discussion_goal`**：一般取**首条用户消息**经规范化后的摘要；若无则使用占位「待用户提出讨论主题」。
+   - **默认用户内容**：包含「群聊讨论目标」「最近讨论」（由历史消息转成的上下文字符串）；若本次请求带 **`custom_prompt`**，仅在**本轮请求中第一位专家**消耗一次。
+   - 若内容中已含「最近讨论 / 历史对话」等区块，则避免再重复追加同一段上下文。
+   - **`extra_system_prompt`** 在群聊流中通常为空；全局 system 已废弃，主持人人设改在主持人 Agent 与主持技能上维护。
 
-6. **流式 Agent 执行（步进语义）**  
+6. **流式 Agent 执行（步进语义）**
    产品形态是「模型一步 → 需要则工具一步 → 直到不再请求工具」的 ReAct 循环，当前实际执行器是 **`SimpleAgent.astream`**：对外事件类型为 **`agent_step`** / **`tool_step`** / **`final_step`**（对应文档里常说的模型步 / 工具步 / 结束步）。`create_skill_execution_agent` 将技能全文、工具名与说明写入系统提示并 `bind_tools`；群聊侧订阅流事件，将 **`agent_step`** 中的文本以 SSE **`content`** 增量推送，**`tool_step`** 多用于内部追踪（避免把原始工具输出直接灌进气泡）。超时等由环境变量（如 `LLM_AGENT_TIMEOUT`）控制。
 
 ### 5.4 MCP 与 Skills 在何时参与

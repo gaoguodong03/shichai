@@ -6,8 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from app.agent.sandbox_adapter import SandboxHandle, SandboxPolicy
-from app.agent.sandbox_handle_keys import policy_mount_fingerprint
+from app.agent.sandbox_adapter import SandboxPolicy
 from app.agent.sandbox_mount_policy import SANDBOX_WORKSPACE_ROOT, SandboxMountPolicy
 from app.agent.sandbox_policy_runtime import env_csv, sandbox_default_environment, sandbox_image_for_user
 from app.agent.session_workspace_policy import host_sessions_root_from_workspace, sandbox_session_dir, sandbox_sessions_root
@@ -126,26 +125,3 @@ def workspace_with_skills_policy(
         allowed_hosts=env_csv("SANDBOX_ALLOWED_HOSTS"),
         volume_mounts=mounts,
     )
-
-
-def cached_handle_still_valid(handle: SandboxHandle, policy: SandboxPolicy, tool_name: str) -> bool:
-    meta = handle.metadata if isinstance(handle.metadata, dict) else {}
-    old_fp = str(meta.get("mount_fingerprint") or "").strip()
-    new_fp = policy_mount_fingerprint(policy)
-    if not old_fp or old_fp != new_fp:
-        return False
-    old_image_ref = str(meta.get("image_ref") or "").strip()
-    new_image_ref = str(policy.image_ref or "").strip()
-    if old_image_ref != new_image_ref:
-        return False
-    old_policy = meta.get("policy")
-    old_allow: list[str] = []
-    if isinstance(old_policy, dict):
-        old_allow = list(old_policy.get("tool_allowlist") or [])
-    tn = (tool_name or "").strip()
-    if old_allow and tn and tn not in old_allow:
-        return False
-    stored_net = meta.get("policy_allow_network")
-    if stored_net is not None and bool(stored_net) != bool(policy.allow_network):
-        return False
-    return True

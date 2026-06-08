@@ -8,29 +8,29 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import settings_skills as settings_skills_mod
-from app.api.settings import (
+from app.api.settings_skill_frontmatter import (
     ALLOWED_TOOLS_FM_KEY,
     AUTO_TOOLS_FM_KEY,
-    _mcp_ids_from_frontmatter,
-    _normalized_allowed_tools_dict,
-    get_mcp_servers_for_skill,
+    mcp_ids_from_frontmatter,
+    normalized_allowed_tools_dict,
 )
+from app.api.settings_skill_store import get_mcp_servers_for_skill
 from app.skills.loader import SkillsLoader
 
 
 def test_mcp_ids_from_allowed_tools():
     fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": ["exa", "exa"], "python": "x"}}
-    assert _mcp_ids_from_frontmatter(fm) == ["exa"]
+    assert mcp_ids_from_frontmatter(fm) == ["exa"]
 
 
 def test_mcp_ids_legacy_mcp_server_ids():
     fm = {"mcp_server_ids": ["a", "b", "a"]}
-    assert _mcp_ids_from_frontmatter(fm) == ["a", "b"]
+    assert mcp_ids_from_frontmatter(fm) == ["a", "b"]
 
 
 def test_mcp_ids_allowed_tools_wins_over_legacy():
     fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": ["x"]}, "mcp_server_ids": ["y"]}
-    assert _mcp_ids_from_frontmatter(fm) == ["x"]
+    assert mcp_ids_from_frontmatter(fm) == ["x"]
 
 
 def test_mcp_ids_auto_tools_wins_over_allowed_tools():
@@ -38,12 +38,12 @@ def test_mcp_ids_auto_tools_wins_over_allowed_tools():
         AUTO_TOOLS_FM_KEY: {"mcp": ["auto"]},
         ALLOWED_TOOLS_FM_KEY: {"mcp": ["allowed"]},
     }
-    assert _mcp_ids_from_frontmatter(fm) == ["auto"]
+    assert mcp_ids_from_frontmatter(fm) == ["auto"]
 
 
 def test_normalized_allowed_tools_from_legacy_only():
     fm = {"mcp_server_ids": ["file-reader"]}
-    out = _normalized_allowed_tools_dict(fm)
+    out = normalized_allowed_tools_dict(fm)
     assert out["mcp"] == ["file-reader"]
     assert out["python"] == ""
 
@@ -72,17 +72,17 @@ def test_get_mcp_servers_reads_skill_md(tmp_path: Path, monkeypatch):
 
 
 def test_validate_skill_mcp_server_ids_unknown():
-    from app.api.settings import _validate_skill_mcp_server_ids
+    from app.api.settings_skill_store import validate_skill_mcp_server_ids
 
     with patch("app.api.settings_skill_store.load_mcp_config", return_value=[{"id": "ok", "enabled": True}]):
-        assert _validate_skill_mcp_server_ids(["ok"]) == ["ok"]
+        assert validate_skill_mcp_server_ids(["ok"]) == ["ok"]
         with pytest.raises(HTTPException) as ei:
-            _validate_skill_mcp_server_ids(["nope"])
+            validate_skill_mcp_server_ids(["nope"])
         assert ei.value.status_code == 400
 
 
 def test_python_requirements_from_allowed_and_auto_tools(tmp_path: Path):
-    from app.api.settings import _python_requirements_from_skill_dir
+    from app.api.settings_skills import _python_requirements_from_skill_dir
 
     skill_dir = tmp_path / "skill"
     skill_dir.mkdir()
@@ -100,7 +100,7 @@ def test_python_requirements_from_allowed_and_auto_tools(tmp_path: Path):
 
 
 def test_merge_sandbox_requirements_lines_dedupes_by_package(tmp_path: Path, monkeypatch):
-    from app.api.settings import _merge_sandbox_requirements_lines
+    from app.api.settings_skills import _merge_sandbox_requirements_lines
 
     req_path = tmp_path / "config" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True)

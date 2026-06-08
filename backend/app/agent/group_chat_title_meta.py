@@ -1,0 +1,262 @@
+"""Title, metadata, and lightweight skill-gate helpers for group chat."""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import re
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List
+
+from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
+
+from app.agent.group_context import (
+    normalize_discussion_goal as _normalize_discussion_goal,
+    title_from_first_message as _title_from_first_message,
+)
+from app.agent.llm_client import get_llm_from_config
+from app.api.group_chat_state import (
+    load_group_meta as _load_group_meta,
+    save_group_history as _save_group_history,
+    save_group_meta as _save_group_meta,
+)
+from app.api.settings_app import load_app_settings
+from app.api.settings_secrets import load_api_secret_values
+from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
+
+logger = logging.getLogger(__name__)
+
+
+def _maybe_upgrade_meta_to_scene_profile(meta_item: Dict[str, Any]) -> bool:
+    """Upgrade legacy virtual-host session metadata to scene orchestration when safe."""
+    profile = str(meta_item.get("orchestration_profile") or "").strip().lower()
+    host_config = meta_item.get("host_config")
+    if str(meta_item.get("leader_agent_id") or "").strip() != VIRTUAL_SCENE_HOST_ID:
+        return False
+    if not (isinstance(host_config, dict) and (meta_item.get("agent_ids") or [])):
+        return False
+    if profile in ("", "recruitment"):
+        meta_item["orchestration_profile"] = "scene"
+        return True
+    return False
+
+
+async def _ai_title_from_recent_user_messages(
+    llm: Any,
+    messages: List[Dict[str, Any]],
+    max_chars: int = 18,
+    max_user_messages: int = 6,
+    group_session_id: str = "",
+    llm_provider_id: str = "",
+) -> str:
+    """Generate a short Chinese title from recent user messages."""
+    try:
+        user_texts: List[str] = []
+        for m in reversed(messages or []):
+            if not isinstance(m, dict):
+                continue
+            if (m.get("role") or "").strip() != "user":
+                continue
+            content = (m.get("content") or "").strip()
+            if not content:
+                continue
+            user_texts.append(_normalize_discussion_goal(content))
+            if len(user_texts) >= max_user_messages:
+                break
+        user_texts.reverse()
+        if not user_texts:
+            return ""
+
+        client = llm.get_client()
+        system_prompt = (
+            "你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。\n"
+            "输出要求：\n"
+            "- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）\n"
+            f"- 中文主题，长度约 15 字（允许最多 {max_chars} 字）\n"
+            "- 不要使用引号或括号，不要以句号/感叹号/问号结尾\n"
+        )
+        content = "最近用户发言：\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])
+        resp = await client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=content)])
+        raw = (getattr(resp, "content", "") or "").strip()
+        if not raw:
+            return ""
+        title = raw.splitlines()[0].strip()
+        title = re.sub(r"^(主题|讨论主题|标题|群聊主题|当前主题)\s*[:：]\s*", "", title)
+        title = title.strip().strip("“”\"'（）()[]【】")
+        while title and title[-1] in "。！？…":
+            title = title[:-1].strip()
+        if len(title) > max_chars:
+            title = title[:max_chars].rstrip()
+        return title
+    except Exception as e:
+        logger.error("AI 生成群聊主题失败: %s", e, exc_info=True)
+        return ""
+
+
+def _schedule_group_title_refresh(
+    group_session_id: str,
+    messages_snapshot: List[Dict[str, Any]],
+    *,
+    max_chars: int = 18,
+    max_user_messages: int = 6,
+) -> None:
+    """Refresh group title in the background so the main chat path stays responsive."""
+    session_id = (group_session_id or "").strip()
+    if not session_id:
+        return
+
+    async def _runner() -> None:
+        started = time.perf_counter()
+        try:
+            app_settings = load_app_settings()
+            llm_provider_id = app_settings.get("default_llm", "qwen")
+            secrets = load_api_secret_values()
+            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"), secrets)
+            ai_title = await _ai_title_from_recent_user_messages(
+                llm,
+                messages_snapshot,
+                max_chars=max_chars,
+                max_user_messages=max_user_messages,
+                group_session_id=session_id,
+                llm_provider_id=str(llm_provider_id or ""),
+            )
+            if not ai_title:
+                logger.info(
+                    "group_chat_title_background_skip session=%s reason=empty elapsed_ms=%s",
+                    session_id,
+                    int((time.perf_counter() - started) * 1000),
+                )
+                return
+            latest_meta = _load_group_meta()
+            meta_item = latest_meta.get(session_id)
+            if not isinstance(meta_item, dict):
+                return
+            current_title = (meta_item.get("title") or "").strip()
+            placeholder_titles = ("新对话", "新群聊", "")
+            is_template_title = current_title.startswith("多Agent协作 ·")
+            title_auto_generated = meta_item.get("title_auto_generated")
+            if title_auto_generated is None:
+                title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
+            if not (title_auto_generated or current_title in placeholder_titles or is_template_title):
+                logger.info(
+                    "group_chat_title_background_skip session=%s reason=manual_title title=%r",
+                    session_id,
+                    current_title,
+                )
+                return
+            meta_item["title"] = ai_title
+            meta_item["title_auto_generated"] = True
+            _save_group_meta(latest_meta)
+            logger.debug(
+                "group_chat_title_background_done session=%s title=%r elapsed_ms=%s",
+                session_id,
+                ai_title,
+                int((time.perf_counter() - started) * 1000),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("group_chat_title_background_failed session=%s err=%s", session_id, e)
+
+    asyncio.create_task(_runner())
+
+
+def _title_refresh_every_user_message() -> bool:
+    return (os.getenv("GROUP_CHAT_TITLE_REFRESH_EVERY_MESSAGE") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _record_user_message_and_refresh_title(
+    *,
+    group_session_id: str,
+    meta: Dict[str, Dict[str, Any]],
+    messages: List[Dict[str, Any]],
+    user_message: str,
+    client_message_id: str,
+) -> None:
+    """Append a user message once and schedule title refresh while title is automatic."""
+    if not user_message:
+        return
+    meta_item = meta[group_session_id]
+    duplicate_user_message = bool(
+        client_message_id
+        and any(
+            msg.get("role") == "user" and str(msg.get("client_message_id") or "").strip() == client_message_id
+            for msg in messages
+        )
+    )
+    first_user_message = not any(m.get("role") == "user" for m in messages)
+    if not duplicate_user_message:
+        user_msg: Dict[str, Any] = {
+            "message_id": f"msg-{uuid.uuid4().hex[:8]}",
+            "role": "user",
+            "content": user_message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if client_message_id:
+            user_msg["client_message_id"] = client_message_id
+        messages.append(user_msg)
+        _save_group_history(group_session_id, messages)
+        meta_item["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    current_title = (meta_item.get("title") or "").strip()
+    placeholder_titles = ("新对话", "新群聊", "")
+    is_template_title = current_title.startswith("多Agent协作 ·")
+    title_auto_generated = meta_item.get("title_auto_generated")
+    if title_auto_generated is None:
+        title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
+    should_refresh_title = bool(
+        not duplicate_user_message
+        and (
+            current_title in placeholder_titles
+            or is_template_title
+            or (first_user_message and title_auto_generated)
+            or (title_auto_generated and _title_refresh_every_user_message())
+        )
+    )
+    if should_refresh_title and first_user_message and (current_title in placeholder_titles or is_template_title):
+        auto_title = _title_from_first_message(user_message, max_chars=10)
+        if auto_title:
+            meta_item["title"] = auto_title
+            meta_item["title_auto_generated"] = True
+    _save_group_meta(meta)
+    if should_refresh_title:
+        _schedule_group_title_refresh(
+            group_session_id,
+            list(messages),
+            max_chars=18,
+            max_user_messages=6,
+        )
+
+
+def _skill_requires_confirmation_gate(skill_content: str) -> bool:
+    """Detect staged skills that require user confirmation before continuing."""
+    s = (skill_content or "").lower()
+    if not s:
+        return False
+    has_stages = ("stage 1" in s and "stage 2" in s) or ("阶段" in s and ("步骤" in s or "流程" in s))
+    requires_confirm = ("ask if" in s) or ("wait for user confirmation" in s) or ("用户确认" in s) or ("请确认" in s)
+    return has_stages and requires_confirm
+
+
+def _infer_required_user_fields_for_skill(skill_content: str, model_output: str) -> List[Dict[str, Any]]:
+    """Expose a consistent required_user_fields gate when a staged skill asks for confirmation."""
+    if not _skill_requires_confirmation_gate(skill_content):
+        return []
+    text = (model_output or "").strip()
+    if not text:
+        return []
+    has_question = ("?" in text) or ("？" in text) or ("请确认" in text) or ("是否" in text) or ("请补充" in text)
+    if not has_question:
+        return []
+    return [
+        {
+            "key": "workflow_user_confirmation",
+            "label": "请确认是否按当前流程继续，或补充缺失信息",
+            "required": True,
+        }
+    ]

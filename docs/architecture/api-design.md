@@ -106,14 +106,14 @@ ALLOW_ANONYMOUS_API=0
 
 | 方法 | 路径 | 用途 |
 |------|------|------|
-| `GET` | `/api/dha/instances` | 专家列表 |
-| `POST` | `/api/dha/instances` | 创建专家 |
-| `PUT` | `/api/dha/instances/{agent_id}` | 更新专家 |
-| `DELETE` | `/api/dha/instances/{agent_id}` | 删除专家 |
+| `GET` | `/api/agents` | 专家列表 |
+| `POST` | `/api/agents` | 创建专家 |
+| `PUT` | `/api/agents/{agent_id}` | 更新专家 |
+| `DELETE` | `/api/agents/{agent_id}` | 删除专家 |
 | `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 |
 | `POST` | `/api/dha/instances/import-bundle` | 导入专家资源包 |
 
-`/api/agents/*` 与 `/api/experts/*` 是兼容别名，新的前端和文档优先使用 `/api/dha/instances/*` 或 `/api/agents/*` 的 Agent 语义。
+`/api/agents/*` 是 Agent 配置主入口；`/api/dha/instances/*` 仅保留专家资源包导入导出接口。
 
 ### 场景和会话预设
 

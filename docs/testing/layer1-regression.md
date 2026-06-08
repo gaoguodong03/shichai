@@ -42,7 +42,7 @@
 | UR-01 账号与用户隔离 | `test_auth_sqlite.py`、`test_sessions_api.py` | 未登录页面跳转、浏览器刷新登录态 |
 | UR-02 工作区与统一会话 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`test_frontend_business_flows.py` | 长回答流式体验、真实文件预览体验 |
 | UR-03 主持人与专家协作 | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 真实 LLM 下主持人可读性与用户等待状态 |
-| UR-04 资源中心 | `test_dha_api.py`、`test_frontend_business_flows.py`、`test_bundle_import_api.py` | 前端资源详情页完整点击路径 |
+| UR-04 资源中心 | `test_agents_api.py`、`test_frontend_business_flows.py`、`test_bundle_import_api.py` | 前端资源详情页完整点击路径 |
 | UR-05 Skill 与脚本执行 | `test_file_ref_and_gateway.py`、`test_group_chat_skill_script_cli_flow.py`、`test_skill_agent_tool_resolution.py` | 真实沙箱依赖安装、长耗时脚本错误展示 |
 | UR-06 MCP 工具能力 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 真实远程 MCP 鉴权、断连、网络异常 |
 | UR-07 沙箱运行环境 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | Docker/OpenSandbox 镜像、Playwright 版沙箱冒烟 |
@@ -65,10 +65,10 @@
 - `test_file_ref_and_gateway.py`：文件引用解析、路径保护、网关执行与串行化。
 - `test_frontend_business_flows.py`：按前端可操作功能串起会话、文件、资源中心与设置页主要 CRUD。
 
-### DHA / 场景包 / 配置校验
+### Agent / 场景包 / 配置校验
 
-- `test_dha_api.py`：`/api/dha/instances` 及别名路由 CRUD。
-- `test_dha_import_validate.py`：DHA 导入校验。
+- `test_agents_api.py`：`/api/agents` 路由 CRUD。
+- `test_agent_import_validate.py`：Agent 导入校验。
 - `test_session_preset_validate.py`：会话预设校验。
 - `test_scenario_bundle.py`：场景包合并与清洗。
 - `test_expert_bundle.py`：专家包导入导出。

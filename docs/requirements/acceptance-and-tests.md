@@ -8,14 +8,14 @@
 
 ## 2. 产品定位
 
-书童四九是一个多用户隔离的 Agent 对话与工具平台，支持用户管理自己的专家（DHA）、场景、技能（Skills）、MCP 工具、LLM 配置与工作区文件，并通过统一会话完成主持人调度、专家协作、工具调用与结果沉淀。
+书童四九是一个多用户隔离的 Agent 对话与工具平台，支持用户管理自己的专家（Agent）、场景、技能（Skills）、MCP 工具、LLM 配置与工作区文件，并通过统一会话完成主持人调度、专家协作、工具调用与结果沉淀。
 
 ## 3. 用户角色
 
 | 角色 | 目标 | 关键能力 |
 |------|------|----------|
 | 普通用户 | 使用专家与技能完成任务 | 登录、创建会话、上传文件、调用工具、查看结果 |
-| 配置用户 | 维护个人资源 | 管理 DHA、Skills、MCP、LLM、沙箱与密钥 |
+| 配置用户 | 维护个人资源 | 管理 Agent、Skills、MCP、LLM、沙箱与密钥 |
 | 运维/部署者 | 保证服务稳定运行 | 配置环境变量、镜像、OpenSandbox、健康检查 |
 | 开发/测试者 | 安全迭代系统 | 按模块开发、运行回归、验证接口契约 |
 
@@ -26,7 +26,7 @@
 | UR-01 账号与用户隔离 | 认证、用户资源根、受保护路由 | `test_auth_sqlite.py`、`test_sessions_api.py`、`frontend/e2e/auth.spec.ts` | 登录、刷新、跨账号资源隔离 | P0 必测 |
 | UR-02 工作区与统一会话 | 会话 API、工作区、SSE 协议 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`test_frontend_business_flows.py`、`frontend/e2e/workspace.spec.ts` | 新建会话、发送消息、上传/引用文件、刷新恢复 | P0 必测 |
 | UR-03 主持人与专家协作 | 调度 FSM、主持人决策、专家 runtime | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 普通会话推荐专家、场景会话固定名单、`@专家` 路由 | P0 必测 |
-| UR-04 资源中心 | 场景、专家、Skill、MCP、LLM、文件配置 | `test_dha_api.py`、`test_frontend_business_flows.py`、`frontend/e2e/resources-*.spec.ts` | 资源中心增删改查、保存后会话可用 | P0 必测 |
+| UR-04 资源中心 | 场景、专家、Skill、MCP、LLM、文件配置 | `test_agents_api.py`、`test_frontend_business_flows.py`、`frontend/e2e/resources-*.spec.ts` | 资源中心增删改查、保存后会话可用 | P0 必测 |
 | UR-05 Skill 与脚本执行 | Skill 契约、脚本工具、沙箱挂载 | `test_file_ref_and_gateway.py`、`test_group_chat_skill_script_cli_flow.py`、`test_skill_agent_tool_resolution.py` | 绑定 Skill 的专家执行脚本，缺依赖时可诊断 | P0 必测 |
 | UR-06 MCP 工具能力 | MCP 配置、工具权限、工具网关 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 新增 MCP、授权专家调用、断连/鉴权错误可见 | P0 必测 |
 | UR-07 沙箱运行环境 | OpenSandbox、requirements、镜像选择 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | 普通版/Playwright 版沙箱、依赖安装、超时诊断 | P0 必测 |
@@ -69,17 +69,17 @@
 - 刷新页面后，历史消息、成员、工作区文件引用仍可展示。
 - 删除会话后，列表不再显示该会话，且不能继续向该会话发消息。
 
-### 5.3 DHA 专家管理
+### 5.3 Agent 专家管理
 
 对应需求：UR-03、UR-04
 
 **需求**
-- 用户可以创建、编辑、删除 DHA 专家实例。
+- 用户可以创建、编辑、删除 Agent 专家实例。
 - 专家可绑定 Skills、MCP 工具、头像与提示词配置。
 - 专家配置可被会话调度与工具组装模块读取。
 
 **验收点**
-- DHA 列表只展示当前用户自己的专家。
+- Agent 列表只展示当前用户自己的专家。
 - 修改专家名称、描述、技能绑定后，新会话使用最新配置。
 - 删除专家后，资源中心列表同步更新；历史会话不应崩溃。
 - 导入专家包时，非法结构或冲突配置给出明确错误。
@@ -193,7 +193,7 @@
 
 | 层级 | 范围 | 推荐命令 |
 |------|------|----------|
-| 配置/校验层 | session preset、DHA import、Skill contract | `pytest tests/test_session_preset_validate.py tests/test_dha_import_validate.py` |
+| 配置/校验层 | session preset、Agent import、Skill contract | `pytest tests/test_session_preset_validate.py tests/test_agent_import_validate.py` |
 | 核心编排层 | FSM、scheduler、orchestrator reducer/contracts | `pytest tests/test_group_orchestration_fsm.py tests/test_scene_scheduler.py tests/test_orchestration_contracts.py` |
 | 工具/沙箱层 | gateway、workspace、sandbox service | `pytest tests/test_file_ref_and_gateway.py tests/test_workspace_files.py tests/test_sandbox_service.py` |
 | API 层 | auth、sessions、bundle import/export | `pytest tests/test_auth_sqlite.py tests/test_sessions_api.py tests/test_bundle_import_api.py` |
