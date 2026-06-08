@@ -36,9 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 从构建阶段复制 Node/npm/npx 及完整 lib（运行期懒加载 npx MCP 时仍需要）
-COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/
-COPY --from=frontend-builder /usr/local/bin/npm /usr/local/bin/
-COPY --from=frontend-builder /usr/local/bin/npx /usr/local/bin/
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/
 COPY --from=frontend-builder /usr/local/lib /usr/local/lib
 # npx 及其依赖（@npmcli/* 等）在 npm 的 node_modules 内，需让 Node 能解析
 ENV NODE_PATH=/usr/local/lib/node_modules:/usr/local/lib/node_modules/npm/node_modules
@@ -52,9 +50,8 @@ RUN ln -sf /usr/local/lib/node_modules/npm/lib/cli.js /usr/local/lib/cli.js \
 # 把 requirements 单独拎出来，避免改业务代码就重装全部依赖
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r backend/requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install beautifulsoup4 lxml markdown matplotlib numpy pandas pillow pymupdf python-pptx requests rich tqdm
+    pip install -r backend/requirements.txt \
+      beautifulsoup4 lxml markdown matplotlib numpy pandas pillow pymupdf python-pptx requests rich tqdm
 COPY backend/ ./backend/
 
 # 前端构建产物
@@ -72,19 +69,16 @@ ENV AGENT_OUTPUTS_DIR=/app/backend/data/agent-outputs
 # 默认端口
 EXPOSE 8000
 
-# 数据与配置目录（运行时挂载 volume）
-RUN mkdir -p /app/data/sessions /app/data/agent-outputs /app/config
-
 # 可选预拉取 npx MCP 包；默认关闭，避免普通打包反复下载临时 npm 包。
 # file-reader 已是 Python 实现，不再需要预拉取 @modelcontextprotocol/server-filesystem。
 # Playwright 能力由独立 Skill sandbox 镜像提供，app 镜像不预拉取 @playwright/mcp。
 WORKDIR /app/backend
 RUN --mount=type=cache,target=/root/.npm \
-    if [ "$PREWARM_NPX_MCP" = "1" ]; then \
+    mkdir -p /app/data/sessions /app/data/agent-outputs /app/config \
+    && if [ "$PREWARM_NPX_MCP" = "1" ]; then \
       timeout 30 npx -y @amap/amap-maps-mcp-server 2>/dev/null || true; \
     else \
       echo "Skipping npx MCP package prewarm"; \
     fi
 
-WORKDIR /app/backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
