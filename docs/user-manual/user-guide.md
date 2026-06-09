@@ -88,42 +88,14 @@
 6. 在文件树中维护 `references/`、`assets/`、`scripts/` 等附加文件。
 7. 点击“保存”。
 
-#### 3.3.1 脚本型技能输出字段
+#### 3.3.1 技能运行状态
 
-如果技能包含 `scripts/` 下的脚本，脚本应在 stdout 输出一个 JSON 对象，用于告诉专家本次执行结果、用户可见产物和下一步流程。
+技能运行时，页面可能显示正在处理、等待补充、处理完成或处理失败等状态。
 
-标准字段如下：
-
-```json
-{
-  "execution_status": "succeeded",
-  "result_code": "completed",
-  "message": "处理完成。",
-  "artifacts": {},
-  "next_action": {
-    "agent_turn": "respond",
-    "skill_session": "release"
-  }
-}
-```
-
-字段含义：
-
-| 字段 | 允许值或类型 | 说明 |
-| --- | --- | --- |
-| `execution_status` | `succeeded` / `blocked` / `failed` | 本次脚本步骤的执行状态。 |
-| `result_code` | 字符串 | 稳定结果码，例如 `completed`、`input.missing`、`dependency.missing`。 |
-| `message` | 字符串 | 给专家和用户看的简短说明或错误原因。 |
-| `artifacts` | JSON 对象 | 放置业务结果，例如文本、文件路径、图片链接、统计数或明细数组。 |
-| `next_action.agent_turn` | `continue` / `respond` | `continue` 表示专家还要继续执行下一步；`respond` 表示专家应回复用户。 |
-| `next_action.skill_session` | `keep` / `release` | `keep` 表示下一条用户消息继续交给同一专家和技能；`release` 表示本轮技能流程结束并交回主持人调度。 |
-
-常见组合：
-
-- 最终结果已交付：`execution_status=succeeded`，`next_action.agent_turn=respond`，`next_action.skill_session=release`。
-- 还缺少用户输入：`execution_status=blocked`，`next_action.agent_turn=respond`，`next_action.skill_session=keep`。
-- 初始化目录、生成草稿后还要继续编辑：`execution_status=succeeded`，`next_action.agent_turn=continue`，`next_action.skill_session=keep`。
-- 脚本或外部服务失败且本轮无法继续：`execution_status=failed`，`next_action.agent_turn=respond`，`next_action.skill_session=release`。
+- 如果专家提示缺少文件、链接、参数或确认信息，按提示补充后继续发送。
+- 如果专家已经交付最终结果，后续消息会重新交给主持人或当前会话正常调度。
+- 如果页面提示脚本、沙箱或工具失败，优先检查该技能声明的工具依赖和“设置 → 沙箱”的 requirements。
+- 如果你正在编写或维护 Skill，技术规范见 `docs/skills/skill-standard.md` 与 `docs/skills/skill-session-flow.md`。
 
 ### 3.4 工具
 

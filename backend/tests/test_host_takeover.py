@@ -215,12 +215,11 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
     assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
-    assert "`current_phase`" not in calls["agent_factory"]["skill_content"]
-    assert '"current_phase": ""' not in calls["agent_factory"]["skill_content"]
-    assert "必须写当前流程阶段" not in calls["agent_factory"]["skill_content"]
+    assert '"current_phase": "阶段1：选题"' in calls["agent_factory"]["skill_content"]
+    assert "本场景也必须同时输出 `current_phase`" in calls["agent_factory"]["skill_content"]
     assert "先判断任务目标是否已经完成" in calls["agent_factory"]["skill_content"]
     assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
-    assert '"current_phase": "阶段1：选题"' not in calls["agent_factory"]["skill_content"]
+    assert "后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文" in calls["agent_factory"]["skill_content"]
     assert "教师" not in calls["agent_factory"]["skill_content"]
     assert "研讨" not in calls["agent_factory"]["skill_content"]
     assert "`next_speaker` 可以写参与者 agent_id" in calls["agent_factory"]["skill_content"]
@@ -308,7 +307,7 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
     }
 
 
-async def test_host_decide_clears_current_phase_when_scheduler_omits_it(monkeypatch):
+async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monkeypatch):
     gc = _get_host_runtime_module()
     calls = {}
     meta_item = {
@@ -366,7 +365,7 @@ async def test_host_decide_clears_current_phase_when_scheduler_omits_it(monkeypa
     assert "current_phase: 阶段2：材料支撑" in calls["user_prompt"]
     assert out["next_speaker"] == "agent-teacher"
     assert meta_item["scheduler_state"] == {
-        "current_phase": "",
+        "current_phase": "阶段2：材料支撑",
         "next_speaker": "agent-teacher",
         "speaker_task": "请教师收窄成可讨论的问题。",
     }

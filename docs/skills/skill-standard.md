@@ -77,7 +77,7 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 3. **输入要求**：说明必须向用户确认的参数。
 4. **执行步骤**：按顺序写清楚分析、调用脚本、整理结果。
 5. **输出格式**：规定给用户看的最终答复结构。
-6. **流程控制**：脚本型 Skill 明确 `next_action.agent_turn` 与 `next_action.skill_session`。
+6. **流程控制**：脚本型 Skill 明确 stdout JSON；非脚本型 Skill 明确隐藏状态块。
 7. **常见错误**：列出模型容易犯的错。
 
 正文应避免：
@@ -340,6 +340,7 @@ if __name__ == "__main__":
 会话锁存在且仍有效时，下一条用户消息默认直接交给该专家继续处理，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
 
 - 脚本或 MCP 工具 stdout JSON 输出 `next_action.skill_session=release`；
+- 非脚本 Skill 的专家正文末尾追加隐藏状态块，且其中 `next_action.skill_session=release`；
 - 用户明确说“结束 skill / 退出技能 / 交给主持人 / 请下一位专家”等；
 - 用户 `@` 或点名其他专家；
 - 平台入口路由收到明确的 `host_takeover_requested` 或 `ignore_auto_agent_id` 字段；
@@ -349,9 +350,9 @@ if __name__ == "__main__":
 
 Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊中的整体流程是否完成。
 
-### 7.1 标准脚本流程控制
+### 7.1 标准流程控制
 
-脚本型 Skill 和返回 JSON 的 MCP 工具通过 stdout JSON 的 `next_action` 控制流程：
+脚本型 Skill 和返回 JSON 的 MCP 工具通过 stdout JSON 的 `next_action` 控制流程。非脚本 Skill 通过专家正文末尾的隐藏状态块表达同一组字段。
 
 规则：
 
@@ -362,11 +363,30 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 完整字段与允许值见 `docs/skills/skill-session-flow.md`。
 
-普通非脚本专家没有结构化工具结果时，单轮发言结束后默认释放 Skill 会话。
+普通非脚本专家没有结构化工具结果或隐藏状态块时，单轮发言结束后默认释放 Skill 会话。场景协作中的阶段成员建议显式写出隐藏状态块，让平台可以记录本轮 Skill 已完成、等待用户补充或需要继续锁定。
+
+隐藏状态块示例：
+
+```text
+[[SKILL_SESSION_STATE]]
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
+[[/SKILL_SESSION_STATE]]
+```
+
+实际专家输出时，状态块必须直接追加到正文末尾，不要放入 Markdown 代码块。平台会读取并移除该状态块，用户只看到专家正文。
 
 ### 7.2 `release` 的判定
 
-满足任一条件时，脚本输出 `next_action.skill_session=release`：
+满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=release`：
 
 - 已交付用户请求的最终结果，且不需要同一 Skill 继续追问或处理；
 - 脚本成功执行，已总结结果、文件路径、下一步建议；
@@ -375,7 +395,7 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 ### 7.3 `keep` 的判定
 
-满足任一条件时，脚本输出 `next_action.skill_session=keep`：
+满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=keep`：
 
 - 还缺少必填参数，需要用户补充；
 - 任务设计为多轮流程，当前只完成其中一步；
@@ -421,8 +441,8 @@ python scripts/validate_skill_cli_contract.py
 人工验收至少覆盖：
 
 - Skill 能被专家按 `description` 正确选择；
-- 需要参数时输出 `next_action.skill_session=keep` 并继续锁定同一专家；
-- 最终交付后输出 `next_action.skill_session=release` 并回到四九调度；
+- 需要参数时通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=keep`，并继续锁定同一专家；
+- 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=release`，并回到四九调度；
 - 用户说“结束 skill / 交给主持人”时能退出锁定；
 - 脚本型 Skill 的 `script_path`、`cli_args_json`、stdout/stderr 与退出码符合约定；
 - 工作产物写入会话工作区，而不是写入 Skill 目录。
@@ -450,7 +470,7 @@ allowed-tools:
 ## 输入要求
 
 - 必填：<参数>。
-- 缺少必填参数时，先向用户追问；脚本返回 `next_action.skill_session=keep`。
+- 缺少必填参数时，先向用户追问；脚本 stdout 或隐藏状态块返回 `next_action.skill_session=keep`。
 
 ## 执行步骤
 
@@ -466,8 +486,21 @@ allowed-tools:
 
 ## 结束点判断
 
-- 已交付最终结果：脚本输出 `next_action.skill_session=release`。
-- 仍需用户补充或确认：脚本输出 `next_action.skill_session=keep`。
+- 已交付最终结果：脚本 stdout 或隐藏状态块输出 `next_action.skill_session=release`。
+- 仍需用户补充或确认：脚本 stdout 或隐藏状态块输出 `next_action.skill_session=keep`。
 
-脚本型 Skill 使用 `next_action` 控制流程；非脚本型 Skill 可在专家回复中说明是否需要用户继续补充。
+脚本型 Skill 使用 stdout JSON 的 `next_action` 控制流程；非脚本型 Skill 使用隐藏状态块控制流程。隐藏状态块不是用户可见正文，实际输出时不要放入 Markdown 代码块。
+
+[[SKILL_SESSION_STATE]]
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
+[[/SKILL_SESSION_STATE]]
 ```

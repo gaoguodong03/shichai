@@ -1,8 +1,13 @@
-# Skill 脚本流程控制协议
+# Skill 流程控制协议
 
-本文定义 Skill 脚本 stdout 的标准 JSON 协议。Skill 脚本只应使用本文的字段名和枚举值。
+本文定义 Skill 的流程控制协议。平台支持两种结构化信号：
 
-## 标准输出结构
+- 脚本型 Skill：脚本 stdout 输出标准 JSON。
+- 非脚本或模型直接发言的 Skill：专家正文末尾追加平台隐藏状态块。
+
+两种信号使用同一组字段和枚举值；普通用户聊天内容中不应出现这些协议字段。
+
+## 1. 脚本 stdout 结构
 
 脚本 stdout 必须输出一个 JSON 对象：
 
@@ -21,13 +26,59 @@
 }
 ```
 
-## 字段规范
+脚本 stdout 必须只输出 JSON 对象，不要混入解释性文字、Markdown 或日志。日志应写入 stderr。
+
+## 2. 专家隐藏状态块
+
+非脚本 Skill、场景协作成员 Skill 或需要由模型直接判断结束点的 Skill，可以在专家正文末尾追加平台隐藏状态块。平台会读取状态块并从用户可见正文中移除。
+
+实际输出时，状态块必须直接追加到正文末尾，不要放进 Markdown 代码块。
+
+完成并交回主持人调度：
+
+```text
+[[SKILL_SESSION_STATE]]
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
+[[/SKILL_SESSION_STATE]]
+```
+
+仍需用户补充或当前专家继续处理：
+
+```text
+[[SKILL_SESSION_STATE]]
+{
+  "execution_status": "blocked",
+  "result_code": "input.missing",
+  "message": "缺少继续处理所需的信息。",
+  "artifacts": {
+    "required_fields": ["<需要补充的信息>"]
+  },
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "keep"
+  }
+}
+[[/SKILL_SESSION_STATE]]
+```
+
+隐藏状态块只表达当前 Skill 会话是否释放，不负责指定下一位专家。场景调度仍由主持人根据阶段、最近正文和会话状态决定。
+
+## 3. 字段规范
 
 | 字段 | 必填 | 类型 | 允许值 | 含义 |
 | --- | --- | --- | --- | --- |
-| `execution_status` | 是 | string | `succeeded` / `blocked` / `failed` | 当前脚本步骤的执行结果。 |
+| `execution_status` | 是 | string | `succeeded` / `blocked` / `failed` | 当前步骤的执行结果。 |
 | `result_code` | 是 | string | 稳定机器码，见下方命名规则 | 当前结果类型，不承担流程控制语义。 |
-| `message` | 是 | string | 任意简短文本 | 给专家和用户看的说明。 |
+| `message` | 是 | string | 任意简短文本 | 给专家和平台看的简短说明。 |
 | `artifacts` | 否 | object | JSON 对象 | 文件路径、统计数、结构化结果等。 |
 | `next_action` | 否 | object | 见下方枚举 | 明确控制后续流程；缺省按 `respond` + `release` 处理。 |
 
@@ -35,9 +86,9 @@
 
 | 值 | 使用场景 |
 | --- | --- |
-| `succeeded` | 脚本步骤执行成功。成功不等于整个 Skill 工作流结束。 |
-| `blocked` | 脚本没有完成目标，但用户补充参数、文件、确认后可以继续。 |
-| `failed` | 脚本失败，当前参数下不能继续；需要专家说明原因或替代方案。 |
+| `succeeded` | 当前步骤执行成功。成功不等于整个 Skill 工作流结束。 |
+| `blocked` | 当前步骤没有完成目标，但用户补充参数、文件、确认后可以继续。 |
+| `failed` | 当前步骤失败，当前参数下不能继续；需要专家说明原因或替代方案。 |
 
 ### `next_action.agent_turn`
 
@@ -59,7 +110,7 @@
 
 缺省规则：如果脚本未输出 `next_action`，平台按 `agent_turn=respond`、`skill_session=release` 处理。
 
-## `result_code` 命名规则
+## 4. `result_code` 命名规则
 
 `result_code` 只描述“发生了什么”，不直接控制流程。推荐使用点分命名：
 
@@ -72,7 +123,7 @@
 
 不要通过 `result_code` 暗示流程控制。例如 `skill.initialized` 本身不等于继续；真正的继续由 `next_action.agent_turn="continue"` 表达。
 
-## 推荐组合
+## 5. 推荐组合
 
 ### 最终完成
 
@@ -142,11 +193,13 @@
 }
 ```
 
-## 冲突处理
+## 6. 冲突处理
 
-脚本只允许用 `next_action` 表达流程控制。同一份 stdout 中不要给出互相矛盾的 `next_action.agent_turn` 或 `next_action.skill_session`。
+脚本 stdout 和专家隐藏状态块只允许用 `next_action` 表达流程控制。同一份输出中不要给出互相矛盾的 `next_action.agent_turn` 或 `next_action.skill_session`。
 
-## 专家回复规则
+当同一轮同时出现多个信号时，平台按“继续优先”处理：任一明确信号要求 `skill_session=keep` 时保留 Skill 会话锁；只有没有 `keep` 信号且存在 `release` 信号时才释放。
+
+## 7. 专家回复规则
 
 专家回复只负责把 `artifacts` 中的业务结果整理给用户。流程控制由脚本或 MCP 工具返回的 `next_action` 决定。
 
@@ -158,4 +211,4 @@
 | `next_action.skill_session=keep` | 本轮回复面向用户补充或确认，下一条用户消息继续交给同一专家和 Skill。 |
 | `next_action.skill_session=release` | 本轮回复交付完成，下一条用户消息交回主持人正常调度。 |
 
-普通非脚本专家没有结构化工具结果时，单轮发言结束后默认释放 Skill 会话。
+普通非脚本专家没有结构化工具结果或隐藏状态块时，单轮发言结束后默认释放 Skill 会话。对场景协作中的关键阶段成员，建议显式追加隐藏状态块，避免主持人无法区分“已完成本阶段”和“仍需同一专家继续”。

@@ -8,6 +8,19 @@ from typing import Any, Dict, List
 logger = logging.getLogger(__name__)
 
 
+def _clip_context_message(content: str, max_chars_per_message: int) -> str:
+    """Keep both opening context and closing delivery/status signals for long messages."""
+    if len(content) <= max_chars_per_message:
+        return content
+    marker = "\n...[中间内容已截断]...\n"
+    available = max_chars_per_message - len(marker)
+    if available < 80:
+        return content[:max_chars_per_message].rstrip() + "\n...[内容已截断]"
+    head_len = available // 2
+    tail_len = available - head_len
+    return content[:head_len].rstrip() + marker + content[-tail_len:].lstrip()
+
+
 def messages_to_context(
     messages: List[Dict[str, Any]],
     max_turns: int = 15,
@@ -20,8 +33,7 @@ def messages_to_context(
     for m in recent:
         role = m.get("role", "")
         content = (m.get("content") or "").strip()
-        if len(content) > max_chars_per_message:
-            content = content[:max_chars_per_message].rstrip() + "\n...[内容已截断]"
+        content = _clip_context_message(content, max_chars_per_message)
         agent_id = m.get("agent_id", "")
         if role == "user":
             lines.append(f"【用户】{content}")

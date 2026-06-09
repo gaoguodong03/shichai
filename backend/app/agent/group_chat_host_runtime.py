@@ -71,14 +71,17 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
 ```json
 {
+  "current_phase": "阶段1：选题",
   "next_speaker": "agent-6ffb9536",
   "speaker_task": "请下一位参与者根据本轮任务继续处理。",
   "reason": "简短说明"
 }
 ```
 
+`current_phase` 用于保存当前场景流程阶段；若主持人 Skill 有阶段要求，本场景也必须同时输出 `current_phase`。
 `next_speaker` 可以写参与者 agent_id；`speaker_task` 会作为后台任务文本交给下一位发言人执行。
 专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是某位参与者 agent_id、`"user"` 或 `"end"`，不要把 `next_speaker` 写成主持人自身。
+后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文；若最近专家已经完成当前 `speaker_task` 的可交付内容，必须更新 `current_phase` 并选择下一阶段目标，不要仅因旧 `current_phase` 仍在上一阶段就重复安排同一专家。
 你必须先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
 任务已完成时，`next_speaker` 写 `"user"` 表示等待用户继续；若整个任务应结束，写 `"end"` 表示本轮会话结束。
 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 `next_speaker` 设为某个专家。
@@ -89,8 +92,14 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 def _persist_host_scheduler_state_meta(meta_item: Optional[Dict[str, Any]], state: Dict[str, str]) -> None:
     if not isinstance(meta_item, dict):
         return
+    previous = meta_item.get("scheduler_state")
+    previous_state = previous if isinstance(previous, dict) else {}
     clean = {
-        "current_phase": str((state or {}).get("current_phase") or "").strip(),
+        "current_phase": str(
+            (state or {}).get("current_phase")
+            or previous_state.get("current_phase")
+            or ""
+        ).strip(),
         "next_speaker": str((state or {}).get("next_speaker") or "").strip(),
         "speaker_task": str((state or {}).get("speaker_task") or "").strip(),
     }

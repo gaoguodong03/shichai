@@ -29,7 +29,7 @@
 1）专家被选中后，在同一轮内直接执行，不再只“点名后等待下一条用户消息”。
 2）专家执行完成后，若无自动继续信号，返回等待用户输入（AWAITING_USER）。
 3）当用户明确表达“结束 skill/退出 skill/交给主持人”等语义时，清理 skill 锁并回到四九调度链路。
-4）Skill 会话由脚本或 MCP 工具 stdout JSON 的 `next_action.skill_session` 判定：`keep` 保留 skill 锁，`release` 释放 skill 锁；普通非脚本专家没有结构化工具结果时，单轮发言结束后默认释放。
+4）Skill 会话由脚本或 MCP 工具 stdout JSON、或专家隐藏状态块中的 `next_action.skill_session` 判定：`keep` 保留 skill 锁，`release` 释放 skill 锁；普通非脚本专家没有结构化工具结果或隐藏状态块时，单轮发言结束后默认释放。
 
 三、主持人可见消息（announcement）规则
 1）announcement 为“给用户看的主持人播报文案”，用于说明当前安排、原因和下一步。
