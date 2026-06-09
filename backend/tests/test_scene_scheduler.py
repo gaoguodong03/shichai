@@ -133,3 +133,77 @@ def test_finalize_scene_profile_rejects_outside_next_speaker():
     assert out.get("suggested_add_agent_ids") == []
     assert out.get("next_speaker") == "user"
     assert out.get("interrupt_reason") == "conflict_detected"
+
+
+def test_finalize_scene_keeps_host_decision_without_banter_specific_material_advance():
+    """通用主流程不硬编码伴学研讨阶段推进，场景流转由场景 Skill 自己表达。"""
+    raw = {
+        "task_done": True,
+        "next_speaker": "agent-material",
+        "reason": "主持人已输出调度状态，平台已保存为后台状态（阶段2：材料包）",
+        "announcement": "下面由 伴学研讨——材料搜索与研究 发言。",
+        "next_prompt": "请材料研究员继续整理材料包。",
+    }
+    agent_profiles = [
+        {
+            "agent_id": "agent-teacher",
+            "name": "伴学研讨——引导教学的教师",
+            "role": "伴学研讨中的教师，负责选题、材料引导、教师追问与最终点评。",
+        },
+        {
+            "agent_id": "agent-material",
+            "name": "伴学研讨——材料搜索与研究",
+            "role": "在伴学研讨前搜索、研究材料",
+        },
+    ]
+
+    out = finalize_host_scheduler_decision(
+        raw,
+        agent_ids=["agent-teacher", "agent-material"],
+        agent_profiles=agent_profiles,
+        available_to_add=[],
+        last_speaker_agent_id="agent-material",
+        user_message="我了解这三个材料了",
+        explicit_requested_agent_ids=[],
+        orchestration_profile="scene",
+    )
+
+    assert out.get("next_speaker") == "agent-material"
+    assert out.get("phase") == "executing"
+    assert out.get("reason") == raw["reason"]
+    assert out.get("next_prompt") == raw["next_prompt"]
+
+
+def test_finalize_scene_keeps_user_pause_without_banter_specific_material_advance():
+    raw = {
+        "task_done": True,
+        "next_speaker": "user",
+        "reason": "主持人已输出调度状态，平台已保存为后台状态（阶段2：材料包）",
+        "announcement": "请用户继续发言。",
+    }
+    agent_profiles = [
+        {
+            "agent_id": "agent-teacher",
+            "name": "伴学研讨——引导教学的教师",
+            "role": "伴学研讨中的教师，负责选题、材料引导、教师追问与最终点评。",
+        },
+        {
+            "agent_id": "agent-material",
+            "name": "伴学研讨——材料搜索与研究",
+            "role": "在伴学研讨前搜索、研究材料",
+        },
+    ]
+
+    out = finalize_host_scheduler_decision(
+        raw,
+        agent_ids=["agent-teacher", "agent-material"],
+        agent_profiles=agent_profiles,
+        available_to_add=[],
+        last_speaker_agent_id="agent-material",
+        user_message="",
+        explicit_requested_agent_ids=[],
+        orchestration_profile="scene",
+    )
+
+    assert out.get("next_speaker") == "user"
+    assert out.get("reason") == raw["reason"]

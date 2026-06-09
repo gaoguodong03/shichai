@@ -1037,7 +1037,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "has_tool_call": bool(tool_calls_trace),
                     "has_raw_result": bool(accumulated_raw_tool_results),
                     "skill_session_state": {
-                        "over": skill_session_state.over,
+                        "skill_session": (
+                            "release"
+                            if skill_session_state.over is True
+                            else "keep"
+                            if skill_session_state.over is False
+                            else None
+                        ),
                         "source": skill_session_state.source,
                         "signals": {
                             "assistant_state_block": skill_session_signals.assistant_state_block
@@ -1045,9 +1051,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             else None,
                             "script_stdout": skill_session_signals.script_stdout if skill_session_signals else None,
                             "legacy_end_marker": bool(skill_session_signals.legacy_end_marker)
-                            if skill_session_signals
-                            else False,
-                            "audio_transcription_success": bool(skill_session_signals.audio_transcription_success)
                             if skill_session_signals
                             else False,
                         },

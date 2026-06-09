@@ -26,6 +26,7 @@ def _build_leader_prompt(
     allow_recruitment: bool = True,
 ) -> str:
     """构建领导人调度的最小提示词。"""
+    can_recruit = allow_recruitment and not agent_list
     agent_lines = []
     for d in agent_list:
         role = d.get("role") or "参与者"
@@ -36,7 +37,7 @@ def _build_leader_prompt(
     agent_text = "\n".join(agent_lines)
 
     add_section = ""
-    if allow_recruitment and available_to_add:
+    if can_recruit and available_to_add:
         add_lines = [f"- {d.get('name') or d.get('agent_id', '')} ({d.get('agent_id', '')}): {d.get('role') or '专家'}" for d in available_to_add[:30]]
         add_section = f"""
 ## 可邀请的新成员（当前不在群内）
@@ -47,17 +48,19 @@ def _build_leader_prompt(
 """
 
     recruit_rule = ""
-    if allow_recruitment:
+    if can_recruit:
         recruit_rule = (
-            '- **当前成员无法完成工作时**：若缺少某类专家（如需要配图、核查、爬取等而群内没有对应专家），'
+            '- **当前没有参与者时**：若需要专家协作，'
             '可输出 suggested_add_agent_ids（从「可邀请的新成员」中选 agent_id），并设 next_speaker 为 "user"，让用户邀请新成员后再继续。\n'
         )
+    elif allow_recruitment:
+        recruit_rule = "- **当前已有参与者**：不要输出 suggested_add_agent_ids，先在场内专家之间调度；若已完成或需用户补充，next_speaker=\"user\"。\n"
     scene_extra = ""
     if not allow_recruitment:
         scene_extra = "- **本场参与者名单已固定**：不要输出 suggested_add_agent_ids；若缺能力，请 next_speaker=\"user\" 请用户调整场景或换话题。\n"
 
     recruit_output = ""
-    if allow_recruitment:
+    if can_recruit:
         recruit_output = "- 建议邀请新成员时：输出 suggested_add_agent_ids，next_speaker=\"user\"。\n"
     else:
         recruit_output = "- 不要输出 suggested_add_agent_ids。\n"
@@ -70,16 +73,16 @@ def _build_leader_prompt(
 {agent_text}
 {add_section}
 
-## 讨论目标
+## 任务目标
 {discussion_goal}
 
-## 最近讨论（摘要）
+## 最近上下文（摘要）
 以下内容为对话与发言摘录，合起来视为唯一上下文。
 
 ## 本轮约束（与上文契约一致）
 - next_speaker：在场 agent_id | \"user\" | \"end\"。
 - 点专家时须给出可执行的 next_prompt。
-- 先判断讨论目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，next_speaker 应为 \"user\" 或 \"end\"，不要再安排专家做“总结答复”或复述同一结果。
+- 先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，next_speaker 应为 \"user\" 或 \"end\"，不要再安排专家做“总结答复”或复述同一结果。
 - 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 next_speaker 设为某个专家。
 {recruit_rule}{scene_extra}
 {recruit_output}
@@ -111,7 +114,7 @@ async def leader_decide(
         available_to_add if allow_rec else [],
         allow_recruitment=allow_rec,
     )
-    user_content = f"最近讨论内容：\n\n{recent_messages}\n\n"
+    user_content = f"最近上下文：\n\n{recent_messages}\n\n"
     if last_speaker_agent_id:
         user_content += f"刚发言的专家：{last_speaker_agent_id}\n\n请判断该专家是否完成任务，并指定下一发言人。"
     else:
@@ -158,7 +161,7 @@ async def leader_decide(
             if suggested_add_agent_ids:
                 announcement = "当前成员无法完成该工作，建议邀请新成员参与。请用户确认是否添加。"
         elif next_speaker == "end":
-            announcement = "讨论结束。"
+            announcement = "会话结束。"
         elif next_speaker and agent_list:
             for d in agent_list:
                 if d.get("agent_id") == next_speaker:

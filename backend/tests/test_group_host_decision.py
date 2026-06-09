@@ -24,28 +24,51 @@ def test_forced_at_mention_matches_agent_name():
 
 def test_host_decision_from_scheduler_state_maps_user():
     out = hd.host_decision_from_scheduler_state(
-        {"current_phase": "补充信息", "next_speaker": "用户", "speaker_task": "请补充年级"},
+        {"current_phase": "补充信息", "next_speaker": "user", "speaker_task": "请补充信息"},
         [],
     )
 
     assert out["next_speaker"] == "user"
-    assert out["next_prompt"] == "请补充年级"
+    assert out["next_prompt"] == "请补充信息"
     assert out["decision_source"] == "host_scheduler_state"
 
 
 def test_host_decision_from_scheduler_state_maps_end():
     out = hd.host_decision_from_scheduler_state(
         {
-            "current_phase": "阶段8：结束研讨",
-            "next_speaker": "结束研讨",
-            "speaker_task": "教师总结已完成，本次研讨结束。",
+            "current_phase": "收尾",
+            "next_speaker": "end",
+            "speaker_task": "任务已完成，本轮会话结束。",
         },
         [],
     )
 
     assert out["next_speaker"] == "end"
-    assert out["announcement"] == "教师总结已完成，本次研讨结束。"
+    assert out["announcement"] == "任务已完成，本轮会话结束。"
     assert out["decision_source"] == "host_scheduler_state"
+
+
+def test_host_decision_from_scheduler_state_rejects_noncanonical_user_and_end_values():
+    assert hd.host_decision_from_scheduler_state(
+        {"current_phase": "", "next_speaker": "用户", "speaker_task": "请补充信息"},
+        [],
+    ) is None
+    assert hd.host_decision_from_scheduler_state(
+        {"current_phase": "", "next_speaker": "结束研讨", "speaker_task": ""},
+        [],
+    ) is None
+
+
+def test_host_decision_from_scheduler_state_end_default_is_generic():
+    out = hd.host_decision_from_scheduler_state(
+        {"current_phase": "", "next_speaker": "end", "speaker_task": ""},
+        [],
+    )
+
+    assert out["next_speaker"] == "end"
+    assert out["announcement"] == "任务已完成，本轮会话结束。"
+    assert "教师" not in out["announcement"]
+    assert "研讨" not in out["announcement"]
 
 
 def test_host_decision_from_scheduler_state_maps_name_with_agent_id():

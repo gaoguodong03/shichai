@@ -53,6 +53,21 @@ def test_scene_runtime_keeps_recruitment_list_for_empty_room():
     assert runtime.available_to_add_for_scheduler == available
 
 
+def test_scene_runtime_hides_recruitment_list_when_room_has_members():
+    available = [{"agent_id": "agent-b", "name": "外部专家"}]
+    runtime = SceneRuntime.from_group_session(
+        session_id="g1",
+        meta_item={"orchestration_profile": "recruitment"},
+        agent_ids=["agent-a"],
+        agent_map={"agent-a": {"agent_id": "agent-a", "name": "写作"}},
+        app_host_profile={"display_name": "四九", "skill_ids": ["group-host"]},
+        available_to_add=available,
+    )
+
+    assert runtime.orchestration_profile == ORCHESTRATION_RECRUITMENT
+    assert runtime.available_to_add_for_scheduler == []
+
+
 def test_scene_runtime_preserves_empty_host_skill_ids():
     runtime = SceneRuntime.from_group_session(
         session_id="g1",

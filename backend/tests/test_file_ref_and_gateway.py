@@ -197,6 +197,18 @@ def test_parse_cli_args_json_accepts_array():
     assert argv == ["--query", "河北张家口其他人员住宿标准"]
 
 
+def test_manifest_required_fields_validate_cli_args_json_positionals():
+    from app.tools import run_skill_script as rss
+
+    meta = {"input_schema": {"type": "object", "required": ["skill_name"]}}
+
+    assert rss._validate_against_manifest("init_skill.py", meta, {}, ["my-skill"]) is None
+    assert (
+        rss._validate_against_manifest("init_skill.py", meta, {}, [])
+        == "脚本 init_skill.py 缺少必填字段: ['skill_name']"
+    )
+
+
 def test_parse_cli_args_json_recovers_concatenated_json_strings():
     from app.tools import run_skill_script as rss
 

@@ -38,6 +38,29 @@ def _json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _tool_result(
+    *,
+    execution_status: str,
+    result_code: str,
+    message: str,
+    artifacts: dict[str, Any] | None = None,
+    agent_turn: str = "respond",
+    skill_session: str = "release",
+) -> str:
+    return _json(
+        {
+            "execution_status": execution_status,
+            "result_code": result_code,
+            "message": message,
+            "artifacts": artifacts or {},
+            "next_action": {
+                "agent_turn": agent_turn,
+                "skill_session": skill_session,
+            },
+        }
+    )
+
+
 def get_api_key() -> str:
     """Return the configured image API key in Bearer form."""
     key = (os.getenv("JENIYA_API_KEY") or os.getenv("CHATANYWHERE_IMAGE_API_KEY") or "").strip()
@@ -147,33 +170,47 @@ def generate_image(
         output_subdir: 可选，写入工作区的相对目录，默认 generated_images。
 
     Returns:
-        JSON 字符串。成功时包含 ok=true、output；若落盘则包含 file_path/download_url。
+        JSON 字符串。外层字段为 execution_status、result_code、message、artifacts、next_action。
     """
     prompt = (description or "").strip()
     if not prompt:
-        return _json(
-            {
-                "ok": False,
-                "message": "缺少 description，请传入具体图片提示词。",
-            }
+        return _tool_result(
+            execution_status="blocked",
+            result_code="image_generation.missing_description",
+            message="缺少 description，请传入具体图片提示词。",
+            artifacts={},
+            skill_session="keep",
         )
 
     try:
         result = _generate_image(description=prompt, pic_size=(pic_size or "1024x1024").strip())
         if _looks_like_upstream_failure(result):
-            return _json({"ok": False, "message": result})
+            return _tool_result(
+                execution_status="failed",
+                result_code="image_generation.upstream_failed",
+                message=result,
+                artifacts={},
+            )
         saved = _save_data_url(result, workspace_id=workspace_id, output_subdir=output_subdir)
-        payload: dict[str, Any] = {
-            "ok": True,
-            "message": "图片生成完成。",
+        artifacts: dict[str, Any] = {
             "output": result if saved is None else saved.get("download_url") or saved.get("local_path") or "",
         }
         if saved:
-            payload.update(saved)
-        return _json(payload)
+            artifacts.update(saved)
+        return _tool_result(
+            execution_status="succeeded",
+            result_code="image_generation.generated",
+            message="图片生成完成。",
+            artifacts=artifacts,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("image_generation failed: %s", exc, exc_info=True)
-        return _json({"ok": False, "message": str(exc)})
+        return _tool_result(
+            execution_status="failed",
+            result_code="image_generation.exception",
+            message=str(exc),
+            artifacts={},
+        )
 
 
 if __name__ == "__main__":

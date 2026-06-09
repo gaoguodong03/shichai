@@ -216,17 +216,17 @@ def host_decision_from_scheduler_state(
     if not raw_speaker:
         return None
     raw_lower = raw_speaker.lower()
-    user_speakers = {"user", "用户", "用户输入", "学生", "student"}
+    user_speakers = {"user"}
     reason = "主持人已输出调度状态，平台已保存为后台状态"
     if phase_text:
         reason += f"（{phase_text}）"
-    end_speakers = {"end", "结束", "结束研讨", "研讨结束", "终止研讨", "完成"}
+    end_speakers = {"end"}
     if raw_lower in end_speakers:
         return {
             "task_done": True,
             "next_speaker": "end",
             "reason": reason,
-            "announcement": task or "教师总结已完成，本次研讨结束。",
+            "announcement": task or "任务已完成，本轮会话结束。",
             "next_prompt": None,
             "suggested_order": None,
             "suggested_add_agent_ids": None,

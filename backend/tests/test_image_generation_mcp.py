@@ -48,13 +48,14 @@ def test_generate_image_saves_data_url_to_workspace(
         )
     )
 
-    assert result["ok"] is True
-    assert result["file_path"].startswith("generated_images/image-")
-    assert result["file_path"].endswith(".png")
-    assert result["download_url"] == f"/api/workspaces/s1/files/download?path={result['file_path']}"
-    assert result["output"] == result["download_url"]
-    assert result["markdown"] == f"![生成图片]({result['download_url']})"
-    assert (workspace_root / result["file_path"]).read_bytes() == b"fake-png"
+    artifacts = result["artifacts"]
+    assert result["execution_status"] == "succeeded"
+    assert artifacts["file_path"].startswith("generated_images/image-")
+    assert artifacts["file_path"].endswith(".png")
+    assert artifacts["download_url"] == f"/api/workspaces/s1/files/download?path={artifacts['file_path']}"
+    assert artifacts["output"] == artifacts["download_url"]
+    assert artifacts["markdown"] == f"![生成图片]({artifacts['download_url']})"
+    assert (workspace_root / artifacts["file_path"]).read_bytes() == b"fake-png"
 
 
 def test_generate_image_without_workspace_uses_single_generated_images_dir(
@@ -78,10 +79,11 @@ def test_generate_image_without_workspace_uses_single_generated_images_dir(
         )
     )
 
-    assert result["ok"] is True
-    assert result["file_path"].startswith("generated_images/image-")
-    assert "/generated_images/generated_images/" not in result["local_path"]
-    assert (tmp_path / "data" / result["file_path"]).read_bytes() == b"fake-jpg"
+    artifacts = result["artifacts"]
+    assert result["execution_status"] == "succeeded"
+    assert artifacts["file_path"].startswith("generated_images/image-")
+    assert "/generated_images/generated_images/" not in artifacts["local_path"]
+    assert (tmp_path / "data" / artifacts["file_path"]).read_bytes() == b"fake-jpg"
 
 
 def test_generate_image_saves_to_mcp_runtime_user_workspace(
@@ -114,9 +116,9 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
         / "sessions"
         / "workspaces"
         / "group-runtime"
-        / result["file_path"]
+        / result["artifacts"]["file_path"]
     )
-    assert result["ok"] is True
+    assert result["execution_status"] == "succeeded"
     assert expected.read_bytes() == b"runtime-user-jpg"
     assert not (
         tmp_path
@@ -125,7 +127,7 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
         / "sessions"
         / "workspaces"
         / "group-runtime"
-        / result["file_path"]
+        / result["artifacts"]["file_path"]
     ).exists()
 
 
@@ -138,7 +140,7 @@ def test_generate_image_reports_upstream_http_error_as_failure(monkeypatch: pyte
 
     result = json.loads(image_generation.generate_image(description="雪夜山门", pic_size="1024x1024"))
 
-    assert result["ok"] is False
+    assert result["execution_status"] == "failed"
     assert result["message"] == "请求失败 HTTP 301: <html>Moved Permanently</html>"
 
 

@@ -107,6 +107,7 @@ class SceneRuntime:
         available = available_to_add_for_prompt(
             list(available_to_add or []),
             orchestration_profile=profile,
+            agent_ids=ids,
         )
         return cls(
             session_id=session_id,

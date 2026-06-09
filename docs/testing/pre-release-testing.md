@@ -301,12 +301,11 @@ http://<server-ip>:8100
 
 重点确认：
 
-- 专家最终回复末尾包含 `[[SKILL_SESSION_STATE]]` 状态块；
-- `{"over": false}` 表示 Skill 会话继续，保留同一专家与同一 Skill；
-- `{"over": true}` 表示 Skill 已完成，释放会话锁并交回四九调度；
-- 脚本型 Skill 的 stdout JSON 若能确定会话状态，应包含 `skill_session_over: true|false`；
-- 专家状态块或脚本 stdout 任一明确为 `false` 时，应保留 Skill 会话锁；
-- stdout 中的 `done/final` 只用于工具循环收束，不作为会话锁释放依据；
+- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`result_code`、`message`、`artifacts`、`next_action`；
+- `next_action.agent_turn` 只允许 `continue` 或 `respond`；
+- `next_action.skill_session` 只允许 `keep` 或 `release`；
+- `next_action.skill_session=keep` 表示保留同一专家与同一 Skill，等待用户补充或继续处理；
+- `next_action.skill_session=release` 表示 Skill 本轮流程结束，释放会话锁并交回四九调度；
 - 脚本型 Skill 使用 `cli_args_json`，不再使用 `input_json` 或 stdin 读取。
 
 建议执行：

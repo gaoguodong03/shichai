@@ -57,6 +57,12 @@ class GroupSessionUpdate(BaseModel):
     add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
     remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
 
+
+def _clear_scheduler_state_for_session(meta_item: Dict[str, Any]) -> None:
+    """Configuration changes invalidate host stage state from a previous scene/task."""
+    meta_item.pop("scheduler_state", None)
+
+
 def create_session_internal(
     title: str = "新对话",
     agent_ids: Optional[List[str]] = None,
@@ -288,6 +294,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     if body.host_config is not None:
         meta[group_session_id]["host_config"] = normalize_host_config_dict(body.host_config)
         meta[group_session_id]["leader_agent_id"] = VIRTUAL_SCENE_HOST_ID
+        _clear_scheduler_state_for_session(meta[group_session_id])
         # 写入场景型 host_config 即视为「场景协作」，避免仍停留在 recruitment 导致误招募
         meta[group_session_id]["orchestration_profile"] = "scene"
     elif body.leader_agent_id is not None:
@@ -297,6 +304,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         if not raw_l:
             meta[group_session_id]["leader_agent_id"] = ""
             meta[group_session_id].pop("host_config", None)
+            _clear_scheduler_state_for_session(meta[group_session_id])
         else:
             lid = _normalize_to_preferred_agent_ids([raw_l], id_to_preferred=id_to_preferred)
             lid = lid[0] if lid else ""
@@ -306,11 +314,13 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             meta[group_session_id]["leader_agent_id"] = lid
             if lid != VIRTUAL_SCENE_HOST_ID:
                 meta[group_session_id].pop("host_config", None)
+            _clear_scheduler_state_for_session(meta[group_session_id])
     if body.orchestration_profile is not None:
         op = str(body.orchestration_profile).strip().lower()
         if op not in ("recruitment", "scene"):
             raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
         meta[group_session_id]["orchestration_profile"] = op
+        _clear_scheduler_state_for_session(meta[group_session_id])
     direct_ids = body.agent_ids
     if direct_ids is not None:
         instances = load_agent_instances()
@@ -325,6 +335,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             if did not in deduped:
                 deduped.append(did)
         meta[group_session_id]["agent_ids"] = deduped
+        _clear_scheduler_state_for_session(meta[group_session_id])
         if deduped and str(meta[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
             meta[group_session_id]["orchestration_profile"] = "scene"
     add_ids = body.add_agent_ids
@@ -360,6 +371,8 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             for did in remove_ids_norm:
                 current.discard(did)
         meta[group_session_id]["agent_ids"] = list(current)
+        if current != before_ids:
+            _clear_scheduler_state_for_session(meta[group_session_id])
         # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
         unique_added = (
             list(

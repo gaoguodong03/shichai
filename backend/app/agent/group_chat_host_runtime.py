@@ -66,21 +66,21 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
 ## 平台调度状态规则
 
-你仍按主持人 Skill 判断当前阶段和下一位发言人，但不要调用 read_file/write_workspace_file/edit_workspace_file/list_workspace_directory 等工具。
+你仍按主持人 Skill 判断下一步调度，但不要调用 read_file/write_workspace_file/edit_workspace_file/list_workspace_directory 等工具。
 平台后端会在内存/会话 meta 中保存调度状态，不会把 `next_speaker.txt`、`speaker_task.txt` 写到用户工作区。你只需要在本轮回复中给出以下结构化结果：
 
 ```json
 {
-  "current_phase": "阶段1：选题",
-  "next_speaker": "教师",
-  "speaker_task": "请教师给出本轮研讨主题。",
+  "next_speaker": "agent-6ffb9536",
+  "speaker_task": "请下一位参与者根据本轮任务继续处理。",
   "reason": "简短说明"
 }
 ```
 
-`next_speaker` 可以写参与者 agent_id，也可以写主持人 Skill 中的角色名；`speaker_task` 会作为后台任务文本交给下一位发言人执行。
-你必须先判断讨论目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
-任务已完成时，`next_speaker` 写 `"user"`/`"用户"` 表示等待用户继续；若整个讨论应结束，写 `"end"`/`"结束研讨"`。
+`next_speaker` 可以写参与者 agent_id；`speaker_task` 会作为后台任务文本交给下一位发言人执行。
+专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是某位参与者 agent_id、`"user"` 或 `"end"`，不要把 `next_speaker` 写成主持人自身。
+你必须先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
+任务已完成时，`next_speaker` 写 `"user"` 表示等待用户继续；若整个任务应结束，写 `"end"` 表示本轮会话结束。
 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 `next_speaker` 设为某个专家。
 不要生成角色正文。
 """
@@ -181,18 +181,23 @@ async def _host_decide_by_agent(
         add_lines.append(f"- {n} ({did}): {r}")
     available_text = "\n".join(add_lines) if add_lines else "（暂无可邀请专家）"
     scene_mode = str(orchestration_profile or "").strip().lower() == "scene"
+    can_show_invitable = (not scene_mode) and (not agent_profiles) and (not orphan_ids)
     mode_line = (
         "【模式】场景协作（名单固定，不建议补人）。\n\n"
         if scene_mode
-        else "【模式】新建会话（可在必要时建议用户邀请专家）。\n\n"
+        else (
+            "【模式】新建会话（当前无人，可建议用户邀请专家）。\n\n"
+            if can_show_invitable
+            else "【模式】新建会话（当前已有参与者，先在场内调度）。\n\n"
+        )
     )
-    extra_policy = "" if scene_mode else (f"【可邀请专家列表】\n{available_text}\n\n")
+    extra_policy = f"【可邀请专家列表】\n{available_text}\n\n" if can_show_invitable else ""
 
     user_content = (
         orphan_block
         + mode_line
         + f"【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】\n{agent_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
-        f"【讨论目标】\n{discussion_goal}\n\n"
+        f"【任务目标】\n{discussion_goal}\n\n"
         "【主持人决策上下文（对话与发言摘录）】\n"
         f"{recent_messages}\n\n"
         + extra_policy
@@ -210,7 +215,7 @@ async def _host_decide_by_agent(
     else:
         user_content += "【当前为首轮】尚无上一位专家发言。\n\n"
     scheduler_state_meta = meta_item.get("scheduler_state") if isinstance(meta_item, dict) else None
-    if isinstance(scheduler_state_meta, dict):
+    if scene_mode and isinstance(scheduler_state_meta, dict):
         phase = str(scheduler_state_meta.get("current_phase") or "").strip()
         speaker = str(scheduler_state_meta.get("next_speaker") or "").strip()
         task = str(scheduler_state_meta.get("speaker_task") or "").strip()
@@ -252,8 +257,8 @@ async def _host_decide_by_agent(
                 "model": str(getattr(llm, "model", "") or ""),
             },
         )
-        scheduler_state = _extract_host_scheduler_state(content_str)
-        if any((scheduler_state.get("current_phase"), scheduler_state.get("next_speaker"), scheduler_state.get("speaker_task"))):
+        scheduler_state = _extract_host_scheduler_state(content_str) if scene_mode else {}
+        if scene_mode and any((scheduler_state.get("current_phase"), scheduler_state.get("next_speaker"), scheduler_state.get("speaker_task"))):
             _persist_host_scheduler_state_meta(meta_item, scheduler_state)
             state_decision = _host_decision_from_scheduler_state(scheduler_state, agent_profiles)
             if state_decision:

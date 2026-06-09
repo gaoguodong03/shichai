@@ -89,6 +89,43 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
     assert detail_resp.json()["data"]["messages"] == []
 
 
+def test_update_session_clears_stale_scheduler_state(client: TestClient):
+    from app.api.group_chat_state import load_group_meta, save_group_meta
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    agent_resp = client.post("/api/agents", json={"agent_id": "agent-clean-scheduler", "name": "清理专家"})
+    assert agent_resp.status_code == 200
+
+    create_resp = client.post("/api/sessions", json={"title": "旧调度状态会话", "agent_ids": []})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        meta = load_group_meta()
+        meta[session_id]["scheduler_state"] = {
+            "current_phase": "阶段1：选题与需求确认",
+            "next_speaker": "用户",
+            "speaker_task": "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。",
+        }
+        save_group_meta(meta)
+    finally:
+        reset_current_user_identity(token)
+
+    update_resp = client.put(
+        f"/api/sessions/{session_id}",
+        json={"agent_ids": ["agent-clean-scheduler"]},
+    )
+    assert update_resp.status_code == 200
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        refreshed = load_group_meta()
+        assert "scheduler_state" not in refreshed[session_id]
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     host_resp = client.put(
         "/api/settings/host-profile",

@@ -3,7 +3,8 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agent.simple_agent import SimpleAgent, _parse_dsml_tool_calls
+from app.agent.simple_agent_finalization import _deterministic_tool_fallback_message
+from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step, _parse_dsml_tool_calls
 from app.agent.tool_spec import ToolSpec
 
 
@@ -27,6 +28,26 @@ class _FakeLLM:
 
     def get_client(self):
         return self._client
+
+
+def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_block():
+    raw = (
+        "---\n"
+        "name: toutiao-summary\n"
+        "description: 当用户需要[TODO: 任务类型]时使用，输入为[TODO: 文件/参数/链接]，产出[TODO: 结果形式]。\n"
+        "allowed-tools:\n"
+        "  mcp: []\n"
+        "  python: ''\n"
+        "---\n\n"
+        "# Toutiao Summary\n"
+    )
+
+    message = _deterministic_tool_fallback_message([raw])
+    text = str(message.content)
+
+    assert "以下是本轮工具返回摘要：" in text
+    assert "```text\n---\nname: toutiao-summary" in text
+    assert text.rstrip().endswith("```")
 
 
 @pytest.mark.asyncio
@@ -246,6 +267,451 @@ async def test_simple_agent_can_stop_after_configured_write_tool_without_final_l
         and item.get("tool") == "write_workspace_file"
         for item in (out.get("tool_attempt_debug") or [])
     )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_continues_after_script_manifest_probe_to_write_workspace():
+    manifest_probe = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-manifest",
+                "name": "run_skill_script_skill-builder",
+                "args": {"script_path": "__manifest__"},
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {"path": "skills/demo/SKILL.md", "content": "# Demo"},
+            }
+        ],
+    )
+    final_summary = AIMessage(content="已创建并写入 skills/demo/SKILL.md")
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name.startswith("run_skill_script"):
+            return {
+                "messages": [ToolMessage(content='{"ok": true, "code": "manifest", "manifest": {}}', tool_call_id="tc-manifest")],
+                "tool_calls": [
+                    {
+                        "tool": tool_name,
+                        "arguments": {"script_path": "__manifest__"},
+                    }
+                ],
+                "tool_raw_outputs": ['{"ok": true, "code": "manifest", "manifest": {}, "message": "已返回当前 skill 的脚本 manifest。"}'],
+            }
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/demo/SKILL.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "skills/demo/SKILL.md", "content": "# Demo"},
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/demo/SKILL.md"],
+            "tool_attempt_debug": [{"source": "write_workspace_file", "matched": True}],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([manifest_probe, write_call, final_summary]),
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_skill-builder",
+                description="run skill script",
+                func=lambda: None,
+            ),
+            ToolSpec.from_function(
+                name="write_workspace_file",
+                description="write workspace file",
+                func=lambda: None,
+            ),
+        ],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 demo skill")]})
+
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    assert str(out["messages"][-1].content) == "已创建并写入 skills/demo/SKILL.md"
+    assert any(
+        item.get("source") == "script_metadata_probe_continue"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
+    init_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-init",
+                "name": "run_skill_script_skill-builder",
+                "args": {
+                    "script_path": "init_skill.py",
+                    "cli_args_json": '["toutiao-summary"]',
+                },
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "skills/toutiao-summary/SKILL.md",
+                    "content": "# Toutiao Summary",
+                },
+            }
+        ],
+    )
+    final_summary = AIMessage(content="已创建并完善 skills/toutiao-summary/SKILL.md")
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name.startswith("run_skill_script"):
+            raw = json.dumps(
+                {
+                    "ok": True,
+                    "code": "script_executed",
+                    "message": "脚本执行成功。",
+                    "stdout": "Skill 'toutiao-summary' initialized successfully.",
+                },
+                ensure_ascii=False,
+            )
+            return {
+                "messages": [ToolMessage(content=raw, tool_call_id="tc-init")],
+                "tool_calls": [
+                    {
+                        "tool": tool_name,
+                        "arguments": {
+                            "script_path": "init_skill.py",
+                            "cli_args_json": '["toutiao-summary"]',
+                        },
+                    }
+                ],
+                "tool_raw_outputs": [raw],
+            }
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-summary/SKILL.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "skills/toutiao-summary/SKILL.md"},
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/toutiao-summary/SKILL.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([init_call, write_call, final_summary]),
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_skill-builder",
+                description="run skill script",
+                func=lambda: None,
+            ),
+            ToolSpec.from_function(
+                name="write_workspace_file",
+                description="write workspace file",
+                func=lambda: None,
+            ),
+        ],
+        system_prompt="完成单次测试任务后输出 [[SKILL_SESSION_END]]。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-summary skill")]})
+
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    assert str(out["messages"][-1].content) == "已创建并完善 skills/toutiao-summary/SKILL.md"
+    assert any(
+        item.get("source") == "script_workflow_step_continue"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_continues_after_skill_initialized_payload_without_tool_trace():
+    init_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-init",
+                "name": "run_skill_script_skill-builder",
+                "args": {
+                    "script_path": "init_skill.py",
+                    "cli_args_json": '["toutiao-news-summary"]',
+                },
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "skills/toutiao-news-summary/SKILL.md",
+                    "content": "# Toutiao News Summary",
+                },
+            }
+        ],
+    )
+    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    raw = json.dumps(
+        {
+            "ok": True,
+            "code": "skill_initialized",
+            "message": "Skill 模板目录已创建，请继续编辑 SKILL.md 并运行必要验证。",
+            "skill_name": "toutiao-news-summary",
+            "workspace_path": "skills/toutiao-news-summary",
+            "skill_content": "---\nname: toutiao-news-summary\n---\n# Toutiao News Summary\n",
+        },
+        ensure_ascii=False,
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name.startswith("run_skill_script"):
+            return {
+                "messages": [ToolMessage(content=raw, tool_call_id="tc-init")],
+                "tool_raw_outputs": [raw],
+            }
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"},
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([init_call, write_call, final_summary]),
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_skill-builder",
+                description="run skill script",
+                func=lambda: None,
+            ),
+            ToolSpec.from_function(
+                name="write_workspace_file",
+                description="write workspace file",
+                func=lambda: None,
+            ),
+        ],
+        system_prompt="完成单次测试任务后输出 [[SKILL_SESSION_END]]。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]})
+
+    assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    final_text = str(out["messages"][-1].content)
+    assert final_text == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert "skill_initialized" not in final_text
+    assert "工具已执行完成" not in final_text
+    assert any(
+        item.get("source") == "script_workflow_step_continue"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_continues_after_next_action_agent_turn_continue():
+    init_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-init",
+                "name": "run_skill_script_skill-builder",
+                "args": {
+                    "script_path": "create_template.py",
+                    "cli_args_json": '["toutiao-news-summary"]',
+                },
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "skills/toutiao-news-summary/SKILL.md",
+                    "content": "# Toutiao News Summary",
+                },
+            }
+        ],
+    )
+    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    raw = json.dumps(
+        {
+            "execution_status": "succeeded",
+            "result_code": "skill.initialized",
+            "message": "Skill 模板目录已创建，请继续编辑 SKILL.md。",
+            "artifacts": {"workspace_path": "skills/toutiao-news-summary"},
+            "next_action": {"agent_turn": "continue", "skill_session": "keep"},
+        },
+        ensure_ascii=False,
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name.startswith("run_skill_script"):
+            return {
+                "messages": [ToolMessage(content=raw, tool_call_id="tc-init")],
+                "tool_raw_outputs": [raw],
+            }
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"},
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([init_call, write_call, final_summary]),
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_skill-builder",
+                description="run skill script",
+                func=lambda: None,
+            ),
+            ToolSpec.from_function(
+                name="write_workspace_file",
+                description="write workspace file",
+                func=lambda: None,
+            ),
+        ],
+        system_prompt="创建 Skill。",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]})
+
+    assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    assert str(out["messages"][-1].content) == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert "工具已执行完成" not in str(out["messages"][-1].content)
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_stream_continues_after_script_manifest_probe_to_write_workspace():
+    manifest_probe = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-manifest",
+                "name": "run_skill_script_skill-builder",
+                "args": {"script_path": "__manifest__"},
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {"path": "skills/demo/SKILL.md", "content": "# Demo"},
+            }
+        ],
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name.startswith("run_skill_script"):
+            return {
+                "messages": [ToolMessage(content='{"ok": true, "code": "manifest", "manifest": {}}', tool_call_id="tc-manifest")],
+                "tool_calls": [
+                    {
+                        "tool": tool_name,
+                        "arguments": {"script_path": "__manifest__"},
+                    }
+                ],
+                "tool_raw_outputs": ['{"ok": true, "code": "manifest", "manifest": {}, "message": "已返回当前 skill 的脚本 manifest。"}'],
+            }
+        return {
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/demo/SKILL.md", tool_call_id="tc-write")],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "skills/demo/SKILL.md", "content": "# Demo"},
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/demo/SKILL.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([manifest_probe, write_call, AIMessage(content="已创建并写入 skills/demo/SKILL.md")]),
+        tools=[
+            ToolSpec.from_function(
+                name="run_skill_script_skill-builder",
+                description="run skill script",
+                func=lambda: None,
+            ),
+            ToolSpec.from_function(
+                name="write_workspace_file",
+                description="write workspace file",
+                func=lambda: None,
+            ),
+        ],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+        synthesize_after_tools=True,
+    )
+
+    final_debug: list[dict] = []
+    async for ev in agent.astream({"messages": [HumanMessage(content="创建 demo skill")]}, stream_mode=["updates"]):
+        if isinstance(ev, dict) and ev.get("type") == "final_step":
+            final_debug = ev.get("tool_attempt_debug") or []
+
+    assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
+    assert any(item.get("source") == "script_metadata_probe_continue" for item in final_debug)
 
 
 @pytest.mark.asyncio
@@ -546,7 +1012,16 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
     should_not_call = AIMessage(content="不应该为了音频转写再次调用模型")
 
     async def _tool_runner(state, tools):
-        raw = json.dumps({"ok": True, "text": transcript, "segment_count": 1}, ensure_ascii=False)
+        raw = json.dumps(
+            {
+                "execution_status": "succeeded",
+                "result_code": "audio_asr.transcribed",
+                "message": "转写完成。",
+                "artifacts": {"text": transcript, "segment_count": 1},
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            },
+            ensure_ascii=False,
+        )
         return {
             "messages": [ToolMessage(content=raw[:4000] + "\n...[工具结果已截断]", tool_call_id="tc-asr")],
             "tool_calls": [
@@ -571,7 +1046,7 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
     assert str(out["messages"][-1].content) == transcript
     assert "不应该" not in str(out["messages"][-1].content)
     assert any(
-        item.get("source") == "audio_transcription_direct_final"
+        item.get("source") == "mcp_tool_result_direct_final"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
@@ -588,7 +1063,16 @@ async def test_simple_agent_forces_audio_asr_tool_for_audio_file_ref_before_llm_
         tool_calls = getattr(last, "tool_calls", None) or []
         assert tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
         assert tool_calls[0]["args"]["path"] == "学生降转及研究方向调整.mp3"
-        raw = json.dumps({"ok": True, "text": transcript, "segment_count": 1}, ensure_ascii=False)
+        raw = json.dumps(
+            {
+                "execution_status": "succeeded",
+                "result_code": "audio_asr.transcribed",
+                "message": "转写完成。",
+                "artifacts": {"text": transcript, "segment_count": 1},
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            },
+            ensure_ascii=False,
+        )
         return {
             "messages": [ToolMessage(content=raw, tool_call_id=tool_calls[0]["id"])],
             "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": tool_calls[0]["args"]}],
@@ -618,7 +1102,7 @@ async def test_simple_agent_forces_audio_asr_tool_for_audio_file_ref_before_llm_
     assert str(out["messages"][-1].content) == transcript
     assert "旧的截断" not in str(out["messages"][-1].content)
     assert any(
-        item.get("source") == "forced_audio_asr_file_ref"
+        item.get("source") == "forced_mcp_file_ref_tool_call"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

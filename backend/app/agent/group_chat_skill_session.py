@@ -96,6 +96,12 @@ def _clear_completed_skill_session_lock_from_history(
         debug = msg.get("tool_debug")
         state = debug.get("skill_session_state") if isinstance(debug, dict) else None
         if isinstance(state, dict):
+            parsed_session = str(state.get("skill_session") or "").strip().lower()
+            if parsed_session in {"keep", "release"}:
+                if parsed_session == "keep":
+                    return False
+                clear_skill_session_lock(meta_item)
+                return True
             parsed = state.get("over")
             if isinstance(parsed, bool):
                 if parsed is False:

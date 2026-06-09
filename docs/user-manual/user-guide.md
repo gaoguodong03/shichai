@@ -88,6 +88,43 @@
 6. 在文件树中维护 `references/`、`assets/`、`scripts/` 等附加文件。
 7. 点击“保存”。
 
+#### 3.3.1 脚本型技能输出字段
+
+如果技能包含 `scripts/` 下的脚本，脚本应在 stdout 输出一个 JSON 对象，用于告诉专家本次执行结果、用户可见产物和下一步流程。
+
+标准字段如下：
+
+```json
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
+```
+
+字段含义：
+
+| 字段 | 允许值或类型 | 说明 |
+| --- | --- | --- |
+| `execution_status` | `succeeded` / `blocked` / `failed` | 本次脚本步骤的执行状态。 |
+| `result_code` | 字符串 | 稳定结果码，例如 `completed`、`input.missing`、`dependency.missing`。 |
+| `message` | 字符串 | 给专家和用户看的简短说明或错误原因。 |
+| `artifacts` | JSON 对象 | 放置业务结果，例如文本、文件路径、图片链接、统计数或明细数组。 |
+| `next_action.agent_turn` | `continue` / `respond` | `continue` 表示专家还要继续执行下一步；`respond` 表示专家应回复用户。 |
+| `next_action.skill_session` | `keep` / `release` | `keep` 表示下一条用户消息继续交给同一专家和技能；`release` 表示本轮技能流程结束并交回主持人调度。 |
+
+常见组合：
+
+- 最终结果已交付：`execution_status=succeeded`，`next_action.agent_turn=respond`，`next_action.skill_session=release`。
+- 还缺少用户输入：`execution_status=blocked`，`next_action.agent_turn=respond`，`next_action.skill_session=keep`。
+- 初始化目录、生成草稿后还要继续编辑：`execution_status=succeeded`，`next_action.agent_turn=continue`，`next_action.skill_session=keep`。
+- 脚本或外部服务失败且本轮无法继续：`execution_status=failed`，`next_action.agent_turn=respond`，`next_action.skill_session=release`。
+
 ### 3.4 工具
 
 “工具”用于配置 MCP Server。

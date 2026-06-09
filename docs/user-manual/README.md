@@ -216,15 +216,17 @@
 3. 检查 `SKILL.md` 正文。
 4. 检查 MCP 工具依赖和 Python requirements。
 5. 如页面提示沙箱缺少依赖，点击一键添加或进入“设置 → 沙箱”补齐。
-6. 点击“保存”。
+6. 如果该技能包含脚本，检查 `SKILL.md` 是否说明脚本 stdout JSON 字段：`execution_status`、`result_code`、`message`、`artifacts`、`next_action`。
+7. 检查 `next_action.agent_turn` 只使用 `continue` 或 `respond`，`next_action.skill_session` 只使用 `keep` 或 `release`。
+8. 点击“保存”。
 
 ### 预期结果
 
-技能正文可保存；依赖提示清晰；requirements 写入后不会丢失；专家配置中可选择该技能。
+技能正文可保存；依赖提示清晰；requirements 写入后不会丢失；专家配置中可选择该技能；脚本型技能的输出字段和允许值说明完整。
 
 ### 不通过判定
 
-技能保存失败、依赖提示与实际配置不一致、requirements 刷新后丢失，均判定为不通过。
+技能保存失败、依赖提示与实际配置不一致、requirements 刷新后丢失、脚本型技能没有说明标准 stdout JSON 字段，均判定为不通过。
 
 ## 7. 资源中心：工具
 
