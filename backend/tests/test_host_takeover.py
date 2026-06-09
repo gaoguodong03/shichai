@@ -215,6 +215,9 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
     assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
+    assert "`current_phase`" not in calls["agent_factory"]["skill_content"]
+    assert '"current_phase": ""' not in calls["agent_factory"]["skill_content"]
+    assert "必须写当前流程阶段" not in calls["agent_factory"]["skill_content"]
     assert "先判断任务目标是否已经完成" in calls["agent_factory"]["skill_content"]
     assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
     assert '"current_phase": "阶段1：选题"' not in calls["agent_factory"]["skill_content"]
@@ -302,6 +305,70 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
         "current_phase": "阶段1：选题",
         "next_speaker": "教师",
         "speaker_task": "请提出本轮研讨主题。",
+    }
+
+
+async def test_host_decide_clears_current_phase_when_scheduler_omits_it(monkeypatch):
+    gc = _get_host_runtime_module()
+    calls = {}
+    meta_item = {
+        "scheduler_state": {
+            "current_phase": "阶段2：材料支撑",
+            "next_speaker": "agent-research",
+            "speaker_task": "请补充可支撑讨论的材料。",
+        }
+    }
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, _skill_id):
+            return "主持人 Skill 正文"
+
+    class FakeAgent:
+        async def ainvoke(self, initial_state, **_kwargs):
+            calls["user_prompt"] = initial_state["messages"][0].content
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content=(
+                            '```json\n{"next_speaker": "agent-teacher", '
+                            '"speaker_task": "请教师收窄成可讨论的问题。", '
+                            '"reason": "继续交给教师"}\n```'
+                        )
+                    )
+                ]
+            }
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", lambda *_args, **_kwargs: FakeAgent())
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-scene-host",
+            "name": "四九场景主持",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host"],
+        },
+        agent_profiles=[
+            {"agent_id": "agent-teacher", "name": "伴学研讨——引导教学的教师", "role": "教师"},
+        ],
+        discussion_goal="AI 在学生竞赛中的应用",
+        recent_messages="【用户】请收窄讨论题",
+        last_speaker_agent_id="agent-research",
+        extra_system_prompt="",
+        group_session_id="group-phase-preserve",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+        meta_item=meta_item,
+    )
+
+    assert "【后台调度状态】" in calls["user_prompt"]
+    assert "current_phase: 阶段2：材料支撑" in calls["user_prompt"]
+    assert out["next_speaker"] == "agent-teacher"
+    assert meta_item["scheduler_state"] == {
+        "current_phase": "",
+        "next_speaker": "agent-teacher",
+        "speaker_task": "请教师收窄成可讨论的问题。",
     }
 
 
