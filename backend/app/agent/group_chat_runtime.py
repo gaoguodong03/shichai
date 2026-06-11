@@ -288,6 +288,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     reason=(decision.get("reason") or ""),
                     announcement=(decision.get("announcement") or ""),
                     next_prompt=decision.get("next_prompt"),
+                    current_phase=(decision.get("current_phase") or ""),
+                    speaker_task=(decision.get("speaker_task") or ""),
                     suggested_add_agent_ids=(decision.get("suggested_add_agent_ids") or []),
                     phase=phase,
                     owner_agent_id=decision.get("owner_agent_id"),
@@ -428,7 +430,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_ids") or [])
                 resolved_next = str(decision.get("next_speaker") or "user").strip().lower() or "user"
-                np_auto = decision.get("next_prompt") if isinstance(decision, dict) else None
+                np_auto = (
+                    decision.get("speaker_task") or decision.get("next_prompt")
+                    if isinstance(decision, dict)
+                    else None
+                )
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
 
@@ -449,6 +455,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         next_speaker=resolved_next,
                         agent_map=agent_map,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
+                        speaker_task=decision.get("speaker_task"),
                         suggested_order=decision.get("suggested_order"),
                         leader_agent_id=leader_agent_id,
                     )
@@ -462,7 +470,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         skill_id=scene_runtime.host_bubble_skill_id(),
                         next_speaker=resolved_next,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
                         reason=decision.get("reason"),
+                        speaker_task=decision.get("speaker_task"),
                         leader_agent_id=leader_agent_id,
                     )
                     if host_msg:
@@ -659,7 +669,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_ids") or [])
                 next_speaker = decision.get("next_speaker", "user")
-                np_auto = decision.get("next_prompt") if isinstance(decision, dict) else None
+                np_auto = (
+                    decision.get("speaker_task") or decision.get("next_prompt")
+                    if isinstance(decision, dict)
+                    else None
+                )
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
                 if suggested_add:
@@ -677,6 +691,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         next_speaker=next_speaker,
                         agent_map=agent_map,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
+                        speaker_task=decision.get("speaker_task"),
                         suggested_order=decision.get("suggested_order"),
                         leader_agent_id=leader_agent_id,
                     )
@@ -688,7 +704,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         skill_id=scene_runtime.host_bubble_skill_id(),
                         next_speaker=next_speaker,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
                         reason=decision.get("reason"),
+                        speaker_task=decision.get("speaker_task"),
                         leader_agent_id=leader_agent_id,
                     )
                     if host_msg:

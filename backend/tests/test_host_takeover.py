@@ -48,7 +48,7 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
     assert not gc._user_requests_host_takeover("【主持人补充指令】请撰写报告", explicit_flag=None, host_display_name="四九")
 
 
-def test_parse_host_response_extracts_next_prompt():
+def test_parse_host_response_migrates_legacy_next_prompt_to_speaker_task():
     gc = _get_host_decision_module()
     raw = """开场白
 ```json
@@ -57,7 +57,8 @@ def test_parse_host_response_extracts_next_prompt():
 """
     out = gc.parse_host_response(raw)
     assert out is not None
-    assert out.get("next_prompt") == "请结合上文补充要点"
+    assert out.get("speaker_task") == "请结合上文补充要点"
+    assert out.get("next_prompt") is None
     assert out.get("next_speaker") == "agent-a"
 
 
@@ -71,6 +72,47 @@ def test_parse_host_response_without_next_prompt():
     out = gc.parse_host_response(raw)
     assert out is not None
     assert out.get("next_prompt") is None
+
+
+def test_host_pause_message_prefers_speaker_task_over_generic_user_announcement():
+    from app.agent.group_chat_host_messages import _build_host_pause_message
+
+    msg = _build_host_pause_message(
+        skill_id="group-host-webnovel",
+        next_speaker="user",
+        current_phase="阶段1：入口分流",
+        announcement="请用户继续发言。",
+        speaker_task="请用户明确报告目标受众和篇幅。",
+    )
+
+    assert msg is not None
+    assert "请用户明确报告目标受众和篇幅。" in msg["content"]
+    assert "current_phase" not in msg["content"]
+    assert msg["meta"]["scheduler_state"] == {
+        "current_phase": "阶段1：入口分流",
+        "next_speaker": "user",
+        "speaker_task": "请用户明确报告目标受众和篇幅。",
+    }
+
+
+def test_host_next_speaker_message_includes_scheduler_state_json():
+    from app.agent.group_chat_host_messages import _build_host_next_speaker_message
+
+    msg = _build_host_next_speaker_message(
+        skill_id="group-host-webnovel",
+        next_speaker="agent-writer",
+        current_phase="阶段2：撰写",
+        speaker_task="请根据确认后的目标受众撰写报告。",
+        agent_map={"agent-writer": {"name": "文字创作专家"}},
+    )
+
+    assert "下面由 文字创作专家 发言。" in msg["content"]
+    assert "current_phase" not in msg["content"]
+    assert msg["meta"]["scheduler_state"] == {
+        "current_phase": "阶段2：撰写",
+        "next_speaker": "agent-writer",
+        "speaker_task": "请根据确认后的目标受众撰写报告。",
+    }
 
 
 def test_preferred_agent_id_map_prefers_agent_namespace():
@@ -215,14 +257,18 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
     assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
-    assert '"current_phase": "阶段1：选题"' in calls["agent_factory"]["skill_content"]
+    assert '"current_phase": "阶段1：入口分流"' in calls["agent_factory"]["skill_content"]
     assert "本场景也必须同时输出 `current_phase`" in calls["agent_factory"]["skill_content"]
     assert "先判断任务目标是否已经完成" in calls["agent_factory"]["skill_content"]
     assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
     assert "后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文" in calls["agent_factory"]["skill_content"]
     assert "教师" not in calls["agent_factory"]["skill_content"]
     assert "研讨" not in calls["agent_factory"]["skill_content"]
-    assert "`next_speaker` 可以写参与者 agent_id" in calls["agent_factory"]["skill_content"]
+    assert "不要在主持人 Skill 中硬编码 agent_id" in calls["agent_factory"]["skill_content"]
+    assert "`speaker_task` 是唯一任务交接字段" in calls["agent_factory"]["skill_content"]
+    assert "next_prompt" not in calls["agent_factory"]["skill_content"]
+    assert '"reason"' not in calls["agent_factory"]["skill_content"]
+    assert "`next_speaker` 可以写参与者 agent_id" not in calls["agent_factory"]["skill_content"]
     assert "专家发言完成后，平台会先交回主持人调度" in calls["agent_factory"]["skill_content"]
     assert "这里的 `next_speaker` 是主持人本次调度出的下一步目标" in calls["agent_factory"]["skill_content"]
     assert "不要把 `next_speaker` 写成主持人自身" in calls["agent_factory"]["skill_content"]
@@ -293,7 +339,8 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
 
     assert out is not None
     assert out["next_speaker"] == "agent-teacher"
-    assert out["next_prompt"] == "请提出本轮研讨主题。"
+    assert out["speaker_task"] == "请提出本轮研讨主题。"
+    assert out.get("next_prompt") is None
     assert out["decision_source"] == "host_scheduler_state"
     assert calls["agent_factory"]["tools"] == []
     assert "不要调用 read_file/write_workspace_file" in calls["agent_factory"]["skill_content"]
@@ -498,6 +545,8 @@ def test_leader_prompt_hides_skill_details_from_host():
     assert "skill-x" not in prompt
     assert "先判断任务目标是否已经完成" in prompt
     assert "不要再安排专家做“总结答复”" in prompt
+    assert "speaker_task" in prompt
+    assert "next_prompt" not in prompt
 
 
 def test_leader_prompt_hides_invitable_list_when_room_has_participants():
@@ -528,3 +577,35 @@ def test_leader_prompt_shows_invitable_list_only_for_empty_room():
 
     assert "可邀请的新成员" in prompt
     assert "专家B" in prompt
+
+
+async def test_leader_decide_migrates_legacy_next_prompt_to_speaker_task():
+    from app.agent.leader_scheduler import leader_decide
+
+    class FakeClient:
+        async def ainvoke(self, _messages):
+            return type(
+                "Resp",
+                (),
+                {
+                    "content": (
+                        '```json\n{"task_done": false, "next_speaker": "agent-a", '
+                        '"next_prompt": "请继续写大纲", "reason": "继续"}\n```'
+                    )
+                },
+            )()
+
+    class FakeLLM:
+        def get_client(self):
+            return FakeClient()
+
+    out = await leader_decide(
+        FakeLLM(),
+        [{"agent_id": "agent-a", "name": "专家A", "role": "写作"}],
+        "写网文",
+        "最近对话",
+    )
+
+    assert out["next_speaker"] == "agent-a"
+    assert out["speaker_task"] == "请继续写大纲"
+    assert out.get("next_prompt") is None

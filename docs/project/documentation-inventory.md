@@ -30,6 +30,7 @@
 | `docs/user-manual/user-guide.md` | 当前有效 | 面向最终用户的操作说明 |
 | `docs/user-manual/README.md` | 当前有效 | 上线验收操作手册源文档 |
 | `docs/skills/skill-standard.md` | 当前有效 | Skill 编写、绑定和会话状态规范 |
+| `docs/skills/host-skill.md` | 当前有效 | 主持人 Skill 写法、运行链路和边界 |
 | `docs/skills/skill-script-paths.md` | 当前有效 | Skill 脚本路径、工作区和沙箱路径 |
 | `docs/skills/sandbox-tool-interface.md` | 当前有效 | 沙箱工具调用接口 |
 | `docs/operations/single-user-single-sandbox.md` | 当前有效 | 单用户单沙箱运行约束 |

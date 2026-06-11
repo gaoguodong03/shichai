@@ -135,6 +135,44 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assert not (ws / "memory" / "logs").exists()
 
 
+def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path):
+    gc = _get_memory_prompt_module()
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+
+    assistant_msg = {
+        "role": "assistant",
+        "agent_id": "agent-writer",
+        "content": "已完成周报初稿，并保存到工作区。",
+        "timestamp": "2026-05-13T12:31:50+00:00",
+        "skill_id": "weekly-report",
+        "tool_debug": {
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {"path": "reports/weekly.md"},
+                }
+            ],
+        },
+        "tool_raw_results": ["已写入当前 Chat 工作区文件：reports/weekly.md"],
+    }
+
+    gc._persist_group_memory_turn(
+        session_id="group-test",
+        msg=assistant_msg,
+        discussion_goal="输出周报",
+        input_prompt_summary="请写周报",
+        app_settings={"group_memory": {"enabled": True, "max_logs": 5, "max_facts": 20}},
+        workspace_root=ws,
+    )
+
+    index = (ws / "memory" / "index.md").read_text(encoding="utf-8")
+    assert "agent: agent-writer" in index
+    assert "skill: weekly-report" in index
+    assert "summary: 已完成周报初稿，并保存到工作区。" in index
+    assert "- reports/weekly.md" in index
+
+
 def test_log_llm_roundtrip_does_not_write_session_workspace_jsonl(tmp_path):
     gc = _get_host_runtime_module()
     ws = tmp_path / "ws"
@@ -166,6 +204,42 @@ def test_append_workspace_image_preview_markdown_appends_image_links():
     raw = ['下载链接：/api/workspaces/s1/files/download?path=generated_images/a.jpg']
     out = gc.append_workspace_image_preview_markdown(base, raw)
     assert "![生成图片1](/api/workspaces/s1/files/download?path=generated_images/a.jpg)" in out
+
+
+def test_append_workspace_image_preview_markdown_skips_image_already_in_content_from_json_artifact():
+    gc = _get_tool_trace_module()
+    url = "/api/workspaces/s1/files/download?path=generated_images/a.jpg"
+    base = f"已生成图片。\n\n![AI配图]({url})"
+    raw = [
+        (
+            '{"execution_status":"succeeded","artifacts":{'
+            f'"output":"{url}","download_url":"{url}",'
+            f'"markdown":"![生成图片]({url})"'
+            "}}"
+        )
+    ]
+
+    out = gc.append_workspace_image_preview_markdown(base, raw)
+
+    assert out == base
+    assert "生成图片1" not in out
+
+
+def test_append_workspace_image_preview_markdown_trims_json_delimiters_from_image_url():
+    gc = _get_tool_trace_module()
+    url = "/api/workspaces/s1/files/download?path=generated_images/a.jpg"
+    raw = [
+        (
+            '{"execution_status":"succeeded","artifacts":{'
+            f'"output":"{url}","download_url":"{url}"'
+            "}}"
+        )
+    ]
+
+    out = gc.append_workspace_image_preview_markdown("已生成图片。", raw)
+
+    assert f"![生成图片1]({url})" in out
+    assert '\",' not in out
 
 
 def test_has_auto_continue_signal_detects_continue_intent():

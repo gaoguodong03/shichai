@@ -29,7 +29,9 @@ import {
 } from './workspacePreferences'
 import {
   agentBodyContent,
+  formatSchedulerStatePopover,
   formatToolPopover,
+  getSchedulerStateRaw,
   getToolRawResults,
   toolRawMeta,
 } from '../workspaceMessageUtils'
@@ -168,6 +170,8 @@ export function useWorkspaceContentProviders(args: {
     groupWorkspaceListWidth,
     groupWorkspacePreviewCollapsed,
     groupWorkspacePreviewIsImage,
+    groupWorkspacePreviewIsMarkdown,
+    groupWorkspacePreviewMarkdownHtml,
     loadGroupWorkspace,
     resetGroupWorkspacePanel,
     groupWorkspaceGoRoot,
@@ -200,6 +204,7 @@ export function useWorkspaceContentProviders(args: {
     extractUserFileReferenceNames,
     formatGroupMsgTime,
     saveAgentMessageToFile,
+    copyAgentMessageToClipboard,
     deleteGroupMessage,
     scrollGroupToBottom,
     scrollLatestAssistantRowToLowerMiddle,
@@ -234,7 +239,6 @@ export function useWorkspaceContentProviders(args: {
     buildMessageWithFileReferences,
   } = useGroupFileReferences({
     sessionId: () => groupDetail.value?.id,
-    workspacePath: groupWorkspacePath,
     prompt: groupNextPrompt,
     loadWorkspace: loadGroupWorkspace,
   })
@@ -558,6 +562,8 @@ export function useWorkspaceContentProviders(args: {
     expandedToolKey,
     toolRawMeta,
     formatToolPopover,
+    getSchedulerStateRaw,
+    formatSchedulerStatePopover,
     formatGroupMsgTime,
     renderMarkdown,
     agentBodyContent,
@@ -565,6 +571,7 @@ export function useWorkspaceContentProviders(args: {
     formatUserBubbleForDisplay,
     extractUserFileReferenceNames,
     deleteGroupMessage,
+    copyAgentMessageToClipboard,
     saveAgentMessageToFile,
   })
 
@@ -692,6 +699,8 @@ export function useWorkspaceContentProviders(args: {
     cancelWorkspacePreviewEdit,
     groupWorkspacePreviewEditContent,
     groupWorkspacePreviewIsImage,
+    groupWorkspacePreviewIsMarkdown,
+    groupWorkspacePreviewMarkdownHtml,
     groupWorkspacePreviewImageUrl,
     groupWorkspacePreviewContent,
   })

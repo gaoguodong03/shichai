@@ -265,11 +265,11 @@ def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     if summary:
         content = (
-            "工具已执行完成，但模型没有生成最终文字总结。以下是本轮工具返回摘要："
+            "工具已执行完成。以下是本轮工具返回摘要："
             f"\n\n{_markdown_code_block(summary)}"
         )
     else:
-        content = "工具已执行完成，但模型没有生成最终文字总结；本轮没有捕获到可展示的工具返回内容。"
+        content = "工具已执行完成，但本轮没有捕获到可展示的工具返回内容。"
     return AIMessage(content=content)
 
 

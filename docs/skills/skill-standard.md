@@ -88,6 +88,24 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 - 让专家代替四九选择下一位专家；
 - 把脚本路径写成工作区文件路径。
 
+### 4.1 工作区文件写入规范
+
+专家可用的工作区文件工具是任务过程能力，不只在用户显式说“保存”时使用。只要任务需要读取上下文、检查已有文件、创建目录、沉淀阶段产物、保存可复用资料或交付最终文件，Skill 正文都应推动专家主动调用相应工具。
+
+在 Skill 正文中建议直接写成一行工具调用合同，避免模型只用自然语言说“已保存”：
+
+```text
+调用 write_workspace_file：path="materials/001-<简短标题>.md"，content="<完整 Markdown 内容>"
+```
+
+约束：
+
+- `path` 必须是当前会话工作区相对路径，不写 `backend/data/`、`workspaces/<会话ID>/` 或宿主机绝对路径。
+- `content` 必须是要保存的完整正文；不能只写摘要、占位符或“见上文”。
+- 只有 `write_workspace_file` 或 `edit_workspace_file` 返回成功后，专家才能在最终答复中说文件已保存。
+- 网页采集、资料检索、素材整理类任务如果得到多条独立素材，应每条素材单独调用一次 `write_workspace_file`，不要把所有素材合并进一个文件。
+- 最终答复只汇总文件清单、来源和简短说明，不把全部素材正文重复堆在聊天气泡里。
+
 ## 5. 脚本型 Skill 规范
 
 脚本路径、工作区路径、Skill 资源路径与数据库文件设计的详细说明见 `docs/skills/skill-script-paths.md`。
@@ -419,8 +437,10 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 - 专家可以说明“建议交回四九重新安排”，但不要自行指定下一位专家。
 - 专家不输出主持人 JSON，不写 `next_speaker`、`suggested_add_agent_ids` 等主持人字段。
-- 主持人 Skill 不代写专家正文，只选择专家、说明原因、给出 `next_prompt`。
+- 主持人 Skill 不代写专家正文；流程型主持人 Skill 只输出 `current_phase`、`next_speaker`、`speaker_task`，由平台负责展示主持消息并把 `speaker_task` 交给下一位专家。
 - Skill 会话未结束时，专家应继续沿同一 Skill 推进，不把用户消息重新交给四九。
+
+主持人 Skill 的专门写法、运行链路和禁区见 [主持人 Skill 规范](host-skill.md)。
 
 ## 9. 上线验收清单
 

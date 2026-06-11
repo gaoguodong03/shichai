@@ -36,14 +36,15 @@
                           <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
                         </div>
                       </template>
-                      <div
-                        :class="[
-                          'group-chat-bubble',
-                          isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
-                          msg.role === 'user' && 'group-chat-bubble-user',
-                          msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
-                        ]"
-                      >
+                      <div class="group-chat-message-stack">
+                        <div
+                          :class="[
+                            'group-chat-bubble',
+                            isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
+                            msg.role === 'user' && 'group-chat-bubble-user',
+                            msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
+                          ]"
+                        >
                         <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
                           <span class="group-chat-bubble-name">{{ bubbleDisplayName(msg) }}</span>
                       <span
@@ -52,8 +53,26 @@
                         :title="`正在输出：${activeStreamingSpeakerName}`"
                       >
                         正在输出{{ streamingPulse }}
-                      </span>
+                          </span>
                           <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
+                          <div
+                            v-if="getSchedulerStateRaw(msg)"
+                            class="group-chat-tool-tag-wrap"
+                            :data-key="`${msg.message_id || i}-scheduler-state`"
+                          >
+                            <button
+                              type="button"
+                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-scheduler-state` && 'group-chat-tool-tag-expanded']"
+                              @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-scheduler-state` ? null : `${msg.message_id || i}-scheduler-state`"
+                            >
+                              skill
+                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                            </button>
+                            <div v-if="expandedToolKey === `${msg.message_id || i}-scheduler-state`" class="group-chat-tool-popover">
+                              <span class="group-chat-tool-popover-title">Skill 调度状态</span>
+                              <pre class="group-chat-tool-popover-pre">{{ formatSchedulerStatePopover(getSchedulerStateRaw(msg)) }}</pre>
+                            </div>
+                          </div>
                           <div
                             v-for="(raw, tri) in getToolRawResults(msg)"
                             :key="tri"
@@ -104,25 +123,51 @@
                             </div>
                           </template>
                         </div>
+                        </div>
                         <div
                           v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg) && (msg.content || '').trim()"
                           class="group-chat-bubble-actions"
                         >
                           <button
+                            type="button"
+                            class="group-chat-bubble-action-btn"
+                            aria-label="拷贝发言内容"
+                            title="拷贝发言内容"
+                            @click="copyAgentMessageToClipboard(msg)"
+                          >
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <rect x="8" y="8" width="11" height="13" rx="2" />
+                              <path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                          </button>
+                          <button
                             v-if="msg.message_id"
                             type="button"
-                            class="group-chat-delete-msg-btn"
-                            title="从会话中彻底删除该条发言，避免污染下一轮专家上下文"
+                            class="group-chat-bubble-action-btn group-chat-bubble-action-danger"
+                            aria-label="删除该发言"
+                            title="删除该发言"
                             @click="deleteGroupMessage(msg)"
                           >
-                            删除该条发言
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                            </svg>
                           </button>
                           <button
                             type="button"
-                            class="group-chat-save-file-btn"
+                            class="group-chat-bubble-action-btn"
+                            aria-label="保存为文件"
+                            title="保存为文件"
                             @click="saveAgentMessageToFile(msg)"
                           >
-                            保存为文件
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                              <path d="M17 21v-8H7v8" />
+                              <path d="M7 3v5h8" />
+                            </svg>
                           </button>
                         </div>
                       </div>
@@ -156,6 +201,8 @@ const {
   expandedToolKey,
   toolRawMeta,
   formatToolPopover,
+  getSchedulerStateRaw,
+  formatSchedulerStatePopover,
   formatGroupMsgTime,
   renderMarkdown,
   agentBodyContent,
@@ -163,6 +210,7 @@ const {
   formatUserBubbleForDisplay,
   extractUserFileReferenceNames,
   deleteGroupMessage,
+  copyAgentMessageToClipboard,
   saveAgentMessageToFile,
 } = useGroupChatMessageContext()
 </script>

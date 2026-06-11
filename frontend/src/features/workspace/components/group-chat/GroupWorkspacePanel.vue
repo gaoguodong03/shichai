@@ -224,6 +224,11 @@
                   />
                   <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
                 </div>
+                <div
+                  v-else-if="groupWorkspacePreviewIsMarkdown"
+                  class="group-chat-workspace-preview-content group-chat-workspace-preview-markdown"
+                  v-html="groupWorkspacePreviewMarkdownHtml"
+                />
                 <pre v-else class="group-chat-workspace-preview-content">{{ groupWorkspacePreviewContent }}</pre>
               </div>
               <div v-else class="group-chat-workspace-preview-placeholder">选择左侧文件以预览</div>
@@ -271,6 +276,8 @@ const {
   cancelWorkspacePreviewEdit,
   groupWorkspacePreviewEditContent,
   groupWorkspacePreviewIsImage,
+  groupWorkspacePreviewIsMarkdown,
+  groupWorkspacePreviewMarkdownHtml,
   groupWorkspacePreviewImageUrl,
   groupWorkspacePreviewContent,
 } = useGroupChatWorkspacePanelContext()

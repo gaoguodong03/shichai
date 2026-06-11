@@ -4,6 +4,7 @@ import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { useAuthenticatedMessageImages } from './useAuthenticatedMessageImages'
 import {
+  agentBodyContent,
   renderMarkdownHtml,
   renderSnippetMarkdownHtml,
 } from '../workspaceMessageUtils'
@@ -130,12 +131,14 @@ export function useGroupMessageList(args: {
     const content = (msg.content || '').trim()
     if (!id || !content) return
     const defaultName = defaultAgentFilename(msg)
-    const filename = (await appPrompt({
+    const promptValue = await appPrompt({
       title: '保存为工作区文件',
       message: '请输入文件名。',
       defaultValue: defaultName,
       required: true,
-    }))?.trim() || defaultName
+    })
+    if (promptValue === null) return
+    const filename = promptValue.trim() || defaultName
     if (!filename) return
     try {
       const response = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files`, {
@@ -152,6 +155,16 @@ export function useGroupMessageList(args: {
       }
     } catch {
       await appAlert({ title: '保存失败', message: '保存失败', variant: 'danger' })
+    }
+  }
+
+  async function copyAgentMessageToClipboard(msg: MsgExt) {
+    const content = agentBodyContent(msg.content || '')
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+    } catch {
+      await appAlert({ title: '复制失败', message: '复制失败，请检查浏览器剪贴板权限', variant: 'danger' })
     }
   }
 
@@ -273,6 +286,7 @@ export function useGroupMessageList(args: {
     extractUserFileReferenceNames,
     formatGroupMsgTime,
     saveAgentMessageToFile,
+    copyAgentMessageToClipboard,
     deleteGroupMessage,
     scrollGroupToBottom,
     isNearGroupBottom,

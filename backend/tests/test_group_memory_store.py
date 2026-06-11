@@ -4,6 +4,7 @@ from pathlib import Path
 from app.agent.group_memory_store import (
     upsert_facts,
     build_dispatch_context,
+    upsert_index_entries,
 )
 
 
@@ -53,6 +54,70 @@ def test_build_dispatch_context_uses_only_facts(tmp_path: Path):
     assert "旧完整发言也不应被引用" not in ctx["rendered"]
 
 
+def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
+    session_id = "group-test"
+    ws = tmp_path / "ws"
+    ws.mkdir(parents=True, exist_ok=True)
+
+    entries = upsert_index_entries(
+        session_id,
+        [
+            {
+                "agent_id": "agent-writer",
+                "skill_id": "weekly-report",
+                "summary": "生成周报草稿",
+                "files": ["reports/weekly.md", "reports/weekly.md"],
+            }
+        ],
+        workspace_root=ws,
+    )
+    entries = upsert_index_entries(
+        session_id,
+        [
+            {
+                "agent_id": "agent-chart",
+                "skill_id": "charting",
+                "summary": "生成趋势图",
+                "files": ["charts/trend.png"],
+            }
+        ],
+        max_entries=2,
+        workspace_root=ws,
+    )
+
+    assert entries == [
+        {
+            "agent_id": "agent-writer",
+            "skill_id": "weekly-report",
+            "summary": "生成周报草稿",
+            "files": ["reports/weekly.md"],
+        },
+        {
+            "agent_id": "agent-chart",
+            "skill_id": "charting",
+            "summary": "生成趋势图",
+            "files": ["charts/trend.png"],
+        },
+    ]
+    index = (ws / "memory" / "index.md").read_text(encoding="utf-8")
+    assert "summary: 生成周报草稿" in index
+    assert "- reports/weekly.md" in index
+    assert "- charts/trend.png" in index
+
+    ctx = build_dispatch_context(
+        session_id=session_id,
+        workspace_root=ws,
+        target_agent_id="agent-next",
+        goal="继续写报告",
+    )
+
+    assert ctx["has_memory"] is True
+    assert "工作区索引" in ctx["rendered"]
+    assert "agent-writer / weekly-report: 生成周报草稿" in ctx["rendered"]
+    assert "- reports/weekly.md" in ctx["rendered"]
+    assert "读取上述文件时使用工作区相对路径" in ctx["rendered"]
+
+
 def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
     session_id = "group-test"
     ws = tmp_path / "ws"
@@ -66,4 +131,4 @@ def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
         k=1,
     )
 
-    assert ctx == {"facts": [], "logs": [], "refs": [], "rendered": "", "has_memory": False}
+    assert ctx == {"facts": [], "index": [], "logs": [], "refs": [], "rendered": "", "has_memory": False}

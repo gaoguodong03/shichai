@@ -6,7 +6,27 @@ from typing import Any, Mapping, Sequence
 
 from app.core.scene_scheduler import RECRUIT_FIXED_MESSAGE
 
-_GENERIC_HOST_ANNOUNCEMENTS = frozenset({"", "请下一位发言。", "请下一位发言", "请下一位发言。 "})
+_GENERIC_HOST_ANNOUNCEMENTS = frozenset(
+    {"", "请下一位发言。", "请下一位发言", "请下一位发言。 ", "请用户继续发言。", "请用户继续发言"}
+)
+
+
+def _scheduler_state_meta(
+    meta: Mapping[str, Any] | None = None,
+    *,
+    current_phase: str | None = None,
+    next_speaker: str | None = None,
+    speaker_task: str | None = None,
+) -> dict[str, Any] | None:
+    out: dict[str, Any] = dict(meta or {})
+    state = {
+        "current_phase": str(current_phase or "").strip(),
+        "next_speaker": str(next_speaker or "").strip(),
+        "speaker_task": str(speaker_task or "").strip(),
+    }
+    if any(state.values()):
+        out["scheduler_state"] = state
+    return out or None
 
 
 def _host_message_base(
@@ -76,6 +96,8 @@ def _build_host_next_speaker_message(
     next_speaker: str,
     agent_map: Mapping[str, Mapping[str, Any]],
     announcement: str | None = None,
+    current_phase: str | None = None,
+    speaker_task: str | None = None,
     suggested_order: Any = None,
     leader_agent_id: str = "",
 ) -> dict[str, Any]:
@@ -83,7 +105,12 @@ def _build_host_next_speaker_message(
     ann = (announcement or "").strip()
     content = f"下面由 {next_name} 发言。" if not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS else ann
     content = _append_suggested_order_if_needed(content, suggested_order, agent_map)
-    msg = _host_message_base(content=content, skill_id=skill_id, leader_agent_id=leader_agent_id)
+    meta = _scheduler_state_meta(
+        current_phase=current_phase,
+        next_speaker=next_speaker,
+        speaker_task=speaker_task,
+    )
+    msg = _host_message_base(content=content, skill_id=skill_id, leader_agent_id=leader_agent_id, meta=meta)
     msg["next_agent_name"] = next_name
     if suggested_order:
         msg["suggested_order"] = suggested_order
@@ -95,20 +122,27 @@ def _build_host_pause_message(
     skill_id: str,
     next_speaker: str,
     announcement: str | None = None,
+    current_phase: str | None = None,
     reason: str | None = None,
+    speaker_task: str | None = None,
     leader_agent_id: str = "",
 ) -> dict[str, Any] | None:
     ann = (announcement or "").strip()
     if (not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS) and next_speaker == "user":
-        reason_text = str(reason or "").strip()
+        reason_text = str(speaker_task or reason or "").strip()
         ann = (
-            f"已暂停自动推进：{reason_text}\n\n请补充更具体要求，或直接指定下一位专家继续。"
+            reason_text
             if reason_text
             else "已暂停自动推进，请补充更具体要求，或直接指定下一位专家继续。"
         )
     if not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS:
         return None
-    return _host_message_base(content=ann, skill_id=skill_id, leader_agent_id=leader_agent_id)
+    meta = _scheduler_state_meta(
+        current_phase=current_phase,
+        next_speaker=next_speaker,
+        speaker_task=speaker_task,
+    )
+    return _host_message_base(content=ann, skill_id=skill_id, leader_agent_id=leader_agent_id, meta=meta)
 
 
 def _build_host_recommendation_message(

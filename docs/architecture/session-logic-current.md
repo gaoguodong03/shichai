@@ -15,7 +15,7 @@
   - 会话消息：`backend/data/users/<user>/sessions/group_history_<session>.json`
   - 会话元信息：`group_sessions_meta.json`
   - 专家记忆：工作区 `memory/facts.md`
-  - LLM 排障日志：工作区 `memory/llm_roundtrips.jsonl`
+  - 工作区产物索引：工作区 `memory/index.md`
 
 关键文件：
 - `backend/app/api/group_chat.py`
@@ -187,8 +187,8 @@ flowchart TD
 `group_memory_store.py`：
 
 - `upsert_facts(...)`：更新 `memory/facts.md`
-- `build_dispatch_context(...)`：只读取 `memory/facts.md` 并构建下一轮专家提示词里的 **【关键事实】**
-- `append_llm_roundtrip(...)`：完整追加 `memory/llm_roundtrips.jsonl`，用于排查每轮 LLM 输入与输出，不参与提示词注入
+- `upsert_index_entries(...)`：更新 `memory/index.md`，记录专家工作简述与工作区相对文件路径
+- `build_dispatch_context(...)`：读取 `memory/facts.md` 与 `memory/index.md`，构建下一轮专家提示词里的 **【关键事实】** 与 **【工作区索引】**
 
 ---
 

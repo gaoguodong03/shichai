@@ -217,18 +217,18 @@ flowchart TB
   subgraph ws [会话工作区 workspaces/会话id]
     mem[memory]
     mem --> factsFile["facts.md"]
-    mem --> roundtripFile["llm_roundtrips.jsonl"]
+    mem --> indexFile["index.md"]
   end
 ```
 
 | 路径 | 作用 |
 |------|------|
 | **`memory/facts.md`** | **事实清单**：从专家回复里抽取的短句事实，合并成 `- ` 开头的列表，去重并截断到 `max_facts` 条，供下一轮主持人/专家派发时拼进提示。 |
-| **`memory/llm_roundtrips.jsonl`** | **排障日志**：完整追加当前会话每次 LLM 调用的输入消息、输出、阶段、专家、Skill、模型等信息。不参与下一轮提示词，不截断、不轮转。 |
+| **`memory/index.md`** | **工作区索引**：从专家回合的工具调用与工具输出中提取工作区相对路径，记录专家、Skill、工作简述和文件路径，供下一位专家定位要读取的产物。 |
 
-**何时写入**：在 [`group_chat.py`](../../backend/app/api/group_chat.py) 里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后只从回复里抽取事实调用 `upsert_facts`。LLM 排障信息由 `append_llm_roundtrip` 写入 `llm_roundtrips.jsonl`。写入失败只打日志，不阻断主对话。
+**何时写入**：在群聊运行流里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后从回复里抽取事实调用 `upsert_facts`，并从 `write_workspace_file` 等工具调用、工具原始输出和 JSON artifacts 中提取工作区路径调用 `upsert_index_entries`。写入失败只打日志，不阻断主对话。
 
-**何时读出**：构造下一轮给专家的提示时，若记忆开启，会调用 `build_dispatch_context`：只读取 `facts.md`，拼成 **【关键事实】** 段落。`llm_roundtrips.jsonl` 只供排查问题，不会被塞进下一轮专家提示词。
+**何时读出**：构造下一轮给专家的提示时，若记忆开启，会调用 `build_dispatch_context`：读取 `facts.md` 与 `index.md`，分别拼成 **【关键事实】** 和 **【工作区索引】** 段落。索引中的文件路径是工作区相对路径，专家读取文件时直接使用这些路径。
 
 **可调参数（在应用设置 JSON 的 `group_memory` 段）**：当前主要使用 `enabled` 与 `max_facts`。旧的 `max_logs` / `dispatch_top_k` 即使出现在配置中，也不再影响下一轮 memory 注入。
 

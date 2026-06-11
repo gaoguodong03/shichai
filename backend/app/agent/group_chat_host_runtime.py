@@ -71,16 +71,16 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
 ```json
 {
-  "current_phase": "阶段1：选题",
-  "next_speaker": "agent-6ffb9536",
-  "speaker_task": "请下一位参与者根据本轮任务继续处理。",
-  "reason": "简短说明"
+  "current_phase": "阶段1：入口分流",
+  "next_speaker": "文字创作专家",
+  "speaker_task": "请根据用户目标完成本阶段任务，完成后交回主持人判断下一阶段。"
 }
 ```
 
 `current_phase` 用于保存当前场景流程阶段；若主持人 Skill 有阶段要求，本场景也必须同时输出 `current_phase`。
-`next_speaker` 可以写参与者 agent_id；`speaker_task` 会作为后台任务文本交给下一位发言人执行。
-专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是某位参与者 agent_id、`"user"` 或 `"end"`，不要把 `next_speaker` 写成主持人自身。
+`next_speaker` 写场景角色名、`"user"` 或 `"end"`；不要在主持人 Skill 中硬编码 agent_id。
+`speaker_task` 是唯一任务交接字段，平台会把它作为后台任务文本交给下一位发言人执行。
+专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是场景内角色名、`"user"` 或 `"end"`，不要把 `next_speaker` 写成主持人自身。
 后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文；若最近专家已经完成当前 `speaker_task` 的可交付内容，必须更新 `current_phase` 并选择下一阶段目标，不要仅因旧 `current_phase` 仍在上一阶段就重复安排同一专家。
 你必须先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
 任务已完成时，`next_speaker` 写 `"user"` 表示等待用户继续；若整个任务应结束，写 `"end"` 表示本轮会话结束。
@@ -149,13 +149,13 @@ async def _host_decide_by_agent(
     skill_ids = [str(x).strip() for x in (host_agent.get("skill_ids") or []) if str(x).strip()]
     resolved_skill_id = ""
     if not skill_ids:
-        skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出主持说明与 next_speaker/next_prompt 决策，不代替专家完成专业正文。"
+        skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，不代替专家完成专业正文。"
     else:
         sid0 = _pick_resolved_host_skill_id(skill_ids)
         resolved_skill_id = sid0
         skill_content = sl.get_skill_full_content(sid0) if sid0 else ""
         if not (skill_content or "").strip():
-            skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出主持说明与 next_speaker/next_prompt 决策，不代替专家完成专业正文。"
+            skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，不代替专家完成专业正文。"
     skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{skill_content}"
     host_system = (host_agent.get("system_prompt") or "").strip()
     if host_system:
@@ -205,7 +205,7 @@ async def _host_decide_by_agent(
     user_content = (
         orphan_block
         + mode_line
-        + f"【当前群聊参与者（next_speaker 必须使用以下 agent_id 之一）】\n{agent_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
+        + f"【当前群聊参与者（next_speaker 优先写场景角色名或参与者名称；括号内系统 ID 仅供平台匹配兜底）】\n{agent_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
         f"【任务目标】\n{discussion_goal}\n\n"
         "【主持人决策上下文（对话与发言摘录）】\n"
         f"{recent_messages}\n\n"

@@ -148,6 +148,11 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     assert "不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`" in instructions
     assert "不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`" in instructions
     assert "上一位专家的可见发言在最近讨论中" in instructions
+    assert "不限于用户显式要求保存或读取" in instructions
+    assert "只有在工具返回写入成功后，才能对用户说文件已保存至工作区" in instructions
+    assert "网页采集、资料检索、素材整理" in instructions
+    assert "每一条独立素材" in instructions
+    assert "分开调用 `write_workspace_file`" in instructions
     assert "memory/speaker_task.txt" not in instructions
     assert "必须先调用 `write_workspace_file` 创建或覆盖该文件" not in instructions
 
@@ -662,6 +667,40 @@ def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():
     assert "headers=Authorization,X-Trace" in context
     assert "secret-token" not in context
     assert "user:secret" not in context
+
+
+@pytest.mark.asyncio
+async def test_mcp_streamable_http_missing_placeholder_fails_before_connect(monkeypatch, caplog):
+    import logging
+
+    import app.mcp.manager as mcp_manager
+
+    def _unexpected_streamable_client(*_args, **_kwargs):
+        raise AssertionError("streamable_http_client should not be called with missing placeholders")
+
+    monkeypatch.delenv("LINKUP_API_KEY", raising=False)
+    monkeypatch.setattr(mcp_manager, "_streamable_http_available", True)
+    monkeypatch.setattr(mcp_manager, "streamable_http_client", _unexpected_streamable_client)
+
+    mgr = mcp_manager.MCPToolManager()
+    config = {
+        "id": "mcp-f0e12d4e",
+        "name": "Linkup抓取网页",
+        "transport": {
+            "type": "http",
+            "base_url": "https://mcp.linkup.so/mcp?apiKey=${LINKUP_API_KEY}",
+        },
+    }
+
+    with caplog.at_level(logging.ERROR, logger="app.mcp.manager"):
+        ok = await mgr.connect_server("mcp-f0e12d4e", config)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert ok is False
+    assert "MCP Server HTTP 传输缺少必需变量" in messages
+    assert "LINKUP_API_KEY" in messages
+    assert "server_id=mcp-f0e12d4e" in messages
+    assert "url=https://mcp.linkup.so/mcp" in messages
 
 
 @pytest.mark.asyncio

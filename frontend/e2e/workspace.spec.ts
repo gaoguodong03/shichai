@@ -46,7 +46,11 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('heading', { name: '已有验收会话' }).click()
     await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
     await page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'brief.md' }).click()
+    await expect(page.locator('.group-chat-workspace-preview').getByRole('heading', { name: '验收说明' })).toBeVisible()
     await expect(page.getByText('旧文件内容。')).toBeVisible()
+    await page.locator('.group-chat-workspace-preview').getByRole('button', { name: '编辑' }).click()
+    await expect(page.locator('.group-chat-workspace-preview-textarea')).toHaveValue(/# 验收说明/)
+    await page.locator('.group-chat-workspace-preview').getByRole('button', { name: '取消' }).click()
 
     await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请更新工作区文件')
     await expect(page.getByPlaceholder('输入 @ 可提及主持人或专家')).toHaveValue('请更新工作区文件')
@@ -55,6 +59,37 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('我已经更新工作区文件。')).toBeVisible()
     await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'expert-output.md' })).toBeVisible()
     await expect(page.getByText('专家已更新文件内容。')).toBeVisible()
+  })
+
+  test('专家消息操作栏在气泡外并支持拷贝正文', async ({ page }) => {
+    const state = createE2eState()
+    const assistantContent = '历史回复：这里可以继续追问。'
+    let workspaceFilePostCount = 0
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:5173' })
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/workspaces/session-existing/files', async (route) => {
+      if (route.request().method() === 'POST') workspaceFilePostCount += 1
+      await route.fallback()
+    })
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+
+    const row = page.locator('[data-message-id="assistant-history"]')
+    await expect(row.locator('.group-chat-bubble .group-chat-bubble-actions')).toHaveCount(0)
+    await expect(row.locator('.group-chat-message-stack > .group-chat-bubble-actions')).toBeVisible()
+    await expect(row.locator('.group-chat-bubble-action-btn')).toHaveCount(3)
+    await expect(row.getByRole('button', { name: '删除该发言' })).toHaveAttribute('title', '删除该发言')
+
+    await row.getByRole('button', { name: '拷贝发言内容' }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(assistantContent)
+
+    await row.getByRole('button', { name: '保存为文件' }).click()
+    await expect(page.getByRole('dialog', { name: '保存为工作区文件' })).toBeVisible()
+    await page.getByRole('button', { name: '取消' }).click()
+    expect(workspaceFilePostCount).toBe(0)
   })
 
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {
@@ -75,6 +110,43 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.locator('.group-chat-toolbar-btn').filter({ hasText: /^场景$/ }).click()
     await expect(page.getByPlaceholder('搜索场景（名称/专家）')).toBeVisible()
     await expect(page.getByText('问答验收场景', { exact: true }).first()).toBeVisible()
+  })
+
+  test('从输入区上传并插入文件时默认上传到工作区根目录', async ({ page }) => {
+    const state = createE2eState()
+    const uploadPathParams: string[] = []
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/workspaces/session-existing/files/upload**', async (route) => {
+      const url = new URL(route.request().url())
+      uploadPathParams.push(url.searchParams.get('path') || '')
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { path: 'upload-root.md' },
+        }),
+      })
+    })
+
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
+    await page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'docs' }).click()
+    await expect(page.getByText('当前：docs')).toBeVisible()
+
+    await page.locator('.group-chat-toolbar-btn').filter({ hasText: /^文件$/ }).click()
+    await expect(page.getByText('从本地上传并插入')).toBeVisible()
+    await page.locator('.group-chat-input-wrap input[type="file"]').setInputFiles({
+      name: 'upload-root.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 上传到根目录\n'),
+    })
+
+    await expect(page.getByText('【文件引用：upload-root.md】')).toBeVisible()
+    expect(uploadPathParams).toEqual([''])
   })
 
   test('资源文件详情页把编辑、删除、下载集中在顶部操作区', async ({ page }) => {

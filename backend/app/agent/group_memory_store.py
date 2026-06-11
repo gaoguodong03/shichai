@@ -26,6 +26,53 @@ def _truncate(text: str, limit: int) -> str:
     return s[:limit].rstrip() + "..."
 
 
+def _clean_index_value(value: Any, limit: int) -> str:
+    return _truncate(str(value or "").replace("\n", " ").strip(), limit)
+
+
+def _read_index_entries(index_file: Path) -> List[Dict[str, Any]]:
+    if not index_file.exists():
+        return []
+
+    entries: List[Dict[str, Any]] = []
+    current: Optional[Dict[str, Any]] = None
+    in_files = False
+    for raw in index_file.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("- agent:"):
+            if current:
+                entries.append(current)
+            current = {
+                "agent_id": stripped.removeprefix("- agent:").strip(),
+                "skill_id": "",
+                "summary": "",
+                "files": [],
+            }
+            in_files = False
+            continue
+        if not current:
+            continue
+        if stripped.startswith("skill:"):
+            current["skill_id"] = stripped.removeprefix("skill:").strip()
+            in_files = False
+            continue
+        if stripped.startswith("summary:"):
+            current["summary"] = stripped.removeprefix("summary:").strip()
+            in_files = False
+            continue
+        if stripped == "files:":
+            in_files = True
+            continue
+        if in_files and stripped.startswith("- "):
+            path = stripped[2:].strip()
+            if path:
+                current.setdefault("files", []).append(path)
+    if current:
+        entries.append(current)
+    return entries
+
+
 def upsert_facts(
     session_id: str,
     facts_delta: List[str],
@@ -60,6 +107,76 @@ def upsert_facts(
     return merged
 
 
+def upsert_index_entries(
+    session_id: str,
+    entries_delta: List[Dict[str, Any]],
+    max_entries: int = 60,
+    workspace_root: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """合并工作区产物索引到 memory/index.md，供后续专家定位文件。"""
+    mem = _memory_root(session_id, workspace_root=workspace_root)
+    index_file = mem / "index.md"
+    existing = _read_index_entries(index_file)
+
+    normalized_delta: List[Dict[str, Any]] = []
+    for entry in entries_delta or []:
+        if not isinstance(entry, dict):
+            continue
+        files: List[str] = []
+        seen_files = set()
+        for raw_path in entry.get("files") or []:
+            path = _clean_index_value(raw_path, 240)
+            if not path or path in seen_files:
+                continue
+            seen_files.add(path)
+            files.append(path)
+        if not files:
+            continue
+        normalized_delta.append(
+            {
+                "agent_id": _clean_index_value(entry.get("agent_id"), 80) or "unknown",
+                "skill_id": _clean_index_value(entry.get("skill_id"), 120) or "default",
+                "summary": _clean_index_value(entry.get("summary"), 180) or "更新工作区文件",
+                "files": files,
+            }
+        )
+
+    merged: List[Dict[str, Any]] = []
+    seen_entries = set()
+    for entry in existing + normalized_delta:
+        files = [str(x).strip() for x in entry.get("files") or [] if str(x or "").strip()]
+        if not files:
+            continue
+        clean_entry = {
+            "agent_id": _clean_index_value(entry.get("agent_id"), 80) or "unknown",
+            "skill_id": _clean_index_value(entry.get("skill_id"), 120) or "default",
+            "summary": _clean_index_value(entry.get("summary"), 180) or "更新工作区文件",
+            "files": files,
+        }
+        key = (
+            clean_entry["agent_id"],
+            clean_entry["skill_id"],
+            tuple(clean_entry["files"]),
+        )
+        if key in seen_entries:
+            continue
+        seen_entries.add(key)
+        merged.append(clean_entry)
+
+    merged = merged[-max(1, int(max_entries)) :]
+    lines = ["# Index", ""]
+    for entry in merged:
+        lines.append(f"- agent: {entry['agent_id']}")
+        lines.append(f"  skill: {entry['skill_id']}")
+        lines.append(f"  summary: {entry['summary']}")
+        lines.append("  files:")
+        for path in entry["files"]:
+            lines.append(f"    - {path}")
+        lines.append("")
+    index_file.write_text("\n".join(lines).rstrip() + ("\n" if merged else "\n\n"), encoding="utf-8")
+    return merged
+
+
 def build_dispatch_context(
     session_id: str,
     target_agent_id: str,
@@ -80,16 +197,33 @@ def build_dispatch_context(
                 facts.append(line[2:].strip())
     facts = facts[-max(1, int(max_facts)) :]
 
+    index_entries = _read_index_entries(mem / "index.md")
+
     lines: List[str] = []
     if facts:
         lines.append("【关键事实】")
         lines.extend([f"- {f}" for f in facts[-10:]])
+    if index_entries:
+        if lines:
+            lines.append("")
+        lines.append("【工作区索引】")
+        lines.append("下列路径是工作区相对路径，读取上述文件时使用工作区相对路径。")
+        for entry in index_entries[-10:]:
+            agent = _clean_index_value(entry.get("agent_id"), 80) or "unknown"
+            skill = _clean_index_value(entry.get("skill_id"), 120) or "default"
+            summary = _clean_index_value(entry.get("summary"), 180) or "更新工作区文件"
+            lines.append(f"- {agent} / {skill}: {summary}")
+            for path in entry.get("files") or []:
+                clean_path = _clean_index_value(path, 240)
+                if clean_path:
+                    lines.append(f"  - {clean_path}")
     rendered = "\n".join(lines).strip()
 
     return {
         "facts": facts,
+        "index": index_entries,
         "logs": [],
         "refs": [],
         "rendered": rendered,
-        "has_memory": bool(facts),
+        "has_memory": bool(facts or index_entries),
     }

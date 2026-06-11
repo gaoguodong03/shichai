@@ -46,7 +46,8 @@ def normalize_scheduler_decision(
     reason = str(data.get("reason") or "")
     announcement = str(data.get("announcement") or reason)
     task_done = bool(data.get("task_done", True))
-    next_prompt = (data.get("next_prompt") or None)
+    current_phase = str(data.get("current_phase") or "").strip()
+    speaker_task = str(data.get("speaker_task") or data.get("next_prompt") or "").strip()
 
     suggested = _clean_ids(
         data.get("suggested_add_agent_ids") or [],
@@ -98,7 +99,9 @@ def normalize_scheduler_decision(
         next_speaker=next_speaker,
         reason=reason,
         announcement=announcement,
-        next_prompt=next_prompt,
+        next_prompt=None,
+        current_phase=current_phase,
+        speaker_task=speaker_task,
         suggested_add_agent_ids=suggested,
         phase=phase,
         owner_agent_id=owner_agent_id,

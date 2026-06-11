@@ -7,6 +7,9 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 
+_WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/workspaces/[^\s)\"'<>]+/files/download\?path=[^\s)\"'<>]+")
+
+
 def append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
     """Append Markdown image previews for workspace image download URLs found in tool output."""
     if not tool_raw_results:
@@ -15,7 +18,7 @@ def append_workspace_image_preview_markdown(content: str, tool_raw_results: List
     for raw in tool_raw_results:
         if not raw:
             continue
-        for url in re.findall(r"/api/workspaces/[^\s)]+/files/download\?path=[^\s)]+", raw):
+        for url in _WORKSPACE_DOWNLOAD_URL_RE.findall(raw):
             urls.append(url)
     if not urls:
         return content

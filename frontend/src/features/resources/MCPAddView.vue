@@ -87,44 +87,8 @@
           />
           <p class="text-xs text-muted mt-1">
             可在 URL 中使用 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 或
-            <code class="font-mono text-[11px]">${ENV_VAR}</code>；认证 Header 也可用下方「密钥」配置。
+            <code class="font-mono text-[11px]">${ENV_VAR}</code>；也可在表单底部选择密钥自动注入 URL。
           </p>
-        </div>
-        <div class="space-y-3 border-t border-border-light pt-4">
-          <p class="text-xs text-muted">
-            远程认证（可选）：与「设置 → 密钥管理」中的条目对应，将保存为 Header
-            <code class="font-mono text-[11px]">前缀${vault:标识}</code>。
-          </p>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">Header 名称</label>
-            <input
-              v-model="authHeaderName"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Authorization"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">值前缀</label>
-            <input
-              v-model="authPrefix"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Bearer "
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
-            <select
-              v-model="authVaultRef"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            >
-              <option value="">（不添加认证 Header）</option>
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
-              </option>
-            </select>
-          </div>
         </div>
       </template>
       <template v-if="form.transport.type === 'http'">
@@ -138,44 +102,8 @@
             placeholder="例如：http://localhost:8000/mcp"
           />
           <p class="text-xs text-muted mt-1">
-            可在 Base URL 中使用 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 或环境变量占位符；也可在下方选择密钥生成 Authorization。
+            可在 Base URL 中使用 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 或环境变量占位符；也可在表单底部选择密钥自动注入 URL。
           </p>
-        </div>
-        <div class="space-y-3 border-t border-border-light pt-4">
-          <p class="text-xs text-muted">
-            远程认证（可选）：与「设置 → 密钥管理」中的条目对应，将保存为 Header
-            <code class="font-mono text-[11px]">前缀${vault:标识}</code>。
-          </p>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">Header 名称</label>
-            <input
-              v-model="authHeaderName"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Authorization"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">值前缀</label>
-            <input
-              v-model="authPrefix"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Bearer "
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
-            <select
-              v-model="authVaultRef"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            >
-              <option value="">（不添加认证 Header）</option>
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
-              </option>
-            </select>
-          </div>
         </div>
       </template>
       <div>
@@ -186,6 +114,21 @@
           class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
           placeholder="MCP Server 的功能描述"
         />
+      </div>
+      <div v-if="form.transport.type === 'sse' || form.transport.type === 'http'" class="space-y-2 border-t border-border-light pt-4">
+        <label class="block text-sm font-medium text-primary mb-1">密钥</label>
+        <select
+          v-model="authVaultRef"
+          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+        >
+          <option value="">（不注入密钥）</option>
+          <option v-for="s in secretItems" :key="s.id" :value="s.id">
+            {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
+          </option>
+        </select>
+        <p class="text-xs text-muted">
+          选中后，保存时会把 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 注入到 URL 末尾；如果 URL 已有 vault 占位符，则替换为当前密钥。
+        </p>
       </div>
       <div class="flex justify-end gap-3 pt-1">
         <button
@@ -210,8 +153,6 @@ import { appAlert } from '@/composables/useAppDialog'
 const emit = defineEmits<{ (e: 'created', id: string): void }>()
 
 const { secretItems, loadApiSecrets } = useApiSecrets()
-const authHeaderName = ref('Authorization')
-const authPrefix = ref('Bearer ')
 const authVaultRef = ref('')
 const stdioEnvName = ref('QWEN_AUDIO_API_KEY')
 const stdioVaultRef = ref('')
@@ -246,19 +187,18 @@ function onTransportChange() {
     base_url: '',
     env: {},
   }
-  authHeaderName.value = 'Authorization'
-  authPrefix.value = 'Bearer '
   authVaultRef.value = ''
   stdioEnvName.value = 'QWEN_AUDIO_API_KEY'
   stdioVaultRef.value = ''
 }
 
-function buildRemoteHeaders(): Record<string, string> | undefined {
+function applySelectedVaultToUrl(current: string): string {
   const vid = authVaultRef.value.trim()
-  if (!vid) return undefined
-  const hn = authHeaderName.value.trim() || 'Authorization'
-  const p = authPrefix.value ?? ''
-  return { [hn]: p + '${vault:' + vid + '}' }
+  const value = current || ''
+  if (!vid) return value.replace(/\$\{vault:[^}]+\}/g, '')
+  const placeholder = '${vault:' + vid + '}'
+  if (/\$\{vault:[^}]+\}/.test(value)) return value.replace(/\$\{vault:[^}]+\}/g, placeholder)
+  return value + placeholder
 }
 
 function buildStdioEnv(): Record<string, string> | undefined {
@@ -272,7 +212,6 @@ async function submit() {
   if (!form.value.name.trim()) return
   saving.value = true
   try {
-    const remoteHeaders = buildRemoteHeaders()
     const transport: Record<string, unknown> = {
       type: form.value.transport.type,
     }
@@ -282,11 +221,9 @@ async function submit() {
       const stdioEnv = buildStdioEnv()
       if (stdioEnv) transport.env = stdioEnv
     } else if (form.value.transport.type === 'sse') {
-      transport.url = form.value.transport.url
-      if (remoteHeaders) transport.headers = remoteHeaders
+      transport.url = applySelectedVaultToUrl(form.value.transport.url)
     } else if (form.value.transport.type === 'http') {
-      transport.base_url = form.value.transport.base_url
-      if (remoteHeaders) transport.headers = remoteHeaders
+      transport.base_url = applySelectedVaultToUrl(form.value.transport.base_url)
     }
 
     const body: Record<string, unknown> = {

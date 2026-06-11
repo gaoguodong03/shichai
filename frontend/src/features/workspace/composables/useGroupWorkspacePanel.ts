@@ -2,8 +2,10 @@ import { apiRequest, apiUrl } from '@/api/base'
 import { computed, onUnmounted, ref, watch, type Ref } from 'vue'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { uploadWorkspaceFile } from '../workspaceUpload'
+import MarkdownIt from 'markdown-it'
 
 type WorkspaceEntry = { name: string; path: string; is_dir: boolean }
+const markdownIt = new MarkdownIt({ html: false, linkify: true, breaks: false })
 
 export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
   const showGroupWorkspace = ref(false)
@@ -294,6 +296,9 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
 
   const textExt = ['.md', '.txt', '.json', '.jsonl', '.py', '.js', '.ts', '.vue', '.html', '.css', '.yaml', '.yml', '.xml', '.csv', '.log', '.docx']
   const imageExt = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg']
+  function isMarkdownFile(name: string) {
+    return /\.md$/i.test(name)
+  }
   function isTextFile(name: string) {
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : ''
     return textExt.includes(ext)
@@ -304,6 +309,8 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
   }
 
   const groupWorkspacePreviewIsImage = computed(() => isImageFile(groupWorkspacePreviewName.value))
+  const groupWorkspacePreviewIsMarkdown = computed(() => isMarkdownFile(groupWorkspacePreviewName.value))
+  const groupWorkspacePreviewMarkdownHtml = computed(() => markdownIt.render(groupWorkspacePreviewContent.value || ''))
 
   function startWorkspacePreviewEdit() {
     groupWorkspacePreviewEditContent.value = groupWorkspacePreviewContent.value
@@ -479,6 +486,8 @@ export function useGroupWorkspacePanel(workspaceId: Ref<string>) {
     groupWorkspaceListWidth,
     groupWorkspacePreviewCollapsed,
     groupWorkspacePreviewIsImage,
+    groupWorkspacePreviewIsMarkdown,
+    groupWorkspacePreviewMarkdownHtml,
     loadGroupWorkspace,
     refreshGroupWorkspaceAfterExternalChange,
     resetGroupWorkspacePanel,

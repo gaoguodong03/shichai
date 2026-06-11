@@ -1,4 +1,4 @@
-"""领导人专家调度：决定 task_done 与 next_speaker"""
+"""领导人专家调度：决定 current_phase、next_speaker 与 speaker_task。"""
 import asyncio
 import json
 import logging
@@ -44,7 +44,7 @@ def _build_leader_prompt(
 若**当前参与者无法完成工作**（例如缺少某类专家、需要专业能力不在现有成员中），你可以建议用户邀请新成员。可邀请的专家列表：
 {chr(10).join(add_lines)}
 
-此时请在 JSON 中同时输出 **suggested_add_agent_ids**：要邀请的 agent_id 数组（从上面列表中选），并设 **next_speaker="user"**，由用户确认后添加成员再继续。格式示例：{{"task_done": true, "next_speaker": "user", "reason": "需要图片生成专家参与", "suggested_add_agent_ids": ["agent-440b26f8"]}}
+此时请在 JSON 中同时输出 **suggested_add_agent_ids**：要邀请的 agent_id 数组（从上面列表中选），并设 **next_speaker="user"**，由用户确认后添加成员再继续。格式示例：{{"current_phase": "招募确认", "next_speaker": "user", "speaker_task": "建议邀请图片生成专家参与，请用户确认是否添加。", "suggested_add_agent_ids": ["agent-440b26f8"]}}
 """
 
     recruit_rule = ""
@@ -66,8 +66,8 @@ def _build_leader_prompt(
         recruit_output = "- 不要输出 suggested_add_agent_ids。\n"
 
     return f"""你是群聊主持人，只做调度，不代写专家正文，也不要为专家指定 Skill。
-你必须输出一段 JSON（可用 ```json 包裹），字段至少包含：task_done、next_speaker、reason。
-当 next_speaker 是某专家时必须给出 next_prompt；next_speaker 只能是在场 agent_id 或 \"user\" 或 \"end\"。
+你必须输出一段 JSON（可用 ```json 包裹），字段至少包含：current_phase、next_speaker、speaker_task。
+当 next_speaker 是某专家时，speaker_task 必须是对方可直接执行的任务说明；next_speaker 只能是在场 agent_id 或 \"user\" 或 \"end\"。
 
 ## 参与者
 {agent_text}
@@ -81,12 +81,12 @@ def _build_leader_prompt(
 
 ## 本轮约束（与上文契约一致）
 - next_speaker：在场 agent_id | \"user\" | \"end\"。
-- 点专家时须给出可执行的 next_prompt。
+- 点专家时须给出可执行的 speaker_task。
 - 先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，next_speaker 应为 \"user\" 或 \"end\"，不要再安排专家做“总结答复”或复述同一结果。
 - 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 next_speaker 设为某个专家。
 {recruit_rule}{scene_extra}
 {recruit_output}
-**本路径要求：仅输出一段 JSON**（可含 task_done、next_speaker、reason、announcement、next_prompt、suggested_add_agent_ids）。"""
+**本路径要求：仅输出一段 JSON**（必须包含 current_phase、next_speaker、speaker_task；可含 suggested_add_agent_ids）。"""
 
 
 async def leader_decide(
@@ -103,8 +103,7 @@ async def leader_decide(
     llm_provider_id: str = "",
 ) -> Dict[str, Any]:
     """
-    调用领导人 LLM 决定：task_done、next_speaker。
-    返回 {"task_done", "next_speaker", "reason", "announcement", "suggested_add_agent_ids"?(可选)}
+    调用领导人 LLM 决定：current_phase、next_speaker、speaker_task。
     """
     allow_rec = orchestration_profile != "scene"
     system_prompt = _build_leader_prompt(
@@ -118,7 +117,7 @@ async def leader_decide(
     if last_speaker_agent_id:
         user_content += f"刚发言的专家：{last_speaker_agent_id}\n\n请判断该专家是否完成任务，并指定下一发言人。"
     else:
-        user_content += "请指定第一个发言人（next_speaker 为某 agent_id）。此时 task_done 可设为 true。"
+        user_content += "请指定第一个发言人，并给出 current_phase、next_speaker、speaker_task。"
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -147,6 +146,7 @@ async def leader_decide(
         task_done = data.get("task_done", True)
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
+        current_phase = str(data.get("current_phase") or "").strip()
         # 解析建议邀请的新成员（主持人完成不了工作时可建议新增）
         suggested_add_agent_ids = None
         raw_suggested = data.get("suggested_add_agent_ids")
@@ -170,14 +170,18 @@ async def leader_decide(
                     break
             if not announcement:
                 announcement = f"下面由 {next_speaker} 发言。"
-        raw_np = data.get("next_prompt")
-        next_prompt_val = str(raw_np).strip() if raw_np is not None and str(raw_np).strip() else None
+        raw_task = data.get("speaker_task")
+        if raw_task is None:
+            raw_task = data.get("next_prompt")
+        speaker_task = str(raw_task or "").strip()
         out = {
             "task_done": task_done,
             "next_speaker": next_speaker,
             "reason": reason,
             "announcement": announcement or reason,
-            "next_prompt": next_prompt_val,
+            "next_prompt": None,
+            "current_phase": current_phase,
+            "speaker_task": speaker_task,
         }
         if suggested_add_agent_ids:
             out["suggested_add_agent_ids"] = suggested_add_agent_ids
@@ -190,7 +194,9 @@ async def leader_decide(
             next_speaker=next_speaker,
             reason=reason,
             announcement=announcement or reason,
-            next_prompt=next_prompt_val,
+            next_prompt=None,
+            current_phase=current_phase,
+            speaker_task=speaker_task,
             suggested_add_agent_ids=suggested_add_agent_ids or [],
             phase=phase,
             owner_agent_id=next_speaker if next_speaker not in ("user", "end") else None,

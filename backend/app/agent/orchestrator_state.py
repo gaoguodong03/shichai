@@ -73,6 +73,8 @@ class OrchestrationDecision:
     reason: str = ""
     announcement: str = ""
     next_prompt: Optional[str] = None
+    current_phase: str = ""
+    speaker_task: str = ""
     suggested_add_agent_ids: List[str] = field(default_factory=list)
     phase: OrchestrationPhase = OrchestrationPhase.PLANNING
     owner_agent_id: Optional[str] = None
@@ -82,12 +84,15 @@ class OrchestrationDecision:
     required_user_fields: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
+        speaker_task = self.speaker_task or self.next_prompt or ""
         payload: Dict[str, Any] = {
             "task_done": bool(self.task_done),
             "next_speaker": (self.next_speaker or "user").strip().lower(),
             "reason": self.reason or "",
             "announcement": self.announcement or self.reason or "",
-            "next_prompt": self.next_prompt,
+            "next_prompt": None,
+            "current_phase": self.current_phase or "",
+            "speaker_task": str(speaker_task),
             "suggested_add_agent_ids": list(self.suggested_add_agent_ids or []),
             "phase": self.phase.value,
             "owner_agent_id": self.owner_agent_id,
@@ -96,8 +101,6 @@ class OrchestrationDecision:
             "handoff_reason": self.handoff_reason,
             "required_user_fields": list(self.required_user_fields or []),
         }
-        if payload["next_speaker"] in ("user", "end"):
-            payload["next_prompt"] = None
         return payload
 
 

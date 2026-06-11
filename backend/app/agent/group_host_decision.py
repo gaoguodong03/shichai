@@ -104,16 +104,19 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
             required_user_fields = []
         if not announcement and reason:
             announcement = reason
-        raw_np = data.get("next_prompt")
-        next_prompt_val: Optional[str] = None
-        if raw_np is not None and str(raw_np).strip():
-            next_prompt_val = str(raw_np).strip()
+        current_phase = str(data.get("current_phase") or data.get("phase_label") or "").strip()
+        raw_task = data.get("speaker_task")
+        if raw_task is None:
+            raw_task = data.get("next_prompt")
+        speaker_task = str(raw_task or "").strip()
         return {
             "task_done": task_done,
             "next_speaker": next_speaker,
             "reason": reason,
             "announcement": announcement or "请下一位发言。",
-            "next_prompt": next_prompt_val,
+            "next_prompt": None,
+            "current_phase": current_phase,
+            "speaker_task": speaker_task,
             "suggested_order": suggested_order,
             "suggested_add_agent_ids": suggested_add_agent_ids,
             "phase": phase,
@@ -228,6 +231,8 @@ def host_decision_from_scheduler_state(
             "reason": reason,
             "announcement": task or "任务已完成，本轮会话结束。",
             "next_prompt": None,
+            "current_phase": phase_text,
+            "speaker_task": task,
             "suggested_order": None,
             "suggested_add_agent_ids": None,
             "phase": None,
@@ -243,7 +248,9 @@ def host_decision_from_scheduler_state(
             "next_speaker": "user",
             "reason": reason,
             "announcement": "请用户继续发言。",
-            "next_prompt": task or None,
+            "next_prompt": None,
+            "current_phase": phase_text,
+            "speaker_task": task,
             "suggested_order": None,
             "suggested_add_agent_ids": None,
             "phase": None,
@@ -265,7 +272,9 @@ def host_decision_from_scheduler_state(
         "next_speaker": agent_id,
         "reason": reason,
         "announcement": f"下面由 {name} 发言。",
-        "next_prompt": task,
+        "next_prompt": None,
+        "current_phase": phase_text,
+        "speaker_task": task,
         "suggested_order": None,
         "suggested_add_agent_ids": None,
         "phase": None,

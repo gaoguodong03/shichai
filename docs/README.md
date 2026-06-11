@@ -7,10 +7,10 @@
 | 目录 | 用途 | 代表文档 |
 |------|------|----------|
 | `requirements/` | 用户需求、验收口径、需求追踪矩阵 | [user-requirements.md](requirements/user-requirements.md)、[acceptance-and-tests.md](requirements/acceptance-and-tests.md) |
-| `architecture/` | 系统架构、详细设计、运行链路、数据结构、接口和模块边界 | [system-architecture.md](architecture/system-architecture.md)、[detailed-design.md](architecture/detailed-design.md)、[runtime-architecture.md](architecture/runtime-architecture.md)、[project-structure.md](architecture/project-structure.md) |
+| `architecture/` | 系统架构、详细设计、运行链路、数据结构、接口和模块边界 | [interface-map.md](architecture/interface-map.md)、[system-architecture.md](architecture/system-architecture.md)、[detailed-design.md](architecture/detailed-design.md)、[runtime-architecture.md](architecture/runtime-architecture.md)、[project-structure.md](architecture/project-structure.md) |
 | `testing/` | 测试用例、回归测试、上线前测试、全流程业务测试 | [test-case-catalog.md](testing/test-case-catalog.md)、[layer1-regression.md](testing/layer1-regression.md)、[pre-release-testing.md](testing/pre-release-testing.md)、[full-flow-business-tests.md](testing/full-flow-business-tests.md) |
 | `user-manual/` | 面向用户和验收人员的操作手册、截图、PDF | [user-guide.md](user-manual/user-guide.md)、[README.md](user-manual/README.md) |
-| `skills/` | Skill 规范、脚本路径、沙箱工具接口 | [skill-standard.md](skills/skill-standard.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md) |
+| `skills/` | Skill 规范、主持人 Skill、脚本路径、沙箱工具接口 | [skill-standard.md](skills/skill-standard.md)、[host-skill.md](skills/host-skill.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md) |
 | `operations/` | 部署、运行、沙箱和运维约束 | [single-user-single-sandbox.md](operations/single-user-single-sandbox.md) |
 | `project/` | 项目工作清单、工程任务拆分、P0 完成审计、里程碑、文档审计和管理性材料 | [worklist.md](project/worklist.md)、[implementation-task-breakdown.md](project/implementation-task-breakdown.md)、[p0-completion-audit.md](project/p0-completion-audit.md)、[documentation-audit.md](project/documentation-audit.md)、[documentation-inventory.md](project/documentation-inventory.md) |
 | `presentations/` | 对外介绍、讲稿、PPT 和演示素材 | [15-minute-technical-brief.md](presentations/15-minute-technical-brief.md) |
@@ -20,9 +20,9 @@
 
 1. 产品和验收：先读 [requirements/user-requirements.md](requirements/user-requirements.md)，再读 [requirements/acceptance-and-tests.md](requirements/acceptance-and-tests.md)。
 2. 设计和任务：读 [architecture/detailed-design.md](architecture/detailed-design.md) 和 [project/implementation-task-breakdown.md](project/implementation-task-breakdown.md)。
-3. 架构和代码入口：读 [architecture/system-architecture.md](architecture/system-architecture.md)、[architecture/runtime-architecture.md](architecture/runtime-architecture.md)、[architecture/project-structure.md](architecture/project-structure.md)。
+3. 架构和代码入口：先读 [architecture/interface-map.md](architecture/interface-map.md)，再读 [architecture/system-architecture.md](architecture/system-architecture.md)、[architecture/runtime-architecture.md](architecture/runtime-architecture.md)、[architecture/project-structure.md](architecture/project-structure.md)。
 4. 开发验证：读 [testing/test-case-catalog.md](testing/test-case-catalog.md)、[testing/layer1-regression.md](testing/layer1-regression.md) 和 [testing/pre-release-testing.md](testing/pre-release-testing.md)。
-5. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)。
+5. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/host-skill.md](skills/host-skill.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)。
 6. 用户操作和上线验收：读 [user-manual/user-guide.md](user-manual/user-guide.md) 和 [user-manual/README.md](user-manual/README.md)。
 
 ## 维护规则

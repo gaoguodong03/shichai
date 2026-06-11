@@ -269,6 +269,25 @@ def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) 
     return s
 
 
+def _missing_mcp_placeholders(val: Any, secrets: Optional[Dict[str, str]] = None) -> List[str]:
+    """Return unresolved placeholder names before substituting them into transport config."""
+    secrets = secrets or {}
+    s = str(val or "")
+    missing: List[str] = []
+
+    for match in re.finditer(r"\$\{vault:([A-Za-z0-9_-]+)\}", s):
+        name = match.group(1)
+        if not secrets.get(name):
+            missing.append(f"vault:{name}")
+
+    for match in re.finditer(r"\$\{(\w+)\}", s):
+        name = match.group(1)
+        if not os.environ.get(name) and not secrets.get(name):
+            missing.append(name)
+
+    return missing
+
+
 def _build_stdio_child_env(
     *,
     username: Optional[str],
@@ -504,12 +523,26 @@ class MCPToolManager:
 
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
                 # 远程 HTTP / Streamable HTTP：使用 MCP SDK 的 streamable_http_client
-                url = (transport.get("url") or transport.get("base_url") or "").strip()
+                raw_url = (transport.get("url") or transport.get("base_url") or "").strip()
+                raw_headers = dict(transport.get("headers") or {})
+                missing_placeholders: List[str] = []
+                missing_placeholders.extend(_missing_mcp_placeholders(raw_url, secrets))
+                for header_value in raw_headers.values():
+                    missing_placeholders.extend(_missing_mcp_placeholders(header_value, secrets))
+                if missing_placeholders:
+                    missing_label = ",".join(sorted(set(missing_placeholders)))
+                    logger.error(
+                        "MCP Server HTTP 传输缺少必需变量: %s context=%s",
+                        missing_label,
+                        _mcp_connection_log_context(server_id, config, transport=transport, url=raw_url),
+                    )
+                    return False
+
+                url = raw_url
                 url = _subst_mcp_placeholders(url, secrets)  # ${vault:...} 密钥库；${VAR} 环境变量
                 if not url:
                     logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
                     return False
-                raw_headers = dict(transport.get("headers") or {})
                 headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
                 auth = headers.get("Authorization")
                 if isinstance(auth, str) and auth.startswith("Bearer") and not auth.startswith("Bearer "):

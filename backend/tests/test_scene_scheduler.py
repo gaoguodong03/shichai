@@ -171,7 +171,8 @@ def test_finalize_scene_keeps_host_decision_without_banter_specific_material_adv
     assert out.get("next_speaker") == "agent-material"
     assert out.get("phase") == "executing"
     assert out.get("reason") == raw["reason"]
-    assert out.get("next_prompt") == raw["next_prompt"]
+    assert out.get("speaker_task") == raw["next_prompt"]
+    assert out.get("next_prompt") is None
 
 
 def test_finalize_scene_keeps_user_pause_without_banter_specific_material_advance():

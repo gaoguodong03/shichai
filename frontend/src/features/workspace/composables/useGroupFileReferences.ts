@@ -48,11 +48,10 @@ function clearFileReferenceFromPrompt(prompt: Ref<string>, file: AttachedFile) {
 
 export function useGroupFileReferences(args: {
   sessionId: () => string | undefined
-  workspacePath: Ref<string>
   prompt: Ref<string>
   loadWorkspace: () => Promise<unknown>
 }) {
-  const { sessionId, workspacePath, prompt, loadWorkspace } = args
+  const { sessionId, prompt, loadWorkspace } = args
 
   const showInsertFileModal = ref(false)
   const insertFileRef = ref<HTMLElement | null>(null)
@@ -79,7 +78,7 @@ export function useGroupFileReferences(args: {
     insertLocalFileUploadingName.value = file.name || '本地文件'
     insertLocalFileUploadProgress.value = null
     try {
-      const result = await uploadWorkspaceFile(id, file, workspacePath.value, ({ percent }) => {
+      const result = await uploadWorkspaceFile(id, file, '', ({ percent }) => {
         insertLocalFileUploadProgress.value = percent
       })
       if (result?.status === 'ok' && result?.data?.path) {

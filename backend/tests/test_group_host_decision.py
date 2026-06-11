@@ -29,7 +29,9 @@ def test_host_decision_from_scheduler_state_maps_user():
     )
 
     assert out["next_speaker"] == "user"
-    assert out["next_prompt"] == "请补充信息"
+    assert out["current_phase"] == "补充信息"
+    assert out["speaker_task"] == "请补充信息"
+    assert out.get("next_prompt") is None
     assert out["decision_source"] == "host_scheduler_state"
 
 
@@ -89,4 +91,6 @@ def test_host_decision_from_scheduler_state_maps_name_with_agent_id():
 
     assert out is not None
     assert out["next_speaker"] == "agent-6ffb9536"
-    assert out["next_prompt"] == "请教师给出本轮讨论主题。"
+    assert out["current_phase"] == "阶段1：选题"
+    assert out["speaker_task"] == "请教师给出本轮讨论主题。"
+    assert out.get("next_prompt") is None
