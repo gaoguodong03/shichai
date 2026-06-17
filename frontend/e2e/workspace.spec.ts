@@ -77,7 +77,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('专家已更新文件内容。')).toBeVisible()
   })
 
-  test('用户可以从工作区标题栏左侧刷新当前目录', async ({ page }) => {
+  test('用户可以从工作区右侧工具栏刷新当前目录', async ({ page }) => {
     const state = createE2eState()
     await loginByStorage(page)
     await mockApi(page, state)
@@ -93,9 +93,10 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
       { name: 'refreshed.md', path: 'refreshed.md', is_dir: false, size: 32, updated_at: '2026-06-17T09:00:00Z' },
     ]
 
-    const refreshButton = page.locator('.group-chat-workspace-heading').getByRole('button', { name: '刷新工作区' })
+    const refreshButton = page.locator('.group-chat-workspace-toolbar-actions').getByRole('button', { name: '刷新工作区' })
     await expect(refreshButton).toBeVisible()
     await expect(refreshButton).toHaveClass(/group-chat-workspace-toolbar-sm/)
+    await expect(page.locator('.group-chat-workspace-heading').getByRole('button', { name: '刷新工作区' })).toHaveCount(0)
 
     await refreshButton.click()
     await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'refreshed.md' })).toBeVisible()

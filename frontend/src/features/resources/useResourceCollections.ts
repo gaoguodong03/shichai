@@ -62,8 +62,9 @@ export function useResourceCollections(args: {
   agentSearch: Ref<string>
   skillSearch: Ref<string>
   mcpSearch: Ref<string>
+  llmSearch: Ref<string>
 }) {
-  const { currentModule, resourceSubModule, selectedId, agentSearch, skillSearch, mcpSearch } = args
+  const { currentModule, resourceSubModule, selectedId, agentSearch, skillSearch, mcpSearch, llmSearch } = args
 
   const skills = ref<SkillRow[]>([])
   const skillsLoading = ref(false)
@@ -76,6 +77,17 @@ export function useResourceCollections(args: {
   const agentInstancesLoading = ref(false)
 
   const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
+
+  const filteredLlmProviderIds = computed(() => {
+    const q = normalizedResourceQuery(llmSearch.value)
+    const ids = llmProviderIds.value
+    if (!q) return ids
+    return ids.filter((id) => {
+      const meta = llmProviders.value[id] || {}
+      const hay = `${id} ${meta.label || ''} ${meta.model || ''} ${meta.base_url || ''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  })
 
   const filteredAgentInstances = computed(() => {
     const q = normalizedResourceQuery(agentSearch.value)
@@ -328,6 +340,7 @@ export function useResourceCollections(args: {
     llmProviders,
     llmLoading,
     llmProviderIds,
+    filteredLlmProviderIds,
     agentInstances,
     agentInstancesLoading,
     filteredAgentInstances,

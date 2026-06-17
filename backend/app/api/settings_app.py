@@ -1,12 +1,22 @@
 """应用设置与主持人 profile API。"""
 from __future__ import annotations
 
+import io
 import json
+import shutil
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.core.llm_bundle import (
+    build_llm_bundle_zip_bytes,
+    provider_for_settings_import,
+    read_llm_bundle_manifest,
+)
+from app.core.scenario_bundle import extract_scenario_bundle_dir
 from app.core.host_config import normalize_host_config_dict
 from app.core.security import user_context_dependency
 from app.core.user_settings_paths import app_settings_path
@@ -287,3 +297,83 @@ async def update_app_settings(body: AppSettingsBody):
     """更新应用设置"""
     save_app_settings(body.model_dump(exclude_none=True))
     return {"status": "ok", "data": _sanitize_app_settings_for_client(load_app_settings())}
+
+
+@router.get("/settings/llm-providers/{provider_id}/export-bundle")
+async def export_llm_provider_bundle(provider_id: str):
+    settings = load_app_settings()
+    providers = settings.get("llm_providers") if isinstance(settings.get("llm_providers"), dict) else {}
+    provider = providers.get(provider_id) if isinstance(providers, dict) else None
+    if not isinstance(provider, dict):
+        raise HTTPException(status_code=404, detail="模型不存在")
+
+    raw = build_llm_bundle_zip_bytes(provider_id, provider, default_llm=str(settings.get("default_llm") or ""))
+    safe = str(provider_id).replace("..", "").replace("/", "").replace("\\", "") or "llm"
+    filename = f"llm-bundle-{safe}.zip"
+    from app.api.settings_skills import _content_disposition_attachment
+
+    return StreamingResponse(
+        io.BytesIO(raw),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition_attachment(filename)},
+    )
+
+
+@router.post("/settings/llm-providers/import-bundle")
+async def import_llm_provider_bundle(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+):
+    fn = (file.filename or "").strip().lower()
+    if not fn.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="请上传 ZIP 模型包")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件为空")
+
+    tmp: Optional[Path] = None
+    try:
+        tmp = extract_scenario_bundle_dir(raw)
+        manifest, provider_id, provider = read_llm_bundle_manifest(tmp)
+        preview = {
+            "provider_id": provider_id,
+            "provider": provider,
+            "default_llm": str(manifest.get("default_llm") or ""),
+            "would_overwrite_provider_id": provider_id
+            in ((load_app_settings().get("llm_providers") or {}) if isinstance(load_app_settings().get("llm_providers"), dict) else {}),
+        }
+        if dry_run:
+            return {
+                "status": "ok",
+                "data": {
+                    "dry_run": True,
+                    "bundle_preview": preview,
+                    "note": "确认后将写入模型配置；API Key 明文不会从模型包导入。",
+                },
+            }
+
+        current = load_app_settings()
+        providers = current.get("llm_providers") if isinstance(current.get("llm_providers"), dict) else {}
+        next_providers = dict(providers or {})
+        next_providers[provider_id] = provider_for_settings_import(provider)
+        default_llm = str(current.get("default_llm") or "")
+        if not default_llm:
+            default_llm = provider_id
+        save_app_settings({"default_llm": default_llm, "llm_providers": next_providers})
+        return {
+            "status": "ok",
+            "data": {
+                "dry_run": False,
+                "summary": {
+                    "imported_provider_id": provider_id,
+                    "overwritten": bool(preview["would_overwrite_provider_id"]),
+                },
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e) or "无效的模型包") from e
+    except HTTPException:
+        raise
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)

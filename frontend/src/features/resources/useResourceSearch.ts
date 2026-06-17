@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 
-export type ResourceSearchKind = 'scenario' | 'agent' | 'skill' | 'mcp'
+export type ResourceSearchKind = 'scenario' | 'agent' | 'skill' | 'mcp' | 'llm'
 
 export function normalizedResourceQuery(value: string) {
   return (value || '').trim().toLowerCase()
@@ -11,10 +11,12 @@ export function useResourceSearch() {
   const showAgentSearch = ref(false)
   const showSkillSearch = ref(false)
   const showMcpSearch = ref(false)
+  const showLlmSearch = ref(false)
   const scenarioSearch = ref('')
   const agentSearch = ref('')
   const skillSearch = ref('')
   const mcpSearch = ref('')
+  const llmSearch = ref('')
 
   function toggleSearch(kind: ResourceSearchKind) {
     if (kind === 'scenario') {
@@ -33,15 +35,21 @@ export function useResourceSearch() {
       showMcpSearch.value = !showMcpSearch.value
       if (!showMcpSearch.value) mcpSearch.value = ''
     }
+    if (kind === 'llm') {
+      showLlmSearch.value = !showLlmSearch.value
+      if (!showLlmSearch.value) llmSearch.value = ''
+    }
   }
 
   function resetResourceSearchesForSectionChange() {
     showAgentSearch.value = false
     showSkillSearch.value = false
     showMcpSearch.value = false
+    showLlmSearch.value = false
     agentSearch.value = ''
     skillSearch.value = ''
     mcpSearch.value = ''
+    llmSearch.value = ''
     scenarioSearch.value = ''
   }
 
@@ -50,10 +58,12 @@ export function useResourceSearch() {
     showAgentSearch,
     showSkillSearch,
     showMcpSearch,
+    showLlmSearch,
     scenarioSearch,
     agentSearch,
     skillSearch,
     mcpSearch,
+    llmSearch,
     toggleSearch,
     resetResourceSearchesForSectionChange,
   }
