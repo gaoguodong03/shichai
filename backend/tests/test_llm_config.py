@@ -2,6 +2,8 @@
 import os
 import sys
 import types
+import zipfile
+from io import BytesIO
 import pytest
 
 # 测试前设置 env，避免 QwenLLM 初始化报错
@@ -68,6 +70,55 @@ def test_settings_refreshes_old_jeniya_builtin_provider_presets():
     assert out["deepseek"]["base_url"] == "https://api.deepseek.com"
     assert out["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert out["custom-jeniya-deepseek"]["base_url"] == "https://jeniya.top/v1"
+
+
+def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
+    """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 明文。"""
+    from app.core.llm_bundle import (
+        LLM_MANIFEST_NAME,
+        build_llm_bundle_zip_bytes,
+        read_llm_bundle_manifest,
+    )
+    from app.core.scenario_bundle import extract_scenario_bundle_dir
+
+    provider = {
+        "base_url": "https://example.test/v1",
+        "model": "example-chat",
+        "api_key": "plain-secret",
+        "api_key_env": "EXAMPLE_API_KEY",
+        "api_key_ref": "vault-example",
+        "api_key_set": True,
+        "temperature": 0.2,
+        "max_tokens": 128,
+        "top_p": 0.9,
+        "extra_body": {"enable_thinking": False},
+    }
+
+    raw = build_llm_bundle_zip_bytes("example", provider, default_llm="example")
+    with zipfile.ZipFile(BytesIO(raw)) as zf:
+        assert LLM_MANIFEST_NAME in zf.namelist()
+        manifest_text = zf.read(LLM_MANIFEST_NAME).decode("utf-8")
+    assert "plain-secret" not in manifest_text
+
+    bundle_dir = extract_scenario_bundle_dir(raw)
+    try:
+        _manifest, provider_id, bundled = read_llm_bundle_manifest(bundle_dir)
+    finally:
+        import shutil
+
+        shutil.rmtree(bundle_dir, ignore_errors=True)
+
+    assert provider_id == "example"
+    assert bundled["base_url"] == "https://example.test/v1"
+    assert bundled["model"] == "example-chat"
+    assert bundled["api_key_env"] == "EXAMPLE_API_KEY"
+    assert bundled["api_key_ref"] == "vault-example"
+    assert bundled["api_key_set"] is True
+    assert bundled["temperature"] == 0.2
+    assert bundled["max_tokens"] == 128
+    assert bundled["top_p"] == 0.9
+    assert bundled["extra_body"] == {"enable_thinking": False}
+    assert "api_key" not in bundled
 
 
 def test_get_llm_from_config_qwen():

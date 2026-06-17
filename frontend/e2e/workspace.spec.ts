@@ -168,13 +168,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         content: `历史消息 ${idx + 1}\n\n这是一段用于撑开消息列表高度的内容，确保会话切换后必须滚动才能看到结尾。`,
       })),
     }
-    state.sessions = [
-      ...state.sessions,
-      {
-        ...longHistorySession,
-        messages: longHistorySession.messages as never,
-      },
-    ]
+    state.sessions = [...state.sessions, longHistorySession]
 
     await loginByStorage(page)
     await mockApi(page, state)

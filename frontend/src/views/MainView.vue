@@ -483,18 +483,36 @@
               />
             </div>
             <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <button
+            <div v-else-if="!filteredSkills.length" class="px-3 py-4 text-sm text-muted">暂无技能</div>
+            <div
               v-else
               v-for="s in filteredSkills"
               :key="s.id"
-              @click="selectedId = s.id"
-              :class="[
-                'w-full text-left px-3 py-3.5 rounded-lg text-sm transition-colors',
-                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
+              class="relative group"
             >
-              <div class="truncate font-medium">{{ s.name || s.id }}</div>
-            </button>
+              <button
+                type="button"
+                @click="selectedId = s.id"
+                :class="[
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                ]"
+              >
+                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate text-xs text-muted mt-0.5 min-h-4">
+                  {{ s.description || '（无描述）' }}
+                </div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除技能 ${s.name || s.id}`"
+                :title="`删除技能 ${s.name || s.id}`"
+                @click.stop="deleteSkill(s.id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <template v-else-if="resourceSubModule === 'mcp'">
             <div class="mb-2 px-3 space-y-2">
@@ -571,21 +589,36 @@
               />
             </div>
             <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <button
+            <div v-else-if="!filteredMcpServers.length" class="px-3 py-4 text-sm text-muted">暂无工具</div>
+            <div
               v-else
               v-for="s in filteredMcpServers"
               :key="s.id"
-              @click="selectedId = s.id"
-              :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
+              class="relative group"
             >
-              <div class="truncate font-medium">{{ s.name || s.id }}</div>
-              <div class="truncate text-xs text-muted mt-0.5 min-h-4" aria-hidden="true">
-                {{ s.description || s.metadata?.description || '\u00a0' }}
-              </div>
-            </button>
+              <button
+                type="button"
+                @click="selectedId = s.id"
+                :class="[
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                ]"
+              >
+                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate text-xs text-muted mt-0.5 min-h-4">
+                  {{ s.description || s.metadata?.description || '（无描述）' }}
+                </div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除工具 ${s.name || s.id}`"
+                :title="`删除工具 ${s.name || s.id}`"
+                @click.stop="deleteMcpServer(s.id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <template v-else-if="resourceSubModule === 'llm'">
             <div class="mb-2 px-3 flex items-center gap-2">
@@ -604,27 +637,41 @@
             </div>
             <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
             <div v-else-if="!llmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
-            <button
+            <div
               v-else
               v-for="id in llmProviderIds"
               :key="id"
-              @click="selectedId = id"
-              :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-                selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
+              class="relative group"
             >
-              <div class="truncate font-medium flex items-center gap-2">
-                <span class="truncate">{{ id }}</span>
-                <span
-                  v-if="id === llmDefault"
-                  class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
-                >
-                  默认
-                </span>
-              </div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '—' }}</div>
-            </button>
+              <button
+                type="button"
+                @click="selectedId = id"
+                :class="[
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                ]"
+              >
+                <div class="truncate font-medium flex items-center gap-2">
+                  <span class="truncate">{{ llmProviders[id]?.label || id }}</span>
+                  <span
+                    v-if="id === llmDefault"
+                    class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
+                  >
+                    默认
+                  </span>
+                </div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '（无模型名）' }}</div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除模型 ${llmProviders[id]?.label || id}`"
+                :title="`删除模型 ${llmProviders[id]?.label || id}`"
+                @click.stop="deleteLlmProvider(id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <template v-else-if="resourceSubModule === 'files'">
             <div class="px-3 mb-2 space-y-2">
@@ -1368,8 +1415,11 @@ const {
   fetchSkills,
   fetchAgents,
   deleteAgentInstance,
+  deleteSkill,
   fetchMCP,
+  deleteMcpServer,
   fetchLLM,
+  deleteLlmProvider,
   createEmptySkill,
   onAgentCreated,
   onMCPCreated,
