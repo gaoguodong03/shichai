@@ -101,9 +101,12 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <div v-if="currentModule === 'workspace'" class="px-3 pt-3 pb-3 flex-shrink-0">
+      <div v-if="currentModule === 'workspace'" ref="newSessionMenuRoot" class="px-3 pt-3 pb-3 flex-shrink-0 relative">
         <button
-          @click="createNewSession"
+          type="button"
+          aria-haspopup="menu"
+          :aria-expanded="newSessionMenuOpen ? 'true' : 'false'"
+          @click.stop="toggleNewSessionMenu"
           :class="[
             'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
             creatingSession
@@ -114,6 +117,38 @@
           <span class="text-base leading-none">＋</span>
           <span>新建会话</span>
         </button>
+        <div
+          v-if="newSessionMenuOpen"
+          class="new-session-menu"
+          role="menu"
+          aria-label="新建会话"
+          @click.stop
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class="new-session-menu-item"
+            :disabled="creatingSession"
+            @click="createBlankSessionFromMenu"
+          >
+            <span class="new-session-menu-item-title">空会话</span>
+          </button>
+          <div class="new-session-menu-divider" />
+          <div v-if="scenarioLoading" class="new-session-menu-status">场景加载中...</div>
+          <div v-else-if="!newSessionMenuScenarios.length" class="new-session-menu-status">暂无场景</div>
+          <button
+            v-else
+            v-for="scenario in newSessionMenuScenarios"
+            :key="scenario.id"
+            type="button"
+            role="menuitem"
+            class="new-session-menu-item"
+            @click="createScenarioSessionFromMenu(scenario)"
+          >
+            <span class="new-session-menu-item-title">{{ scenario.name || '未命名场景' }}</span>
+            <span class="new-session-menu-item-meta">{{ (scenario.agent_ids || []).length }} 位专家</span>
+          </button>
+        </div>
       </div>
       <div
         class="flex-1 overflow-y-auto middle-column-scrollbar"
@@ -1234,7 +1269,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, inject } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, inject } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import WorkspaceContent from '@/features/workspace/WorkspaceContent.vue'
@@ -1363,6 +1398,7 @@ const {
   scenarioLeaderLlmId,
   scenarioDraft,
   isCreatingScenario,
+  scenarioPresets,
   filteredScenarioPresets,
   selectedScenarioPreset,
   scenarioAddableExperts,
@@ -1511,6 +1547,63 @@ const workspaceContentRef = ref<{
     discussion_goal_example?: string
   }) => Promise<string | null>
 } | null>(null)
+const newSessionMenuRoot = ref<HTMLElement | null>(null)
+const newSessionMenuOpen = ref(false)
+const newSessionMenuScenarios = computed(() =>
+  (scenarioPresets.value || []).filter((scenario) => (scenario.name || '').trim() || (scenario.agent_ids || []).length),
+)
+
+function closeNewSessionMenu() {
+  newSessionMenuOpen.value = false
+}
+
+function toggleNewSessionMenu() {
+  if (creatingSession.value) return
+  newSessionMenuOpen.value = !newSessionMenuOpen.value
+  if (newSessionMenuOpen.value) {
+    fetchScenarioPresets()
+  }
+}
+
+function onDocumentClickForNewSessionMenu(event: MouseEvent) {
+  if (!newSessionMenuOpen.value) return
+  const root = newSessionMenuRoot.value
+  if (root && event.target instanceof Node && root.contains(event.target)) return
+  closeNewSessionMenu()
+}
+
+function onDocumentKeydownForNewSessionMenu(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeNewSessionMenu()
+}
+
+async function createBlankSessionFromMenu() {
+  closeNewSessionMenu()
+  await createNewSession()
+}
+
+async function createScenarioSessionFromMenu(scenario: {
+  id: string
+  name: string
+  agent_ids: string[]
+  leader_agent_id?: string
+  host_config?: ScenarioHostConfig
+  description?: string
+  discussion_goal_example?: string
+}) {
+  closeNewSessionMenu()
+  await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClickForNewSessionMenu)
+  document.addEventListener('keydown', onDocumentKeydownForNewSessionMenu)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClickForNewSessionMenu)
+  document.removeEventListener('keydown', onDocumentKeydownForNewSessionMenu)
+})
+
 async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()
   await fetchGroupSessions()

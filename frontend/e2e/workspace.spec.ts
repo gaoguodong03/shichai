@@ -6,12 +6,28 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await bootLoggedInApp(page)
 
     await page.getByRole('button', { name: '新建会话' }).click()
+    await page.getByRole('menuitem', { name: '空会话' }).click()
     await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible()
 
     await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请回答这条 UI 自动化消息')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('自动化测试回复：需求已收到。')).toBeVisible()
+  })
+
+  test('新建会话菜单提供空会话和场景入口', async ({ page }) => {
+    await bootLoggedInApp(page)
+
+    await page.getByRole('button', { name: '新建会话' }).click()
+
+    const menu = page.getByRole('menu', { name: '新建会话' })
+    await expect(menu).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: '空会话' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: /问答验收场景/ })).toBeVisible()
+
+    await menu.getByRole('menuitem', { name: /问答验收场景/ }).click()
+
+    await expect(page.getByRole('heading', { name: '问答验收场景' })).toBeVisible()
   })
 
   test('专家回复结束后刷新会话工作区文件与预览', async ({ page }) => {
@@ -296,6 +312,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await bootLoggedInApp(page)
 
     await page.getByRole('button', { name: '新建会话' }).click()
+    await page.getByRole('menuitem', { name: '空会话' }).click()
     await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible()
     const sessionList = page.locator('.middle-column-scrollbar')
     await expect(sessionList.getByText('空白会话', { exact: true })).toHaveCount(1)
