@@ -92,6 +92,73 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     expect(workspaceFilePostCount).toBe(0)
   })
 
+  test('多个 sandbox 调用默认折叠到一个图标按钮', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].messages = [
+      {
+        message_id: 'assistant-sandbox-tools',
+        role: 'assistant',
+        agent_id: 'agent-qa',
+        content: '沙箱调用结果如下。',
+        tool_raw_results: [
+          JSON.stringify({ _sandbox_trace: {}, result: 'one' }),
+          JSON.stringify({ _sandbox_trace: {}, result: 'two' }),
+          JSON.stringify({ _sandbox_trace: {}, result: 'three' }),
+        ],
+      } as never,
+    ]
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+
+    const row = page.locator('[data-message-id="assistant-sandbox-tools"]')
+    const toggle = row.getByRole('button', { name: '显示沙箱调用 (3)' })
+    await expect(toggle).toBeVisible()
+    await expect(row.getByRole('button', { name: 'sandbox' })).toHaveCount(0)
+
+    await toggle.click()
+    await expect(row.getByRole('button', { name: 'sandbox' })).toHaveCount(3)
+
+    await row.getByRole('button', { name: '隐藏沙箱调用 (3)' }).click()
+    await expect(row.getByRole('button', { name: 'sandbox' })).toHaveCount(0)
+  })
+
+  test('Skill 调度状态入口使用 sandbox 同款图标按钮', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].messages = [
+      {
+        message_id: 'assistant-scheduler-state',
+        role: 'assistant',
+        agent_id: 'agent-qa',
+        content: '下面由写作专家继续。',
+        meta: {
+          scheduler_state: {
+            current_phase: 'draft',
+            next_speaker: 'agent-writer',
+            speaker_task: '整理正文',
+          },
+        },
+      } as never,
+    ]
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+
+    const row = page.locator('[data-message-id="assistant-scheduler-state"]')
+    const toggle = row.getByRole('button', { name: '显示 Skill 调度状态 (1)' })
+    await expect(toggle).toBeVisible()
+    await expect(row.getByRole('button', { name: 'skill', exact: true })).toHaveCount(0)
+
+    await toggle.click()
+    await expect(row.getByText('Skill 调度状态')).toBeVisible()
+  })
+
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {
     await bootLoggedInApp(page)
 

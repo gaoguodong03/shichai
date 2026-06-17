@@ -58,23 +58,72 @@
                           <div
                             v-if="getSchedulerStateRaw(msg)"
                             class="group-chat-tool-tag-wrap"
-                            :data-key="`${msg.message_id || i}-scheduler-state`"
+                            :data-key="schedulerStateKey(msg, i)"
                           >
                             <button
                               type="button"
-                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-scheduler-state` && 'group-chat-tool-tag-expanded']"
-                              @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-scheduler-state` ? null : `${msg.message_id || i}-scheduler-state`"
+                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-sandbox-group-toggle', isSchedulerStateOpen(msg, i) && 'group-chat-tool-tag-expanded']"
+                              :aria-label="`${isSchedulerStateOpen(msg, i) ? '隐藏' : '显示'} Skill 调度状态 (1)`"
+                              :title="`${isSchedulerStateOpen(msg, i) ? '隐藏' : '显示'} Skill 调度状态 (1)`"
+                              @click="expandedToolKey = isSchedulerStateOpen(msg, i) ? null : schedulerStateKey(msg, i)"
                             >
-                              skill
-                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                              <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="4" width="18" height="16" rx="3" />
+                                <path d="M8 9l3 3-3 3" />
+                                <path d="M13 15h3" />
+                              </svg>
+                              <span class="group-chat-sandbox-group-count" aria-hidden="true">1</span>
+                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
-                            <div v-if="expandedToolKey === `${msg.message_id || i}-scheduler-state`" class="group-chat-tool-popover">
+                            <div v-if="isSchedulerStateOpen(msg, i)" class="group-chat-tool-popover">
                               <span class="group-chat-tool-popover-title">Skill 调度状态</span>
                               <pre class="group-chat-tool-popover-pre">{{ formatSchedulerStatePopover(getSchedulerStateRaw(msg)) }}</pre>
                             </div>
                           </div>
                           <div
-                            v-for="(raw, tri) in getToolRawResults(msg)"
+                            v-if="getSandboxToolRawResults(msg).length"
+                            class="group-chat-tool-tag-wrap"
+                            :data-key="sandboxGroupKey(msg, i)"
+                          >
+                            <button
+                              type="button"
+                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-sandbox-group-toggle', isSandboxGroupOpen(msg, i) && 'group-chat-tool-tag-expanded']"
+                              :aria-label="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxToolRawResults(msg).length})`"
+                              :title="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxToolRawResults(msg).length})`"
+                              @click="expandedToolKey = isSandboxGroupOpen(msg, i) ? null : sandboxGroupKey(msg, i)"
+                            >
+                              <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="3" y="4" width="18" height="16" rx="3" />
+                                <path d="M8 9l3 3-3 3" />
+                                <path d="M13 15h3" />
+                              </svg>
+                              <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ getSandboxToolRawResults(msg).length }}</span>
+                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                            </button>
+                            <div v-if="isSandboxGroupOpen(msg, i)" class="group-chat-tool-popover group-chat-sandbox-group-popover">
+                              <button
+                                v-for="(raw, tri) in getSandboxToolRawResults(msg)"
+                                :key="`${sandboxGroupKey(msg, i)}-${tri}`"
+                                type="button"
+                                :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === sandboxToolKey(msg, i, tri) && 'group-chat-tool-tag-expanded']"
+                                @click.stop="expandedToolKey = expandedToolKey === sandboxToolKey(msg, i, tri) ? sandboxGroupKey(msg, i) : sandboxToolKey(msg, i, tri)"
+                              >
+                                {{ toolRawMeta(raw).toolName }}
+                                <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                              </button>
+                              <div
+                                v-for="(raw, tri) in getSandboxToolRawResults(msg)"
+                                :key="`${sandboxToolKey(msg, i, tri)}-popover`"
+                                v-show="expandedToolKey === sandboxToolKey(msg, i, tri)"
+                                class="group-chat-sandbox-detail"
+                              >
+                                <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
+                                <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            v-for="(raw, tri) in getNonSandboxToolRawResults(msg)"
                             :key="tri"
                             class="group-chat-tool-tag-wrap"
                             :data-key="`${msg.message_id || i}-${tri}`"
@@ -213,4 +262,42 @@ const {
   copyAgentMessageToClipboard,
   saveAgentMessageToFile,
 } = useGroupChatMessageContext()
+
+function messageToolKey(msg: GroupMessage, index: number) {
+  return msg.message_id || index
+}
+
+function isSandboxToolRaw(raw: string) {
+  return toolRawMeta(raw).toolName.toLowerCase().startsWith('sandbox')
+}
+
+function getSandboxToolRawResults(msg: GroupMessage) {
+  return getToolRawResults(msg).filter(isSandboxToolRaw)
+}
+
+function getNonSandboxToolRawResults(msg: GroupMessage) {
+  return getToolRawResults(msg).filter((raw: string) => !isSandboxToolRaw(raw))
+}
+
+function schedulerStateKey(msg: GroupMessage, index: number) {
+  return `${messageToolKey(msg, index)}-scheduler-state`
+}
+
+function isSchedulerStateOpen(msg: GroupMessage, index: number) {
+  return expandedToolKey.value === schedulerStateKey(msg, index)
+}
+
+function sandboxGroupKey(msg: GroupMessage, index: number) {
+  return `${messageToolKey(msg, index)}-sandbox-group`
+}
+
+function sandboxToolKey(msg: GroupMessage, index: number, toolIndex: number) {
+  return `${messageToolKey(msg, index)}-sandbox-${toolIndex}`
+}
+
+function isSandboxGroupOpen(msg: GroupMessage, index: number) {
+  const key = sandboxGroupKey(msg, index)
+  const value = expandedToolKey.value
+  return value === key || Boolean(value?.startsWith(`${messageToolKey(msg, index)}-sandbox-`))
+}
 </script>
