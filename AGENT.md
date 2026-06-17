@@ -81,7 +81,7 @@
 - 沙箱挂载用户自己的 `agent-outputs/workspaces` 到 `/workspace`。
 - 沙箱挂载用户自己的 `skills` 到 `/skills`，只读。
 - Skill 脚本执行统一走 OpenSandbox，不再宿主机 subprocess 兜底。
-- `run_skill_script` 创建工具时绑定 `owner_user_id`，执行时不再回退默认用户。
+- `run_skill_script` 新建工具时绑定 `owner_user_id`，执行时不再回退默认用户。
 - 缺用户上下文时返回 `missing_user_context`。
 - 用户 `config/sandbox/requirements.txt` 会：
   - 保存/merge 后触发 prewarm；

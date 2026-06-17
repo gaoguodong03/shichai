@@ -335,12 +335,13 @@ async def import_llm_provider_bundle(
     try:
         tmp = extract_scenario_bundle_dir(raw)
         manifest, provider_id, provider = read_llm_bundle_manifest(tmp)
+        current = load_app_settings()
+        current_providers = current.get("llm_providers") if isinstance(current.get("llm_providers"), dict) else {}
         preview = {
             "provider_id": provider_id,
             "provider": provider,
             "default_llm": str(manifest.get("default_llm") or ""),
-            "would_overwrite_provider_id": provider_id
-            in ((load_app_settings().get("llm_providers") or {}) if isinstance(load_app_settings().get("llm_providers"), dict) else {}),
+            "would_overwrite_provider_id": provider_id in (current_providers or {}),
         }
         if dry_run:
             return {
@@ -352,9 +353,7 @@ async def import_llm_provider_bundle(
                 },
             }
 
-        current = load_app_settings()
-        providers = current.get("llm_providers") if isinstance(current.get("llm_providers"), dict) else {}
-        next_providers = dict(providers or {})
+        next_providers = dict(current_providers or {})
         next_providers[provider_id] = provider_for_settings_import(provider)
         default_llm = str(current.get("default_llm") or "")
         if not default_llm:

@@ -414,7 +414,7 @@ flowchart TB
 | `GET` | `/health` | 健康检查；用于部署、反向代理或脚本确认后端进程是否存活。 | `backend/app/main.py` | 不读写业务数据 |
 | `GET` | `/` | 后端未挂载前端静态文件时返回 API 基本信息；生产静态站点挂载成功时通常由 SPA 接管。 | `backend/app/main.py`、`backend/app/core/static_spa.py` | 不读写业务数据 |
 | `POST` | `/api/auth/login` | 登录；校验手机号或邮箱账号与密码，成功返回 Bearer token、`username`、稳定 `user_id`，并异步预热用户沙箱。 | `backend/app/api/auth.py` | 账号库、`users/{user_id}/profile.json`、用户资源目录 |
-| `POST` | `/api/auth/register` | 注册；创建账号、初始化用户资源目录、写入用户 profile，并返回登录 token。 | `backend/app/api/auth.py` | 账号库、`users/{user_id}/profile.json`、空场景预设 |
+| `POST` | `/api/auth/register` | 注册；新建账号、初始化用户资源目录、写入用户 profile，并返回登录 token。 | `backend/app/api/auth.py` | 账号库、`users/{user_id}/profile.json`、空场景预设 |
 | `PUT` | `/api/auth/account` | 修改当前登录账号；需要当前密码，成功后返回新 token。 | `backend/app/api/auth.py` | 账号库、用户 profile |
 | `POST` | `/api/auth/account` | 修改当前登录账号的兼容入口；语义与 `PUT /api/auth/account` 相同。 | `backend/app/api/auth.py` | 账号库、用户 profile |
 | `PUT` | `/api/auth/password` | 修改当前登录账号密码；需要当前密码和新密码，成功后返回新 token。 | `backend/app/api/auth.py` | 账号库 |
@@ -425,7 +425,7 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/sessions` | 获取当前用户的会话列表；用于左侧会话列表和运行态标记。 | `backend/app/api/sessions.py` | `sessions/group_sessions_meta.json` |
-| `POST` | `/api/sessions` | 创建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/group_sessions_meta.json`、`sessions/group_history_{id}.json` |
+| `POST` | `/api/sessions` | 新建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/group_sessions_meta.json`、`sessions/group_history_{id}.json` |
 | `GET` | `/api/sessions/{session_id}` | 获取会话详情；返回标题、成员、消息历史、专家展示信息、运行态。 | `backend/app/api/sessions.py` | 会话 meta、history、Agent 配置 |
 | `GET` | `/api/sessions/{session_id}/events/stream` | 会话后台事件流；页面刷新、切换会话或后台任务继续运行时，用它同步 `runtime_state` 和消息更新。 | `backend/app/api/sessions.py` | 内存订阅队列、会话 `runtime_state` |
 | `PUT` | `/api/sessions/{session_id}` | 更新会话；改标题、主持人配置、编排模式、替换或增删专家成员。 | `backend/app/api/sessions.py` | 会话 meta |
@@ -442,13 +442,13 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/workspaces/sessions-with-files` | 列出有工作区文件的会话；资源中心“文件”分区使用。空工作区会被顺手清理。 | `backend/app/api/files.py` | `sessions/workspaces/{session_id}/...` |
-| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 在某个会话工作区内创建目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
+| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 在某个会话工作区内新建目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `GET` | `/api/workspaces/{workspace_id}/files` | 列出工作区指定目录下的文件和子目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `GET` | `/api/workspaces/{workspace_id}/files/download` | 下载工作区内指定文件；图片和附件下载也走这个入口。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `GET` | `/api/workspaces/{workspace_id}/files/content` | 读取工作区内 UTF-8 文本文件内容，用于预览、编辑或插入提示词。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存或覆盖工作区内文本文件内容。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `DELETE` | `/api/workspaces/{workspace_id}/files/content` | 删除工作区内指定文件或目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `POST` | `/api/workspaces/{workspace_id}/files` | 在工作区内创建新文本文件。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
+| `POST` | `/api/workspaces/{workspace_id}/files` | 在工作区内新建新文本文件。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `POST` | `/api/workspaces/{workspace_id}/files/upload` | 上传本地文件到指定工作区目录；附件引用和文件面板上传使用。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 | `PUT` | `/api/workspaces/{workspace_id}/files/rename` | 重命名或移动工作区内文件、目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
 
@@ -457,7 +457,7 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/agents` | 获取当前用户专家列表；资源中心专家分区、会话成员展示和主持人调度都依赖它。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/` |
-| `POST` | `/api/agents` | 创建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
+| `POST` | `/api/agents` | 新建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
 | `PUT` | `/api/agents/{agent_id}` | 更新专家配置；改人设、绑定 Skill/MCP、模型、头像和能力开关。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
 | `DELETE` | `/api/agents/{agent_id}` | 删除专家；同时标记场景预设中缺失的专家引用，避免导入导出引用静默丢失。 | `backend/app/api/agents.py` | 专家配置、场景引用快照 |
 | `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 ZIP；包含专家配置、关联 Skill 和可选 MCP 配置。 | `backend/app/api/agents.py` | ZIP 文件流、专家/Skill/MCP 配置 |
@@ -468,7 +468,7 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/settings/session-presets` | 获取场景/会话预设列表；会从资源目录恢复缺失的聚合配置。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/` |
-| `PUT` | `/api/settings/session-presets` | 保存场景列表；用于创建、编辑、删除场景后整体写回。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/{id}/scenario.json` |
+| `PUT` | `/api/settings/session-presets` | 保存场景列表；用于新建、编辑、删除场景后整体写回。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/{id}/scenario.json` |
 | `GET` | `/api/settings/session-presets/{preset_id}/export-bundle` | 导出场景资源包 ZIP；包含场景、专家、Skill 和可选 MCP。 | `backend/app/api/settings_presets.py` | ZIP 文件流、场景/专家/Skill/MCP 配置 |
 | `POST` | `/api/settings/session-presets/import-bundle` | 导入场景资源包；可 dry-run 预览缺失引用、同名覆盖和 Skill/MCP 本地 id 重映射。 | `backend/app/api/settings_presets.py` | 场景、专家、Skill、MCP、沙箱 requirements |
 
@@ -477,7 +477,7 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/settings/skills` | 获取当前用户 Skill 列表；资源中心、专家配置和主持人配置都用它。 | `backend/app/api/settings_skills.py` | `resources/skills/` |
-| `POST` | `/api/settings/skills` | 创建空 Skill；生成纯 ASCII `skill_id` 目录和默认 `SKILL.md`。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md` |
+| `POST` | `/api/settings/skills` | 新建空 Skill；生成纯 ASCII `skill_id` 目录和默认 `SKILL.md`。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md` |
 | `POST` | `/api/settings/skills/import-zip` | 导入 Skill ZIP；合并可选 MCP 配置、沙箱 requirements，并预热用户沙箱。 | `backend/app/api/settings_skills.py` | Skill 目录、MCP 配置、沙箱 requirements |
 | `GET` | `/api/settings/skills/{skill_id}/export-zip` | 导出单个 Skill 为 ZIP；包含 `SKILL.md`、辅助文件和可选 MCP 配置。 | `backend/app/api/settings_skills.py` | ZIP 文件流、Skill 目录 |
 | `PUT` | `/api/settings/skills/{skill_id}` | 更新 Skill 元信息、正文和允许工具；若名称变化会同步重命名目录并更新引用。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md`、引用配置 |
@@ -499,7 +499,7 @@ flowchart TB
 | `GET` | `/api/settings/mcp` | 获取当前用户 MCP Server 配置列表；只读配置，不主动连接 Server。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json` |
 | `GET` | `/api/settings/mcp/{server_id}/export-zip` | 导出单个 MCP Server 配置为 ZIP。 | `backend/app/api/settings_mcp.py` | ZIP 文件流、MCP 配置 |
 | `POST` | `/api/settings/mcp/import-zip` | 导入 MCP 配置 ZIP；支持 dry-run 预览。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json`、`resources/tools/` |
-| `POST` | `/api/settings/mcp` | 创建 MCP Server 配置；支持 stdio、HTTP/Streamable HTTP 传输信息。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json`、`resources/tools/{id}/tool.json` |
+| `POST` | `/api/settings/mcp` | 新建 MCP Server 配置；支持 stdio、HTTP/Streamable HTTP 传输信息。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json`、`resources/tools/{id}/tool.json` |
 | `PUT` | `/api/settings/mcp/{server_id}` | 更新 MCP Server 名称、传输配置或 metadata；会丢弃内存连接，下次懒加载。 | `backend/app/api/settings_mcp.py` | MCP 配置、MCP 运行时缓存 |
 | `DELETE` | `/api/settings/mcp/{server_id}` | 删除 MCP Server；同时为仍引用它的 Skill 保存缺失引用标签。 | `backend/app/api/settings_mcp.py` | MCP 配置、Skill frontmatter 引用标签 |
 | `POST` | `/api/settings/mcp/{server_id}/test` | 测试 MCP Server 连接；连接后调用 `list_tools`，返回连接状态、耗时和工具数。 | `backend/app/api/settings_mcp.py` | `mcp/manager.py` 内存连接 |

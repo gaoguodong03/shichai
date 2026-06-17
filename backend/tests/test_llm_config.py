@@ -122,7 +122,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
 
 
 def test_get_llm_from_config_qwen():
-    """使用 qwen provider 创建 LLM"""
+    """使用 qwen provider 新建 LLM"""
     os.environ["QWEN_API_KEY"] = "test-key"  # 隔离：避免被其他测试先设置的 setdefault 覆盖
     from app.agent.llm_client import get_llm_from_config
 
@@ -139,7 +139,7 @@ def test_get_llm_from_config_qwen():
 
 
 def test_get_llm_from_config_jeniya():
-    """使用 jeniya provider 创建 LLM"""
+    """使用 jeniya provider 新建 LLM"""
     from app.agent.llm_client import get_llm_from_config
 
     llm = get_llm_from_config("jeniya", {

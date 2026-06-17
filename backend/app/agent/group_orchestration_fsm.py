@@ -51,7 +51,7 @@ def effective_orchestration_profile(meta_item: Dict[str, Any], *, agent_ids: Lis
 
 
 def default_orchestration_profile_for_new_session(*, agent_ids: List[str]) -> str:
-    """创建会话时写入 meta 的默认值。"""
+    """新建会话时写入 meta 的默认值。"""
     return ORCHESTRATION_SCENE if agent_ids else ORCHESTRATION_RECRUITMENT
 
 

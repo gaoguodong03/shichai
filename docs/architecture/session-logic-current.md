@@ -206,7 +206,7 @@ flowchart TD
 
 ### 7.2 占位与最终替换
 
-- 流式中会创建 `_streaming` assistant 占位消息。
+- 流式中会新建 `_streaming` assistant 占位消息。
 - 收到完整 `message` 后，用最终对象替换占位。
 - 会话刷新时，`groupDetail.messages` 会整体覆盖 `groupDisplayMessages`。
 

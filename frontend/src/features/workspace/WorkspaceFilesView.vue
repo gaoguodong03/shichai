@@ -28,7 +28,7 @@
           @click="createFolder"
           :disabled="loading || !sessionId"
         >
-          创建文件夹
+          新建文件夹
         </button>
         <button
           type="button"
@@ -211,7 +211,7 @@ async function createFolder() {
   const id = props.sessionId
   if (!id) return
   const dirname = (await appPrompt({
-    title: '创建文件夹',
+    title: '新建文件夹',
     message: '请输入文件夹名称。',
     defaultValue: '新文件夹',
     required: true,
@@ -225,7 +225,7 @@ async function createFolder() {
   })
   const j = await r.json()
   if (j?.status !== 'ok') {
-    await appAlert({ title: '创建文件夹失败', message: j?.detail || '创建文件夹失败', variant: 'danger' })
+    await appAlert({ title: '新建文件夹失败', message: j?.detail || '新建文件夹失败', variant: 'danger' })
     return
   }
   await loadDir(currentDir.value)

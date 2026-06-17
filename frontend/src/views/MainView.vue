@@ -213,7 +213,7 @@
                   @click="createScenarioPreset"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建场景</span>
+                  <span>新建场景</span>
                 </button>
                 <button
                   type="button"
@@ -311,7 +311,7 @@
                   ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建专家</span>
+                  <span>新建专家</span>
                 </button>
                 <button
                   type="button"
@@ -422,7 +422,7 @@
                   ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建技能</span>
+                  <span>新建技能</span>
                 </button>
                 <button
                   type="button"
@@ -527,7 +527,7 @@
                   ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建工具</span>
+                  <span>新建工具</span>
                 </button>
                 <button
                   type="button"
@@ -633,7 +633,7 @@
                   ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建模型</span>
+                  <span>新建模型</span>
                 </button>
                 <button
                   type="button"
@@ -807,7 +807,7 @@
             <div v-if="selectedScenarioPreset" class="max-w-5xl w-full mx-auto">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-primary mb-1">
-                  {{ isCreatingScenario ? '创建场景' : '配置场景' }}
+                  {{ isCreatingScenario ? '新建场景' : '配置场景' }}
                 </h2>
               </div>
               <form class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
@@ -1290,6 +1290,89 @@
             取消
           </button>
         </div>
+        </template>
+      </div>
+    </div>
+
+    <div
+      v-if="llmImportModalOpen"
+      class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      @click.self="onLlmImportBackdropClick"
+    >
+      <div
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
+        @click.stop
+      >
+        <div
+          v-if="llmImportCommitting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span
+            class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin"
+            aria-hidden="true"
+          />
+          <p class="text-sm font-medium text-primary">正在导入…</p>
+          <p class="text-xs text-muted px-4 text-center">请勿关闭页面，导入完成后将在此显示结果</p>
+        </div>
+        <template v-if="llmImportResult">
+          <h3 class="text-lg font-semibold mb-3">{{ llmImportResult.ok ? '导入成功' : '导入失败' }}</h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="llmImportResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ llmImportResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeLlmImportModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <h3 class="text-lg font-semibold mb-3">导入模型</h3>
+          <template v-if="llmBundlePreview?.bundle_preview">
+            <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
+              <div class="font-medium text-primary">{{ llmBundlePreview.bundle_preview.provider_id }}</div>
+              <p class="text-xs text-muted leading-5">
+                模型型号：{{ llmBundlePreview.bundle_preview.provider.model || '未填写' }}
+              </p>
+              <p class="text-xs text-muted leading-5">
+                URL：{{ llmBundlePreview.bundle_preview.provider.base_url || '未填写' }}
+              </p>
+              <p
+                v-if="llmBundlePreview.bundle_preview.would_overwrite_provider_id"
+                class="mt-2 text-xs rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
+              >
+                同标识模型已存在，确认后将更新该模型配置；不会导入 API Key 明文。
+              </p>
+            </div>
+          </template>
+          <div class="flex justify-start gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              :disabled="llmImportCommitting || !canConfirmLlmImport"
+              @click="commitLlmImport"
+            >
+              {{ llmImportCommitting ? '导入中…' : '确认导入' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+              :disabled="llmImportCommitting"
+              @click="closeLlmImportModal"
+            >
+              取消
+            </button>
+          </div>
         </template>
       </div>
     </div>

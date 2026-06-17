@@ -15,7 +15,7 @@
 - 修改：`backend/tests/test_frontend_route_and_context_contracts.py`
   - 增加 `WorkspaceContent.vue` 标准大小合同测试。
   - 检查父组件不再包含群聊发送、会话加载、流式事件、@ 提及、快捷场景、插入文件上传等业务函数。
-- 创建：`frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts`
+- 新建：`frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts`
   - 暂时承接 `WorkspaceContent.vue` 原有 provider 组装逻辑。
   - 调用既有 `useGroupWorkspacePanel`、`createGroupChatStreamRunner` 和四个 focused context provider。
   - 返回模板需要的 `groupDetail`、`groupLoading`、`groupError`、`loadGroupDetail`。
@@ -66,10 +66,10 @@ def test_workspace_content_is_standard_size_shell():
 ## 任务 2：迁移 provider 组装逻辑
 
 **文件：**
-- 创建：`frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts`
+- 新建：`frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts`
 - 修改：`frontend/src/features/workspace/WorkspaceContent.vue`
 
-- [ ] **步骤 1：创建 composable**
+- [ ] **步骤 1：新建 composable**
 
 将 `WorkspaceContent.vue` 当前 `<script setup>` 中除 `defineProps`、`defineEmits` 之外的 provider 状态和方法迁移到：
 

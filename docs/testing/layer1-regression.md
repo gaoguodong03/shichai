@@ -98,7 +98,7 @@
 
 ### 会话与工作区 API
 
-- `test_sessions_api.py`：会话创建/列表/详情/删除与 404。
+- `test_sessions_api.py`：会话新建/列表/详情/删除与 404。
 - `test_workspace_files.py`：工作区文件增删改查、下载、上传、路径穿越防护、工具写入。
 - `test_scenario_bundle.py`：场景包导出、导入和依赖收集。
 

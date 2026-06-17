@@ -145,7 +145,7 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     )
 
     assert "调度任务由平台通过本轮提示词传入" in instructions
-    assert "不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`" in instructions
+    assert "不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`" in instructions
     assert "不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`" in instructions
     assert "上一位专家的可见发言在最近讨论中" in instructions
     assert "不限于用户显式要求保存或读取" in instructions
@@ -154,7 +154,7 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     assert "每一条独立素材" in instructions
     assert "分开调用 `write_workspace_file`" in instructions
     assert "memory/speaker_task.txt" not in instructions
-    assert "必须先调用 `write_workspace_file` 创建或覆盖该文件" not in instructions
+    assert "必须先调用 `write_workspace_file` 新建或覆盖该文件" not in instructions
 
 
 def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths():

@@ -22,7 +22,7 @@
 | 用户需求 | 最低验证 | 补充验收 |
 |----------|----------|----------|
 | UR-01 账号与用户隔离 | 第一层回归中的鉴权与会话测试 | 浏览器检查未登录跳转、登录刷新、跨账号资源隔离 |
-| UR-02 工作区与统一会话 | 第一层回归中的会话、SSE、前端业务流测试 | 手工创建会话、上传文件、刷新后继续对话 |
+| UR-02 工作区与统一会话 | 第一层回归中的会话、SSE、前端业务流测试 | 手工新建会话、上传文件、刷新后继续对话 |
 | UR-03 主持人与专家协作 | 第一层回归中的调度 FSM、专家 runtime、主持人接管测试 | 普通会话、场景会话、`@专家` 三种路径各跑一轮 |
 | UR-04 资源中心 | 第一层回归中的 Agent、资源配置和业务流测试 | 资源中心检查场景、专家、Skill、MCP、LLM 保存反馈 |
 | UR-05 Skill 与脚本执行 | 第一层回归中的 Skill 脚本和工具网关测试 | 真实沙箱执行一个脚本型 Skill，检查成功和失败提示 |
@@ -205,8 +205,8 @@ npm run build
 
 - `frontend/e2e/auth.spec.ts`：登录、注册与进入主工作台；
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
-- `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家创建与保存；
-- `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具创建、模型参数保存；
+- `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
+- `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
 - `frontend/e2e/settings.spec.ts`：主持人设置、配色、密钥、账号、安全和沙箱 requirements。
 
 调试时可打开浏览器：
@@ -243,7 +243,7 @@ http://<server-ip>:8100
 
 - 页面能打开且无明显白屏；
 - 能登录测试账号；
-- 能创建/进入会话；
+- 能新建/进入会话；
 - 能发送一条普通消息；
 - 如本次改动涉及技能或文件，需额外验证对应技能脚本和工作区文件读写；
 - `docker ps` 中 `st49` 与 `opensandbox-server` 为 healthy 或持续运行状态。

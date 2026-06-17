@@ -641,14 +641,14 @@ def _execute_script_subprocess(
 
 def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
-    创建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
+    新建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
     """
     skills_dir = _get_skills_dir()
     owner_user_id = _get_current_user_id()
     skill_home = (skills_dir / skill_id).resolve()
     script_root = (skill_home / "scripts").resolve()
-    # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
+    # 仅当该 skill 目录真实存在且含 SKILL.md 时才新建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 

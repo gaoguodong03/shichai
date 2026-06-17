@@ -75,7 +75,7 @@ def get_llm_from_config(
     api_secrets: Optional[Dict[str, str]] = None,
 ) -> "QwenLLM":
     """
-    根据 provider_id 从配置创建 LLM 客户端。
+    根据 provider_id 从配置新建 LLM 客户端。
     解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
     """
     providers = providers_config or _DEFAULT_LLM_PROVIDERS

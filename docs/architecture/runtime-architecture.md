@@ -159,7 +159,7 @@ stateDiagram-v2
 9. **构造本轮用户侧输入**  
    一般会带上：**讨论目标**、**最近讨论摘要/历史**，并避免重复拼接历史。若用户带了自定义输入（如覆盖本轮提示），会按规则只使用一次。
 
-10. **创建「带工具的执行器」并流式跑**  
+10. **新建「带工具的执行器」并流式跑**  
    使用为该专家选好的 **LLM** 和工具列表，进入 `SimpleAgent` 执行器；对模型输出做 **流式迭代**（内部有 `agent_step` / `tool_step` / `final_step` 等阶段）。
 
 11. **推给用户看的内容（与内部执行）**  
@@ -210,7 +210,7 @@ stateDiagram-v2
 
 `data/users/{user_id}/sessions/workspaces/{会话id}/`
 
-其下 **`memory/`** 约定如下（不存在会在写入时自动创建）：
+其下 **`memory/`** 约定如下（不存在会在写入时自动新建）：
 
 ```mermaid
 flowchart TB
@@ -261,7 +261,7 @@ flowchart TB
 
 - **全局配置在哪**：应用设置（如 `app_settings.json`）里通常有 **`default_llm`**（默认 provider  id，代码里常见回退为 `qwen`）和 **`llm_providers`**：一个**字典**，键是 provider id（字符串），值里一般有 `base_url`、`model`，以及 **`api_key`** 或 **`api_key_env`**（从环境变量读密钥）。
 
-- **创建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
+- **新建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
 
 - **何时用哪套模型**：群聊里通过 **`_get_llm_for_agent(agent_profile, app_settings)`**（见 `group_chat.py`）统一决定：
 
@@ -277,11 +277,11 @@ flowchart TB
 **技能**在本项目里主要是**用户资源目录下的一棵技能树**：每个技能一个子目录，**核心文件是 `SKILL.md`**（YAML frontmatter + Markdown 正文）。frontmatter 当前收敛为 **`name`**、**`description`**、**`allowed-tools` / `auto-tools`**：其中 MCP 字段声明该技能运行时允许加载的 MCP，Python 依赖会进入设置-沙箱依赖合并与预热流程。
 
 - **存哪里**：`data/users/{user_id}/resources/skills/{skill_id}/`
-  `skill_id` 一般与目录名一致；资源中心里创建/导入的技能会落在此路径。
+  `skill_id` 一般与目录名一致；资源中心里新建/导入的技能会落在此路径。
 
 - **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
 
-- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、创建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
+- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、新建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
 
 - **和「专家」的关系**：专家配置里的 **`skill_ids`** 列出可用技能 id；本轮推理时把选中技能的**正文 + 描述**拼进系统提示，并挂上专家的 `system_prompt` / `role`（见第 4 节专家回合）。
 

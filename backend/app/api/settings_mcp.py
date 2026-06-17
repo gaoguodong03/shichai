@@ -53,7 +53,7 @@ class MCPTransport(BaseModel):
     env: Optional[Dict[str, str]] = None
 
 class MCPServerCreate(BaseModel):
-    """创建 MCP Server 请求"""
+    """新建 MCP Server 请求"""
     name: str
     transport: MCPTransport
     metadata: Optional[Dict[str, Any]] = None
@@ -277,7 +277,7 @@ async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Fo
 
 @router.post("/settings/mcp")
 async def create_mcp_server(server: MCPServerCreate):
-    """创建 MCP Server"""
+    """新建 MCP Server"""
     servers = load_mcp_config()
     
     # 生成 ID

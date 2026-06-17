@@ -22,7 +22,7 @@
   - 资源中心专家 URL 用 `agent`，不新增 `/resources/dha`
 - 修改：`frontend/e2e/auth.spec.ts`
   - 登录后断言进入 `/workspace`
-- 创建：`frontend/e2e/route-boundaries.spec.ts`
+- 新建：`frontend/e2e/route-boundaries.spec.ts`
   - 覆盖 `/workspace`、`/resources/agent`、`/settings/sandbox`、非法 section redirect
 - 修改：`frontend/e2e/resources-scenario-expert.spec.ts`
   - 专家页从 `/resources/agent` 进入，而不是依赖点击旧内部状态
@@ -35,14 +35,14 @@
   - `frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue`
   - `frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue`
   - `frontend/src/features/workspace/components/group-chat/GroupWorkspacePanel.vue`
-- 创建：`backend/tests/test_frontend_route_and_context_contracts.py`
+- 新建：`backend/tests/test_frontend_route_and_context_contracts.py`
   - 静态锁定 route/context 合同，弥补没有 frontend unit test runner 的缺口
 
 ## 任务 1：路由边界与 `agent` URL 命名
 
 **文件：**
-- 创建：`backend/tests/test_frontend_route_and_context_contracts.py`
-- 创建：`frontend/e2e/route-boundaries.spec.ts`
+- 新建：`backend/tests/test_frontend_route_and_context_contracts.py`
+- 新建：`frontend/e2e/route-boundaries.spec.ts`
 - 修改：`frontend/e2e/auth.spec.ts`
 - 修改：`frontend/e2e/resources-scenario-expert.spec.ts`
 - 修改：`frontend/src/router/index.ts`

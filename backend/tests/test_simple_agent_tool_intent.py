@@ -308,7 +308,7 @@ async def test_simple_agent_continues_after_script_manifest_probe_to_write_works
             }
         ],
     )
-    final_summary = AIMessage(content="已创建并写入 skills/demo/SKILL.md")
+    final_summary = AIMessage(content="已新建并写入 skills/demo/SKILL.md")
     calls: list[str] = []
 
     async def _tool_runner(state, tools):
@@ -358,10 +358,10 @@ async def test_simple_agent_continues_after_script_manifest_probe_to_write_works
         synthesize_after_tools=True,
     )
 
-    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 demo skill")]})
+    out = await agent.ainvoke({"messages": [HumanMessage(content="新建 demo skill")]})
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert str(out["messages"][-1].content) == "已创建并写入 skills/demo/SKILL.md"
+    assert str(out["messages"][-1].content) == "已新建并写入 skills/demo/SKILL.md"
     assert any(
         item.get("source") == "script_metadata_probe_continue"
         for item in (out.get("tool_attempt_debug") or [])
@@ -396,7 +396,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
             }
         ],
     )
-    final_summary = AIMessage(content="已创建并完善 skills/toutiao-summary/SKILL.md")
+    final_summary = AIMessage(content="已新建并完善 skills/toutiao-summary/SKILL.md")
     calls: list[str] = []
 
     async def _tool_runner(state, tools):
@@ -457,10 +457,10 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
         synthesize_after_tools=True,
     )
 
-    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-summary skill")]})
+    out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-summary skill")]})
 
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert str(out["messages"][-1].content) == "已创建并完善 skills/toutiao-summary/SKILL.md"
+    assert str(out["messages"][-1].content) == "已新建并完善 skills/toutiao-summary/SKILL.md"
     assert any(
         item.get("source") == "script_workflow_step_continue"
         for item in (out.get("tool_attempt_debug") or [])
@@ -495,12 +495,12 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
             }
         ],
     )
-    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     raw = json.dumps(
         {
             "ok": True,
             "code": "skill_initialized",
-            "message": "Skill 模板目录已创建，请继续编辑 SKILL.md 并运行必要验证。",
+            "message": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行必要验证。",
             "skill_name": "toutiao-news-summary",
             "workspace_path": "skills/toutiao-news-summary",
             "skill_content": "---\nname: toutiao-news-summary\n---\n# Toutiao News Summary\n",
@@ -549,12 +549,12 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
         synthesize_after_tools=True,
     )
 
-    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]})
+    out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
     assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
     final_text = str(out["messages"][-1].content)
-    assert final_text == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert final_text == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "skill_initialized" not in final_text
     assert "工具已执行完成" not in final_text
     assert any(
@@ -591,12 +591,12 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
             }
         ],
     )
-    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     raw = json.dumps(
         {
             "execution_status": "succeeded",
             "result_code": "skill.initialized",
-            "message": "Skill 模板目录已创建，请继续编辑 SKILL.md。",
+            "message": "Skill 模板目录已新建，请继续编辑 SKILL.md。",
             "artifacts": {"workspace_path": "skills/toutiao-news-summary"},
             "next_action": {"agent_turn": "continue", "skill_session": "keep"},
         },
@@ -638,17 +638,17 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
                 func=lambda: None,
             ),
         ],
-        system_prompt="创建 Skill。",
+        system_prompt="新建 Skill。",
         tool_runner=_tool_runner,
         max_steps=4,
         synthesize_after_tools=True,
     )
 
-    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]})
+    out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
     assert _is_run_skill_script_workflow_step({"tool_raw_outputs": [raw]}) is True
     assert calls == ["run_skill_script_skill-builder", "write_workspace_file"]
-    assert str(out["messages"][-1].content) == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert str(out["messages"][-1].content) == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "工具已执行完成" not in str(out["messages"][-1].content)
 
 
@@ -657,7 +657,7 @@ def test_skill_initialized_result_code_without_next_action_does_not_continue_wor
         {
             "execution_status": "succeeded",
             "result_code": "skill.initialized",
-            "message": "Skill 模板目录已创建。",
+            "message": "Skill 模板目录已新建。",
             "artifacts": {"workspace_path": "skills/toutiao-news-summary"},
         },
         ensure_ascii=False,
@@ -699,12 +699,12 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
             '</｜｜DSML｜｜tool_calls>'
         )
     )
-    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     init_stdout = json.dumps(
         {
             "execution_status": "succeeded",
             "result_code": "skill.initialized",
-            "message": "Skill 模板目录已创建，请继续编辑 SKILL.md 并运行 quick_validate.py。",
+            "message": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行 quick_validate.py。",
             "artifacts": {
                 "workspace_path": "skills/toutiao-news-summary",
                 "next_steps": ["读取生成的 SKILL.md。", "替换草稿占位内容。"],
@@ -763,17 +763,17 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
             ToolSpec.from_function(name="read_file", description="read workspace file", func=lambda: None),
             ToolSpec.from_function(name="write_workspace_file", description="write workspace file", func=lambda: None),
         ],
-        system_prompt="创建 Skill。",
+        system_prompt="新建 Skill。",
         tool_runner=_tool_runner,
         max_steps=5,
         synthesize_after_tools=True,
     )
 
-    out = await agent.ainvoke({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]})
+    out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
     assert calls == ["run_skill_script_skill-builder", "read_file", "write_workspace_file"]
     final_text = str(out["messages"][-1].content)
-    assert final_text == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert final_text == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "工具已执行完成" not in final_text
     assert any(
         item.get("source") == "post_tool_synthesis_dsml_tool_calls"
@@ -813,7 +813,7 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
             '</｜｜DSML｜｜tool_calls>'
         )
     )
-    final_summary = AIMessage(content="已创建并完善 skills/toutiao-news-summary/SKILL.md")
+    final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     init_raw = json.dumps(
         {
             "ok": True,
@@ -824,7 +824,7 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
                 {
                     "execution_status": "succeeded",
                     "result_code": "skill.initialized",
-                    "message": "Skill 模板目录已创建，请继续编辑 SKILL.md。",
+                    "message": "Skill 模板目录已新建，请继续编辑 SKILL.md。",
                     "artifacts": {"workspace_path": "skills/toutiao-news-summary"},
                     "next_action": {"agent_turn": "continue", "skill_session": "keep"},
                 },
@@ -864,7 +864,7 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
             ToolSpec.from_function(name="read_file", description="read workspace file", func=lambda: None),
             ToolSpec.from_function(name="write_workspace_file", description="write workspace file", func=lambda: None),
         ],
-        system_prompt="创建 Skill。",
+        system_prompt="新建 Skill。",
         tool_runner=_tool_runner,
         max_steps=5,
         synthesize_after_tools=True,
@@ -872,7 +872,7 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
 
     agent_texts: list[str] = []
     final_debug: list[dict] = []
-    async for ev in agent.astream({"messages": [HumanMessage(content="创建 toutiao-news-summary skill")]}, stream_mode=["updates"]):
+    async for ev in agent.astream({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]}, stream_mode=["updates"]):
         if ev.get("type") == "agent_step" and isinstance(ev.get("message"), AIMessage):
             text = str(ev["message"].content or "").strip()
             if text:
@@ -881,7 +881,7 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
             final_debug = ev.get("tool_attempt_debug") or []
 
     assert calls == ["run_skill_script_skill-builder", "read_file", "write_workspace_file"]
-    assert agent_texts[-1] == "已创建并完善 skills/toutiao-news-summary/SKILL.md"
+    assert agent_texts[-1] == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert all("工具已执行完成" not in text for text in agent_texts)
     assert any(item.get("source") == "post_tool_synthesis_dsml_tool_calls" for item in final_debug)
 
@@ -937,7 +937,7 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([manifest_probe, write_call, AIMessage(content="已创建并写入 skills/demo/SKILL.md")]),
+        llm=_FakeLLM([manifest_probe, write_call, AIMessage(content="已新建并写入 skills/demo/SKILL.md")]),
         tools=[
             ToolSpec.from_function(
                 name="run_skill_script_skill-builder",
@@ -957,7 +957,7 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
     )
 
     final_debug: list[dict] = []
-    async for ev in agent.astream({"messages": [HumanMessage(content="创建 demo skill")]}, stream_mode=["updates"]):
+    async for ev in agent.astream({"messages": [HumanMessage(content="新建 demo skill")]}, stream_mode=["updates"]):
         if isinstance(ev, dict) and ev.get("type") == "final_step":
             final_debug = ev.get("tool_attempt_debug") or []
 
@@ -1061,7 +1061,7 @@ async def test_simple_agent_does_not_treat_named_skill_execution_as_introspectio
             "- **check-dev-env**（标识：`check-dev-env`）\n"
             "  检查本地开发环境。\n"
             "- **skill-builder**（标识：`skill-builder`）\n"
-            "  创建 Skill。"
+            "  新建 Skill。"
         ),
         tool_runner=lambda *_args, **_kwargs: None,
         max_steps=2,
@@ -1091,7 +1091,7 @@ async def test_simple_agent_ignores_history_sections_for_bound_skill_introspecti
             "- **check-dev-env**（标识：`check-dev-env`）\n"
             "  检查本地开发环境。\n"
             "- **skill-builder**（标识：`skill-builder`）\n"
-            "  创建 Skill。"
+            "  新建 Skill。"
         ),
         tool_runner=lambda *_args, **_kwargs: None,
         max_steps=2,

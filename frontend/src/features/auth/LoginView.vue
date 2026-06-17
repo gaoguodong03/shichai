@@ -83,7 +83,7 @@
               :disabled="loading"
               class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-text-inverse hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {{ loading ? (isRegister ? '创建中…' : '验证中…') : (isRegister ? '创建账户' : '登录') }}
+              {{ loading ? (isRegister ? '新建中…' : '验证中…') : (isRegister ? '新建账户' : '登录') }}
             </button>
           </form>
           <p class="mt-6 text-center text-sm text-muted">
@@ -92,7 +92,7 @@
               class="text-accent hover:opacity-80 hover:underline"
               @click="toggleMode"
             >
-              {{ isRegister ? '已有账号？去登录' : '没有账号？创建账户' }}
+              {{ isRegister ? '已有账号？去登录' : '没有账号？新建账户' }}
             </button>
           </p>
         </div>

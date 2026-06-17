@@ -2,7 +2,7 @@
   <div class="flex flex-col h-full p-4 overflow-y-auto themed-scrollbar">
     <div class="max-w-5xl w-full mx-auto">
       <div class="mb-4">
-        <h2 class="text-2xl font-semibold text-primary mb-1">创建工具</h2>
+        <h2 class="text-2xl font-semibold text-primary mb-1">新建工具</h2>
       </div>
       <form @submit.prevent="submit" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
       <div>
@@ -136,7 +136,7 @@
           :disabled="saving"
           class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
         >
-          {{ saving ? '创建中...' : '创建' }}
+          {{ saving ? '新建中...' : '新建' }}
         </button>
       </div>
       </form>
@@ -240,10 +240,10 @@ async function submit() {
     if (j.status === 'ok' && j.data?.id) {
       emit('created', j.data.id)
     } else {
-      await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
+      await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }
   } catch {
-    await appAlert({ title: '创建失败', message: '创建失败', variant: 'danger' })
+    await appAlert({ title: '新建失败', message: '新建失败', variant: 'danger' })
   } finally {
     saving.value = false
   }

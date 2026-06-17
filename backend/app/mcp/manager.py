@@ -495,7 +495,7 @@ class MCPToolManager:
                     )
                     read, write = stdio_transport
                 except Exception as e:
-                    logger.error(f"创建 stdio 客户端失败（: {e}", exc_info=True)
+                    logger.error(f"新建 stdio 客户端失败（: {e}", exc_info=True)
                     raise
                 
                 # 根据 MCP 官方文档，ClientSession 应该作为异步上下文管理器使用
@@ -618,7 +618,7 @@ class MCPToolManager:
         try:
             tools_result = await session.list_tools()
             for mcp_tool in tools_result.tools:
-                # 创建项目内 ToolSpec（传入 server_id 用于生成唯一名称）
+                # 新建项目内 ToolSpec（传入 server_id 用于生成唯一名称）
                 tool_spec = self._create_tool_spec(mcp_tool, session, server_id)
                 tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
                 self.tools[tool_name] = tool_spec

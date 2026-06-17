@@ -51,7 +51,7 @@ def test_workspace_list_empty(client):
 
 
 def test_workspace_create_and_list(client):
-    """workspace 内创建文件后能列出"""
+    """workspace 内新建文件后能列出"""
     r = client.post(
         "/api/workspaces/ws1/files",
         json={"filename": "hello.md", "content": "# Hello"},

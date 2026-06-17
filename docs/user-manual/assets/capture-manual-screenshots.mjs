@@ -141,11 +141,11 @@ await shot('login-page.png', [
   { label: 4, selector: 'text=没有账号' },
 ])
 
-await clickText('没有账号？创建账户')
+await clickText('没有账号？新建账户')
 await shot('register-page.png', [
   { label: 1, selector: 'input[type="text"], input[type="email"]' },
   { label: 2, selector: 'input[type="password"]' },
-  { label: 3, selector: 'button:has-text("创建账户")' },
+  { label: 3, selector: 'button:has-text("新建账户")' },
   { label: 4, selector: 'text=已有账号' },
 ])
 
@@ -175,7 +175,7 @@ await shot('workspace-member-file.png', [
 await goto('/resources/scenario')
 await clickText('问答验收场景')
 await shot('resources-scenario.png', [
-  { label: 1, selector: 'button:has-text("创建场景")' },
+  { label: 1, selector: 'button:has-text("新建场景")' },
   { label: 2, selector: 'text=问答验收场景' },
   { label: 3, selector: 'text=协作专家' },
   { label: 4, selector: 'button:has-text("保存")' },
@@ -184,7 +184,7 @@ await shot('resources-scenario.png', [
 await goto('/resources/agent')
 await clickText('问答验收专家')
 await shot('resources-expert.png', [
-  { label: 1, selector: 'button:has-text("创建专家")' },
+  { label: 1, selector: 'button:has-text("新建专家")' },
   { label: 2, selector: 'text=问答验收专家' },
   { label: 3, selector: 'text=系统提示词' },
   { label: 4, selector: 'button:has-text("保存")' },
@@ -193,7 +193,7 @@ await shot('resources-expert.png', [
 await goto('/resources/skill')
 await clickText('问答验收技能')
 await shot('resources-skill.png', [
-  { label: 1, selector: 'button:has-text("创建技能")' },
+  { label: 1, selector: 'button:has-text("新建技能")' },
   { label: 2, selector: 'text=问答验收技能' },
   { label: 3, selector: 'text=技能运行时依赖' },
   { label: 4, selector: 'button:has-text("保存")' },
@@ -202,7 +202,7 @@ await shot('resources-skill.png', [
 await goto('/resources/mcp')
 await clickText('验收工具')
 await shot('resources-tool.png', [
-  { label: 1, selector: 'button:has-text("创建工具")' },
+  { label: 1, selector: 'button:has-text("新建工具")' },
   { label: 2, selector: 'text=验收工具' },
   { label: 3, selector: 'text=传输方式' },
   { label: 4, selector: 'button:has-text("保存")' },
@@ -234,7 +234,7 @@ await shot('settings-host.png', [
 
 await goto('/settings/secrets')
 await shot('settings-secret.png', [
-  { label: 1, selector: 'button:has-text("创建密钥")' },
+  { label: 1, selector: 'button:has-text("新建密钥")' },
   { label: 2, selector: 'text=jeniya' },
   { label: 3, selector: 'text=已保存' },
   { label: 4, selector: 'button:has-text("保存")' },

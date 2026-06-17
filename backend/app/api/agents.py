@@ -38,7 +38,7 @@ def _get_agent_instances_path() -> Path:
 
 
 class AgentCreate(BaseModel):
-    """创建 Agent 实例请求"""
+    """新建 Agent 实例请求"""
     name: str
     role: str = ""
     system_prompt: Optional[str] = None
@@ -409,7 +409,7 @@ async def list_agent_instances_response():
 
 
 async def create_agent_instance(body: AgentCreate):
-    """创建 Agent 实例"""
+    """新建 Agent 实例"""
     instances = load_agent_instances()
     agent_id = (body.agent_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
     skill_ids = body.skill_ids or []
@@ -489,7 +489,7 @@ async def get_agents():
 
 @router.post("/agents")
 async def create_agent(body: AgentCreate):
-    """创建 Agent（主入口）。"""
+    """新建 Agent（主入口）。"""
     return await create_agent_instance(body)
 
 

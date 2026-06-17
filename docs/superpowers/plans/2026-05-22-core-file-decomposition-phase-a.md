@@ -12,7 +12,7 @@
 
 ## 文件结构
 
-- 创建：`backend/app/api/settings_presets.py`
+- 新建：`backend/app/api/settings_presets.py`
   - Session preset CRUD
   - Scenario bundle export/import
   - Public share import
@@ -85,9 +85,9 @@ def test_session_presets_routes_remain_available(client):
 /Users/ggd/.local/bin/rtk git commit -m "test: 锁定场景预设设置路由契约"
 ```
 
-## 任务 3：创建 `settings_presets.py` 并迁移 session preset CRUD
+## 任务 3：新建 `settings_presets.py` 并迁移 session preset CRUD
 
-- [x] **步骤 1：创建新 router 文件**
+- [x] **步骤 1：新建新 router 文件**
 
 从 `settings.py` 迁移以下内容到 `backend/app/api/settings_presets.py`：
 

@@ -15,7 +15,7 @@
 {
   "execution_status": "succeeded",
   "result_code": "skill.initialized",
-  "message": "Skill 模板目录已创建。",
+  "message": "Skill 模板目录已新建。",
   "artifacts": {
     "workspace_path": "skills/demo"
   },
@@ -148,7 +148,7 @@
 {
   "execution_status": "succeeded",
   "result_code": "skill.initialized",
-  "message": "Skill 模板目录已创建，请继续编辑 SKILL.md 并运行校验。",
+  "message": "Skill 模板目录已新建，请继续编辑 SKILL.md 并运行校验。",
   "artifacts": {
     "workspace_path": "skills/demo"
   },

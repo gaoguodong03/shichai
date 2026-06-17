@@ -593,7 +593,7 @@ def _next_available_skill_id(base: Path, seed: str) -> str:
 
 @router.post("/settings/skills")
 async def create_skill(skill: SkillCreate):
-    """创建 Skill：在 skills 目录下创建 <id>/SKILL.md"""
+    """新建 Skill：在 skills 目录下新建 <id>/SKILL.md"""
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
     if not (skill.name or "").strip():

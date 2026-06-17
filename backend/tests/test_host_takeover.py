@@ -442,7 +442,7 @@ async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypat
                 "messages": [
                     gc.AIMessage(
                         content=(
-                            "请用户确认创建 Skill 的用途。\n"
+                            "请用户确认新建 Skill 的用途。\n"
                             '```json\n{"task_done": true, "next_speaker": "user", '
                             '"reason": "需要确认 Skill 需求"}\n```'
                         )
@@ -465,8 +465,8 @@ async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypat
             "skill_ids": ["group-host"],
         },
         agent_profiles=[],
-        discussion_goal="创建一个 Skill",
-        recent_messages="【用户】帮我创建一个 Skill",
+        discussion_goal="新建一个 Skill",
+        recent_messages="【用户】帮我新建一个 Skill",
         last_speaker_agent_id=None,
         extra_system_prompt="",
         group_session_id="group-recruitment",

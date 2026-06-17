@@ -60,18 +60,18 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
   })
 
-  test('用户可以创建工具并进入工具配置页', async ({ page }) => {
+  test('用户可以新建工具并进入工具配置页', async ({ page }) => {
     await bootLoggedInApp(page)
 
     await page.getByRole('button', { name: '资源中心' }).click()
     await page.getByRole('button', { name: '工具', exact: true }).click()
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
 
-    await page.getByRole('button', { name: '创建工具' }).click()
-    await expect(page.getByRole('heading', { name: '创建工具' })).toBeVisible()
+    await page.getByRole('button', { name: '新建工具' }).click()
+    await expect(page.getByRole('heading', { name: '新建工具' })).toBeVisible()
     await page.getByPlaceholder('例如：文件系统 MCP').fill('自动化工具')
     await page.getByPlaceholder('例如：python').fill('python')
-    await page.getByRole('button', { name: '创建', exact: true }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
 
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()
     await expect(page.getByText('自动化工具')).toBeVisible()

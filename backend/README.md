@@ -26,7 +26,7 @@ python -m venv venv
 pip install -r requirements.txt
 # 复制并编辑 .env，至少设置模型 Key 与 AUTH_SECRET
 cp .env.example .env
-# 创建本地账号；密码会写入 SQLite hash，不要提交运行时配置文件
+# 新建本地账号；密码会写入 SQLite hash，不要提交运行时配置文件
 python manage_accounts.py add --username demo@example.com --password 'change-me'
 python -m app.main
 ```
@@ -96,7 +96,7 @@ python backend/scripts/validate_skill_cli_contract.py
 ## 多用户上线建议（默认体验补丁）
 
 - 架构原则：所有用户共用一套 `run_skill_script` 执行器，按用户上下文访问各自 `skills/` 与 `workspace/`。
-- 技能目录为每用户 `data/users/{user_id}/resources/skills/{skill_id}/`（资源中心创建或 ZIP 导入）。
+- 技能目录为每用户 `data/users/{user_id}/resources/skills/{skill_id}/`（资源中心新建或 ZIP 导入）。
 - 全局兼容补丁：在工具组装层维护历史 MCP id 别名映射（如 `fetch -> linkup`），防止旧 skill 配置导致运行失败。
 - 补丁边界：这类补丁属于默认体验增强，不改变“单执行器 + 多用户隔离”的架构方向。
 

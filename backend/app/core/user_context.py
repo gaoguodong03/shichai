@@ -139,7 +139,7 @@ def _build_user_context(user_id: str, username: str = "") -> UserContext:
 
     ctx = build_user_context(user_id=uid, username=name)
 
-    # 尽量提前创建基础目录，但失败也不影响后续按需 mkdir
+    # 尽量提前新建基础目录，但失败也不影响后续按需 mkdir
     try:
         ensure_user_resource_layout(user_id=uid, username=name)
         ctx.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +171,7 @@ def get_user_context_for(username: str) -> UserContext:
     """显式获取某个用户的 UserContext，不依赖请求上下文。
 
     兼容旧调用点传入登录名的情况：若 SQLite 认证库中存在该账号，
-    使用其稳定 user_id 作为物理目录名，避免重新创建 username 目录。
+    使用其稳定 user_id 作为物理目录名，避免重新新建 username 目录。
     """
     ident = (username or "").strip()
     if not ident:

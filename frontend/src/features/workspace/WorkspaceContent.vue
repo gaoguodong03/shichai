@@ -44,7 +44,7 @@
       </div>
       <h2 class="workspace-empty-title">选择会话开始协作</h2>
       <p class="workspace-empty-desc">
-        在左侧选择已有会话，或点击「新建会话」创建新会话（默认仅主持人，可在会话内邀请专家）。
+        在左侧选择已有会话，或点击「新建会话」新建新会话（默认仅主持人，可在会话内邀请专家）。
       </p>
       <p class="workspace-empty-hint">
         会话内可使用工作区、邀请专家等能力。

@@ -191,7 +191,7 @@ async def change_password(body: ChangePasswordBody, current_user: CurrentUser = 
 
 @router.post("/auth/register")
 async def register(body: RegisterBody):
-    """创建新账户：写入用户文件，并初始化用户档案"""
+    """新建新账户：写入用户文件，并初始化用户档案"""
     name = body.username.strip()
     if not name:
         raise HTTPException(status_code=400, detail="用户名不能为空")

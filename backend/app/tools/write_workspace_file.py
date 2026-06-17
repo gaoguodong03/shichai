@@ -48,7 +48,7 @@ def _normalize_content(content_or_input, **kwargs) -> str:
 
 def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
-    创建写入当前会话 workspace 文件的工具。
+    新建写入当前会话 workspace 文件的工具。
     workspace_id 为 session_id 或 group_session_id；写入经 SandboxService + OpenSandbox。
     """
 

@@ -68,7 +68,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
 
 
 def create_read_file_tool(session_id: str) -> ToolSpec:
-    """创建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
+    """新建读取引用文件工具；有 session_id 时仅允许该会话 workspace，经 SandboxService + OpenSandbox 读 /workspace。"""
 
     async def _read_file(path: str = "", **kwargs) -> str:
         raw = _normalize_path(path) or _normalize_path(kwargs.get("__arg1")) or _normalize_path(kwargs.get("path"))

@@ -46,7 +46,7 @@ async def list_sessions():
 
 @router.post("/sessions")
 async def create_session(body: SessionCreate):
-    """创建会话（默认仅主持人，agent_ids 为空）"""
+    """新建会话（默认仅主持人，agent_ids 为空）"""
     data = create_session_internal(
         title=body.title or "新对话",
         agent_ids=body.agent_ids,

@@ -34,13 +34,13 @@ Phase F：一次性迁移脚本。读取旧邮箱目录，生成 `user_id` 目�
   - 职责：`UserContext.base_dir` 改为 `users/<user_id>`，暴露 `resources_dir`、`vault_dir`、`sessions_dir` 等标准路径。
 - 修改：`backend/app/core/user_settings_paths.py`
   - 职责：新增标准资源路径 helper；旧 helper 暂保留给 Phase B/C 过渡。
-- 创建：`backend/app/core/atomic_json.py`
+- 新建：`backend/app/core/atomic_json.py`
   - 职责：提供 `atomic_write_text`、`atomic_write_json`、`read_json_or_default`，资源写入统一复用。
 - 修改：`backend/app/api/auth.py`
-  - 职责：注册创建新目录结构，登录返回 `user_id`，改账号只更新登录名，不重命名 `user_id` 目录。
+  - 职责：注册新建新目录结构，登录返回 `user_id`，改账号只更新登录名，不重命名 `user_id` 目录。
 - 修改：`backend/tests/test_auth_sqlite.py`
   - 职责：覆盖 `user_id` 目录、登录兼容、改账号不搬资源目录。
-- 创建：`backend/tests/test_user_resource_paths.py`
+- 新建：`backend/tests/test_user_resource_paths.py`
   - 职责：覆盖标准路径 helper、原子 JSON 写入、旧邮箱目录不进入主路径。
 
 ## 任务 1：认证库增加 user_id
@@ -143,7 +143,7 @@ def _ensure_user_id_column(conn: sqlite3.Connection) -> None:
 
 - [x] **步骤 1：编写失败的测试**
 
-创建 `backend/tests/test_user_resource_paths.py`：
+新建 `backend/tests/test_user_resource_paths.py`：
 
 ```python
 import json
@@ -273,7 +273,7 @@ def build_user_context(*, user_id: str, username: str = "") -> UserContext:
 ## 任务 3：原子 JSON 写入工具
 
 **文件：**
-- 创建：`backend/app/core/atomic_json.py`
+- 新建：`backend/app/core/atomic_json.py`
 - 测试：`backend/tests/test_user_resource_paths.py`
 
 - [x] **步骤 1：编写失败的测试**
@@ -311,7 +311,7 @@ def test_atomic_write_json_preserves_existing_file_on_serializer_error(tmp_path)
 
 - [x] **步骤 3：编写最少实现代码**
 
-创建 `backend/app/core/atomic_json.py`：
+新建 `backend/app/core/atomic_json.py`：
 
 ```python
 from __future__ import annotations
@@ -605,7 +605,7 @@ return {
 
 ## 后续计划入口
 
-Phase A 合并后再创建 Phase B 计划，范围只覆盖 `resources/scenarios` 和 `resources/agents`。Phase B 的第一个红灯测试应验证 `/api/settings/session-presets` 仍返回旧字段结构，但磁盘主体文件已写入 `resources/scenarios/<scenario_id>/scenario.json`；第二个红灯测试应验证 `/api/dha` 仍返回 `agent_id`/`expert_id` 兼容字段，但磁盘主体文件已写入 `resources/agents/<agent_id>/agent.json`。
+Phase A 合并后再新建 Phase B 计划，范围只覆盖 `resources/scenarios` 和 `resources/agents`。Phase B 的第一个红灯测试应验证 `/api/settings/session-presets` 仍返回旧字段结构，但磁盘主体文件已写入 `resources/scenarios/<scenario_id>/scenario.json`；第二个红灯测试应验证 `/api/dha` 仍返回 `agent_id`/`expert_id` 兼容字段，但磁盘主体文件已写入 `resources/agents/<agent_id>/agent.json`。
 
 ## 自检
 

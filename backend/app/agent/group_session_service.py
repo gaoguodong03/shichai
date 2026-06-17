@@ -69,7 +69,7 @@ def create_session_internal(
     leader_agent_id: Optional[str] = None,
     host_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """创建一条会话（默认虚拟场景主持人 + host_config）。"""
+    """新建一条会话（默认虚拟场景主持人 + host_config）。"""
     instances = load_agent_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     valid_ids = set(id_to_preferred.values())
@@ -116,7 +116,7 @@ def create_session_internal(
     meta[gsid] = row
     _save_group_meta(meta)
     _save_group_history(gsid, [])
-    # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
+    # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
     return _build_session_payload(gsid, meta[gsid])
 
 def export_session_to_markdown(session_id: str, filename: Optional[str] = None) -> tuple:
@@ -262,7 +262,7 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
+    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动新建该会话条目以避免 404。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
         if body.add_agent_ids:

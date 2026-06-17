@@ -18,15 +18,15 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })
 
-  test('创建场景草稿未保存前不出现在场景列表', async ({ page }) => {
+  test('新建场景草稿未保存前不出现在场景列表', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/scenario')
 
     const sidebar = page.getByRole('complementary')
-    await page.getByRole('button', { name: '创建场景' }).click()
-    await page.getByRole('button', { name: '创建场景' }).click()
-    await page.getByRole('button', { name: '创建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
 
-    await expect(page.getByRole('heading', { name: '创建场景' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '新建场景' })).toBeVisible()
     await expect(sidebar.getByText('0 位专家', { exact: true })).toHaveCount(0)
   })
 
@@ -151,14 +151,14 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByRole('button', { name: '确认覆盖导入' })).toBeVisible()
   })
 
-  test('用户可以创建专家并保存专家配置', async ({ page }) => {
+  test('用户可以新建专家并保存专家配置', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/agent')
 
     await expect(page).toHaveURL(/\/resources\/agent$/)
     await expect(page.getByRole('complementary').getByText('问答专家').first()).toBeVisible()
 
-    await page.getByRole('button', { name: '创建专家' }).click()
-    await expect(page.getByRole('heading', { name: '创建专家' })).toBeVisible()
+    await page.getByRole('button', { name: '新建专家' }).click()
+    await expect(page.getByRole('heading', { name: '新建专家' })).toBeVisible()
     await page.getByPlaceholder('请输入专家名称').fill('自动化专家')
     await page.getByPlaceholder('请输入专家描述').fill('负责验收真实用户点击路径')
     await page.getByRole('button', { name: '保存' }).click()

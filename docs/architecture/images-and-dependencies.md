@@ -9,7 +9,7 @@
 | 层级 | 当前配置入口 | 作用 | 不应该承担 |
 |------|--------------|------|------------|
 | 主应用镜像 `ST49_IMAGE` | `docker-compose.1panel.yml` 的 `st49.image`，模板为根目录 `Dockerfile` | 运行 FastAPI 后端、托管前端静态产物、连接 MCP、调用 OpenSandbox | 不负责隔离执行用户 Skill 脚本 |
-| OpenSandbox 控制面 | `OPENSANDBOX_SERVER_IMAGE`、`OPENSANDBOX_EXECD_IMAGE`、`OPENSANDBOX_EGRESS_IMAGE` | 提供沙箱生命周期 API、创建执行容器、转发执行命令 | 不应替换成业务沙箱镜像 |
+| OpenSandbox 控制面 | `OPENSANDBOX_SERVER_IMAGE`、`OPENSANDBOX_EXECD_IMAGE`、`OPENSANDBOX_EGRESS_IMAGE` | 提供沙箱生命周期 API、新建执行容器、转发执行命令 | 不应替换成业务沙箱镜像 |
 | 技能沙箱镜像 | `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE` | 执行用户 Skill 脚本，挂载用户工作区和技能目录 | 不运行 FastAPI，不托管前端 |
 | 用户沙箱依赖 | `backend/data/users/<user>/config/sandbox/requirements.txt` | 为单个用户额外安装 Python 包 | 不应写进主应用 `requirements.txt`，除非后端代码也依赖它 |
 
@@ -39,7 +39,7 @@
 | `backend/app/api/sandbox_settings.py` | 沙箱设置、requirements 读写、merge、保存后预热 API |
 | `backend/app/core/sandbox_requirements.py` | requirements 去重 key、合并写入、错误信息格式化 |
 | `backend/app/agent/sandbox_image_policy.py` | 沙箱镜像选项、用户 image variant 读写 |
-| `backend/app/agent/sandbox_service.py` | 创建/复用/预热用户沙箱，安装用户 requirements |
+| `backend/app/agent/sandbox_service.py` | 新建/复用/预热用户沙箱，安装用户 requirements |
 | `backend/app/core/runtime_env.py` | 主应用启动默认环境变量 |
 
 ## 排障顺序

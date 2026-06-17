@@ -18,7 +18,7 @@
 
 - [x] **步骤 1：编写失败测试**
 
-在 `backend/tests/test_group_memory_store.py` 中加入测试：创建 `facts.md` 和旧 `memory/logs/*.md`，调用 `build_dispatch_context()`，断言返回不包含 logs/refs，也不渲染相关历史摘录。
+在 `backend/tests/test_group_memory_store.py` 中加入测试：新建 `facts.md` 和旧 `memory/logs/*.md`，调用 `build_dispatch_context()`，断言返回不包含 logs/refs，也不渲染相关历史摘录。
 
 - [x] **步骤 2：运行测试验证失败**
 
@@ -69,7 +69,7 @@
 
 - [x] **步骤 1：编写失败测试**
 
-加入或更新测试，断言 `_log_llm_roundtrip(..., session_id=..., workspace_root=...)` 写入 workspace JSONL，且不会创建 `backend/logs/llm_trace.log`。
+加入或更新测试，断言 `_log_llm_roundtrip(..., session_id=..., workspace_root=...)` 写入 workspace JSONL，且不会新建 `backend/logs/llm_trace.log`。
 
 - [x] **步骤 2：运行测试验证失败**
 

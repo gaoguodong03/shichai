@@ -33,7 +33,7 @@
 
 1. 开发：`npm run dev` → Vite 默认 `http://localhost:5173`。
 2. **代理**：`vite.config.ts` 将 `/api` 转发到 `http://127.0.0.1:8000`，超时 180s，适配长耗时工具调用；若出现 Vite `ECONNREFUSED`，优先确认后端已通过 `python -m app.main` 监听 8000 端口。
-3. **入口**：`src/main.ts` 创建 Vue 应用、注册 Pinia 与路由；**全局包装 `fetch`**：若 `localStorage` 存在 `dha_token`，则对所有请求附加 `Authorization: Bearer <token>`。
+3. **入口**：`src/main.ts` 新建 Vue 应用、注册 Pinia 与路由；**全局包装 `fetch`**：若 `localStorage` 存在 `dha_token`，则对所有请求附加 `Authorization: Bearer <token>`。
 4. **路由**：`/` → `MainView`（需登录）；`/login` → `LoginView`。`beforeEach` 用 `dha_logged_in === 'true'` 做简单门禁（与 token 并存）。
 
 ### 2.3 开发时典型组合
@@ -64,7 +64,7 @@
 
 ### 5.1 API 表面
 
-- **会话主入口**：`/api/sessions/*`（列表、创建、读写、删除消息、`chat/stream` 等），实现上与群聊共用存储（见 `sessions.py` 转调 `group_chat`）。
+- **会话主入口**：`/api/sessions/*`（列表、新建、读写、删除消息、`chat/stream` 等），实现上与群聊共用存储（见 `sessions.py` 转调 `group_chat`）。
 - **Agent（专家）配置**：`/api/agents/*`，专家资源包导入导出沿用 `/api/dha/instances/*`。
 
 ### 5.2 编排策略（`next_speaker` 如何决定）

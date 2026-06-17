@@ -18,7 +18,7 @@
 
 - 同一用户多个会话共用同一个沙箱实例。
 - 每个会话只允许访问自己的子目录：`/workspace/<session_id>`。
-- 工具层（读写/重命名/创建目录/列表）必须做路径归一化和越界拦截。
+- 工具层（读写/重命名/新建目录/列表）必须做路径归一化和越界拦截。
 
 ## 脚本执行规则
 
@@ -33,7 +33,7 @@
 
 - 默认基础镜像不跟随应用镜像。`ST49_IMAGE` 只用于后端应用容器，Skill 沙箱通过 `SANDBOX_STANDARD_IMAGE` / `SANDBOX_PLAYWRIGHT_IMAGE` 指向独立模板镜像。
 - 1Panel 包由 `ST49_SANDBOX_STANDARD_IMAGE` / `ST49_SANDBOX_PLAYWRIGHT_IMAGE` 写入模板镜像 tag；普通 app 发布如 `26.05.22` 不会自动派生 `sandbox:26.05.22-standard`。
-- Docker/OpenSandbox 会复用同一镜像 tag 的本地镜像层；已下载的模板镜像不会按用户重复下载。若需要提前下载模板但不创建用户沙箱，可在宿主机先执行 `docker pull <SANDBOX_STANDARD_IMAGE>`。
+- Docker/OpenSandbox 会复用同一镜像 tag 的本地镜像层；已下载的模板镜像不会按用户重复下载。若需要提前下载模板但不新建用户沙箱，可在宿主机先执行 `docker pull <SANDBOX_STANDARD_IMAGE>`。
 - 如需独立维护 Skill 沙箱镜像，可使用 `docker/skill-sandbox/Dockerfile` 构建并通过 `SANDBOX_STANDARD_IMAGE` 覆盖。
 - 修改镜像内容后需要重建并推送镜像，再重启后端/OpenSandbox 相关服务。
 - 每用户额外 Python 包通过 `data/users/<user_id>/config/sandbox/requirements.txt` 管理；内容 hash 变化时会在该用户沙箱内重新安装。

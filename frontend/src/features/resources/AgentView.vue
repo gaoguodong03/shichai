@@ -8,7 +8,7 @@
       <div class="max-w-5xl w-full mx-auto">
         <div class="mb-4">
           <h2 class="text-2xl font-semibold text-primary mb-1">
-            {{ selectedAgentId === '__new__' ? '创建专家' : '配置专家' }}
+            {{ selectedAgentId === '__new__' ? '新建专家' : '配置专家' }}
           </h2>
         </div>
 
@@ -473,7 +473,7 @@ async function saveAgent() {
     if (j.status === 'ok' && j.data?.agent_id) {
       emit('created', j.data.agent_id as string)
     } else {
-      await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
+      await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }
   }
 }

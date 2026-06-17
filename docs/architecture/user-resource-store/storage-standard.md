@@ -271,7 +271,7 @@ sessions/
 文件职责：
 
 - `index.json`：会话列表摘要。
-- `meta.json`：标题、场景、参与专家、创建时间、归档状态。
+- `meta.json`：标题、场景、参与专家、新建时间、归档状态。
 - `messages.jsonl`：聊天消息，一行一条，适合追加写。
 - `events.jsonl`：SSE 事件、工具调用、错误、沙箱记录。
 - `runtime_state.json`：下一轮发言者、pending owner、host plan、运行时快照。
@@ -390,7 +390,7 @@ rename
 不在主代码路径兼容旧邮箱目录。一次性迁移脚本负责：
 
 - 生成新 `user_id`。
-- 创建 `backend/data/users/<user_id>/`。
+- 新建 `backend/data/users/<user_id>/`。
 - 拆分旧 `config/session_presets.json` 到 `resources/scenarios/`。
 - 拆分旧 `config/dha_instances.json` 到 `resources/agents/`。
 - 移动旧 `skills/` 到 `resources/skills/`。
@@ -403,7 +403,7 @@ rename
 
 最低验收：
 
-- 新用户注册后创建新目录结构。
+- 新用户注册后新建新目录结构。
 - 资源中心能列出场景、专家、Skill、工具、模型。
 - 新建、编辑、删除任一资源不会破坏其他资源。
 - 场景能正确解析专家、专家能正确解析 Skill。

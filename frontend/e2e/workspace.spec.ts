@@ -406,7 +406,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(sessionList.getByText('空白会话', { exact: true })).toHaveCount(0)
   })
 
-  test('场景创建后不会被旧会话列表响应切回上一会话', async ({ page }) => {
+  test('场景新建后不会被旧会话列表响应切回上一会话', async ({ page }) => {
     const state = createE2eState()
     await loginByStorage(page)
     await mockApi(page, state)

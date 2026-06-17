@@ -88,11 +88,11 @@ test.describe('验收 5/6：设置中心', () => {
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('button', { name: '密钥' }).click()
     await expect(page.getByRole('heading', { name: '密钥管理' })).toBeVisible()
-    await page.getByRole('button', { name: '创建密钥' }).click()
+    await page.getByRole('button', { name: '新建密钥' }).click()
     await page.getByPlaceholder('例如：Jeniya 主密钥').fill('自动化密钥')
     await page.getByPlaceholder('例如：QWEN_API_KEY').fill('auto-key')
     await page.getByPlaceholder('sk-...').fill('sk-test')
-    await page.getByRole('button', { name: '创建', exact: true }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
     await expect(page.getByText('自动化密钥')).toBeVisible()
 
     await page.getByRole('button', { name: '账号' }).click()

@@ -24,7 +24,7 @@
 | TC-UR01-02 | UR-01 | E2E | 未登录 | 访问 `/workspace` | 跳转 `/login?redirect=...` | `frontend/e2e/auth.spec.ts` |
 | TC-UR01-03 | UR-01 | API | A、B 两个账号 | A 请求 B 的会话或文件 | 请求被拒绝或返回不存在 | `backend/tests/test_sessions_api.py`、`backend/tests/test_workspace_files.py` |
 | TC-UR01-04 | UR-01 | API | 已登录 | 刷新页面后继续请求当前用户接口 | 登录态保持，用户上下文不丢失 | `backend/tests/test_auth_sqlite.py` |
-| TC-UR02-01 | UR-02 | API | 已登录 | `POST /api/sessions` 创建会话 | 返回唯一 `session_id` 并出现在列表 | `backend/tests/test_sessions_api.py` |
+| TC-UR02-01 | UR-02 | API | 已登录 | `POST /api/sessions` 新建会话 | 返回唯一 `session_id` 并出现在列表 | `backend/tests/test_sessions_api.py` |
 | TC-UR02-02 | UR-02 | API/E2E | 已有会话 | 发送消息并读取 SSE | 前端收到增量、完整消息和结束事件 | `backend/tests/test_group_chat_stream_protocol.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR02-03 | UR-02 | E2E | 会话含消息和文件 | 刷新工作区页面 | 历史、成员、文件和状态恢复 | `frontend/e2e/workspace.spec.ts` |
 | TC-UR02-04 | UR-02 | API | 已有会话 | 删除会话后继续发消息 | 列表不再显示，后续发送被拒绝 | `backend/tests/test_sessions_api.py` |

@@ -70,7 +70,7 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
         parts.append(
             "- 这些文件工具是任务过程能力，不限于用户显式要求保存或读取；只要当前任务需要检查已有文件、"
-            "创建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。\n"
+            "新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。\n"
         )
         if "read_file" in names:
             parts.append(
@@ -167,7 +167,7 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 )
 
 _WORKSPACE_TASK_FILE_RULE = (
-    "- 调度任务由平台通过本轮提示词传入，不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
+    "- 调度任务由平台通过本轮提示词传入，不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
     "- 只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出"
     "「报告已保存至工作区」或类似结论。\n"
 )
@@ -229,11 +229,11 @@ def create_skill_execution_agent(
     synthesize_after_read_file_paths: tuple[str, ...] = (),
 ):
     """
-    创建技能执行 Agent：仅用于「第二次调用」。
+    新建技能执行 Agent：仅用于「第二次调用」。
     系统提示词 = 用户设置 + 选中技能的完整内容 + 工具列表。
     按 skill 步骤执行，某一步需要时调用 MCP 工具。
     """
-    logger.debug(f"创建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
+    logger.debug(f"新建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
 
     system_prompt = ""
     if extra_system_prompt and extra_system_prompt.strip():
