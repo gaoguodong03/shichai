@@ -23,7 +23,7 @@ def merge_single_expert_into_instances(
 ) -> Tuple[List[Dict[str, Any]], str | None, bool, List[str]]:
     """
     合并单条专家。id_conflict: skip | overwrite（按 name 判冲突）。
-    返回 (新列表, 最终 agent_id, 是否因同名跳过, 被覆盖的旧 agent_id 列表)。
+    返回 (新列表, 最终 agent_id, 是否因同名未写入, 被覆盖的旧 agent_id 列表)。
     """
     from app.core.scenario_bundle import strip_agent_row_for_disk
 

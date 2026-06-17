@@ -69,11 +69,12 @@ export function useZipResourceImports(options: {
       if (j?.status === 'ok') {
         await options.fetchSkills()
         if (j?.data?.id) options.selectedId.value = j.data.id
+        const kept = j?.data?.kept_skill_ids || j?.data?.summary?.kept_skill_ids || []
         skillImportResult.value = {
           ok: true,
-          message: j?.data?.skipped_by_name
-            ? `未导入：存在同名技能 "${j?.data?.name || '未知'}"`
-            : `导入成功：${j?.data?.name || j?.data?.id || '技能'}`,
+          message: kept.length
+            ? `导入成功：${j?.data?.name || '技能'}（已保留本地同名技能）`
+            : `导入成功：${j?.data?.name || '技能'}`,
         }
       } else {
         skillImportResult.value = { ok: false, message: j?.detail || '导入技能失败' }
@@ -116,7 +117,7 @@ export function useZipResourceImports(options: {
       const summary = j?.data?.summary || {}
       await appAlert({
         title: '导入成功',
-        message: `新增 ${summary.mcp_added ?? 0} 个，更新 ${summary.mcp_updated ?? 0} 个，跳过 ${summary.mcp_skipped ?? 0} 个`,
+        message: `新增 ${summary.mcp_added ?? 0} 个，保留 ${summary.mcp_skipped ?? 0} 个`,
         variant: 'success',
       })
     } catch (err) {

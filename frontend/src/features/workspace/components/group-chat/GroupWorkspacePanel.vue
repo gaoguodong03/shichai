@@ -10,7 +10,24 @@
             :style="{ width: groupWorkspaceWidth + 'px', minWidth: groupWorkspaceWidth + 'px' }"
           >
             <div class="group-chat-workspace-toolbar">
-              <span class="group-chat-workspace-title">工作区</span>
+              <div class="group-chat-workspace-heading">
+                <span class="group-chat-workspace-title">工作区</span>
+                <button
+                  type="button"
+                  class="group-chat-workspace-toolbar-sm"
+                  title="刷新工作区"
+                  aria-label="刷新工作区"
+                  :disabled="groupWorkspaceUploading || groupWorkspaceLoading"
+                  @click="loadGroupWorkspace"
+                >
+                  <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 0 1-15.1 6.6" />
+                    <path d="M3 12A9 9 0 0 1 18.1 5.4" />
+                    <path d="M6 18H3v3" />
+                    <path d="M18 6h3V3" />
+                  </svg>
+                </button>
+              </div>
               <div class="group-chat-workspace-toolbar-actions">
                 <button
                   v-if="groupWorkspacePath"
@@ -134,7 +151,7 @@
                       @click="groupWorkspaceEnterDir(e)"
                     >
                       <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                      <span class="truncate">{{ e.name }}</span>
+                      <span class="truncate" :title="e.name">{{ e.name }}</span>
                     </button>
                     <button
                       v-else
@@ -145,7 +162,7 @@
                       @click="previewWorkspaceFile(e)"
                     >
                       <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                      <span class="truncate">{{ e.name }}</span>
+                      <span class="truncate" :title="e.name">{{ e.name }}</span>
                     </button>
                     <div class="group-chat-workspace-item-actions">
                       <button
@@ -187,7 +204,7 @@
               >
               <div v-if="groupWorkspacePreviewPath" class="group-chat-workspace-preview">
                 <div class="group-chat-workspace-preview-header">
-                  <span class="group-chat-workspace-preview-title">{{ groupWorkspacePreviewName }}</span>
+                  <span class="group-chat-workspace-preview-title" :title="groupWorkspacePreviewName">{{ groupWorkspacePreviewName }}</span>
                   <div class="group-chat-workspace-preview-actions">
                     <template v-if="isTextFile(groupWorkspacePreviewName) && !groupWorkspacePreviewLoading">
                       <template v-if="!groupWorkspacePreviewEditing">
@@ -245,6 +262,7 @@ const {
   onGroupWorkspaceResizeMouseDown,
   groupWorkspaceWidth,
   groupWorkspacePath,
+  loadGroupWorkspace,
   goGroupWorkspaceUp,
   groupWorkspaceGoRoot,
   createGroupWorkspaceDir,

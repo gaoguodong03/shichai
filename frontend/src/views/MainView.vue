@@ -1007,28 +1007,23 @@
         <template v-else>
         <h3 id="scenario-import-title" class="text-lg font-semibold mb-3">导入场景</h3>
         <template v-if="scenarioBundlePreview?.bundle_preview">
-          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+          <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
-            <div class="text-xs text-muted">场景名称：{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内专家</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="ex in scenarioBundlePreview.bundle_preview.experts" :key="ex.agent_id">
-                  <span class="text-primary">{{ ex.name || ex.agent_id }}</span>
-                </li>
-              </ul>
+            <p class="text-xs text-muted leading-5">场景名称：{{ scenarioBundlePreview.bundle_preview.preset_name }}</p>
+            <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length">
+              <p class="text-xs text-muted leading-5">
+                专家名称：{{ scenarioBundlePreview.bundle_preview.experts.map((ex) => ex.name).filter(Boolean).join('，') }}
+              </p>
             </div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-              <p class="text-xs text-primary">{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || []).join('，') }}</p>
+            <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length">
+              <p class="text-xs text-muted leading-5">
+                技能名称：{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || [], scenarioBundlePreview.bundle_preview.skill_names).join('，') }}
+              </p>
             </div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="m in scenarioBundlePreview.bundle_preview.mcps" :key="m.id">
-                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
-                </li>
-              </ul>
+            <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length">
+              <p class="text-xs text-muted leading-5">
+                工具名称：{{ displayMcpNames(scenarioBundlePreview.bundle_preview.mcps || []).join('，') }}
+              </p>
             </div>
             <div
               v-if="hasImportMissingReferences(scenarioBundlePreview.bundle_preview.missing_references)"
@@ -1041,7 +1036,6 @@
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
                     <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
-                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
                       </span>
@@ -1051,14 +1045,11 @@
               </div>
               <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
             </div>
-            <p v-if="scenarioOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
-              将覆盖已有内容：{{ scenarioOverwriteSummary }}
-            </p>
             <div
               v-if="scenarioConflictPreviewRows.length"
               class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
             >
-              <div class="text-xs font-medium mb-1">冲突预览</div>
+              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
               <ul class="list-disc pl-4 text-xs space-y-0.5">
                 <li v-for="row in scenarioConflictPreviewRows" :key="row">{{ row }}</li>
               </ul>
@@ -1072,7 +1063,7 @@
             :disabled="scenarioImportCommitting || !canConfirmScenarioImport"
             @click="commitScenarioImport"
           >
-            {{ scenarioImportCommitting ? '导入中…' : hasScenarioNameConflict ? '确认覆盖导入' : '确认导入' }}
+            {{ scenarioImportCommitting ? '导入中…' : '确认导入' }}
           </button>
           <button
             type="button"
@@ -1132,20 +1123,18 @@
         <template v-else>
         <h3 class="text-lg font-semibold mb-3">导入专家</h3>
         <template v-if="agentBundlePreview?.bundle_preview">
-          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+          <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ agentBundlePreview.bundle_preview.name }}</div>
-            <div class="text-xs text-muted">专家名称：{{ agentBundlePreview.bundle_preview.name || '未命名专家' }}</div>
-            <div v-if="(agentBundlePreview.bundle_preview.skills || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-              <p class="text-xs text-primary">{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || []).join('，') }}</p>
+            <p class="text-xs text-muted leading-5">专家名称：{{ agentBundlePreview.bundle_preview.name || '未命名专家' }}</p>
+            <div v-if="(agentBundlePreview.bundle_preview.skills || []).length">
+              <p class="text-xs text-muted leading-5">
+                技能名称：{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || [], agentBundlePreview.bundle_preview.skill_names).join('，') }}
+              </p>
             </div>
-            <div v-if="(agentBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="m in agentBundlePreview.bundle_preview.mcps" :key="m.id">
-                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
-                </li>
-              </ul>
+            <div v-if="(agentBundlePreview.bundle_preview.mcps || []).length">
+              <p class="text-xs text-muted leading-5">
+                工具名称：{{ displayMcpNames(agentBundlePreview.bundle_preview.mcps || []).join('，') }}
+              </p>
             </div>
             <div
               v-if="hasImportMissingReferences(agentBundlePreview.bundle_preview.missing_references)"
@@ -1158,7 +1147,6 @@
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
                     <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
-                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
                       </span>
@@ -1168,9 +1156,15 @@
               </div>
               <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
             </div>
-            <p v-if="agentOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
-              将覆盖已有内容：{{ agentOverwriteSummary }}
-            </p>
+            <div
+              v-if="agentConflictPreviewRows.length"
+              class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
+            >
+              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
+              <ul class="list-disc pl-4 text-xs space-y-0.5">
+                <li v-for="row in agentConflictPreviewRows" :key="row">{{ row }}</li>
+              </ul>
+            </div>
           </div>
         </template>
         <div class="flex justify-start gap-2">
@@ -1180,7 +1174,7 @@
             :disabled="agentImportCommitting || !canConfirmAgentImport"
             @click="commitAgentImport"
           >
-            {{ agentImportCommitting ? '导入中…' : hasAgentNameConflict ? '确认覆盖导入' : '确认导入' }}
+            {{ agentImportCommitting ? '导入中…' : '确认导入' }}
           </button>
           <button
             type="button"
@@ -1242,7 +1236,7 @@
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ pendingSkillZipFile?.name || '未选择文件' }}</div>
             <p class="text-xs text-muted">仅支持 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。</p>
-            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将执行覆盖导入。</p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将保留本地版本；名称不同会作为新版本导入。</p>
           </div>
           <div class="flex justify-start gap-2">
             <button
@@ -1251,7 +1245,7 @@
               :disabled="skillZipImporting || !pendingSkillZipFile"
               @click="commitSkillZipImport"
             >
-              {{ skillZipImporting ? '导入中…' : '确认覆盖导入' }}
+              {{ skillZipImporting ? '导入中…' : '确认导入' }}
             </button>
             <button
               type="button"
@@ -1453,16 +1447,14 @@ const {
   agentBundlePreview,
   canConfirmAgentImport,
   canConfirmScenarioImport,
-  hasScenarioNameConflict,
-  hasAgentNameConflict,
   displaySkillNames,
+  displayMcpNames,
   hasImportMissingReferences,
   missingReferenceGroups,
   missingRequiredByText,
   missingReferenceTitle,
-  scenarioOverwriteSummary,
   scenarioConflictPreviewRows,
-  agentOverwriteSummary,
+  agentConflictPreviewRows,
   pickScenarioImportFile,
   closeScenarioImportModal,
   onScenarioImportBackdropClick,

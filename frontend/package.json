@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc && vite build",
+    "test:copy": "node scripts/check-group-composer-copy.mjs",
     "test:e2e": "playwright test",
     "test:e2e:full": "playwright test",
     "preview": "vite preview"

@@ -2,6 +2,35 @@ import { expect, test } from '@playwright/test'
 import { bootLoggedInApp } from './fixtures/mockApi'
 
 test.describe('验收 4/6：资源中心技能、工具与模型', () => {
+  test('技能、工具和模型左栏展示名称、描述和悬停删除入口', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/skill')
+
+    const sidebar = page.getByRole('complementary')
+
+    const skillItem = sidebar.getByRole('button', { name: /问答技能.*用于前端点击验收/ })
+    await expect(skillItem).toBeVisible()
+    const skillDelete = sidebar.getByRole('button', { name: '删除技能 问答技能' })
+    await expect(skillDelete).toHaveCSS('opacity', '0')
+    await skillItem.hover()
+    await expect(skillDelete).toHaveCSS('opacity', '1')
+
+    await page.getByRole('button', { name: '工具', exact: true }).click()
+    const toolItem = sidebar.getByRole('button', { name: /文件系统工具.*读写工作区文件/ })
+    await expect(toolItem).toBeVisible()
+    const toolDelete = sidebar.getByRole('button', { name: '删除工具 文件系统工具' })
+    await expect(toolDelete).toHaveCSS('opacity', '0')
+    await toolItem.hover()
+    await expect(toolDelete).toHaveCSS('opacity', '1')
+
+    await page.getByRole('button', { name: '模型', exact: true }).click()
+    const modelItem = sidebar.getByRole('button', { name: /Qwen.*qwen3-max/ })
+    await expect(modelItem).toBeVisible()
+    const modelDelete = sidebar.getByRole('button', { name: '删除模型 Qwen' })
+    await expect(modelDelete).toHaveCSS('opacity', '0')
+    await modelItem.hover()
+    await expect(modelDelete).toHaveCSS('opacity', '1')
+  })
+
   test('用户可以查看技能详情、依赖和文件树', async ({ page }) => {
     await bootLoggedInApp(page)
 

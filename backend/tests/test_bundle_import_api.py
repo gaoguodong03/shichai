@@ -15,7 +15,7 @@ def test_public_share_routes_are_removed():
     assert client.get("/api/settings/session-presets/scenario-1/share-link").status_code == 404
 
 
-def test_scene_bundle_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
+def test_scene_bundle_import_keeps_same_name_tree(monkeypatch, tmp_path: Path):
     import json
 
     from app.api import settings_presets as api
@@ -38,6 +38,7 @@ def test_scene_bundle_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
                 {
                     "agent_id": "local-expert",
                     "name": "Expert A",
+                    "role": "old role",
                     "skill_ids": ["local-skill"],
                     "mcp_server_ids": ["local-mcp"],
                 }
@@ -47,7 +48,7 @@ def test_scene_bundle_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
         encoding="utf-8",
     )
     config_dir.joinpath("mcp_servers.json").write_text(
-        json.dumps([{"id": "local-mcp", "name": "Tool A", "enabled": True}], ensure_ascii=False),
+        json.dumps([{"id": "local-mcp", "name": "Tool A", "transport": {"type": "stdio", "command": "old"}}], ensure_ascii=False),
         encoding="utf-8",
     )
     config_dir.joinpath("session_presets.json").write_text(
@@ -80,11 +81,131 @@ def test_scene_bundle_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
             {
                 "agent_id": "shared-expert",
                 "name": "Expert A",
+                "role": "new role",
                 "skill_ids": ["shared-skill"],
                 "mcp_server_ids": ["shared-mcp"],
             }
         ],
-        [{"id": "shared-mcp", "name": "Tool A", "enabled": True}],
+        [{"id": "shared-mcp", "name": "Tool A", "transport": {"type": "stdio", "command": "new"}}],
+        source_skills,
+        ["shared-skill"],
+    )
+
+    try:
+        preview = __import__("asyncio").run(api._import_scene_from_bundle_bytes(raw, dry_run=True))
+        assert preview["preview"]["skill_names"] == {"shared-skill": "Skill A"}
+        result = __import__("asyncio").run(api._import_scene_from_bundle_bytes(raw, dry_run=False))
+    finally:
+        reset_current_username(token)
+    summary = result["summary"]
+    assert summary["skipped_by_name"] == []
+    assert summary["kept_existing_ids"] == ["local-scene"]
+    assert summary["skill_id_map"] == {"shared-skill": "local-skill"}
+    assert summary["mcp_id_map"] == {"shared-mcp": "local-mcp"}
+    assert local_skill.exists()
+    assert not (skills_dir / "shared-skill" / "SKILL.md").exists()
+    assert "description: old" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+
+    experts = json.loads(config_dir.joinpath("dha_instances.json").read_text(encoding="utf-8"))
+    assert [x["agent_id"] for x in experts] == ["local-expert"]
+    assert experts[0]["role"] == "old role"
+    assert experts[0]["skill_ids"] == ["local-skill"]
+    assert experts[0]["mcp_server_ids"] == ["local-mcp"]
+
+    mcps = json.loads(config_dir.joinpath("mcp_servers.json").read_text(encoding="utf-8"))
+    assert [x["id"] for x in mcps] == ["local-mcp"]
+    assert mcps[0]["transport"]["command"] == "old"
+
+    presets = json.loads(config_dir.joinpath("session_presets.json").read_text(encoding="utf-8"))
+    assert [x["id"] for x in presets] == ["local-scene"]
+    assert presets[0]["host_config"]["skill_ids"] == ["local-skill"]
+    assert presets[0]["host_config"]["mcp_server_ids"] == ["local-mcp"]
+
+    scenario_resource = user_root / "resources" / "scenarios" / "local-scene" / "scenario.json"
+    agent_resource = user_root / "resources" / "agents" / "local-expert" / "agent.json"
+    tool_resource = user_root / "resources" / "tools" / "local-mcp" / "tool.json"
+    skill_resource = user_root / "resources" / "skills" / "local-skill" / "SKILL.md"
+    assert json.loads(scenario_resource.read_text(encoding="utf-8"))["name"] == "Scene A"
+    assert json.loads(agent_resource.read_text(encoding="utf-8"))["id"] == "local-expert"
+    assert json.loads(tool_resource.read_text(encoding="utf-8"))["name"] == "Tool A"
+    assert skill_resource.is_file()
+
+
+def test_scene_bundle_import_regenerates_ids_when_names_differ(monkeypatch, tmp_path: Path):
+    import json
+
+    from app.api import settings_presets as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+    config_dir = ctx.config_dir
+    skills_dir = ctx.skills_dir
+    existing_skill = skills_dir / "shared-skill"
+    existing_skill.mkdir()
+    existing_skill.joinpath("SKILL.md").write_text(
+        "---\nname: Old Skill\ndescription: old\n---\nold\n",
+        encoding="utf-8",
+    )
+    config_dir.joinpath("dha_instances.json").write_text(
+        json.dumps(
+            [
+                {
+                    "agent_id": "shared-expert",
+                    "name": "Old Expert",
+                    "skill_ids": ["shared-skill"],
+                    "mcp_server_ids": ["shared-mcp"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    config_dir.joinpath("mcp_servers.json").write_text(
+        json.dumps([{"id": "shared-mcp", "name": "Old Tool", "enabled": True}], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    config_dir.joinpath("session_presets.json").write_text(
+        json.dumps(
+            [
+                {
+                    "id": "shared-scene",
+                    "name": "Old Scene",
+                    "agent_ids": ["shared-expert"],
+                    "host_config": {"skill_ids": ["shared-skill"], "mcp_server_ids": ["shared-mcp"]},
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    source_skills = tmp_path / "source_skills"
+    incoming_skill = source_skills / "shared-skill"
+    incoming_skill.mkdir(parents=True)
+    incoming_skill.joinpath("SKILL.md").write_text(
+        "---\nname: New Skill\ndescription: new\n---\nnew\n",
+        encoding="utf-8",
+    )
+    raw = build_scenario_bundle_zip_bytes(
+        {
+            "id": "shared-scene",
+            "name": "New Scene",
+            "agent_ids": ["shared-expert"],
+            "host_config": {"skill_ids": ["shared-skill"], "mcp_server_ids": ["shared-mcp"]},
+        },
+        [
+            {
+                "agent_id": "shared-expert",
+                "name": "New Expert",
+                "skill_ids": ["shared-skill"],
+                "mcp_server_ids": ["shared-mcp"],
+            }
+        ],
+        [{"id": "shared-mcp", "name": "New Tool", "enabled": True}],
         source_skills,
         ["shared-skill"],
     )
@@ -93,34 +214,38 @@ def test_scene_bundle_import_remaps_same_name_tree(monkeypatch, tmp_path: Path):
         result = __import__("asyncio").run(api._import_scene_from_bundle_bytes(raw, dry_run=False))
     finally:
         reset_current_username(token)
+
     summary = result["summary"]
-    assert summary["overwritten_existing_ids"] == ["local-scene"]
-    assert summary["skill_id_map"] == {"local-skill": "shared-skill"}
-    assert summary["mcp_id_map"] == {"local-mcp": "shared-mcp"}
-    assert not local_skill.exists()
-    assert (skills_dir / "shared-skill" / "SKILL.md").is_file()
+    new_scene_id = summary["preset_imported_ids"][0]
+    new_skill_id = summary["skill_id_map"]["shared-skill"]
+    new_mcp_id = summary["mcp_id_map"]["shared-mcp"]
+    assert new_scene_id != "shared-scene"
+    assert new_skill_id != "shared-skill"
+    assert new_mcp_id != "shared-mcp"
+    assert new_skill_id.startswith("skill-")
+    assert new_mcp_id.startswith("mcp-")
 
     experts = json.loads(config_dir.joinpath("dha_instances.json").read_text(encoding="utf-8"))
-    assert [x["agent_id"] for x in experts] == ["shared-expert"]
-    assert experts[0]["skill_ids"] == ["shared-skill"]
-    assert experts[0]["mcp_server_ids"] == ["shared-mcp"]
+    assert len(experts) == 2
+    new_expert = next(row for row in experts if row["name"] == "New Expert")
+    assert new_expert["agent_id"] != "shared-expert"
+    assert new_expert["skill_ids"] == [new_skill_id]
+    assert new_expert["mcp_server_ids"] == [new_mcp_id]
 
     mcps = json.loads(config_dir.joinpath("mcp_servers.json").read_text(encoding="utf-8"))
-    assert [x["id"] for x in mcps] == ["shared-mcp"]
+    assert {row["name"] for row in mcps} == {"Old Tool", "New Tool"}
+    assert any(row["id"] == new_mcp_id and row["name"] == "New Tool" for row in mcps)
 
     presets = json.loads(config_dir.joinpath("session_presets.json").read_text(encoding="utf-8"))
-    assert [x["id"] for x in presets] == ["shared-scene"]
-    assert presets[0]["host_config"]["skill_ids"] == ["shared-skill"]
-    assert presets[0]["host_config"]["mcp_server_ids"] == ["shared-mcp"]
+    assert len(presets) == 2
+    new_scene = next(row for row in presets if row["name"] == "New Scene")
+    assert new_scene["id"] == new_scene_id
+    assert new_scene["agent_ids"] == [new_expert["agent_id"]]
+    assert new_scene["host_config"]["skill_ids"] == [new_skill_id]
+    assert new_scene["host_config"]["mcp_server_ids"] == [new_mcp_id]
 
-    scenario_resource = user_root / "resources" / "scenarios" / "shared-scene" / "scenario.json"
-    agent_resource = user_root / "resources" / "agents" / "shared-expert" / "agent.json"
-    tool_resource = user_root / "resources" / "tools" / "shared-mcp" / "tool.json"
-    skill_resource = user_root / "resources" / "skills" / "shared-skill" / "SKILL.md"
-    assert json.loads(scenario_resource.read_text(encoding="utf-8"))["name"] == "Scene A"
-    assert json.loads(agent_resource.read_text(encoding="utf-8"))["id"] == "shared-expert"
-    assert json.loads(tool_resource.read_text(encoding="utf-8"))["name"] == "Tool A"
-    assert skill_resource.is_file()
+    assert (skills_dir / "shared-skill" / "SKILL.md").read_text(encoding="utf-8").find("Old Skill") >= 0
+    assert (skills_dir / new_skill_id / "SKILL.md").is_file()
 
 
 def test_scene_bundle_upload_import_persists_for_refresh(monkeypatch, tmp_path: Path):
@@ -177,16 +302,77 @@ def test_scene_bundle_upload_import_persists_for_refresh(monkeypatch, tmp_path: 
         headers=headers,
     )
     assert imported.status_code == 200
+    summary = imported.json()["data"]["summary"]
+    imported_scene_id = summary["preset_imported_ids"][0]
+    imported_agent_id = summary["agent_id_map"]["online-expert"]
+    assert imported_scene_id != "online-scene"
+    assert imported_agent_id != "online-expert"
 
     refreshed = client.get("/api/settings/session-presets", headers=headers)
     assert refreshed.status_code == 200
     presets = refreshed.json()["data"]["presets"]
-    assert [x["id"] for x in presets] == ["online-scene"]
-    assert presets[0]["agent_ids"] == ["online-expert"]
+    assert [x["id"] for x in presets] == [imported_scene_id]
+    assert presets[0]["agent_ids"] == [imported_agent_id]
 
     user_root = user_root_base / "u1"
-    scenario_resource = user_root / "resources" / "scenarios" / "online-scene" / "scenario.json"
+    scenario_resource = user_root / "resources" / "scenarios" / imported_scene_id / "scenario.json"
     assert json.loads(scenario_resource.read_text(encoding="utf-8"))["name"] == "Online Scene"
+
+
+def test_scene_bundle_upload_dry_run_reports_same_name_expert_conflicts(monkeypatch, tmp_path: Path):
+    import json
+
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+    from app.main import app
+
+    user_root_base = tmp_path / "users"
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(user_root_base))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+    ctx.config_dir.joinpath("dha_instances.json").write_text(
+        json.dumps(
+            [
+                {"agent_id": "local-expert-a", "name": "Expert A"},
+                {"agent_id": "local-expert-b", "name": "Expert B"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    reset_current_username(token)
+
+    source_skills = tmp_path / "source_skills"
+    bundle_bytes = build_scenario_bundle_zip_bytes(
+        {"id": "scene-1", "name": "Scene 1", "agent_ids": ["incoming-a", "incoming-b"]},
+        [
+            {"agent_id": "incoming-a", "name": "Expert A"},
+            {"agent_id": "incoming-b", "name": "Expert B"},
+        ],
+        [],
+        source_skills,
+        [],
+    )
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    preview = client.post(
+        "/api/settings/session-presets/import-bundle",
+        files={
+            "file": ("scene-bundle.zip", bundle_bytes, "application/zip"),
+            "dry_run": (None, "true"),
+        },
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert preview.status_code == 200
+    bundle_preview = preview.json()["data"]["bundle_preview"]
+    assert bundle_preview["would_overwrite_experts"] == {
+        "incoming-a": ["local-expert-a"],
+        "incoming-b": ["local-expert-b"],
+    }
 
 
 def test_scene_bundle_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path):
@@ -375,5 +561,55 @@ def test_skill_bundle_import_merges_bundled_mcp(monkeypatch, tmp_path: Path):
 
     assert result["summary"]["mcp_added"] == 1
     assert result["summary"]["missing_references"]["tools"] == []
-    assert [row["id"] for row in mcp_rows] == ["tool-a"]
+    imported_mcp_id = result["summary"]["mcp_id_map"]["tool-a"]
+    assert imported_mcp_id.startswith("mcp-")
+    assert [row["id"] for row in mcp_rows] == [imported_mcp_id]
+    skill_text = (ctx.skills_dir / str(result["imported_skill_id"]) / "SKILL.md").read_text(encoding="utf-8")
+    assert imported_mcp_id in skill_text
+    assert "tool-a" not in skill_text
     assert not (ctx.skills_dir / str(result["imported_skill_id"]) / "mcp_servers.json").exists()
+
+
+def test_skill_zip_import_keeps_same_name_local_skill(monkeypatch, tmp_path: Path):
+    from app.api import settings_skills as api
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+    from app.main import app
+
+    user_root_base = tmp_path / "users"
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(user_root_base))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+    local_skill = ctx.skills_dir / "local-skill"
+    local_skill.mkdir(parents=True)
+    local_skill.joinpath("SKILL.md").write_text(
+        "---\nname: Skill A\ndescription: old\n---\nold body\n",
+        encoding="utf-8",
+    )
+    reset_current_username(token)
+
+    source_skill = tmp_path / "source_skill"
+    source_skill.mkdir()
+    source_skill.joinpath("SKILL.md").write_text(
+        "---\nname: Skill A\ndescription: new\n---\nnew body\n",
+        encoding="utf-8",
+    )
+    raw = api._build_skill_zip_bytes(source_skill, [])
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/settings/skills/import-zip",
+        files={"file": ("skill-a.zip", raw, "application/zip")},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["id"] == "local-skill"
+    assert data["kept_skill_ids"] == ["local-skill"]
+    assert "description: old" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+    assert not (ctx.skills_dir / "skill-a" / "SKILL.md").exists()

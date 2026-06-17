@@ -20,11 +20,8 @@ from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.scenario_bundle import (
     build_scenario_bundle_zip_bytes,
     collect_skill_and_mcp_ids_for_preset,
-    copy_bundle_skills_to_user,
     extract_scenario_bundle_dir,
     list_skill_ids_in_bundle_skills_dir,
-    merge_agent_instances_for_bundle,
-    merge_mcp_servers_for_bundle,
     read_bundle_manifest_and_lists,
     strip_agent_row_for_disk,
 )
@@ -36,18 +33,20 @@ from app.core.session_preset_validate import (
     validation_to_api_dict,
 )
 from app.core.settings_bundle_import import (
+    bundle_skill_name_map as _bundle_skill_name_map,
     collect_mcp_refs_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     mcp_rows_for_bundle_refs,
-    mcp_conflict_id_map as _mcp_conflict_id_map,
-    skill_conflict_id_map as _skill_conflict_id_map,
+    mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
+    skill_name_identity_import_plan as _skill_name_identity_import_plan,
+    upsert_rows_by_id as _upsert_rows_by_id,
 )
 from app.core.settings_references import (
     merge_reference_rows_for_ids as _merge_reference_rows_for_ids,
     normalize_reference_rows as _normalize_reference_rows,
+    remap_id_list as _remap_id_list,
     remap_bundle_references as _remap_bundle_references,
-    replace_mcp_server_id_in_user_configs as _replace_mcp_server_id_in_user_configs,
 )
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import session_presets_path, skills_dir_path
@@ -321,12 +320,158 @@ def _normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().lower()
 
 
+def _new_resource_id(prefix: str, used_ids: Set[str], *, length: int = 8) -> str:
+    candidate = f"{prefix}-{uuid.uuid4().hex[:length]}"
+    while candidate in used_ids:
+        candidate = f"{prefix}-{uuid.uuid4().hex[:length]}"
+    used_ids.add(candidate)
+    return candidate
+
+
+def _agent_name_identity_import_plan(
+    existing_agents: List[Dict[str, Any]],
+    bundle_agents: List[Dict[str, Any]],
+) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
+    existing_name_to_id: Dict[str, str] = {}
+    used_ids: Set[str] = set()
+    for row in existing_agents:
+        aid = str(row.get("agent_id") or "").strip()
+        if aid:
+            used_ids.add(aid)
+        name_key = _normalized_name_key(row.get("name"))
+        if aid and name_key and name_key not in existing_name_to_id:
+            existing_name_to_id[name_key] = aid
+
+    id_map: Dict[str, str] = {}
+    rows_to_import: List[Dict[str, Any]] = []
+    kept_existing_ids: List[str] = []
+    for incoming in bundle_agents:
+        incoming_id = str(incoming.get("agent_id") or "").strip()
+        if not incoming_id:
+            continue
+        name_key = _normalized_name_key(incoming.get("name"))
+        existing_id = existing_name_to_id.get(name_key) if name_key else ""
+        if existing_id:
+            id_map[incoming_id] = existing_id
+            kept_existing_ids.append(existing_id)
+            continue
+        else:
+            target_id = _new_resource_id("agent", used_ids)
+        copied = strip_agent_row_for_disk(dict(incoming))
+        copied["agent_id"] = target_id
+        id_map[incoming_id] = target_id
+        rows_to_import.append(copied)
+        if name_key:
+            existing_name_to_id[name_key] = target_id
+    return id_map, rows_to_import, list(dict.fromkeys(kept_existing_ids))
+
+
+def _agent_name_conflicts(
+    existing_agents: List[Dict[str, Any]],
+    bundle_agents: List[Dict[str, Any]],
+) -> Dict[str, List[str]]:
+    existing_name_to_ids: Dict[str, List[str]] = {}
+    for row in existing_agents:
+        aid = str(row.get("agent_id") or "").strip()
+        name_key = _normalized_name_key(row.get("name"))
+        if aid and name_key:
+            existing_name_to_ids.setdefault(name_key, []).append(aid)
+
+    conflicts: Dict[str, List[str]] = {}
+    for incoming in bundle_agents:
+        incoming_id = str(incoming.get("agent_id") or "").strip()
+        incoming_name_key = _normalized_name_key(incoming.get("name"))
+        if not incoming_id or not incoming_name_key:
+            continue
+        ids = existing_name_to_ids.get(incoming_name_key) or []
+        if ids:
+            conflicts[incoming_id] = list(dict.fromkeys(ids))
+    return conflicts
+
+
+def _remap_scene_agent_ids(preset: Dict[str, Any], agent_id_map: Dict[str, str]) -> Dict[str, Any]:
+    work = dict(preset)
+    work["agent_ids"] = _remap_id_list(work.get("agent_ids") or work.get("expert_ids"), agent_id_map)
+    if "expert_ids" in work:
+        work["expert_ids"] = work["agent_ids"]
+    leader = str(work.get("leader_agent_id") or "").strip()
+    if leader and leader != VIRTUAL_SCENE_HOST_ID:
+        work["leader_agent_id"] = agent_id_map.get(leader, leader)
+    return work
+
+
+def _prepare_import_scene_by_name_identity(
+    norm: Dict[str, Any],
+    agent_bundle: List[Dict[str, Any]],
+    mcp_bundle: List[Dict[str, Any]],
+    tmp: Path,
+    user_skills: Path,
+    existing_agents: List[Dict[str, Any]],
+    existing_mcp: List[Dict[str, Any]],
+) -> Tuple[
+    Dict[str, Any],
+    bool,
+    List[str],
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    Dict[str, str],
+    Dict[str, str],
+    Dict[str, str],
+    List[str],
+    List[str],
+]:
+    imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
+    mcp_id_map, mcp_rows_to_import, _overwritten_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
+    remapped_preset, remapped_agents = _remap_bundle_references(
+        norm,
+        agent_bundle,
+        skill_id_map=skill_id_map,
+        mcp_id_map=mcp_id_map,
+    )
+    agent_id_map, agent_rows_to_import, _skipped_agents = _agent_name_identity_import_plan(
+        existing_agents,
+        remapped_agents,
+    )
+    remapped_preset = _remap_scene_agent_ids(remapped_preset, agent_id_map)
+
+    existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+    existing_scene_name_to_id = {
+        _normalized_name_key(row.get("name")): str(row.get("id") or "").strip()
+        for row in existing_presets
+        if _normalized_name_key(row.get("name")) and str(row.get("id") or "").strip()
+    }
+    existing_scene_id = existing_scene_name_to_id.get(_normalized_name_key(remapped_preset.get("name")))
+    kept_scene_ids: List[str] = []
+    keep_preset = False
+    if existing_scene_id:
+        remapped_preset = dict(remapped_preset)
+        remapped_preset["id"] = existing_scene_id
+        kept_scene_ids.append(existing_scene_id)
+        keep_preset = True
+    else:
+        used_scene_ids = {str(row.get("id") or "").strip() for row in existing_presets if str(row.get("id") or "").strip()}
+        remapped_preset = dict(remapped_preset)
+        remapped_preset["id"] = _new_resource_id("scenario", used_scene_ids, length=10)
+    return (
+        remapped_preset,
+        keep_preset,
+        kept_scene_ids,
+        agent_rows_to_import,
+        mcp_rows_to_import,
+        skill_id_map,
+        mcp_id_map,
+        agent_id_map,
+        imported_skills,
+        overwritten_skills,
+    )
+
+
 def _merge_session_presets_into_file(
     normalized_rows: List[Dict[str, Any]], id_conflict: str
 ) -> Tuple[List[Dict[str, Any]], List[str], List[str], List[str]]:
     """将已规范化的场景行合并写入 session_presets.json。
 
-    返回 (合并后列表, 本次写入的 preset id 列表, 因同名跳过的名称, 被覆盖的旧 preset id 列表)。
+    返回 (合并后列表, 本次写入的 preset id 列表, 因兼容 skip 模式跳过的名称, 被同名覆盖的旧 id 列表)。
     """
     path = _get_session_presets_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -516,13 +661,12 @@ async def import_session_preset_bundle(
     dry_run: bool = Form(True),
     overwrite_experts: bool = Form(True),
     overwrite_skills: bool = Form(True),
-    # False=用包内覆盖本地同名 MCP（与前端「同名工具覆盖本地工具配置」勾选一致）；True=保留本地同名，仅追加缺失 id
+    # 兼容旧表单字段；当前导入语义固定为同名保留本地内容并映射到本地 id，不同名生成新 id。
     mcp_skip_existing: bool = Form(False),
     preset_id_conflict: str = Form("overwrite"),
 ):
-    """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单与将覆盖的技能提示。"""
-    from app.api.agents import load_agent_instances, save_agent_instances
-    from app.api.settings_skills import _merge_imported_skill_requirements_and_prewarm
+    """导入场景包：合并专家、技能、MCP 与场景预设。dry_run=true 时仅返回包内清单、同名保留与 id 重映射预览。"""
+    from app.api.agents import load_agent_instances
 
     fn = (file.filename or "").strip().lower()
     if not fn.endswith(".zip"):
@@ -545,6 +689,7 @@ async def import_session_preset_bundle(
             raise HTTPException(status_code=400, detail="场景包内 preset 无效（需 id、name、agent_ids）")
 
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        skill_names = _bundle_skill_name_map(tmp, skill_ids_in_zip)
         experts_preview = [
             {"agent_id": str(x.get("agent_id") or ""), "name": str(x.get("name") or "")}
             for x in agent_bundle
@@ -557,15 +702,11 @@ async def import_session_preset_bundle(
         ]
 
         user_skills = _get_skills_dir()
-        would_overwrite_skills: List[str] = []
-        would_skip_skills: List[str] = []
-        for sid in skill_ids_in_zip:
-            dest = user_skills / sid
-            if dest.is_dir():
-                if overwrite_skills:
-                    would_overwrite_skills.append(sid)
-                else:
-                    would_skip_skills.append(sid)
+        skill_id_map, _skill_copy_pairs, would_overwrite_skills = _skill_name_identity_import_plan(
+            tmp,
+            user_skills,
+            skill_ids_in_zip,
+        )
 
         existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
         preset_name_conflicts = [
@@ -576,6 +717,8 @@ async def import_session_preset_bundle(
         ]
         existing_agents = load_agent_instances()
         existing_mcp = load_mcp_config()
+        mcp_id_map, _mcp_rows_to_import, would_overwrite_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
+        expert_conflicts = _agent_name_conflicts(existing_agents, agent_bundle)
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
             agent_bundle,
@@ -614,9 +757,15 @@ async def import_session_preset_bundle(
                         "preset_name": norm["name"],
                         "experts": experts_preview,
                         "skills": skill_ids_in_zip,
+                        "skill_names": skill_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite_skills,
-                        "would_skip_skills": would_skip_skills,
+                        "would_skip_skills": [],
+                        "would_remap_skill_ids": skill_id_map,
+                        "would_remap_mcp_server_ids": mcp_id_map,
+                        "would_overwrite_mcp_server_ids": would_overwrite_mcp,
+                        "would_skip_mcp_server_ids": [],
+                        "would_overwrite_experts": expert_conflicts,
                         "name_conflict_existing_ids": preset_name_conflicts,
                         "name_conflict_mode": conflict,
                         "missing_references": missing_references,
@@ -625,27 +774,17 @@ async def import_session_preset_bundle(
                 },
             }
 
-        imported_skills, skipped_skills = copy_bundle_skills_to_user(
-            tmp, user_skills, overwrite=overwrite_skills
-        )
-        invalidate_skills_cache_for_user(get_current_username() or "")
-        requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
-
-        merged_agents = merge_agent_instances_for_bundle(
-            existing_agents, agent_bundle, overwrite=overwrite_experts
-        )
-        save_agent_instances(merged_agents)
-
-        merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
-            existing_mcp, mcp_bundle, skip_existing=mcp_skip_existing
-        )
-        save_mcp_config(merged_mcp)
-        await _invalidate_mcp_runtime_after_config_change()
-
         before_import_ids = _preset_ids(_load_session_preset_rows_from_file(_get_session_presets_path()))
         before_import_resource_ids = _scenario_resource_ids()
-        merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file([norm], conflict)
-        val_after = _session_preset_validation_payload(norm)
+        helper_result = await _import_scene_from_bundle_bytes(raw, dry_run=False)
+        summary = dict(helper_result.get("summary") or {})
+        merged_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        imported_ids = list(summary.get("preset_imported_ids") or [])
+        skipped_by_name = list(summary.get("skipped_by_name") or [])
+        overwritten_existing_ids = list(summary.get("overwritten_existing_ids") or [])
+        val_after = _session_preset_validation_payload(
+            next((row for row in merged_presets if str(row.get("id") or "") in imported_ids), norm)
+        ) if imported_ids else None
         meta = _request_log_meta(request)
         user_ctx = get_current_user_context(default_fallback=False)
         logger.info(
@@ -662,11 +801,11 @@ async def import_session_preset_bundle(
             skipped_by_name,
             before_import_resource_ids,
             _scenario_resource_ids(),
-            imported_skills,
-            skipped_skills,
-            mcp_added,
-            mcp_updated,
-            mcp_skipped,
+            summary.get("skills_imported") or [],
+            summary.get("skills_skipped") or [],
+            summary.get("mcp_added") or 0,
+            summary.get("mcp_updated") or 0,
+            summary.get("mcp_skipped") or 0,
             meta["referer"],
         )
 
@@ -674,19 +813,7 @@ async def import_session_preset_bundle(
             "status": "ok",
             "data": {
                 "dry_run": False,
-                "summary": {
-                    "preset_imported_ids": imported_ids,
-                    "skipped_by_name": skipped_by_name,
-                    "overwritten_existing_ids": overwritten_existing_ids,
-                    "skills_imported": imported_skills,
-                    "skills_skipped": skipped_skills,
-                    "missing_references": missing_references,
-                    **requirements_result,
-                    "experts_total_after": len(merged_agents),
-                    "mcp_added": mcp_added,
-                    "mcp_skipped": mcp_skipped,
-                    "mcp_updated": mcp_updated,
-                },
+                "summary": summary,
                 "validation_after": val_after,
                 "presets": merged_presets,
             },
@@ -703,7 +830,13 @@ async def import_session_preset_bundle(
 
 async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[str, Any]:
     from app.api.agents import load_agent_instances, save_agent_instances
-    from app.api.settings_skills import _merge_imported_skill_requirements_and_prewarm
+    from app.api.settings_skills import (
+        _merge_imported_skill_requirements_and_prewarm,
+        _read_skill_file,
+        _remap_frontmatter_mcp_refs,
+        _sanitize_skill_frontmatter_for_write,
+        _write_skill_file,
+    )
 
     tmp: Optional[Path] = None
     try:
@@ -713,19 +846,14 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
+        skill_names = _bundle_skill_name_map(tmp, skill_ids_in_zip)
         user_skills = _get_skills_dir()
-        skill_id_map = _skill_conflict_id_map(tmp, user_skills, skill_ids_in_zip)
-        mcp_id_map = _mcp_conflict_id_map(load_mcp_config(), mcp_bundle)
-        remapped_preset, remapped_agent_bundle = _remap_bundle_references(
-            norm,
-            agent_bundle,
-            skill_id_map=skill_id_map,
-            mcp_id_map=mcp_id_map,
+        skill_id_map, _skill_copy_pairs, overwritten_skill_ids = _skill_name_identity_import_plan(
+            tmp,
+            user_skills,
+            skill_ids_in_zip,
         )
-        norm = normalize_preset_dict_for_validation(remapped_preset)
-        if norm is None:
-            raise HTTPException(status_code=400, detail="场景分享包无效")
-        agent_bundle = remapped_agent_bundle
+        mcp_id_map, _mcp_rows_to_import, overwritten_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
         preset_name_conflicts = [
             str(r.get("id") or "")
@@ -734,21 +862,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             and str(r.get("id") or "").strip()
         ]
         existing_experts = load_agent_instances()
-        expert_conflicts: Dict[str, List[str]] = {}
-        for incoming in agent_bundle:
-            incoming_id = str(incoming.get("agent_id") or "").strip()
-            incoming_name_key = _normalized_name_key(incoming.get("name"))
-            conflicts = [
-                str(old.get("agent_id") or "")
-                for old in existing_experts
-                if str(old.get("agent_id") or "").strip()
-                and (
-                    str(old.get("agent_id") or "").strip() == incoming_id
-                    or (incoming_name_key and _normalized_name_key(old.get("name")) == incoming_name_key)
-                )
-            ]
-            if conflicts:
-                expert_conflicts[incoming_id or str(incoming.get("name") or "")] = list(dict.fromkeys(conflicts))
+        expert_conflicts = _agent_name_conflicts(existing_experts, agent_bundle)
         missing_references = _find_missing_references_for_scene_bundle(
             norm,
             agent_bundle,
@@ -771,45 +885,97 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                         if str(x.get("agent_id") or "").strip()
                     ],
                     "skills": skill_ids_in_zip,
+                    "skill_names": skill_names,
                     "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_ids": preset_name_conflicts,
-                    "would_overwrite_skills": sorted(skill_id_map.keys()),
+                    "would_overwrite_skills": overwritten_skill_ids,
+                    "would_skip_skills": [],
                     "would_remap_skill_ids": skill_id_map,
                     "would_remap_mcp_server_ids": mcp_id_map,
+                    "would_overwrite_mcp_server_ids": overwritten_mcp_ids,
+                    "would_skip_mcp_server_ids": [],
                     "would_overwrite_experts": expert_conflicts,
                     "missing_references": missing_references,
                 },
             }
-        imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
-        invalidate_skills_cache_for_user(get_current_username() or "")
-        for old_id, new_id in mcp_id_map.items():
-            _replace_mcp_server_id_in_user_configs(old_id, new_id)
-        merged_agents = merge_agent_instances_for_bundle(load_agent_instances(), agent_bundle, overwrite=True)
-        save_agent_instances(merged_agents)
-        merged_mcp, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
-            load_mcp_config(), mcp_bundle, skip_existing=False
+        (
+            norm,
+            keep_preset,
+            kept_scene_ids,
+            agent_rows_to_import,
+            mcp_rows_to_import,
+            skill_id_map,
+            mcp_id_map,
+            agent_id_map,
+            imported_skills,
+            overwritten_skills,
+        ) = _prepare_import_scene_by_name_identity(
+            norm,
+            agent_bundle,
+            mcp_bundle,
+            tmp,
+            user_skills,
+            load_agent_instances(),
+            load_mcp_config(),
         )
+        norm = normalize_preset_dict_for_validation(norm)
+        if norm is None:
+            raise HTTPException(status_code=400, detail="场景分享包无效")
+        invalidate_skills_cache_for_user(get_current_username() or "")
+        for sid in imported_skills:
+            skill_dir = user_skills / sid
+            if not (skill_dir / "SKILL.md").is_file():
+                continue
+            fm, body = _read_skill_file(skill_dir)
+            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map)
+            _sanitize_skill_frontmatter_for_write(fm)
+            _write_skill_file(skill_dir, fm, body)
+        merged_agents = _upsert_rows_by_id(load_agent_instances(), agent_rows_to_import, "agent_id")
+        save_agent_instances(merged_agents)
+        mcp_before = load_mcp_config()
+        existing_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_before}
+        imported_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
+        kept_mcp_ids = [
+            mid
+            for mid in dict.fromkeys(str(x or "").strip() for x in mcp_id_map.values())
+            if mid and mid in existing_mcp_ids and mid not in imported_mcp_ids
+        ]
+        merged_mcp = _upsert_rows_by_id(mcp_before, mcp_rows_to_import, "id")
+        mcp_added = len([mid for mid in imported_mcp_ids if mid and mid not in existing_mcp_ids])
+        mcp_skipped = len(kept_mcp_ids)
+        mcp_updated = len([mid for mid in imported_mcp_ids if mid and mid in existing_mcp_ids])
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
-        _merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file(
-            [norm], "overwrite"
-        )
+        if keep_preset:
+            imported_ids: List[str] = []
+            skipped_by_name: List[str] = []
+            overwritten_existing_ids: List[str] = []
+            _mirror_session_presets_to_resources(_load_session_preset_rows_from_file(_get_session_presets_path()))
+        else:
+            _merged_presets, imported_ids, skipped_by_name, overwritten_existing_ids = _merge_session_presets_into_file(
+                [norm], "overwrite"
+            )
         return {
             "object_type": "scene",
             "summary": {
                 "preset_imported_ids": imported_ids,
                 "skipped_by_name": skipped_by_name,
                 "overwritten_existing_ids": overwritten_existing_ids,
+                "kept_existing_ids": kept_scene_ids,
                 "skills_imported": imported_skills,
-                "skills_overwritten": overwritten_skills,
+                "skills_overwritten": [],
+                "skills_kept": overwritten_skills,
+                "skills_skipped": [],
                 "skill_id_map": skill_id_map,
                 "mcp_id_map": mcp_id_map,
+                "agent_id_map": agent_id_map,
                 "missing_references": missing_references,
                 **requirements_result,
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
+                "mcp_kept_ids": kept_mcp_ids,
             },
         }
     finally:

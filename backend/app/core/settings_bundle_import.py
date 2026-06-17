@@ -2,33 +2,92 @@
 from __future__ import annotations
 
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import yaml
 
-from app.core.scenario_bundle import copy_bundle_skills_to_user, list_skill_ids_in_bundle_skills_dir
-from app.core.settings_references import replace_skill_id_in_user_configs
+from app.core.scenario_bundle import list_skill_ids_in_bundle_skills_dir
 
 
 def normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().casefold()
 
 
-def mcp_conflict_id_map(existing_servers: List[Dict[str, Any]], bundle_servers: List[Dict[str, Any]]) -> Dict[str, str]:
-    by_id = {str(s.get("id") or "").strip(): s for s in existing_servers if str(s.get("id") or "").strip()}
+def _new_local_id(prefix: str, used_ids: Set[str]) -> str:
+    candidate = f"{prefix}-{uuid.uuid4().hex[:8]}"
+    while candidate in used_ids:
+        candidate = f"{prefix}-{uuid.uuid4().hex[:8]}"
+    used_ids.add(candidate)
+    return candidate
+
+
+def mcp_name_identity_import_plan(
+    existing_servers: List[Dict[str, Any]],
+    bundle_servers: List[Dict[str, Any]],
+) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
+    """Plan MCP import by name only.
+
+    Bundle ids are transient. Same name maps to the local id and keeps local content;
+    a new name receives a generated local id before it is saved.
+    """
+    existing_name_to_id: Dict[str, str] = {}
+    used_ids: Set[str] = set()
+    for row in existing_servers:
+        rid = str(row.get("id") or "").strip()
+        if rid:
+            used_ids.add(rid)
+        name_key = normalized_name_key(row.get("name"))
+        if rid and name_key and name_key not in existing_name_to_id:
+            existing_name_to_id[name_key] = rid
+
     id_map: Dict[str, str] = {}
+    rows_to_import: List[Dict[str, Any]] = []
+    kept_existing_ids: List[str] = []
     for incoming in bundle_servers:
         incoming_id = str(incoming.get("id") or "").strip()
-        incoming_name = normalized_name_key(incoming.get("name"))
         if not incoming_id:
             continue
-        for old_id, old in by_id.items():
-            if old_id == incoming_id:
-                continue
-            if incoming_name and normalized_name_key(old.get("name")) == incoming_name:
-                id_map[old_id] = incoming_id
-    return id_map
+        name_key = normalized_name_key(incoming.get("name"))
+        existing_id = existing_name_to_id.get(name_key) if name_key else ""
+        if existing_id:
+            id_map[incoming_id] = existing_id
+            kept_existing_ids.append(existing_id)
+            continue
+        else:
+            target_id = _new_local_id("mcp", used_ids)
+        copied = dict(incoming)
+        copied["id"] = target_id
+        id_map[incoming_id] = target_id
+        rows_to_import.append(copied)
+        if name_key:
+            existing_name_to_id[name_key] = target_id
+    return id_map, rows_to_import, list(dict.fromkeys(kept_existing_ids))
+
+
+def upsert_rows_by_id(
+    existing_rows: List[Dict[str, Any]],
+    incoming_rows: List[Dict[str, Any]],
+    id_key: str,
+) -> List[Dict[str, Any]]:
+    by_id: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for row in existing_rows:
+        rid = str(row.get(id_key) or "").strip()
+        if not rid:
+            continue
+        if rid not in by_id:
+            order.append(rid)
+        by_id[rid] = dict(row)
+    for row in incoming_rows:
+        rid = str(row.get(id_key) or "").strip()
+        if not rid:
+            continue
+        if rid not in by_id:
+            order.append(rid)
+        by_id[rid] = dict(row)
+    return [by_id[rid] for rid in order if rid in by_id]
 
 
 def _read_skill_frontmatter(skill_dir: Path) -> Dict[str, Any]:
@@ -423,46 +482,76 @@ def find_missing_references_for_skill_bundle(
     return missing
 
 
-def skill_conflict_id_map(bundle_dir: Path, user_skills_dir: Path, skill_ids: List[str]) -> Dict[str, str]:
-    id_map: Dict[str, str] = {}
+def skill_name_identity_import_plan(
+    bundle_dir: Path,
+    user_skills_dir: Path,
+    skill_ids: List[str] | None = None,
+) -> Tuple[Dict[str, str], List[Tuple[str, str]], List[str]]:
+    """Plan Skill import by name only without copying files."""
+    skill_ids = list(skill_ids) if skill_ids is not None else list_skill_ids_in_bundle_skills_dir(bundle_dir)
     user_skills_dir.mkdir(parents=True, exist_ok=True)
-    existing_by_id: Dict[str, str] = {}
-    existing_name_to_ids: Dict[str, List[str]] = {}
+    existing_name_to_id: Dict[str, str] = {}
+    used_ids: Set[str] = set()
     for child in sorted(user_skills_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
             continue
-        fm = _read_skill_frontmatter(child)
         sid = child.name
-        existing_by_id[sid] = normalized_name_key(fm.get("name") or sid)
-        if existing_by_id[sid]:
-            existing_name_to_ids.setdefault(existing_by_id[sid], []).append(sid)
+        used_ids.add(sid)
+        fm = _read_skill_frontmatter(child)
+        name_key = normalized_name_key(fm.get("name") or sid)
+        if name_key and name_key not in existing_name_to_id:
+            existing_name_to_id[name_key] = sid
 
+    id_map: Dict[str, str] = {}
+    copy_pairs: List[Tuple[str, str]] = []
+    kept_existing: List[str] = []
+    skills_root = bundle_dir / "skills"
     for incoming_id in skill_ids:
-        src = bundle_dir / "skills" / incoming_id
+        src = skills_root / incoming_id
         if not src.is_dir() or not (src / "SKILL.md").is_file():
             continue
         fm = _read_skill_frontmatter(src)
-        incoming_name_key = normalized_name_key(fm.get("name") or incoming_id)
-        conflict_ids: List[str] = []
-        if incoming_id in existing_by_id:
-            conflict_ids.append(incoming_id)
-        if incoming_name_key:
-            conflict_ids.extend(old_id for old_id in existing_name_to_ids.get(incoming_name_key, []) if old_id != incoming_id)
-        for old_id in dict.fromkeys(conflict_ids):
-            id_map[old_id] = incoming_id
-    return id_map
+        name_key = normalized_name_key(fm.get("name") or incoming_id)
+        existing_id = existing_name_to_id.get(name_key) if name_key else ""
+        if existing_id:
+            id_map[incoming_id] = existing_id
+            kept_existing.append(existing_id)
+            continue
+        target_id = _new_local_id("skill", used_ids)
+        id_map[incoming_id] = target_id
+        copy_pairs.append((incoming_id, target_id))
+        if name_key:
+            existing_name_to_id[name_key] = target_id
+    return id_map, copy_pairs, list(dict.fromkeys(kept_existing))
+
+
+def bundle_skill_name_map(bundle_dir: Path, skill_ids: List[str] | None = None) -> Dict[str, str]:
+    skill_ids = list(skill_ids) if skill_ids is not None else list_skill_ids_in_bundle_skills_dir(bundle_dir)
+    skills_root = bundle_dir / "skills"
+    out: Dict[str, str] = {}
+    for sid in skill_ids:
+        skill_id = str(sid or "").strip()
+        if not skill_id:
+            continue
+        fm = _read_skill_frontmatter(skills_root / skill_id)
+        out[skill_id] = str(fm.get("name") or skill_id).strip()
+    return out
 
 
 def copy_bundle_skills_to_user_by_name(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
-    skill_ids = list_skill_ids_in_bundle_skills_dir(bundle_dir)
-    id_map = skill_conflict_id_map(bundle_dir, user_skills_dir, skill_ids)
-    overwritten = sorted(id_map.keys())
-    user_skills_dir.mkdir(parents=True, exist_ok=True)
-    for old_id in overwritten:
-        old_dir = user_skills_dir / old_id
-        if old_dir.is_dir():
-            shutil.rmtree(old_dir, ignore_errors=True)
-    imported, _skipped = copy_bundle_skills_to_user(bundle_dir, user_skills_dir, overwrite=True)
-    for old_id, new_id in id_map.items():
-        replace_skill_id_in_user_configs(old_id, new_id)
+    """Copy bundle skills using name as the import identity.
+
+    Returns (imported_skill_ids, kept_existing_skill_ids, bundle_id_to_local_id_map).
+    """
+    id_map, copy_pairs, overwritten = skill_name_identity_import_plan(bundle_dir, user_skills_dir)
+    skills_root = bundle_dir / "skills"
+    imported: List[str] = []
+    for incoming_id, target_id in copy_pairs:
+        src = skills_root / incoming_id
+        dest = user_skills_dir / target_id
+        if src.is_dir() and (src / "SKILL.md").is_file():
+            if dest.exists():
+                shutil.rmtree(dest)
+            shutil.copytree(src, dest)
+            imported.append(target_id)
     return imported, overwritten, id_map

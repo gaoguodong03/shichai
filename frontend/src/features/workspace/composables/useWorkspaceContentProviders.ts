@@ -668,6 +668,7 @@ export function useWorkspaceContentProviders(args: {
     onGroupWorkspaceResizeMouseDown,
     groupWorkspaceWidth,
     groupWorkspacePath,
+    loadGroupWorkspace,
     goGroupWorkspaceUp,
     groupWorkspaceGoRoot,
     createGroupWorkspaceDir,

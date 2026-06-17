@@ -188,7 +188,11 @@ def test_session_preset_export_resolves_skill_mcp_by_reference_label_name(monkey
     finally:
         reset_current_user_identity(token)
     assert result["summary"]["mcp_added"] == 1
-    assert imported_rows[0]["id"] == "stale-exa"
+    imported_mcp_id = result["summary"]["mcp_id_map"]["stale-exa"]
+    assert imported_mcp_id.startswith("mcp-")
+    assert imported_rows[0]["id"] == imported_mcp_id
+    assert imported_rows[0]["name"] == "Exa 搜索"
+    assert imported_rows[0]["transport"]["base_url"] == "https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}"
 
 
 def test_strip_agent():

@@ -77,6 +77,52 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByText('专家已更新文件内容。')).toBeVisible()
   })
 
+  test('用户可以从工作区标题栏左侧刷新当前目录', async ({ page }) => {
+    const state = createE2eState()
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
+    await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'brief.md' })).toBeVisible()
+
+    state.files['session-existing:'] = [
+      ...state.files['session-existing:'],
+      { name: 'refreshed.md', path: 'refreshed.md', is_dir: false, size: 32, updated_at: '2026-06-17T09:00:00Z' },
+    ]
+
+    const refreshButton = page.locator('.group-chat-workspace-heading').getByRole('button', { name: '刷新工作区' })
+    await expect(refreshButton).toBeVisible()
+    await expect(refreshButton).toHaveClass(/group-chat-workspace-toolbar-sm/)
+
+    await refreshButton.click()
+    await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'refreshed.md' })).toBeVisible()
+  })
+
+  test('工作区文件名截断时 hover 显示完整文件名', async ({ page }) => {
+    const state = createE2eState()
+    const longFileName = 'AI时代工程团队领导力提升-20260611T153000Z.md'
+    state.files['session-existing:'] = [
+      { name: longFileName, path: longFileName, is_dir: false, size: 512, updated_at: '2026-06-17T09:00:00Z' },
+    ]
+    state.fileContent[`session-existing:${longFileName}`] = '# 长文件名验证\n\n用于验证 hover 全名提示。\n'
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
+
+    const fileName = page.locator('.group-chat-workspace-item-btn-main .truncate', { hasText: longFileName })
+    await expect(fileName).toHaveAttribute('title', longFileName)
+
+    await fileName.click()
+    await expect(page.locator('.group-chat-workspace-preview-title')).toHaveAttribute('title', longFileName)
+  })
+
   test('专家消息操作栏在气泡外并支持拷贝正文', async ({ page }) => {
     const state = createE2eState()
     const assistantContent = '历史回复：这里可以继续追问。'
@@ -106,6 +152,46 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.getByRole('dialog', { name: '保存为工作区文件' })).toBeVisible()
     await page.getByRole('button', { name: '取消' }).click()
     expect(workspaceFilePostCount).toBe(0)
+  })
+
+  test('切换到历史会话时消息列表自动定位到末尾', async ({ page }) => {
+    const state = createE2eState()
+    const longHistorySession = {
+      id: 'session-long-history',
+      title: '长历史会话',
+      updated_at: '2026-05-23T09:00:00Z',
+      agent_ids: ['agent-qa'],
+      messages: Array.from({ length: 36 }, (_, idx) => ({
+        message_id: `long-${idx + 1}`,
+        role: idx % 2 === 0 ? 'user' : 'assistant',
+        agent_id: idx % 2 === 0 ? undefined : 'agent-qa',
+        content: `历史消息 ${idx + 1}\n\n这是一段用于撑开消息列表高度的内容，确保会话切换后必须滚动才能看到结尾。`,
+      })),
+    }
+    state.sessions = [
+      ...state.sessions,
+      {
+        ...longHistorySession,
+        messages: longHistorySession.messages as never,
+      },
+    ]
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/')
+    await expectMainShell(page)
+
+    await expect(page.locator('[data-message-id="assistant-history"]')).toBeVisible()
+
+    await page.locator('[data-session-id="session-long-history"]').click()
+    await expect(page.locator('[data-message-id="long-36"]')).toBeVisible()
+
+    const scrollState = await page.locator('.group-chat-messages').evaluate((el) => ({
+      scrollTop: el.scrollTop,
+      maxTop: el.scrollHeight - el.clientHeight,
+    }))
+    expect(scrollState.scrollTop).toBeGreaterThan(0)
+    expect(scrollState.maxTop - scrollState.scrollTop).toBeLessThanOrEqual(4)
   })
 
   test('多个 sandbox 调用默认折叠到一个图标按钮', async ({ page }) => {

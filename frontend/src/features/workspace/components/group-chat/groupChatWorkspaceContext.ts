@@ -142,6 +142,7 @@ export interface GroupChatWorkspacePanelContext {
   groupWorkspaceWidth: ContextValue
   onGroupWorkspaceResizeMouseDown: ContextValue
   groupWorkspacePath: ContextValue
+  loadGroupWorkspace: ContextValue
   goGroupWorkspaceUp: ContextValue
   groupWorkspaceGoRoot: ContextValue
   createGroupWorkspaceDir: ContextValue

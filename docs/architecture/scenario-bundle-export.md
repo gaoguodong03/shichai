@@ -32,9 +32,15 @@ flowchart LR
 | `mcp_servers.json` | **仅当**收集到的 `mcp_ids` 非空时写入；为当前用户配置里这些 id 的 MCP 条目 |
 | `skills/<skill_id>/...` | 每个技能目录下含 `SKILL.md` 才会打包；路径为 `skills/{skill_id}/相对文件` |
 
-**注意**：场景预设行、专家、MCP 在包内 **不做 id 重映射**；导出的是当前账号配置里的真实 id 与内容。
+**注意**：场景预设行、专家、Skill、MCP 在包内会保留导出账号的 id，用来维持包内引用关系；导入到目标账号时这些 id 不作为冲突依据，也不会直接作为本地资源 id。
 
 ## 各类「ID」怎么来、怎么用
+
+导入时统一采用「名称即版本」规则：
+
+- 名称相同：认为目标账号已有同名资源，覆盖本地资源内容并保留本地 id，包内引用映射到这个本地 id。
+- 名称不同：认为是新版本或新资源，即使包内 id 与本地 id 相同，也生成新的本地 id 后导入。
+- 包内 id 只用于解开 ZIP 内部的场景、专家、Skill、MCP 引用，落盘前会按目标账号重新映射。
 
 ### 1. 场景预设 id（`preset.id`）
 
@@ -45,7 +51,7 @@ flowchart LR
 
 - 包内 `dha_instances.json` 只包含场景 `agent_ids` 里、且在本地 `dha_instances` 里能找到的专家。
 - [`strip_agent_row_for_disk`](../../backend/app/core/scenario_bundle.py) 会去掉 `expert_id`、`file_capability_labels`，**保留 `agent_id` 等其余字段**。
-- 导入时用 [`merge_agent_instances_for_bundle`](../../backend/app/core/scenario_bundle.py)：**以 `agent_id` 为键**合并；冲突时是否覆盖由 `overwrite_experts` 决定。
+- 导入时专家按 `name` 判断冲突；同名覆盖本地专家内容并保留本地 `agent_id`，不同名生成新的 `agent-*` 本地 id，并重写场景中的专家引用。
 
 ### 3. 技能 id（目录名 = skill_id）
 
@@ -53,17 +59,17 @@ flowchart LR
   - 场景 `host_config` 里规范化后的 `skill_ids`、`mcp_server_ids`；
   - 每个关联专家的 `skill_ids`、`mcp_server_ids`。
 - ZIP 里每个技能对应 `skills_root / {skill_id}`，且必须有 `SKILL.md` 才会打进包。
-- 导入时 [`copy_bundle_skills_to_user`](../../backend/app/core/scenario_bundle.py)：**目录名即 skill_id**，复制到用户技能目录。
+- 导入时 Skill 按 `SKILL.md` frontmatter 里的 `name` 判断冲突；同名覆盖本地 Skill 内容并保留本地目录 id，不同名生成新的 `skill-*` 目录名，并重写专家、场景主持人和 Skill frontmatter 中的相关引用。
 
 ### 4. MCP id
 
 - 收集的是一串 **字符串 id**，再从 [`load_mcp_config()`](../../backend/app/api/settings_mcp.py) 里按 id 取完整条目写入 `mcp_servers.json`（本地没有的 id 不会出现）。
-- 导入时 [`merge_mcp_servers_for_bundle`](../../backend/app/core/scenario_bundle.py) 按 MCP 的 `id` 合并，`mcp_skip_existing` 控制同名是跳过还是覆盖。
+- 导入时 MCP 按 `name` 判断冲突；同名覆盖本地 MCP 配置并保留本地 id，不同名生成新的 `mcp-*` 本地 id，并重写专家、场景主持人和 Skill frontmatter 中的 MCP 引用。
 
 ### 5. 导入场景包时预设 id 冲突
 
-- [`_merge_session_presets_into_file`](../../backend/app/api/settings_presets.py)：若本地已有同 id 且 `preset_id_conflict == "new_id"`，会把导入的场景 id 改成 `scenario-{uuid 前 10 位}`；`overwrite` 则覆盖同 id 条目（具体以该函数与 `normalize_preset_dict_for_validation` 为准）。
+- 场景按 `name` 判断冲突；同名覆盖本地场景内容并保留本地 `scenario-*` id，不同名生成新的 `scenario-*` 本地 id。包内 `preset.id` 不决定覆盖关系。
 
 ---
 
-**一句话**：导出包是「按场景 id 取行 + 按引用收集专家/技能/MCP 快照」打成 ZIP；包内 id 保持原样；导入时按冲突策略决定覆盖、跳过或重命名。
+**一句话**：导出包是「按场景 id 取行 + 按引用收集专家/技能/MCP 快照」打成 ZIP；包内 id 保持原样用于内部引用；导入时只按名称判断版本，同名覆盖目标账号内容并保留本地 id，不同名生成目标账号的新 id 后落盘。

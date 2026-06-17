@@ -43,6 +43,7 @@ export function useGroupMessageList(args: {
   const groupDisplayMessages = ref<GroupMessage[]>([])
   const mdRef = ref<{ render: (s: string) => string } | null>(new MarkdownIt({ breaks: true }))
   const { scheduleHydrateAuthImages } = useAuthenticatedMessageImages(groupMessagesRef)
+  let renderedSessionId = ''
 
   function renderMarkdown(text: string) {
     return renderMarkdownHtml(mdRef.value, text)
@@ -262,14 +263,21 @@ export function useGroupMessageList(args: {
   }
 
   watch(
-    () => groupDetail.value?.messages,
-    (messages) => {
-      const shouldFollow = isNearGroupBottom()
+    () => [groupDetail.value?.id, groupDetail.value?.messages] as const,
+    ([sessionId, messages]) => {
+      const nextSessionId = String(sessionId || '')
+      const sessionChanged = nextSessionId !== renderedSessionId
+      renderedSessionId = nextSessionId
+      const shouldFollow = sessionChanged || isNearGroupBottom()
       const nextMessages = Array.isArray(messages) ? [...messages] : []
       groupDisplayMessages.value = nextMessages
       nextTick(() => {
         scheduleHydrateAuthImages()
-        if (shouldFollow) scrollGroupToBottomIfNear()
+        if (sessionChanged) {
+          scrollGroupToBottom()
+        } else if (shouldFollow) {
+          scrollGroupToBottomIfNear()
+        }
       })
     },
     { immediate: true },

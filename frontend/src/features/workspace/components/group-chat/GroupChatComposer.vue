@@ -532,7 +532,7 @@
                     :disabled="groupStreaming || insertLocalFileUploading || (groupWaitingForUser ? !effectiveNextSpeaker : !canSend)"
                     @click="(groupWaitingForUser && effectiveNextSpeaker) ? confirmGroupNext(effectiveNextSpeaker) : sendGroupMessage()"
                   >
-                    {{ currentGroupStreaming ? '发送中…' : (insertLocalFileUploading ? '文件上传中…' : (otherSessionStreaming ? '其他会话运行中' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送'))) }}
+                    {{ currentGroupStreaming ? '运行中' : (insertLocalFileUploading ? '文件上传中…' : (otherSessionStreaming ? '其他会话运行中' : (groupWaitingForUser && effectiveNextSpeaker ? '确认并继续' : '发送'))) }}
                   </button>
                 </div>
               </div>

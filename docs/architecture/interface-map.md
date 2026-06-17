@@ -470,7 +470,7 @@ flowchart TB
 | `GET` | `/api/settings/session-presets` | 获取场景/会话预设列表；会从资源目录恢复缺失的聚合配置。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/` |
 | `PUT` | `/api/settings/session-presets` | 保存场景列表；用于创建、编辑、删除场景后整体写回。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/{id}/scenario.json` |
 | `GET` | `/api/settings/session-presets/{preset_id}/export-bundle` | 导出场景资源包 ZIP；包含场景、专家、Skill 和可选 MCP。 | `backend/app/api/settings_presets.py` | ZIP 文件流、场景/专家/Skill/MCP 配置 |
-| `POST` | `/api/settings/session-presets/import-bundle` | 导入场景资源包；可 dry-run 预览缺失引用、同名覆盖、Skill/MCP 冲突。 | `backend/app/api/settings_presets.py` | 场景、专家、Skill、MCP、沙箱 requirements |
+| `POST` | `/api/settings/session-presets/import-bundle` | 导入场景资源包；可 dry-run 预览缺失引用、同名覆盖和 Skill/MCP 本地 id 重映射。 | `backend/app/api/settings_presets.py` | 场景、专家、Skill、MCP、沙箱 requirements |
 
 #### Skill 与 Skill 目录文件
 

@@ -34,6 +34,7 @@ type ScenarioBundlePreview = {
     preset_name: string
     experts: { agent_id: string; name: string }[]
     skills: string[]
+    skill_names?: Record<string, string>
     mcps: { id: string; name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
@@ -43,6 +44,7 @@ type ScenarioBundlePreview = {
     would_overwrite_experts?: Record<string, string[]>
     would_remap_skill_ids?: Record<string, string>
     would_remap_mcp_server_ids?: Record<string, string>
+    would_overwrite_mcp_server_ids?: string[]
   }
 }
 
@@ -51,12 +53,16 @@ type AgentBundlePreview = {
     agent_id: string
     name?: string
     skills: string[]
+    skill_names?: Record<string, string>
     mcps: { id: string; name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
     name_conflict_existing_ids?: string[]
     name_conflict_mode?: 'skip' | 'overwrite'
+    would_remap_skill_ids?: Record<string, string>
+    would_remap_mcp_server_ids?: Record<string, string>
+    would_overwrite_mcp_server_ids?: string[]
   }
 }
 
@@ -93,15 +99,38 @@ export function useBundleImports(options: {
     () => !!(scenarioBundlePreview.value?.bundle_preview && pendingBundleFile.value),
   )
   const hasScenarioNameConflict = computed(
-    () => (scenarioBundlePreview.value?.bundle_preview?.name_conflict_existing_ids || []).length > 0,
+    () => {
+      const bp = scenarioBundlePreview.value?.bundle_preview
+      if (!bp) return false
+      return Boolean(
+        (bp.name_conflict_existing_ids || []).length
+        || Object.values(bp.would_overwrite_experts || {}).some((ids) => (ids || []).length)
+        || (bp.would_overwrite_skills || []).length
+        || (bp.would_overwrite_mcp_server_ids || []).length,
+      )
+    },
   )
   const hasAgentNameConflict = computed(
-    () => (agentBundlePreview.value?.bundle_preview?.name_conflict_existing_ids || []).length > 0,
+    () => {
+      const bp = agentBundlePreview.value?.bundle_preview
+      if (!bp) return false
+      return Boolean(
+        (bp.name_conflict_existing_ids || []).length
+        || (bp.would_overwrite_skills || []).length
+        || (bp.would_overwrite_mcp_server_ids || []).length,
+      )
+    },
   )
 
-  function displaySkillNames(skillIds: string[]): string[] {
+  function displaySkillNames(skillIds: string[], skillNameMap?: Record<string, string>): string[] {
     const byId = new Map((options.skills.value || []).map((s) => [s.id, s.name || s.id]))
-    return (skillIds || []).map((sid) => byId.get(sid) || sid)
+    return (skillIds || [])
+      .map((sid) => skillNameMap?.[sid] || byId.get(sid) || sid)
+      .filter(Boolean)
+  }
+
+  function displayMcpNames(mcps: { id: string; name: string }[]): string[] {
+    return (mcps || []).map((m) => m.name || '').filter(Boolean)
   }
 
   function hasImportMissingReferences(refs: ImportMissingReferences | null | undefined): boolean {
@@ -127,28 +156,8 @@ export function useBundleImports(options: {
     const typeLabel = item.type_label || (group.key === 'tools' ? 'MCP 工具' : group.label)
     const name = String(item.name || '').trim()
     if (name) return `${typeLabel} ${name}`
-    return item.display_name || `${typeLabel} ${item.id}`
+    return item.display_name && item.display_name !== item.id ? item.display_name : typeLabel
   }
-
-  const scenarioOverwriteSummary = computed(() => {
-    const bp = scenarioBundlePreview.value?.bundle_preview
-    if (!bp) return ''
-    const parts: string[] = []
-    if ((bp.name_conflict_existing_ids || []).length) {
-      parts.push(`场景：${bp.preset_name || bp.preset_id}`)
-    }
-    if ((bp.experts || []).length) {
-      const expertNames = (bp.experts || []).map((x) => x.name || x.agent_id).filter(Boolean)
-      if (expertNames.length) parts.push(`专家：${expertNames.join('，')}`)
-    }
-    const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
-    if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
-    if ((bp.mcps || []).length) {
-      const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
-      if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
-    }
-    return parts.join('\n')
-  })
 
   const scenarioConflictPreviewRows = computed(() => {
     const bp = scenarioBundlePreview.value?.bundle_preview
@@ -156,37 +165,53 @@ export function useBundleImports(options: {
     const rows: string[] = []
     const scenarioConflicts = bp.name_conflict_existing_ids || []
     if (scenarioConflicts.length) {
-      rows.push(`已有场景：${scenarioConflicts.join('，')}`)
+      rows.push(`场景：${bp.preset_name}`)
     }
-    const expertNames = new Map((bp.experts || []).map((item) => [item.agent_id, item.name || item.agent_id]))
-    for (const [incomingId, existingIds] of Object.entries(bp.would_overwrite_experts || {})) {
-      const ids = (existingIds || []).filter(Boolean)
-      if (!ids.length) continue
-      rows.push(`专家：${expertNames.get(incomingId) || incomingId} → 覆盖 ${ids.join('，')}`)
+    const expertNames = new Map((bp.experts || []).map((item) => [item.agent_id, item.name || '']))
+    for (const [incomingId, existingNames] of Object.entries(bp.would_overwrite_experts || {})) {
+      if (!(existingNames || []).length) continue
+      const name = expertNames.get(incomingId)
+      if (name) rows.push(`专家：${name}`)
     }
+    const overwrittenSkillIds = new Set(bp.would_overwrite_skills || [])
     for (const [oldId, newId] of Object.entries(bp.would_remap_skill_ids || {})) {
-      if (oldId && newId) rows.push(`Skill：${oldId} → ${newId}`)
+      if (!overwrittenSkillIds.has(newId)) continue
+      const fallbackName = displaySkillNames([newId])[0]
+      const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
+      if (name) rows.push(`技能：${name}`)
     }
+    const overwrittenMcpIds = new Set(bp.would_overwrite_mcp_server_ids || [])
+    const mcpNames = new Map((bp.mcps || []).map((item) => [item.id, item.name || '']))
     for (const [oldId, newId] of Object.entries(bp.would_remap_mcp_server_ids || {})) {
-      if (oldId && newId) rows.push(`MCP：${oldId} → ${newId}`)
+      if (!overwrittenMcpIds.has(newId)) continue
+      const name = mcpNames.get(oldId)
+      if (name) rows.push(`工具：${name}`)
     }
     return rows
   })
 
-  const agentOverwriteSummary = computed(() => {
+  const agentConflictPreviewRows = computed(() => {
     const bp = agentBundlePreview.value?.bundle_preview
-    if (!bp) return ''
-    const parts: string[] = []
+    if (!bp) return []
+    const rows: string[] = []
     if ((bp.name_conflict_existing_ids || []).length) {
-      parts.push(`专家：${bp.name || bp.agent_id || '未命名专家'}`)
+      rows.push(`专家：${bp.name || '未命名专家'}`)
     }
-    const skillNames = displaySkillNames(bp.would_overwrite_skills || [])
-    if (skillNames.length) parts.push(`技能：${skillNames.join('，')}`)
-    if ((bp.mcps || []).length) {
-      const mcpNames = (bp.mcps || []).map((x) => x.name || x.id).filter(Boolean)
-      if (mcpNames.length) parts.push(`工具：${mcpNames.join('，')}`)
+    const overwrittenSkillIds = new Set(bp.would_overwrite_skills || [])
+    for (const [oldId, newId] of Object.entries(bp.would_remap_skill_ids || {})) {
+      if (!overwrittenSkillIds.has(newId)) continue
+      const fallbackName = displaySkillNames([newId])[0]
+      const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
+      if (name) rows.push(`技能：${name}`)
     }
-    return parts.join('\n')
+    const overwrittenMcpIds = new Set(bp.would_overwrite_mcp_server_ids || [])
+    const mcpNames = new Map((bp.mcps || []).map((item) => [item.id, item.name || '']))
+    for (const [oldId, newId] of Object.entries(bp.would_remap_mcp_server_ids || {})) {
+      if (!overwrittenMcpIds.has(newId)) continue
+      const name = mcpNames.get(oldId)
+      if (name) rows.push(`工具：${name}`)
+    }
+    return rows
   })
 
   function pickScenarioImportFile() {
@@ -242,9 +267,14 @@ export function useBundleImports(options: {
             preset_imported_ids?: string[]
             skills_imported?: string[]
             skills_skipped?: string[]
+            skills_overwritten?: string[]
+            skills_kept?: string[]
             skipped_by_name?: string[]
             overwritten_existing_ids?: string[]
+            kept_existing_ids?: string[]
             mcp_added?: number
+            mcp_updated?: number
+            mcp_skipped?: number
           }
         }
       }
@@ -253,7 +283,7 @@ export function useBundleImports(options: {
       }
       const s = j.data?.summary
       const msg = s
-        ? `场景 id：${(s.preset_imported_ids || []).join(', ') || '—'}\n场景同名覆盖：${(s.overwritten_existing_ids || []).length} 个，跳过：${(s.skipped_by_name || []).length} 个\n技能写入：${(s.skills_imported || []).length} 个，跳过：${(s.skills_skipped || []).length} 个\n新增 MCP 配置：${s.mcp_added ?? 0} 条`
+        ? `导入成功\n同名场景保留：${(s.kept_existing_ids || []).length} 个\n技能写入：${(s.skills_imported || []).length} 个，保留：${(s.skills_kept || []).length} 个\nMCP 新增：${s.mcp_added ?? 0} 条，保留：${s.mcp_skipped ?? 0} 条`
         : '导入成功'
       await options.fetchScenarioPresets()
       await options.fetchAgents()
@@ -343,6 +373,9 @@ export function useBundleImports(options: {
             skills_imported?: string[]
             skipped_by_name?: boolean
             overwritten_agent_ids?: string[]
+            kept_agent_ids?: string[]
+            skills_overwritten?: string[]
+            skills_kept?: string[]
           }
         }
       }
@@ -350,12 +383,10 @@ export function useBundleImports(options: {
         throw new Error(j.detail || '导入失败')
       }
       const summary = j.data?.summary
-      const aid = summary?.imported_agent_id
-      const msg = summary?.skipped_by_name
-        ? `未导入：存在同名专家（技能写入 ${(summary.skills_imported || []).length} 个）`
-        : aid
-          ? `导入成功，专家 id：${aid}（同名覆盖 ${(summary?.overwritten_agent_ids || []).length} 个；技能写入 ${(summary?.skills_imported || []).length} 个）`
-          : '导入成功'
+      const keptCount = (summary?.kept_agent_ids || []).length
+      const skillWriteCount = (summary?.skills_imported || []).length
+      const skillKeptCount = (summary?.skills_kept || []).length
+      const msg = `导入成功${keptCount ? `\n同名专家保留：${keptCount} 个` : ''}\n技能写入 ${skillWriteCount} 个，保留 ${skillKeptCount} 个`
       await options.fetchAgents()
       await options.fetchSkills()
       await options.fetchMCP()
@@ -383,13 +414,13 @@ export function useBundleImports(options: {
     hasScenarioNameConflict,
     hasAgentNameConflict,
     displaySkillNames,
+    displayMcpNames,
     hasImportMissingReferences,
     missingReferenceGroups,
     missingRequiredByText,
     missingReferenceTitle,
-    scenarioOverwriteSummary,
     scenarioConflictPreviewRows,
-    agentOverwriteSummary,
+    agentConflictPreviewRows,
     pickScenarioImportFile,
     closeScenarioImportModal,
     onScenarioImportBackdropClick,
