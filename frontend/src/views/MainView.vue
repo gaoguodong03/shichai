@@ -621,25 +621,83 @@
             </div>
           </template>
           <template v-else-if="resourceSubModule === 'llm'">
-            <div class="mb-2 px-3 flex items-center gap-2">
-              <button
-                @click="selectedId = '__new__'"
-                :class="[
-                  'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  selectedId === '__new__'
-                    ? 'bg-nav-selected-bg text-nav-selected-text'
-                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                ]"
-              >
-                <span class="text-base leading-none">＋</span>
-                <span>创建模型</span>
-              </button>
+            <div class="mb-2 px-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  @click="selectedId = '__new__'"
+                  :class="[
+                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
+                    selectedId === '__new__'
+                      ? 'bg-nav-selected-bg text-nav-selected-text'
+                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  ]"
+                >
+                  <span class="text-base leading-none">＋</span>
+                  <span>创建模型</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入模型包（ZIP）"
+                  @click="pickLlmImportFile"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索模型"
+                  @click="toggleSearch('llm')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                </button>
+              </div>
+              <input
+                ref="llmImportFileInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onLlmImportFile"
+              />
+            </div>
+            <div v-if="showLlmSearch" class="px-3 mb-2">
+              <input
+                v-model="llmSearch"
+                type="text"
+                placeholder="搜索模型（标识/型号/URL）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
             </div>
             <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <div v-else-if="!llmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
+            <div v-else-if="!filteredLlmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
             <div
               v-else
-              v-for="id in llmProviderIds"
+              v-for="id in filteredLlmProviderIds"
               :key="id"
               class="relative group"
             >
@@ -1390,10 +1448,12 @@ const {
   showAgentSearch,
   showSkillSearch,
   showMcpSearch,
+  showLlmSearch,
   scenarioSearch,
   agentSearch,
   skillSearch,
   mcpSearch,
+  llmSearch,
   toggleSearch,
   resetResourceSearchesForSectionChange,
 } = useResourceSearch()
@@ -1407,6 +1467,7 @@ const {
   llmProviders,
   llmLoading,
   llmProviderIds,
+  filteredLlmProviderIds,
   agentInstances,
   agentInstancesLoading,
   filteredAgentInstances,
@@ -1430,6 +1491,7 @@ const {
   agentSearch,
   skillSearch,
   mcpSearch,
+  llmSearch,
 })
 const {
   scenarioLoading,
@@ -1495,8 +1557,14 @@ const {
   agentImportCommitting,
   agentImportResult,
   agentBundlePreview,
+  llmImportFileInputRef,
+  llmImportModalOpen,
+  llmImportCommitting,
+  llmImportResult,
+  llmBundlePreview,
   canConfirmAgentImport,
   canConfirmScenarioImport,
+  canConfirmLlmImport,
   displaySkillNames,
   displayMcpNames,
   hasImportMissingReferences,
@@ -1516,6 +1584,11 @@ const {
   onAgentImportBackdropClick,
   onAgentImportFile,
   commitAgentImport,
+  pickLlmImportFile,
+  closeLlmImportModal,
+  onLlmImportBackdropClick,
+  onLlmImportFile,
+  commitLlmImport,
 } = useBundleImports({
   skills,
   selectedScenarioPreset,
@@ -1524,6 +1597,7 @@ const {
   fetchAgents,
   fetchSkills,
   fetchMCP,
+  fetchLLM,
 })
 
 const {
