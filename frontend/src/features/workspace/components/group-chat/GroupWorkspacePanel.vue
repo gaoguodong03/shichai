@@ -10,8 +10,8 @@
             :style="{ width: groupWorkspaceWidth + 'px', minWidth: groupWorkspaceWidth + 'px' }"
           >
             <div class="group-chat-workspace-toolbar">
-              <div class="group-chat-workspace-heading">
-                <span class="group-chat-workspace-title">工作区</span>
+              <span class="group-chat-workspace-title">工作区</span>
+              <div class="group-chat-workspace-toolbar-actions">
                 <button
                   type="button"
                   class="group-chat-workspace-toolbar-sm"
@@ -27,8 +27,6 @@
                     <path d="M18 6h3V3" />
                   </svg>
                 </button>
-              </div>
-              <div class="group-chat-workspace-toolbar-actions">
                 <button
                   v-if="groupWorkspacePath"
                   type="button"

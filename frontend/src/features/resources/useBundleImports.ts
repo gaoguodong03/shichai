@@ -66,6 +66,23 @@ type AgentBundlePreview = {
   }
 }
 
+type LlmBundlePreview = {
+  bundle_preview?: {
+    provider_id: string
+    provider: {
+      base_url?: string
+      model?: string
+      label?: string
+      api_key_env?: string
+      api_key_ref?: string
+      api_key_set?: boolean
+      [key: string]: unknown
+    }
+    default_llm?: string
+    would_overwrite_provider_id?: boolean
+  }
+}
+
 type SkillListItem = { id: string; name: string }
 
 export function useBundleImports(options: {
@@ -76,6 +93,7 @@ export function useBundleImports(options: {
   fetchAgents: () => Promise<void>
   fetchSkills: () => Promise<void>
   fetchMCP: () => Promise<void>
+  fetchLLM: () => Promise<void>
 }) {
   const scenarioImportFileInputRef = ref<HTMLInputElement | null>(null)
   const scenarioImportModalOpen = ref(false)
@@ -91,12 +109,23 @@ export function useBundleImports(options: {
   const agentImportResult = ref<ImportResult | null>(null)
   const agentBundlePreview = ref<AgentBundlePreview | null>(null)
 
+  const llmImportFileInputRef = ref<HTMLInputElement | null>(null)
+  const llmImportModalOpen = ref(false)
+  const pendingLlmBundleFile = ref<File | null>(null)
+  const llmImportCommitting = ref(false)
+  const llmImportResult = ref<ImportResult | null>(null)
+  const llmBundlePreview = ref<LlmBundlePreview | null>(null)
+
   const canConfirmAgentImport = computed(
     () => !!(agentBundlePreview.value?.bundle_preview && pendingAgentBundleFile.value),
   )
 
   const canConfirmScenarioImport = computed(
     () => !!(scenarioBundlePreview.value?.bundle_preview && pendingBundleFile.value),
+  )
+
+  const canConfirmLlmImport = computed(
+    () => !!(llmBundlePreview.value?.bundle_preview && pendingLlmBundleFile.value),
   )
   const hasScenarioNameConflict = computed(
     () => {
@@ -335,6 +364,72 @@ export function useBundleImports(options: {
     closeAgentImportModal()
   }
 
+  function pickLlmImportFile() {
+    llmImportFileInputRef.value?.click()
+  }
+
+  function closeLlmImportModal() {
+    llmImportModalOpen.value = false
+    pendingLlmBundleFile.value = null
+    llmBundlePreview.value = null
+    llmImportResult.value = null
+  }
+
+  function onLlmImportBackdropClick() {
+    if (llmImportCommitting.value || llmImportResult.value) return
+    closeLlmImportModal()
+  }
+
+  async function onLlmImportFile(ev: Event) {
+    const file = await zipFileFromEvent(ev, '模型包')
+    if (!file) return
+    pendingLlmBundleFile.value = file
+    llmBundlePreview.value = null
+    const fd = new FormData()
+    appendLlmBundleOptions(fd, file, true)
+    const preview = await loadBundlePreview<LlmBundlePreview>({
+      endpoint: '/settings/llm-providers/import-bundle',
+      formData: fd,
+      errorTitle: '无法读取模型包',
+      fallbackMessage: '模型包预览失败',
+    })
+    if (!preview) {
+      pendingLlmBundleFile.value = null
+      return
+    }
+    llmBundlePreview.value = preview
+    llmImportModalOpen.value = true
+  }
+
+  async function commitLlmImport() {
+    if (!pendingLlmBundleFile.value) return
+    llmImportResult.value = null
+    llmImportCommitting.value = true
+    try {
+      const fd = new FormData()
+      appendLlmBundleOptions(fd, pendingLlmBundleFile.value, false)
+      const r = await apiRequest('/settings/llm-providers/import-bundle', { method: 'POST', body: fd })
+      const j = (await r.json().catch(() => ({}))) as {
+        status?: string
+        detail?: string
+        data?: { summary?: { imported_provider_id?: string; overwritten?: boolean } }
+      }
+      if (j?.status !== 'ok') {
+        throw new Error(j.detail || '导入失败')
+      }
+      await options.fetchLLM()
+      const providerId = j.data?.summary?.imported_provider_id || llmBundlePreview.value?.bundle_preview?.provider_id || ''
+      llmImportResult.value = {
+        ok: true,
+        message: providerId ? `导入成功\n模型：${providerId}` : '导入成功',
+      }
+    } catch (e) {
+      llmImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
+    } finally {
+      llmImportCommitting.value = false
+    }
+  }
+
   async function onAgentImportFile(ev: Event) {
     const file = await zipFileFromEvent(ev, '专家包')
     if (!file) return
@@ -409,8 +504,14 @@ export function useBundleImports(options: {
     agentImportCommitting,
     agentImportResult,
     agentBundlePreview,
+    llmImportFileInputRef,
+    llmImportModalOpen,
+    llmImportCommitting,
+    llmImportResult,
+    llmBundlePreview,
     canConfirmAgentImport,
     canConfirmScenarioImport,
+    canConfirmLlmImport,
     hasScenarioNameConflict,
     hasAgentNameConflict,
     displaySkillNames,
@@ -432,6 +533,11 @@ export function useBundleImports(options: {
     onAgentImportBackdropClick,
     onAgentImportFile,
     commitAgentImport,
+    pickLlmImportFile,
+    closeLlmImportModal,
+    onLlmImportBackdropClick,
+    onLlmImportFile,
+    commitLlmImport,
   }
 }
 
@@ -485,4 +591,9 @@ function appendAgentBundleOptions(fd: FormData, file: File, dryRun: boolean) {
   fd.append('overwrite_skills', 'true')
   fd.append('mcp_skip_existing', 'false')
   fd.append('id_conflict', 'overwrite')
+}
+
+function appendLlmBundleOptions(fd: FormData, file: File, dryRun: boolean) {
+  fd.append('file', file)
+  fd.append('dry_run', dryRun ? 'true' : 'false')
 }

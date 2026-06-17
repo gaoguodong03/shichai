@@ -2012,12 +2012,6 @@
   font-weight: 600;
   color: var(--color-text);
 }
-.group-chat-workspace-heading {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-}
 .group-chat-workspace-back {
   font-size: 0.75rem;
   color: var(--color-accent);
