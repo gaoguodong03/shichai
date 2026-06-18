@@ -71,6 +71,27 @@ def test_get_mcp_servers_reads_skill_md(tmp_path: Path, monkeypatch):
         assert get_mcp_servers_for_skill("my-skill") == ["exa"]
 
 
+def test_get_mcp_servers_resolves_by_name(tmp_path: Path, monkeypatch):
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        f"name: T\n{ALLOWED_TOOLS_FM_KEY}:\n  mcp: [exa]\n  python: ''\n"
+        "reference-labels:\n  mcp:\n    - id: exa\n      name: Exa\n---\nbody\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("app.api.settings_skill_store._get_skills_dir", lambda: skills_root)
+    monkeypatch.setattr("app.api.settings_skill_store.get_builtin_skills_dir", lambda: tmp_path / "none")
+
+    with patch(
+        "app.api.settings_skill_store.load_mcp_config",
+        return_value=[{"id": "mcp-local", "name": "Exa", "enabled": True}],
+    ):
+        assert get_mcp_servers_for_skill("my-skill") == ["mcp-local"]
+
+
 def test_validate_skill_mcp_server_ids_unknown():
     from app.api.settings_skill_store import validate_skill_mcp_server_ids
 
@@ -79,6 +100,16 @@ def test_validate_skill_mcp_server_ids_unknown():
         with pytest.raises(HTTPException) as ei:
             validate_skill_mcp_server_ids(["nope"])
         assert ei.value.status_code == 400
+
+
+def test_validate_skill_mcp_server_ids_resolves_by_name():
+    from app.api.settings_skill_store import validate_skill_mcp_server_ids
+
+    with patch(
+        "app.api.settings_skill_store.load_mcp_config",
+        return_value=[{"id": "mcp-local", "name": "Exa", "enabled": True}],
+    ):
+        assert validate_skill_mcp_server_ids(["exa"], [{"id": "exa", "name": "Exa"}]) == ["mcp-local"]
 
 
 def test_python_requirements_from_allowed_and_auto_tools(tmp_path: Path):

@@ -13,6 +13,7 @@ from app.api.settings_skill_frontmatter import (
     normalized_allowed_tools_dict,
     parse_frontmatter_lenient,
 )
+from app.core.mcp_skill_resolution import resolve_skill_mcp_declarations
 from app.core.user_settings_paths import skills_dir_path
 from app.skills.loader import get_builtin_skills_dir
 
@@ -103,15 +104,17 @@ def load_skills_config() -> List[Dict[str, Any]]:
     return skills
 
 
-def validate_skill_mcp_server_ids(mcp_ids: Optional[List[str]]) -> List[str]:
+def validate_skill_mcp_server_ids(
+    mcp_ids: Optional[List[str]],
+    mcp_refs: Optional[List[Dict[str, str]]] = None,
+) -> List[str]:
     ids = [str(x).strip() for x in (mcp_ids or []) if str(x).strip()]
     if not ids:
         return []
-    existing = {str(s.get("id")) for s in load_mcp_config()}
-    missing = [x for x in ids if x not in existing]
+    resolved, missing = resolve_skill_mcp_declarations(ids, mcp_refs, load_mcp_config())
     if missing:
         raise HTTPException(status_code=400, detail=f"MCP Server 不存在: {', '.join(missing)}")
-    return list(dict.fromkeys(ids))
+    return resolved
 
 
 def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
@@ -119,8 +122,9 @@ def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
     if not d:
         return []
     fm, _ = read_skill_file(d)
-    ids = mcp_ids_from_frontmatter(fm)
+    allowed = normalized_allowed_tools_dict(fm)
+    ids = list(allowed.get("mcp") or [])
     if not ids:
         return []
-    valid = {str(s.get("id")) for s in load_mcp_config()}
-    return [x for x in ids if x in valid]
+    resolved, _missing = resolve_skill_mcp_declarations(ids, allowed.get("mcp_refs"), load_mcp_config())
+    return resolved

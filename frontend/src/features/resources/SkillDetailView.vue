@@ -285,6 +285,11 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, computed, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
+import {
+  buildMcpServerIndex,
+  isMcpDeclarationMissing,
+  resolveMcpDeclaration,
+} from './mcpDependencyMatch'
 import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
 import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPartPath } from './resourcePartPaths'
 
@@ -356,13 +361,22 @@ function hasLoadedSkillContent() {
   )
 }
 
-const addableMcpServers = computed(() => {
-  const chosen = new Set(form.value.allowed_tools.mcp)
-  return mcpServers.value.filter((s) => s.enabled !== false && !chosen.has(s.id))
+const mcpServerIndex = computed(() => buildMcpServerIndex(mcpServers.value))
+const resolvedMcpLocalIds = computed(() => {
+  const ids = new Set<string>()
+  for (const declared of form.value.allowed_tools.mcp) {
+    const resolved = resolveMcpDeclaration(declared, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
+    if (resolved?.id) ids.add(resolved.id)
+  }
+  return ids
 })
-const mcpServerIds = computed(() => new Set(mcpServers.value.map((s) => s.id)))
+const addableMcpServers = computed(() =>
+  mcpServers.value.filter((s) => s.enabled !== false && !resolvedMcpLocalIds.value.has(s.id))
+)
 const missingMcpDependencies = computed(() =>
-  form.value.allowed_tools.mcp.filter((id) => id && !mcpServerIds.value.has(id))
+  form.value.allowed_tools.mcp.filter((id) =>
+    isMcpDeclarationMissing(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
+  )
 )
 const missingMcpDependencyLabels = computed(() =>
   missingMcpDependencies.value.map((id) => mcpLabel(id)),
@@ -405,7 +419,7 @@ function isPythonDependencyMissing(dep: string) {
 }
 
 function isMcpDependencyMissing(id: string) {
-  return Boolean(id && !mcpServerIds.value.has(id))
+  return isMcpDeclarationMissing(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
 }
 
 function mcpNameLookup(): Record<string, string> {
@@ -413,9 +427,11 @@ function mcpNameLookup(): Record<string, string> {
 }
 
 function mcpLabel(id: string) {
-  const s = mcpServers.value.find((x) => x.id === id)
+  const resolved = resolveMcpDeclaration(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
+  if (resolved?.name) return resolved.name
+  if (resolved?.id) return resolved.id
   const snap = normalizeReferenceRows(form.value.allowed_tools.mcp_refs, MCP_REFERENCE_ID_KEYS).find((x) => x.id === id)
-  return s?.name || snap?.name || `MCP 工具 ${id}`
+  return snap?.name || `MCP 工具 ${id}`
 }
 
 function removeMcpServer(id: string) {
