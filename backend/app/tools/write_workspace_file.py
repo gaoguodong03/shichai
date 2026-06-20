@@ -17,6 +17,10 @@ class WriteWorkspaceFileInput(BaseModel):
         default="",
         description="要保存的完整文本内容；若为空则工具会报错并提示重新传入。与 path 在同一次调用中一起传入。",
     )
+    overwrite: bool = Field(
+        default=False,
+        description="是否允许覆盖同名文件。默认 false；需要修改已有文件时优先使用 edit_workspace_file 或新建带时间戳的新文件。",
+    )
 
 
 def _normalize_path(path_or_input) -> str:
@@ -46,15 +50,24 @@ def _normalize_content(content_or_input, **kwargs) -> str:
     return ""
 
 
+def _normalize_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
     新建写入当前会话 workspace 文件的工具。
     workspace_id 为 session_id 或 group_session_id；写入经 SandboxService + OpenSandbox。
     """
 
-    async def _write_to_workspace_file(path: str, content: str = "", **kwargs) -> str:
+    async def _write_to_workspace_file(path: str, content: str = "", overwrite: bool = False, **kwargs) -> str:
         path_value = _normalize_path(path) or _normalize_path(kwargs.get("path")) or _normalize_path(kwargs.get("__arg1")) or ""
         content_value = _normalize_content(content, **kwargs)
+        allow_overwrite = _normalize_bool(overwrite) or _normalize_bool(kwargs.get("overwrite"))
         path_value = path_value.strip()
         if not path_value:
             return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report.md）。"
@@ -69,6 +82,12 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         target = (ws_root / normalized).resolve()
         if not str(target).startswith(str(ws_root.resolve())):
             return f"错误：路径 {path_value} 不在当前工作区内。"
+        if target.exists() and not allow_overwrite:
+            return (
+                f"错误：文件已存在：{normalized}。为避免覆盖已有正文或工作区产物，"
+                "write_workspace_file 默认不覆盖同名文件。请改用新的带时间戳文件名，"
+                "或在确需覆盖时显式传入 overwrite=true。"
+            )
         svc = get_shared_sandbox_service()
         try:
             user_id = get_current_user().username
