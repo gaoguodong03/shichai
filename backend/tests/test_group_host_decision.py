@@ -46,7 +46,9 @@ def test_host_decision_from_scheduler_state_maps_end():
     )
 
     assert out["next_speaker"] == "end"
-    assert out["announcement"] == "任务已完成，本轮会话结束。"
+    from app.agent.group_chat_host_messages import HOST_END_MESSAGE
+
+    assert out["announcement"] == HOST_END_MESSAGE
     assert out["decision_source"] == "host_scheduler_state"
 
 
@@ -68,7 +70,9 @@ def test_host_decision_from_scheduler_state_end_default_is_generic():
     )
 
     assert out["next_speaker"] == "end"
-    assert out["announcement"] == "任务已完成，本轮会话结束。"
+    from app.agent.group_chat_host_messages import HOST_END_MESSAGE
+
+    assert out["announcement"] == HOST_END_MESSAGE
     assert "教师" not in out["announcement"]
     assert "研讨" not in out["announcement"]
 

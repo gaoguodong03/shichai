@@ -10,13 +10,11 @@
         <div
           class="pointer-events-none absolute inset-0 bg-gradient-to-b from-accent-subtle/55 to-page/18 md:rounded-l-xl rounded-t-xl md:rounded-t-none"
         />
-        <img
-          :src="landingImageUrl"
-          alt="书童四九"
-          class="relative z-[1] w-full max-w-[min(100%,500px)] select-none"
-          width="630"
-          height="490"
-          decoding="async"
+        <FeatureCarousel
+          class="relative z-[1] w-full max-w-[min(100%,500px)]"
+          :slides="featureSlides"
+          :interval="5000"
+          embedded
         />
       </div>
 
@@ -104,10 +102,17 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import landingImageUrl from '@/assets/landing.png'
 import logoUrl from '@/assets/49logo.png'
+import FeatureCarousel, { type FeatureSlide } from '@/features/landing/FeatureCarousel.vue'
 import { THEME_AUTH_CHANGED_EVENT } from '@/composables/useTheme'
 import { apiRequest } from '@/api/base'
+
+const featureSlides: FeatureSlide[] = [
+  { src: '/feature/feature1.png', alt: '兼容人工智能生态' },
+  { src: '/feature/feature2.png', alt: '满足多元场景需求' },
+  { src: '/feature/feature3.png', alt: '优化技能工具调用' },
+  { src: '/feature/feature4.png', alt: '兼顾资源隔离与协同' },
+]
 
 const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
@@ -198,7 +203,7 @@ async function onSubmit() {
     if (typeof redir === 'string' && redir.startsWith('/') && !redir.startsWith('//')) {
       router.replace(redir)
     } else {
-      router.replace('/')
+      router.replace('/workspace')
     }
   } catch (e) {
     error.value = '网络错误，请稍后重试'

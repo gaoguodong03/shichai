@@ -84,7 +84,7 @@ export function useResourceCollections(args: {
     if (!q) return ids
     return ids.filter((id) => {
       const meta = llmProviders.value[id] || {}
-      const hay = `${id} ${meta.label || ''} ${meta.model || ''} ${meta.base_url || ''}`.toLowerCase()
+      const hay = `${id} ${meta.label || ''} ${meta.model || ''}`.toLowerCase()
       return hay.includes(q)
     })
   })

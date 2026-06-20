@@ -69,6 +69,8 @@
 
 ### 5.2 编排策略（`next_speaker` 如何决定）
 
+> 三层状态机总览（主持人 FSM + Skill 锁 + 专家 `next_action`）：[group-orchestration-fsm.md](./group-orchestration-fsm.md)
+
 实现集中在 `backend/app/api/group_chat.py` 的 `group_chat_stream`；内存里用 `OrchestrationContext`（`app/agent/orchestrator_state.py`）记录 **阶段** `phase`（如 `planning` / `executing` / `awaiting_user` / `recruiting` / `completed`）等，SSE 的 `end` 事件里也会带 `phase`、`interrupt_reason` 等。
 
 #### 5.2.1 双轨编排与 meta 字段

@@ -199,6 +199,8 @@
 
 当同一轮同时出现多个信号时，平台按“继续优先”处理：任一明确信号要求 `skill_session=keep` 时保留 Skill 会话锁；只有没有 `keep` 信号且存在 `release` 信号时才释放。
 
+与主持人调度、入口路由的合成视图见 [群聊编排有限状态机](../architecture/group-orchestration-fsm.md)。
+
 ## 7. 专家回复规则
 
 专家回复只负责把 `artifacts` 中的业务结果整理给用户。流程控制由脚本或 MCP 工具返回的 `next_action` 决定。

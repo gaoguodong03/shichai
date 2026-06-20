@@ -223,12 +223,6 @@
                     <span class="text-xs tracking-[0.18em] text-muted">
                       书童四九
                     </span>
-                    <span class="text-sm font-semibold text-primary mt-0.5">
-                      ID
-                      <span class="text-muted">
-                        {{ selectedAgentId && selectedAgentId !== '__new__' ? selectedAgentId : 'Pending' }}
-                      </span>
-                    </span>
                   </div>
                   <span class="px-2.5 py-1 rounded-full bg-black text-white text-xs font-medium">
                     Role Card

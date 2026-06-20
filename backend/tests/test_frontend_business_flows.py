@@ -440,6 +440,8 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert manifest["provider"]["model"] == "qwen3-max"
     assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert "api_key" not in manifest["provider"]
+    assert "api_key_env" not in manifest["provider"]
+    assert "api_key_ref" not in manifest["provider"]
 
     preview_llm = client.post(
         "/api/settings/llm-providers/import-bundle",

@@ -28,7 +28,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      redirect: '/workspace',
+      redirect: '/login',
     },
     {
       path: '/workspace',

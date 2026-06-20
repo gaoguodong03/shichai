@@ -302,13 +302,9 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    selectedId === '__new__'
-                      ? 'bg-nav-selected-bg text-nav-selected-text'
-                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
                   <span>新建专家</span>
@@ -355,20 +351,19 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <input
-              ref="agentImportFileInputRef"
-              type="file"
-              accept=".zip,application/zip"
-              class="hidden"
-              @change="onAgentImportFile"
-            />
-            <div v-if="showAgentSearch" class="px-3 mb-2">
               <input
+                v-if="showAgentSearch"
                 v-model="agentSearch"
                 type="text"
                 placeholder="搜索专家（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="agentImportFileInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onAgentImportFile"
               />
             </div>
             <div v-if="agentInstancesLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -415,11 +410,9 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="createEmptySkill"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
                   <span>新建技能</span>
@@ -427,8 +420,8 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入技能包（ZIP）"
                   @click="triggerSkillZipImport"
-                  title="导入技能"
                 >
                   <svg
                     class="main-sidebar-svg-icon"
@@ -445,13 +438,6 @@
                     <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
-                <input
-                  ref="skillZipInputRef"
-                  type="file"
-                  accept=".zip,application/zip"
-                  class="hidden"
-                  @change="onSkillZipSelected"
-                />
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
@@ -473,13 +459,19 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <div v-if="showSkillSearch" class="px-3 mb-2">
               <input
+                v-if="showSkillSearch"
                 v-model="skillSearch"
                 type="text"
                 placeholder="搜索技能（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="skillZipInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onSkillZipSelected"
               />
             </div>
             <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -518,13 +510,9 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    selectedId === '__new__'
-                      ? 'bg-nav-selected-bg text-nav-selected-text'
-                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
                   <span>新建工具</span>
@@ -532,7 +520,7 @@
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                  title="导入工具"
+                  title="导入工具包（ZIP）"
                   :disabled="mcpZipImporting"
                   @click="triggerMcpZipImport"
                 >
@@ -551,13 +539,6 @@
                     <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
-                <input
-                  ref="mcpZipInputRef"
-                  type="file"
-                  accept=".zip,application/zip"
-                  class="hidden"
-                  @change="onMcpZipSelected"
-                />
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
@@ -579,13 +560,19 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <div v-if="showMcpSearch" class="px-3 mb-2">
               <input
+                v-if="showMcpSearch"
                 v-model="mcpSearch"
                 type="text"
                 placeholder="搜索工具（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="mcpZipInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onMcpZipSelected"
               />
             </div>
             <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -624,13 +611,9 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    selectedId === '__new__'
-                      ? 'bg-nav-selected-bg text-nav-selected-text'
-                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
                   <span>新建模型</span>
@@ -678,19 +661,18 @@
                 </button>
               </div>
               <input
+                v-if="showLlmSearch"
+                v-model="llmSearch"
+                type="text"
+                placeholder="搜索模型（名称/模型型号）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
                 ref="llmImportFileInputRef"
                 type="file"
                 accept=".zip,application/zip"
                 class="hidden"
                 @change="onLlmImportFile"
-              />
-            </div>
-            <div v-if="showLlmSearch" class="px-3 mb-2">
-              <input
-                v-model="llmSearch"
-                type="text"
-                placeholder="搜索模型（标识/型号/URL）"
-                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
             </div>
             <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -1038,6 +1020,7 @@
         <template v-else-if="resourceSubModule === 'llm'">
           <LLMSettingsView
             :provider-id="selectedId"
+            :providers-version="llmProvidersVersion"
             @updated="(id: string | undefined) => { fetchLLM(); if (id) selectedId = id }"
           />
         </template>
@@ -1516,6 +1499,7 @@ async function logout() {
 }
 
 const selectedId = ref<string | null>(null)
+const llmProvidersVersion = ref(0)
 const resourceMenuExpanded = ref(false)
 const { currentModule, resourceSubModule, settingsSection } = useMainRouteState(route)
 const {
@@ -1674,6 +1658,7 @@ const {
   commitLlmImport,
 } = useBundleImports({
   skills,
+  selectedId,
   selectedScenarioPreset,
   isCreatingScenario,
   fetchScenarioPresets,
@@ -1681,6 +1666,9 @@ const {
   fetchSkills,
   fetchMCP,
   fetchLLM,
+  onLlmListChanged: () => {
+    llmProvidersVersion.value += 1
+  },
 })
 
 const {

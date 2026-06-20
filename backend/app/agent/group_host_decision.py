@@ -5,6 +5,8 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from app.agent.group_chat_host_messages import HOST_END_MESSAGE
+
 
 def _to_agent_style_id(raw_id: str) -> str:
     sid = str(raw_id or "").strip()
@@ -229,7 +231,7 @@ def host_decision_from_scheduler_state(
             "task_done": True,
             "next_speaker": "end",
             "reason": reason,
-            "announcement": task or "任务已完成，本轮会话结束。",
+            "announcement": HOST_END_MESSAGE,
             "next_prompt": None,
             "current_phase": phase_text,
             "speaker_task": task,
@@ -248,6 +250,24 @@ def host_decision_from_scheduler_state(
             "next_speaker": "user",
             "reason": reason,
             "announcement": "请用户继续发言。",
+            "next_prompt": None,
+            "current_phase": phase_text,
+            "speaker_task": task,
+            "suggested_order": None,
+            "suggested_add_agent_ids": None,
+            "phase": None,
+            "owner_agent_id": None,
+            "interrupt_reason": None,
+            "decision_source": "host_scheduler_state",
+            "handoff_reason": reason,
+            "required_user_fields": [],
+        }
+    if raw_lower == "invite":
+        return {
+            "task_done": True,
+            "next_speaker": "invite",
+            "reason": reason,
+            "announcement": "",
             "next_prompt": None,
             "current_phase": phase_text,
             "speaker_task": task,

@@ -94,7 +94,9 @@ from app.agent.group_chat_expert_resolution import (
     _default_leader_agent_id,
     _get_llm_for_agent,
     _last_user_message_text,
+    _llm_credential_notice_for_agent,
     _normalize_to_preferred_agent_ids,
+    _resolve_llm_provider_for_agent,
     _to_agent_style_id,
 )
 from app.agent.group_chat_skill_session import (
@@ -116,6 +118,7 @@ from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
     _build_host_recruit_message,
 )
+from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
 from app.agent.group_chat_title_meta import (
     _infer_required_user_fields_for_skill,
     _record_user_message_and_refresh_title,
@@ -352,6 +355,40 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _persist_host_memory(host_msg)
                 return f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
 
+            def _credential_notice_for_agent(agent_profile: Optional[Dict[str, Any]]) -> Optional[str]:
+                return _llm_credential_notice_for_agent(agent_profile, app_settings)
+
+            def _build_credential_abort_events(
+                agent_profile: Optional[Dict[str, Any]],
+                *,
+                error_code: str = "llm_credential_error",
+            ) -> Optional[List[str]]:
+                notice = _credential_notice_for_agent(agent_profile)
+                if not notice:
+                    return None
+                host_msg = _build_host_notice_message(
+                    skill_id=scene_runtime.host_bubble_skill_id(),
+                    content=notice,
+                    leader_agent_id=leader_agent_id,
+                    meta={"error_code": error_code},
+                )
+                end_payload = build_end_payload(
+                    waiting_for_user=True,
+                    phase=OrchestrationPhase.AWAITING_USER,
+                    interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
+                    resume_target_agent_id=resume_target_agent_id,
+                    required_user_fields=required_user_fields,
+                    turn_id=orch_ctx.turn_id,
+                    token_version=orch_ctx.token_version,
+                    handoff_reason=notice,
+                    extra={"error_code": error_code},
+                )
+                _persist_pending_state(end_payload)
+                return [
+                    _record_host_message(host_msg),
+                    f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n",
+                ]
+
             async def _handoff_to_host_scheduler_after_expert() -> Tuple[str, List[str]]:
                 """After a completed expert turn, let the host choose the next owner in the same stream."""
                 nonlocal scheduler_next_prompt
@@ -366,6 +403,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     bool(host_agent),
                     last_speaker_agent_id,
                 )
+                abort_events = _build_credential_abort_events(host_agent if host_agent else None)
+                if abort_events:
+                    emitted.extend(abort_events)
+                    return "user", emitted
                 if leader_agent_id and host_agent:
                     llm_host = _get_llm_for_agent(host_agent, app_settings)
                     decision = await _host_decide_by_agent(
@@ -446,7 +487,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_add=suggested_add,
                         leader_agent_id=leader_agent_id,
                     )
-                    emitted.append(_record_host_message(host_msg))
+                    if host_msg:
+                        emitted.append(_record_host_message(host_msg))
                     return resolved_next, emitted
 
                 if resolved_next in agent_ids:
@@ -483,6 +525,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         orch_ctx.phase = OrchestrationPhase.COMPLETED
                     return resolved_next, emitted
 
+                if resolved_next == "invite":
+                    orch_ctx.phase = OrchestrationPhase.RECRUITING
+                    return "user", emitted
+
                 return "user", emitted
 
             next_speaker = None
@@ -491,6 +537,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             # 0 个 Agent：主持人为先，主持人回复用户并推荐若干 Agent 加入（不再使用 Chat）
             if len(agent_ids) == 0:
+                abort_events = _build_credential_abort_events(None)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
                 recent = _scheduler_recent_context(group_session_id, messages)
                 all_instances = [d for d in preferred_instances if d.get("agent_id")]
                 picked: List[str] = []
@@ -585,6 +636,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 orch_ctx.owner_agent_id = entry_route.direct_agent_id
             else:
                 logger.debug("group_chat_route_branch=host_scheduler session=%s", group_session_id)
+                abort_events = _build_credential_abort_events(host_agent if host_agent else None)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
                 # 统一调度路径：流程由 Skill 锁与主持人 JSON 表达。
                 recent = _scheduler_recent_context(group_session_id, messages)
                 decision = None
@@ -684,7 +740,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_add=suggested_add,
                         leader_agent_id=leader_agent_id,
                     )
-                    yield _record_host_message(host_msg)
+                    if host_msg:
+                        yield _record_host_message(host_msg)
                 if next_speaker in agent_ids:
                     host_msg = _build_host_next_speaker_message(
                         skill_id=scene_runtime.host_bubble_skill_id(),
@@ -713,15 +770,18 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         yield _record_host_message(host_msg)
                     if next_speaker == "user":
                         orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+                elif next_speaker == "invite":
+                    orch_ctx.phase = OrchestrationPhase.RECRUITING
 
             if not next_speaker:
                 fallback_host = _build_host_fallback_message(
                     skill_id=scene_runtime.host_bubble_skill_id(),
                     leader_agent_id=leader_agent_id,
                 )
-                fallback_event = _record_host_message(fallback_host)
-                _save_group_meta(meta)
-                yield fallback_event
+                if fallback_host:
+                    fallback_event = _record_host_message(fallback_host)
+                    _save_group_meta(meta)
+                    yield fallback_event
 
             while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_ids:
                 if agent_turns >= 32:
@@ -756,6 +816,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     move_to_interrupt(orch_ctx, InterruptReason.NEED_MORE_CONTEXT)
                     next_speaker = "user"
                     break
+
+                abort_events = _build_credential_abort_events(agent_profile)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
 
                 expert_runtime = await build_expert_turn_runtime(
                     agent_profile=agent_profile,
@@ -1298,14 +1364,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             raise
         except Exception as e:
             logger.exception("群聊流式输出异常")
-            yield f"event: error\ndata: {json_module.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            err_text = str(e)
+            if is_llm_credential_error_message(err_text):
+                provider_id, cfg = _resolve_llm_provider_for_agent(host_agent if host_agent else None, app_settings)
+                notice = build_llm_credential_notice(provider_id, cfg)
+                host_msg = _build_host_notice_message(
+                    skill_id=scene_runtime.host_bubble_skill_id(),
+                    content=notice,
+                    leader_agent_id=leader_agent_id,
+                    meta={"error_code": "llm_credential_error", "error": err_text},
+                )
+                messages.append(host_msg)
+                _save_group_history(group_session_id, messages)
+                yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+            else:
+                yield f"event: error\ndata: {json_module.dumps({'error': err_text}, ensure_ascii=False)}\n\n"
             try:
                 payload = build_end_payload(
                     waiting_for_user=True,
                     phase=OrchestrationPhase.AWAITING_USER,
                     interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
                     handoff_reason="stream_error",
-                    extra={"error": str(e)},
+                    extra={"error": err_text},
                 )
                 yield f"event: end\ndata: {json_module.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception:

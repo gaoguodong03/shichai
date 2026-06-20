@@ -1,4 +1,5 @@
 """测试 LLM 配置化（get_llm_from_config）"""
+import json
 import os
 import sys
 import types
@@ -73,7 +74,7 @@ def test_settings_refreshes_old_jeniya_builtin_provider_presets():
 
 
 def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
-    """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 明文。"""
+    """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 或密钥绑定信息。"""
     from app.core.llm_bundle import (
         LLM_MANIFEST_NAME,
         build_llm_bundle_zip_bytes,
@@ -98,7 +99,12 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     with zipfile.ZipFile(BytesIO(raw)) as zf:
         assert LLM_MANIFEST_NAME in zf.namelist()
         manifest_text = zf.read(LLM_MANIFEST_NAME).decode("utf-8")
+    manifest = json.loads(manifest_text)
+    manifest_provider = manifest["provider"]
     assert "plain-secret" not in manifest_text
+    assert "api_key" not in manifest_provider
+    assert "api_key_env" not in manifest_provider
+    assert "api_key_ref" not in manifest_provider
 
     bundle_dir = extract_scenario_bundle_dir(raw)
     try:
@@ -111,14 +117,14 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert provider_id == "example"
     assert bundled["base_url"] == "https://example.test/v1"
     assert bundled["model"] == "example-chat"
-    assert bundled["api_key_env"] == "EXAMPLE_API_KEY"
-    assert bundled["api_key_ref"] == "vault-example"
+    assert "api_key" not in bundled
+    assert "api_key_env" not in bundled
+    assert "api_key_ref" not in bundled
     assert bundled["api_key_set"] is True
     assert bundled["temperature"] == 0.2
     assert bundled["max_tokens"] == 128
     assert bundled["top_p"] == 0.9
     assert bundled["extra_body"] == {"enable_thinking": False}
-    assert "api_key" not in bundled
 
 
 def test_get_llm_from_config_qwen():
@@ -136,6 +142,48 @@ def test_get_llm_from_config_qwen():
     assert llm.base_url == "https://dashscope.aliyuncs.com/v1"
     assert llm.model == "qwen-turbo"
     assert llm.api_key == "test-key"
+
+
+def test_resolve_llm_api_key_prefers_vault_ref():
+    from app.agent.llm_client import resolve_llm_api_key
+
+    cfg = {
+        "api_key_env": "JENIYA_API_KEY",
+        "api_key": "inline-should-not-win",
+        "api_key_ref": "vault-a",
+    }
+    assert resolve_llm_api_key(cfg, {"vault-a": "from-vault"}) == "from-vault"
+
+
+def test_build_llm_credential_notice_mentions_model():
+    from app.agent.llm_client import build_llm_credential_notice
+
+    notice = build_llm_credential_notice(
+        "qwen",
+        {"model": "qwen3-max", "label": "通义千问"},
+    )
+    assert "qwen3-max" in notice
+    assert "没有配置密钥或密钥错误" in notice
+
+
+def test_llm_credential_notice_for_agent_when_key_missing(monkeypatch):
+    from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
+
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+    notice = _llm_credential_notice_for_agent(
+        None,
+        {
+            "default_llm": "qwen",
+            "llm_providers": {
+                "qwen": {
+                    "model": "qwen3-max",
+                    "api_key_env": "QWEN_API_KEY",
+                }
+            },
+        },
+    )
+    assert notice is not None
+    assert "qwen3-max" in notice
 
 
 def test_get_llm_from_config_jeniya():

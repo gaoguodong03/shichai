@@ -108,3 +108,13 @@ def test_end_payload_defaults_suggested_to_user_when_waiting_and_omitted():
         interrupt_reason=InterruptReason.NONE,
     )
     assert payload["suggested_next_speaker"] == "user"
+
+
+def test_normalize_scheduler_accepts_invite_next_speaker():
+    out = normalize_scheduler_decision(
+        {"next_speaker": "invite", "speaker_task": "请邀请文字创作专家"},
+        agent_ids=["agent-a"],
+    )
+    assert out["next_speaker"] == "invite"
+    assert out["phase"] == OrchestrationPhase.RECRUITING.value
+    assert out["interrupt_reason"] == InterruptReason.NEED_RECRUIT_EXPERT.value

@@ -11,7 +11,9 @@ from langchain_core.messages import HumanMessage, AIMessage  # type: ignore
 
 from app.agent.group_chat_expert_resolution import (
     _get_llm_for_agent,
+    _llm_credential_notice_for_agent,
     _pick_resolved_host_skill_id,
+    _resolve_llm_provider_for_agent,
 )
 from app.agent.group_host_decision import (
     extract_candidate_agent_ids_from_text as _extract_candidate_agent_ids_from_text,
@@ -20,6 +22,8 @@ from app.agent.group_host_decision import (
     host_decision_from_scheduler_state as _host_decision_from_scheduler_state,
     parse_host_response as _parse_host_response,
 )
+from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
+from app.agent.group_chat_host_messages import HOST_ZERO_EXPERT_RECOMMENDATION
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
@@ -62,30 +66,36 @@ def _request_skills_loader():
     return get_skills_loader_for_user(u.username, u.ctx.skills_dir)
 
 
+_HOST_DEFAULT_DUTY = (
+    "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，"
+    "平台会根据调度结果生成固定主持话术，你不得代答、复述用户需求或补充说明。"
+)
+
 _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
 ## 平台调度状态规则
 
-你仍按主持人 Skill 判断下一步调度，但不要调用 read_file/write_workspace_file/edit_workspace_file/list_workspace_directory 等工具。
-平台后端会在内存/会话 meta 中保存调度状态，不会把 `next_speaker.txt`、`speaker_task.txt` 写到用户工作区。你只需要在本轮回复中给出以下结构化结果：
+你仍按主持人 Skill 判断下一步调度，你只需要在本轮回复中给出以下结构化结果：
+
+**只输出 JSON（可用 ```json 包裹），不要输出任何面向用户的自然语言。**
 
 ```json
 {
-  "current_phase": "阶段1：入口分流",
-  "next_speaker": "文字创作专家",
-  "speaker_task": "请根据用户目标完成本阶段任务，完成后交回主持人判断下一阶段。"
+  "current_phase": "阶段：xxxx",
+  "next_speaker": "agent-xxxxxx",
+  "speaker_task": "请根据用户目标完成本阶段任务"
 }
 ```
 
-`current_phase` 用于保存当前场景流程阶段；若主持人 Skill 有阶段要求，本场景也必须同时输出 `current_phase`。
-`next_speaker` 写场景角色名、`"user"` 或 `"end"`；不要在主持人 Skill 中硬编码 agent_id。
-`speaker_task` 是唯一任务交接字段，平台会把它作为后台任务文本交给下一位发言人执行。
-专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是场景内角色名、`"user"` 或 `"end"`，不要把 `next_speaker` 写成主持人自身。
-后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文；若最近专家已经完成当前 `speaker_task` 的可交付内容，必须更新 `current_phase` 并选择下一阶段目标，不要仅因旧 `current_phase` 仍在上一阶段就重复安排同一专家。
+`current_phase` 用于保存当前场景流程阶段；
+`next_speaker` 写场景角色id、`"invite"` 、`"user"` 或 `"end"`。
+`speaker_task` 平台会把它作为后台任务文本交给下一位发言人执行。
+专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是场景内角色id、 `"invite"` 、`"user"` 或 `"end"`。
 你必须先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
-任务已完成时，`next_speaker` 写 `"user"` 表示等待用户继续；若整个任务应结束，写 `"end"` 表示本轮会话结束。
+任务已完成且整个会话应结束时：`current_phase` 写 `"end"`，且 `next_speaker` 写 `"end"`。
+需要等待用户继续输入时：`next_speaker` 写 `"user"`（平台不会展示主持气泡）。
+需要邀请新专家完成任务时：`next_speaker` 写 `"invite"`（平台不会展示主持气泡）。
 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 `next_speaker` 设为某个专家。
-不要生成角色正文。
 """
 
 
@@ -145,22 +155,12 @@ async def _host_decide_by_agent(
     host_display_name = str(hp_norm.get("display_name") or "四九").strip() or "四九"
     name = host_agent.get("name") or host_agent.get("agent_id", host_display_name)
     role = host_agent.get("role") or "群聊主持人"
-    sl = _request_skills_loader()
     skill_ids = [str(x).strip() for x in (host_agent.get("skill_ids") or []) if str(x).strip()]
-    resolved_skill_id = ""
-    if not skill_ids:
-        skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，不代替专家完成专业正文。"
-    else:
-        sid0 = _pick_resolved_host_skill_id(skill_ids)
-        resolved_skill_id = sid0
-        skill_content = sl.get_skill_full_content(sid0) if sid0 else ""
-        if not (skill_content or "").strip():
-            skill_content = "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，不代替专家完成专业正文。"
-    skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{skill_content}"
+    resolved_skill_id = _pick_resolved_host_skill_id(skill_ids) if skill_ids else ""
+    skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{_HOST_DEFAULT_DUTY}\n\n{_HOST_SCHEDULER_STATE_INSTRUCTION.strip()}"
     host_system = (host_agent.get("system_prompt") or "").strip()
     if host_system:
         skill_content = f"{host_system}\n\n{skill_content}"
-    skill_content = f"{skill_content}\n\n{_HOST_SCHEDULER_STATE_INSTRUCTION}"
 
     agent_lines = []
     for d in agent_profiles:
@@ -205,7 +205,7 @@ async def _host_decide_by_agent(
     user_content = (
         orphan_block
         + mode_line
-        + f"【当前群聊参与者（next_speaker 优先写场景角色名或参与者名称；括号内系统 ID 仅供平台匹配兜底）】\n{agent_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
+        + f"【当前群聊参与者（next_speaker 写 agent_id）】\n{agent_text or '（暂无：请检查场景是否已选择协作专家，或专家是否已从库中删除）'}\n\n"
         f"【任务目标】\n{discussion_goal}\n\n"
         "【主持人决策上下文（对话与发言摘录）】\n"
         f"{recent_messages}\n\n"
@@ -282,6 +282,18 @@ async def _host_decide_by_agent(
             return parsed
         return None
     except Exception as e:
+        err_text = str(e)
+        if is_llm_credential_error_message(err_text):
+            notice = _llm_credential_notice_for_agent(host_agent, app_settings)
+            if not notice:
+                provider_id, cfg = _resolve_llm_provider_for_agent(host_agent, app_settings)
+                notice = build_llm_credential_notice(provider_id, cfg)
+            return {
+                "next_speaker": "user",
+                "announcement": notice,
+                "reason": "llm_credential_error",
+                "interrupt_reason": "tool_unavailable",
+            }
         logger.warning("主持人 Agent 调用失败，将回退到默认调度: %s", e)
         return None
 
@@ -316,6 +328,9 @@ async def _host_only_respond_and_recommend(
         role = d.get("role") or "参与者"
         agent_lines.append(f"- {name} ({did}): {role}")
     agent_text = "\n".join(agent_lines) if agent_lines else "（暂无可选专家）"
+    notice = _llm_credential_notice_for_agent(None, app_settings)
+    if notice:
+        return notice, None
     llm = _get_llm_for_agent(None, app_settings)
     user_content = (
         f"【讨论目标/用户消息】\n{discussion_goal}\n\n"
@@ -323,6 +338,7 @@ async def _host_only_respond_and_recommend(
         f"【可选专家列表】\n{agent_text}\n\n"
         "【建议策略】\n"
         "- 优先推荐 1~3 位最相关专家（按优先级排序）；\n"
+        "- 只输出 JSON，包含 suggested_add_agent_ids；\n"
         "- 推荐后先等待用户确认邀请。\n\n"
     )
     agent = create_skill_execution_agent(llm, [], system_content, extra_system_prompt or "")
@@ -351,7 +367,7 @@ async def _host_only_respond_and_recommend(
         )
         if not content_str or not content_str.strip():
             fallback_ids = _heuristic_recommend_agents(discussion_goal, all_instances, max_n=3)
-            return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
+            return HOST_ZERO_EXPERT_RECOMMENDATION, fallback_ids or None
         text = content_str.strip()
         announcement = text
         suggested_add_agent_ids: Optional[List[str]] = None
@@ -381,8 +397,12 @@ async def _host_only_respond_and_recommend(
         if not suggested_add_agent_ids and valid_ids:
             found = _extract_candidate_agent_ids_from_text(text, all_instances, max_n=3)
             suggested_add_agent_ids = [x for x in found if x in valid_ids][:3]
-        return announcement or text, suggested_add_agent_ids
+        return HOST_ZERO_EXPERT_RECOMMENDATION, suggested_add_agent_ids
     except Exception as e:
+        err_text = str(e)
+        if is_llm_credential_error_message(err_text):
+            provider_id, cfg = _resolve_llm_provider_for_agent(None, app_settings)
+            return build_llm_credential_notice(provider_id, cfg), None
         logger.warning("主持人 0 成员推荐调用失败: %s", e)
         fallback_ids = _heuristic_recommend_agents(discussion_goal, all_instances, max_n=3)
-        return "我已收到您的需求，建议先邀请以下专家加入讨论。", fallback_ids or None
+        return HOST_ZERO_EXPERT_RECOMMENDATION, fallback_ids or None

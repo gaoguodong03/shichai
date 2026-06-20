@@ -87,6 +87,7 @@ type SkillListItem = { id: string; name: string }
 
 export function useBundleImports(options: {
   skills: Ref<SkillListItem[]>
+  selectedId: Ref<string | null>
   selectedScenarioPreset: ComputedRef<{ id: string } | null>
   isCreatingScenario: ComputedRef<boolean>
   fetchScenarioPresets: () => Promise<void>
@@ -94,6 +95,7 @@ export function useBundleImports(options: {
   fetchSkills: () => Promise<void>
   fetchMCP: () => Promise<void>
   fetchLLM: () => Promise<void>
+  onLlmListChanged?: () => void
 }) {
   const scenarioImportFileInputRef = ref<HTMLInputElement | null>(null)
   const scenarioImportModalOpen = ref(false)
@@ -419,6 +421,8 @@ export function useBundleImports(options: {
       }
       await options.fetchLLM()
       const providerId = j.data?.summary?.imported_provider_id || llmBundlePreview.value?.bundle_preview?.provider_id || ''
+      if (providerId) options.selectedId.value = providerId
+      options.onLlmListChanged?.()
       llmImportResult.value = {
         ok: true,
         message: providerId ? `导入成功\n模型：${providerId}` : '导入成功',

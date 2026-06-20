@@ -74,7 +74,7 @@ def test_parse_host_response_without_next_prompt():
     assert out.get("next_prompt") is None
 
 
-def test_host_pause_message_prefers_speaker_task_over_generic_user_announcement():
+def test_host_pause_message_user_shows_speaker_task():
     from app.agent.group_chat_host_messages import _build_host_pause_message
 
     msg = _build_host_pause_message(
@@ -86,13 +86,22 @@ def test_host_pause_message_prefers_speaker_task_over_generic_user_announcement(
     )
 
     assert msg is not None
-    assert "请用户明确报告目标受众和篇幅。" in msg["content"]
-    assert "current_phase" not in msg["content"]
-    assert msg["meta"]["scheduler_state"] == {
-        "current_phase": "阶段1：入口分流",
-        "next_speaker": "user",
-        "speaker_task": "请用户明确报告目标受众和篇幅。",
-    }
+    assert msg["content"] == "请用户明确报告目标受众和篇幅。"
+
+
+def test_host_pause_message_end_uses_fixed_copy():
+    from app.agent.group_chat_host_messages import HOST_END_MESSAGE, _build_host_pause_message
+
+    msg = _build_host_pause_message(
+        skill_id="group-host-webnovel",
+        next_speaker="end",
+        current_phase="end",
+        speaker_task="",
+    )
+
+    assert msg is not None
+    assert msg["content"] == HOST_END_MESSAGE
+    assert msg["meta"]["scheduler_state"]["next_speaker"] == "end"
 
 
 def test_host_next_speaker_message_includes_scheduler_state_json():
@@ -194,27 +203,17 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
     assert pick([]) == ""
 
 
-async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path):
+async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path):
     gc = _get_host_runtime_module()
     calls = {}
     meta_item = {}
-
-    class FakeSkillsLoader:
-        def get_skill_full_content(self, skill_id):
-            return {
-                "group-host": "通用主持 Skill 正文",
-                "group-host-webnovel": "网文专用主持 Skill 正文",
-            }.get(skill_id)
-
-    async def fake_tool_builder(*_args, **_kwargs):
-        raise AssertionError("host scheduler should not use workspace tools for scheduler-state persistence")
 
     class FakeAgent:
         async def ainvoke(self, *_args, **_kwargs):
             return {
                 "messages": [
                     gc.AIMessage(
-                        content='```json\n{"task_done": false, "next_speaker": "agent-a", "next_prompt": "请写大纲", "reason": "按场景专用主持流程"}\n```'
+                        content='```json\n{"current_phase": "阶段：撰写", "next_speaker": "agent-a", "speaker_task": "请写大纲"}\n```'
                     )
                 ]
             }
@@ -229,15 +228,14 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         }
         return FakeAgent()
 
-    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
     monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
 
     out = await gc._host_decide_by_agent(
         llm=object(),
         host_agent={
             "agent_id": "agent-scene-host",
-            "name": "四九场景主持",
-            "role": "群聊场景主持人",
+            "name": "五九",
+            "role": "群聊主持人",
             "skill_ids": ["group-host", "group-host-webnovel"],
         },
         agent_profiles=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
@@ -246,37 +244,21 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         last_speaker_agent_id=None,
         extra_system_prompt="",
         group_session_id="group-1",
-        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        app_settings={"host_profile": {"display_name": "五九", "skill_ids": []}},
         orchestration_profile="scene",
         meta_item=meta_item,
     )
 
     assert out is not None
     assert out["next_speaker"] == "agent-a"
-    assert "网文专用主持 Skill 正文" in calls["agent_factory"]["skill_content"]
-    assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
+    content = calls["agent_factory"]["skill_content"]
+    assert "你是 五九，担任本群主持人。你的角色：群聊主持人。" in content
+    assert "平台会根据调度结果生成固定主持话术" in content
+    assert '"next_speaker": "agent-xxxxxx"' in content
+    assert '`"invite"`' in content
+    assert "网文专用主持 Skill 正文" not in content
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
-    assert '"current_phase": "阶段1：入口分流"' in calls["agent_factory"]["skill_content"]
-    assert "本场景也必须同时输出 `current_phase`" in calls["agent_factory"]["skill_content"]
-    assert "先判断任务目标是否已经完成" in calls["agent_factory"]["skill_content"]
-    assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
-    assert "后台调度状态是上一轮主持人保存的状态，可能滞后于刚发言专家的正文" in calls["agent_factory"]["skill_content"]
-    assert "教师" not in calls["agent_factory"]["skill_content"]
-    assert "研讨" not in calls["agent_factory"]["skill_content"]
-    assert "不要在主持人 Skill 中硬编码 agent_id" in calls["agent_factory"]["skill_content"]
-    assert "`speaker_task` 是唯一任务交接字段" in calls["agent_factory"]["skill_content"]
-    assert "next_prompt" not in calls["agent_factory"]["skill_content"]
-    assert '"reason"' not in calls["agent_factory"]["skill_content"]
-    assert "`next_speaker` 可以写参与者 agent_id" not in calls["agent_factory"]["skill_content"]
-    assert "专家发言完成后，平台会先交回主持人调度" in calls["agent_factory"]["skill_content"]
-    assert "这里的 `next_speaker` 是主持人本次调度出的下一步目标" in calls["agent_factory"]["skill_content"]
-    assert "不要把 `next_speaker` 写成主持人自身" in calls["agent_factory"]["skill_content"]
-    assert "也可以写主持人 Skill 中的角色名" not in calls["agent_factory"]["skill_content"]
-    assert '`next_speaker` 写 `"user"` 表示等待用户继续' in calls["agent_factory"]["skill_content"]
-    assert '写 `"end"` 表示本轮会话结束' in calls["agent_factory"]["skill_content"]
-    assert '`next_speaker` 写 `"user"`/`"用户"`' not in calls["agent_factory"]["skill_content"]
-    assert '写 `"end"`/`"结束研讨"`' not in calls["agent_factory"]["skill_content"]
     assert meta_item["scheduler_state"]["next_speaker"] == "agent-a"
 
 
@@ -343,7 +325,8 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
     assert out.get("next_prompt") is None
     assert out["decision_source"] == "host_scheduler_state"
     assert calls["agent_factory"]["tools"] == []
-    assert "不要调用 read_file/write_workspace_file" in calls["agent_factory"]["skill_content"]
+    assert "平台会根据调度结果生成固定主持话术" in calls["agent_factory"]["skill_content"]
+    assert "next_speaker 写 agent_id" in calls["initial_state"]["messages"][0].content
     assert not (tmp_path / "current_phase.txt").exists()
     assert not (tmp_path / "next_speaker.txt").exists()
     assert not (tmp_path / "speaker_task.txt").exists()

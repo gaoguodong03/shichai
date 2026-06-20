@@ -69,27 +69,27 @@ def bind_tools_compat(client: Any, tools: list[Any]) -> Any:
     return client.bind_tools(binding_tools, tool_choice="required")
 
 
-def get_llm_from_config(
+def resolve_llm_provider_entry(
     provider_id: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
-    api_secrets: Optional[Dict[str, str]] = None,
-) -> "QwenLLM":
-    """
-    根据 provider_id 从配置新建 LLM 客户端。
-    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
-    """
+) -> tuple[str, Dict[str, Any]]:
+    """Resolve provider id to its config row, falling back to qwen defaults."""
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
     provider_key = str(provider_id or "").strip()
     providers_by_lower = {str(k).strip().lower(): v for k, v in providers.items()}
-    cfg = (
-        providers.get(provider_key)
-        or providers_by_lower.get(provider_key.lower())
-        or providers.get("qwen")
-        or providers_by_lower.get("qwen")
-    )
+    resolved_id = provider_key
+    cfg = providers.get(provider_key) or providers_by_lower.get(provider_key.lower())
     if not cfg:
-        return QwenLLM()
+        resolved_id = "qwen"
+        cfg = providers.get("qwen") or providers_by_lower.get("qwen") or {}
+    return resolved_id, dict(cfg or {})
 
+
+def resolve_llm_api_key(
+    cfg: Dict[str, Any],
+    api_secrets: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
+    """Resolve API key without constructing an LLM client."""
     api_key = None
     ref = (cfg.get("api_key_ref") or "").strip()
     if ref and api_secrets and ref in api_secrets:
@@ -99,6 +99,64 @@ def get_llm_from_config(
     if not api_key:
         api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
         api_key = os.getenv(api_key_env)
+    return (str(api_key).strip() or None) if api_key else None
+
+
+def describe_llm_provider(provider_id: str, cfg: Dict[str, Any]) -> str:
+    """Human-readable model label for user-facing notices."""
+    model = str(cfg.get("model") or provider_id or "").strip() or str(provider_id or "").strip() or "unknown"
+    label = str(cfg.get("label") or "").strip()
+    if label and label != model:
+        return f"{label}（{model}）"
+    return model
+
+
+def build_llm_credential_notice(provider_id: str, cfg: Dict[str, Any]) -> str:
+    """User-facing notice when an LLM provider has no usable API key."""
+    model_desc = describe_llm_provider(provider_id, cfg)
+    return (
+        f"模型型号为 {model_desc}，此时没有配置密钥或密钥错误。"
+        "请前往「设置 → 密钥」添加密钥，并在「资源中心 → 配置模型」中为该模型选择密钥后重试。"
+    )
+
+
+def is_llm_credential_error_message(text: str) -> bool:
+    """Detect auth/key failures returned by upstream LLM gateways."""
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    needles = (
+        "缺少 api key",
+        "api key",
+        "api_key",
+        "invalid api key",
+        "incorrect api key",
+        "authentication",
+        "unauthorized",
+        "401",
+        "invalid token",
+        "无效的令牌",
+        "no api key",
+        "authenticationerror",
+        "permission denied",
+    )
+    return any(needle in normalized for needle in needles)
+
+
+def get_llm_from_config(
+    provider_id: str,
+    providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
+    api_secrets: Optional[Dict[str, str]] = None,
+) -> "QwenLLM":
+    """
+    根据 provider_id 从配置新建 LLM 客户端。
+    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
+    """
+    resolved_id, cfg = resolve_llm_provider_entry(provider_id, providers_config)
+    if not cfg:
+        return QwenLLM()
+
+    api_key = resolve_llm_api_key(cfg, api_secrets)
     base_url = cfg.get("base_url")
     model = cfg.get("model")
     return QwenLLM(

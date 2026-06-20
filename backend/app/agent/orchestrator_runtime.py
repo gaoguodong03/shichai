@@ -63,7 +63,7 @@ def normalize_scheduler_decision(
     if suggested:
         interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT
 
-    if next_speaker not in agent_ids and next_speaker not in ("user", "end"):
+    if next_speaker not in agent_ids and next_speaker not in ("user", "end", "invite"):
         next_speaker = "user"
         if interrupt_reason == InterruptReason.NONE:
             interrupt_reason = InterruptReason.CONFLICT_DETECTED
@@ -74,6 +74,10 @@ def normalize_scheduler_decision(
     if phase is None:
         if next_speaker == "end":
             phase = OrchestrationPhase.COMPLETED
+        elif next_speaker == "invite":
+            phase = OrchestrationPhase.RECRUITING
+            if interrupt_reason == InterruptReason.NONE:
+                interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT
         elif next_speaker == "user":
             phase = OrchestrationPhase.RECRUITING if suggested else OrchestrationPhase.AWAITING_USER
         else:

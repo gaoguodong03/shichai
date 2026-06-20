@@ -4,11 +4,21 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from app.core.scene_scheduler import RECRUIT_FIXED_MESSAGE
-
-_GENERIC_HOST_ANNOUNCEMENTS = frozenset(
-    {"", "请下一位发言。", "请下一位发言", "请下一位发言。 ", "请用户继续发言。", "请用户继续发言"}
+HOST_DELEGATE_PREFIX = "下面由"
+HOST_END_MESSAGE = "任务结束，请打开新对话。"
+HOST_USER_PAUSE_MESSAGE = "请继续补充你的需求。"
+HOST_ZERO_EXPERT_RECOMMENDATION = (
+    "我推荐以下专家加入讨论：\n\n"
+    "文字创作专家 (核心角色) — 负责与你确认文章方向、搭建大纲、撰写正文、后续的续写/改写/润色。\n"
+    "信息检索专家 (辅助角色) — 如果需要查找资料、核实数据、或者参考其他文章素材，他可以提供支持。\n"
+    "图片生成专家 (可选角色) — 如果文章需要配图，可以在文字完成后请他生成合适的图片并排版。"
 )
+
+
+def _is_task_end(*, next_speaker: str, current_phase: str | None = None) -> bool:
+    if str(next_speaker or "").strip().lower() == "end":
+        return True
+    return str(current_phase or "").strip().lower() == "end"
 
 
 def _scheduler_state_meta(
@@ -57,37 +67,15 @@ def _agent_display_name(agent_id: str, agent_map: Mapping[str, Mapping[str, Any]
     return agent_id
 
 
-def _append_suggested_order_if_needed(
-    content: str,
-    suggested_order: Any,
-    agent_map: Mapping[str, Mapping[str, Any]],
-) -> str:
-    if not isinstance(suggested_order, list) or not suggested_order:
-        return content
-    ordered_names: list[str] = []
-    for aid in suggested_order:
-        sid = str(aid or "").strip()
-        if not sid:
-            continue
-        ordered_names.append(_agent_display_name(sid, agent_map))
-    if not ordered_names:
-        return content
-    has_list_marker = ("1." in content) or ("- " in content)
-    if has_list_marker:
-        return content
-    lines = [f"{idx + 1}. {name}" for idx, name in enumerate(ordered_names[:5])]
-    return (content.rstrip() + "\n\n" + "建议顺序：\n" + "\n".join(lines)).strip()
-
-
 def _build_host_recruit_message(
     *,
     skill_id: str,
     suggested_add: Sequence[str],
     leader_agent_id: str = "",
-) -> dict[str, Any]:
-    msg = _host_message_base(content=RECRUIT_FIXED_MESSAGE, skill_id=skill_id, leader_agent_id=leader_agent_id)
-    msg["suggested_add_agent_ids"] = list(suggested_add or [])
-    return msg
+) -> dict[str, Any] | None:
+    # 主持人仅三种固定话术；场内补人不单独发气泡，由系统邀请状态提示用户。
+    _ = (skill_id, suggested_add, leader_agent_id)
+    return None
 
 
 def _build_host_next_speaker_message(
@@ -101,10 +89,19 @@ def _build_host_next_speaker_message(
     suggested_order: Any = None,
     leader_agent_id: str = "",
 ) -> dict[str, Any]:
+    if _is_task_end(next_speaker=next_speaker, current_phase=current_phase):
+        pause = _build_host_pause_message(
+            skill_id=skill_id,
+            next_speaker="end",
+            current_phase=current_phase or "end",
+            speaker_task=speaker_task,
+            leader_agent_id=leader_agent_id,
+        )
+        if pause is not None:
+            return pause
+    _ = announcement
     next_name = _agent_display_name(next_speaker, agent_map)
-    ann = (announcement or "").strip()
-    content = f"下面由 {next_name} 发言。" if not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS else ann
-    content = _append_suggested_order_if_needed(content, suggested_order, agent_map)
+    content = f"{HOST_DELEGATE_PREFIX} {next_name} 发言。"
     meta = _scheduler_state_meta(
         current_phase=current_phase,
         next_speaker=next_speaker,
@@ -127,22 +124,33 @@ def _build_host_pause_message(
     speaker_task: str | None = None,
     leader_agent_id: str = "",
 ) -> dict[str, Any] | None:
-    ann = (announcement or "").strip()
-    if (not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS) and next_speaker == "user":
-        reason_text = str(speaker_task or reason or "").strip()
-        ann = (
-            reason_text
-            if reason_text
-            else "已暂停自动推进，请补充更具体要求，或直接指定下一位专家继续。"
+    _ = announcement
+    if _is_task_end(next_speaker=next_speaker, current_phase=current_phase):
+        meta = _scheduler_state_meta(
+            current_phase=current_phase or "end",
+            next_speaker="end",
+            speaker_task=speaker_task,
         )
-    if not ann or ann in _GENERIC_HOST_ANNOUNCEMENTS:
-        return None
-    meta = _scheduler_state_meta(
-        current_phase=current_phase,
-        next_speaker=next_speaker,
-        speaker_task=speaker_task,
-    )
-    return _host_message_base(content=ann, skill_id=skill_id, leader_agent_id=leader_agent_id, meta=meta)
+        return _host_message_base(
+            content=HOST_END_MESSAGE,
+            skill_id=skill_id,
+            leader_agent_id=leader_agent_id,
+            meta=meta,
+        )
+    if str(next_speaker or "").strip().lower() == "user":
+        content = str(speaker_task or reason or "").strip() or HOST_USER_PAUSE_MESSAGE
+        meta = _scheduler_state_meta(
+            current_phase=current_phase,
+            next_speaker="user",
+            speaker_task=speaker_task,
+        )
+        return _host_message_base(
+            content=content,
+            skill_id=skill_id,
+            leader_agent_id=leader_agent_id,
+            meta=meta,
+        )
+    return None
 
 
 def _build_host_recommendation_message(
@@ -151,19 +159,16 @@ def _build_host_recommendation_message(
     content: str,
     picked: Sequence[str],
 ) -> dict[str, Any]:
-    msg = _host_message_base(content=content, skill_id=skill_id)
+    _ = content
+    msg = _host_message_base(content=HOST_ZERO_EXPERT_RECOMMENDATION, skill_id=skill_id)
     if picked:
         msg["suggested_add_agent_ids"] = list(picked)
     return msg
 
 
-def _build_host_fallback_message(*, skill_id: str, leader_agent_id: str = "") -> dict[str, Any]:
-    return _host_message_base(
-        content="主持人暂未选出下一位专家，已暂停自动推进。请补充更具体要求，或直接指定下一位专家继续。",
-        skill_id=skill_id,
-        leader_agent_id=leader_agent_id,
-        meta={"reason": "next_speaker_missing"},
-    )
+def _build_host_fallback_message(*, skill_id: str, leader_agent_id: str = "") -> dict[str, Any] | None:
+    _ = (skill_id, leader_agent_id)
+    return None
 
 
 def _build_host_notice_message(

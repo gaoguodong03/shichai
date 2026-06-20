@@ -13,10 +13,12 @@ LLM_MANIFEST_NAME = "llm_bundle.json"
 
 
 def sanitize_llm_provider_for_bundle(provider: Dict[str, Any]) -> Dict[str, Any]:
-    """Return an export-safe LLM provider row without plaintext API keys."""
+    """Return an export-safe LLM provider row without secrets or key binding metadata."""
     copied = json.loads(json.dumps(provider, ensure_ascii=False))
     if isinstance(copied, dict):
         copied.pop("api_key", None)
+        copied.pop("api_key_env", None)
+        copied.pop("api_key_ref", None)
     return copied if isinstance(copied, dict) else {}
 
 
