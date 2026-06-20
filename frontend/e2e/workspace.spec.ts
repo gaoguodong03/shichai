@@ -256,6 +256,72 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(row.getByText('Skill 调度状态')).toBeVisible()
   })
 
+  test('专家运行时先显示占位气泡并随状态更新', async ({ page }) => {
+    const state = createE2eState()
+    state.sessions[0].agent_ids = ['agent-qa', 'agent-writer']
+    await loginByStorage(page)
+    await mockApi(page, state)
+
+    const streamReachedFileWrite = new Promise<void>((resolve) => {
+      page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+          body: [
+            `event: route\ndata: ${JSON.stringify({ agent_id: 'agent-writer', skill_id: 'skill-write' })}\n\n`,
+            `event: content\ndata: ${JSON.stringify({ agent_id: 'agent-writer', text: '', meta: { phase: 'file_writing' } })}\n\n`,
+          ].join(''),
+        })
+        resolve()
+      })
+    })
+    let releaseFallback: (() => void) | null = null
+    const fallbackStarted = new Promise<void>((resolve) => {
+      page.route('**/api/sessions/session-existing/chat', async (route) => {
+        if (route.request().method() !== 'POST') return route.fallback()
+        resolve()
+        await new Promise<void>((release) => {
+          releaseFallback = release
+        })
+        await route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'ok',
+            data: {
+              messages: [
+                {
+                  message_id: 'assistant-writer-final',
+                  role: 'assistant',
+                  agent_id: 'agent-writer',
+                  skill_id: 'skill-write',
+                  content: '文章草稿已经写入工作区。',
+                },
+              ],
+              end: { waiting_for_user: true, interrupted: false },
+            },
+          }),
+        })
+      })
+    })
+
+    await page.goto('/')
+    await expectMainShell(page)
+    await page.getByRole('heading', { name: '已有验收会话' }).click()
+    await page.getByPlaceholder('输入 @ 可提及主持人或专家').fill('请写一篇文章')
+    await page.getByRole('button', { name: '发送' }).click()
+
+    await streamReachedFileWrite
+    await fallbackStarted
+    const placeholder = page.locator('.group-chat-msg-row-other').filter({ hasText: '写作专家' }).last()
+    await expect(placeholder.getByText('写入文件中...')).toBeVisible()
+
+    releaseFallback?.()
+
+    await expect(page.getByText('文章草稿已经写入工作区。')).toBeVisible()
+    await expect(page.getByText('写入文件中...')).toHaveCount(0)
+  })
+
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {
     await bootLoggedInApp(page)
 

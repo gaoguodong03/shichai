@@ -43,6 +43,7 @@
                             isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
                             msg.role === 'user' && 'group-chat-bubble-user',
                             msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
+                            (msg as GroupMessage)._streamingStatus && 'group-chat-bubble-agent-running',
                           ]"
                         >
                         <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
@@ -148,7 +149,16 @@
                             <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
                           </template>
                           <template v-else-if="msg.role !== 'user'">
-                            <div class="group-chat-markdown" v-html="renderMarkdown(agentBodyContent(msg.content || ''))"></div>
+                            <div
+                              v-if="(msg as GroupMessage)._streamingStatus"
+                              class="group-chat-running-status"
+                              role="status"
+                              aria-live="polite"
+                            >
+                              <span class="group-chat-running-status-dot" aria-hidden="true" />
+                              <span>{{ agentBodyContent(msg.content || '') }}</span>
+                            </div>
+                            <div v-else class="group-chat-markdown" v-html="renderMarkdown(agentBodyContent(msg.content || ''))"></div>
                           </template>
                           <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
                           <template v-else>

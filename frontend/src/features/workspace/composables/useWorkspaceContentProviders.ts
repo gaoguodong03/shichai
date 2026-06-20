@@ -382,6 +382,7 @@ export function useWorkspaceContentProviders(args: {
   })
   const {
     appendStreamingContent,
+    showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
     handleStreamMessageEvent,
     handleStreamEndEvent,
@@ -405,6 +406,7 @@ export function useWorkspaceContentProviders(args: {
     abortGroupStream,
     patchGroupStreamState,
     updateAutoSwitchHint,
+    showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
     appendStreamingContent,
     handleStreamMessageEvent,

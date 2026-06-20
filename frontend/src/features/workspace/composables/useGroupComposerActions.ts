@@ -18,6 +18,7 @@ type LastSentDraft = {
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
 type StreamContent = { text?: string; agent_id?: string; meta?: { phase?: string } }
+type StreamRoute = { agent_id?: string; skill_id?: string }
 
 export function useGroupComposerActions(args: {
   selectedGroupSessionId: () => string | null
@@ -38,6 +39,7 @@ export function useGroupComposerActions(args: {
   abortGroupStream: (sessionId: string) => void
   patchGroupStreamState: (sessionId: string, patch: Record<string, unknown>) => void
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
+  showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
   appendStreamingContent: (agentId: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
@@ -61,6 +63,7 @@ export function useGroupComposerActions(args: {
       ]
     },
     updateAutoSwitchHint: args.updateAutoSwitchHint,
+    showStreamingRoutePlaceholder: args.showStreamingRoutePlaceholder,
     consumeStreamingStatusContent: args.consumeStreamingStatusContent,
     appendStreamingContent: args.appendStreamingContent,
     handleStreamMessageEvent: args.handleStreamMessageEvent,
