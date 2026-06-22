@@ -84,7 +84,6 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
 
-    await page.getByRole('heading', { name: '已有验收会话' }).click()
     await page.locator('.group-chat-header-right').getByRole('button', { name: '文件' }).click()
     await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'brief.md' })).toBeVisible()
 
@@ -100,6 +99,19 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
     await refreshButton.click()
     await expect(page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'refreshed.md' })).toBeVisible()
+
+    await page.locator('.group-chat-workspace-item-btn-main').filter({ hasText: 'docs' }).click()
+    const toolbar = page.locator('.group-chat-workspace-toolbar')
+    await expect(toolbar.locator('.group-chat-workspace-path-actions').getByRole('button', { name: '上一级' })).toBeVisible()
+    const rootButton = toolbar.locator('.group-chat-workspace-path-actions').getByRole('button', { name: '根目录' })
+    const nestedRefreshButton = toolbar.locator('.group-chat-workspace-file-actions').getByRole('button', { name: '刷新工作区' })
+    await expect(rootButton).toBeVisible()
+    await expect(nestedRefreshButton).toBeVisible()
+    const rootBox = await rootButton.boundingBox()
+    const refreshBox = await nestedRefreshButton.boundingBox()
+    expect(rootBox).not.toBeNull()
+    expect(refreshBox).not.toBeNull()
+    expect(refreshBox!.x).toBeGreaterThan(rootBox!.x)
   })
 
   test('工作区文件名截断时 hover 显示完整文件名', async ({ page }) => {

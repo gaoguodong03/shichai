@@ -127,6 +127,26 @@ from app.agent.group_chat_title_meta import (
 logger = logging.getLogger(__name__)
 
 
+def _log_expert_prompt(
+    *,
+    session_id: str,
+    run_id: str,
+    agent_id: str,
+    skill_id: str,
+    user_content: str,
+) -> None:
+    prompt = str(user_content or "")
+    logger.info(
+        "group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_id=%s skill_id=%s prompt_len=%s\n%s",
+        session_id,
+        run_id,
+        agent_id,
+        skill_id,
+        len(prompt),
+        prompt,
+    )
+
+
 class GroupChatRequest(BaseModel):
     message: Optional[str] = None
     client_message_id: Optional[str] = None
@@ -951,6 +971,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 ):
                     uc = uc + "\n\n【历史对话（供参考）】\n" + context
                 user_content = uc
+                _log_expert_prompt(
+                    session_id=group_session_id,
+                    run_id=run_id,
+                    agent_id=next_speaker,
+                    skill_id=resolved_skill_id,
+                    user_content=user_content,
+                )
                 initial_state = {
                     "messages": [HumanMessage(content=user_content)],
                     "tools": tools,

@@ -2066,6 +2066,20 @@
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.group-chat-workspace-path-actions,
+.group-chat-workspace-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.group-chat-workspace-path-actions {
+  flex: 0 1 auto;
+}
+.group-chat-workspace-file-actions {
+  flex: 0 0 auto;
 }
 .group-chat-workspace-toolbar-sm {
   font-size: 0.6875rem;

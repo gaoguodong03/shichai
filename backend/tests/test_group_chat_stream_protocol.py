@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import logging
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.group_chat_streaming import iter_with_keepalive
@@ -101,6 +102,30 @@ async def test_group_session_event_publisher_notifies_subscriber():
     assert event["type"] == "messages_updated"
     assert event["session_id"] == "session-push"
     assert event["message_count"] == 3
+
+
+def test_expert_prompt_log_includes_full_prompt(caplog):
+    from app.agent import group_chat_runtime
+
+    prompt = "【群聊讨论目标】\n写周报\n\n【本轮用户输入】\n请总结风险"
+
+    with caplog.at_level(logging.INFO, logger="app.agent.group_chat_runtime"):
+        group_chat_runtime._log_expert_prompt(
+            session_id="group-test",
+            run_id="run-test",
+            agent_id="agent-writer",
+            skill_id="weekly-report",
+            user_content=prompt,
+        )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "group_chat_expert_prompt code=expert_prompt" in messages
+    assert "session=group-test" in messages
+    assert "run_id=run-test" in messages
+    assert "agent_id=agent-writer" in messages
+    assert "skill_id=weekly-report" in messages
+    assert "prompt_len=" in messages
+    assert prompt in messages
 
 
 @pytest.mark.asyncio
