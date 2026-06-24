@@ -45,7 +45,12 @@ export function useMainModuleLifecycle(args: {
   } = args
 
   const resourceLoaders: Record<ResourceSubModule, () => MaybeAsync> = {
-    scenario: fetchScenarioPresets,
+    scenario: () => Promise.all([
+      fetchScenarioPresets(),
+      fetchAgents(),
+      fetchSkills(),
+      fetchLLM(),
+    ]).then(() => undefined),
     skill: fetchSkills,
     mcp: fetchMCP,
     agent: fetchAgents,
@@ -104,10 +109,6 @@ export function useMainModuleLifecycle(args: {
 
   watch(resourceSubModule, (sub) => {
     resetResourceSearchesForSectionChange()
-    if (sub === 'scenario') {
-      fetchScenarioPresets()
-      return
-    }
     selectedId.value = null
     loadResourceSection(sub)
   })

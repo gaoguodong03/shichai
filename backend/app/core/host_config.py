@@ -15,15 +15,10 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         raw = {}
     skill_ids = [str(x).strip() for x in (raw.get("skill_ids") or []) if str(x).strip()]
-    ref_names = {
-        row["id"]: str(row.get("name") or "").strip()
-        for row in normalize_reference_rows(raw.get("skill_refs"))
-        if row.get("id")
-    }
     skill_ids = [
         sid
         for sid in skill_ids
-        if sid != LEGACY_DEFAULT_HOST_SKILL_ID or bool(ref_names.get(sid))
+        if sid != LEGACY_DEFAULT_HOST_SKILL_ID
     ]
     sp = raw.get("system_prompt")
     system_prompt = str(sp).strip() if sp is not None else ""

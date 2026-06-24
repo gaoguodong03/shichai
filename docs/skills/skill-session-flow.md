@@ -51,7 +51,7 @@
 [[/SKILL_SESSION_STATE]]
 ```
 
-仍需用户补充或当前专家继续处理：
+仍需用户补充且下一轮必须回到同一专家继续处理：
 
 ```text
 [[SKILL_SESSION_STATE]]
@@ -71,6 +71,8 @@
 ```
 
 隐藏状态块只表达当前 Skill 会话是否释放，不负责指定下一位专家。场景调度仍由主持人根据阶段、最近正文和会话状态决定。
+
+如果专家只是把确认问题交给用户，且用户回复后应由主持人重新判断下一阶段或重新选择专家，隐藏状态块应使用 `skill_session=release`。只有下一轮必须回到同一专家和同一 Skill 才使用 `skill_session=keep`。
 
 ## 3. 字段规范
 
@@ -172,6 +174,23 @@
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "keep"
+  }
+}
+```
+
+### 等待用户且交回主持人
+
+```json
+{
+  "execution_status": "blocked",
+  "result_code": "input.confirmation_required",
+  "message": "等待用户确认下一步。",
+  "artifacts": {
+    "required_fields": ["用户确认"]
+  },
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
   }
 }
 ```

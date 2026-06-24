@@ -405,6 +405,43 @@ def test_scene_bundle_dry_run_reports_missing_expert(monkeypatch, tmp_path: Path
     assert missing["tools"] == []
 
 
+def test_scene_bundle_dry_run_ignores_legacy_group_host_stale_ref(monkeypatch, tmp_path: Path):
+    from app.api import settings_presets as api
+    from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_username("u1")
+    ctx = get_current_user_context(default_fallback=False)
+    assert ctx is not None
+
+    raw = build_scenario_bundle_zip_bytes(
+        {
+            "id": "scene-1",
+            "name": "Scene 1",
+            "agent_ids": ["expert-1"],
+            "host_config": {
+                "skill_ids": ["group-host"],
+                "skill_refs": [{"id": "group-host", "name": "网文协同写作主持人"}],
+            },
+        },
+        [{"agent_id": "expert-1", "name": "Expert 1", "skill_ids": [], "mcp_server_ids": []}],
+        [],
+        tmp_path / "source_skills",
+        [],
+    )
+    try:
+        result = __import__("asyncio").run(api._import_scene_from_bundle_bytes(raw, dry_run=True))
+    finally:
+        reset_current_username(token)
+
+    missing = result["preview"]["missing_references"]
+    assert result["preview"]["skills"] == []
+    assert missing["experts"] == []
+    assert missing["skills"] == []
+    assert missing["tools"] == []
+
+
 def test_expert_bundle_dry_run_reports_missing_skill(monkeypatch, tmp_path: Path):
     from app.api import settings_skills as api
     from app.core.expert_bundle import build_expert_bundle_zip_bytes

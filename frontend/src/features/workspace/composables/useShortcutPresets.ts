@@ -63,20 +63,13 @@ export function useShortcutPresets(args: {
     if (!hc) return undefined
     const skillLookup = Object.fromEntries((args.skills() || []).map((s) => [s.id, s.name || s.id]))
     const refs = Array.isArray(hc.skill_refs) ? hc.skill_refs : []
-    const refName = (id: string) => {
-      const fromCurrent = String(skillLookup[id] || '').trim()
-      if (fromCurrent) return fromCurrent
-      const hit = refs.find((row) => String(row?.id || '').trim() === id)
-      return String(hit?.name || '').trim()
-    }
     const skillIds: string[] = []
     const seen = new Set<string>()
     for (const item of Array.isArray(hc.skill_ids) ? hc.skill_ids : []) {
       const id = String(item || '').trim()
       if (!id || seen.has(id)) continue
       const exists = Boolean(skillLookup[id])
-      const name = refName(id)
-      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists && (!name || name === id)) {
+      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists) {
         continue
       }
       skillIds.push(id)

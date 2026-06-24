@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import yaml
 
+from app.core.host_config import normalize_host_config_dict
 from app.core.scenario_bundle import list_skill_ids_in_bundle_skills_dir
 
 
@@ -384,7 +385,7 @@ def find_missing_references_for_scene_bundle(
         if aid not in bundle_expert_by_id and aid not in existing_expert_ids:
             _add_missing_reference(missing, "experts", aid, required_by=scene_label, source="scene")
 
-    host_config = preset.get("host_config") if isinstance(preset.get("host_config"), dict) else {}
+    host_config = normalize_host_config_dict(preset.get("host_config"))
     skill_refs: Dict[str, List[str]] = {}
     for sid in _dedupe_nonempty(host_config.get("skill_ids") or []):
         skill_refs.setdefault(sid, []).append(host_label)
