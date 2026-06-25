@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
+from urllib.parse import unquote_plus, urlsplit
 
 from app.core.host_config import normalize_host_config_dict
 
@@ -33,6 +34,30 @@ _SENSITIVE_CONFIG_TOKENS = {
     "token",
 }
 _VAULT_REF_RE = re.compile(r"\$\{vault:[^}]+\}")
+_ENV_REF_RE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_SANITIZABLE_URL_SCHEMES = {"http", "https", "ws", "wss"}
+_PLACEHOLDER_VALUE_TOKENS = {
+    "api_key",
+    "apikey",
+    "your_api_key",
+    "your_apikey",
+    "token",
+    "your_token",
+    "access_token",
+    "your_access_token",
+    "secret",
+    "your_secret",
+    "password",
+    "your_password",
+    "your_username",
+    "your_client_id",
+    "your_client_secret",
+    "your_actual_api_key_here",
+    "placeholder",
+    "replace_me",
+    "changeme",
+    "todo",
+}
 
 
 def _zip_parts_safe(parts: List[str]) -> bool:
@@ -58,16 +83,117 @@ def _contains_vault_ref(value: Any) -> bool:
     return isinstance(value, str) and bool(_VAULT_REF_RE.search(value))
 
 
+def _contains_config_ref(value: Any) -> bool:
+    return isinstance(value, str) and bool(_VAULT_REF_RE.search(value) or _ENV_REF_RE.search(value))
+
+
 def _sanitize_secret_mapping(raw: Any) -> Any:
     if not isinstance(raw, dict):
         return raw
     out: Dict[str, Any] = {}
     for key, value in raw.items():
-        if _is_sensitive_config_key(key) and not _contains_vault_ref(value):
+        if _is_sensitive_config_key(key) and not _contains_config_ref(value):
             out[str(key)] = ""
         else:
             out[str(key)] = value
     return out
+
+
+def _is_auth_control_key(raw_key: Any) -> bool:
+    return re.sub(r"[^a-z0-9]+", "", str(raw_key or "").strip().casefold()) in {
+        "auth",
+        "authtype",
+        "authmode",
+        "authorizationurl",
+        "authurl",
+    }
+
+
+def _looks_like_header_secret(value: Any) -> bool:
+    return isinstance(value, str) and bool(re.match(r"^\s*(Bearer|Basic|Digest|Token)\s+\S+", value, re.I))
+
+
+def _is_placeholder_config_value(value: Any, key: Any = "") -> bool:
+    if not isinstance(value, str) or _contains_config_ref(value):
+        return False
+    trimmed = value.strip()
+    if not trimmed:
+        return False
+    if re.match(r"^<[^>]+>$", trimmed) or re.match(r"^\{\{[^}]+\}\}$", trimmed):
+        return True
+    normalized = re.sub(r"[^a-z0-9]+", "_", trimmed.casefold()).strip("_")
+    compact_key = re.sub(r"[^a-z0-9]+", "", str(key or "").casefold())
+    return normalized in _PLACEHOLDER_VALUE_TOKENS or (
+        normalized.startswith("your_") and bool(re.search(r"key|token|secret|password|username|client", compact_key + normalized))
+    )
+
+
+def _should_clear_sensitive_value(key: Any, value: Any) -> bool:
+    if not isinstance(value, str) or not value or _contains_config_ref(value):
+        return False
+    normalized_key = re.sub(r"[^a-z0-9]+", "", str(key or "").casefold())
+    if _is_sensitive_config_key(key):
+        return True
+    if "authorization" in normalized_key and _looks_like_header_secret(value):
+        return True
+    if _is_auth_control_key(key):
+        return False
+    if str(key) in {"command", "args"}:
+        return False
+    return _is_placeholder_config_value(value, key)
+
+
+def _sanitize_url_query(value: str) -> str:
+    if "?" not in value:
+        return value
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return value
+    if parsed.scheme not in _SANITIZABLE_URL_SCHEMES:
+        return value
+
+    query_start = value.find("?")
+    fragment_start = value.find("#")
+    if fragment_start != -1 and fragment_start < query_start:
+        return value
+    query_end = len(value) if fragment_start == -1 else fragment_start
+    prefix = value[: query_start + 1]
+    raw_query = value[query_start + 1 : query_end]
+    suffix = value[query_end:]
+    changed = False
+    parts: List[str] = []
+    for part in raw_query.split("&"):
+        raw_key, sep, raw_param_value = part.partition("=")
+        key = unquote_plus(raw_key)
+        param_value = unquote_plus(raw_param_value)
+        if _contains_config_ref(raw_param_value) or _contains_config_ref(param_value):
+            parts.append(part)
+            continue
+        if _is_sensitive_config_key(key) or _is_placeholder_config_value(param_value, key):
+            changed = True
+            parts.append(f"{raw_key}=")
+        else:
+            parts.append(part if sep else raw_key)
+    return f"{prefix}{'&'.join(parts)}{suffix}" if changed else value
+
+
+def _sanitize_mcp_config_recursive(value: Any, key_name: str = "") -> Any:
+    if isinstance(value, str):
+        if _should_clear_sensitive_value(key_name, value):
+            return ""
+        return _sanitize_url_query(value)
+    if isinstance(value, list):
+        out: List[Any] = []
+        for item in value:
+            if key_name == "args" and isinstance(item, str):
+                out.append(_sanitize_url_query(item))
+            else:
+                out.append(_sanitize_mcp_config_recursive(item, key_name))
+        return out
+    if isinstance(value, dict):
+        return {str(k): _sanitize_mcp_config_recursive(v, str(k)) for k, v in value.items()}
+    return value
 
 
 def sanitize_mcp_server_for_bundle(server: Dict[str, Any]) -> Dict[str, Any]:
@@ -75,10 +201,13 @@ def sanitize_mcp_server_for_bundle(server: Dict[str, Any]) -> Dict[str, Any]:
     copied = json.loads(json.dumps(server, ensure_ascii=False))
     transport = copied.get("transport")
     if isinstance(transport, dict):
-        if "env" in transport:
-            transport["env"] = _sanitize_secret_mapping(transport.get("env"))
-        if "headers" in transport:
-            transport["headers"] = _sanitize_secret_mapping(transport.get("headers"))
+        copied["transport"] = _sanitize_mcp_config_recursive(transport)
+        transport = copied.get("transport")
+        if isinstance(transport, dict):
+            if "env" in transport:
+                transport["env"] = _sanitize_secret_mapping(transport.get("env"))
+            if "headers" in transport:
+                transport["headers"] = _sanitize_secret_mapping(transport.get("headers"))
     return copied
 
 
