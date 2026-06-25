@@ -12,14 +12,22 @@ from app.core.security import get_current_user
 class WriteWorkspaceFileInput(BaseModel):
     """write_workspace_file 的入参。一次调用必须同时传 path 和 content。"""
 
-    path: str = Field(description="工作区内相对路径，例如 notes/report.md 或 workspace-write-test.txt")
+    path: str = Field(
+        description=(
+            "工作区内相对路径。项目生成的新文件名统一使用 文件名-YYYYMMDDHHMMSS00.扩展名，"
+            "例如 notes/report-2026062519304500.md；只有用户明确指定已有路径或固定文件名时才按用户原文使用。"
+        )
+    )
     content: str = Field(
         default="",
         description="要保存的完整文本内容；若为空则工具会报错并提示重新传入。与 path 在同一次调用中一起传入。",
     )
     overwrite: bool = Field(
         default=False,
-        description="是否允许覆盖同名文件。默认 false；需要修改已有文件时优先使用 edit_workspace_file 或新建带时间戳的新文件。",
+        description=(
+            "是否允许覆盖同名文件。默认 false；需要修改已有文件时优先使用 edit_workspace_file，"
+            "或新建符合 文件名-YYYYMMDDHHMMSS00.扩展名 的新文件。"
+        ),
     )
 
 
@@ -70,7 +78,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         allow_overwrite = _normalize_bool(overwrite) or _normalize_bool(kwargs.get("overwrite"))
         path_value = path_value.strip()
         if not path_value:
-            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report.md）。"
+            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report-2026062519304500.md）。"
         if not content_value:
             return (
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
@@ -85,7 +93,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         if target.exists() and not allow_overwrite:
             return (
                 f"错误：文件已存在：{normalized}。为避免覆盖已有正文或工作区产物，"
-                "write_workspace_file 默认不覆盖同名文件。请改用新的带时间戳文件名，"
+                "write_workspace_file 默认不覆盖同名文件。请改用符合 文件名-YYYYMMDDHHMMSS00.扩展名 的新文件名，"
                 "或在确需覆盖时显式传入 overwrite=true。"
             )
         svc = get_shared_sandbox_service()
@@ -106,7 +114,8 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         name="write_workspace_file",
         description=(
             "将文本内容写入当前 Chat 对应的工作区（workspace）中的文件（经 OpenSandbox /workspace）。\n"
-            "- path: 工作区内相对路径，例如 'notes/report.md'。\n"
+            "- path: 工作区内相对路径。项目生成的新文件名统一使用 文件名-YYYYMMDDHHMMSS00.扩展名，"
+            "例如 'notes/report-2026062519304500.md'；用户明确指定已有路径或固定文件名时按用户原文使用。\n"
             "- content: 要保存的完整文本内容。"
         ),
         coroutine=_write_to_workspace_file,

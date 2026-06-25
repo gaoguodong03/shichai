@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "vue-tsc && vite build",
     "test:copy": "node scripts/check-group-composer-copy.mjs",
+    "test:message-time": "node --disable-warning=ExperimentalWarning scripts/check-message-time-format.mjs",
     "test:mcp-config": "node scripts/check-mcp-config-contract.mjs",
     "test:e2e": "playwright test",
     "test:e2e:full": "playwright test",

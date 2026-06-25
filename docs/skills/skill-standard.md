@@ -135,7 +135,7 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 - 只写“需要用户确认”，但不写隐藏状态块和等待后的会话归属。
 - 只说“保存文件”，但没有明确 `write_workspace_file(...)` 或 `edit_workspace_file(...)` 的工具调用合同。
 - 默认把过程草稿、头脑风暴、读者测试、临时摘要写成文件。
-- 覆盖用户源文件；修改已有文件时应新建带时间戳的新文件。
+- 覆盖用户源文件；修改已有文件时应新建符合 `文件名-YYYYMMDDHHMMSS00.扩展名` 的新文件。
 - 在专家 Skill 中自行指定下一位专家或输出主持人 JSON。
 
 ### 4.2 工作区文件写入规范
@@ -145,15 +145,16 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 在 Skill 正文中建议直接写成一行工具调用合同，避免模型只用自然语言说“已保存”：
 
 ```text
-调用 write_workspace_file：path="materials/001-<简短标题>.md"，content="<完整 Markdown 内容>"
+调用 write_workspace_file：path="materials/<简短标题>-<时间戳>.md"，content="<完整 Markdown 内容>"
 ```
 
 约束：
 
 - `path` 必须是当前会话工作区相对路径，不写 `backend/data/`、`workspaces/<会话ID>/` 或宿主机绝对路径。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-YYYYMMDDHHMMSS00.扩展名`，例如 `materials/技术管理手感-2026062519304500.md`。
 - `content` 必须是要保存的完整正文；不能只写摘要、占位符或“见上文”。
 - 只有 `write_workspace_file` 或 `edit_workspace_file` 返回成功后，专家才能在最终答复中说文件已保存。
-- 修改已有文件时，不覆盖源文件；读取源文件后应新建带时间戳的新文件，并在新文件开头记录 `source_path`。
+- 修改已有文件时，不覆盖源文件；读取源文件后应新建符合 `文件名-YYYYMMDDHHMMSS00.扩展名` 的新文件，并在新文件开头记录 `source_path`。
 - 网页采集、资料检索、素材整理类任务如果得到多条独立素材，应每条素材单独调用一次 `write_workspace_file`，不要把所有素材合并进一个文件。
 - 最终答复只汇总文件清单、来源和简短说明，不把全部素材正文重复堆在聊天气泡里。
 

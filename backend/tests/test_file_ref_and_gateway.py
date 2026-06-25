@@ -150,6 +150,8 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
     assert "上一位专家的可见发言在最近讨论中" in instructions
     assert "不限于用户显式要求保存或读取" in instructions
     assert "只有在工具返回写入成功后，才能对用户说文件已保存至工作区" in instructions
+    assert "YYYYMMDDHHMMSS00" in instructions
+    assert "文件名-YYYYMMDDHHMMSS00.扩展名" in instructions
     assert "网页采集、资料检索、素材整理" in instructions
     assert "每一条独立素材" in instructions
     assert "分开调用 `write_workspace_file`" in instructions

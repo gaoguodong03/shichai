@@ -51,7 +51,7 @@ def _log_llm_roundtrip(
         return t if len(t) <= max_chars else (t[:max_chars] + f"\n... [truncated {len(t) - max_chars} chars]")
 
     logger.info(
-        "[LLM_ROUNDTRIP][%s] system_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] user_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] model_output:\n%s",
+        "[Prompt][LLM_ROUNDTRIP][%s] system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][%s] user_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] model_output:\n%s",
         tag,
         _clip(system_content),
         tag,

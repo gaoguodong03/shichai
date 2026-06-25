@@ -816,6 +816,21 @@
   color: var(--color-text-muted);
   opacity: 0.85;
 }
+.group-chat-message-full-time {
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  opacity: 0.9;
+  white-space: nowrap;
+}
+.group-chat-message-full-time-inline {
+  margin-top: 0;
+  margin-left: 0.35rem;
+}
+.group-chat-msg-row-user .group-chat-message-full-time {
+  text-align: right;
+}
 .group-chat-bubble-body {
   margin: 0;
   text-align: left;

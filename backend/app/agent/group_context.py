@@ -93,6 +93,12 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
         max_chars=700,
         max_chars_per_message=240,
     )
+    if context.strip():
+        context = (
+            "以下最近讨论仅供承接上下文；本轮用户输入优先。"
+            "不要复述、检查或确认上一轮内容，除非用户明确要求回顾或确认。\n\n"
+            + context
+        )
     if skipped:
         logger.debug("group_expert_context_noise_filtered skipped=%s kept=%s", skipped, len(filtered))
     return context

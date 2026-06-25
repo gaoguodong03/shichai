@@ -194,27 +194,11 @@ def _merge_session_presets_with_resource_rows(rows: List[Dict[str, Any]]) -> Lis
 
 
 @router.get("/settings/session-presets")
-async def get_session_presets(request: Request = None):
+async def get_session_presets():
     """读取会话快捷预设（用于前端快捷按钮）。"""
     path = _get_session_presets_path()
     presets = _load_session_preset_rows_from_file(path)
-    before_ids = _preset_ids(presets)
-    resource_ids = _scenario_resource_ids()
     presets = _merge_session_presets_with_resource_rows(presets)
-    after_ids = _preset_ids(presets)
-    meta = _request_log_meta(request)
-    user_ctx = get_current_user_context(default_fallback=False)
-    logger.info(
-        "scenario_presets_get user=%s username=%s client=%s aggregate_ids=%s resource_ids=%s returned_ids=%s recovered=%s referer=%s",
-        user_ctx.user_id if user_ctx else "",
-        user_ctx.username if user_ctx else get_current_username() or "",
-        meta["client"],
-        before_ids,
-        resource_ids,
-        after_ids,
-        [rid for rid in after_ids if rid not in before_ids],
-        meta["referer"],
-    )
     return {"status": "ok", "data": {"presets": presets}}
 
 

@@ -228,6 +228,20 @@
                               <path d="M7 3v5h8" />
                             </svg>
                           </button>
+                          <span
+                            v-if="(msg as MsgExt).timestamp"
+                            class="group-chat-message-full-time group-chat-message-full-time-inline"
+                            :title="`发出时间：${formatGroupMsgFullTime((msg as MsgExt).timestamp)}`"
+                          >
+                            {{ formatGroupMsgFullTime((msg as MsgExt).timestamp) }}
+                          </span>
+                        </div>
+                        <div
+                          v-if="msg.role === 'user' && (msg as MsgExt).timestamp"
+                          class="group-chat-message-full-time"
+                          :title="`发出时间：${formatGroupMsgFullTime((msg as MsgExt).timestamp)}`"
+                        >
+                          {{ formatGroupMsgFullTime((msg as MsgExt).timestamp) }}
                         </div>
                       </div>
                     </div>
@@ -263,6 +277,7 @@ const {
   getSchedulerStateRaw,
   formatSchedulerStatePopover,
   formatGroupMsgTime,
+  formatGroupMsgFullTime,
   renderMarkdown,
   agentBodyContent,
   isShortSingleLine,

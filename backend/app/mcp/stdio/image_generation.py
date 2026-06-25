@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -119,7 +119,7 @@ def _save_data_url(result: str, *, workspace_id: str, output_subdir: str) -> dic
         download_prefix = ""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now().strftime("%Y%m%d%H%M%S") + "00"
     filename = f"image-{ts}-{uuid4().hex[:8]}.{ext}"
     output_path = output_dir / filename
     output_path.write_bytes(image_bytes)

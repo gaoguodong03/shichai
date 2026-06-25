@@ -26,6 +26,62 @@ def _llm_test_keys(monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "test-moonshot-key")
 
 
+def test_traced_llm_client_logs_prompt_for_all_call_modes(caplog):
+    import asyncio
+    import logging
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from app.agent.llm_client import _instrument_llm_client
+
+    class RawClient:
+        async def ainvoke(self, inp, *args, **kwargs):
+            return "async-ok"
+
+        def invoke(self, inp, *args, **kwargs):
+            return "sync-ok"
+
+        async def astream(self, inp, *args, **kwargs):
+            yield "stream-ok"
+
+        def stream(self, inp, *args, **kwargs):
+            yield "sync-stream-ok"
+
+    async def collect_stream(stream):
+        return [item async for item in stream]
+
+    client = _instrument_llm_client(
+        RawClient(),
+        provider_base_url="https://example.test/v1",
+        model_name="test-model",
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.agent.llm_client"):
+        assert asyncio.run(
+            client.ainvoke(
+                [
+                    SystemMessage(content="系统提示词全文"),
+                    HumanMessage(content="用户提示词全文"),
+                ]
+            )
+        ) == "async-ok"
+        assert client.invoke("直接字符串提示词全文") == "sync-ok"
+        assert asyncio.run(collect_stream(client.astream([HumanMessage(content="流式提示词全文")]))) == ["stream-ok"]
+        assert list(client.stream([HumanMessage(content="同步流式提示词全文")])) == ["sync-stream-ok"]
+
+    assert caplog.text.count("[Prompt]") == 4
+    assert "method=ainvoke" in caplog.text
+    assert "method=invoke" in caplog.text
+    assert "method=astream" in caplog.text
+    assert "method=stream" in caplog.text
+    assert "model=test-model" in caplog.text
+    assert "系统提示词全文" in caplog.text
+    assert "用户提示词全文" in caplog.text
+    assert "直接字符串提示词全文" in caplog.text
+    assert "流式提示词全文" in caplog.text
+    assert "同步流式提示词全文" in caplog.text
+
+
 def test_builtin_llm_provider_presets_use_compatible_base_urls():
     """后端运行时兜底与设置页默认 provider 地址必须同步且可被当前 ChatOpenAI 客户端调用。"""
     from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults

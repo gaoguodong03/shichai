@@ -8,6 +8,7 @@ import {
   renderMarkdownHtml,
   renderSnippetMarkdownHtml,
 } from '../workspaceMessageUtils'
+import { formatGroupMsgFullTime, formatGroupMsgTime } from '../messageTimeFormat'
 
 export type GroupMessage = {
   message_id?: string
@@ -109,16 +110,6 @@ export function useGroupMessageList(args: {
       })
       .filter(Boolean)
     return [...new Set(names)]
-  }
-
-  function formatGroupMsgTime(ts?: string) {
-    if (!ts) return ''
-    try {
-      const date = new Date(ts)
-      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    } catch {
-      return ts
-    }
   }
 
   function defaultAgentFilename(msg: MsgExt): string {
@@ -293,6 +284,7 @@ export function useGroupMessageList(args: {
     isShortSingleLine,
     extractUserFileReferenceNames,
     formatGroupMsgTime,
+    formatGroupMsgFullTime,
     saveAgentMessageToFile,
     copyAgentMessageToClipboard,
     deleteGroupMessage,

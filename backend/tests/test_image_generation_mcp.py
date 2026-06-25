@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,8 @@ def test_generate_image_saves_data_url_to_workspace(
     artifacts = result["artifacts"]
     assert result["execution_status"] == "succeeded"
     assert artifacts["file_path"].startswith("generated_images/image-")
+    assert re.match(r"^generated_images/image-\d{16}-[0-9a-f]{8}\.png$", artifacts["file_path"])
+    assert not re.search(r"\d{8}-\d{6}", artifacts["file_path"])
     assert artifacts["file_path"].endswith(".png")
     assert artifacts["download_url"] == f"/api/workspaces/s1/files/download?path={artifacts['file_path']}"
     assert artifacts["output"] == artifacts["download_url"]

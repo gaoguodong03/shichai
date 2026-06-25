@@ -39,6 +39,7 @@ export interface GroupChatMessageContext {
   getSchedulerStateRaw: ContextValue
   formatSchedulerStatePopover: ContextValue
   formatGroupMsgTime: ContextValue
+  formatGroupMsgFullTime: ContextValue
   renderMarkdown: ContextValue
   agentBodyContent: ContextValue
   isShortSingleLine: ContextValue

@@ -17,6 +17,22 @@ def test_messages_to_expert_context_filters_repeated_technical_errors():
     assert text.count("有效业务结论") == 1
 
 
+def test_messages_to_expert_context_marks_history_as_reference_not_repeat_task():
+    messages = [
+        {"role": "assistant", "agent_id": "agent-a", "content": "上一轮已经给出的完整结论"},
+        {"role": "user", "content": "这里再补充一个新的约束"},
+    ]
+
+    text = group_context.messages_to_expert_context(messages)
+
+    assert "本轮用户输入" in text
+    assert "优先" in text
+    assert "仅供承接" in text
+    assert "不要复述" in text
+    assert "上一轮已经给出的完整结论" in text
+    assert "这里再补充一个新的约束" in text
+
+
 def test_messages_to_context_preserves_tail_when_truncating_long_messages():
     long_material = (
         "材料包开头：" + ("案例事实。" * 80) + "\n"

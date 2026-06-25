@@ -1,8 +1,12 @@
 """LLM 客户端 - 支持 Qwen 及 OpenAI 兼容 API，可配置化切换"""
+import json
+import logging
 import os
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from app.agent.tool_spec import tools_to_openai_tools
+
+logger = logging.getLogger(__name__)
 
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "https://jeniya.top/v1"
@@ -449,10 +453,72 @@ class _TracedLLMClient:
         )
 
     async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        self._log_prompt("ainvoke", inp)
         return await self._raw_client.ainvoke(inp, *args, **kwargs)
 
     def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        self._log_prompt("invoke", inp)
         return self._raw_client.invoke(inp, *args, **kwargs)
+
+    async def astream(self, inp: Any, *args: Any, **kwargs: Any):
+        self._log_prompt("astream", inp)
+        async for chunk in self._raw_client.astream(inp, *args, **kwargs):
+            yield chunk
+
+    def stream(self, inp: Any, *args: Any, **kwargs: Any):
+        self._log_prompt("stream", inp)
+        yield from self._raw_client.stream(inp, *args, **kwargs)
+
+    def _log_prompt(self, method: str, inp: Any) -> None:
+        logger.info(
+            "[Prompt] method=%s model=%s base_url=%s\n%s",
+            method,
+            self._model_name,
+            self._provider_base_url,
+            _serialize_prompt_payload(inp),
+        )
+
+
+def _serialize_prompt_payload(value: Any) -> str:
+    try:
+        return json.dumps(_prompt_to_jsonable(value), ensure_ascii=False, indent=2, default=str)
+    except Exception:  # noqa: BLE001
+        return str(value)
+
+
+def _prompt_to_jsonable(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_prompt_to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _prompt_to_jsonable(v) for k, v in value.items()}
+
+    content_marker = object()
+    content = getattr(value, "content", content_marker)
+    if content is not content_marker:
+        row: Dict[str, Any] = {
+            "type": str(getattr(value, "type", "") or value.__class__.__name__),
+            "content": _prompt_to_jsonable(content),
+        }
+        for attr in ("name", "id", "tool_call_id"):
+            attr_value = getattr(value, attr, None)
+            if attr_value:
+                row[attr] = _prompt_to_jsonable(attr_value)
+        additional_kwargs = getattr(value, "additional_kwargs", None)
+        if additional_kwargs:
+            row["additional_kwargs"] = _prompt_to_jsonable(additional_kwargs)
+        tool_calls = getattr(value, "tool_calls", None)
+        if tool_calls:
+            row["tool_calls"] = _prompt_to_jsonable(tool_calls)
+        return row
+
+    if hasattr(value, "model_dump"):
+        try:
+            return _prompt_to_jsonable(value.model_dump())
+        except Exception:  # noqa: BLE001
+            pass
+    return str(value)
 
 
 def _instrument_llm_client(

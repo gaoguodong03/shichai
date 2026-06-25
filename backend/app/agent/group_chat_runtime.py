@@ -139,7 +139,7 @@ def _log_expert_prompt(
 ) -> None:
     prompt = str(user_content or "")
     logger.info(
-        "group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_id=%s skill_id=%s prompt_len=%s\n%s",
+        "[Prompt] group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_id=%s skill_id=%s prompt_len=%s\n%s",
         session_id,
         run_id,
         agent_id,

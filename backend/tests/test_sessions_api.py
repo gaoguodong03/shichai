@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 
 import pytest
@@ -59,6 +60,34 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
 
     get_after_delete = client.get(f"/api/sessions/{session_id}")
     assert get_after_delete.status_code == 404
+
+
+def test_export_session_default_filename_uses_workspace_timestamp_contract(monkeypatch, tmp_path):
+    from app.api import files as files_api
+    from app.api import group_chat_state
+    from app.agent.group_session_service import _save_group_history, export_session_to_markdown
+
+    session_id = "sess-export-contract"
+    sessions_root = tmp_path / "sessions"
+    workspace_root = tmp_path / "workspaces" / session_id
+    monkeypatch.setattr(group_chat_state, "GROUP_SESSIONS_ROOT", sessions_root)
+
+    def _fake_workspace_root(_session_id: str):
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        return workspace_root
+
+    monkeypatch.setattr(files_api, "get_workspace_root", _fake_workspace_root)
+
+    _save_group_history(
+        session_id,
+        [{"role": "user", "content": "请导出这段对话", "timestamp": "t1"}],
+    )
+
+    rel_path, download_url = export_session_to_markdown(session_id)
+
+    assert re.match(rf"^session-{re.escape(session_id)}-\d{{16}}\.md$", rel_path)
+    assert not re.search(r"\d{8}-\d{6}", rel_path)
+    assert download_url.endswith(f"path={rel_path}")
 
 
 def test_update_empty_session_can_become_scene_without_join_messages(client: TestClient):

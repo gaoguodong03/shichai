@@ -188,6 +188,17 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
+def test_write_workspace_file_tool_advertises_project_filename_contract():
+    from app.tools.write_workspace_file import WriteWorkspaceFileInput, create_write_workspace_file_tool
+
+    tool = create_write_workspace_file_tool("sess-contract")
+    path_description = WriteWorkspaceFileInput.model_fields["path"].description or ""
+
+    assert "YYYYMMDDHHMMSS00" in path_description
+    assert "文件名-YYYYMMDDHHMMSS00.扩展名" in path_description
+    assert "YYYYMMDDHHMMSS00" in tool.description
+
+
 def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, monkeypatch):
     """write_workspace_file 默认不覆盖已有文件，避免最终产物被后续摘要误写覆盖。"""
     from app.api.files import get_workspace_root

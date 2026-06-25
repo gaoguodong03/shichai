@@ -124,7 +124,7 @@ async def leader_decide(
         HumanMessage(content=user_content),
     ]
     logger.info(
-        "[LLM_ROUNDTRIP][leader_decide] system_prompt:\n%s\n\n[LLM_ROUNDTRIP][leader_decide] user_prompt:\n%s",
+        "[Prompt][LLM_ROUNDTRIP][leader_decide] system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][leader_decide] user_prompt:\n%s",
         system_prompt,
         user_content,
     )

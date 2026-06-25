@@ -119,6 +119,7 @@ def test_expert_prompt_log_includes_full_prompt(caplog):
         )
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[Prompt]" in messages
     assert "group_chat_expert_prompt code=expert_prompt" in messages
     assert "session=group-test" in messages
     assert "run_id=run-test" in messages

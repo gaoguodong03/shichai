@@ -193,6 +193,45 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
         reset_current_user_identity(token)
 
 
+def test_get_session_presets_does_not_log_noisy_ids(monkeypatch, tmp_path, caplog):
+    import asyncio
+    import json
+    import logging
+
+    from app.api.settings_presets import get_session_presets
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-quiet", username="quiet@example.com")
+    try:
+        user_root = tmp_path / "users" / "user-resource-quiet"
+        preset_path = user_root / "config" / "session_presets.json"
+        preset_path.parent.mkdir(parents=True)
+        preset_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "quiet-scene",
+                        "name": "安静场景",
+                        "agent_ids": ["quiet-agent"],
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        with caplog.at_level(logging.INFO, logger="app.api.settings_presets"):
+            result = asyncio.run(get_session_presets())
+
+        assert result["data"]["presets"][0]["id"] == "quiet-scene"
+        assert "scenario_presets_get" not in caplog.text
+        assert "aggregate_ids=" not in caplog.text
+        assert "returned_ids=" not in caplog.text
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_save_mcp_config_mirrors_tools_resource_files(monkeypatch, tmp_path):
     import json
 

@@ -142,7 +142,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
         lines.append("\n\n")
     md = "".join(lines)
     ws_root = get_workspace_root(session_id)
-    fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+    fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}00.md"
     fn = fn.replace("..", "").replace("/", "")
     if not fn.endswith(".md"):
         fn += ".md"
