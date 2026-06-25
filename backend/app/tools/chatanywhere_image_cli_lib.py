@@ -1,7 +1,7 @@
 """Jeniya Gemini 图像生成 CLI 共享库。
 
 供 run_skill_script 调用的脚本使用（如 app-icon-generator）。
-- 环境变量 JENIYA_API_KEY（兼容 CHATANYWHERE_IMAGE_API_KEY 作为回退）
+- 环境变量 JENIYA_API_KEY
 - 可选 JENIYA_IMAGE_BASE_URL，默认 https://jeniya.top
 - POST {base}/v1beta/models/gemini-3.1-flash-image-preview:generateContent
 """
@@ -45,15 +45,11 @@ def get_api_key() -> str:
             _env_path = _backend_dir / ".env"
             load_dotenv(_env_path)
             key = os.environ.get("JENIYA_API_KEY", "").strip()
-            if not key:
-                key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
         except Exception:
             pass
     if not key:
-        key = os.environ.get("CHATANYWHERE_IMAGE_API_KEY", "").strip()
-    if not key:
         raise ValueError(
-            "未配置 JENIYA_API_KEY（或 CHATANYWHERE_IMAGE_API_KEY 回退值）。请在 backend/.env 中设置，"
+            "未配置 JENIYA_API_KEY。请在 backend/.env 或 MCP transport.env 中设置，"
             "格式可为 Bearer sk-xxx 或仅 sk-xxx。"
         )
     return key if key.startswith("Bearer ") else f"Bearer {key}"
@@ -66,10 +62,7 @@ def generate_image(description: str, pic_size: str = "1024x1024") -> str:
     except ValueError as e:
         return str(e)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": api_key,
-    }
+    headers = {"Authorization": api_key}
     body = {
         "contents": [
             {

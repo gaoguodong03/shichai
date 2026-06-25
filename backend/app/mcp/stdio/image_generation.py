@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """General image generation MCP server.
 
-Local stdio MCP for generating images from text prompts. API keys are provided
-through stdio transport env, typically ``JENIYA_API_KEY=${vault:id}`` or the
-legacy ``CHATANYWHERE_IMAGE_API_KEY`` fallback.
+Local stdio MCP for generating images from text prompts. The API key is
+provided through stdio transport env, typically ``JENIYA_API_KEY=${vault:id}``.
 """
 from __future__ import annotations
 
@@ -63,11 +62,9 @@ def _tool_result(
 
 def get_api_key() -> str:
     """Return the configured image API key in Bearer form."""
-    key = (os.getenv("JENIYA_API_KEY") or os.getenv("CHATANYWHERE_IMAGE_API_KEY") or "").strip()
+    key = os.getenv("JENIYA_API_KEY", "").strip()
     if not key:
-        raise ValueError(
-            "未配置 JENIYA_API_KEY 或 CHATANYWHERE_IMAGE_API_KEY。请在 MCP transport.env 中选择密钥。"
-        )
+        raise ValueError("未配置 JENIYA_API_KEY。请在 MCP transport.env 中配置该密钥。")
     return key if key.startswith("Bearer ") else f"Bearer {key}"
 
 
@@ -149,7 +146,6 @@ def _looks_like_upstream_failure(result: str) -> bool:
         "请求失败",
         "生成图片失败",
         "未配置 JENIYA_API_KEY",
-        "未配置 CHATANYWHERE_IMAGE_API_KEY",
     )
     return text.startswith(failure_prefixes)
 

@@ -26,6 +26,14 @@ def test_get_api_key_requires_configuration(monkeypatch: pytest.MonkeyPatch):
         image_generation.get_api_key()
 
 
+def test_get_api_key_ignores_legacy_chatanywhere_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("JENIYA_API_KEY", raising=False)
+    monkeypatch.setenv("CHATANYWHERE_IMAGE_API_KEY", "legacy-key")
+
+    with pytest.raises(ValueError, match="JENIYA_API_KEY"):
+        image_generation.get_api_key()
+
+
 def test_generate_image_saves_data_url_to_workspace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -205,6 +213,53 @@ def test_chatanywhere_image_retries_remote_disconnect(monkeypatch: pytest.Monkey
 
     assert calls["count"] == 2
     assert result == "data:image/png;base64,ZmFrZQ=="
+
+
+def test_chatanywhere_image_posts_with_jeniya_authorization_only(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("JENIYA_API_KEY", "key")
+    monkeypatch.setenv("CHATANYWHERE_IMAGE_API_KEY", "legacy-key")
+
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            seen["headers"] = kwargs.get("headers")
+            return httpx.Response(
+                200,
+                json={
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "inlineData": {
+                                            "mimeType": "image/png",
+                                            "data": "ZmFrZQ==",
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                request=httpx.Request("POST", "https://jeniya.top"),
+            )
+
+    monkeypatch.setattr(chatanywhere_image_cli_lib.httpx, "Client", FakeClient)
+
+    result = chatanywhere_image_cli_lib.generate_image("河南烩面", "1024x1792")
+
+    assert result == "data:image/png;base64,ZmFrZQ=="
+    assert seen["headers"] == {"Authorization": "Bearer key"}
 
 
 def test_chatanywhere_image_reports_remote_disconnect_after_retries(monkeypatch: pytest.MonkeyPatch):
