@@ -242,6 +242,73 @@ def test_append_workspace_image_preview_markdown_trims_json_delimiters_from_imag
     assert '\",' not in out
 
 
+def test_guard_delivery_claims_replaces_unverified_generation_claim():
+    gc = _get_tool_trace_module()
+    content = "已生成「板面美食推广图」。\n\n图片链接：generated_images/missing.jpg"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert "已生成「板面美食推广图」" not in out
+    assert "generated_images/missing.jpg" in out
+
+
+def test_guard_delivery_claims_keeps_successful_workspace_write_claim():
+    gc = _get_tool_trace_module()
+    content = "已生成周报，并保存到工作区：reports/weekly.md"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
+        tool_raw_results=["已写入当前 Chat 工作区文件：reports/weekly.md"],
+    )
+
+    assert out == content
+
+
+def test_guard_delivery_claims_requires_existing_file_when_workspace_root_is_available(tmp_path):
+    gc = _get_tool_trace_module()
+    content = "已生成周报，并保存到工作区：reports/weekly.md"
+    raw_results = ["已写入当前 Chat 工作区文件：reports/weekly.md"]
+
+    missing = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
+        tool_raw_results=raw_results,
+        workspace_root=tmp_path,
+    )
+    assert "本轮没有确认文件生成成功" in missing
+
+    target = tmp_path / "reports" / "weekly.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("weekly", encoding="utf-8")
+
+    existing = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
+        tool_raw_results=raw_results,
+        workspace_root=tmp_path,
+    )
+    assert existing == content
+
+
+def test_guard_delivery_claims_ignores_plain_non_file_generation_text():
+    gc = _get_tool_trace_module()
+    content = "已生成一版讨论思路，下面是正文内容。"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert out == content
+
+
 def test_has_auto_continue_signal_detects_continue_intent():
     gc = _get_context_module()
     assert gc.has_auto_continue_signal("接下来我会继续执行下一步。") is True
