@@ -157,7 +157,7 @@ import { apiRequest } from '@/api/base'
 import { computed, ref, watch } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
-import { buildMcpServerPayload, type McpServerDraft } from './mcpConfigContract'
+import { buildMcpServerPayload, mapConfigRowsToMap, type McpServerDraft } from './mcpConfigContract'
 
 const props = defineProps<{ serverId: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
@@ -221,15 +221,6 @@ function nextRow(key = '', value = ''): KeyValueRow {
 function mapToRows(value: unknown): KeyValueRow[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return []
   return Object.entries(value as Record<string, unknown>).map(([key, val]) => nextRow(key, String(val ?? '')))
-}
-
-function rowsToMap(rows: KeyValueRow[]): Record<string, string> | undefined {
-  const out: Record<string, string> = {}
-  for (const row of rows) {
-    const key = row.key.trim()
-    if (key) out[key] = row.value
-  }
-  return Object.keys(out).length ? out : undefined
 }
 
 function addEnvRow() {
@@ -323,8 +314,8 @@ function buildDraft(): McpServerDraft {
     if (!transport.type) transport.type = form.value.transport.type
   }
 
-  const env = rowsToMap(envRows.value)
-  const headers = rowsToMap(headerRows.value)
+  const env = mapConfigRowsToMap(envRows.value)
+  const headers = mapConfigRowsToMap(headerRows.value, { defaultKeyForValuedRow: 'Authorization' })
   if (env) transport.env = env
   if (headers) transport.headers = headers
 

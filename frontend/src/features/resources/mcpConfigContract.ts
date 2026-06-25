@@ -7,6 +7,11 @@ export interface McpServerDraft {
   warnings?: string[]
 }
 
+export interface McpConfigMapRow {
+  key?: string
+  value?: unknown
+}
+
 const SECRET_FIELD_PATTERN =
   /(api[-_ ]?key|access[-_ ]?token|personal[-_ ]?access[-_ ]?token|token|secret|password)/i
 const SENSITIVE_QUERY_KEY_PATTERN =
@@ -383,4 +388,20 @@ export function sanitizeMcpServerForExport(server: { transport?: unknown; metada
       ...(server.metadata ?? {}),
     },
   }
+}
+
+export function mapConfigRowsToMap(
+  rows: McpConfigMapRow[],
+  options: { defaultKeyForValuedRow?: string } = {},
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {}
+  for (const row of rows) {
+    const value = String(row.value ?? '')
+    let key = String(row.key ?? '').trim()
+    if (!key && value.trim() && options.defaultKeyForValuedRow) {
+      key = options.defaultKeyForValuedRow
+    }
+    if (key) out[key] = value
+  }
+  return Object.keys(out).length ? out : undefined
 }

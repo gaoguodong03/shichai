@@ -18,6 +18,7 @@ await writeFile(compiledPath, compiled, 'utf8')
 
 const {
   buildMcpServerPayload,
+  mapConfigRowsToMap,
   parseImportedMcpServers,
   sanitizeMcpServerForExport,
 } = await import(`${compiledPath}?t=${Date.now()}`)
@@ -133,4 +134,24 @@ test('sanitizeMcpServerForExport clears plaintext secrets but keeps vault refs',
     API_KEY: '${vault:api-key}',
     CLIENT_SECRET: '',
   })
+})
+
+test('mapConfigRowsToMap defaults valued header rows without changing env rows', () => {
+  assert.deepEqual(mapConfigRowsToMap([
+    { key: '', value: '${vault:amap}' },
+  ], {
+    defaultKeyForValuedRow: 'Authorization',
+  }), {
+    Authorization: '${vault:amap}',
+  })
+
+  assert.equal(mapConfigRowsToMap([
+    { key: '', value: '${vault:amap}' },
+  ]), undefined)
+
+  assert.equal(mapConfigRowsToMap([
+    { key: '', value: '' },
+  ], {
+    defaultKeyForValuedRow: 'Authorization',
+  }), undefined)
 })
