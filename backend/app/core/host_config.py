@@ -19,7 +19,7 @@ def normalize_host_config_dict(raw: Any) -> Dict[str, Any]:
         sid
         for sid in skill_ids
         if sid != LEGACY_DEFAULT_HOST_SKILL_ID
-    ]
+    ][:1]
     sp = raw.get("system_prompt")
     system_prompt = str(sp).strip() if sp is not None else ""
     llm = str(raw.get("llm_provider_id") or "").strip()

@@ -847,7 +847,7 @@
                   </div>
                   <div>
                     <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-                    <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+                    <div class="text-xs font-medium text-muted mb-1.5">主持人技能（单选）</div>
                     <input
                       v-if="skills.length"
                       v-model.trim="scenarioLeaderSkillSearch"

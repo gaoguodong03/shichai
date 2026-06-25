@@ -66,6 +66,45 @@ def _request_skills_loader():
     return get_skills_loader_for_user(u.username, u.ctx.skills_dir)
 
 
+def _host_skill_ref_names(host_agent: Dict[str, Any]) -> List[str]:
+    names: List[str] = []
+    for ref in host_agent.get("skill_refs") or []:
+        if not isinstance(ref, dict):
+            continue
+        name = str(ref.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _host_skill_name_matches(candidate: str, expected: str) -> bool:
+    c = str(candidate or "").strip()
+    e = str(expected or "").strip()
+    if not c or not e:
+        return False
+    return c == e or c.startswith(e) or e.startswith(c)
+
+
+def _load_host_skill_content(skills_loader: Any, skill_id: str, host_agent: Dict[str, Any]) -> str:
+    if not skill_id:
+        return ""
+    content = str(skills_loader.get_skill_full_content(skill_id) or "").strip()
+    if content:
+        return content
+
+    ref_names = _host_skill_ref_names(host_agent)
+    if not ref_names:
+        return ""
+    for fallback_id, skill in getattr(skills_loader, "skills", {}).items():
+        skill_name = str(getattr(skill, "name", "") or "").strip()
+        if any(_host_skill_name_matches(skill_name, ref_name) for ref_name in ref_names):
+            fallback_content = str(skills_loader.get_skill_full_content(str(fallback_id)) or "").strip()
+            if fallback_content:
+                logger.info("resolved stale host skill id %s by skill_ref name to %s", skill_id, fallback_id)
+                return fallback_content
+    return ""
+
+
 _HOST_DEFAULT_DUTY = (
     "你是群聊主持人，负责在当前群内专家之间做调度，输出 current_phase、next_speaker、speaker_task 决策，"
     "平台会根据调度结果生成固定主持话术，你不得代答、复述用户需求或补充说明。"
@@ -157,7 +196,16 @@ async def _host_decide_by_agent(
     role = host_agent.get("role") or "群聊主持人"
     skill_ids = [str(x).strip() for x in (host_agent.get("skill_ids") or []) if str(x).strip()]
     resolved_skill_id = _pick_resolved_host_skill_id(skill_ids) if skill_ids else ""
-    skill_content = f"你是 {name}，担任本群主持人。你的角色：{role}。\n\n{_HOST_DEFAULT_DUTY}\n\n{_HOST_SCHEDULER_STATE_INSTRUCTION.strip()}"
+    host_skill_content = ""
+    if resolved_skill_id:
+        host_skill_content = _load_host_skill_content(_request_skills_loader(), resolved_skill_id, host_agent)
+    skill_sections = [
+        f"你是 {name}，担任本群主持人。你的角色：{role}。",
+        host_skill_content,
+        _HOST_DEFAULT_DUTY,
+        _HOST_SCHEDULER_STATE_INSTRUCTION.strip(),
+    ]
+    skill_content = "\n\n".join(section for section in skill_sections if section)
     host_system = (host_agent.get("system_prompt") or "").strip()
     if host_system:
         skill_content = f"{host_system}\n\n{skill_content}"

@@ -211,6 +211,7 @@ export function useScenarioEditor(options: {
       }
       out.push(id)
       seen.add(id)
+      break
     }
     return out
   }
@@ -272,10 +273,9 @@ export function useScenarioEditor(options: {
   }
 
   function toggleScenarioLeaderSkill(skillId: string) {
-    const set = new Set(scenarioLeaderSkillIds.value)
-    if (set.has(skillId)) set.delete(skillId)
-    else set.add(skillId)
-    scenarioLeaderSkillIds.value = Array.from(set)
+    const id = String(skillId || '').trim()
+    if (!id) return
+    scenarioLeaderSkillIds.value = scenarioLeaderSkillIds.value.includes(id) ? [] : [id]
   }
 
   function createScenarioPreset() {

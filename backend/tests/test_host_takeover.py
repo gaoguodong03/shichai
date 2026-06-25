@@ -208,6 +208,11 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path)
     calls = {}
     meta_item = {}
 
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, skill_id):
+            assert skill_id == "group-host-webnovel"
+            return "网文专用主持 Skill 正文：文字创作完成后应进入图片生成阶段。"
+
     class FakeAgent:
         async def ainvoke(self, *_args, **_kwargs):
             return {
@@ -228,6 +233,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path)
         }
         return FakeAgent()
 
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
     monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
 
     out = await gc._host_decide_by_agent(
@@ -256,7 +262,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path)
     assert "平台会根据调度结果生成固定主持话术" in content
     assert '"next_speaker": "agent-xxxxxx"' in content
     assert '`"invite"`' in content
-    assert "网文专用主持 Skill 正文" not in content
+    assert "网文专用主持 Skill 正文：文字创作完成后应进入图片生成阶段。" in content
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
     assert meta_item["scheduler_state"]["next_speaker"] == "agent-a"
@@ -335,6 +341,61 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
         "next_speaker": "教师",
         "speaker_task": "请提出本轮研讨主题。",
     }
+
+
+async def test_host_decide_resolves_legacy_host_skill_ref_by_name(monkeypatch):
+    gc = _get_host_runtime_module()
+    calls = {}
+
+    class FakeSkill:
+        name = "网文协同写作主持人v1.0"
+
+    class FakeSkillsLoader:
+        skills = {"v10-2": FakeSkill()}
+
+        def get_skill_full_content(self, skill_id):
+            if skill_id == "v10-2":
+                return "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。"
+            return None
+
+    class FakeAgent:
+        async def ainvoke(self, *_args, **_kwargs):
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content='```json\n{"current_phase": "阶段4：配图", "next_speaker": "agent-image", "speaker_task": "请生成配图"}\n```'
+                    )
+                ]
+            }
+
+    def fake_agent_factory(_llm, _tools, skill_content, *_args, **_kwargs):
+        calls["skill_content"] = skill_content
+        return FakeAgent()
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-scene-host",
+            "name": "四九",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host-webnovel"],
+            "skill_refs": [{"id": "group-host-webnovel", "name": "网文协同写作主持人"}],
+        },
+        agent_profiles=[{"agent_id": "agent-image", "name": "图片生成专家", "role": "图片生成"}],
+        discussion_goal="写网文并配图",
+        recent_messages="【文字创作专家】文章已保存到 逆光工程师-第1章-2026061115500000.md",
+        last_speaker_agent_id="agent-writer",
+        extra_system_prompt="",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+        meta_item={},
+    )
+
+    assert out["next_speaker"] == "agent-image"
+    assert "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。" in calls["skill_content"]
 
 
 async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monkeypatch):
