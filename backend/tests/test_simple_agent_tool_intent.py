@@ -50,6 +50,28 @@ def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_bloc
     assert text.rstrip().endswith("```")
 
 
+def test_deterministic_tool_fallback_returns_semantic_summary_as_markdown():
+    raw = json.dumps(
+        {
+            "ok": True,
+            "summary": (
+                "# 第二章 技术范式转移：从手写代码到 Agent 编排\n\n"
+                "## 2.1 生产效率的指数级提升\n\n"
+                "Thoughtworks 的案例说明，工具返回的本轮摘要应该作为 Markdown 正文展示。"
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+    message = _deterministic_tool_fallback_message([raw])
+    text = str(message.content)
+
+    assert text.startswith("# 第二章 技术范式转移")
+    assert "## 2.1 生产效率的指数级提升" in text
+    assert "```text" not in text
+    assert "工具已执行完成" not in text
+
+
 def test_deterministic_tool_fallback_does_not_expose_missing_llm_summary_state():
     raw = (
         "Title: ISEF: International Rules for Pre-College Science Research - Society for Science\n"
