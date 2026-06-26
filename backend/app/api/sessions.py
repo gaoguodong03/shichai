@@ -21,6 +21,12 @@ from app.agent.group_session_service import (
     stop_group_session_run,
     update_group_session,
 )
+from app.session_state.service import (
+    capture_session_checkpoint,
+    clone_session_from_checkpoint,
+    list_session_checkpoints,
+    rollback_session_to_checkpoint,
+)
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
 logger = logging.getLogger(__name__)
@@ -31,6 +37,10 @@ class SessionCreate(BaseModel):
     agent_ids: List[str] = []
     leader_agent_id: Optional[str] = None  # 虚拟主持人 id
     host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
+
+
+class SessionRollback(BaseModel):
+    checkpoint_id: str
 
 
 @router.get("/sessions")
@@ -184,3 +194,28 @@ async def session_export(session_id: str):
         return {"status": "ok", "data": {"path": rel_path, "download_url": download_url}}
     except HTTPException:
         raise
+
+
+@router.post("/sessions/{session_id}/snapshot")
+async def session_snapshot(session_id: str):
+    """为当前会话创建一个状态快照。"""
+    return {"status": "ok", "data": capture_session_checkpoint(session_id, reason="manual_snapshot")}
+
+
+@router.get("/sessions/{session_id}/snapshots")
+async def session_snapshots(session_id: str):
+    """列出当前会话已保存的状态链。"""
+    return {"status": "ok", "data": {"checkpoints": list_session_checkpoints(session_id)}}
+
+
+@router.post("/sessions/{session_id}/clone")
+async def session_clone(session_id: str):
+    """复制当前会话并新建一个窗口。"""
+    return {"status": "ok", "data": clone_session_from_checkpoint(session_id)}
+
+
+@router.post("/sessions/{session_id}/rollback")
+async def session_rollback(session_id: str, body: SessionRollback):
+    """回溯到指定 checkpoint，并删除其后的状态记录。"""
+    data = await rollback_session_to_checkpoint(session_id, body.checkpoint_id)
+    return {"status": "ok", "data": data}

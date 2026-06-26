@@ -1,6 +1,7 @@
 """Agent 产出文件 API - 文件系统模块用"""
 import os
 import shutil
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
@@ -8,13 +9,31 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.core.security import CurrentUser, user_context_dependency
+from app.session_state.paths import (
+    LEGACY_HISTORY_PREFIX,
+    ensure_session_layout,
+    legacy_history_path,
+    migrate_session_layout,
+    resolve_history_path,
+    resolve_workspace_path,
+)
 
 router = APIRouter(tags=["files"])
+logger = logging.getLogger(__name__)
 
 # 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{user_id}/sessions
 WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
 NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+
+
+def _auto_checkpoint_workspace(workspace_id: str, reason: str) -> None:
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(workspace_id, reason=reason)
+    except Exception:
+        logger.warning("workspace checkpoint failed: %s reason=%s", workspace_id, reason, exc_info=True)
 
 
 def _get_agent_outputs_root_for_user(user: CurrentUser) -> Path:
@@ -36,20 +55,20 @@ def get_agent_outputs_root() -> Path:
 
 def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
-    返回指定 workspace 的根目录路径（不保证已创建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
+    返回指定会话的工作区根目录（不保证已创建），位于
+    data/users/{user_id}/sessions/{session_id}/workspace/ 下。
     """
     wid = (workspace_id or "").strip().replace("\\", "/")
     if not wid or wid.startswith("/") or "/" in wid or ".." in wid:
         raise HTTPException(status_code=400, detail="Invalid workspace_id")
     if user is None:
-        # 按当前请求上下文用户推导（Agent 工具与 files API 共用）
         from app.core.security import get_current_user as _get_user
 
         user = _get_user()
-    root = _get_agent_outputs_root_for_user(user)
-    workspaces_root = (root / WORKSPACES_SUBDIR).resolve()
-    workspace_root = (workspaces_root / wid).resolve()
-    if workspace_root != workspaces_root and workspaces_root not in workspace_root.parents:
+    migrate_session_layout(user.ctx, wid)
+    workspace_root = resolve_workspace_path(user.ctx, wid).resolve()
+    sessions_dir = user.ctx.sessions_dir.resolve()
+    if workspace_root != sessions_dir and sessions_dir not in workspace_root.parents:
         raise HTTPException(status_code=400, detail="Invalid workspace_id")
     return workspace_root
 
@@ -149,6 +168,7 @@ async def create_workspace_dir(
         raise HTTPException(status_code=400, detail=str(e))
     ws_root = get_workspace_root(workspace_id, user=current_user)
     rel = str(new_dir.relative_to(ws_root)).replace("\\", "/")
+    _auto_checkpoint_workspace(workspace_id, "workspace_mkdir")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -278,6 +298,7 @@ async def update_workspace_file_content(
         raise HTTPException(status_code=400, detail="Cannot edit a directory")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body.content or "", encoding="utf-8")
+    _auto_checkpoint_workspace(workspace_id, "workspace_file_content_updated")
     return {"status": "ok", "data": {"path": path}}
 
 
@@ -308,6 +329,7 @@ async def delete_workspace_file(
             target.unlink()
         except OSError as e:
             raise HTTPException(status_code=500, detail=str(e))
+    _auto_checkpoint_workspace(workspace_id, "workspace_file_deleted")
     return {"status": "ok", "data": {"path": path, "deleted": True}}
 
 
@@ -336,6 +358,7 @@ async def create_workspace_file(
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
+    _auto_checkpoint_workspace(workspace_id, "workspace_file_created")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -378,6 +401,7 @@ async def upload_workspace_file(
     finally:
         await file.close()
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
+    _auto_checkpoint_workspace(workspace_id, "workspace_file_uploaded")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -416,4 +440,5 @@ async def rename_workspace_file(
     new_path.parent.mkdir(parents=True, exist_ok=True)
     target.rename(new_path)
     rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
+    _auto_checkpoint_workspace(workspace_id, "workspace_file_renamed")
     return {"status": "ok", "data": {"path": rel}}

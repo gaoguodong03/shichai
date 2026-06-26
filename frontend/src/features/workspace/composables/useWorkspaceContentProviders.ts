@@ -523,6 +523,32 @@ export function useWorkspaceContentProviders(args: {
     { immediate: true }
   )
 
+  async function onSessionForked(sessionId: string) {
+    const id = (sessionId || '').trim()
+    if (!id) return
+    let sessionRow: { id: string; title?: string; updated_at?: string; agent_ids?: string[] } = { id }
+    try {
+      const response = await apiRequest(`/sessions/${encodeURIComponent(id)}`)
+      const payload = await response.json().catch(() => null)
+      if (response.ok && payload?.status === 'ok' && payload?.data) {
+        sessionRow = {
+          id,
+          title: typeof payload.data.title === 'string' ? payload.data.title : undefined,
+          updated_at: typeof payload.data.updated_at === 'string' ? payload.data.updated_at : undefined,
+          agent_ids: Array.isArray(payload.data.agent_ids) ? payload.data.agent_ids : undefined,
+        }
+      }
+    } catch {
+      // fallback: still switch session with minimal row
+    }
+    emit('scenario-new-session', id, sessionRow)
+  }
+
+  async function onSessionRolledBack() {
+    await loadGroupDetail()
+    await loadGroupWorkspace()
+    await refreshGroupWorkspaceAfterExternalChange()
+  }
 
   provideGroupChatSessionContext({
     props,
@@ -538,6 +564,8 @@ export function useWorkspaceContentProviders(args: {
     tocActiveKey,
     jumpToSessionTopic,
     renderSnippetMarkdown,
+    onSessionForked,
+    onSessionRolledBack,
   })
 
   provideGroupChatMessageContext({

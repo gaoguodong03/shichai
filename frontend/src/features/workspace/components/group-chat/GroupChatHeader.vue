@@ -105,6 +105,13 @@
           </div>
 
           <div class="group-chat-header-right">
+            <SessionStateActions
+              v-if="props.selectedGroupSessionId"
+              :session-id="props.selectedGroupSessionId"
+              :session-title="groupDetail?.title"
+              @forked="onSessionForked"
+              @rolled-back="onSessionRolledBack"
+            />
             <button
               type="button"
               :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
@@ -118,6 +125,7 @@
 </template>
 
 <script setup lang="ts">
+import SessionStateActions from './SessionStateActions.vue'
 import {
   useGroupChatSessionContext,
   useGroupChatWorkspacePanelContext,
@@ -137,6 +145,8 @@ const {
   tocActiveKey,
   jumpToSessionTopic,
   renderSnippetMarkdown,
+  onSessionForked,
+  onSessionRolledBack,
 } = useGroupChatSessionContext()
 
 const {

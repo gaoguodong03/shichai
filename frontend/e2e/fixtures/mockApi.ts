@@ -365,6 +365,35 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path.match(/^\/sessions\/[^/]+\/messages\/[^/]+$/) && method === 'DELETE') {
       return ok(route)
     }
+    const cloneMatch = path.match(/^\/sessions\/([^/]+)\/clone$/)
+    if (cloneMatch && method === 'POST') {
+      const source = state.sessions.find((s) => s.id === decodeURIComponent(cloneMatch[1]))
+      if (!source) return notFound(route)
+      const next: Session = {
+        ...source,
+        id: `session-fork-${state.sessions.length + 1}`,
+        title: `${source.title} · 分叉`,
+        updated_at: now,
+        messages: source.messages.map((m) => ({ ...m })),
+      }
+      state.sessions = [next, ...state.sessions]
+      const srcKey = fileKey(source.id, '')
+      const dstKey = fileKey(next.id, '')
+      if (state.files[srcKey]) {
+        state.files[dstKey] = state.files[srcKey].map((e) => ({ ...e }))
+      }
+      return ok(route, {
+        source_session_id: source.id,
+        session_id: next.id,
+        title: next.title,
+      })
+    }
+    if (path.match(/^\/sessions\/[^/]+\/snapshots$/) && method === 'GET') {
+      return ok(route, { checkpoints: [] })
+    }
+    if (path.match(/^\/sessions\/[^/]+\/rollback$/) && method === 'POST') {
+      return ok(route, {})
+    }
 
     if (path === '/agents' && method === 'GET') {
       return ok(route, { instances: state.agents, agents: state.agents })

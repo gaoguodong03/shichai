@@ -16,6 +16,8 @@ export interface GroupChatSessionContext {
   tocActiveKey: ContextValue
   jumpToSessionTopic: ContextValue
   renderSnippetMarkdown: ContextValue
+  onSessionForked: ContextValue
+  onSessionRolledBack: ContextValue
 }
 
 export interface GroupChatMessageContext {
