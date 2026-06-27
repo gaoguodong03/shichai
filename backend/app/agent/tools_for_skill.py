@@ -39,7 +39,7 @@ class RenameWorkspaceFileInput(BaseModel):
 
 
 class MkdirWorkspaceInput(BaseModel):
-    path: str = Field(description="要创建的目录相对路径，例如 notes/archive")
+    path: str = Field(description="要新建的目录相对路径，例如 notes/archive")
 
 
 class ListWorkspaceDirectoryInput(BaseModel):
@@ -144,8 +144,8 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
                 rel_path=rel,
             )
         except Exception as e:
-            return f"错误：创建目录失败 - {e}"
-        return f"已创建目录：{rel}"
+            return f"错误：新建目录失败 - {e}"
+        return f"已新建目录：{rel}"
 
     async def _list_workspace_directory(path: str = "") -> str:
         cleaned = str(path or "").strip().replace("\\", "/").strip("/")
@@ -208,7 +208,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         ),
         ToolSpec.from_function(
             name="mkdir_workspace",
-            description="在当前工作区创建目录。",
+            description="在当前工作区新建目录。",
             coroutine=_mkdir_workspace,
             args_schema=MkdirWorkspaceInput,
         ),

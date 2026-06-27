@@ -28,16 +28,12 @@ _USER_SKILL_SESSION_EXIT_RE = re.compile(
 
 
 def user_requests_exit_skill_session(user_message: str) -> bool:
-    """用户侧表达：本段 Skill 可结束，下一轮应交四九调度（与专家正文中的 [[SKILL_SESSION_END]] 对应）。"""
+    """用户侧表达：本段 Skill 可结束，下一轮应交四九调度。"""
     s = (user_message or "").strip()
     if len(s) < 4:
         return False
     return bool(_USER_SKILL_SESSION_EXIT_RE.search(s))
 
-
-def user_message_is_pass_control(user_message: str) -> bool:
-    """自由研讨里 pass 表示用户本轮不发言，仍应交由主持人推进阶段调度。"""
-    return (user_message or "").strip().lower() == "pass"
 
 ORCHESTRATION_RECRUITMENT = "recruitment"
 ORCHESTRATION_SCENE = "scene"
@@ -55,7 +51,7 @@ def effective_orchestration_profile(meta_item: Dict[str, Any], *, agent_ids: Lis
 
 
 def default_orchestration_profile_for_new_session(*, agent_ids: List[str]) -> str:
-    """创建会话时写入 meta 的默认值。"""
+    """新建会话时写入 meta 的默认值。"""
     return ORCHESTRATION_SCENE if agent_ids else ORCHESTRATION_RECRUITMENT
 
 
@@ -63,9 +59,12 @@ def available_to_add_for_prompt(
     full_list: List[Dict[str, Any]],
     *,
     orchestration_profile: str,
+    agent_ids: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """场景模式不向模型提供可邀请名单；新建会话（招募）提供完整列表。"""
+    """仅真实空会话向模型提供可邀请名单。"""
     if orchestration_profile == ORCHESTRATION_SCENE:
+        return []
+    if agent_ids:
         return []
     return list(full_list or [])
 
@@ -103,13 +102,6 @@ def resolve_group_entry_route(
         )
 
     if host_takeover_requested:
-        return GroupEntryRoute(
-            skip_host_dispatch=False,
-            direct_agent_id=None,
-            clear_skill_lock_before_host=True,
-        )
-
-    if user_message_is_pass_control(user_message):
         return GroupEntryRoute(
             skip_host_dispatch=False,
             direct_agent_id=None,

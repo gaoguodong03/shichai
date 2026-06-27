@@ -26,7 +26,7 @@ class PartFileUpdate(BaseModel):
 
 
 class PartDirCreate(BaseModel):
-    """在 references/assets/scripts/other 下创建目录"""
+    """在 references/assets/scripts/other 下新建目录"""
 
     path: str
 

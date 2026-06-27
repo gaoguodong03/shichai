@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 
 import pytest
@@ -61,6 +62,34 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     assert get_after_delete.status_code == 404
 
 
+def test_export_session_default_filename_uses_workspace_timestamp_contract(monkeypatch, tmp_path):
+    from app.api import files as files_api
+    from app.api import group_chat_state
+    from app.agent.group_session_service import _save_group_history, export_session_to_markdown
+
+    session_id = "sess-export-contract"
+    sessions_root = tmp_path / "sessions"
+    workspace_root = tmp_path / "workspaces" / session_id
+    monkeypatch.setattr(group_chat_state, "GROUP_SESSIONS_ROOT", sessions_root)
+
+    def _fake_workspace_root(_session_id: str):
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        return workspace_root
+
+    monkeypatch.setattr(files_api, "get_workspace_root", _fake_workspace_root)
+
+    _save_group_history(
+        session_id,
+        [{"role": "user", "content": "请导出这段对话", "timestamp": "t1"}],
+    )
+
+    rel_path, download_url = export_session_to_markdown(session_id)
+
+    assert re.match(rf"^session-{re.escape(session_id)}-\d{{16}}\.md$", rel_path)
+    assert not re.search(r"\d{8}-\d{6}", rel_path)
+    assert download_url.endswith(f"path={rel_path}")
+
+
 def test_update_empty_session_can_become_scene_without_join_messages(client: TestClient):
     agent_resp = client.post("/api/agents", json={"agent_id": "agent-scene-flow", "name": "场景专家"})
     assert agent_resp.status_code == 200
@@ -87,6 +116,43 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["data"]["messages"] == []
+
+
+def test_update_session_clears_stale_scheduler_state(client: TestClient):
+    from app.api.group_chat_state import load_group_meta, save_group_meta
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    agent_resp = client.post("/api/agents", json={"agent_id": "agent-clean-scheduler", "name": "清理专家"})
+    assert agent_resp.status_code == 200
+
+    create_resp = client.post("/api/sessions", json={"title": "旧调度状态会话", "agent_ids": []})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        meta = load_group_meta()
+        meta[session_id]["scheduler_state"] = {
+            "current_phase": "阶段1：选题与需求确认",
+            "next_speaker": "用户",
+            "speaker_task": "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。",
+        }
+        save_group_meta(meta)
+    finally:
+        reset_current_user_identity(token)
+
+    update_resp = client.put(
+        f"/api/sessions/{session_id}",
+        json={"agent_ids": ["agent-clean-scheduler"]},
+    )
+    assert update_resp.status_code == 200
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        refreshed = load_group_meta()
+        assert "scheduler_state" not in refreshed[session_id]
+    finally:
+        reset_current_user_identity(token)
 
 
 def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):

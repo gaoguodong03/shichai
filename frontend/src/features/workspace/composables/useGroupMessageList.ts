@@ -4,9 +4,11 @@ import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import { useAuthenticatedMessageImages } from './useAuthenticatedMessageImages'
 import {
+  agentBodyContent,
   renderMarkdownHtml,
   renderSnippetMarkdownHtml,
 } from '../workspaceMessageUtils'
+import { formatGroupMsgFullTime, formatGroupMsgTime } from '../messageTimeFormat'
 
 export type GroupMessage = {
   message_id?: string
@@ -42,6 +44,7 @@ export function useGroupMessageList(args: {
   const groupDisplayMessages = ref<GroupMessage[]>([])
   const mdRef = ref<{ render: (s: string) => string } | null>(new MarkdownIt({ breaks: true }))
   const { scheduleHydrateAuthImages } = useAuthenticatedMessageImages(groupMessagesRef)
+  let renderedSessionId = ''
 
   function renderMarkdown(text: string) {
     return renderMarkdownHtml(mdRef.value, text)
@@ -109,16 +112,6 @@ export function useGroupMessageList(args: {
     return [...new Set(names)]
   }
 
-  function formatGroupMsgTime(ts?: string) {
-    if (!ts) return ''
-    try {
-      const date = new Date(ts)
-      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    } catch {
-      return ts
-    }
-  }
-
   function defaultAgentFilename(msg: MsgExt): string {
     const name = (groupDetail.value?.agent_map || {})[msg.agent_id || '']?.name || 'agent'
     const ts = new Date().toISOString().slice(0, 19).replace('T', '').replace(/[-:]/g, '').slice(0, 12)
@@ -130,12 +123,14 @@ export function useGroupMessageList(args: {
     const content = (msg.content || '').trim()
     if (!id || !content) return
     const defaultName = defaultAgentFilename(msg)
-    const filename = (await appPrompt({
+    const promptValue = await appPrompt({
       title: '保存为工作区文件',
       message: '请输入文件名。',
       defaultValue: defaultName,
       required: true,
-    }))?.trim() || defaultName
+    })
+    if (promptValue === null) return
+    const filename = promptValue.trim() || defaultName
     if (!filename) return
     try {
       const response = await apiRequest(`/workspaces/${encodeURIComponent(id)}/files`, {
@@ -152,6 +147,16 @@ export function useGroupMessageList(args: {
       }
     } catch {
       await appAlert({ title: '保存失败', message: '保存失败', variant: 'danger' })
+    }
+  }
+
+  async function copyAgentMessageToClipboard(msg: MsgExt) {
+    const content = agentBodyContent(msg.content || '')
+    if (!content) return
+    try {
+      await navigator.clipboard.writeText(content)
+    } catch {
+      await appAlert({ title: '复制失败', message: '复制失败，请检查浏览器剪贴板权限', variant: 'danger' })
     }
   }
 
@@ -249,14 +254,21 @@ export function useGroupMessageList(args: {
   }
 
   watch(
-    () => groupDetail.value?.messages,
-    (messages) => {
-      const shouldFollow = isNearGroupBottom()
+    () => [groupDetail.value?.id, groupDetail.value?.messages] as const,
+    ([sessionId, messages]) => {
+      const nextSessionId = String(sessionId || '')
+      const sessionChanged = nextSessionId !== renderedSessionId
+      renderedSessionId = nextSessionId
+      const shouldFollow = sessionChanged || isNearGroupBottom()
       const nextMessages = Array.isArray(messages) ? [...messages] : []
       groupDisplayMessages.value = nextMessages
       nextTick(() => {
         scheduleHydrateAuthImages()
-        if (shouldFollow) scrollGroupToBottomIfNear()
+        if (sessionChanged) {
+          scrollGroupToBottom()
+        } else if (shouldFollow) {
+          scrollGroupToBottomIfNear()
+        }
       })
     },
     { immediate: true },
@@ -272,7 +284,9 @@ export function useGroupMessageList(args: {
     isShortSingleLine,
     extractUserFileReferenceNames,
     formatGroupMsgTime,
+    formatGroupMsgFullTime,
     saveAgentMessageToFile,
+    copyAgentMessageToClipboard,
     deleteGroupMessage,
     scrollGroupToBottom,
     isNearGroupBottom,

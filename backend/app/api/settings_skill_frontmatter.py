@@ -14,7 +14,7 @@ from app.core.settings_references import (
 
 
 class SkillCreate(BaseModel):
-    """创建 Skill 请求"""
+    """新建 Skill 请求"""
 
     name: Optional[str] = None
     description: Optional[str] = None

@@ -8,9 +8,9 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
-from app.agent.simple_agent_audio import (
-    _audio_transcription_final_message,
-    _forced_audio_asr_file_ref_message,
+from app.agent.simple_agent_mcp_tools import (
+    _forced_mcp_file_ref_tool_call,
+    _mcp_tool_result_direct_final_message,
 )
 from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
@@ -20,6 +20,7 @@ from app.agent.simple_agent_finalization import (
     _deterministic_tool_fallback_message,
     _fallback_after_llm_failure_message,
     _final_synthesis_instruction,
+    _json_loads_maybe,
     _large_run_skill_script_success_direct_final_message,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
@@ -50,6 +51,132 @@ from app.agent.simple_agent_tool_ids import (
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
+
+
+_RUN_SKILL_SCRIPT_METADATA_PATHS = {
+    "__list__",
+    ":list",
+    "list",
+    "__manifest__",
+    ":manifest",
+    "manifest",
+}
+_RUN_SKILL_SCRIPT_METADATA_CODES = {"scripts_list", "manifest", "script_description"}
+_RUN_SKILL_SCRIPT_CONTINUE_AFTER_SUCCESS_PATHS = {"init_skill.py"}
+_RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES = {"skill_initialized"}
+_RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE = "continue"
+
+
+def _normalized_skill_script_path(value: Any) -> str:
+    script_path = str(value or "").strip().replace("\\", "/")
+    while script_path.startswith("./"):
+        script_path = script_path[2:].lstrip("/")
+    if script_path.startswith("scripts/"):
+        script_path = script_path[8:].lstrip("/")
+    return script_path
+
+
+def _run_skill_raw_outputs_have_code(tool_out: dict[str, Any], codes: set[str]) -> bool:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list) or not raw_outputs:
+        return False
+    for raw in raw_outputs:
+        payload = _json_loads_maybe(raw)
+        if not isinstance(payload, dict) or str(payload.get("code") or "") not in codes:
+            return False
+    return True
+
+
+def _iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list):
+        return []
+    payloads: list[dict[str, Any]] = []
+    for raw in raw_outputs:
+        payload = _json_loads_maybe(raw)
+        if isinstance(payload, dict):
+            payloads.append(payload)
+            stdout_payload = _json_loads_maybe(payload.get("stdout"))
+            if isinstance(stdout_payload, dict):
+                payloads.append(stdout_payload)
+    return payloads
+
+
+def _run_skill_outputs_request_agent_turn_continue(tool_out: dict[str, Any]) -> bool:
+    payloads = _iter_run_skill_raw_output_payloads(tool_out)
+    if not payloads:
+        return False
+    saw_continue = False
+    for payload in payloads:
+        if payload.get("ok") is False or str(payload.get("execution_status") or "").strip().lower() == "failed":
+            return False
+        next_action = payload.get("next_action")
+        if not isinstance(next_action, dict):
+            continue
+        if str(next_action.get("agent_turn") or "").strip().lower() == _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
+            saw_continue = True
+    return saw_continue
+
+
+def _run_skill_workflow_outputs_are_successful(tool_out: dict[str, Any]) -> bool:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list) or not raw_outputs:
+        return True
+    for raw in raw_outputs:
+        payload = _json_loads_maybe(raw)
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("ok") is False or str(payload.get("execution_status") or "").strip().lower() == "failed":
+            return False
+        stdout_payload = _json_loads_maybe(payload.get("stdout"))
+        if isinstance(stdout_payload, dict) and (
+            stdout_payload.get("ok") is False
+            or str(stdout_payload.get("execution_status") or "").strip().lower() == "failed"
+        ):
+            return False
+    return True
+
+
+def _is_run_skill_script_metadata_probe(tool_out: dict[str, Any]) -> bool:
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if isinstance(calls, list) and calls:
+        saw_metadata_probe = False
+        for call in calls:
+            if not isinstance(call, dict):
+                return False
+            tool_name = str(call.get("tool") or call.get("name") or "").strip()
+            if not tool_name.startswith("run_skill_script"):
+                return False
+            args = _tool_call_args(call)
+            script_path = _normalized_skill_script_path(args.get("script_path") or args.get("__arg1"))
+            if script_path in _RUN_SKILL_SCRIPT_METADATA_PATHS or script_path.startswith("__describe__:"):
+                saw_metadata_probe = True
+                continue
+            return False
+        return saw_metadata_probe
+    return _run_skill_raw_outputs_have_code(tool_out, _RUN_SKILL_SCRIPT_METADATA_CODES)
+
+
+def _is_run_skill_script_workflow_step(tool_out: dict[str, Any]) -> bool:
+    if _run_skill_outputs_request_agent_turn_continue(tool_out):
+        return True
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if isinstance(calls, list) and calls:
+        saw_workflow_step = False
+        for call in calls:
+            if not isinstance(call, dict):
+                return False
+            tool_name = str(call.get("tool") or call.get("name") or "").strip()
+            if not tool_name.startswith("run_skill_script"):
+                return False
+            args = _tool_call_args(call)
+            script_path = _normalized_skill_script_path(args.get("script_path") or args.get("__arg1"))
+            if script_path in _RUN_SKILL_SCRIPT_CONTINUE_AFTER_SUCCESS_PATHS:
+                saw_workflow_step = True
+                continue
+            return False
+        return saw_workflow_step and _run_skill_workflow_outputs_are_successful(tool_out)
+    return _run_skill_raw_outputs_have_code(tool_out, _RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES)
 
 
 @dataclass
@@ -132,6 +259,112 @@ class SimpleAgent:
             return True
         return False
 
+    async def _execute_tool_response(
+        self,
+        response: BaseMessage,
+        *,
+        messages: list[BaseMessage],
+        tools: list[ToolSpec],
+        tool_result_cache: dict[str, dict[str, Any]],
+        tool_attempt_debug: list[dict[str, Any]],
+        tool_raw_outputs: list[str],
+        initial_state: dict[str, Any],
+        tool_calls_trace: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        tool_call_id_map = _normalize_ai_tool_call_ids(response)
+        state = {
+            "messages": messages,
+            "tools": tools,
+            "tool_result_cache": tool_result_cache,
+            "workspace_id": initial_state.get("workspace_id", ""),
+        }
+        tool_out = await self.tool_runner(state, tools)
+        out_msgs = tool_out.get("messages") or []
+        tad = tool_out.get("tool_attempt_debug")
+        if isinstance(tad, list):
+            tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
+        tc = tool_out.get("tool_calls")
+        if isinstance(tc, list) and tool_calls_trace is not None:
+            tool_calls_trace.extend(tc)
+        tro = tool_out.get("tool_raw_outputs")
+        if isinstance(tro, list):
+            tool_raw_outputs.extend([str(x) for x in tro])
+        if isinstance(out_msgs, list) and out_msgs:
+            _normalize_tool_message_ids(out_msgs, tool_call_id_map)
+            messages.extend(out_msgs)
+        missing_tool_msgs = _missing_tool_response_messages(
+            getattr(response, "tool_calls", None) or [],
+            out_msgs if isinstance(out_msgs, list) else [],
+            "工具执行器未返回结果消息",
+        )
+        if missing_tool_msgs:
+            logger.warning(
+                "SimpleAgent: tool_runner returned incomplete synthesized tool messages; filled_missing=%s",
+                len(missing_tool_msgs),
+            )
+            messages.extend(missing_tool_msgs)
+        return tool_out
+
+    async def _coerce_and_execute_synthesis_tool_calls(
+        self,
+        synthesis_response: BaseMessage,
+        *,
+        messages: list[BaseMessage],
+        tools: list[ToolSpec],
+        tool_result_cache: dict[str, dict[str, Any]],
+        tool_attempt_debug: list[dict[str, Any]],
+        tool_raw_outputs: list[str],
+        initial_state: dict[str, Any],
+        step: int,
+        tool_calls_trace: list[dict[str, Any]] | None = None,
+        previous_tool_signature: str = "",
+    ) -> tuple[BaseMessage | None, dict[str, Any] | None]:
+        coerced, debug = _coerce_text_tool_calls_to_structured(synthesis_response)
+        tool_calls = getattr(coerced, "tool_calls", None) or []
+        if not tool_calls:
+            return None, None
+        synthesis_signature = " | ".join(
+            f"{str(tc.get('name') or '')}:{tc.get('args')}"
+            for tc in tool_calls
+            if isinstance(tc, dict)
+        )
+        if previous_tool_signature and synthesis_signature == previous_tool_signature:
+            tool_attempt_debug.append(
+                {
+                    "source": "post_tool_synthesis_repeated_tool_calls_ignored",
+                    "matched": True,
+                    "signature_preview": synthesis_signature[:240],
+                }
+            )
+            return None, None
+        if debug is None:
+            debug = {
+                "source": "post_tool_synthesis_tool_calls",
+                "matched": True,
+                "count": len(tool_calls),
+                "content_preview": _extract_text_content(synthesis_response)[:240],
+            }
+        else:
+            debug = {**debug, "source": "post_tool_synthesis_dsml_tool_calls"}
+        tool_attempt_debug.append(debug)
+        messages.append(coerced)
+        tool_out = await self._execute_tool_response(
+            coerced,
+            messages=messages,
+            tools=tools,
+            tool_result_cache=tool_result_cache,
+            tool_attempt_debug=tool_attempt_debug,
+            tool_raw_outputs=tool_raw_outputs,
+            initial_state=initial_state,
+            tool_calls_trace=tool_calls_trace,
+        )
+        logger.info(
+            "SimpleAgent: executed synthesized tool calls step=%s count=%s",
+            step,
+            len(tool_calls),
+        )
+        return coerced, tool_out
+
     async def _call_model(self, client: Any, messages: list[BaseMessage], *, step: int | None = None) -> AIMessage:
         chars = sum(len(_extract_text_content(msg)) for msg in messages)
         logger.info(
@@ -199,7 +432,7 @@ class SimpleAgent:
                 if coerced_debug is not None:
                     tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
-                forced = _forced_audio_asr_file_ref_message(messages, tools)
+                forced = _forced_mcp_file_ref_tool_call(messages, tools)
                 if forced is not None:
                     logger.info(
                         "SimpleAgent: forcing audio ASR tool call for file ref path=%s",
@@ -348,17 +581,17 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": tool_error_message}
                     break
-                audio_final_message = _audio_transcription_final_message(tool_out)
-                if audio_final_message is not None:
-                    messages.append(audio_final_message)
+                mcp_direct_final_message = _mcp_tool_result_direct_final_message(tool_out)
+                if mcp_direct_final_message is not None:
+                    messages.append(mcp_direct_final_message)
                     tool_attempt_debug.append(
                         {
-                            "source": "audio_transcription_direct_final",
+                            "source": "mcp_tool_result_direct_final",
                             "matched": True,
-                            "content_preview": _extract_text_content(audio_final_message)[:240],
+                            "content_preview": _extract_text_content(mcp_direct_final_message)[:240],
                         }
                     )
-                    yield {"type": "agent_step", "step": step + 2, "message": audio_final_message}
+                    yield {"type": "agent_step", "step": step + 2, "message": mcp_direct_final_message}
                     break
                 large_script_final_message = _large_run_skill_script_success_direct_final_message(tool_out)
                 if large_script_final_message is not None:
@@ -372,6 +605,22 @@ class SimpleAgent:
                     )
                     yield {"type": "agent_step", "step": step + 2, "message": large_script_final_message}
                     break
+                if _is_run_skill_script_metadata_probe(tool_out):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_metadata_probe_continue",
+                            "matched": True,
+                        }
+                    )
+                    continue
+                if _is_run_skill_script_workflow_step(tool_out):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_workflow_step_continue",
+                            "matched": True,
+                        }
+                    )
+                    continue
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
@@ -395,6 +644,28 @@ class SimpleAgent:
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesized_tool_message, synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
+                        final_message,
+                        messages=messages,
+                        tools=tools,
+                        tool_result_cache=tool_result_cache,
+                        tool_attempt_debug=tool_attempt_debug,
+                        tool_raw_outputs=all_tool_raw_outputs,
+                        initial_state=initial_state,
+                        step=step + 2,
+                        previous_tool_signature=current_signature,
+                    )
+                    if synthesized_tool_message is not None and synthesized_tool_out is not None:
+                        yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
+                        yield {
+                            "type": "tool_step",
+                            "step": step + 2,
+                            "tool_messages": synthesized_tool_out.get("messages") or [],
+                            "tool_calls": synthesized_tool_out.get("tool_calls") or [],
+                            "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
+                            "tool_attempt_debug": tool_attempt_debug,
+                        }
+                        continue
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         all_tool_raw_outputs,
@@ -408,6 +679,28 @@ class SimpleAgent:
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesized_tool_message, synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
+                        final_message,
+                        messages=messages,
+                        tools=tools,
+                        tool_result_cache=tool_result_cache,
+                        tool_attempt_debug=tool_attempt_debug,
+                        tool_raw_outputs=all_tool_raw_outputs,
+                        initial_state=initial_state,
+                        step=step + 2,
+                        previous_tool_signature=current_signature,
+                    )
+                    if synthesized_tool_message is not None and synthesized_tool_out is not None:
+                        yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
+                        yield {
+                            "type": "tool_step",
+                            "step": step + 2,
+                            "tool_messages": synthesized_tool_out.get("messages") or [],
+                            "tool_calls": synthesized_tool_out.get("tool_calls") or [],
+                            "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
+                            "tool_attempt_debug": tool_attempt_debug,
+                        }
+                        continue
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         all_tool_raw_outputs,
@@ -544,7 +837,7 @@ class SimpleAgent:
                 if coerced_debug is not None:
                     tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
-                forced = _forced_audio_asr_file_ref_message(messages, tools)
+                forced = _forced_mcp_file_ref_tool_call(messages, tools)
                 if forced is not None:
                     logger.info(
                         "SimpleAgent: forcing audio ASR tool call for file ref path=%s",
@@ -676,14 +969,14 @@ class SimpleAgent:
                         }
                     )
                     break
-                audio_final_message = _audio_transcription_final_message(tool_out)
-                if audio_final_message is not None:
-                    messages.append(audio_final_message)
+                mcp_direct_final_message = _mcp_tool_result_direct_final_message(tool_out)
+                if mcp_direct_final_message is not None:
+                    messages.append(mcp_direct_final_message)
                     tool_attempt_debug.append(
                         {
-                            "source": "audio_transcription_direct_final",
+                            "source": "mcp_tool_result_direct_final",
                             "matched": True,
-                            "content_preview": _extract_text_content(audio_final_message)[:240],
+                            "content_preview": _extract_text_content(mcp_direct_final_message)[:240],
                         }
                     )
                     break
@@ -698,6 +991,22 @@ class SimpleAgent:
                         }
                     )
                     break
+                if _is_run_skill_script_metadata_probe(tool_out):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_metadata_probe_continue",
+                            "matched": True,
+                        }
+                    )
+                    continue
+                if _is_run_skill_script_workflow_step(tool_out):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "script_workflow_step_continue",
+                            "matched": True,
+                        }
+                    )
+                    continue
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
@@ -720,6 +1029,20 @@ class SimpleAgent:
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesized_tool_message, _synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
+                        final_message,
+                        messages=messages,
+                        tools=tools,
+                        tool_result_cache=tool_result_cache,
+                        tool_attempt_debug=tool_attempt_debug,
+                        tool_raw_outputs=tool_raw_outputs,
+                        initial_state=initial_state,
+                        step=step + 2,
+                        tool_calls_trace=tool_calls_trace,
+                        previous_tool_signature=current_signature,
+                    )
+                    if synthesized_tool_message is not None:
+                        continue
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         tool_raw_outputs,
@@ -732,6 +1055,20 @@ class SimpleAgent:
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesized_tool_message, _synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
+                        final_message,
+                        messages=messages,
+                        tools=tools,
+                        tool_result_cache=tool_result_cache,
+                        tool_attempt_debug=tool_attempt_debug,
+                        tool_raw_outputs=tool_raw_outputs,
+                        initial_state=initial_state,
+                        step=step + 2,
+                        tool_calls_trace=tool_calls_trace,
+                        previous_tool_signature=current_signature,
+                    )
+                    if synthesized_tool_message is not None:
+                        continue
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         tool_raw_outputs,

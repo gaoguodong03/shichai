@@ -198,7 +198,7 @@ export function useScenarioEditor(options: {
     return Boolean(skillId && !(skills.value || []).some((s) => s.id === skillId))
   }
 
-  function normalizeScenarioLeaderSkillIds(raw: unknown, refs?: ReferenceSnapshot[]): string[] {
+  function normalizeScenarioLeaderSkillIds(raw: unknown): string[] {
     const out: string[] = []
     const seen = new Set<string>()
     const skillLookup = skillNameLookup()
@@ -206,12 +206,12 @@ export function useScenarioEditor(options: {
       const id = String(item || '').trim()
       if (!id || seen.has(id)) continue
       const exists = Boolean(skillLookup[id])
-      const refName = referenceNameForId(id, refs, exists ? skillLookup : undefined)
-      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists && (!refName || refName === id)) {
+      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists) {
         continue
       }
       out.push(id)
       seen.add(id)
+      break
     }
     return out
   }
@@ -254,7 +254,7 @@ export function useScenarioEditor(options: {
     const hc = s.host_config
     if (hc && typeof hc === 'object') {
       scenarioLeaderDisplayName.value = (hc.display_name as string) || ''
-      scenarioLeaderSkillIds.value = normalizeScenarioLeaderSkillIds(hc.skill_ids, hc.skill_refs)
+      scenarioLeaderSkillIds.value = normalizeScenarioLeaderSkillIds(hc.skill_ids)
       scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
       scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
       const fc = (hc.file_capabilities || {}) as Record<string, boolean>
@@ -273,10 +273,9 @@ export function useScenarioEditor(options: {
   }
 
   function toggleScenarioLeaderSkill(skillId: string) {
-    const set = new Set(scenarioLeaderSkillIds.value)
-    if (set.has(skillId)) set.delete(skillId)
-    else set.add(skillId)
-    scenarioLeaderSkillIds.value = Array.from(set)
+    const id = String(skillId || '').trim()
+    if (!id) return
+    scenarioLeaderSkillIds.value = scenarioLeaderSkillIds.value.includes(id) ? [] : [id]
   }
 
   function createScenarioPreset() {
@@ -367,10 +366,7 @@ export function useScenarioEditor(options: {
       await appAlert({ title: '无法保存场景', message: '请至少选择 1 位协作专家', variant: 'warning' })
       return
     }
-    const skillIds = normalizeScenarioLeaderSkillIds(
-      scenarioLeaderSkillIds.value,
-      selectedScenarioPreset.value?.host_config?.skill_refs || [],
-    )
+    const skillIds = normalizeScenarioLeaderSkillIds(scenarioLeaderSkillIds.value)
     const host_config: ScenarioHostConfig = {
       skill_ids: skillIds,
       skill_refs: mergeReferenceRowsForIds(

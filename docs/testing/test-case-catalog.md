@@ -24,7 +24,7 @@
 | TC-UR01-02 | UR-01 | E2E | 未登录 | 访问 `/workspace` | 跳转 `/login?redirect=...` | `frontend/e2e/auth.spec.ts` |
 | TC-UR01-03 | UR-01 | API | A、B 两个账号 | A 请求 B 的会话或文件 | 请求被拒绝或返回不存在 | `backend/tests/test_sessions_api.py`、`backend/tests/test_workspace_files.py` |
 | TC-UR01-04 | UR-01 | API | 已登录 | 刷新页面后继续请求当前用户接口 | 登录态保持，用户上下文不丢失 | `backend/tests/test_auth_sqlite.py` |
-| TC-UR02-01 | UR-02 | API | 已登录 | `POST /api/sessions` 创建会话 | 返回唯一 `session_id` 并出现在列表 | `backend/tests/test_sessions_api.py` |
+| TC-UR02-01 | UR-02 | API | 已登录 | `POST /api/sessions` 新建会话 | 返回唯一 `session_id` 并出现在列表 | `backend/tests/test_sessions_api.py` |
 | TC-UR02-02 | UR-02 | API/E2E | 已有会话 | 发送消息并读取 SSE | 前端收到增量、完整消息和结束事件 | `backend/tests/test_group_chat_stream_protocol.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR02-03 | UR-02 | E2E | 会话含消息和文件 | 刷新工作区页面 | 历史、成员、文件和状态恢复 | `frontend/e2e/workspace.spec.ts` |
 | TC-UR02-04 | UR-02 | API | 已有会话 | 删除会话后继续发消息 | 列表不再显示，后续发送被拒绝 | `backend/tests/test_sessions_api.py` |
@@ -47,7 +47,7 @@
 | TC-UR08-01 | UR-08 | API/E2E | 工作区已有文件 | 上传、预览、编辑、保存、下载 | 内容正确，操作后列表刷新 | `backend/tests/test_workspace_files.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR08-02 | UR-08 | API | 恶意路径 `../` | 请求读取工作区外文件 | 返回拒绝，不泄露路径内容 | `backend/tests/test_file_ref_and_gateway.py` |
 | TC-UR08-03 | UR-08 | API | 专家生成文件 | 工具写入当前工作区 | 新文件出现在对应会话文件列表 | `backend/tests/test_sandbox_workspace_fs.py` |
-| TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名冲突和覆盖/重映射项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
+| TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名覆盖和本地 id 重映射项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | TC-UR09-02 | UR-09 | API | ZIP 结构错误 | 上传导入 | 返回明确结构错误 | `backend/tests/test_scenario_bundle.py` |
 | TC-UR09-03 | UR-09 | API | 专家资源包 | 导入专家包 | 专家、Skill 和工具引用按规则落库 | `backend/tests/test_expert_bundle.py` |
 | TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型、API Key 和默认主持人 | 新会话可引用最新配置，设置响应和前端均不泄露完整 Key | `backend/tests/test_llm_config.py`、`backend/tests/test_sessions_api.py`、`backend/tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |

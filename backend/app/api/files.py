@@ -55,6 +55,7 @@ def get_agent_outputs_root() -> Path:
 
 def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
+    返回指定 workspace 的根目录路径（不保证已新建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
     返回指定会话的工作区根目录（不保证已创建），位于
     data/users/{user_id}/sessions/{session_id}/workspace/ 下。
     """
@@ -76,7 +77,7 @@ def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) 
 def get_workspace_root(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
     确保指定 workspace 根目录存在并返回路径。
-    供创建 Chat / Workspace 文件操作等场景使用。
+    供新建 Chat / Workspace 文件操作等场景使用。
     """
     ws_root = get_workspace_root_path(workspace_id, user=user)
     ws_root.mkdir(parents=True, exist_ok=True)
@@ -149,7 +150,7 @@ async def create_workspace_dir(
     path: str = "",
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
-    """在指定 workspace 内创建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
+    """在指定 workspace 内新建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
     dirname = (body.dirname or "").strip().replace("..", "").replace("\\", "").strip("/")
     if not dirname:
         raise HTTPException(status_code=400, detail="dirname is required")
@@ -182,7 +183,7 @@ async def list_workspace_files(
     列出指定 workspace 下的文件/子目录。
     - workspace_id 通常与 Chat / Group Session ID 对应；
     - path 为 workspace 内相对路径，空表示该 workspace 根目录；
-    - 工作区根目录未创建时（用户尚未使用过该工作区）直接返回空列表，不创建目录。
+    - 工作区根目录未新建时（用户尚未使用过该工作区）直接返回空列表，不新建目录。
     """
     ws_root_path = get_workspace_root_path(workspace_id, user=current_user)
     if (path or "").strip() == "":
@@ -340,7 +341,7 @@ async def create_workspace_file(
     path: str = "",
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
-    """在指定 workspace 内创建新文件（path 为 workspace 内目录相对路径，body.filename 为文件名）"""
+    """在指定 workspace 内新建新文件（path 为 workspace 内目录相对路径，body.filename 为文件名）"""
     if not body.filename or not body.filename.strip():
         raise HTTPException(status_code=400, detail="filename is required")
     fn = body.filename.strip().replace("..", "").replace("/", "")

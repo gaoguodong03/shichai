@@ -53,7 +53,7 @@ def get_user_profile(username: str) -> Optional[UserProfile]:
 
 
 def ensure_user_profile(username: str, created_at: str = "") -> UserProfile:
-    """若不存在则创建一个最小用户档案。"""
+    """若不存在则新建一个最小用户档案。"""
     username = (username or "").strip()
     if not username:
         raise ValueError("username is required")

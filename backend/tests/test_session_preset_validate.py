@@ -78,6 +78,33 @@ def test_legacy_group_host_placeholder_is_not_a_default_dependency():
     assert cfg["skill_ids"] == []
 
 
+def test_legacy_group_host_placeholder_with_stale_ref_is_not_a_dependency():
+    cfg = normalize_host_config_dict(
+        {
+            "skill_ids": ["group-host"],
+            "skill_refs": [{"id": "group-host", "name": "网文协同写作主持人"}],
+        }
+    )
+
+    assert cfg["skill_ids"] == []
+    assert cfg.get("skill_refs") is None
+
+
+def test_host_config_normalizes_to_single_host_skill():
+    cfg = normalize_host_config_dict(
+        {
+            "skill_ids": ["host-a", "host-b"],
+            "skill_refs": [
+                {"id": "host-a", "name": "主持人 A"},
+                {"id": "host-b", "name": "主持人 B"},
+            ],
+        }
+    )
+
+    assert cfg["skill_ids"] == ["host-a"]
+    assert cfg["skill_refs"] == [{"id": "host-a", "name": "主持人 A"}]
+
+
 def test_validate_host_mcp_ignores_legacy_enabled_false():
     preset = {
         "id": "p",

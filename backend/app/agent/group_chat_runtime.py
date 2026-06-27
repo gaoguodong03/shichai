@@ -77,6 +77,7 @@ from app.agent.group_chat_tool_trace import (
     append_workspace_image_preview_markdown as _append_workspace_image_preview_markdown,
     extract_sandbox_entry_trace as _extract_sandbox_entry_trace,
     extract_tool_calls_from_accumulated as _extract_tool_calls_from_accumulated,
+    guard_unverified_delivery_claims as _guard_unverified_delivery_claims,
 )
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
@@ -94,7 +95,9 @@ from app.agent.group_chat_expert_resolution import (
     _default_leader_agent_id,
     _get_llm_for_agent,
     _last_user_message_text,
+    _llm_credential_notice_for_agent,
     _normalize_to_preferred_agent_ids,
+    _resolve_llm_provider_for_agent,
     _to_agent_style_id,
 )
 from app.agent.group_chat_skill_session import (
@@ -116,12 +119,34 @@ from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
     _build_host_recruit_message,
 )
+from app.api.files import get_workspace_root_path as _get_workspace_root_path
+from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
 from app.agent.group_chat_title_meta import (
     _infer_required_user_fields_for_skill,
     _record_user_message_and_refresh_title,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _log_expert_prompt(
+    *,
+    session_id: str,
+    run_id: str,
+    agent_id: str,
+    skill_id: str,
+    user_content: str,
+) -> None:
+    prompt = str(user_content or "")
+    logger.info(
+        "[Prompt] group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_id=%s skill_id=%s prompt_len=%s\n%s",
+        session_id,
+        run_id,
+        agent_id,
+        skill_id,
+        len(prompt),
+        prompt,
+    )
 
 
 class GroupChatRequest(BaseModel):
@@ -288,6 +313,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     reason=(decision.get("reason") or ""),
                     announcement=(decision.get("announcement") or ""),
                     next_prompt=decision.get("next_prompt"),
+                    current_phase=(decision.get("current_phase") or ""),
+                    speaker_task=(decision.get("speaker_task") or ""),
                     suggested_add_agent_ids=(decision.get("suggested_add_agent_ids") or []),
                     phase=phase,
                     owner_agent_id=decision.get("owner_agent_id"),
@@ -350,6 +377,40 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _persist_host_memory(host_msg)
                 return f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
 
+            def _credential_notice_for_agent(agent_profile: Optional[Dict[str, Any]]) -> Optional[str]:
+                return _llm_credential_notice_for_agent(agent_profile, app_settings)
+
+            def _build_credential_abort_events(
+                agent_profile: Optional[Dict[str, Any]],
+                *,
+                error_code: str = "llm_credential_error",
+            ) -> Optional[List[str]]:
+                notice = _credential_notice_for_agent(agent_profile)
+                if not notice:
+                    return None
+                host_msg = _build_host_notice_message(
+                    skill_id=scene_runtime.host_bubble_skill_id(),
+                    content=notice,
+                    leader_agent_id=leader_agent_id,
+                    meta={"error_code": error_code},
+                )
+                end_payload = build_end_payload(
+                    waiting_for_user=True,
+                    phase=OrchestrationPhase.AWAITING_USER,
+                    interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
+                    resume_target_agent_id=resume_target_agent_id,
+                    required_user_fields=required_user_fields,
+                    turn_id=orch_ctx.turn_id,
+                    token_version=orch_ctx.token_version,
+                    handoff_reason=notice,
+                    extra={"error_code": error_code},
+                )
+                _persist_pending_state(end_payload)
+                return [
+                    _record_host_message(host_msg),
+                    f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n",
+                ]
+
             async def _handoff_to_host_scheduler_after_expert() -> Tuple[str, List[str]]:
                 """After a completed expert turn, let the host choose the next owner in the same stream."""
                 nonlocal scheduler_next_prompt
@@ -364,6 +425,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     bool(host_agent),
                     last_speaker_agent_id,
                 )
+                abort_events = _build_credential_abort_events(host_agent if host_agent else None)
+                if abort_events:
+                    emitted.extend(abort_events)
+                    return "user", emitted
                 if leader_agent_id and host_agent:
                     llm_host = _get_llm_for_agent(host_agent, app_settings)
                     decision = await _host_decide_by_agent(
@@ -428,7 +493,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_ids") or [])
                 resolved_next = str(decision.get("next_speaker") or "user").strip().lower() or "user"
-                np_auto = decision.get("next_prompt") if isinstance(decision, dict) else None
+                np_auto = (
+                    decision.get("speaker_task") or decision.get("next_prompt")
+                    if isinstance(decision, dict)
+                    else None
+                )
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
 
@@ -440,7 +509,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_add=suggested_add,
                         leader_agent_id=leader_agent_id,
                     )
-                    emitted.append(_record_host_message(host_msg))
+                    if host_msg:
+                        emitted.append(_record_host_message(host_msg))
                     return resolved_next, emitted
 
                 if resolved_next in agent_ids:
@@ -449,6 +519,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         next_speaker=resolved_next,
                         agent_map=agent_map,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
+                        speaker_task=decision.get("speaker_task"),
                         suggested_order=decision.get("suggested_order"),
                         leader_agent_id=leader_agent_id,
                     )
@@ -462,7 +534,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         skill_id=scene_runtime.host_bubble_skill_id(),
                         next_speaker=resolved_next,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
                         reason=decision.get("reason"),
+                        speaker_task=decision.get("speaker_task"),
                         leader_agent_id=leader_agent_id,
                     )
                     if host_msg:
@@ -473,6 +547,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         orch_ctx.phase = OrchestrationPhase.COMPLETED
                     return resolved_next, emitted
 
+                if resolved_next == "invite":
+                    orch_ctx.phase = OrchestrationPhase.RECRUITING
+                    return "user", emitted
+
                 return "user", emitted
 
             next_speaker = None
@@ -481,6 +559,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             # 0 个 Agent：主持人为先，主持人回复用户并推荐若干 Agent 加入（不再使用 Chat）
             if len(agent_ids) == 0:
+                abort_events = _build_credential_abort_events(None)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
                 recent = _scheduler_recent_context(group_session_id, messages)
                 all_instances = [d for d in preferred_instances if d.get("agent_id")]
                 picked: List[str] = []
@@ -575,6 +658,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 orch_ctx.owner_agent_id = entry_route.direct_agent_id
             else:
                 logger.debug("group_chat_route_branch=host_scheduler session=%s", group_session_id)
+                abort_events = _build_credential_abort_events(host_agent if host_agent else None)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
                 # 统一调度路径：流程由 Skill 锁与主持人 JSON 表达。
                 recent = _scheduler_recent_context(group_session_id, messages)
                 decision = None
@@ -659,7 +747,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_ids") or [])
                 next_speaker = decision.get("next_speaker", "user")
-                np_auto = decision.get("next_prompt") if isinstance(decision, dict) else None
+                np_auto = (
+                    decision.get("speaker_task") or decision.get("next_prompt")
+                    if isinstance(decision, dict)
+                    else None
+                )
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
                 if suggested_add:
@@ -670,13 +762,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         suggested_add=suggested_add,
                         leader_agent_id=leader_agent_id,
                     )
-                    yield _record_host_message(host_msg)
+                    if host_msg:
+                        yield _record_host_message(host_msg)
                 if next_speaker in agent_ids:
                     host_msg = _build_host_next_speaker_message(
                         skill_id=scene_runtime.host_bubble_skill_id(),
                         next_speaker=next_speaker,
                         agent_map=agent_map,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
+                        speaker_task=decision.get("speaker_task"),
                         suggested_order=decision.get("suggested_order"),
                         leader_agent_id=leader_agent_id,
                     )
@@ -688,22 +783,27 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         skill_id=scene_runtime.host_bubble_skill_id(),
                         next_speaker=next_speaker,
                         announcement=announcement,
+                        current_phase=decision.get("current_phase"),
                         reason=decision.get("reason"),
+                        speaker_task=decision.get("speaker_task"),
                         leader_agent_id=leader_agent_id,
                     )
                     if host_msg:
                         yield _record_host_message(host_msg)
                     if next_speaker == "user":
                         orch_ctx.phase = OrchestrationPhase.AWAITING_USER
+                elif next_speaker == "invite":
+                    orch_ctx.phase = OrchestrationPhase.RECRUITING
 
             if not next_speaker:
                 fallback_host = _build_host_fallback_message(
                     skill_id=scene_runtime.host_bubble_skill_id(),
                     leader_agent_id=leader_agent_id,
                 )
-                fallback_event = _record_host_message(fallback_host)
-                _save_group_meta(meta)
-                yield fallback_event
+                if fallback_host:
+                    fallback_event = _record_host_message(fallback_host)
+                    _save_group_meta(meta)
+                    yield fallback_event
 
             while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_ids:
                 if agent_turns >= 32:
@@ -738,6 +838,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     move_to_interrupt(orch_ctx, InterruptReason.NEED_MORE_CONTEXT)
                     next_speaker = "user"
                     break
+
+                abort_events = _build_credential_abort_events(agent_profile)
+                if abort_events:
+                    for event in abort_events:
+                        yield event
+                    return
 
                 expert_runtime = await build_expert_turn_runtime(
                     agent_profile=agent_profile,
@@ -867,6 +973,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 ):
                     uc = uc + "\n\n【历史对话（供参考）】\n" + context
                 user_content = uc
+                _log_expert_prompt(
+                    session_id=group_session_id,
+                    run_id=run_id,
+                    agent_id=next_speaker,
+                    skill_id=resolved_skill_id,
+                    user_content=user_content,
+                )
                 initial_state = {
                     "messages": [HumanMessage(content=user_content)],
                     "tools": tools,
@@ -998,6 +1111,20 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 skill_session_completed = skill_session_state.over is True
                 full_content = skill_session_state.display_content
                 skill_session_signals = skill_session_state.signals
+                delivery_guard_applied = False
+                try:
+                    workspace_root_for_guard = _get_workspace_root_path(group_session_id)
+                except Exception:
+                    workspace_root_for_guard = None
+                guarded_content = _guard_unverified_delivery_claims(
+                    full_content,
+                    tool_calls=tool_calls_trace,
+                    tool_raw_results=accumulated_raw_tool_results,
+                    workspace_root=workspace_root_for_guard,
+                )
+                if guarded_content != full_content:
+                    delivery_guard_applied = True
+                    full_content = guarded_content
                 skill_introspection_meta_answer = _has_bound_skill_introspection_direct_final(tool_attempt_debug)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill_id = resolved_skill_id if agent_profile else "default"
@@ -1037,7 +1164,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "has_tool_call": bool(tool_calls_trace),
                     "has_raw_result": bool(accumulated_raw_tool_results),
                     "skill_session_state": {
-                        "over": skill_session_state.over,
+                        "skill_session": (
+                            "release"
+                            if skill_session_state.over is True
+                            else "keep"
+                            if skill_session_state.over is False
+                            else None
+                        ),
                         "source": skill_session_state.source,
                         "signals": {
                             "assistant_state_block": skill_session_signals.assistant_state_block
@@ -1047,10 +1180,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             "legacy_end_marker": bool(skill_session_signals.legacy_end_marker)
                             if skill_session_signals
                             else False,
-                            "audio_transcription_success": bool(skill_session_signals.audio_transcription_success)
-                            if skill_session_signals
-                            else False,
                         },
+                    },
+                    "delivery_guard": {
+                        "applied": delivery_guard_applied,
                     },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
@@ -1277,14 +1410,28 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             raise
         except Exception as e:
             logger.exception("群聊流式输出异常")
-            yield f"event: error\ndata: {json_module.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            err_text = str(e)
+            if is_llm_credential_error_message(err_text):
+                provider_id, cfg = _resolve_llm_provider_for_agent(host_agent if host_agent else None, app_settings)
+                notice = build_llm_credential_notice(provider_id, cfg)
+                host_msg = _build_host_notice_message(
+                    skill_id=scene_runtime.host_bubble_skill_id(),
+                    content=notice,
+                    leader_agent_id=leader_agent_id,
+                    meta={"error_code": "llm_credential_error", "error": err_text},
+                )
+                messages.append(host_msg)
+                _save_group_history(group_session_id, messages)
+                yield f"event: message\ndata: {json_module.dumps(host_msg, ensure_ascii=False)}\n\n"
+            else:
+                yield f"event: error\ndata: {json_module.dumps({'error': err_text}, ensure_ascii=False)}\n\n"
             try:
                 payload = build_end_payload(
                     waiting_for_user=True,
                     phase=OrchestrationPhase.AWAITING_USER,
                     interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,
                     handoff_reason="stream_error",
-                    extra={"error": str(e)},
+                    extra={"error": err_text},
                 )
                 yield f"event: end\ndata: {json_module.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception:

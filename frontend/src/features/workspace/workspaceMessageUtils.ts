@@ -41,6 +41,28 @@ export function formatToolPopover(raw: string): string {
   return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
+export function getSchedulerStateRaw(msg: { meta?: unknown }): string {
+  const meta = msg.meta && typeof msg.meta === 'object' ? msg.meta as { scheduler_state?: unknown } : null
+  const state = meta?.scheduler_state
+  if (!state || typeof state !== 'object') return ''
+  const data = state as {
+    current_phase?: unknown
+    next_speaker?: unknown
+    speaker_task?: unknown
+  }
+  const out = {
+    current_phase: String(data.current_phase || '').trim(),
+    next_speaker: String(data.next_speaker || '').trim(),
+    speaker_task: String(data.speaker_task || '').trim(),
+  }
+  if (!out.current_phase && !out.next_speaker && !out.speaker_task) return ''
+  return JSON.stringify(out, null, 2)
+}
+
+export function formatSchedulerStatePopover(raw: string): string {
+  return tryFormatJson(raw)
+}
+
 function extractToolCallBlocks(content: string): string[] {
   const text = content || ''
   if (!text.trim()) return []

@@ -61,7 +61,7 @@ def cmd_add(args: argparse.Namespace) -> int:
     created_at = datetime.now(timezone.utc).isoformat()
     ensure_user_profile(name, created_at=created_at)
     ensure_empty_session_presets(name)
-    print(f"已创建账户: {name}")
+    print(f"已新建账户: {name}")
     return 0
 
 

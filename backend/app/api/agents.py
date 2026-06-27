@@ -38,7 +38,7 @@ def _get_agent_instances_path() -> Path:
 
 
 class AgentCreate(BaseModel):
-    """创建 Agent 实例请求"""
+    """新建 Agent 实例请求"""
     name: str
     role: str = ""
     system_prompt: Optional[str] = None
@@ -277,22 +277,19 @@ async def import_agent_instance_bundle(
     file: UploadFile = File(...),
     dry_run: bool = Form(True),
     overwrite_skills: bool = Form(True),
-    # False=用包内覆盖本地同名 MCP；True=保留本地同名，仅追加缺失 id
+    # 兼容旧表单字段；当前导入语义固定为同名保留本地内容并映射到本地 id，不同名生成新 id。
     mcp_skip_existing: bool = Form(False),
     id_conflict: str = Form("overwrite"),
 ):
     """导入专家包：合并技能、MCP 与专家条目。"""
-    from app.api.settings_mcp import load_mcp_config, save_mcp_config
-    from app.api.settings_skills import _invalidate_mcp_runtime_after_config_change
-    from app.core.expert_bundle import merge_single_expert_into_instances, read_expert_bundle_manifest
-    from app.core.settings_bundle_import import find_missing_references_for_expert_bundle
+    from app.api.settings_mcp import load_mcp_config
+    from app.core.expert_bundle import read_expert_bundle_manifest
+    from app.core.settings_bundle_import import bundle_skill_name_map, find_missing_references_for_expert_bundle
     from app.core.scenario_bundle import (
         extract_scenario_bundle_dir,
-        copy_bundle_skills_to_user,
         list_skill_ids_in_bundle_skills_dir,
-        merge_mcp_servers_for_bundle,
     )
-    from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
+    from app.skills.loader import get_builtin_skills_dir
 
     fn = (file.filename or "").strip().lower()
     if not fn.endswith(".zip"):
@@ -315,15 +312,14 @@ async def import_agent_instance_bundle(
 
         user_skills = _agent_skills_dir()
         skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
-        would_overwrite: List[str] = []
-        would_skip: List[str] = []
-        for sid in skill_ids_in_zip:
-            dest = user_skills / sid
-            if dest.is_dir():
-                if overwrite_skills:
-                    would_overwrite.append(sid)
-                else:
-                    would_skip.append(sid)
+        skill_names = bundle_skill_name_map(tmp, skill_ids_in_zip)
+        from app.core.settings_bundle_import import skill_name_identity_import_plan
+
+        _skill_id_map, _skill_copy_pairs, would_overwrite = skill_name_identity_import_plan(
+            tmp,
+            user_skills,
+            skill_ids_in_zip,
+        )
 
         mcp_path = tmp / "mcp_servers.json"
         mcp_bundle: List[Dict[str, Any]] = []
@@ -364,9 +360,10 @@ async def import_agent_instance_bundle(
                         "agent_id": str(norm.get("agent_id") or "") or "（可空，提交时生成）",
                         "name": norm.get("name"),
                         "skills": skill_ids_in_zip,
+                        "skill_names": skill_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite,
-                        "would_skip_skills": would_skip,
+                        "would_skip_skills": [],
                         "name_conflict_existing_ids": same_name_agent_ids,
                         "name_conflict_mode": conflict,
                         "missing_references": missing_references,
@@ -375,23 +372,12 @@ async def import_agent_instance_bundle(
                 },
             }
 
-        imported_skills, skipped_skills = copy_bundle_skills_to_user(
-            tmp, user_skills, overwrite=overwrite_skills
-        )
-        invalidate_skills_cache_for_user(get_current_username() or "")
+        from app.api.settings_skills import _import_expert_from_bundle_bytes
 
-        if mcp_bundle:
-            merged_mcp, _a, _s, _u = merge_mcp_servers_for_bundle(
-                existing_mcp, mcp_bundle, skip_existing=mcp_skip_existing
-            )
-            save_mcp_config(merged_mcp)
-            await _invalidate_mcp_runtime_after_config_change()
-
-        instances = existing_instances
-        instances, final_id, skipped_by_name, overwritten_agent_ids = merge_single_expert_into_instances(
-            instances, norm, id_conflict=conflict
-        )
-        save_agent_instances(instances)
+        helper_result = await _import_expert_from_bundle_bytes(raw, dry_run=False)
+        summary = dict(helper_result.get("summary") or {})
+        final_id = summary.get("imported_agent_id")
+        instances = load_agent_instances()
         val_after = None
         if final_id:
             val_after = _agent_validation_payload(next(d for d in instances if d.get("agent_id") == final_id))
@@ -400,14 +386,7 @@ async def import_agent_instance_bundle(
             "status": "ok",
             "data": {
                 "dry_run": False,
-                "summary": {
-                    "imported_agent_id": final_id,
-                    "skipped_by_name": skipped_by_name,
-                    "overwritten_agent_ids": overwritten_agent_ids,
-                    "skills_imported": imported_skills,
-                    "skills_skipped": skipped_skills,
-                    "missing_references": missing_references,
-                },
+                "summary": summary,
                 "validation_after": val_after,
             },
         }
@@ -430,7 +409,7 @@ async def list_agent_instances_response():
 
 
 async def create_agent_instance(body: AgentCreate):
-    """创建 Agent 实例"""
+    """新建 Agent 实例"""
     instances = load_agent_instances()
     agent_id = (body.agent_id or "").strip() or f"agent-{uuid.uuid4().hex[:8]}"
     skill_ids = body.skill_ids or []
@@ -510,7 +489,7 @@ async def get_agents():
 
 @router.post("/agents")
 async def create_agent(body: AgentCreate):
-    """创建 Agent（主入口）。"""
+    """新建 Agent（主入口）。"""
     return await create_agent_instance(body)
 
 

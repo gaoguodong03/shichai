@@ -263,7 +263,7 @@
 
             >
 
-              {{ saving ? '创建中...' : '创建' }}
+              {{ saving ? '新建中...' : '新建' }}
 
             </button>
 
@@ -280,6 +280,24 @@
             >
 
               {{ saving ? '保存中...' : '保存' }}
+
+            </button>
+
+            <button
+
+              v-if="!isNew"
+
+              type="button"
+
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
+
+              title="导出 ZIP 模型包"
+
+              @click="exportProviderBundle"
+
+            >
+
+              导出
 
             </button>
 
@@ -326,6 +344,9 @@ import { appAlert, appConfirm } from '@/composables/useAppDialog'
 const props = defineProps<{
 
   providerId?: string | null
+
+  /** 父级刷新模型列表时递增，用于导入/覆盖后同步详情 */
+  providersVersion?: number
 
 }>()
 
@@ -571,36 +592,66 @@ async function loadSecrets() {
 
 
 
-async function load() {
+function applyProviderToEdit(pid: string) {
+  const meta = form.value.llm_providers[pid]
+  if (!meta) return
 
-  loading.value = true
+  const params = paramsFromMeta(meta as Record<string, unknown>)
+  if (isDeepSeekFingerprint(`${pid} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
+    params.thinking = 'false'
+  }
+
+  edit.value = {
+    id: pid,
+    base_url: meta.base_url ?? '',
+    model: meta.model ?? '',
+    api_key_env: meta.api_key_env ?? '',
+    api_key_ref: (meta.api_key_ref || '').trim(),
+    params,
+  }
+}
+
+async function syncEditForProvider(pid: string | null) {
+  if (!pid) return
+
+  if (pid === '__new__') {
+    edit.value = {
+      id: '',
+      base_url: 'https://jeniya.top/v1',
+      model: '',
+      api_key_env: 'JENIYA_API_KEY',
+      api_key_ref: '',
+      params: emptyParams(),
+    }
+    return
+  }
+
+  if (!form.value.llm_providers[pid]) {
+    await load({ silent: true })
+  }
+
+  applyProviderToEdit(pid)
+}
+
+async function load(options: { silent?: boolean } = {}) {
+  const showLoading = !options.silent
+  if (showLoading) loading.value = true
 
   try {
-
     const r = await apiRequest('/settings/app')
-
     const j = await r.json()
 
     if (j?.status === 'ok' && j?.data) {
-
       form.value = {
-
         default_llm: j.data.default_llm ?? 'qwen',
-
         llm_providers: { ...(j.data.llm_providers || {}) },
-
       }
-
     }
 
     await loadSecrets()
-
   } finally {
-
-    loading.value = false
-
+    if (showLoading) loading.value = false
   }
-
 }
 
 
@@ -661,71 +712,27 @@ async function saveAll(nextSelectedId?: string) {
 
 
 
-onMounted(load)
-
-
+onMounted(async () => {
+  await load()
+  await syncEditForProvider(effectiveProviderId.value)
+})
 
 watch(
-
-  () => [effectiveProviderId.value, form.value.llm_providers],
-
-  () => {
-
-    const pid = effectiveProviderId.value
-
-    if (!pid) return
-
-    if (pid === '__new__') {
-
-      edit.value = {
-
-        id: '',
-
-        base_url: 'https://jeniya.top/v1',
-
-        model: '',
-
-        api_key_env: 'JENIYA_API_KEY',
-
-        api_key_ref: '',
-
-        params: emptyParams(),
-
-      }
-
-      return
-
-    }
-
-    const meta = form.value.llm_providers[pid]
-
-    if (!meta) return
-
-    const params = paramsFromMeta(meta as Record<string, unknown>)
-    if (isDeepSeekFingerprint(`${pid} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
-      params.thinking = 'false'
-    }
-
-    edit.value = {
-
-      id: pid,
-
-      base_url: meta.base_url ?? '',
-
-      model: meta.model ?? '',
-
-      api_key_env: meta.api_key_env ?? '',
-
-      api_key_ref: (meta.api_key_ref || '').trim(),
-
-      params,
-
-    }
-
+  () => effectiveProviderId.value,
+  (pid) => {
+    void syncEditForProvider(pid)
   },
+)
 
-  { deep: true },
-
+watch(
+  () => props.providersVersion,
+  () => {
+    if (props.providersVersion == null) return
+    void (async () => {
+      await load({ silent: true })
+      await syncEditForProvider(effectiveProviderId.value)
+    })()
+  },
 )
 
 watch(
@@ -866,6 +873,48 @@ async function setAsDefault() {
   form.value.default_llm = pid
 
   await saveAll()
+
+}
+
+
+
+async function exportProviderBundle() {
+
+  const pid = effectiveProviderId.value
+
+  if (!pid || pid === '__new__') return
+
+  try {
+
+    const r = await apiRequest(`/settings/llm-providers/${encodeURIComponent(pid)}/export-bundle`)
+
+    if (!r.ok) {
+
+      const j = (await r.json().catch(() => ({}))) as { detail?: string }
+
+      throw new Error(j.detail || '导出失败')
+
+    }
+
+    const blob = await r.blob()
+
+    const url = URL.createObjectURL(blob)
+
+    const a = document.createElement('a')
+
+    a.href = url
+
+    a.download = `llm-bundle-${pid.replace(/[/\\]/g, '_')}.zip`
+
+    a.click()
+
+    URL.revokeObjectURL(url)
+
+  } catch (e) {
+
+    await appAlert({ title: '导出失败', message: (e as Error).message || '导出失败', variant: 'danger' })
+
+  }
 
 }
 

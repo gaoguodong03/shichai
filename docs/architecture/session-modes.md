@@ -29,15 +29,23 @@
 1）专家被选中后，在同一轮内直接执行，不再只“点名后等待下一条用户消息”。
 2）专家执行完成后，若无自动继续信号，返回等待用户输入（AWAITING_USER）。
 3）当用户明确表达“结束 skill/退出 skill/交给主持人”等语义时，清理 skill 锁并回到四九调度链路。
-4）Skill 会话按“继续优先”判定：专家状态块或脚本 stdout 任一明确为 `false` 时保留 skill 锁；没有明确 `false` 时，再按专家状态块 `true`、脚本 `skill_session_over=true`、旧结束标记的顺序释放锁。`done/final` 只表示工具循环结束，不释放 skill 锁。
+4）Skill 会话由脚本或 MCP 工具 stdout JSON、或专家隐藏状态块中的 `next_action` 判定；字段含义与组合见 [skill-session-flow.md](../skills/skill-session-flow.md)，与主持人/入口路由的合成状态机见 [group-orchestration-fsm.md](./group-orchestration-fsm.md)。
 
-三、主持人可见消息（announcement）规则
-1）announcement 为“给用户看的主持人播报文案”，用于说明当前安排、原因和下一步。
-2）当 next_speaker 为专家时，主持人先输出 announcement（或默认“下面由 X 发言”），随后专家发言。
-3）当 next_speaker 为 user 或 end 时，主持人的 announcement 也必须落为可见消息，避免出现“用户连续发言但界面无响应”的观感。
+三、主持人可见消息规则（平台固定话术）
+
+主持人只负责调度，不向用户复述需求或代答。平台根据 `next_speaker` 生成固定话术，完整状态机见 [group-orchestration-fsm.md](./group-orchestration-fsm.md)。
+
+| next_speaker | 用户可见 |
+| --- | --- |
+| 场内 `agent-xxx` | `下面由 {专家名} 发言。` |
+| `invite`（含 0 专家需组队） | 固定「我推荐以下专家加入讨论：…」 |
+| `end` | `任务结束，请打开新对话。`（吸收态） |
+| `user` | **无主持气泡**；用户说完后重新走主持人调度 |
+
+注意：`next_speaker=user` 与 `next_action.skill_session=keep` 不同。后者是专家声明的 Skill 锁，下条用户消息直达专家，主持人全程 bypass（见上文「一、路由优先级」第 3 条及 [group-orchestration-fsm.md](./group-orchestration-fsm.md) L2）。
 
 四、结束与中断
-1）next_speaker=end：会话进入 COMPLETED，结束讨论。
+1）`next_speaker=end`：会话进入 COMPLETED；持久化后进入吸收态，后续输入仍返回结束话术（见 [group-orchestration-fsm.md](./group-orchestration-fsm.md)）。
 2）需要用户补充信息、上下文不足、工具异常、轮次预算到达上限等情况：进入等待用户状态，并通过中断原因提示用户下一步。
 
 五、前端提示条行为（与后端编排对应）

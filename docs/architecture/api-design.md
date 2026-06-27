@@ -72,7 +72,7 @@ ALLOW_ANONYMOUS_API=0
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | `GET` | `/api/sessions` | 当前用户会话列表 |
-| `POST` | `/api/sessions` | 创建普通会话或带专家/场景成员的会话 |
+| `POST` | `/api/sessions` | 新建普通会话或带专家/场景成员的会话 |
 | `GET` | `/api/sessions/{session_id}` | 会话详情、历史、成员、meta |
 | `PUT` | `/api/sessions/{session_id}` | 更新会话标题、成员或场景信息 |
 | `DELETE` | `/api/sessions/{session_id}` | 删除会话 |
@@ -107,7 +107,7 @@ ALLOW_ANONYMOUS_API=0
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | `GET` | `/api/agents` | 专家列表 |
-| `POST` | `/api/agents` | 创建专家 |
+| `POST` | `/api/agents` | 新建专家 |
 | `PUT` | `/api/agents/{agent_id}` | 更新专家 |
 | `DELETE` | `/api/agents/{agent_id}` | 删除专家 |
 | `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 |
@@ -131,7 +131,7 @@ ALLOW_ANONYMOUS_API=0
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | `GET` | `/api/settings/skills` | Skill 列表 |
-| `POST` | `/api/settings/skills` | 创建 Skill |
+| `POST` | `/api/settings/skills` | 新建 Skill |
 | `PUT` | `/api/settings/skills/{skill_id}` | 更新 Skill 元信息 |
 | `DELETE` | `/api/settings/skills/{skill_id}` | 删除 Skill |
 | `GET` | `/api/settings/skills/{skill_id}/content` | 读取 `SKILL.md` |
@@ -151,7 +151,7 @@ ALLOW_ANONYMOUS_API=0
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | `GET` | `/api/settings/mcp` | MCP Server 列表 |
-| `POST` | `/api/settings/mcp` | 创建 MCP Server |
+| `POST` | `/api/settings/mcp` | 新建 MCP Server |
 | `PUT` | `/api/settings/mcp/{server_id}` | 更新 MCP Server |
 | `DELETE` | `/api/settings/mcp/{server_id}` | 删除 MCP Server |
 | `POST` | `/api/settings/mcp/{server_id}/test` | 测试连接 |
@@ -167,9 +167,9 @@ ALLOW_ANONYMOUS_API=0
 |------|------|------|
 | `GET` | `/api/workspaces/sessions-with-files` | 有文件的会话列表 |
 | `GET` | `/api/workspaces/{workspace_id}/files` | 文件列表 |
-| `POST` | `/api/workspaces/{workspace_id}/files` | 创建文件 |
+| `POST` | `/api/workspaces/{workspace_id}/files` | 新建文件 |
 | `POST` | `/api/workspaces/{workspace_id}/files/upload` | 上传文件 |
-| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 创建目录 |
+| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 新建目录 |
 | `GET` | `/api/workspaces/{workspace_id}/files/content` | 读取文件内容 |
 | `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存文件内容 |
 | `DELETE` | `/api/workspaces/{workspace_id}/files/content` | 删除文件 |

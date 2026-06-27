@@ -68,6 +68,10 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     if file_lines:
         parts.append("## 文件操作（当前会话工作区）\n\n你拥有以下与「当前会话工作区」相关的工具：\n")
         parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
+        parts.append(
+            "- 这些文件工具是任务过程能力，不限于用户显式要求保存或读取；只要当前任务需要检查已有文件、"
+            "新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。\n"
+        )
         if "read_file" in names:
             parts.append(
                 "- 当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，"
@@ -76,11 +80,16 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             )
         if "write_workspace_file" in names or "edit_workspace_file" in names:
             parts.append(
-                "- 当用户让你「保存/写入/覆盖某个文件」时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，"
-                "而不是只说「请手动保存」。\n"
+                "- 当用户明确要求「保存/写入/覆盖某个文件」，或本轮任务需要把中间产物、最终产物沉淀为工作区文件时，"
+                "优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说「请手动保存」或把全部内容堆在回复里。\n"
             )
         if "write_workspace_file" in names:
             parts.append(_WORKSPACE_TASK_FILE_RULE)
+            parts.append(
+                "- 对网页采集、资料检索、素材整理任务，采集到多条独立素材时，不要把所有素材写进一个文件；"
+                "应为每一条独立素材分开调用 `write_workspace_file`，保存为 `materials/<序号>-<简短标题>.md` "
+                "等工作区相对路径，再在最终答复汇总文件清单。\n"
+            )
         parts.append("- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。\n")
         parts.append(
             "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
@@ -158,7 +167,12 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 )
 
 _WORKSPACE_TASK_FILE_RULE = (
-    "- 调度任务由平台通过本轮提示词传入，不要创建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
+    "- 调度任务由平台通过本轮提示词传入，不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
+    "- 除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用"
+    "`文件名-YYYYMMDDHHMMSS00.扩展名` 格式，例如 `report-2026062519304500.md`；"
+    "不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"
+    "- 只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出"
+    "「报告已保存至工作区」或类似结论。\n"
 )
 
 
@@ -218,11 +232,11 @@ def create_skill_execution_agent(
     synthesize_after_read_file_paths: tuple[str, ...] = (),
 ):
     """
-    创建技能执行 Agent：仅用于「第二次调用」。
+    新建技能执行 Agent：仅用于「第二次调用」。
     系统提示词 = 用户设置 + 选中技能的完整内容 + 工具列表。
     按 skill 步骤执行，某一步需要时调用 MCP 工具。
     """
-    logger.debug(f"创建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
+    logger.debug(f"新建技能执行 Agent，工具数量: {len(tools)}，技能内容长度: {len(skill_full_content)}")
 
     system_prompt = ""
     if extra_system_prompt and extra_system_prompt.strip():

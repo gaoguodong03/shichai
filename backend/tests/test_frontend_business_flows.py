@@ -429,6 +429,40 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert "api_key" not in provider_after
     assert "sk-inline-secret" not in app_settings_after_secret.text
 
+    exported_llm = client.get("/api/settings/llm-providers/qwen/export-bundle", headers=headers)
+    assert exported_llm.status_code == 200
+    assert exported_llm.headers["content-type"].startswith("application/zip")
+    with zipfile.ZipFile(BytesIO(exported_llm.content)) as zf:
+        manifest_text = zf.read("llm_bundle.json").decode("utf-8")
+        manifest = json.loads(manifest_text)
+    assert "sk-inline-secret" not in manifest_text
+    assert manifest["provider_id"] == "qwen"
+    assert manifest["provider"]["model"] == "qwen3-max"
+    assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert "api_key" not in manifest["provider"]
+    assert "api_key_env" not in manifest["provider"]
+    assert "api_key_ref" not in manifest["provider"]
+
+    preview_llm = client.post(
+        "/api/settings/llm-providers/import-bundle",
+        files={"file": ("qwen.zip", exported_llm.content, "application/zip")},
+        headers=headers,
+    )
+    assert preview_llm.status_code == 200
+    preview = preview_llm.json()["data"]["bundle_preview"]
+    assert preview["provider_id"] == "qwen"
+    assert preview["provider"]["model"] == "qwen3-max"
+    assert "api_key" not in preview["provider"]
+
+    imported_llm = client.post(
+        "/api/settings/llm-providers/import-bundle",
+        data={"dry_run": "false"},
+        files={"file": ("qwen.zip", exported_llm.content, "application/zip")},
+        headers=headers,
+    )
+    assert imported_llm.status_code == 200
+    assert imported_llm.json()["data"]["summary"]["imported_provider_id"] == "qwen"
+
     host_profile = client.put(
         "/api/settings/host-profile",
         json={"display_name": "测试主持人", "skill_ids": [], "mcp_server_ids": []},

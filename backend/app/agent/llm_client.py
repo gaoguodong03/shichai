@@ -1,8 +1,12 @@
 """LLM 客户端 - 支持 Qwen 及 OpenAI 兼容 API，可配置化切换"""
+import json
+import logging
 import os
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from app.agent.tool_spec import tools_to_openai_tools
+
+logger = logging.getLogger(__name__)
 
 # 默认 provider 配置（当 app_settings 无 llm_providers 时使用）；与 settings 中 _DEFAULT_LLM_PROVIDERS 保持一致
 _JENIYA_BASE = "https://jeniya.top/v1"
@@ -69,27 +73,27 @@ def bind_tools_compat(client: Any, tools: list[Any]) -> Any:
     return client.bind_tools(binding_tools, tool_choice="required")
 
 
-def get_llm_from_config(
+def resolve_llm_provider_entry(
     provider_id: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
-    api_secrets: Optional[Dict[str, str]] = None,
-) -> "QwenLLM":
-    """
-    根据 provider_id 从配置创建 LLM 客户端。
-    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
-    """
+) -> tuple[str, Dict[str, Any]]:
+    """Resolve provider id to its config row, falling back to qwen defaults."""
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
     provider_key = str(provider_id or "").strip()
     providers_by_lower = {str(k).strip().lower(): v for k, v in providers.items()}
-    cfg = (
-        providers.get(provider_key)
-        or providers_by_lower.get(provider_key.lower())
-        or providers.get("qwen")
-        or providers_by_lower.get("qwen")
-    )
+    resolved_id = provider_key
+    cfg = providers.get(provider_key) or providers_by_lower.get(provider_key.lower())
     if not cfg:
-        return QwenLLM()
+        resolved_id = "qwen"
+        cfg = providers.get("qwen") or providers_by_lower.get("qwen") or {}
+    return resolved_id, dict(cfg or {})
 
+
+def resolve_llm_api_key(
+    cfg: Dict[str, Any],
+    api_secrets: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
+    """Resolve API key without constructing an LLM client."""
     api_key = None
     ref = (cfg.get("api_key_ref") or "").strip()
     if ref and api_secrets and ref in api_secrets:
@@ -99,6 +103,64 @@ def get_llm_from_config(
     if not api_key:
         api_key_env = cfg.get("api_key_env", "QWEN_API_KEY")
         api_key = os.getenv(api_key_env)
+    return (str(api_key).strip() or None) if api_key else None
+
+
+def describe_llm_provider(provider_id: str, cfg: Dict[str, Any]) -> str:
+    """Human-readable model label for user-facing notices."""
+    model = str(cfg.get("model") or provider_id or "").strip() or str(provider_id or "").strip() or "unknown"
+    label = str(cfg.get("label") or "").strip()
+    if label and label != model:
+        return f"{label}（{model}）"
+    return model
+
+
+def build_llm_credential_notice(provider_id: str, cfg: Dict[str, Any]) -> str:
+    """User-facing notice when an LLM provider has no usable API key."""
+    model_desc = describe_llm_provider(provider_id, cfg)
+    return (
+        f"模型型号为 {model_desc}，此时没有配置密钥或密钥错误。"
+        "请前往「设置 → 密钥」添加密钥，并在「资源中心 → 配置模型」中为该模型选择密钥后重试。"
+    )
+
+
+def is_llm_credential_error_message(text: str) -> bool:
+    """Detect auth/key failures returned by upstream LLM gateways."""
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    needles = (
+        "缺少 api key",
+        "api key",
+        "api_key",
+        "invalid api key",
+        "incorrect api key",
+        "authentication",
+        "unauthorized",
+        "401",
+        "invalid token",
+        "无效的令牌",
+        "no api key",
+        "authenticationerror",
+        "permission denied",
+    )
+    return any(needle in normalized for needle in needles)
+
+
+def get_llm_from_config(
+    provider_id: str,
+    providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
+    api_secrets: Optional[Dict[str, str]] = None,
+) -> "QwenLLM":
+    """
+    根据 provider_id 从配置新建 LLM 客户端。
+    解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
+    """
+    resolved_id, cfg = resolve_llm_provider_entry(provider_id, providers_config)
+    if not cfg:
+        return QwenLLM()
+
+    api_key = resolve_llm_api_key(cfg, api_secrets)
     base_url = cfg.get("base_url")
     model = cfg.get("model")
     return QwenLLM(
@@ -391,10 +453,72 @@ class _TracedLLMClient:
         )
 
     async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        self._log_prompt("ainvoke", inp)
         return await self._raw_client.ainvoke(inp, *args, **kwargs)
 
     def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> Any:
+        self._log_prompt("invoke", inp)
         return self._raw_client.invoke(inp, *args, **kwargs)
+
+    async def astream(self, inp: Any, *args: Any, **kwargs: Any):
+        self._log_prompt("astream", inp)
+        async for chunk in self._raw_client.astream(inp, *args, **kwargs):
+            yield chunk
+
+    def stream(self, inp: Any, *args: Any, **kwargs: Any):
+        self._log_prompt("stream", inp)
+        yield from self._raw_client.stream(inp, *args, **kwargs)
+
+    def _log_prompt(self, method: str, inp: Any) -> None:
+        logger.info(
+            "[Prompt] method=%s model=%s base_url=%s\n%s",
+            method,
+            self._model_name,
+            self._provider_base_url,
+            _serialize_prompt_payload(inp),
+        )
+
+
+def _serialize_prompt_payload(value: Any) -> str:
+    try:
+        return json.dumps(_prompt_to_jsonable(value), ensure_ascii=False, indent=2, default=str)
+    except Exception:  # noqa: BLE001
+        return str(value)
+
+
+def _prompt_to_jsonable(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_prompt_to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _prompt_to_jsonable(v) for k, v in value.items()}
+
+    content_marker = object()
+    content = getattr(value, "content", content_marker)
+    if content is not content_marker:
+        row: Dict[str, Any] = {
+            "type": str(getattr(value, "type", "") or value.__class__.__name__),
+            "content": _prompt_to_jsonable(content),
+        }
+        for attr in ("name", "id", "tool_call_id"):
+            attr_value = getattr(value, attr, None)
+            if attr_value:
+                row[attr] = _prompt_to_jsonable(attr_value)
+        additional_kwargs = getattr(value, "additional_kwargs", None)
+        if additional_kwargs:
+            row["additional_kwargs"] = _prompt_to_jsonable(additional_kwargs)
+        tool_calls = getattr(value, "tool_calls", None)
+        if tool_calls:
+            row["tool_calls"] = _prompt_to_jsonable(tool_calls)
+        return row
+
+    if hasattr(value, "model_dump"):
+        try:
+            return _prompt_to_jsonable(value.model_dump())
+        except Exception:  # noqa: BLE001
+            pass
+    return str(value)
 
 
 def _instrument_llm_client(

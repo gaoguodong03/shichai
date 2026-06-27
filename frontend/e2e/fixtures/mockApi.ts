@@ -495,6 +495,11 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       skill.allowed_tools = (body.allowed_tools as Skill['allowed_tools']) || skill.allowed_tools
       return ok(route, skill)
     }
+    if (skillMatch && method === 'DELETE') {
+      const id = decodeURIComponent(skillMatch[1])
+      state.skills = state.skills.filter((s) => s.id !== id)
+      return ok(route)
+    }
     if (path === '/settings/mcp' && method === 'GET') {
       return ok(route, { servers: state.mcpServers })
     }
@@ -515,6 +520,11 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       if (!server) return notFound(route)
       Object.assign(server, readBody(route))
       return ok(route, server)
+    }
+    if (mcpMatch && method === 'DELETE') {
+      const id = decodeURIComponent(mcpMatch[1])
+      state.mcpServers = state.mcpServers.filter((s) => s.id !== id)
+      return ok(route)
     }
     if (path === '/settings/app' && method === 'GET') {
       return ok(route, state.appSettings)

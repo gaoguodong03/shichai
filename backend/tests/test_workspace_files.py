@@ -51,7 +51,7 @@ def test_workspace_list_empty(client):
 
 
 def test_workspace_create_and_list(client):
-    """workspace 内创建文件后能列出"""
+    """workspace 内新建文件后能列出"""
     r = client.post(
         "/api/workspaces/ws1/files",
         json={"filename": "hello.md", "content": "# Hello"},
@@ -186,6 +186,82 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert "已写入" in out
     ws = get_workspace_root("sess-w")
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
+
+
+def test_write_workspace_file_tool_advertises_project_filename_contract():
+    from app.tools.write_workspace_file import WriteWorkspaceFileInput, create_write_workspace_file_tool
+
+    tool = create_write_workspace_file_tool("sess-contract")
+    path_description = WriteWorkspaceFileInput.model_fields["path"].description or ""
+
+    assert "YYYYMMDDHHMMSS00" in path_description
+    assert "文件名-YYYYMMDDHHMMSS00.扩展名" in path_description
+    assert "YYYYMMDDHHMMSS00" in tool.description
+
+
+def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, monkeypatch):
+    """write_workspace_file 默认不覆盖已有文件，避免最终产物被后续摘要误写覆盖。"""
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+
+    tool = create_write_workspace_file_tool("sess-no-overwrite")
+    out = asyncio.run(tool.ainvoke({"path": "article.md", "content": "full article"}))
+    assert "已写入" in out
+
+    overwrite_out = asyncio.run(tool.ainvoke({"path": "article.md", "content": "summary only"}))
+
+    assert "错误：文件已存在" in overwrite_out
+    ws = get_workspace_root("sess-no-overwrite")
+    assert (ws / "article.md").read_text(encoding="utf-8") == "full article"
+
+
+def test_write_workspace_file_allows_explicit_overwrite(temp_user_data_root, monkeypatch):
+    """调用方明确传 overwrite=true 时仍可覆盖文件。"""
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+
+    tool = create_write_workspace_file_tool("sess-explicit-overwrite")
+    assert "已写入" in asyncio.run(tool.ainvoke({"path": "article.md", "content": "first"}))
+
+    out = asyncio.run(tool.ainvoke({"path": "article.md", "content": "second", "overwrite": True}))
+
+    assert "已写入" in out
+    ws = get_workspace_root("sess-explicit-overwrite")
+    assert (ws / "article.md").read_text(encoding="utf-8") == "second"
 
 
 def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data_root):

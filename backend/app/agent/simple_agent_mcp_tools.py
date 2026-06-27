@@ -73,13 +73,13 @@ def _audio_asr_already_called(messages: list[BaseMessage]) -> bool:
     return False
 
 
-def _forced_audio_asr_file_ref_message(messages: list[BaseMessage], tools: list[ToolSpec]) -> _ForcedToolCall | None:
+def _forced_mcp_file_ref_tool_call(messages: list[BaseMessage], tools: list[ToolSpec]) -> _ForcedToolCall | None:
     if not _has_audio_asr_tool(tools) or _audio_asr_already_called(messages):
         return None
     path = _last_user_audio_path(messages)
     if not path:
         return None
-    call_id = f"forced_audio_asr_{hashlib.sha256(path.encode('utf-8')).hexdigest()[:24]}"
+    call_id = f"forced_mcp_file_ref_{hashlib.sha256(path.encode('utf-8')).hexdigest()[:24]}"
     msg = AIMessage(
         content="",
         tool_calls=[
@@ -93,27 +93,35 @@ def _forced_audio_asr_file_ref_message(messages: list[BaseMessage], tools: list[
     return _ForcedToolCall(
         message=msg,
         debug={
-            "source": "forced_audio_asr_file_ref",
+            "source": "forced_mcp_file_ref_tool_call",
             "matched": True,
+            "tool": _AUDIO_ASR_TOOL_NAME,
             "path": path,
         },
     )
 
 
-def _audio_transcription_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
-    """Surface full audio transcripts directly instead of asking the LLM to restate them."""
-    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
-    if not isinstance(calls, list):
-        return None
+def _text_artifact_from_mcp_result(payload: dict[str, Any]) -> str:
+    if str(payload.get("execution_status") or "").strip() != "succeeded":
+        return ""
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return ""
+    transcript = artifacts.get("text")
+    return transcript.strip() if isinstance(transcript, str) and transcript.strip() else ""
 
-    tool_names = {
-        str(call.get("tool") or call.get("name") or "").strip()
-        for call in calls
-        if isinstance(call, dict)
-    }
-    has_script_call = any(name.startswith("run_skill_script_audio-transcription") for name in tool_names)
-    has_audio_asr_call = _AUDIO_ASR_TOOL_NAME in tool_names
-    if not has_script_call and not has_audio_asr_call:
+
+def _legacy_script_text_from_stdout(payload: dict[str, Any]) -> str:
+    if payload.get("ok") is not True:
+        return ""
+    transcript = payload.get("text")
+    return transcript.strip() if isinstance(transcript, str) and transcript.strip() else ""
+
+
+def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:
+    """Surface standard MCP text artifacts directly instead of asking the LLM to restate them."""
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list) or not calls:
         return None
 
     raw_outputs = tool_out.get("tool_raw_outputs")
@@ -126,10 +134,9 @@ def _audio_transcription_final_message(tool_out: dict[str, Any]) -> AIMessage | 
             continue
         if not isinstance(outer, dict):
             continue
-        if has_audio_asr_call and outer.get("ok") is True:
-            transcript = outer.get("text")
-            if isinstance(transcript, str) and transcript.strip():
-                return AIMessage(content=transcript.strip())
+        text = _text_artifact_from_mcp_result(outer)
+        if text:
+            return AIMessage(content=text)
 
         stdout = outer.get("stdout")
         if not isinstance(stdout, str) or not stdout.strip():
@@ -138,10 +145,9 @@ def _audio_transcription_final_message(tool_out: dict[str, Any]) -> AIMessage | 
             payload = json.loads(stdout.strip())
         except Exception:
             continue
-        if not isinstance(payload, dict) or payload.get("ok") is not True:
+        if not isinstance(payload, dict):
             continue
-        transcript = payload.get("text")
-        if not isinstance(transcript, str) or not transcript.strip():
-            continue
-        return AIMessage(content=transcript.strip())
+        text = _text_artifact_from_mcp_result(payload) or _legacy_script_text_from_stdout(payload)
+        if text:
+            return AIMessage(content=text)
     return None

@@ -10,6 +10,7 @@
 - Skill 附带的 `scripts/`、`references/`、`assets/`；
 - 专家在群聊中绑定和执行的 Skill；
 - 需要 OpenSandbox 执行脚本的 Skill。
+- 不依赖脚本、主要通过专家多轮对话完成的流程型或合著型 Skill。
 
 不适用于四九主持人本身的业务调度策略，但主持人 Skill 也应遵守基础文件结构与输出契约。
 
@@ -56,37 +57,106 @@ allowed-tools:
 | `description` | 必填 | 写清楚“什么时候用”，不要只写能力口号。 |
 | `allowed-tools` | 必填 | 使用统一结构；没有额外工具时也保留空值。 |
 
-`description` 应包含：
+`description` 只用于帮助平台和专家判断“什么时候用”，不应总结完整流程。它应包含：
 
 - 触发对象：处理哪类任务；
 - 输入线索：用户说出什么需求时应使用；
-- 结果形态：最终产出是什么。
+- 关键边界：哪些近似任务也应或不应使用。
 
 示例：
 
 ```yaml
-description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文件时使用，产出章节文本与保存路径摘要。
+description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资料或保存章节文本到工作区时使用；不用于正文创作或图片生成。
 ```
 
 ## 4. 正文编写规范
 
-正文建议包含以下章节：
+正文应先判断 Skill 类型，再选择结构。不要把所有 Skill 都写成脚本模板。
+
+| 类型 | 适用场景 | 正文重点 |
+| --- | --- | --- |
+| 流程/合著型 Skill | 长文合著、主持调度、资料确认、逐阶段创作、多人协作、需要用户多轮确认的任务。 | 触发边界、阶段门禁、状态块、工作区文件规则、何时等待用户、何时交回主持人。 |
+| 脚本型 Skill | 表格分析、爬虫、转换、校验、批处理、确定性计算等需要稳定工具执行的任务。 | 非交互式脚本、参数 schema、stdout JSON、stderr 诊断、产物路径和校验。 |
+| 参考型 Skill | 规范、制度、写作风格、API 使用说明、团队流程等主要靠文本指导的任务。 | 触发条件、查询路径、不可做事项、输出格式和引用来源。 |
+
+通用正文建议包含以下章节：
 
 1. **你是谁**：定义专家在此 Skill 下的角色。
 2. **什么时候使用**：列出明确触发条件和不应使用的场景。
 3. **输入要求**：说明必须向用户确认的参数。
 4. **执行步骤**：按顺序写清楚分析、调用脚本、整理结果。
 5. **输出格式**：规定给用户看的最终答复结构。
-6. **结束点判断**：明确何时 `over=true`、何时 `over=false`。
+6. **流程控制**：脚本型 Skill 明确 stdout JSON；非脚本型 Skill 明确隐藏状态块。
 7. **常见错误**：列出模型容易犯的错。
 
 正文应避免：
 
 - 只写抽象原则，不写可执行步骤；
 - 要求用户自行执行后端内部命令；
-- 混用旧版 `input_json` 参数说明；
+- 混用非 `cli_args_json` 的参数说明；
 - 让专家代替四九选择下一位专家；
 - 把脚本路径写成工作区文件路径。
+
+### 4.1 流程/合著型 Skill 规范
+
+流程/合著型 Skill 适合文章合著、资料工作流、图片确认、读者测试、专家协作等长流程任务。这类 Skill 的核心不是“调用一个脚本”，而是让专家在真实对话中稳定遵守阶段、确认点和文件产物规则。
+
+必须写清：
+
+- **角色边界**：专家只负责哪类任务，遇到搜索、写作、生图、审阅等相邻职责时如何交回主持人。
+- **阶段流程**：每个阶段的目标、输入、退出条件，以及是否允许落盘。
+- **确认门禁**：什么时候必须等待用户确认，用户说“直接来”时是否仍需列出默认假设。
+- **状态块**：需要用户补充、任务无关、最终完成时分别追加什么隐藏状态块。
+- **文件规则**：哪些内容只在聊天中确认，哪些最终产物必须真实调用工作区写入工具保存。
+
+流程/合著型 Skill 的常见状态块：
+
+```text
+[[SKILL_SESSION_STATE]]
+{
+  "execution_status": "blocked",
+  "result_code": "input.confirmation_required",
+  "message": "等待用户补充或确认",
+  "artifacts": {
+    "required_fields": ["用户回复"]
+  },
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
+[[/SKILL_SESSION_STATE]]
+```
+
+这里的 `release` 表示本专家已把确认问题交给用户，下一轮由主持人或入口路由重新判断。如果确认后必须回到同一专家继续处理，才使用 `skill_session=keep`。
+
+流程/合著型 Skill 必须避免：
+
+- 只写“需要用户确认”，但不写隐藏状态块和等待后的会话归属。
+- 只说“保存文件”，但没有明确 `write_workspace_file(...)` 或 `edit_workspace_file(...)` 的工具调用合同。
+- 默认把过程草稿、头脑风暴、读者测试、临时摘要写成文件。
+- 覆盖用户源文件；修改已有文件时应新建符合 `文件名-YYYYMMDDHHMMSS00.扩展名` 的新文件。
+- 在专家 Skill 中自行指定下一位专家或输出主持人 JSON。
+
+### 4.2 工作区文件写入规范
+
+专家可用的工作区文件工具是任务过程能力，不只在用户显式说“保存”时使用。只要任务需要读取上下文、检查已有文件、新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，Skill 正文都应推动专家主动调用相应工具。
+
+在 Skill 正文中建议直接写成一行工具调用合同，避免模型只用自然语言说“已保存”：
+
+```text
+调用 write_workspace_file：path="materials/<简短标题>-<时间戳>.md"，content="<完整 Markdown 内容>"
+```
+
+约束：
+
+- `path` 必须是当前会话工作区相对路径，不写 `backend/data/`、`workspaces/<会话ID>/` 或宿主机绝对路径。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-YYYYMMDDHHMMSS00.扩展名`，例如 `materials/技术管理手感-2026062519304500.md`。
+- `content` 必须是要保存的完整正文；不能只写摘要、占位符或“见上文”。
+- 只有 `write_workspace_file` 或 `edit_workspace_file` 返回成功后，专家才能在最终答复中说文件已保存。
+- 修改已有文件时，不覆盖源文件；读取源文件后应新建符合 `文件名-YYYYMMDDHHMMSS00.扩展名` 的新文件，并在新文件开头记录 `source_path`。
+- 网页采集、资料检索、素材整理类任务如果得到多条独立素材，应每条素材单独调用一次 `write_workspace_file`，不要把所有素材合并进一个文件。
+- 最终答复只汇总文件清单、来源和简短说明，不把全部素材正文重复堆在聊天气泡里。
 
 ## 5. 脚本型 Skill 规范
 
@@ -110,18 +180,22 @@ description: 当用户需要抓取 WebNovel 小说章节并保存为工作区文
 - 文档中若写 `scripts/foo.py`，系统会尽量纠正，但规范写法仍是 `foo.py`。
 - 脚本参数必须是 argv 数组 JSON，例如 `["--name", "value"]`。
 - 脚本必须把结构化结果写到 stdout，错误写到 stderr，并使用退出码表达成功或失败。
-- stdout JSON 推荐包含 `ok`、`code`、`message`、`result/text/output` 等业务字段；若脚本能确定当前 Skill 会话是否结束，必须使用 `skill_session_over: true|false` 表达。兼容 `over`，但新脚本优先写 `skill_session_over`。
-- `done`、`final` 只表示工具循环可以收束，不等价于释放群聊 Skill 会话锁。
+- stdout JSON 必须使用标准字段：`execution_status`、`result_code`、`message`，并按需输出 `artifacts` 与 `next_action`。
 
-成功且应结束 Skill 会话的 stdout 示例：
+成功且声明 Skill 会话结束的 stdout 示例：
 
 ```json
 {
-  "ok": true,
-  "code": "completed",
+  "execution_status": "succeeded",
+  "result_code": "completed",
   "message": "已生成结果文件。",
-  "output": "outputs/result.txt",
-  "skill_session_over": true
+  "artifacts": {
+    "output_path": "outputs/result.txt"
+  },
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
 }
 ```
 
@@ -191,11 +265,16 @@ try:
     import pandas as pd
 except ImportError:
     print(json.dumps({
-        "ok": False,
-        "code": "missing_dependency",
+        "execution_status": "failed",
+        "result_code": "dependency.missing",
         "message": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。",
-        "missing_dependencies": ["pandas>=2.2"],
-        "skill_session_over": False
+        "artifacts": {
+            "missing_dependencies": ["pandas>=2.2"]
+        },
+        "next_action": {
+            "agent_turn": "respond",
+            "skill_session": "release"
+        }
     }, ensure_ascii=False))
     raise SystemExit(2)
 ```
@@ -204,35 +283,38 @@ except ImportError:
 
 #### 5.3.3 stdout 字段怎么写
 
-脚本 stdout 推荐只输出一个 JSON 对象，字段分三层：
+脚本 stdout 必须只输出一个 JSON 对象。新脚本使用以下标准字段：
 
 | 字段 | 建议 | 说明 |
 | --- | --- | --- |
-| `ok` | 必填 | `true` 表示脚本执行成功，`false` 表示业务失败或缺条件。 |
-| `code` | 必填 | 稳定机器码，如 `completed`、`missing_dependency`、`file_not_found`。 |
-| `message` | 推荐 | 给模型/用户看的短说明。 |
-| `text` / `result` / `output` | 按需 | 主要结果。长文本用 `text`，文件路径用 `output` 或 `files`。 |
-| `*_count` | 按需 | 计数类结果，如 `segment_count`、`chunk_count`、`row_count`、`page_count`。 |
-| `segments` / `items` / `files` | 按需 | 明细数组；每项包含 `index`、`path`、`text` 等稳定字段。 |
-| `skill_session_over` | 推荐 | `true` 表示当前 Skill 可结束，`false` 表示还需要用户补充或继续处理。 |
-| `done` / `final` | 可选 | 只表示工具循环可以收束，不等价于释放 Skill 会话锁。 |
+| `execution_status` | 必填 | 枚举：`succeeded`、`blocked`、`failed`。 |
+| `result_code` | 必填 | 稳定机器码，如 `completed`、`input.missing`、`dependency.missing`。 |
+| `message` | 必填 | 给专家和用户看的短说明。 |
+| `artifacts` | 按需 | 结构化结果。文件路径、计数、明细数组都放在这里。 |
+| `next_action.agent_turn` | 按需 | 枚举：`continue`、`respond`。控制当前专家回合是否继续行动。 |
+| `next_action.skill_session` | 按需 | 枚举：`keep`、`release`。控制下一条用户消息是否回到同一专家和 Skill。 |
 
 如果你说的“短接数”是音频/视频切片或分段数，字段建议命名为 `segment_count` 或 `chunk_count`，并同时给出 `segments` 明细：
 
 ```json
 {
-  "ok": true,
-  "code": "transcribed",
+  "execution_status": "succeeded",
+  "result_code": "transcribed",
   "message": "转写完成。",
-  "text": "完整转写文本……",
-  "chunk_seconds": 120,
-  "segment_count": 3,
-  "segments": [
-    {"index": 1, "total": 3, "text": "第一段……"},
-    {"index": 2, "total": 3, "text": "第二段……"},
-    {"index": 3, "total": 3, "text": "第三段……"}
-  ],
-  "skill_session_over": true
+  "artifacts": {
+    "text": "完整转写文本……",
+    "chunk_seconds": 120,
+    "segment_count": 3,
+    "segments": [
+      {"index": 1, "total": 3, "text": "第一段……"},
+      {"index": 2, "total": 3, "text": "第二段……"},
+      {"index": 3, "total": 3, "text": "第三段……"}
+    ]
+  },
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
 }
 ```
 
@@ -268,10 +350,16 @@ def main() -> None:
     input_path = Path(args.input)
     if not input_path.exists():
         emit({
-            "ok": False,
-            "code": "file_not_found",
+            "execution_status": "blocked",
+            "result_code": "file.missing",
             "message": f"找不到输入文件：{args.input}",
-            "skill_session_over": False
+            "artifacts": {
+                "required_fields": ["input"]
+            },
+            "next_action": {
+                "agent_turn": "respond",
+                "skill_session": "keep"
+            }
         }, code=2)
 
     output_path = Path(args.output)
@@ -280,12 +368,17 @@ def main() -> None:
     output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
     emit({
-        "ok": True,
-        "code": "completed",
+        "execution_status": "succeeded",
+        "result_code": "completed",
         "message": "处理完成。",
-        "output": str(output_path),
-        "result": result,
-        "skill_session_over": True
+        "artifacts": {
+            "output_path": str(output_path),
+            "result": result
+        },
+        "next_action": {
+            "agent_turn": "respond",
+            "skill_session": "release"
+        }
     })
 
 
@@ -297,10 +390,13 @@ if __name__ == "__main__":
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         emit({
-            "ok": False,
-            "code": "script_error",
+            "execution_status": "failed",
+            "result_code": "runtime.failed",
             "message": str(exc),
-            "skill_session_over": False
+            "next_action": {
+                "agent_turn": "respond",
+                "skill_session": "release"
+            }
         }, code=1)
 ```
 
@@ -313,92 +409,77 @@ if __name__ == "__main__":
 
 会话锁存在且仍有效时，下一条用户消息默认直接交给该专家继续处理，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
 
-- 专家明确声明本 Skill 会话结束；
+- 脚本或 MCP 工具 stdout JSON 输出 `next_action.skill_session=release`；
+- 非脚本 Skill 的专家正文末尾追加隐藏状态块，且其中 `next_action.skill_session=release`；
 - 用户明确说“结束 skill / 退出技能 / 交给主持人 / 请下一位专家”等；
 - 用户 `@` 或点名其他专家；
-- 主持人接管、override 或忽略当前专家；
+- 平台入口路由收到明确的 `host_takeover_requested` 或 `ignore_auto_agent_id` 字段；
 - 当前专家或 Skill 已不在会话有效范围内。
 
 ## 7. 结束点判断规范
 
 Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊中的整体流程是否完成。
 
-### 7.1 必须输出状态块
+### 7.1 标准流程控制
 
-专家执行 Skill 的完整回复末尾必须输出状态块：
-
-```text
-[[SKILL_SESSION_STATE]]
-{"over": false}
-[[/SKILL_SESSION_STATE]]
-```
+脚本型 Skill 和返回 JSON 的 MCP 工具通过 stdout JSON 的 `next_action` 控制流程。非脚本 Skill 通过专家正文末尾的隐藏状态块表达同一组字段。
 
 规则：
 
-- `over=false`：Skill 仍需继续，系统保留会话锁；下一条用户消息优先回到同一专家和同一 Skill。
-- `over=true`：Skill 已完成，系统释放会话锁；下一条用户消息回到四九调度。
-- 状态块必须放在全部正文之后，不能混入正文解释。
-- 状态块只给系统使用，展示给用户时会被剥离。
+- `next_action.agent_turn=continue`：当前专家回合继续行动，例如继续编辑文件或调用下一个工具。
+- `next_action.agent_turn=respond`：当前专家基于脚本结果生成最终答复。
+- `next_action.skill_session=keep`：下一条用户消息继续回到同一专家和同一 Skill。
+- `next_action.skill_session=release`：释放 Skill 会话锁，下一轮交回主持人调度。
 
-状态决策规则：
+完整字段与允许值见 `docs/skills/skill-session-flow.md`。
 
-| 信号 | 平台动作 |
-| --- | --- |
-| 专家状态块 `over=false` | 保留当前 Skill 会话锁 |
-| 脚本 stdout `skill_session_over=false` / `over=false` | 保留当前 Skill 会话锁 |
-| 专家状态块 `over=true`，且没有任何明确 `false` | 释放 Skill 会话锁 |
-| 脚本 stdout `skill_session_over=true` / `over=true`，且专家状态块未给出明确状态 | 释放 Skill 会话锁 |
-| 旧标记 `[[SKILL_SESSION_END]]` / `【技能会话结束】`，且没有任何明确结构化信号 | 兼容释放 Skill 会话锁 |
-| 都没有 | 默认保留当前 Skill 会话锁 |
+普通非脚本专家没有结构化工具结果或隐藏状态块时，单轮发言结束后默认释放 Skill 会话。场景协作中的阶段成员建议显式写出隐藏状态块，让平台可以记录本轮 Skill 已完成、等待用户补充或需要继续锁定。
 
-兼容规则：新 Skill 必须使用状态块；脚本型 Skill 应同时输出 `skill_session_over`。平台按“继续优先”处理冲突，只要专家状态块或脚本 stdout 任一明确要求继续，就不会释放会话锁。
-
-### 7.2 `over=true` 的判定
-
-满足任一条件时，应输出 `{"over": true}`：
-
-- 已交付用户请求的最终结果，且不需要同一 Skill 继续追问或处理；
-- 脚本成功执行，已总结结果、文件路径、下一步建议；
-- 用户明确表示任务完成、到此为止、不用继续；
-- 当前 Skill 判断后续应由四九重新选择专家；
-- 任务无法继续且已给出明确失败原因和替代建议。
-
-示例：
+隐藏状态块示例：
 
 ```text
-已完成章节抓取，文件已保存到 `outputs/chapter-001.txt`。如需继续抓取下一章，可以重新告诉我链接。
-
 [[SKILL_SESSION_STATE]]
-{"over": true}
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
 [[/SKILL_SESSION_STATE]]
 ```
 
-### 7.3 `over=false` 的判定
+实际专家输出时，状态块必须直接追加到正文末尾，不要放入 Markdown 代码块。平台会读取并移除该状态块，用户只看到专家正文。
 
-满足任一条件时，应输出 `{"over": false}`：
+### 7.2 `release` 的判定
+
+满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=release`：
+
+- 已交付用户请求的最终结果，且不需要同一 Skill 继续追问或处理；
+- 脚本成功执行，已总结结果、文件路径、下一步建议；
+- 当前 Skill 判断后续应由四九重新选择专家；
+- 已向用户提出确认问题，且下一轮应由主持人根据用户回复重新调度；
+- 任务无法继续且已给出明确失败原因和替代建议。
+
+### 7.3 `keep` 的判定
+
+满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=keep`：
 
 - 还缺少必填参数，需要用户补充；
 - 任务设计为多轮流程，当前只完成其中一步；
 - 已产出草稿，但需要用户确认方向后继续修改；
 - 脚本执行失败但可由用户补充信息或换参数后继续；
-- 正在等待用户选择、确认、上传文件或提供链接。
+- 正在等待用户选择、确认、上传文件或提供链接，且下一轮必须回到同一专家继续处理。
 
-示例：
+### 7.4 不应释放的情况
 
-```text
-我还需要你提供目标小说目录页链接，才能继续抓取章节。请直接发 URL。
+以下情况不要输出 `release`，应输出 `next_action.skill_session=keep`：
 
-[[SKILL_SESSION_STATE]]
-{"over": false}
-[[/SKILL_SESSION_STATE]]
-```
-
-### 7.4 不应结束的情况
-
-以下情况不要输出 `over=true`：
-
-- 只是向用户提出一个必要问题；
-- 只完成了计划、提纲、参数确认中的一环；
+- 向用户提出的问题只有同一专家继续处理才有意义；
+- 只完成了计划、提纲、参数确认中的一环，且下一轮必须回到同一专家；
 - 工具刚返回原始结果，但尚未整理给用户；
 - 用户明显希望“继续生成 / 继续修改 / 继续抓取”；
 - 需要保持同一专家上下文才能完成后续步骤。
@@ -409,8 +490,10 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 - 专家可以说明“建议交回四九重新安排”，但不要自行指定下一位专家。
 - 专家不输出主持人 JSON，不写 `next_speaker`、`suggested_add_agent_ids` 等主持人字段。
-- 主持人 Skill 不代写专家正文，只选择专家、说明原因、给出 `next_prompt`。
+- 主持人 Skill 不代写专家正文；流程型主持人 Skill 只输出 `current_phase`、`next_speaker`、`speaker_task`，由平台负责展示主持消息并把 `speaker_task` 交给下一位专家。
 - Skill 会话未结束时，专家应继续沿同一 Skill 推进，不把用户消息重新交给四九。
+
+主持人 Skill 的专门写法、运行链路和禁区见 [主持人 Skill 规范](host-skill.md)。
 
 ## 9. 上线验收清单
 
@@ -431,8 +514,8 @@ python scripts/validate_skill_cli_contract.py
 人工验收至少覆盖：
 
 - Skill 能被专家按 `description` 正确选择；
-- 需要参数时输出 `over=false` 并继续锁定同一专家；
-- 最终交付后输出 `over=true` 并回到四九调度；
+- 需要参数时通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=keep`，并继续锁定同一专家；
+- 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=release`，并回到四九调度；
 - 用户说“结束 skill / 交给主持人”时能退出锁定；
 - 脚本型 Skill 的 `script_path`、`cli_args_json`、stdout/stderr 与退出码符合约定；
 - 工作产物写入会话工作区，而不是写入 Skill 目录。
@@ -460,7 +543,7 @@ allowed-tools:
 ## 输入要求
 
 - 必填：<参数>。
-- 缺少必填参数时，先向用户追问，并设置 `over=false`。
+- 缺少必填参数时，先向用户追问；脚本 stdout 或隐藏状态块返回 `next_action.skill_session=keep`。
 
 ## 执行步骤
 
@@ -476,10 +559,21 @@ allowed-tools:
 
 ## 结束点判断
 
-- 已交付最终结果：输出 `{"over": true}`。
-- 仍需用户补充或确认：输出 `{"over": false}`。
+- 已交付最终结果：脚本 stdout 或隐藏状态块输出 `next_action.skill_session=release`。
+- 仍需用户补充或确认：脚本 stdout 或隐藏状态块输出 `next_action.skill_session=keep`。
+
+脚本型 Skill 使用 stdout JSON 的 `next_action` 控制流程；非脚本型 Skill 使用隐藏状态块控制流程。隐藏状态块不是用户可见正文，实际输出时不要放入 Markdown 代码块。
 
 [[SKILL_SESSION_STATE]]
-{"over": false}
+{
+  "execution_status": "succeeded",
+  "result_code": "completed",
+  "message": "处理完成。",
+  "artifacts": {},
+  "next_action": {
+    "agent_turn": "respond",
+    "skill_session": "release"
+  }
+}
 [[/SKILL_SESSION_STATE]]
 ```

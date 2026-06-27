@@ -33,7 +33,6 @@ _CLI_ARGV_MAX_STRLEN = 32_768
 _SCRIPT_GATEWAY: Optional[UnifiedToolGateway] = None
 _SANDBOX_ENV_PASSTHROUGH_KEYS = (
     "JENIYA_API_KEY",
-    "CHATANYWHERE_IMAGE_API_KEY",
     "JENIYA_IMAGE_BASE_URL",
     "JENIYA_IMAGE_MODEL",
     "QWEN_AUDIO_CHUNK_SECONDS",
@@ -262,13 +261,61 @@ def _recover_embedded_cli_args_json(raw: str) -> list[Any] | None:
     return value if isinstance(value, list) else None
 
 
-def _validate_against_manifest(script_path: str, script_meta: dict[str, Any], parsed_input: Any) -> str | None:
+def _normalize_cli_field_name(name: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(name or "").strip().lower()).strip("_")
+
+
+def _cli_required_missing(required: list[Any], cli_argv: list[str]) -> list[Any]:
+    normalized_required = [_normalize_cli_field_name(item) for item in required]
+    named_values: dict[str, str] = {}
+    positionals: list[str] = []
+    i = 0
+    while i < len(cli_argv):
+        item = str(cli_argv[i] or "")
+        if item.startswith("--") and len(item) > 2:
+            flag, sep, inline_value = item[2:].partition("=")
+            key = _normalize_cli_field_name(flag)
+            if sep:
+                named_values[key] = inline_value
+            elif i + 1 < len(cli_argv) and not str(cli_argv[i + 1]).startswith("-"):
+                named_values[key] = str(cli_argv[i + 1])
+                i += 1
+            else:
+                named_values[key] = "true"
+        elif not item.startswith("-"):
+            positionals.append(item)
+        i += 1
+
+    missing: list[Any] = []
+    positional_index = 0
+    for original, normalized in zip(required, normalized_required):
+        named_value = named_values.get(normalized)
+        if named_value is not None and str(named_value).strip():
+            continue
+        if positional_index < len(positionals) and str(positionals[positional_index]).strip():
+            positional_index += 1
+            continue
+        missing.append(original)
+    return missing
+
+
+def _validate_against_manifest(
+    script_path: str,
+    script_meta: dict[str, Any],
+    parsed_input: Any,
+    cli_argv: list[str] | None = None,
+) -> str | None:
     """按 manifest.input_schema 做最小校验（仅 required）。"""
     schema = script_meta.get("input_schema")
     if not isinstance(schema, dict):
         return None
     required = schema.get("required")
     if not isinstance(required, list) or not required:
+        return None
+    if cli_argv is not None:
+        missing = _cli_required_missing(required, cli_argv)
+        if missing:
+            return f"脚本 {script_path} 缺少必填字段: {missing}"
         return None
     if not isinstance(parsed_input, dict):
         return f"脚本 {script_path} 要求 input_json 为对象，且包含字段: {required}"
@@ -593,14 +640,14 @@ def _execute_script_subprocess(
 
 def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
-    创建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
+    新建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
     """
     skills_dir = _get_skills_dir()
     owner_user_id = _get_current_user_id()
     skill_home = (skills_dir / skill_id).resolve()
     script_root = (skill_home / "scripts").resolve()
-    # 仅当该 skill 目录真实存在且含 SKILL.md 时才创建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
+    # 仅当该 skill 目录真实存在且含 SKILL.md 时才新建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
@@ -721,7 +768,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         if cli_err:
             return _json_result(ok=False, code="invalid_cli_args_json", message=cli_err)
         script_meta = _script_meta_for(manifest, script_path)
-        schema_error = _validate_against_manifest(script_path, script_meta, parsed_input)
+        schema_error = _validate_against_manifest(script_path, script_meta, parsed_input, cli_argv)
         if schema_error:
             return _json_result(ok=False, code="manifest_validation_failed", message=schema_error, meta=script_meta)
 

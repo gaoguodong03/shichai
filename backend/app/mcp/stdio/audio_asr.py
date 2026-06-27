@@ -37,6 +37,29 @@ def _json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _tool_result(
+    *,
+    execution_status: str,
+    result_code: str,
+    message: str,
+    artifacts: dict[str, Any] | None = None,
+    agent_turn: str = "respond",
+    skill_session: str = "release",
+) -> str:
+    return _json(
+        {
+            "execution_status": execution_status,
+            "result_code": result_code,
+            "message": message,
+            "artifacts": artifacts or {},
+            "next_action": {
+                "agent_turn": agent_turn,
+                "skill_session": skill_session,
+            },
+        }
+    )
+
+
 def _is_under(child: Path, parent: Path) -> bool:
     try:
         child.relative_to(parent)
@@ -233,7 +256,7 @@ def transcribe_audio_file(
         chunk_seconds: 可选分片秒数，默认 120；大文件会按该长度分片后逐段转写。
 
     Returns:
-        JSON 字符串，成功时包含 ok=true、text 和 segment_count；失败时包含 ok=false 和 message。
+        JSON 字符串，包含 execution_status、result_code、message、artifacts、next_action。
     """
     try:
         audio_path = resolve_data_audio_path(path)
@@ -256,18 +279,26 @@ def transcribe_audio_file(
                 )
                 text = _extract_text(data)
                 if not text:
-                    return _json(
-                        {
-                            "ok": False,
-                            "message": f"第 {idx} 段未返回可用转写文本。",
-                            "upstream": data,
-                        }
+                    return _tool_result(
+                        execution_status="failed",
+                        result_code="audio_asr.empty_segment",
+                        message=f"第 {idx} 段未返回可用转写文本。",
+                        artifacts={"segment_index": idx, "upstream": data},
                     )
                 texts.append(text)
-        return _json({"ok": True, "text": "\n".join(texts).strip(), "segment_count": len(texts)})
+        return _tool_result(
+            execution_status="succeeded",
+            result_code="audio_asr.transcribed",
+            message="音频转写完成。",
+            artifacts={"text": "\n".join(texts).strip(), "segment_count": len(texts)},
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("audio_asr transcription failed: %s", exc, exc_info=True)
-        return _json({"ok": False, "message": str(exc)})
+        return _tool_result(
+            execution_status="failed",
+            result_code="audio_asr.failed",
+            message=str(exc),
+        )
 
 
 if __name__ == "__main__":

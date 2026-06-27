@@ -2,12 +2,14 @@ import { chatOnceRequest, streamSessionChat, type ChatStreamRequestPayload } fro
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
 type StreamContent = { text?: string; agent_id?: string; meta?: { phase?: string } }
+type StreamRoute = { agent_id?: string; skill_id?: string }
 
 export function createGroupChatStreamRunner(deps: {
   isSelectedSession: (sessionId: string) => boolean
   setStreamingPhase: (text: string, sessionId: string) => void
   appendHostError: (content: string) => void
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
+  showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
   appendStreamingContent: (agentId: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
@@ -31,6 +33,7 @@ export function createGroupChatStreamRunner(deps: {
         {
           onRoute: (data) => {
             deps.updateAutoSwitchHint(data, sessionId)
+            deps.showStreamingRoutePlaceholder(data, sessionId)
           },
           onContent: (data) => {
             if (data?.text != null && data?.agent_id) {

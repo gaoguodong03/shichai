@@ -121,7 +121,7 @@ QWEN_MODEL=gpt-4o
 |------|------|------|
 | .env 快速切换 | ✅ 已可用 | 修改 QWEN_* 即可 |
 | 方案 A 配置化 | ✅ 已实现 | `app_settings.json` 含 `default_llm`、`llm_providers` |
-| `get_llm_from_config` | ✅ | `llm_client.py`，按 provider_id 从配置创建 LLM |
+| `get_llm_from_config` | ✅ | `llm_client.py`，按 provider_id 从配置新建 LLM |
 | `chat.py` 读取配置 | ✅ | 每次请求从 `load_app_settings()` 取 `default_llm` |
 | 设置 UI | ✅ | AppSettingsView 支持 LLM 下拉选择（qwen、jeniya 等） |
 

@@ -113,6 +113,48 @@ def test_scenario_bundle_sanitizes_mcp_plaintext_secrets():
         shutil.rmtree(skills_root, ignore_errors=True)
 
 
+def test_scenario_bundle_sanitizes_mcp_url_headers_and_nested_secrets():
+    preset = {"id": "p1", "name": "P", "agent_ids": []}
+    mcps = [
+        {
+            "id": "x1",
+            "name": "Remote",
+            "transport": {
+                "type": "http",
+                "base_url": "https://mcp.example.test/mcp?apiKey=plain-secret&mode=web&token=${vault:remote-token}",
+                "headers": {
+                    "Authorization": "Bearer plain-secret",
+                    "X-Trace": "keep",
+                    "X-Api-Key": "${vault:header-key}",
+                },
+                "nested": {
+                    "callback": "https://callback.example.test/run?access_token=plain-token&ok=1",
+                    "authType": "bearer",
+                },
+            },
+        }
+    ]
+    skills_root = Path(tempfile.mkdtemp())
+    try:
+        raw = build_scenario_bundle_zip_bytes(preset, [], mcps, skills_root, [])
+        ext = extract_scenario_bundle_dir(raw)
+        try:
+            _man, _p, _agents, mcp = read_bundle_manifest_and_lists(ext)
+            transport = mcp[0]["transport"]
+            assert transport["base_url"] == "https://mcp.example.test/mcp?apiKey=&mode=web&token=${vault:remote-token}"
+            assert transport["headers"]["Authorization"] == ""
+            assert transport["headers"]["X-Trace"] == "keep"
+            assert transport["headers"]["X-Api-Key"] == "${vault:header-key}"
+            assert transport["nested"]["callback"] == "https://callback.example.test/run?access_token=&ok=1"
+            assert transport["nested"]["authType"] == "bearer"
+            assert "plain-secret" not in raw.decode("latin-1")
+            assert "plain-token" not in raw.decode("latin-1")
+        finally:
+            shutil.rmtree(ext, ignore_errors=True)
+    finally:
+        shutil.rmtree(skills_root, ignore_errors=True)
+
+
 def test_session_preset_export_resolves_skill_mcp_by_reference_label_name(monkeypatch, tmp_path: Path):
     import asyncio
     import json
@@ -188,7 +230,11 @@ def test_session_preset_export_resolves_skill_mcp_by_reference_label_name(monkey
     finally:
         reset_current_user_identity(token)
     assert result["summary"]["mcp_added"] == 1
-    assert imported_rows[0]["id"] == "stale-exa"
+    imported_mcp_id = result["summary"]["mcp_id_map"]["stale-exa"]
+    assert imported_mcp_id.startswith("mcp-")
+    assert imported_rows[0]["id"] == imported_mcp_id
+    assert imported_rows[0]["name"] == "Exa 搜索"
+    assert imported_rows[0]["transport"]["base_url"] == "https://mcp.exa.ai/mcp?exaApiKey=${EXA_API_KEY}"
 
 
 def test_strip_agent():

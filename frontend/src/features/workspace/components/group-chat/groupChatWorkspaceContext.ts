@@ -38,13 +38,17 @@ export interface GroupChatMessageContext {
   expandedToolKey: ContextValue
   toolRawMeta: ContextValue
   formatToolPopover: ContextValue
+  getSchedulerStateRaw: ContextValue
+  formatSchedulerStatePopover: ContextValue
   formatGroupMsgTime: ContextValue
+  formatGroupMsgFullTime: ContextValue
   renderMarkdown: ContextValue
   agentBodyContent: ContextValue
   isShortSingleLine: ContextValue
   formatUserBubbleForDisplay: ContextValue
   extractUserFileReferenceNames: ContextValue
   deleteGroupMessage: ContextValue
+  copyAgentMessageToClipboard: ContextValue
   saveAgentMessageToFile: ContextValue
 }
 
@@ -141,6 +145,7 @@ export interface GroupChatWorkspacePanelContext {
   groupWorkspaceWidth: ContextValue
   onGroupWorkspaceResizeMouseDown: ContextValue
   groupWorkspacePath: ContextValue
+  loadGroupWorkspace: ContextValue
   goGroupWorkspaceUp: ContextValue
   groupWorkspaceGoRoot: ContextValue
   createGroupWorkspaceDir: ContextValue
@@ -172,6 +177,8 @@ export interface GroupChatWorkspacePanelContext {
   cancelWorkspacePreviewEdit: ContextValue
   groupWorkspacePreviewEditContent: ContextValue
   groupWorkspacePreviewIsImage: ContextValue
+  groupWorkspacePreviewIsMarkdown: ContextValue
+  groupWorkspacePreviewMarkdownHtml: ContextValue
   groupWorkspacePreviewImageUrl: ContextValue
   groupWorkspacePreviewContent: ContextValue
 }

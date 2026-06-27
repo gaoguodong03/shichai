@@ -13,20 +13,19 @@ SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
 GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
 
 ## Skill 会话状态
-场景协作中，专家本轮发言完成后默认交回主持人调度；不要为了交回主持人而输出 `over=true`。
+场景协作中，普通专家本轮发言完成后默认交回主持人调度。
 
-只有当本轮明确还需要同一专家等待用户补充或继续处理时，才在回复末尾追加：
-[[SKILL_SESSION_STATE]]
-{"over": false}
-[[/SKILL_SESSION_STATE]]
-
-脚本型 Skill 若确实需要继续等待同一专家处理，可在 stdout JSON 中输出
-`skill_session_over: false`。平台遇到专家状态块或脚本 stdout 任一明确
-`false` 时，会保留 Skill 会话锁。旧版 `over=true` / `skill_session_over=true`
-仍兼容为“已结束”，但新 Skill 不需要输出它。
+脚本型 Skill 必须在 stdout JSON 中输出固定字段：
+`execution_status`、`result_code`、`message`、`artifacts`、`next_action`。
+`next_action.skill_session` 只允许 `keep` 或 `release`：
+`keep` 表示保留 Skill 会话锁，`release` 表示释放。
 """
 
 SCRIPT_SKILL_SESSION_OVER_KEYS = ("skill_session_over", "over")
+SCRIPT_NEXT_ACTION_SESSION_VALUES = {
+    "keep": False,
+    "release": True,
+}
 
 
 @dataclass(frozen=True)
@@ -46,7 +45,6 @@ class SkillSessionSignals:
     assistant_state_block: Optional[bool]
     script_stdout: Optional[bool]
     legacy_end_marker: bool
-    audio_transcription_success: bool
 
 
 def _json_loads_maybe(value: Any) -> Any:
@@ -82,7 +80,7 @@ def skill_session_ended_by_expert_output(content: str) -> bool:
 
 
 def strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bool], str]:
-    """Remove state blocks and return the last explicit over / skill_session_over value."""
+    """Remove state blocks and return the last explicit Skill-session value."""
     s = str(raw or "")
     last_over: Optional[bool] = None
     start, end = SKILL_SESSION_STATE_START, SKILL_SESSION_STATE_END
@@ -97,12 +95,20 @@ def strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bo
         s = (s[:lo] + s[hi + len(end) :]).rstrip()
         obj = _json_loads_maybe(inner)
         if isinstance(obj, dict):
-            value = obj.get("over")
-            if value is None:
-                value = obj.get("skill_session_over")
-            parsed = _boolish(value)
-            if parsed is not None:
-                last_over = parsed
+            next_action = obj.get("next_action")
+            if isinstance(next_action, dict):
+                parsed_action = SCRIPT_NEXT_ACTION_SESSION_VALUES.get(
+                    str(next_action.get("skill_session") or "").strip().lower()
+                )
+                if parsed_action is not None:
+                    last_over = parsed_action
+                    continue
+            for key in SCRIPT_SKILL_SESSION_OVER_KEYS:
+                if key not in obj:
+                    continue
+                parsed = _boolish(obj.get(key))
+                if parsed is not None:
+                    last_over = parsed
     return last_over, s
 
 
@@ -143,32 +149,23 @@ def skill_session_over_from_tool_outputs(
     `done` / `final` markers are intentionally ignored because they mean
     "stop this tool loop", not "release the group Skill session lock".
     """
-    last_over: Optional[bool] = None
+    last_next_action: Optional[bool] = None
+    last_legacy_over: Optional[bool] = None
     for payload in _iter_tool_payloads(raw_outputs, tool_names):
+        next_action = payload.get("next_action")
+        if isinstance(next_action, dict):
+            parsed_action = SCRIPT_NEXT_ACTION_SESSION_VALUES.get(
+                str(next_action.get("skill_session") or "").strip().lower()
+            )
+            if parsed_action is not None:
+                last_next_action = parsed_action
         for key in SCRIPT_SKILL_SESSION_OVER_KEYS:
             if key not in payload:
                 continue
             parsed = _boolish(payload.get(key))
             if parsed is not None:
-                last_over = parsed
-    return last_over
-
-
-def audio_transcription_success_from_tool_outputs(
-    raw_outputs: Iterable[str] | None,
-    tool_names: Iterable[str] | None = None,
-) -> bool:
-    names = [str(name or "") for name in tool_names] if tool_names is not None else None
-    if names is None or not any(name.startswith("run_skill_script_audio-transcription") for name in names):
-        return False
-    for payload in _iter_tool_payloads(raw_outputs, tool_names):
-        if payload.get("ok") is not True:
-            continue
-        code = str(payload.get("code") or "").strip()
-        text = str(payload.get("text") or "").strip()
-        if code == "transcribed" and text:
-            return True
-    return False
+                last_legacy_over = parsed
+    return last_next_action if last_next_action is not None else last_legacy_over
 
 
 def _choose_skill_session_state(signals: SkillSessionSignals) -> tuple[Optional[bool], str]:
@@ -183,8 +180,6 @@ def _choose_skill_session_state(signals: SkillSessionSignals) -> tuple[Optional[
         return True, "script_stdout"
     if signals.legacy_end_marker:
         return True, "legacy_end_marker"
-    if signals.audio_transcription_success:
-        return True, "audio_transcription_success"
     return None, "none"
 
 
@@ -196,11 +191,10 @@ def resolve_skill_session_state(
     """Resolve the Skill-session finish state conservatively.
 
     Precedence:
-    1. Any explicit false from expert state block or script stdout keeps the lock.
-    2. Expert final-answer state block true.
-    3. Script stdout JSON field `skill_session_over` / `over` true.
-    4. Legacy expert final-answer end markers.
-    5. No explicit state: ordinary one-turn expert speech; do not create a
+    1. Any explicit keep from expert state block or script stdout keeps the lock.
+    2. Any explicit release from expert state block or script stdout releases it.
+    3. Legacy expert final-answer end markers release it.
+    4. No explicit state: ordinary one-turn expert speech; do not create a
        cross-request lock.
     """
     over_from_content, content_without_state = strip_skill_session_state_blocks_and_get_over(raw_content)
@@ -210,7 +204,6 @@ def resolve_skill_session_state(
         assistant_state_block=over_from_content,
         script_stdout=over_from_script,
         legacy_end_marker=skill_session_ended_by_expert_output(content_without_state),
-        audio_transcription_success=audio_transcription_success_from_tool_outputs(tool_raw_outputs, tool_names),
     )
     over, source = _choose_skill_session_state(signals)
     return SkillSessionStateResolution(over, display_content, source, signals)

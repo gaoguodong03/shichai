@@ -54,20 +54,6 @@ def test_resolve_skip_host_when_skill_lock():
     assert r.direct_agent_id == "agent-a"
 
 
-def test_resolve_pass_control_message_returns_to_host_even_with_skill_lock():
-    meta = {"skill_session_owner_id": "agent-a"}
-    r = resolve_group_entry_route(
-        meta_item=meta,
-        agent_ids=["agent-a"],
-        host_takeover_requested=False,
-        ignore_auto_agent_id="",
-        user_message=" pass ",
-    )
-    assert r.skip_host_dispatch is False
-    assert r.direct_agent_id is None
-    assert r.clear_skill_lock_before_host is True
-
-
 def test_resolve_no_skip_on_host_takeover():
     meta = {"skill_session_owner_id": "agent-a"}
     r = resolve_group_entry_route(
@@ -147,6 +133,39 @@ def test_resolve_skill_session_state_reads_script_stdout_over():
     assert resolved.display_content == "已转写完成"
 
 
+def test_resolve_skill_session_state_reads_next_action_skill_session():
+    raw_tool_outputs = [
+        (
+            '{"execution_status": "blocked", "result_code": "input.missing", '
+            '"message": "缺少目标文件路径。", '
+            '"next_action": {"agent_turn": "respond", "skill_session": "keep"}}'
+        )
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "缺少目标文件路径。",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_demo"],
+    )
+    assert resolved.over is False
+    assert resolved.source == "script_stdout"
+
+
+def test_resolve_skill_session_state_next_action_beats_legacy_over():
+    raw_tool_outputs = [
+        (
+            '{"ok": true, "skill_session_over": true, '
+            '"next_action": {"agent_turn": "respond", "skill_session": "keep"}}'
+        )
+    ]
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "还需要继续",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_demo"],
+    )
+    assert resolved.over is False
+    assert resolved.source == "script_stdout"
+
+
 def test_resolve_skill_session_state_reads_travel_script_stdout_over():
     raw_tool_outputs = [
         (
@@ -170,19 +189,6 @@ def test_resolve_skill_session_state_ignores_done_final_for_session_lock():
     resolved = skill_session_contract.resolve_skill_session_state("脚本完成", raw_tool_outputs)
     assert resolved.over is None
     assert resolved.source == "none"
-
-
-def test_resolve_skill_session_state_treats_audio_transcription_success_as_over():
-    raw_tool_outputs = [
-        '{"ok": true, "stdout": "{\\"ok\\": true, \\"code\\": \\"transcribed\\", \\"done\\": true, \\"final\\": true, \\"text\\": \\"转写文本\\"}"}'
-    ]
-    resolved = skill_session_contract.resolve_skill_session_state(
-        "转写文本",
-        raw_tool_outputs,
-        tool_names=["run_skill_script_audio-transcription"],
-    )
-    assert resolved.over is True
-    assert resolved.source == "audio_transcription_success"
 
 
 def test_resolve_skill_session_state_ignores_non_script_tool_over_when_named():
@@ -242,7 +248,7 @@ def test_resolve_skill_session_state_legacy_marker_releases_without_explicit_sig
     assert "SKILL_SESSION_END" not in resolved.display_content
 
 
-def test_resolve_skill_session_state_explicit_false_beats_audio_success_fallback():
+def test_resolve_skill_session_state_explicit_script_false_keeps_lock():
     raw_tool_outputs = [
         (
             '{"ok": true, "stdout": "{\\"ok\\": true, '

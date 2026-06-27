@@ -32,6 +32,7 @@ backend/.env.*
 # Local account/database state; keep committed templates/examples separately.
 backend/config/auth_users.txt
 backend/config/users.json
+backend/config/mcp_servers.json
 backend/config/*.sqlite
 backend/config/*.sqlite3
 backend/config/*.db

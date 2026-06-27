@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from app.agent.llm_client import get_llm_from_config
+from app.agent.llm_client import (
+    build_llm_credential_notice,
+    get_llm_from_config,
+    resolve_llm_api_key,
+    resolve_llm_provider_entry,
+)
 from app.api.settings_secrets import load_api_secret_values
 from app.agent.scene_runtime import pick_scene_host_skill_id
 
@@ -101,13 +106,34 @@ def _pick_resolved_host_skill_id(skill_ids: List[str]) -> str:
     return pick_scene_host_skill_id(skill_ids)
 
 
-def _get_llm_for_agent(agent_profile: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
-    """Create the LLM configured for an Agent, falling back to the app default provider."""
+def _resolve_llm_provider_for_agent(
+    agent_profile: Optional[Dict[str, Any]],
+    app_settings: Dict[str, Any],
+) -> tuple[str, Dict[str, Any]]:
+    """Resolve the provider id/config used by an Agent or the app default."""
     provider = (agent_profile.get("llm_provider_id") or "").strip() if agent_profile else ""
     if not provider:
-        provider = app_settings.get("default_llm", "qwen")
+        provider = str(app_settings.get("default_llm") or "qwen").strip() or "qwen"
+    return resolve_llm_provider_entry(provider, app_settings.get("llm_providers"))
+
+
+def _llm_credential_notice_for_agent(
+    agent_profile: Optional[Dict[str, Any]],
+    app_settings: Dict[str, Any],
+) -> Optional[str]:
+    """Return a host-facing notice when the resolved provider has no API key."""
+    provider_id, cfg = _resolve_llm_provider_for_agent(agent_profile, app_settings)
     secrets = load_api_secret_values()
-    return get_llm_from_config(provider, app_settings.get("llm_providers"), secrets)
+    if resolve_llm_api_key(cfg, secrets):
+        return None
+    return build_llm_credential_notice(provider_id, cfg)
+
+
+def _get_llm_for_agent(agent_profile: Optional[Dict[str, Any]], app_settings: Dict[str, Any]) -> Any:
+    """Create the LLM configured for an Agent, falling back to the app default provider."""
+    provider_id, _cfg = _resolve_llm_provider_for_agent(agent_profile, app_settings)
+    secrets = load_api_secret_values()
+    return get_llm_from_config(provider_id, app_settings.get("llm_providers"), secrets)
 
 
 def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:

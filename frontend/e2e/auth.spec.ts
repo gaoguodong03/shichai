@@ -7,11 +7,11 @@ test.describe('验收 1/6：登录与账号入口', () => {
 
     await page.goto('/')
     await expect(page).toHaveURL(/\/login/)
-    await page.getByRole('button', { name: '没有账号？创建账户' }).click()
+    await page.getByRole('button', { name: '没有账号？新建账户' }).click()
     await page.getByLabel('账号').fill('e2e@example.test')
     await page.getByLabel('密码', { exact: true }).fill('password123')
     await page.getByLabel('确认密码').fill('password123')
-    await page.getByRole('button', { name: '创建账户' }).click()
+    await page.getByRole('button', { name: '新建账户' }).click()
 
     await expectMainShell(page)
     await expect(page).toHaveURL(/\/workspace$/)

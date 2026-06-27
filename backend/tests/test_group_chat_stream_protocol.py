@@ -1,5 +1,6 @@
 import pytest
 import asyncio
+import logging
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.group_chat_streaming import iter_with_keepalive
@@ -101,6 +102,31 @@ async def test_group_session_event_publisher_notifies_subscriber():
     assert event["type"] == "messages_updated"
     assert event["session_id"] == "session-push"
     assert event["message_count"] == 3
+
+
+def test_expert_prompt_log_includes_full_prompt(caplog):
+    from app.agent import group_chat_runtime
+
+    prompt = "【群聊讨论目标】\n写周报\n\n【本轮用户输入】\n请总结风险"
+
+    with caplog.at_level(logging.INFO, logger="app.agent.group_chat_runtime"):
+        group_chat_runtime._log_expert_prompt(
+            session_id="group-test",
+            run_id="run-test",
+            agent_id="agent-writer",
+            skill_id="weekly-report",
+            user_content=prompt,
+        )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[Prompt]" in messages
+    assert "group_chat_expert_prompt code=expert_prompt" in messages
+    assert "session=group-test" in messages
+    assert "run_id=run-test" in messages
+    assert "agent_id=agent-writer" in messages
+    assert "skill_id=weekly-report" in messages
+    assert "prompt_len=" in messages
+    assert prompt in messages
 
 
 @pytest.mark.asyncio
@@ -281,6 +307,26 @@ def test_store_skill_session_lock_only_for_explicit_continue_or_forced_wait():
     assert meta_item["skill_session_skill_id"] == "seminar-teacher"
 
 
+def test_scene_expert_turn_hands_back_to_host_before_next_target():
+    from app.agent.group_chat_skill_session import _should_handoff_to_host_after_expert
+
+    assert _should_handoff_to_host_after_expert(
+        orchestration_profile="scene",
+        skill_session_over=None,
+        has_auto_continue_signal=False,
+    ) is True
+    assert _should_handoff_to_host_after_expert(
+        orchestration_profile="scene",
+        skill_session_over=True,
+        has_auto_continue_signal=False,
+    ) is True
+    assert _should_handoff_to_host_after_expert(
+        orchestration_profile="scene",
+        skill_session_over=False,
+        has_auto_continue_signal=True,
+    ) is False
+
+
 @pytest.mark.asyncio
 async def test_astream_emits_unified_protocol_events():
     first = AIMessage(
@@ -325,7 +371,18 @@ async def test_astream_forces_audio_asr_tool_for_audio_file_ref_before_llm_reply
         tool_calls = getattr(last, "tool_calls", None) or []
         assert tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
         assert tool_calls[0]["args"]["path"] == "interview.m4a"
-        raw = '{"ok": true, "text": "' + transcript + '", "segment_count": 1}'
+        import json
+
+        raw = json.dumps(
+            {
+                "execution_status": "succeeded",
+                "result_code": "audio_asr.transcribed",
+                "message": "音频转写完成。",
+                "artifacts": {"text": transcript, "segment_count": 1},
+                "next_action": {"agent_turn": "respond", "skill_session": "release"},
+            },
+            ensure_ascii=False,
+        )
         return {
             "messages": [ToolMessage(content=raw, tool_call_id=tool_calls[0]["id"])],
             "tool_attempt_debug": [],
@@ -362,7 +419,7 @@ async def test_astream_forces_audio_asr_tool_for_audio_file_ref_before_llm_reply
     )
     final = next(ev for ev in events if isinstance(ev, dict) and ev.get("type") == "final_step")
     assert any(
-        item.get("source") == "forced_audio_asr_file_ref"
+        item.get("source") == "forced_mcp_file_ref_tool_call"
         for item in final.get("tool_attempt_debug", [])
     )
 

@@ -62,8 +62,9 @@ export function useResourceCollections(args: {
   agentSearch: Ref<string>
   skillSearch: Ref<string>
   mcpSearch: Ref<string>
+  llmSearch: Ref<string>
 }) {
-  const { currentModule, resourceSubModule, selectedId, agentSearch, skillSearch, mcpSearch } = args
+  const { currentModule, resourceSubModule, selectedId, agentSearch, skillSearch, mcpSearch, llmSearch } = args
 
   const skills = ref<SkillRow[]>([])
   const skillsLoading = ref(false)
@@ -76,6 +77,17 @@ export function useResourceCollections(args: {
   const agentInstancesLoading = ref(false)
 
   const llmProviderIds = computed(() => Object.keys(llmProviders.value || {}))
+
+  const filteredLlmProviderIds = computed(() => {
+    const q = normalizedResourceQuery(llmSearch.value)
+    const ids = llmProviderIds.value
+    if (!q) return ids
+    return ids.filter((id) => {
+      const meta = llmProviders.value[id] || {}
+      const hay = `${id} ${meta.label || ''} ${meta.model || ''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  })
 
   const filteredAgentInstances = computed(() => {
     const q = normalizedResourceQuery(agentSearch.value)
@@ -178,6 +190,25 @@ export function useResourceCollections(args: {
     }
   }
 
+  async function deleteSkill(skillId: string) {
+    const skill = skills.value.find((s) => s.id === skillId)
+    const ok = await appConfirm({
+      title: '删除技能',
+      message: `确定删除技能「${skill?.name || skillId}」？`,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(skillId)}`, { method: 'DELETE' })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      if (selectedId.value === skillId) selectedId.value = null
+      await fetchSkills()
+    } else {
+      await appAlert({ title: '删除技能失败', message: j.detail || '删除失败', variant: 'danger' })
+    }
+  }
+
   async function fetchMCP(options: { silent?: boolean } = {}) {
     const showLoading = !options.silent && mcpServers.value.length === 0
     if (showLoading) mcpLoading.value = true
@@ -194,6 +225,25 @@ export function useResourceCollections(args: {
       }
     } finally {
       if (showLoading) mcpLoading.value = false
+    }
+  }
+
+  async function deleteMcpServer(serverId: string) {
+    const server = mcpServers.value.find((s) => s.id === serverId)
+    const ok = await appConfirm({
+      title: '删除工具',
+      message: `确定删除工具「${server?.name || serverId}」？`,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
+    const r = await apiRequest(`/settings/mcp/${encodeURIComponent(serverId)}`, { method: 'DELETE' })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      if (selectedId.value === serverId) selectedId.value = null
+      await fetchMCP()
+    } else {
+      await appAlert({ title: '删除工具失败', message: j.detail || '删除失败', variant: 'danger' })
     }
   }
 
@@ -220,6 +270,37 @@ export function useResourceCollections(args: {
       llmProviders.value = {}
     } finally {
       llmLoading.value = false
+    }
+  }
+
+  async function deleteLlmProvider(providerId: string) {
+    const provider = llmProviders.value[providerId]
+    const label = provider?.label || providerId
+    const ok = await appConfirm({
+      title: '删除模型',
+      message: `确定删除模型「${label}」？`,
+      variant: 'danger',
+      confirmText: '删除',
+    })
+    if (!ok) return
+
+    const nextProviders = { ...llmProviders.value }
+    delete nextProviders[providerId]
+    const nextDefault = llmDefault.value === providerId ? Object.keys(nextProviders)[0] || 'qwen' : llmDefault.value
+    const r = await apiRequest('/settings/app', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        default_llm: nextDefault,
+        llm_providers: nextProviders,
+      }),
+    })
+    const j = await r.json()
+    if (j.status === 'ok') {
+      if (selectedId.value === providerId) selectedId.value = nextDefault && nextProviders[nextDefault] ? nextDefault : null
+      await fetchLLM()
+    } else {
+      await appAlert({ title: '删除模型失败', message: j.detail || '删除失败', variant: 'danger' })
     }
   }
 
@@ -259,6 +340,7 @@ export function useResourceCollections(args: {
     llmProviders,
     llmLoading,
     llmProviderIds,
+    filteredLlmProviderIds,
     agentInstances,
     agentInstancesLoading,
     filteredAgentInstances,
@@ -268,8 +350,11 @@ export function useResourceCollections(args: {
     fetchSkills,
     fetchAgents,
     deleteAgentInstance,
+    deleteSkill,
     fetchMCP,
+    deleteMcpServer,
     fetchLLM,
+    deleteLlmProvider,
     createEmptySkill,
     onAgentCreated,
     onMCPCreated,

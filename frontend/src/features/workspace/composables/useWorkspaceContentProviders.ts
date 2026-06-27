@@ -29,7 +29,9 @@ import {
 } from './workspacePreferences'
 import {
   agentBodyContent,
+  formatSchedulerStatePopover,
   formatToolPopover,
+  getSchedulerStateRaw,
   getToolRawResults,
   toolRawMeta,
 } from '../workspaceMessageUtils'
@@ -168,6 +170,8 @@ export function useWorkspaceContentProviders(args: {
     groupWorkspaceListWidth,
     groupWorkspacePreviewCollapsed,
     groupWorkspacePreviewIsImage,
+    groupWorkspacePreviewIsMarkdown,
+    groupWorkspacePreviewMarkdownHtml,
     loadGroupWorkspace,
     resetGroupWorkspacePanel,
     groupWorkspaceGoRoot,
@@ -199,7 +203,9 @@ export function useWorkspaceContentProviders(args: {
     isShortSingleLine,
     extractUserFileReferenceNames,
     formatGroupMsgTime,
+    formatGroupMsgFullTime,
     saveAgentMessageToFile,
+    copyAgentMessageToClipboard,
     deleteGroupMessage,
     scrollGroupToBottom,
     scrollLatestAssistantRowToLowerMiddle,
@@ -234,7 +240,6 @@ export function useWorkspaceContentProviders(args: {
     buildMessageWithFileReferences,
   } = useGroupFileReferences({
     sessionId: () => groupDetail.value?.id,
-    workspacePath: groupWorkspacePath,
     prompt: groupNextPrompt,
     loadWorkspace: loadGroupWorkspace,
   })
@@ -378,6 +383,7 @@ export function useWorkspaceContentProviders(args: {
   })
   const {
     appendStreamingContent,
+    showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
     handleStreamMessageEvent,
     handleStreamEndEvent,
@@ -401,6 +407,7 @@ export function useWorkspaceContentProviders(args: {
     abortGroupStream,
     patchGroupStreamState,
     updateAutoSwitchHint,
+    showStreamingRoutePlaceholder,
     consumeStreamingStatusContent,
     appendStreamingContent,
     handleStreamMessageEvent,
@@ -586,13 +593,17 @@ export function useWorkspaceContentProviders(args: {
     expandedToolKey,
     toolRawMeta,
     formatToolPopover,
+    getSchedulerStateRaw,
+    formatSchedulerStatePopover,
     formatGroupMsgTime,
+    formatGroupMsgFullTime,
     renderMarkdown,
     agentBodyContent,
     isShortSingleLine,
     formatUserBubbleForDisplay,
     extractUserFileReferenceNames,
     deleteGroupMessage,
+    copyAgentMessageToClipboard,
     saveAgentMessageToFile,
   })
 
@@ -689,6 +700,7 @@ export function useWorkspaceContentProviders(args: {
     onGroupWorkspaceResizeMouseDown,
     groupWorkspaceWidth,
     groupWorkspacePath,
+    loadGroupWorkspace,
     goGroupWorkspaceUp,
     groupWorkspaceGoRoot,
     createGroupWorkspaceDir,
@@ -720,6 +732,8 @@ export function useWorkspaceContentProviders(args: {
     cancelWorkspacePreviewEdit,
     groupWorkspacePreviewEditContent,
     groupWorkspacePreviewIsImage,
+    groupWorkspacePreviewIsMarkdown,
+    groupWorkspacePreviewMarkdownHtml,
     groupWorkspacePreviewImageUrl,
     groupWorkspacePreviewContent,
   })

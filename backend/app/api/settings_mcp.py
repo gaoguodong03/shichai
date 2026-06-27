@@ -17,7 +17,8 @@ from pydantic import BaseModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
-from app.core.scenario_bundle import merge_mcp_servers_for_bundle, sanitize_mcp_servers_for_bundle
+from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
+from app.core.settings_bundle_import import mcp_name_identity_import_plan, upsert_rows_by_id
 from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 from app.core.user_context import get_current_user_context, get_current_username
 from app.core.user_settings_paths import mcp_config_path, skills_dir_path
@@ -52,7 +53,7 @@ class MCPTransport(BaseModel):
     env: Optional[Dict[str, str]] = None
 
 class MCPServerCreate(BaseModel):
-    """创建 MCP Server 请求"""
+    """新建 MCP Server 请求"""
     name: str
     transport: MCPTransport
     metadata: Optional[Dict[str, Any]] = None
@@ -249,23 +250,34 @@ async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Fo
     preview = [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in rows]
     if dry_run:
         return {"status": "ok", "data": {"object_type": "mcp", "preview": {"mcps": preview}}}
-    merged, mcp_added, mcp_skipped, mcp_updated = merge_mcp_servers_for_bundle(
-        load_mcp_config(), rows, skip_existing=False
-    )
+    existing = load_mcp_config()
+    mcp_id_map, rows_to_import, kept_mcp_ids = mcp_name_identity_import_plan(existing, rows)
+    existing_ids = {str(row.get("id") or "").strip() for row in existing}
+    imported_ids = {str(row.get("id") or "").strip() for row in rows_to_import}
+    merged = upsert_rows_by_id(existing, rows_to_import, "id")
+    mcp_added = len([mid for mid in imported_ids if mid and mid not in existing_ids])
+    mcp_skipped = len(kept_mcp_ids)
+    mcp_updated = len([mid for mid in imported_ids if mid and mid in existing_ids])
     save_mcp_config(merged)
     await _invalidate_mcp_runtime_after_config_change()
     return {
         "status": "ok",
         "data": {
             "object_type": "mcp",
-            "summary": {"mcp_added": mcp_added, "mcp_skipped": mcp_skipped, "mcp_updated": mcp_updated},
+            "summary": {
+                "mcp_added": mcp_added,
+                "mcp_skipped": mcp_skipped,
+                "mcp_updated": mcp_updated,
+                "mcp_id_map": mcp_id_map,
+                "mcp_kept_ids": kept_mcp_ids,
+            },
         },
     }
 
 
 @router.post("/settings/mcp")
 async def create_mcp_server(server: MCPServerCreate):
-    """创建 MCP Server"""
+    """新建 MCP Server"""
     servers = load_mcp_config()
     
     # 生成 ID

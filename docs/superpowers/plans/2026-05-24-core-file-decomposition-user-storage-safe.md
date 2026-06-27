@@ -39,11 +39,11 @@
 
 ## 文件结构
 
-Phase B1 创建或修改：
+Phase B1 新建或修改：
 
-- 创建：`backend/app/api/group_chat_state.py`
+- 新建：`backend/app/api/group_chat_state.py`
   - 负责群聊 meta/history 文件读写、session payload 构建、archive segments、runtime state、session event subscribers。
-- 创建：`backend/app/agent/group_context.py`
+- 新建：`backend/app/agent/group_context.py`
   - 负责消息上下文、专家上下文、讨论目标、标题兜底、soft-stop 纯文本判定等纯函数。
 - 修改：`backend/app/api/group_chat.py`
   - 删除已迁出的 helper，保留路由函数、Pydantic request model、`group_chat_stream()` 主入口。
@@ -54,9 +54,9 @@ Phase B1 创建或修改：
 - 保留：`backend/tests/test_group_chat_stream_protocol.py`、`backend/tests/test_host_takeover.py`、`backend/tests/test_group_chat_group_memory.py`
   - 作为行为回归测试。
 
-后续 Phase B2 创建或修改：
+后续 Phase B2 新建或修改：
 
-- 创建：`backend/app/agent/group_host_decision.py`
+- 新建：`backend/app/agent/group_host_decision.py`
   - 负责 `_extract_json_object_from_llm_text`、host response 解析、workspace scheduler state、@ 提及/显式专家提取。
 - 修改：`backend/app/api/group_chat.py`
   - 只保留调用 `group_host_decision` 的编排 glue。
@@ -113,7 +113,7 @@ Phase B1 创建或修改：
 ## 任务 2：抽出 `group_chat_state.py`
 
 **文件：**
-- 创建：`backend/app/api/group_chat_state.py`
+- 新建：`backend/app/api/group_chat_state.py`
 - 修改：`backend/app/api/group_chat.py`
 - 测试：`backend/tests/test_group_chat_state.py`
 
@@ -183,9 +183,9 @@ def test_runtime_state_clears_done_task(monkeypatch):
 
 预期：FAIL，错误包含 `cannot import name 'group_chat_state'` 或缺少目标函数。
 
-- [x] **步骤 3：创建状态模块并迁移函数**
+- [x] **步骤 3：新建状态模块并迁移函数**
 
-创建 `backend/app/api/group_chat_state.py`，从 `group_chat.py` 迁出以下完整函数体并去掉下划线前缀：
+新建 `backend/app/api/group_chat_state.py`，从 `group_chat.py` 迁出以下完整函数体并去掉下划线前缀：
 
 - `_ACTIVE_GROUP_RUNS` -> `ACTIVE_GROUP_RUNS`
 - `_ACTIVE_GROUP_RUNS_LOCK` -> `ACTIVE_GROUP_RUNS_LOCK`
@@ -262,7 +262,7 @@ from app.api.group_chat_state import (
 ## 任务 3：抽出 `group_context.py`
 
 **文件：**
-- 创建：`backend/app/agent/group_context.py`
+- 新建：`backend/app/agent/group_context.py`
 - 修改：`backend/app/api/group_chat.py`
 - 测试：`backend/tests/test_group_context.py`
 
@@ -308,7 +308,7 @@ def test_title_from_first_message_limits_text():
 
 预期：FAIL，错误包含 `cannot import name 'group_context'`。
 
-- [x] **步骤 3：创建 `group_context.py` 并迁移纯函数**
+- [x] **步骤 3：新建 `group_context.py` 并迁移纯函数**
 
 从 `group_chat.py` 迁出：
 
@@ -378,7 +378,7 @@ from app.agent.group_context import (
 ## 任务 4：抽出 `group_host_decision.py`
 
 **文件：**
-- 创建：`backend/app/agent/group_host_decision.py`
+- 新建：`backend/app/agent/group_host_decision.py`
 - 修改：`backend/app/api/group_chat.py`
 - 测试：`backend/tests/test_group_host_decision.py`
 - 保留：`backend/tests/test_host_takeover.py`
@@ -555,7 +555,7 @@ def persist_host_scheduler_state_files(session_id: str, state: dict[str, str], *
 
 ### SandboxService 拆分计划
 
-单独创建 `docs/superpowers/plans/YYYY-MM-DD-sandbox-service-decomposition.md`，只覆盖：
+单独新建 `docs/superpowers/plans/YYYY-MM-DD-sandbox-service-decomposition.md`，只覆盖：
 
 - `backend/app/agent/sandbox_policy_builder.py`
 - `backend/app/agent/sandbox_handle_pool.py`
@@ -573,7 +573,7 @@ def persist_host_scheduler_state_files(session_id: str, state: dict[str, str], *
 
 ### WorkspaceContent provider 拆分计划
 
-单独创建 `docs/superpowers/plans/YYYY-MM-DD-workspace-provider-decomposition.md`，只覆盖：
+单独新建 `docs/superpowers/plans/YYYY-MM-DD-workspace-provider-decomposition.md`，只覆盖：
 
 - `useGroupSessionDetail.ts`
 - `useGroupRuntimeStreamState.ts`
@@ -591,7 +591,7 @@ def persist_host_scheduler_state_files(session_id: str, state: dict[str, str], *
 
 ### MainView shell 拆分计划
 
-单独创建 `docs/superpowers/plans/YYYY-MM-DD-main-view-shell-decomposition.md`，只覆盖：
+单独新建 `docs/superpowers/plans/YYYY-MM-DD-main-view-shell-decomposition.md`，只覆盖：
 
 - `useMainNavigation.ts`
 - `useScenarioResourcePanel.ts`

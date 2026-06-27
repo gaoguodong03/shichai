@@ -159,7 +159,7 @@ stateDiagram-v2
 9. **构造本轮用户侧输入**  
    一般会带上：**讨论目标**、**最近讨论摘要/历史**，并避免重复拼接历史。若用户带了自定义输入（如覆盖本轮提示），会按规则只使用一次。
 
-10. **创建「带工具的执行器」并流式跑**  
+10. **新建「带工具的执行器」并流式跑**  
    使用为该专家选好的 **LLM** 和工具列表，进入 `SimpleAgent` 执行器；对模型输出做 **流式迭代**（内部有 `agent_step` / `tool_step` / `final_step` 等阶段）。
 
 11. **推给用户看的内容（与内部执行）**  
@@ -210,25 +210,25 @@ stateDiagram-v2
 
 `data/users/{user_id}/sessions/workspaces/{会话id}/`
 
-其下 **`memory/`** 约定如下（不存在会在写入时自动创建）：
+其下 **`memory/`** 约定如下（不存在会在写入时自动新建）：
 
 ```mermaid
 flowchart TB
   subgraph ws [会话工作区 workspaces/会话id]
     mem[memory]
     mem --> factsFile["facts.md"]
-    mem --> roundtripFile["llm_roundtrips.jsonl"]
+    mem --> indexFile["index.md"]
   end
 ```
 
 | 路径 | 作用 |
 |------|------|
 | **`memory/facts.md`** | **事实清单**：从专家回复里抽取的短句事实，合并成 `- ` 开头的列表，去重并截断到 `max_facts` 条，供下一轮主持人/专家派发时拼进提示。 |
-| **`memory/llm_roundtrips.jsonl`** | **排障日志**：完整追加当前会话每次 LLM 调用的输入消息、输出、阶段、专家、Skill、模型等信息。不参与下一轮提示词，不截断、不轮转。 |
+| **`memory/index.md`** | **工作区索引**：从专家回合的工具调用与工具输出中提取工作区相对路径，记录专家、Skill、工作简述和文件路径，供下一位专家定位要读取的产物。 |
 
-**何时写入**：在 [`group_chat.py`](../../backend/app/api/group_chat.py) 里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后只从回复里抽取事实调用 `upsert_facts`。LLM 排障信息由 `append_llm_roundtrip` 写入 `llm_roundtrips.jsonl`。写入失败只打日志，不阻断主对话。
+**何时写入**：在群聊运行流里，当应用设置中 **`group_memory.enabled`** 为真（默认一般为开）时，专家回合成功结束后从回复里抽取事实调用 `upsert_facts`，并从 `write_workspace_file` 等工具调用、工具原始输出和 JSON artifacts 中提取工作区路径调用 `upsert_index_entries`。写入失败只打日志，不阻断主对话。
 
-**何时读出**：构造下一轮给专家的提示时，若记忆开启，会调用 `build_dispatch_context`：只读取 `facts.md`，拼成 **【关键事实】** 段落。`llm_roundtrips.jsonl` 只供排查问题，不会被塞进下一轮专家提示词。
+**何时读出**：构造下一轮给专家的提示时，若记忆开启，会调用 `build_dispatch_context`：读取 `facts.md` 与 `index.md`，分别拼成 **【关键事实】** 和 **【工作区索引】** 段落。索引中的文件路径是工作区相对路径，专家读取文件时直接使用这些路径。
 
 **可调参数（在应用设置 JSON 的 `group_memory` 段）**：当前主要使用 `enabled` 与 `max_facts`。旧的 `max_logs` / `dispatch_top_k` 即使出现在配置中，也不再影响下一轮 memory 注入。
 
@@ -261,7 +261,7 @@ flowchart TB
 
 - **全局配置在哪**：应用设置（如 `app_settings.json`）里通常有 **`default_llm`**（默认 provider  id，代码里常见回退为 `qwen`）和 **`llm_providers`**：一个**字典**，键是 provider id（字符串），值里一般有 `base_url`、`model`，以及 **`api_key`** 或 **`api_key_env`**（从环境变量读密钥）。
 
-- **创建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
+- **新建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
 
 - **何时用哪套模型**：群聊里通过 **`_get_llm_for_agent(agent_profile, app_settings)`**（见 `group_chat.py`）统一决定：
 
@@ -277,11 +277,11 @@ flowchart TB
 **技能**在本项目里主要是**用户资源目录下的一棵技能树**：每个技能一个子目录，**核心文件是 `SKILL.md`**（YAML frontmatter + Markdown 正文）。frontmatter 当前收敛为 **`name`**、**`description`**、**`allowed-tools` / `auto-tools`**：其中 MCP 字段声明该技能运行时允许加载的 MCP，Python 依赖会进入设置-沙箱依赖合并与预热流程。
 
 - **存哪里**：`data/users/{user_id}/resources/skills/{skill_id}/`
-  `skill_id` 一般与目录名一致；资源中心里创建/导入的技能会落在此路径。
+  `skill_id` 一般与目录名一致；资源中心里新建/导入的技能会落在此路径。
 
 - **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
 
-- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、创建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
+- **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、新建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
 
 - **和「专家」的关系**：专家配置里的 **`skill_ids`** 列出可用技能 id；本轮推理时把选中技能的**正文 + 描述**拼进系统提示，并挂上专家的 `system_prompt` / `role`（见第 4 节专家回合）。
 

@@ -38,7 +38,7 @@ def _evaluate_soft_stop(
         state["low_increment_streak"] = 0
         state["repeat_conclusion_streak"] = 0
 
-    has_fail = _has_tool_failure(tool_raw_results, full_content)
+    has_fail = _has_unresolved_tool_failure(tool_raw_results, full_content)
     state["tool_failure_streak"] = int(state.get("tool_failure_streak", 0)) + 1 if has_fail else 0
     state["prev_content"] = full_content
     state["prev_speaker"] = current_speaker
@@ -50,3 +50,37 @@ def _evaluate_soft_stop(
     if int(state.get("low_increment_streak", 0)) >= 2:
         return "连续两轮内容增量较低，建议暂停并由用户确认下一步。"
     return None
+
+
+def _looks_like_terminal_tool_failure(content: str) -> bool:
+    text = str(content or "").strip().lower()
+    if not text:
+        return True
+    first = text[:500]
+    terminal_markers = (
+        "当前步骤失败",
+        "工具执行失败",
+        "执行错误",
+        "工具已执行完成，但模型没有返回可展示的文字总结",
+        "模型没有返回可展示的文字内容",
+        "无法继续",
+        "请用户确认或调整任务",
+    )
+    return any(marker.lower() in first for marker in terminal_markers)
+
+
+def _has_substantive_recovered_content(content: str) -> bool:
+    if _looks_like_terminal_tool_failure(content):
+        return False
+    return len(_normalize_compare_text(content)) >= 80
+
+
+def _has_unresolved_tool_failure(tool_raw_results: List[str], full_content: str) -> bool:
+    if not _has_tool_failure(tool_raw_results, full_content):
+        return False
+    # Some tools may fail while the expert still completes the turn from available
+    # context, for example a material packet assembled after web requests returned
+    # 404/DNS errors. Do not pause the scene if the visible expert answer recovered.
+    if _has_substantive_recovered_content(full_content):
+        return False
+    return True

@@ -86,8 +86,8 @@
 
 ### 群聊记忆与协议
 
-- `test_group_memory_store.py`：事实去重、facts-only 分发上下文、会话级 LLM roundtrip JSONL。
-- `test_group_chat_group_memory.py`：群聊 facts 注入、会话级 LLM roundtrip 写入、图片预览 markdown、自动继续信号。
+- `test_group_memory_store.py`：事实去重、工作区索引写入、facts/index 分发上下文。
+- `test_group_chat_group_memory.py`：群聊 facts 注入、专家工具产物索引、图片预览 markdown、自动继续信号。
 - `test_group_chat_stream_protocol.py`：群聊流式事件协议。
 - `test_group_chat_skill_script_cli_flow.py`：前端 `@专家` 触发 Skill 脚本，并通过 CLI argv 传参。
 
@@ -98,7 +98,7 @@
 
 ### 会话与工作区 API
 
-- `test_sessions_api.py`：会话创建/列表/详情/删除与 404。
+- `test_sessions_api.py`：会话新建/列表/详情/删除与 404。
 - `test_workspace_files.py`：工作区文件增删改查、下载、上传、路径穿越防护、工具写入。
 - `test_scenario_bundle.py`：场景包导出、导入和依赖收集。
 

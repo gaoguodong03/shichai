@@ -12,20 +12,20 @@
 
 ## 文件结构
 
-- 创建：`docs/user-manual/README.md`，图文验收操作手册源文档。
-- 创建：`docs/user-manual/images/`，存放截图和标注图。
-- 创建：`docs/user-manual/书童四九上线验收操作手册.pdf`，验收人员分发版 PDF。
-- 创建：`docs/user-manual/assets/`，如需要，存放 PDF 样式或导出辅助资源。
-- 创建：`docs/superpowers/plans/2026-05-24-user-acceptance-manual.md`，本实施计划。
+- 新建：`docs/user-manual/README.md`，图文验收操作手册源文档。
+- 新建：`docs/user-manual/images/`，存放截图和标注图。
+- 新建：`docs/user-manual/书童四九上线验收操作手册.pdf`，验收人员分发版 PDF。
+- 新建：`docs/user-manual/assets/`，如需要，存放 PDF 样式或导出辅助资源。
+- 新建：`docs/superpowers/plans/2026-05-24-user-acceptance-manual.md`，本实施计划。
 
 ## 任务 1：准备文档目录和执行环境
 
 **文件：**
-- 创建：`docs/user-manual/README.md`
-- 创建：`docs/user-manual/images/`
-- 创建：`docs/user-manual/assets/`
+- 新建：`docs/user-manual/README.md`
+- 新建：`docs/user-manual/images/`
+- 新建：`docs/user-manual/assets/`
 
-- [x] **步骤 1：创建目录**
+- [x] **步骤 1：新建目录**
 
 运行：
 
@@ -98,11 +98,11 @@ http://127.0.0.1:5173
 
 - [x] **步骤 2：配置模型**
 
-在资源中心或设置入口创建/确认 `jeniya` 模型配置。API Key 使用本地测试值，截图和正文不展示明文。
+在资源中心或设置入口新建/确认 `jeniya` 模型配置。API Key 使用本地测试值，截图和正文不展示明文。
 
 预期：模型配置可保存，列表或详情页可见 `jeniya`。
 
-- [x] **步骤 3：创建演示数据**
+- [x] **步骤 3：新建演示数据**
 
 统一使用以下命名：
 
@@ -119,7 +119,7 @@ http://127.0.0.1:5173
 ## 任务 4：浏览器截图和标注
 
 **文件：**
-- 创建：`docs/user-manual/images/*.png`
+- 新建：`docs/user-manual/images/*.png`
 
 - [x] **步骤 1：截取登录与账号入口**
 
@@ -193,7 +193,7 @@ share-import-result.png
 ## 任务 5：编写 Markdown 手册
 
 **文件：**
-- 创建/修改：`docs/user-manual/README.md`
+- 新建/修改：`docs/user-manual/README.md`
 
 - [x] **步骤 1：写入手册总说明**
 
@@ -224,7 +224,7 @@ share-import-result.png
 ## 任务 6：导出 PDF
 
 **文件：**
-- 创建：`docs/user-manual/书童四九上线验收操作手册.pdf`
+- 新建：`docs/user-manual/书童四九上线验收操作手册.pdf`
 
 - [x] **步骤 1：选择可用导出工具**
 

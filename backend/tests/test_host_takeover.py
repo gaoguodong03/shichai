@@ -1,6 +1,8 @@
 """Host-on-demand routing tests."""
 import os
 
+import pytest
+
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
 
 
@@ -46,7 +48,7 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
     assert not gc._user_requests_host_takeover("【主持人补充指令】请撰写报告", explicit_flag=None, host_display_name="四九")
 
 
-def test_parse_host_response_extracts_next_prompt():
+def test_parse_host_response_migrates_legacy_next_prompt_to_speaker_task():
     gc = _get_host_decision_module()
     raw = """开场白
 ```json
@@ -55,7 +57,8 @@ def test_parse_host_response_extracts_next_prompt():
 """
     out = gc.parse_host_response(raw)
     assert out is not None
-    assert out.get("next_prompt") == "请结合上文补充要点"
+    assert out.get("speaker_task") == "请结合上文补充要点"
+    assert out.get("next_prompt") is None
     assert out.get("next_speaker") == "agent-a"
 
 
@@ -69,6 +72,56 @@ def test_parse_host_response_without_next_prompt():
     out = gc.parse_host_response(raw)
     assert out is not None
     assert out.get("next_prompt") is None
+
+
+def test_host_pause_message_user_shows_speaker_task():
+    from app.agent.group_chat_host_messages import _build_host_pause_message
+
+    msg = _build_host_pause_message(
+        skill_id="group-host-webnovel",
+        next_speaker="user",
+        current_phase="阶段1：入口分流",
+        announcement="请用户继续发言。",
+        speaker_task="请用户明确报告目标受众和篇幅。",
+    )
+
+    assert msg is not None
+    assert msg["content"] == "请用户明确报告目标受众和篇幅。"
+
+
+def test_host_pause_message_end_uses_fixed_copy():
+    from app.agent.group_chat_host_messages import HOST_END_MESSAGE, _build_host_pause_message
+
+    msg = _build_host_pause_message(
+        skill_id="group-host-webnovel",
+        next_speaker="end",
+        current_phase="end",
+        speaker_task="",
+    )
+
+    assert msg is not None
+    assert msg["content"] == HOST_END_MESSAGE
+    assert msg["meta"]["scheduler_state"]["next_speaker"] == "end"
+
+
+def test_host_next_speaker_message_includes_scheduler_state_json():
+    from app.agent.group_chat_host_messages import _build_host_next_speaker_message
+
+    msg = _build_host_next_speaker_message(
+        skill_id="group-host-webnovel",
+        next_speaker="agent-writer",
+        current_phase="阶段2：撰写",
+        speaker_task="请根据确认后的目标受众撰写报告。",
+        agent_map={"agent-writer": {"name": "文字创作专家"}},
+    )
+
+    assert "下面由 文字创作专家 发言。" in msg["content"]
+    assert "current_phase" not in msg["content"]
+    assert msg["meta"]["scheduler_state"] == {
+        "current_phase": "阶段2：撰写",
+        "next_speaker": "agent-writer",
+        "speaker_task": "请根据确认后的目标受众撰写报告。",
+    }
 
 
 def test_preferred_agent_id_map_prefers_agent_namespace():
@@ -150,27 +203,22 @@ def test_pick_resolved_host_skill_id_prefers_specialized_over_generic():
     assert pick([]) == ""
 
 
-async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path):
+async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path):
     gc = _get_host_runtime_module()
     calls = {}
     meta_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
-            return {
-                "group-host": "通用主持 Skill 正文",
-                "group-host-webnovel": "网文专用主持 Skill 正文",
-            }.get(skill_id)
-
-    async def fake_tool_builder(*_args, **_kwargs):
-        raise AssertionError("host scheduler should not use workspace tools for scheduler-state persistence")
+            assert skill_id == "group-host-webnovel"
+            return "网文专用主持 Skill 正文：文字创作完成后应进入图片生成阶段。"
 
     class FakeAgent:
         async def ainvoke(self, *_args, **_kwargs):
             return {
                 "messages": [
                     gc.AIMessage(
-                        content='```json\n{"task_done": false, "next_speaker": "agent-a", "next_prompt": "请写大纲", "reason": "按场景专用主持流程"}\n```'
+                        content='```json\n{"current_phase": "阶段：撰写", "next_speaker": "agent-a", "speaker_task": "请写大纲"}\n```'
                     )
                 ]
             }
@@ -192,8 +240,8 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         llm=object(),
         host_agent={
             "agent_id": "agent-scene-host",
-            "name": "四九场景主持",
-            "role": "群聊场景主持人",
+            "name": "五九",
+            "role": "群聊主持人",
             "skill_ids": ["group-host", "group-host-webnovel"],
         },
         agent_profiles=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
@@ -202,19 +250,21 @@ async def test_host_decide_loads_resolved_scene_host_skill(monkeypatch, tmp_path
         last_speaker_agent_id=None,
         extra_system_prompt="",
         group_session_id="group-1",
-        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        app_settings={"host_profile": {"display_name": "五九", "skill_ids": []}},
         orchestration_profile="scene",
         meta_item=meta_item,
     )
 
     assert out is not None
     assert out["next_speaker"] == "agent-a"
-    assert "网文专用主持 Skill 正文" in calls["agent_factory"]["skill_content"]
-    assert "通用主持 Skill 正文" not in calls["agent_factory"]["skill_content"]
+    content = calls["agent_factory"]["skill_content"]
+    assert "你是 五九，担任本群主持人。你的角色：群聊主持人。" in content
+    assert "平台会根据调度结果生成固定主持话术" in content
+    assert '"next_speaker": "agent-xxxxxx"' in content
+    assert '`"invite"`' in content
+    assert "网文专用主持 Skill 正文：文字创作完成后应进入图片生成阶段。" in content
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
-    assert "先判断讨论目标是否已经完成" in calls["agent_factory"]["skill_content"]
-    assert "不要再安排专家做“总结答复”" in calls["agent_factory"]["skill_content"]
     assert meta_item["scheduler_state"]["next_speaker"] == "agent-a"
 
 
@@ -277,10 +327,12 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
 
     assert out is not None
     assert out["next_speaker"] == "agent-teacher"
-    assert out["next_prompt"] == "请提出本轮研讨主题。"
+    assert out["speaker_task"] == "请提出本轮研讨主题。"
+    assert out.get("next_prompt") is None
     assert out["decision_source"] == "host_scheduler_state"
     assert calls["agent_factory"]["tools"] == []
-    assert "不要调用 read_file/write_workspace_file" in calls["agent_factory"]["skill_content"]
+    assert "平台会根据调度结果生成固定主持话术" in calls["agent_factory"]["skill_content"]
+    assert "next_speaker 写 agent_id" in calls["initial_state"]["messages"][0].content
     assert not (tmp_path / "current_phase.txt").exists()
     assert not (tmp_path / "next_speaker.txt").exists()
     assert not (tmp_path / "speaker_task.txt").exists()
@@ -289,6 +341,238 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
         "next_speaker": "教师",
         "speaker_task": "请提出本轮研讨主题。",
     }
+
+
+async def test_host_decide_resolves_legacy_host_skill_ref_by_name(monkeypatch):
+    gc = _get_host_runtime_module()
+    calls = {}
+
+    class FakeSkill:
+        name = "网文协同写作主持人v1.0"
+
+    class FakeSkillsLoader:
+        skills = {"v10-2": FakeSkill()}
+
+        def get_skill_full_content(self, skill_id):
+            if skill_id == "v10-2":
+                return "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。"
+            return None
+
+    class FakeAgent:
+        async def ainvoke(self, *_args, **_kwargs):
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content='```json\n{"current_phase": "阶段4：配图", "next_speaker": "agent-image", "speaker_task": "请生成配图"}\n```'
+                    )
+                ]
+            }
+
+    def fake_agent_factory(_llm, _tools, skill_content, *_args, **_kwargs):
+        calls["skill_content"] = skill_content
+        return FakeAgent()
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-scene-host",
+            "name": "四九",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host-webnovel"],
+            "skill_refs": [{"id": "group-host-webnovel", "name": "网文协同写作主持人"}],
+        },
+        agent_profiles=[{"agent_id": "agent-image", "name": "图片生成专家", "role": "图片生成"}],
+        discussion_goal="写网文并配图",
+        recent_messages="【文字创作专家】文章已保存到 逆光工程师-第1章-2026061115500000.md",
+        last_speaker_agent_id="agent-writer",
+        extra_system_prompt="",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+        meta_item={},
+    )
+
+    assert out["next_speaker"] == "agent-image"
+    assert "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。" in calls["skill_content"]
+
+
+async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monkeypatch):
+    gc = _get_host_runtime_module()
+    calls = {}
+    meta_item = {
+        "scheduler_state": {
+            "current_phase": "阶段2：材料支撑",
+            "next_speaker": "agent-research",
+            "speaker_task": "请补充可支撑讨论的材料。",
+        }
+    }
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, _skill_id):
+            return "主持人 Skill 正文"
+
+    class FakeAgent:
+        async def ainvoke(self, initial_state, **_kwargs):
+            calls["user_prompt"] = initial_state["messages"][0].content
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content=(
+                            '```json\n{"next_speaker": "agent-teacher", '
+                            '"speaker_task": "请教师收窄成可讨论的问题。", '
+                            '"reason": "继续交给教师"}\n```'
+                        )
+                    )
+                ]
+            }
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", lambda *_args, **_kwargs: FakeAgent())
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-scene-host",
+            "name": "四九场景主持",
+            "role": "群聊场景主持人",
+            "skill_ids": ["group-host"],
+        },
+        agent_profiles=[
+            {"agent_id": "agent-teacher", "name": "伴学研讨——引导教学的教师", "role": "教师"},
+        ],
+        discussion_goal="AI 在学生竞赛中的应用",
+        recent_messages="【用户】请收窄讨论题",
+        last_speaker_agent_id="agent-research",
+        extra_system_prompt="",
+        group_session_id="group-phase-preserve",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="scene",
+        meta_item=meta_item,
+    )
+
+    assert "【后台调度状态】" in calls["user_prompt"]
+    assert "current_phase: 阶段2：材料支撑" in calls["user_prompt"]
+    assert out["next_speaker"] == "agent-teacher"
+    assert meta_item["scheduler_state"] == {
+        "current_phase": "阶段2：材料支撑",
+        "next_speaker": "agent-teacher",
+        "speaker_task": "请教师收窄成可讨论的问题。",
+    }
+
+
+@pytest.mark.asyncio
+async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypatch):
+    from app.agent import group_chat_host_runtime as gc
+
+    meta_item = {
+        "scheduler_state": {
+            "current_phase": "阶段1：选题与需求确认",
+            "next_speaker": "用户",
+            "speaker_task": "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。",
+        }
+    }
+    calls = {}
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, _sid):
+            return "主持人 Skill 正文"
+
+    class FakeAgent:
+        async def ainvoke(self, initial_state, **_kwargs):
+            calls["user_prompt"] = initial_state["messages"][0].content
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content=(
+                            "请用户确认新建 Skill 的用途。\n"
+                            '```json\n{"task_done": true, "next_speaker": "user", '
+                            '"reason": "需要确认 Skill 需求"}\n```'
+                        )
+                    )
+                ]
+            }
+
+    def fake_agent_factory(*_args, **_kwargs):
+        return FakeAgent()
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", fake_agent_factory)
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-host",
+            "name": "四九",
+            "role": "群聊主持人",
+            "skill_ids": ["group-host"],
+        },
+        agent_profiles=[],
+        discussion_goal="新建一个 Skill",
+        recent_messages="【用户】帮我新建一个 Skill",
+        last_speaker_agent_id=None,
+        extra_system_prompt="",
+        group_session_id="group-recruitment",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="recruitment",
+        meta_item=meta_item,
+    )
+
+    assert "【后台调度状态】" not in calls["user_prompt"]
+    assert "网页爬取专家" not in calls["user_prompt"]
+    assert out["decision_source"] == "legacy"
+    assert out["next_speaker"] == "user"
+    assert meta_item["scheduler_state"]["speaker_task"] == "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。"
+
+
+@pytest.mark.asyncio
+async def test_host_decide_hides_invitable_list_when_room_has_participants(monkeypatch):
+    from app.agent import group_chat_host_runtime as gc
+
+    calls = {}
+
+    class FakeSkillsLoader:
+        def get_skill_full_content(self, _sid):
+            return "主持人 Skill 正文"
+
+    class FakeAgent:
+        async def ainvoke(self, initial_state, **_kwargs):
+            calls["user_prompt"] = initial_state["messages"][0].content
+            return {
+                "messages": [
+                    gc.AIMessage(
+                        content='```json\n{"task_done": false, "next_speaker": "agent-a", "next_prompt": "请继续", "reason": "继续交给场内专家"}\n```'
+                    )
+                ]
+            }
+
+    monkeypatch.setattr(gc, "_request_skills_loader", lambda: FakeSkillsLoader())
+    monkeypatch.setattr(gc, "create_skill_execution_agent", lambda *_args, **_kwargs: FakeAgent())
+
+    out = await gc._host_decide_by_agent(
+        llm=object(),
+        host_agent={
+            "agent_id": "agent-host",
+            "name": "四九",
+            "role": "群聊主持人",
+            "skill_ids": ["group-host"],
+        },
+        agent_profiles=[{"agent_id": "agent-a", "name": "写作专家", "role": "写作"}],
+        discussion_goal="继续写作",
+        recent_messages="【用户】继续",
+        last_speaker_agent_id=None,
+        extra_system_prompt="",
+        available_to_add=[{"agent_id": "agent-b", "name": "检索专家", "role": "检索"}],
+        group_session_id="group-recruitment-with-member",
+        app_settings={"host_profile": {"display_name": "四九", "skill_ids": []}},
+        orchestration_profile="recruitment",
+        meta_item={},
+    )
+
+    assert out["next_speaker"] == "agent-a"
+    assert "【可邀请专家列表】" not in calls["user_prompt"]
+    assert "检索专家" not in calls["user_prompt"]
 
 
 def test_leader_prompt_hides_skill_details_from_host():
@@ -303,5 +587,69 @@ def test_leader_prompt_hides_skill_details_from_host():
     )
     assert "skills=" not in prompt
     assert "skill-x" not in prompt
-    assert "先判断讨论目标是否已经完成" in prompt
+    assert "先判断任务目标是否已经完成" in prompt
     assert "不要再安排专家做“总结答复”" in prompt
+    assert "speaker_task" in prompt
+    assert "next_prompt" not in prompt
+
+
+def test_leader_prompt_hides_invitable_list_when_room_has_participants():
+    from app.agent.leader_scheduler import _build_leader_prompt
+
+    prompt = _build_leader_prompt(
+        [{"agent_id": "agent-a", "name": "专家A", "role": "文案"}],
+        "完成文案任务",
+        "最近对话",
+        [{"agent_id": "agent-b", "name": "专家B", "role": "检索"}],
+        allow_recruitment=True,
+    )
+
+    assert "可邀请的新成员" not in prompt
+    assert "专家B" not in prompt
+
+
+def test_leader_prompt_shows_invitable_list_only_for_empty_room():
+    from app.agent.leader_scheduler import _build_leader_prompt
+
+    prompt = _build_leader_prompt(
+        [],
+        "需要组队",
+        "最近对话",
+        [{"agent_id": "agent-b", "name": "专家B", "role": "检索"}],
+        allow_recruitment=True,
+    )
+
+    assert "可邀请的新成员" in prompt
+    assert "专家B" in prompt
+
+
+async def test_leader_decide_migrates_legacy_next_prompt_to_speaker_task():
+    from app.agent.leader_scheduler import leader_decide
+
+    class FakeClient:
+        async def ainvoke(self, _messages):
+            return type(
+                "Resp",
+                (),
+                {
+                    "content": (
+                        '```json\n{"task_done": false, "next_speaker": "agent-a", '
+                        '"next_prompt": "请继续写大纲", "reason": "继续"}\n```'
+                    )
+                },
+            )()
+
+    class FakeLLM:
+        def get_client(self):
+            return FakeClient()
+
+    out = await leader_decide(
+        FakeLLM(),
+        [{"agent_id": "agent-a", "name": "专家A", "role": "写作"}],
+        "写网文",
+        "最近对话",
+    )
+
+    assert out["next_speaker"] == "agent-a"
+    assert out["speaker_task"] == "请继续写大纲"
+    assert out.get("next_prompt") is None

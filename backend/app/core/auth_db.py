@@ -207,7 +207,7 @@ def hash_password(password: str, *, salt: Optional[bytes] = None) -> tuple[str, 
 
 
 def create_user(*, username: str, password: str, created_at: str = "", conn: Optional[sqlite3.Connection] = None) -> None:
-    # 仅负责创建/插入；种子迁移由外层入口（verify/user_exists/seed）触发一次。
+    # 仅负责新建/插入；种子迁移由外层入口（verify/user_exists/seed）触发一次。
     init_auth_db()
     if not username or not username.strip():
         raise ValueError("username is required")

@@ -6,207 +6,146 @@
       </div>
       <div v-if="loading" class="p-4 text-muted">加载中...</div>
       <form v-else-if="server" @submit.prevent="save" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
-      <div>
-        <label class="block text-sm font-medium text-primary mb-1">名称 *</label>
-        <input
-          v-model="form.name"
-          type="text"
-          required
-          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-        />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-primary mb-1">描述</label>
-        <textarea
-          v-model="form.metadata.description"
-          rows="2"
-          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-        />
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-primary mb-1">传输类型 *</label>
-        <select
-          v-model="form.transport.type"
-          @change="onTransportChange"
-          class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-        >
-          <option value="stdio">stdio</option>
-          <option value="sse">SSE</option>
-          <option value="http">HTTP</option>
-        </select>
-      </div>
-      <template v-if="form.transport.type === 'stdio'">
         <div>
-          <label class="block text-sm font-medium text-primary mb-1">命令 *</label>
+          <label class="block text-sm font-medium text-primary mb-1">名称 *</label>
           <input
-            v-model="form.transport.command"
+            v-model="form.name"
             type="text"
             required
             class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-primary mb-1">参数（每行一个）</label>
+          <label class="block text-sm font-medium text-primary mb-1">描述</label>
           <textarea
-            v-model="stdioArgs"
-            rows="3"
+            v-model="form.metadata.description"
+            rows="2"
             class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
           />
         </div>
-        <div class="space-y-3 border-t border-border-light pt-4">
-          <p class="text-xs text-muted">
-            本地进程密钥（可选）：选择密钥后会保存到
-            <code class="font-mono text-[11px]">transport.env</code>，运行时注入给 stdio MCP。
-          </p>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">环境变量名</label>
-            <input
-              v-model="stdioEnvName"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="QWEN_AUDIO_API_KEY"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
-            <select
-              v-model="stdioVaultRef"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            >
-              <option value="">（不注入密钥）</option>
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </template>
-      <template v-if="form.transport.type === 'sse'">
         <div>
-          <label class="block text-sm font-medium text-primary mb-1">URL *</label>
-          <input
-            v-model="form.transport.url"
-            type="url"
-            required
+          <label class="block text-sm font-medium text-primary mb-1">传输类型 *</label>
+          <select
+            v-model="form.transport.type"
+            @change="onTransportChange"
             class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-          />
-          <p class="text-xs text-muted mt-1">
-            可在 URL 中使用 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 或
-            <code class="font-mono text-[11px]">${ENV_VAR}</code>；认证也可用下方「密钥」。
-          </p>
+          >
+            <option value="stdio">stdio</option>
+            <option value="sse">SSE</option>
+            <option value="http">HTTP</option>
+            <option value="streamable_http">Streamable HTTP</option>
+            <option value="custom">自定义</option>
+          </select>
         </div>
-        <div class="space-y-3 border-t border-border-light pt-4">
-          <p class="text-xs text-muted">
-            远程认证（可选）：与「设置 → 密钥管理」一致，保存为
-            <code class="font-mono text-[11px]">前缀${vault:标识}</code>。
-          </p>
+        <template v-if="form.transport.type === 'stdio'">
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">Header 名称</label>
+            <label class="block text-sm font-medium text-primary mb-1">命令 *</label>
             <input
-              v-model="authHeaderName"
+              v-model="form.transport.command"
               type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Authorization"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">值前缀</label>
-            <input
-              v-model="authPrefix"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Bearer "
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
-            <select
-              v-model="authVaultRef"
+              required
               class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            >
-              <option value="">（不添加认证 Header）</option>
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
-              </option>
-            </select>
-          </div>
-        </div>
-      </template>
-      <template v-if="form.transport.type === 'http'">
-        <div>
-          <label class="block text-sm font-medium text-primary mb-1">Base URL *</label>
-          <input
-            v-model="form.transport.base_url"
-            type="url"
-            required
-            class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-          />
-          <p class="text-xs text-muted mt-1">
-            可在 Base URL 中使用 <code class="font-mono text-[11px]">${vault:密钥标识}</code> 或环境变量占位符；也可在下方选择密钥。
-          </p>
-        </div>
-        <div class="space-y-3 border-t border-border-light pt-4">
-          <p class="text-xs text-muted">
-            远程认证（可选）：与「设置 → 密钥管理」一致，保存为
-            <code class="font-mono text-[11px]">前缀${vault:标识}</code>。
-          </p>
-          <div>
-            <label class="block text-sm font-medium text-primary mb-1">Header 名称</label>
-            <input
-              v-model="authHeaderName"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Authorization"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">值前缀</label>
-            <input
-              v-model="authPrefix"
-              type="text"
-              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              placeholder="Bearer "
+            <label class="block text-sm font-medium text-primary mb-1">参数（每行一个）</label>
+            <textarea
+              v-model="stdioArgs"
+              rows="3"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
             />
           </div>
+        </template>
+        <template v-if="form.transport.type === 'sse'">
           <div>
-            <label class="block text-sm font-medium text-primary mb-1">密钥</label>
-            <select
-              v-model="authVaultRef"
+            <label class="block text-sm font-medium text-primary mb-1">URL *</label>
+            <input
+              v-model="form.transport.url"
+              type="url"
+              required
               class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-            >
-              <option value="">（不添加认证 Header）</option>
-              <option v-for="s in secretItems" :key="s.id" :value="s.id">
-                {{ s.label || s.id }}{{ s.key_set ? '' : '（未配置）' }}
-              </option>
+            />
+          </div>
+        </template>
+        <template v-if="form.transport.type === 'http' || form.transport.type === 'streamable_http'">
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">Base URL *</label>
+            <input
+              v-model="form.transport.base_url"
+              type="url"
+              required
+              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+            />
+          </div>
+        </template>
+        <template v-if="form.transport.type === 'custom'">
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">自定义 transport JSON</label>
+            <textarea
+              v-model="customTransportJson"
+              rows="6"
+              class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+            />
+          </div>
+        </template>
+
+        <div v-if="form.transport.type === 'stdio' || form.transport.type === 'custom'" class="space-y-3 border-t border-border-light pt-4">
+          <div class="flex items-center justify-between gap-3">
+            <label class="block text-sm font-medium text-primary">环境变量</label>
+            <button type="button" @click="addEnvRow" class="text-sm text-accent hover:underline">添加</button>
+          </div>
+          <div v-for="row in envRows" :key="row.id" class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-2 items-center">
+            <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="MINIMAX_API_KEY" />
+            <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="${vault:minimax}" />
+            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
+              <option value="">填入密钥</option>
+              <option v-for="s in secretItems" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
             </select>
+            <button type="button" @click="removeEnvRow(row.id)" class="px-2 py-2 text-sm text-danger hover:opacity-80">删除</button>
           </div>
         </div>
-      </template>
-      <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
-        <button
-          type="submit"
-          :disabled="saving"
-          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
-        >
-          {{ saving ? '保存中...' : '保存' }}
-        </button>
-        <button
-          type="button"
-          @click="exportZip"
-          :disabled="exporting"
-          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
-        >
-          {{ exporting ? '导出中...' : '导出' }}
-        </button>
-        <button
-          type="button"
-          @click="deleteServer"
-          :disabled="deleting"
-          class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
-        >
-          删除
-        </button>
-      </div>
+
+        <div v-if="form.transport.type === 'sse' || form.transport.type === 'http' || form.transport.type === 'streamable_http' || form.transport.type === 'custom'" class="space-y-3 border-t border-border-light pt-4">
+          <div class="flex items-center justify-between gap-3">
+            <label class="block text-sm font-medium text-primary">请求头</label>
+            <button type="button" @click="addHeaderRow" class="text-sm text-accent hover:underline">添加</button>
+          </div>
+          <div v-for="row in headerRows" :key="row.id" class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-2 items-center">
+            <input v-model="row.key" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Authorization" />
+            <input v-model="row.value" type="text" class="px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="Bearer ${vault:token}" />
+            <select class="px-2 py-2 border border-input-border bg-input-bg text-primary rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring" @change="setVaultValue(row, $event)">
+              <option value="">填入密钥</option>
+              <option v-for="s in secretItems" :key="s.id" :value="s.id">{{ s.label || s.id }}</option>
+            </select>
+            <button type="button" @click="removeHeaderRow(row.id)" class="px-2 py-2 text-sm text-danger hover:opacity-80">删除</button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-start gap-2 pt-3 flex-shrink-0">
+          <button
+            type="submit"
+            :disabled="saving"
+            class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+          >
+            {{ saving ? '保存中...' : '保存' }}
+          </button>
+          <button
+            type="button"
+            @click="exportZip"
+            :disabled="exporting"
+            class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
+          >
+            {{ exporting ? '导出中...' : '导出' }}
+          </button>
+          <button
+            type="button"
+            @click="deleteServer"
+            :disabled="deleting"
+            class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
+          >
+            删除
+          </button>
+        </div>
       </form>
       <div v-else class="p-4 text-muted">未找到该 Server</div>
     </div>
@@ -215,26 +154,27 @@
 
 <script setup lang="ts">
 import { apiRequest } from '@/api/base'
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useApiSecrets } from '@/composables/useApiSecrets'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
+import { buildMcpServerPayload, mapConfigRowsToMap, type McpServerDraft } from './mcpConfigContract'
 
 const props = defineProps<{ serverId: string }>()
 const emit = defineEmits<{ (e: 'updated'): void; (e: 'deleted'): void }>()
 
-const { secretItems, loadApiSecrets, parseVaultHeader } = useApiSecrets()
+const { secretItems, loadApiSecrets } = useApiSecrets()
 
-const authHeaderName = ref('Authorization')
-const authPrefix = ref('Bearer ')
-const authVaultRef = ref('')
-const stdioEnvName = ref('QWEN_AUDIO_API_KEY')
-const stdioVaultRef = ref('')
+interface KeyValueRow {
+  id: number
+  key: string
+  value: string
+}
 
 interface Server {
   id: string
   name: string
-  transport?: {
-    type: string
+  transport?: Record<string, unknown> & {
+    type?: string
     command?: string
     args?: string[]
     url?: string
@@ -245,20 +185,23 @@ interface Server {
   metadata?: { description?: string }
 }
 
+let rowSeq = 0
 const server = ref<Server | null>(null)
 const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const exporting = ref(false)
+const customTransportJson = ref('')
+const envRows = ref<KeyValueRow[]>([])
+const headerRows = ref<KeyValueRow[]>([])
 const form = ref({
   name: '',
   transport: {
-    type: 'stdio' as string,
+    type: 'stdio',
     command: '',
     args: [] as string[],
     url: '',
     base_url: '',
-    env: {} as Record<string, string>,
   },
   metadata: { description: '' },
 })
@@ -270,28 +213,71 @@ const stdioArgs = computed({
   },
 })
 
+function nextRow(key = '', value = ''): KeyValueRow {
+  rowSeq += 1
+  return { id: rowSeq, key, value }
+}
+
+function mapToRows(value: unknown): KeyValueRow[] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value as Record<string, unknown>).map(([key, val]) => nextRow(key, String(val ?? '')))
+}
+
+function addEnvRow() {
+  envRows.value.push(nextRow())
+}
+
+function removeEnvRow(id: number) {
+  envRows.value = envRows.value.filter((row) => row.id !== id)
+}
+
+function addHeaderRow() {
+  headerRows.value.push(nextRow())
+}
+
+function removeHeaderRow(id: number) {
+  headerRows.value = headerRows.value.filter((row) => row.id !== id)
+}
+
+function setVaultValue(row: KeyValueRow, event: Event) {
+  const select = event.target as HTMLSelectElement
+  const id = select.value.trim()
+  if (id) row.value = '${vault:' + id + '}'
+  select.value = ''
+}
+
+function normalizeKnownTransportType(type: string): string {
+  return ['stdio', 'sse', 'http', 'streamable_http', 'custom'].includes(type) ? type : 'custom'
+}
+
 function fillForm(s: Server) {
   const t = (s.transport ?? {}) as NonNullable<Server['transport']>
-  const httpUrl = t.base_url || t.url || ''
-  const auth = parseVaultHeader(t.headers)
-  const stdioAuth = parseStdioVaultEnv(t.env)
-  authHeaderName.value = auth.headerName
-  authPrefix.value = auth.prefix
-  authVaultRef.value = auth.vaultRef
-  stdioEnvName.value = stdioAuth.envName
-  stdioVaultRef.value = stdioAuth.vaultRef
+  const type = normalizeKnownTransportType(String(t.type || 'stdio'))
+  const httpUrl = String(t.base_url || t.url || '')
+  const extraTransport = { ...t }
+  delete extraTransport.type
+  delete extraTransport.command
+  delete extraTransport.args
+  delete extraTransport.url
+  delete extraTransport.base_url
+  delete extraTransport.env
+  delete extraTransport.headers
+  if (type === 'custom' && t.type && !['custom'].includes(String(t.type))) extraTransport.type = t.type
+
   form.value = {
     name: s.name,
     transport: {
-      type: t.type || 'stdio',
-      command: t.command || '',
+      type,
+      command: String(t.command || ''),
       args: Array.isArray(t.args) ? [...t.args] : [],
       url: httpUrl,
       base_url: httpUrl,
-      env: t.env && typeof t.env === 'object' ? { ...t.env } : {},
     },
     metadata: { description: s.metadata?.description || '' },
   }
+  envRows.value = mapToRows(t.env)
+  headerRows.value = mapToRows(t.headers)
+  customTransportJson.value = Object.keys(extraTransport).length ? JSON.stringify(extraTransport, null, 2) : ''
 }
 
 function onTransportChange() {
@@ -301,45 +287,43 @@ function onTransportChange() {
     args: [],
     url: '',
     base_url: '',
-    env: {},
   }
-  authHeaderName.value = 'Authorization'
-  authPrefix.value = 'Bearer '
-  authVaultRef.value = ''
-  stdioEnvName.value = 'QWEN_AUDIO_API_KEY'
-  stdioVaultRef.value = ''
+  envRows.value = []
+  headerRows.value = []
+  customTransportJson.value = ''
 }
 
-function buildRemoteHeaders(): Record<string, string> | undefined {
-  const vid = authVaultRef.value.trim()
-  if (!vid) return undefined
-  const hn = authHeaderName.value.trim() || 'Authorization'
-  const p = authPrefix.value ?? ''
-  return { [hn]: p + '${vault:' + vid + '}' }
+function parseCustomTransport(): Record<string, unknown> {
+  if (!customTransportJson.value.trim()) return {}
+  const parsed = JSON.parse(customTransportJson.value)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid_custom_transport')
+  return parsed as Record<string, unknown>
 }
 
-function parseStdioVaultEnv(env?: Record<string, string>): { envName: string; vaultRef: string } {
-  const fallback = { envName: 'QWEN_AUDIO_API_KEY', vaultRef: '' }
-  if (!env) return fallback
-  const preferred = env.QWEN_AUDIO_API_KEY ? ['QWEN_AUDIO_API_KEY'] : []
-  const names = [...preferred, ...Object.keys(env).filter((k) => k !== 'QWEN_AUDIO_API_KEY')]
-  for (const name of names) {
-    const m = /^\$\{vault:([^}]+)\}\s*$/.exec(String(env[name] || ''))
-    if (m) return { envName: name, vaultRef: m[1] }
+function buildDraft(): McpServerDraft {
+  const transport: Record<string, unknown> & { type: string } = { type: form.value.transport.type }
+  if (form.value.transport.type === 'stdio') {
+    transport.command = form.value.transport.command
+    transport.args = form.value.transport.args || []
+  } else if (form.value.transport.type === 'sse') {
+    transport.url = form.value.transport.url
+  } else if (form.value.transport.type === 'http' || form.value.transport.type === 'streamable_http') {
+    transport.base_url = form.value.transport.base_url || form.value.transport.url
+  } else {
+    Object.assign(transport, parseCustomTransport())
+    if (!transport.type) transport.type = form.value.transport.type
   }
-  return fallback
-}
 
-function buildStdioEnv(): Record<string, string> | undefined {
-  const env = { ...(form.value.transport.env || {}) }
-  const name = stdioEnvName.value.trim()
-  if (!name) return Object.keys(env).length ? env : undefined
-  if (stdioVaultRef.value.trim()) {
-    env[name] = '${vault:' + stdioVaultRef.value.trim() + '}'
-  } else if (/^\$\{vault:[^}]+\}\s*$/.test(String(env[name] || ''))) {
-    delete env[name]
+  const env = mapConfigRowsToMap(envRows.value)
+  const headers = mapConfigRowsToMap(headerRows.value, { defaultKeyForValuedRow: 'Authorization' })
+  if (env) transport.env = env
+  if (headers) transport.headers = headers
+
+  return {
+    name: form.value.name.trim(),
+    transport,
+    metadata: { description: form.value.metadata.description || '' },
   }
-  return Object.keys(env).length ? env : undefined
 }
 
 async function load(options: { silent?: boolean } = {}) {
@@ -364,29 +348,7 @@ async function save() {
   if (!server.value) return
   saving.value = true
   try {
-    const remoteHeaders = buildRemoteHeaders()
-    const transport: Record<string, unknown> = {
-      type: form.value.transport.type,
-    }
-    if (form.value.transport.type === 'stdio') {
-      transport.command = form.value.transport.command
-      transport.args = form.value.transport.args || []
-      const stdioEnv = buildStdioEnv()
-      if (stdioEnv) transport.env = stdioEnv
-    } else if (form.value.transport.type === 'sse') {
-      transport.url = form.value.transport.url
-      if (remoteHeaders) transport.headers = remoteHeaders
-    } else if (form.value.transport.type === 'http') {
-      const u = form.value.transport.base_url || form.value.transport.url
-      transport.base_url = u
-      if (remoteHeaders) transport.headers = remoteHeaders
-    }
-
-    const body: Record<string, unknown> = {
-      name: form.value.name.trim(),
-      transport,
-      metadata: form.value.metadata,
-    }
+    const body = buildMcpServerPayload(buildDraft())
     const r = await apiRequest(`/settings/mcp/${encodeURIComponent(props.serverId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -404,6 +366,8 @@ async function save() {
     } else {
       await appAlert({ title: '保存失败', message: j.detail || '保存失败', variant: 'danger' })
     }
+  } catch {
+    await appAlert({ title: '保存失败', message: '请检查自定义 transport JSON 或必填字段', variant: 'danger' })
   } finally {
     saving.value = false
   }

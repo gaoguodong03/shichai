@@ -181,8 +181,6 @@ def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[st
     payload = _successful_tool_payload(tool_out)
     if payload is None:
         return False
-    if "[[SKILL_SESSION_END]]" in (system_prompt or ""):
-        return True
     if _payload_requests_final(payload):
         return True
     return _env_truthy("SKILL_AGENT_FORCE_FINAL_ON_ANY_SCRIPT_SUCCESS", "0") and _has_run_skill_script_call(tool_out)
@@ -205,8 +203,6 @@ def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -
         parts.append(f"stdout:\n{stdout}")
     if stderr:
         parts.append(f"stderr:\n{stderr}")
-    if "[[SKILL_SESSION_END]]" in (system_prompt or ""):
-        parts.append("最终答复末尾必须包含 [[SKILL_SESSION_END]]。")
     return HumanMessage(content="\n\n".join(parts))
 
 
@@ -244,6 +240,78 @@ def _raw_tool_outputs_summary(raw_outputs: list[str], *, limit: int = 2000) -> s
     return summary[:limit].rstrip()
 
 
+_DIRECT_MARKDOWN_SUMMARY_KEYS = ("markdown", "summary", "answer", "content", "text", "result", "results", "output")
+_DIRECT_MARKDOWN_SUMMARY_KEY_SET = set(_DIRECT_MARKDOWN_SUMMARY_KEYS)
+_TOOL_SUMMARY_KEYS = (*_DIRECT_MARKDOWN_SUMMARY_KEYS, "stdout", "message")
+
+
+def _summary_text_from_value(value: Any) -> str:
+    if isinstance(value, str):
+        nested = _json_loads_maybe(value)
+        if isinstance(nested, (dict, list)):
+            value = nested
+        else:
+            return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, indent=2)
+    return str(value)
+
+
+def _semantic_tool_output_summary(raw_outputs: list[str], *, limit: int = 2400) -> tuple[str, bool]:
+    snippets: list[str] = []
+    direct_markdown = False
+    for raw in raw_outputs or []:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        payload = _json_loads_maybe(text)
+        selected = ""
+        selected_direct = False
+        if isinstance(payload, dict):
+            for key in _TOOL_SUMMARY_KEYS:
+                value = payload.get(key)
+                if value in (None, ""):
+                    continue
+                nested = _json_loads_maybe(value) if isinstance(value, str) else None
+                if isinstance(nested, dict):
+                    nested_summary, nested_direct = _semantic_tool_output_summary(
+                        [json.dumps(nested, ensure_ascii=False)],
+                        limit=limit,
+                    )
+                    if nested_summary:
+                        selected = nested_summary
+                        selected_direct = nested_direct or key in _DIRECT_MARKDOWN_SUMMARY_KEY_SET
+                        break
+                selected = _summary_text_from_value(value)
+                selected_direct = key in _DIRECT_MARKDOWN_SUMMARY_KEY_SET
+                break
+            if not selected:
+                selected = json.dumps(payload, ensure_ascii=False, indent=2)
+        elif isinstance(payload, list):
+            selected = json.dumps(payload, ensure_ascii=False, indent=2)
+        else:
+            selected = text
+
+        if selected_direct:
+            snippet = selected.strip()
+        else:
+            lines = [line.strip() for line in selected.splitlines() if line.strip()]
+            snippet = "\n".join(lines[:12]).strip()
+        if snippet:
+            snippets.append(snippet)
+            direct_markdown = direct_markdown or selected_direct
+        if sum(len(s) for s in snippets) >= limit:
+            break
+    summary = "\n\n".join(snippets).strip()
+    return summary[:limit].rstrip(), direct_markdown
+
+
+def _markdown_code_block(text: str, info: str = "text") -> str:
+    max_run = max((len(match.group(0)) for match in re.finditer(r"`{3,}", text or "")), default=2)
+    fence = "`" * max(3, max_run + 1)
+    return f"{fence}{info}\n{text.rstrip()}\n{fence}"
+
+
 def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
     parts = [
         "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
@@ -260,11 +328,17 @@ def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
     dependency_message = _script_dependency_fallback_summary(raw_outputs)
     if dependency_message:
         return AIMessage(content=dependency_message)
-    summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
+    summary, direct_markdown = _semantic_tool_output_summary(raw_outputs, limit=2400)
     if summary:
-        content = f"工具已执行完成，但模型没有生成最终文字总结。以下是本轮工具返回摘要：\n\n{summary}"
+        if direct_markdown:
+            content = summary
+        else:
+            content = (
+                "工具已执行完成。以下是本轮工具返回摘要："
+                f"\n\n{_markdown_code_block(summary)}"
+            )
     else:
-        content = "工具已执行完成，但模型没有生成最终文字总结；本轮没有捕获到可展示的工具返回内容。"
+        content = "工具已执行完成，但本轮没有捕获到可展示的工具返回内容。"
     return AIMessage(content=content)
 
 

@@ -101,9 +101,12 @@
       class="flex-shrink-0 flex flex-col bg-sidebar overflow-hidden"
       :style="{ width: middleColumnOpen ? middleColumnWidth + 'px' : '0px' }"
     >
-      <div v-if="currentModule === 'workspace'" class="px-3 pt-3 pb-3 flex-shrink-0">
+      <div v-if="currentModule === 'workspace'" ref="newSessionMenuRoot" class="px-3 pt-3 pb-3 flex-shrink-0 relative">
         <button
-          @click="createNewSession"
+          type="button"
+          aria-haspopup="menu"
+          :aria-expanded="newSessionMenuOpen ? 'true' : 'false'"
+          @click.stop="toggleNewSessionMenu"
           :class="[
             'w-full px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
             creatingSession
@@ -114,6 +117,38 @@
           <span class="text-base leading-none">＋</span>
           <span>新建会话</span>
         </button>
+        <div
+          v-if="newSessionMenuOpen"
+          class="new-session-menu"
+          role="menu"
+          aria-label="新建会话"
+          @click.stop
+        >
+          <button
+            type="button"
+            role="menuitem"
+            class="new-session-menu-item"
+            :disabled="creatingSession"
+            @click="createBlankSessionFromMenu"
+          >
+            <span class="new-session-menu-item-title">空会话</span>
+          </button>
+          <div class="new-session-menu-divider" />
+          <div v-if="scenarioLoading" class="new-session-menu-status">场景加载中...</div>
+          <div v-else-if="!newSessionMenuScenarios.length" class="new-session-menu-status">暂无场景</div>
+          <button
+            v-else
+            v-for="scenario in newSessionMenuScenarios"
+            :key="scenario.id"
+            type="button"
+            role="menuitem"
+            class="new-session-menu-item"
+            @click="createScenarioSessionFromMenu(scenario)"
+          >
+            <span class="new-session-menu-item-title">{{ scenario.name || '未命名场景' }}</span>
+            <span class="new-session-menu-item-meta">{{ (scenario.agent_ids || []).length }} 位专家</span>
+          </button>
+        </div>
       </div>
       <div
         class="flex-1 overflow-y-auto middle-column-scrollbar"
@@ -178,7 +213,7 @@
                   @click="createScenarioPreset"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建场景</span>
+                  <span>新建场景</span>
                 </button>
                 <button
                   type="button"
@@ -267,16 +302,12 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    selectedId === '__new__'
-                      ? 'bg-nav-selected-bg text-nav-selected-text'
-                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建专家</span>
+                  <span>新建专家</span>
                 </button>
                 <button
                   type="button"
@@ -320,20 +351,19 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <input
-              ref="agentImportFileInputRef"
-              type="file"
-              accept=".zip,application/zip"
-              class="hidden"
-              @change="onAgentImportFile"
-            />
-            <div v-if="showAgentSearch" class="px-3 mb-2">
               <input
+                v-if="showAgentSearch"
                 v-model="agentSearch"
                 type="text"
                 placeholder="搜索专家（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="agentImportFileInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onAgentImportFile"
               />
             </div>
             <div v-if="agentInstancesLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
@@ -380,20 +410,18 @@
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="createEmptySkill"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建技能</span>
+                  <span>新建技能</span>
                 </button>
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入技能包（ZIP）"
                   @click="triggerSkillZipImport"
-                  title="导入技能"
                 >
                   <svg
                     class="main-sidebar-svg-icon"
@@ -410,13 +438,6 @@
                     <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
-                <input
-                  ref="skillZipInputRef"
-                  type="file"
-                  accept=".zip,application/zip"
-                  class="hidden"
-                  @change="onSkillZipSelected"
-                />
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
@@ -438,48 +459,68 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <div v-if="showSkillSearch" class="px-3 mb-2">
               <input
+                v-if="showSkillSearch"
                 v-model="skillSearch"
                 type="text"
                 placeholder="搜索技能（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
+              <input
+                ref="skillZipInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onSkillZipSelected"
+              />
             </div>
             <div v-if="skillsLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <button
+            <div v-else-if="!filteredSkills.length" class="px-3 py-4 text-sm text-muted">暂无技能</div>
+            <div
               v-else
               v-for="s in filteredSkills"
               :key="s.id"
-              @click="selectedId = s.id"
-              :class="[
-                'w-full text-left px-3 py-3.5 rounded-lg text-sm transition-colors',
-                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
+              class="relative group"
             >
-              <div class="truncate font-medium">{{ s.name || s.id }}</div>
-            </button>
+              <button
+                type="button"
+                @click="selectedId = s.id"
+                :class="[
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                ]"
+              >
+                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate text-xs text-muted mt-0.5 min-h-4">
+                  {{ s.description || '（无描述）' }}
+                </div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除技能 ${s.name || s.id}`"
+                :title="`删除技能 ${s.name || s.id}`"
+                @click.stop="deleteSkill(s.id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <template v-else-if="resourceSubModule === 'mcp'">
             <div class="mb-2 px-3 space-y-2">
               <div class="flex items-center gap-2">
                 <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
-                  :class="[
-                    'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                    selectedId === '__new__'
-                      ? 'bg-nav-selected-bg text-nav-selected-text'
-                      : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
-                  ]"
                 >
                   <span class="text-base leading-none">＋</span>
-                  <span>创建工具</span>
+                  <span>新建工具</span>
                 </button>
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
-                  title="导入工具"
+                  title="导入工具包（ZIP）"
                   :disabled="mcpZipImporting"
                   @click="triggerMcpZipImport"
                 >
@@ -498,13 +539,6 @@
                     <path d="m11 8 4 4-4 4" />
                   </svg>
                 </button>
-                <input
-                  ref="mcpZipInputRef"
-                  type="file"
-                  accept=".zip,application/zip"
-                  class="hidden"
-                  @change="onMcpZipSelected"
-                />
                 <button
                   type="button"
                   class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
@@ -526,70 +560,158 @@
                   </svg>
                 </button>
               </div>
-            </div>
-            <div v-if="showMcpSearch" class="px-3 mb-2">
               <input
+                v-if="showMcpSearch"
                 v-model="mcpSearch"
                 type="text"
                 placeholder="搜索工具（名称/描述）"
                 class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
               />
+              <input
+                ref="mcpZipInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onMcpZipSelected"
+              />
             </div>
             <div v-if="mcpLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <button
+            <div v-else-if="!filteredMcpServers.length" class="px-3 py-4 text-sm text-muted">暂无工具</div>
+            <div
               v-else
               v-for="s in filteredMcpServers"
               :key="s.id"
-              @click="selectedId = s.id"
-              :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
+              class="relative group"
             >
-              <div class="truncate font-medium">{{ s.name || s.id }}</div>
-              <div class="truncate text-xs text-muted mt-0.5 min-h-4" aria-hidden="true">
-                {{ s.description || s.metadata?.description || '\u00a0' }}
-              </div>
-            </button>
-          </template>
-          <template v-else-if="resourceSubModule === 'llm'">
-            <div class="mb-2 px-3 flex items-center gap-2">
               <button
-                @click="selectedId = '__new__'"
+                type="button"
+                @click="selectedId = s.id"
                 :class="[
-                  'flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm',
-                  selectedId === '__new__'
-                    ? 'bg-nav-selected-bg text-nav-selected-text'
-                    : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
                 ]"
               >
-                <span class="text-base leading-none">＋</span>
-                <span>创建模型</span>
+                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate text-xs text-muted mt-0.5 min-h-4">
+                  {{ s.description || s.metadata?.description || '（无描述）' }}
+                </div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除工具 ${s.name || s.id}`"
+                :title="`删除工具 ${s.name || s.id}`"
+                @click.stop="deleteMcpServer(s.id)"
+              >
+                ×
               </button>
             </div>
-            <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <div v-else-if="!llmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
-            <button
-              v-else
-              v-for="id in llmProviderIds"
-              :key="id"
-              @click="selectedId = id"
-              :class="[
-                'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors',
-                selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
-              ]"
-            >
-              <div class="truncate font-medium flex items-center gap-2">
-                <span class="truncate">{{ id }}</span>
-                <span
-                  v-if="id === llmDefault"
-                  class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
+          </template>
+          <template v-else-if="resourceSubModule === 'llm'">
+            <div class="mb-2 px-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
+                  @click="selectedId = '__new__'"
                 >
-                  默认
-                </span>
+                  <span class="text-base leading-none">＋</span>
+                  <span>新建模型</span>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="导入模型包（ZIP）"
+                  @click="pickLlmImportFile"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M14 3h6v18h-6" />
+                    <path d="M4 12h11" />
+                    <path d="m11 8 4 4-4 4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="w-10 h-10 rounded-xl bg-list-hover text-primary hover:bg-nav-hover-bg transition-colors flex items-center justify-center"
+                  title="搜索模型"
+                  @click="toggleSearch('llm')"
+                >
+                  <svg
+                    class="main-sidebar-svg-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3.5-3.5" />
+                  </svg>
+                </button>
               </div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '—' }}</div>
-            </button>
+              <input
+                v-if="showLlmSearch"
+                v-model="llmSearch"
+                type="text"
+                placeholder="搜索模型（名称/模型型号）"
+                class="w-full px-3 py-2 text-sm bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+              />
+              <input
+                ref="llmImportFileInputRef"
+                type="file"
+                accept=".zip,application/zip"
+                class="hidden"
+                @change="onLlmImportFile"
+              />
+            </div>
+            <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
+            <div v-else-if="!filteredLlmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
+            <div
+              v-else
+              v-for="id in filteredLlmProviderIds"
+              :key="id"
+              class="relative group"
+            >
+              <button
+                type="button"
+                @click="selectedId = id"
+                :class="[
+                  'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
+                  selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                ]"
+              >
+                <div class="truncate font-medium flex items-center gap-2">
+                  <span class="truncate">{{ llmProviders[id]?.label || id }}</span>
+                  <span
+                    v-if="id === llmDefault"
+                    class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
+                  >
+                    默认
+                  </span>
+                </div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '（无模型名）' }}</div>
+              </button>
+              <button
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                :aria-label="`删除模型 ${llmProviders[id]?.label || id}`"
+                :title="`删除模型 ${llmProviders[id]?.label || id}`"
+                @click.stop="deleteLlmProvider(id)"
+              >
+                ×
+              </button>
+            </div>
           </template>
           <template v-else-if="resourceSubModule === 'files'">
             <div class="px-3 mb-2 space-y-2">
@@ -667,7 +789,7 @@
             <div v-if="selectedScenarioPreset" class="max-w-5xl w-full mx-auto">
               <div class="mb-4">
                 <h2 class="text-2xl font-semibold text-primary mb-1">
-                  {{ isCreatingScenario ? '创建场景' : '配置场景' }}
+                  {{ isCreatingScenario ? '新建场景' : '配置场景' }}
                 </h2>
               </div>
               <form class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
@@ -725,7 +847,7 @@
                   </div>
                   <div>
                     <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-                    <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+                    <div class="text-xs font-medium text-muted mb-1.5">主持人技能（单选）</div>
                     <input
                       v-if="skills.length"
                       v-model.trim="scenarioLeaderSkillSearch"
@@ -898,6 +1020,7 @@
         <template v-else-if="resourceSubModule === 'llm'">
           <LLMSettingsView
             :provider-id="selectedId"
+            :providers-version="llmProvidersVersion"
             @updated="(id: string | undefined) => { fetchLLM(); if (id) selectedId = id }"
           />
         </template>
@@ -972,28 +1095,23 @@
         <template v-else>
         <h3 id="scenario-import-title" class="text-lg font-semibold mb-3">导入场景</h3>
         <template v-if="scenarioBundlePreview?.bundle_preview">
-          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+          <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
-            <div class="text-xs text-muted">场景名称：{{ scenarioBundlePreview.bundle_preview.preset_name }}</div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内专家</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="ex in scenarioBundlePreview.bundle_preview.experts" :key="ex.agent_id">
-                  <span class="text-primary">{{ ex.name || ex.agent_id }}</span>
-                </li>
-              </ul>
+            <p class="text-xs text-muted leading-5">场景名称：{{ scenarioBundlePreview.bundle_preview.preset_name }}</p>
+            <div v-if="(scenarioBundlePreview.bundle_preview.experts || []).length">
+              <p class="text-xs text-muted leading-5">
+                专家名称：{{ scenarioBundlePreview.bundle_preview.experts.map((ex) => ex.name).filter(Boolean).join('，') }}
+              </p>
             </div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-              <p class="text-xs text-primary">{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || []).join('，') }}</p>
+            <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length">
+              <p class="text-xs text-muted leading-5">
+                技能名称：{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || [], scenarioBundlePreview.bundle_preview.skill_names).join('，') }}
+              </p>
             </div>
-            <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="m in scenarioBundlePreview.bundle_preview.mcps" :key="m.id">
-                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
-                </li>
-              </ul>
+            <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length">
+              <p class="text-xs text-muted leading-5">
+                工具名称：{{ displayMcpNames(scenarioBundlePreview.bundle_preview.mcps || []).join('，') }}
+              </p>
             </div>
             <div
               v-if="hasImportMissingReferences(scenarioBundlePreview.bundle_preview.missing_references)"
@@ -1006,7 +1124,6 @@
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
                     <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
-                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
                       </span>
@@ -1016,14 +1133,11 @@
               </div>
               <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
             </div>
-            <p v-if="scenarioOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
-              将覆盖已有内容：{{ scenarioOverwriteSummary }}
-            </p>
             <div
               v-if="scenarioConflictPreviewRows.length"
               class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
             >
-              <div class="text-xs font-medium mb-1">冲突预览</div>
+              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
               <ul class="list-disc pl-4 text-xs space-y-0.5">
                 <li v-for="row in scenarioConflictPreviewRows" :key="row">{{ row }}</li>
               </ul>
@@ -1037,7 +1151,7 @@
             :disabled="scenarioImportCommitting || !canConfirmScenarioImport"
             @click="commitScenarioImport"
           >
-            {{ scenarioImportCommitting ? '导入中…' : hasScenarioNameConflict ? '确认覆盖导入' : '确认导入' }}
+            {{ scenarioImportCommitting ? '导入中…' : '确认导入' }}
           </button>
           <button
             type="button"
@@ -1097,20 +1211,18 @@
         <template v-else>
         <h3 class="text-lg font-semibold mb-3">导入专家</h3>
         <template v-if="agentBundlePreview?.bundle_preview">
-          <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
+          <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ agentBundlePreview.bundle_preview.name }}</div>
-            <div class="text-xs text-muted">专家名称：{{ agentBundlePreview.bundle_preview.name || '未命名专家' }}</div>
-            <div v-if="(agentBundlePreview.bundle_preview.skills || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内技能</div>
-              <p class="text-xs text-primary">{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || []).join('，') }}</p>
+            <p class="text-xs text-muted leading-5">专家名称：{{ agentBundlePreview.bundle_preview.name || '未命名专家' }}</p>
+            <div v-if="(agentBundlePreview.bundle_preview.skills || []).length">
+              <p class="text-xs text-muted leading-5">
+                技能名称：{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || [], agentBundlePreview.bundle_preview.skill_names).join('，') }}
+              </p>
             </div>
-            <div v-if="(agentBundlePreview.bundle_preview.mcps || []).length" class="pt-2">
-              <div class="text-xs font-medium text-muted mb-1">包内 MCP</div>
-              <ul class="list-disc pl-4 text-muted space-y-0.5">
-                <li v-for="m in agentBundlePreview.bundle_preview.mcps" :key="m.id">
-                  <span class="font-mono text-primary">{{ m.id }}</span> {{ m.name }}
-                </li>
-              </ul>
+            <div v-if="(agentBundlePreview.bundle_preview.mcps || []).length">
+              <p class="text-xs text-muted leading-5">
+                工具名称：{{ displayMcpNames(agentBundlePreview.bundle_preview.mcps || []).join('，') }}
+              </p>
             </div>
             <div
               v-if="hasImportMissingReferences(agentBundlePreview.bundle_preview.missing_references)"
@@ -1123,7 +1235,6 @@
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
                     <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
-                      <span class="font-mono text-red-600 dark:text-red-300">（{{ item.id }}）</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
                       </span>
@@ -1133,9 +1244,15 @@
               </div>
               <p class="mt-2 text-xs">这些内容不会阻止导入，但导入后相关场景、专家或技能可能需要手动补齐。</p>
             </div>
-            <p v-if="agentOverwriteSummary" class="text-xs text-amber-700 dark:text-amber-400 pt-2 whitespace-pre-line">
-              将覆盖已有内容：{{ agentOverwriteSummary }}
-            </p>
+            <div
+              v-if="agentConflictPreviewRows.length"
+              class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
+            >
+              <div class="text-xs font-medium mb-1">同名内容将保留本地版本，冲突预览：</div>
+              <ul class="list-disc pl-4 text-xs space-y-0.5">
+                <li v-for="row in agentConflictPreviewRows" :key="row">{{ row }}</li>
+              </ul>
+            </div>
           </div>
         </template>
         <div class="flex justify-start gap-2">
@@ -1145,7 +1262,7 @@
             :disabled="agentImportCommitting || !canConfirmAgentImport"
             @click="commitAgentImport"
           >
-            {{ agentImportCommitting ? '导入中…' : hasAgentNameConflict ? '确认覆盖导入' : '确认导入' }}
+            {{ agentImportCommitting ? '导入中…' : '确认导入' }}
           </button>
           <button
             type="button"
@@ -1156,6 +1273,89 @@
             取消
           </button>
         </div>
+        </template>
+      </div>
+    </div>
+
+    <div
+      v-if="llmImportModalOpen"
+      class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      @click.self="onLlmImportBackdropClick"
+    >
+      <div
+        class="max-w-lg w-full max-h-[85vh] overflow-y-auto rounded-xl border border-border-light bg-card shadow-xl p-5 text-primary themed-scrollbar relative"
+        @click.stop
+      >
+        <div
+          v-if="llmImportCommitting"
+          class="absolute inset-0 z-[25] flex flex-col items-center justify-center gap-3 rounded-xl bg-card/90 backdrop-blur-sm"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span
+            class="inline-block h-9 w-9 rounded-full border-2 border-accent border-t-transparent animate-spin"
+            aria-hidden="true"
+          />
+          <p class="text-sm font-medium text-primary">正在导入…</p>
+          <p class="text-xs text-muted px-4 text-center">请勿关闭页面，导入完成后将在此显示结果</p>
+        </div>
+        <template v-if="llmImportResult">
+          <h3 class="text-lg font-semibold mb-3">{{ llmImportResult.ok ? '导入成功' : '导入失败' }}</h3>
+          <p
+            class="text-sm mb-4 whitespace-pre-wrap"
+            :class="llmImportResult.ok ? 'text-primary' : 'text-danger'"
+          >
+            {{ llmImportResult.message }}
+          </p>
+          <div class="flex justify-start">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover"
+              @click="closeLlmImportModal"
+            >
+              关闭
+            </button>
+          </div>
+        </template>
+        <template v-else>
+          <h3 class="text-lg font-semibold mb-3">导入模型</h3>
+          <template v-if="llmBundlePreview?.bundle_preview">
+            <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
+              <div class="font-medium text-primary">{{ llmBundlePreview.bundle_preview.provider_id }}</div>
+              <p class="text-xs text-muted leading-5">
+                模型型号：{{ llmBundlePreview.bundle_preview.provider.model || '未填写' }}
+              </p>
+              <p class="text-xs text-muted leading-5">
+                URL：{{ llmBundlePreview.bundle_preview.provider.base_url || '未填写' }}
+              </p>
+              <p
+                v-if="llmBundlePreview.bundle_preview.would_overwrite_provider_id"
+                class="mt-2 text-xs rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
+              >
+                同标识模型已存在，确认后将更新该模型配置；不会导入 API Key 明文。
+              </p>
+            </div>
+          </template>
+          <div class="flex justify-start gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
+              :disabled="llmImportCommitting || !canConfirmLlmImport"
+              @click="commitLlmImport"
+            >
+              {{ llmImportCommitting ? '导入中…' : '确认导入' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 text-sm rounded-lg border border-border-light bg-card hover:bg-list-hover disabled:opacity-50"
+              :disabled="llmImportCommitting"
+              @click="closeLlmImportModal"
+            >
+              取消
+            </button>
+          </div>
         </template>
       </div>
     </div>
@@ -1207,7 +1407,7 @@
           <div class="mb-4 space-y-2 text-sm border border-border-light rounded-lg p-3 bg-page">
             <div class="font-medium text-primary">{{ pendingSkillZipFile?.name || '未选择文件' }}</div>
             <p class="text-xs text-muted">仅支持 ZIP 文件，且 ZIP 根目录必须包含 SKILL.md。</p>
-            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将执行覆盖导入。</p>
+            <p class="text-xs text-amber-700 dark:text-amber-400">同名技能将保留本地版本；名称不同会作为新版本导入。</p>
           </div>
           <div class="flex justify-start gap-2">
             <button
@@ -1216,7 +1416,7 @@
               :disabled="skillZipImporting || !pendingSkillZipFile"
               @click="commitSkillZipImport"
             >
-              {{ skillZipImporting ? '导入中…' : '确认覆盖导入' }}
+              {{ skillZipImporting ? '导入中…' : '确认导入' }}
             </button>
             <button
               type="button"
@@ -1234,7 +1434,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, inject } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, inject } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import WorkspaceContent from '@/features/workspace/WorkspaceContent.vue'
@@ -1299,6 +1499,7 @@ async function logout() {
 }
 
 const selectedId = ref<string | null>(null)
+const llmProvidersVersion = ref(0)
 const resourceMenuExpanded = ref(false)
 const { currentModule, resourceSubModule, settingsSection } = useMainRouteState(route)
 const {
@@ -1314,10 +1515,12 @@ const {
   showAgentSearch,
   showSkillSearch,
   showMcpSearch,
+  showLlmSearch,
   scenarioSearch,
   agentSearch,
   skillSearch,
   mcpSearch,
+  llmSearch,
   toggleSearch,
   resetResourceSearchesForSectionChange,
 } = useResourceSearch()
@@ -1331,6 +1534,7 @@ const {
   llmProviders,
   llmLoading,
   llmProviderIds,
+  filteredLlmProviderIds,
   agentInstances,
   agentInstancesLoading,
   filteredAgentInstances,
@@ -1339,8 +1543,11 @@ const {
   fetchSkills,
   fetchAgents,
   deleteAgentInstance,
+  deleteSkill,
   fetchMCP,
+  deleteMcpServer,
   fetchLLM,
+  deleteLlmProvider,
   createEmptySkill,
   onAgentCreated,
   onMCPCreated,
@@ -1351,6 +1558,7 @@ const {
   agentSearch,
   skillSearch,
   mcpSearch,
+  llmSearch,
 })
 const {
   scenarioLoading,
@@ -1363,6 +1571,7 @@ const {
   scenarioLeaderLlmId,
   scenarioDraft,
   isCreatingScenario,
+  scenarioPresets,
   filteredScenarioPresets,
   selectedScenarioPreset,
   scenarioAddableExperts,
@@ -1415,18 +1624,22 @@ const {
   agentImportCommitting,
   agentImportResult,
   agentBundlePreview,
+  llmImportFileInputRef,
+  llmImportModalOpen,
+  llmImportCommitting,
+  llmImportResult,
+  llmBundlePreview,
   canConfirmAgentImport,
   canConfirmScenarioImport,
-  hasScenarioNameConflict,
-  hasAgentNameConflict,
+  canConfirmLlmImport,
   displaySkillNames,
+  displayMcpNames,
   hasImportMissingReferences,
   missingReferenceGroups,
   missingRequiredByText,
   missingReferenceTitle,
-  scenarioOverwriteSummary,
   scenarioConflictPreviewRows,
-  agentOverwriteSummary,
+  agentConflictPreviewRows,
   pickScenarioImportFile,
   closeScenarioImportModal,
   onScenarioImportBackdropClick,
@@ -1438,14 +1651,24 @@ const {
   onAgentImportBackdropClick,
   onAgentImportFile,
   commitAgentImport,
+  pickLlmImportFile,
+  closeLlmImportModal,
+  onLlmImportBackdropClick,
+  onLlmImportFile,
+  commitLlmImport,
 } = useBundleImports({
   skills,
+  selectedId,
   selectedScenarioPreset,
   isCreatingScenario,
   fetchScenarioPresets,
   fetchAgents,
   fetchSkills,
   fetchMCP,
+  fetchLLM,
+  onLlmListChanged: () => {
+    llmProvidersVersion.value += 1
+  },
 })
 
 const {
@@ -1511,6 +1734,63 @@ const workspaceContentRef = ref<{
     discussion_goal_example?: string
   }) => Promise<string | null>
 } | null>(null)
+const newSessionMenuRoot = ref<HTMLElement | null>(null)
+const newSessionMenuOpen = ref(false)
+const newSessionMenuScenarios = computed(() =>
+  (scenarioPresets.value || []).filter((scenario) => (scenario.name || '').trim() || (scenario.agent_ids || []).length),
+)
+
+function closeNewSessionMenu() {
+  newSessionMenuOpen.value = false
+}
+
+function toggleNewSessionMenu() {
+  if (creatingSession.value) return
+  newSessionMenuOpen.value = !newSessionMenuOpen.value
+  if (newSessionMenuOpen.value) {
+    fetchScenarioPresets()
+  }
+}
+
+function onDocumentClickForNewSessionMenu(event: MouseEvent) {
+  if (!newSessionMenuOpen.value) return
+  const root = newSessionMenuRoot.value
+  if (root && event.target instanceof Node && root.contains(event.target)) return
+  closeNewSessionMenu()
+}
+
+function onDocumentKeydownForNewSessionMenu(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeNewSessionMenu()
+}
+
+async function createBlankSessionFromMenu() {
+  closeNewSessionMenu()
+  await createNewSession()
+}
+
+async function createScenarioSessionFromMenu(scenario: {
+  id: string
+  name: string
+  agent_ids: string[]
+  leader_agent_id?: string
+  host_config?: ScenarioHostConfig
+  description?: string
+  discussion_goal_example?: string
+}) {
+  closeNewSessionMenu()
+  await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClickForNewSessionMenu)
+  document.addEventListener('keydown', onDocumentKeydownForNewSessionMenu)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClickForNewSessionMenu)
+  document.removeEventListener('keydown', onDocumentKeydownForNewSessionMenu)
+})
+
 async function onChatMessageSent() {
   workspaceContentRef.value?.refresh()
   await fetchGroupSessions()

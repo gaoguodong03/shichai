@@ -22,7 +22,7 @@
 | 用户需求 | 最低验证 | 补充验收 |
 |----------|----------|----------|
 | UR-01 账号与用户隔离 | 第一层回归中的鉴权与会话测试 | 浏览器检查未登录跳转、登录刷新、跨账号资源隔离 |
-| UR-02 工作区与统一会话 | 第一层回归中的会话、SSE、前端业务流测试 | 手工创建会话、上传文件、刷新后继续对话 |
+| UR-02 工作区与统一会话 | 第一层回归中的会话、SSE、前端业务流测试 | 手工新建会话、上传文件、刷新后继续对话 |
 | UR-03 主持人与专家协作 | 第一层回归中的调度 FSM、专家 runtime、主持人接管测试 | 普通会话、场景会话、`@专家` 三种路径各跑一轮 |
 | UR-04 资源中心 | 第一层回归中的 Agent、资源配置和业务流测试 | 资源中心检查场景、专家、Skill、MCP、LLM 保存反馈 |
 | UR-05 Skill 与脚本执行 | 第一层回归中的 Skill 脚本和工具网关测试 | 真实沙箱执行一个脚本型 Skill，检查成功和失败提示 |
@@ -205,8 +205,8 @@ npm run build
 
 - `frontend/e2e/auth.spec.ts`：登录、注册与进入主工作台；
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
-- `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家创建与保存；
-- `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具创建、模型参数保存；
+- `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
+- `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
 - `frontend/e2e/settings.spec.ts`：主持人设置、配色、密钥、账号、安全和沙箱 requirements。
 
 调试时可打开浏览器：
@@ -243,7 +243,7 @@ http://<server-ip>:8100
 
 - 页面能打开且无明显白屏；
 - 能登录测试账号；
-- 能创建/进入会话；
+- 能新建/进入会话；
 - 能发送一条普通消息；
 - 如本次改动涉及技能或文件，需额外验证对应技能脚本和工作区文件读写；
 - `docker ps` 中 `st49` 与 `opensandbox-server` 为 healthy 或持续运行状态。
@@ -301,12 +301,11 @@ http://<server-ip>:8100
 
 重点确认：
 
-- 专家最终回复末尾包含 `[[SKILL_SESSION_STATE]]` 状态块；
-- `{"over": false}` 表示 Skill 会话继续，保留同一专家与同一 Skill；
-- `{"over": true}` 表示 Skill 已完成，释放会话锁并交回四九调度；
-- 脚本型 Skill 的 stdout JSON 若能确定会话状态，应包含 `skill_session_over: true|false`；
-- 专家状态块或脚本 stdout 任一明确为 `false` 时，应保留 Skill 会话锁；
-- stdout 中的 `done/final` 只用于工具循环收束，不作为会话锁释放依据；
+- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`result_code`、`message`、`artifacts`、`next_action`；
+- `next_action.agent_turn` 只允许 `continue` 或 `respond`；
+- `next_action.skill_session` 只允许 `keep` 或 `release`；
+- `next_action.skill_session=keep` 表示保留同一专家与同一 Skill，等待用户补充或继续处理；
+- `next_action.skill_session=release` 表示 Skill 本轮流程结束，释放会话锁并交回四九调度；
 - 脚本型 Skill 使用 `cli_args_json`，不再使用 `input_json` 或 stdin 读取。
 
 建议执行：

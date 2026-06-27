@@ -1,4 +1,3 @@
-"""Session CRUD and metadata service for group-chat backed sessions."""
 from __future__ import annotations
 
 import asyncio
@@ -61,13 +60,19 @@ class GroupSessionUpdate(BaseModel):
     add_agent_ids: Optional[List[str]] = None  # 向已有群聊追加 Agent
     remove_agent_ids: Optional[List[str]] = None  # 从群聊中移除 Agent
 
+
+def _clear_scheduler_state_for_session(meta_item: Dict[str, Any]) -> None:
+    """Configuration changes invalidate host stage state from a previous scene/task."""
+    meta_item.pop("scheduler_state", None)
+
+
 def create_session_internal(
     title: str = "新对话",
     agent_ids: Optional[List[str]] = None,
     leader_agent_id: Optional[str] = None,
     host_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """创建一条会话（默认虚拟场景主持人 + host_config）。"""
+    """新建一条会话（默认虚拟场景主持人 + host_config）。"""
     instances = load_agent_instances()
     id_to_preferred = _build_preferred_agent_id_map(instances)
     valid_ids = set(id_to_preferred.values())
@@ -114,6 +119,7 @@ def create_session_internal(
     meta[gsid] = row
     _save_group_meta(meta)
     _save_group_history(gsid, [])
+    # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
     try:
         from app.session_state.service import capture_session_checkpoint
 
@@ -132,7 +138,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
         raise HTTPException(status_code=400, detail="会话无消息，无法导出")
     md = format_session_chat_markdown(messages)
     ws_root = get_workspace_root(session_id)
-    fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+    fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}00.md"
     fn = fn.replace("..", "").replace("/", "")
     if not fn.endswith(".md"):
         fn += ".md"
@@ -252,7 +258,7 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动创建该会话条目以避免 404。"""
+    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请（add_agent_ids），则自动新建该会话条目以避免 404。"""
     meta = _load_group_meta()
     if group_session_id not in meta:
         if body.add_agent_ids:
@@ -284,6 +290,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     if body.host_config is not None:
         meta[group_session_id]["host_config"] = normalize_host_config_dict(body.host_config)
         meta[group_session_id]["leader_agent_id"] = VIRTUAL_SCENE_HOST_ID
+        _clear_scheduler_state_for_session(meta[group_session_id])
         # 写入场景型 host_config 即视为「场景协作」，避免仍停留在 recruitment 导致误招募
         meta[group_session_id]["orchestration_profile"] = "scene"
     elif body.leader_agent_id is not None:
@@ -293,6 +300,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         if not raw_l:
             meta[group_session_id]["leader_agent_id"] = ""
             meta[group_session_id].pop("host_config", None)
+            _clear_scheduler_state_for_session(meta[group_session_id])
         else:
             lid = _normalize_to_preferred_agent_ids([raw_l], id_to_preferred=id_to_preferred)
             lid = lid[0] if lid else ""
@@ -302,11 +310,13 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             meta[group_session_id]["leader_agent_id"] = lid
             if lid != VIRTUAL_SCENE_HOST_ID:
                 meta[group_session_id].pop("host_config", None)
+            _clear_scheduler_state_for_session(meta[group_session_id])
     if body.orchestration_profile is not None:
         op = str(body.orchestration_profile).strip().lower()
         if op not in ("recruitment", "scene"):
             raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
         meta[group_session_id]["orchestration_profile"] = op
+        _clear_scheduler_state_for_session(meta[group_session_id])
     direct_ids = body.agent_ids
     if direct_ids is not None:
         instances = load_agent_instances()
@@ -321,6 +331,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             if did not in deduped:
                 deduped.append(did)
         meta[group_session_id]["agent_ids"] = deduped
+        _clear_scheduler_state_for_session(meta[group_session_id])
         if deduped and str(meta[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
             meta[group_session_id]["orchestration_profile"] = "scene"
     add_ids = body.add_agent_ids
@@ -356,6 +367,8 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             for did in remove_ids_norm:
                 current.discard(did)
         meta[group_session_id]["agent_ids"] = list(current)
+        if current != before_ids:
+            _clear_scheduler_state_for_session(meta[group_session_id])
         # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
         unique_added = (
             list(

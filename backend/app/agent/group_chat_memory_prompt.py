@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 
 from app.agent.group_context import (
     normalize_compare_text as _normalize_compare_text,
     shorten_text as _shorten_text,
 )
-from app.agent.group_memory_store import build_dispatch_context, upsert_facts
+from app.agent.group_memory_store import build_dispatch_context, upsert_facts, upsert_index_entries
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,112 @@ def _extract_facts_from_response(text: str, max_items: int = 4) -> List[str]:
     return [item[:220] for item in chunks[:max_items]]
 
 
+def _normalize_workspace_index_path(value: Any) -> str:
+    path = str(value or "").strip().strip('"').strip("'")
+    if not path:
+        return ""
+    match = re.search(r"(?:[?&]path=)([^\"'\s)]+)", path)
+    if match:
+        path = unquote(match.group(1))
+    if "://" in path and "path=" not in str(value or ""):
+        return ""
+    path = path.replace("\\", "/")
+    path = re.sub(r"^/workspace/", "", path)
+    path = re.sub(r"^workspace/", "", path)
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.lstrip("/")
+    path = path.strip().strip("，,。.;；)")
+    if not path or path in {"memory/facts.md", "memory/index.md"}:
+        return ""
+    return path[:240]
+
+
+def _iter_artifact_paths(payload: Any) -> List[str]:
+    paths: List[str] = []
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            key_text = str(key or "").lower()
+            if key_text in {
+                "path",
+                "file_path",
+                "filepath",
+                "workspace_path",
+                "output_path",
+                "download_url",
+                "output",
+                "markdown",
+            }:
+                normalized = _normalize_workspace_index_path(value)
+                if normalized:
+                    paths.append(normalized)
+            paths.extend(_iter_artifact_paths(value))
+    elif isinstance(payload, list):
+        for item in payload:
+            paths.extend(_iter_artifact_paths(item))
+    return paths
+
+
+def _extract_paths_from_tool_raw_output(raw: str) -> List[str]:
+    text = str(raw or "")
+    paths: List[str] = []
+    try:
+        decoded = json.loads(text)
+    except Exception:
+        decoded = None
+    if decoded is not None:
+        paths.extend(_iter_artifact_paths(decoded))
+    for pattern in (
+        r"已写入当前 Chat 工作区文件[:：]\s*([^\s]+)",
+        r"已写入当前工作区文件[:：]\s*([^\s]+)",
+        r"/api/workspaces/[^\"'\s)]+/files/download\?path=([^\"'\s)]+)",
+    ):
+        for match in re.finditer(pattern, text):
+            normalized = _normalize_workspace_index_path(match.group(1))
+            if normalized:
+                paths.append(normalized)
+    return paths
+
+
+def _extract_index_paths_from_message(msg: Dict[str, Any]) -> List[str]:
+    paths: List[str] = []
+    tool_debug = msg.get("tool_debug") if isinstance(msg, dict) else {}
+    tool_calls = tool_debug.get("tool_calls") if isinstance(tool_debug, dict) else []
+    for call in tool_calls if isinstance(tool_calls, list) else []:
+        if not isinstance(call, dict):
+            continue
+        args = call.get("arguments") or call.get("args") or {}
+        if not isinstance(args, dict):
+            continue
+        for key in ("path", "file_path", "output_path", "target_path", "dst_path", "new_path", "workspace_path"):
+            normalized = _normalize_workspace_index_path(args.get(key))
+            if normalized:
+                paths.append(normalized)
+
+    for raw in msg.get("tool_raw_results") or []:
+        paths.extend(_extract_paths_from_tool_raw_output(str(raw)))
+
+    deduped: List[str] = []
+    seen = set()
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        deduped.append(path)
+    return deduped
+
+
+def _summarize_index_work(content: str) -> str:
+    for raw in (content or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        line = line.lstrip("-*0123456789. #").strip()
+        if line:
+            return line[:180]
+    return "更新工作区文件"
+
+
 def _persist_group_memory_turn(
     *,
     session_id: str,
@@ -82,14 +190,30 @@ def _persist_group_memory_turn(
     if role != "assistant":
         return
     content = str((msg or {}).get("content") or "").strip()
-    if not content:
-        return
-    facts_delta = _extract_facts_from_response(content)
+    if content:
+        facts_delta = _extract_facts_from_response(content)
+    else:
+        facts_delta = []
     if facts_delta:
         upsert_facts(
             session_id=session_id,
             facts_delta=facts_delta,
             max_facts=mem["max_facts"],
+            workspace_root=workspace_root,
+        )
+    index_paths = _extract_index_paths_from_message(msg)
+    if index_paths:
+        upsert_index_entries(
+            session_id=session_id,
+            entries_delta=[
+                {
+                    "agent_id": str((msg or {}).get("agent_id") or "unknown"),
+                    "skill_id": str((msg or {}).get("skill_id") or "default"),
+                    "summary": _summarize_index_work(content),
+                    "files": index_paths,
+                }
+            ],
+            max_entries=mem["max_facts"],
             workspace_root=workspace_root,
         )
 

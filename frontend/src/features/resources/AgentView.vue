@@ -8,7 +8,7 @@
       <div class="max-w-5xl w-full mx-auto">
         <div class="mb-4">
           <h2 class="text-2xl font-semibold text-primary mb-1">
-            {{ selectedAgentId === '__new__' ? '创建专家' : '配置专家' }}
+            {{ selectedAgentId === '__new__' ? '新建专家' : '配置专家' }}
           </h2>
         </div>
 
@@ -222,12 +222,6 @@
                   <div class="flex flex-col">
                     <span class="text-xs tracking-[0.18em] text-muted">
                       书童四九
-                    </span>
-                    <span class="text-sm font-semibold text-primary mt-0.5">
-                      ID
-                      <span class="text-muted">
-                        {{ selectedAgentId && selectedAgentId !== '__new__' ? selectedAgentId : 'Pending' }}
-                      </span>
                     </span>
                   </div>
                   <span class="px-2.5 py-1 rounded-full bg-black text-white text-xs font-medium">
@@ -473,7 +467,7 @@ async function saveAgent() {
     if (j.status === 'ok' && j.data?.agent_id) {
       emit('created', j.data.agent_id as string)
     } else {
-      await appAlert({ title: '创建失败', message: j.detail || '创建失败', variant: 'danger' })
+      await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }
   }
 }

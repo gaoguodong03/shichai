@@ -271,7 +271,7 @@ sessions/
 文件职责：
 
 - `index.json`：会话列表摘要。
-- `meta.json`：标题、场景、参与专家、创建时间、归档状态。
+- `meta.json`：标题、场景、参与专家、新建时间、归档状态。
 - `messages.jsonl`：聊天消息，一行一条，适合追加写。
 - `events.jsonl`：SSE 事件、工具调用、错误、沙箱记录。
 - `runtime_state.json`：下一轮发言者、pending owner、host plan、运行时快照。
@@ -344,7 +344,7 @@ resources/
 1. 解包到临时目录。
 2. 读取 manifest。
 3. 计算依赖图。
-4. dry-run 返回将导入、将覆盖、缺失、冲突和需要密钥的内容。
+4. dry-run 返回将导入、将覆盖、id 重映射、缺失引用和需要密钥的内容。
 5. 用户确认后写入资源目录。
 6. 原子更新 index。
 7. 记录导入事件。
@@ -355,6 +355,12 @@ resources/
 - 导出专家时带上引用的 Skill 和工具配置。
 - 导出 Skill 时带完整目录。
 - 不导出 vault 中的真实密钥。
+
+导入冲突规则：
+
+- 目标账号导入时不使用导出方 id 判断冲突。
+- 资源名称相同表示版本一致，覆盖目标账号已有资源内容并保留本地 id，包内引用映射到这个本地 id。
+- 资源名称不同表示新版本或新资源，即使导出方 id 与本地 id 相同，也生成新的本地 id 后导入。
 
 ## 8. 写入和备份
 
@@ -384,7 +390,7 @@ rename
 不在主代码路径兼容旧邮箱目录。一次性迁移脚本负责：
 
 - 生成新 `user_id`。
-- 创建 `backend/data/users/<user_id>/`。
+- 新建 `backend/data/users/<user_id>/`。
 - 拆分旧 `config/session_presets.json` 到 `resources/scenarios/`。
 - 拆分旧 `config/dha_instances.json` 到 `resources/agents/`。
 - 移动旧 `skills/` 到 `resources/skills/`。
@@ -397,7 +403,7 @@ rename
 
 最低验收：
 
-- 新用户注册后创建新目录结构。
+- 新用户注册后新建新目录结构。
 - 资源中心能列出场景、专家、Skill、工具、模型。
 - 新建、编辑、删除任一资源不会破坏其他资源。
 - 场景能正确解析专家、专家能正确解析 Skill。

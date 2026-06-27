@@ -12,6 +12,13 @@ type StreamStatusPayload = {
   meta?: { phase?: string }
 }
 
+type StreamRoutePayload = {
+  agent_id?: string
+  skill_id?: string
+}
+
+const STREAMING_STATUS_DEFAULT = '正在运行中...'
+
 export function useGroupStreamEvents(args: {
   selectedGroupSessionId: () => string | null
   groupDisplayMessages: Ref<GroupMessage[]>
@@ -63,18 +70,87 @@ export function useGroupStreamEvents(args: {
     return sessionId || selectedGroupSessionId() || ''
   }
 
+  function streamingStatusTextForPhase(phase: string): string {
+    const key = String(phase || '').trim().toLowerCase()
+    if (!key) return STREAMING_STATUS_DEFAULT
+    if (key === 'file_resolving' || key === 'preparing') return '正在处理文件...'
+    if (key === 'file_resolved' || key === 'file_parsed') return '文件已处理，正在继续...'
+    if (
+      key === 'file_writing' ||
+      key === 'file_write' ||
+      key === 'writing_file' ||
+      key === 'workspace_writing'
+    ) {
+      return '写入文件中...'
+    }
+    if (key === 'file_written' || key === 'workspace_written') return '文件已写入，正在继续...'
+    if (key === 'tool_running' || key === 'tool_pending') return '正在运行中...'
+    if (key === 'agent_waiting') return '正在等待任务完成...'
+    if (key === 'generating' || key === 'llm_generating' || key === 'assistant_generating') return '正在生成回复...'
+    return STREAMING_STATUS_DEFAULT
+  }
+
+  function ensureStreamingStatusPlaceholder(agentId: string, content = STREAMING_STATUS_DEFAULT, extra: Record<string, unknown> = {}) {
+    const id = String(agentId || '').trim()
+    if (!id) return
+    const statusContent = String(content || STREAMING_STATUS_DEFAULT)
+    const list = [...groupDisplayMessages.value]
+    const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
+    const isSameStreaming =
+      last?.role === 'assistant' && last?.agent_id === id && (last as { _streaming?: boolean })._streaming
+    if (isSameStreaming) {
+      if ((last as { _streamingStatus?: boolean })._streamingStatus || !(last.content || '').trim()) {
+        groupDisplayMessages.value = [
+          ...list.slice(0, -1),
+          { ...last, ...extra, content: statusContent, _streaming: true, _streamingStatus: true } as GroupMessage,
+        ]
+      }
+      return
+    }
+    const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
+    groupDisplayMessages.value = [
+      ...cleared,
+      {
+        role: 'assistant',
+        agent_id: id,
+        content: statusContent,
+        _streaming: true,
+        _streamingStatus: true,
+        ...extra,
+      } as unknown as GroupMessage,
+    ]
+    scrollLatestAssistantRowToLowerMiddle()
+    nextTick(() => scheduleHydrateAuthImages())
+  }
+
+  function showStreamingRoutePlaceholder(data: StreamRoutePayload, sessionId = selectedGroupSessionId() || '') {
+    if (sessionId && selectedGroupSessionId() !== sessionId) return
+    const agentId = String(data?.agent_id || '').trim()
+    if (!agentId) return
+    const id = activeSessionId(sessionId)
+    patchGroupStreamState(id, {
+      phase: STREAMING_STATUS_DEFAULT,
+      agentId,
+      skillId: String(data?.skill_id || '').trim(),
+    })
+    ensureStreamingStatusPlaceholder(agentId, STREAMING_STATUS_DEFAULT, {
+      skill_id: String(data?.skill_id || '').trim(),
+    })
+  }
+
   /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
   function appendStreamingContent(agentId: string, text: string) {
     const list = [...groupDisplayMessages.value]
-    const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
+    const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
     const appendToExisting =
       last?.role === 'assistant' && last?.agent_id === agentId && (last as { _streaming?: boolean })._streaming
     if (appendToExisting) {
-      const next = [...list.slice(0, -1), { ...last, content: (last.content || '') + text } as GroupMessage]
+      const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : (last.content || '') + text
+      const next = [...list.slice(0, -1), { ...last, content, _streamingStatus: false } as GroupMessage]
       groupDisplayMessages.value = next
     } else {
       const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-      groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: agentId, content: text, _streaming: true } as unknown as GroupMessage]
+      groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: agentId, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
       scrollLatestAssistantRowToLowerMiddle()
     }
     scrollLatestAssistantRowToLowerMiddle()
@@ -124,12 +200,22 @@ export function useGroupStreamEvents(args: {
     const phase = String(data?.meta?.phase || '').trim()
     if (!phase) return false
     const id = activeSessionId(sessionId)
+    const agentId = String(data?.agent_id || '').trim()
+    if (agentId) ensureStreamingStatusPlaceholder(agentId, streamingStatusTextForPhase(phase))
     if (phase === 'file_resolving' || phase === 'preparing') {
       patchGroupStreamState(id, { phase: '正在处理文件引用…' })
       return true
     }
     if (phase === 'file_resolved' || phase === 'file_parsed') {
       patchGroupStreamState(id, { phase: '文件引用已处理' })
+      return true
+    }
+    if (phase === 'file_writing' || phase === 'file_write' || phase === 'writing_file' || phase === 'workspace_writing') {
+      patchGroupStreamState(id, { phase: '写入文件中…' })
+      return true
+    }
+    if (phase === 'file_written' || phase === 'workspace_written') {
+      patchGroupStreamState(id, { phase: '文件已写入' })
       return true
     }
     if (phase === 'tool_running' || phase === 'tool_pending') {
@@ -225,6 +311,7 @@ export function useGroupStreamEvents(args: {
 
   return {
     appendStreamingContent,
+    showStreamingRoutePlaceholder,
     replaceOrPushAssistantMessage,
     clearStreamingPlaceholders,
     consumeStreamingStatusContent,

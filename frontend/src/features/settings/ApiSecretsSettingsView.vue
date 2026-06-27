@@ -10,7 +10,7 @@
           @click="selectNew"
         >
           <span class="text-base leading-none">＋</span>
-          <span>创建密钥</span>
+          <span>新建密钥</span>
         </button>
         <div class="flex-1 min-h-0 overflow-y-auto themed-scrollbar space-y-1 pt-1">
           <div v-if="loading" class="text-xs text-muted px-2 py-2">加载中...</div>
@@ -47,7 +47,7 @@
           v-if="!selectedId"
           class="text-sm text-muted py-12 text-center border border-dashed border-border-light rounded-xl"
         >
-          请从左侧选择一条密钥，或点击「创建密钥」。
+          请从左侧选择一条密钥，或点击「新建密钥」。
         </div>
 
         <form
@@ -64,7 +64,7 @@
               class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring font-mono text-sm"
               placeholder="例如：QWEN_API_KEY"
             />
-            <p class="text-xs text-muted mt-1">字母、数字、连字符、下划线，可与 .env 变量名一致（区分大小写），创建后不可修改。</p>
+            <p class="text-xs text-muted mt-1">字母、数字、连字符、下划线，可与 .env 变量名一致（区分大小写），新建后不可修改。</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-primary mb-1">显示名称（可选）</label>
@@ -99,7 +99,7 @@
               class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
               :disabled="saving"
             >
-              {{ saving ? '创建中...' : '创建' }}
+              {{ saving ? '新建中...' : '新建' }}
             </button>
           </div>
         </form>
@@ -214,7 +214,7 @@ async function createSecret() {
       selectedId.value = j.data.id as string
       draftNew.value = { id: '', label: '', api_key: '' }
     } else {
-      await appAlert({ title: '创建失败', message: (j as { detail?: string }).detail || '创建失败', variant: 'danger' })
+      await appAlert({ title: '新建失败', message: (j as { detail?: string }).detail || '新建失败', variant: 'danger' })
     }
   } finally {
     saving.value = false

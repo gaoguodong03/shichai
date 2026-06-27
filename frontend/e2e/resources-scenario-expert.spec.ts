@@ -18,15 +18,56 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })
 
-  test('创建场景草稿未保存前不出现在场景列表', async ({ page }) => {
+  test('旧版默认主持人 Skill 快照不显示为缺失技能', async ({ page }) => {
+    const state = createE2eState()
+    state.scenarios[0].host_config = {
+      skill_ids: ['group-host'],
+      skill_refs: [{ id: 'group-host', name: '网文协同写作主持人' }],
+    }
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.goto('/resources/scenario')
+
+    await expect(page.getByText('缺失技能')).toHaveCount(0)
+    await expect(page.getByText('网文协同写作主持人')).toHaveCount(0)
+  })
+
+  test('刷新直达场景页会加载专家和技能依赖', async ({ page }) => {
+    const state = createE2eState()
+    let agentsFetchCount = 0
+    let skillsFetchCount = 0
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/agents', async (route) => {
+      if (route.request().method() === 'GET') agentsFetchCount += 1
+      await route.fallback()
+    })
+    await page.route('**/api/settings/skills', async (route) => {
+      if (route.request().method() === 'GET') skillsFetchCount += 1
+      await route.fallback()
+    })
+
+    await page.goto('/resources/scenario')
+
+    await expect.poll(() => agentsFetchCount).toBeGreaterThan(0)
+    await expect.poll(() => skillsFetchCount).toBeGreaterThan(0)
+    await expect(page.getByRole('button', { name: '问答技能' })).toBeVisible()
+    await expect(page.getByRole('main').getByText('问答专家')).toBeVisible()
+    await expect(page.getByText('缺失技能')).toHaveCount(0)
+    await expect(page.getByText('缺失专家')).toHaveCount(0)
+  })
+
+  test('新建场景草稿未保存前不出现在场景列表', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/scenario')
 
     const sidebar = page.getByRole('complementary')
-    await page.getByRole('button', { name: '创建场景' }).click()
-    await page.getByRole('button', { name: '创建场景' }).click()
-    await page.getByRole('button', { name: '创建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await page.getByRole('button', { name: '新建场景' }).click()
 
-    await expect(page.getByRole('heading', { name: '创建场景' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '新建场景' })).toBeVisible()
     await expect(sidebar.getByText('0 位专家', { exact: true })).toHaveCount(0)
   })
 
@@ -95,7 +136,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     })
     await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
     await page.getByRole('button', { name: '确认导入' }).click()
-    await expect(page.getByText('导入成功')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
     await page.waitForTimeout(300)
 
     expect(emptyPresetPutCount).toBe(0)
@@ -143,22 +184,21 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
     await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
     await expect(page.getByText('冲突预览')).toBeVisible()
-    await expect(page.getByText('已有场景：scene-local')).toBeVisible()
-    await expect(page.getByText('专家：导入专家 → 覆盖 agent-local')).toBeVisible()
-    await expect(page.getByText('Skill：skill-local → skill-new')).toBeVisible()
-    await expect(page.getByText('MCP：mcp-local → mcp-new')).toBeVisible()
+    await expect(page.getByText('同名内容将保留本地版本')).toBeVisible()
+    await expect(page.getByText('场景：冲突场景')).toBeVisible()
+    await expect(page.getByText('专家：导入专家')).toBeVisible()
     await expect(page.getByText('技能 缺失技能')).toBeVisible()
-    await expect(page.getByRole('button', { name: '确认覆盖导入' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '确认导入' })).toBeVisible()
   })
 
-  test('用户可以创建专家并保存专家配置', async ({ page }) => {
+  test('用户可以新建专家并保存专家配置', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/agent')
 
     await expect(page).toHaveURL(/\/resources\/agent$/)
     await expect(page.getByRole('complementary').getByText('问答专家').first()).toBeVisible()
 
-    await page.getByRole('button', { name: '创建专家' }).click()
-    await expect(page.getByRole('heading', { name: '创建专家' })).toBeVisible()
+    await page.getByRole('button', { name: '新建专家' }).click()
+    await expect(page.getByRole('heading', { name: '新建专家' })).toBeVisible()
     await page.getByPlaceholder('请输入专家名称').fill('自动化专家')
     await page.getByPlaceholder('请输入专家描述').fill('负责验收真实用户点击路径')
     await page.getByRole('button', { name: '保存' }).click()

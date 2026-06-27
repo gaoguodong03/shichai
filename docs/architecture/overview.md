@@ -109,6 +109,7 @@ backend/data/users/{user_id}/
 
 ## 相关文档
 
+- [接口定位架构图](interface-map.md)
 - [系统架构图](system-architecture.md)
 - [API 设计文档](api-design.md)
 - [运行架构说明](runtime-architecture.md)

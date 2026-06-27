@@ -131,7 +131,7 @@ def _default_access_token_expire_minutes() -> int:
 
 
 def create_access_token(username: str, expires_minutes: int | None = None) -> str:
-    """创建一个简单的 HMAC-SHA256 JWT 兼容 token，不依赖外部库。"""
+    """新建一个简单的 HMAC-SHA256 JWT 兼容 token，不依赖外部库。"""
     if expires_minutes is None:
         expires_minutes = _default_access_token_expire_minutes()
     header = {"alg": "HS256", "typ": "JWT"}

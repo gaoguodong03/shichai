@@ -27,7 +27,7 @@ services:
       - |
         # Compose 会展开单层环境变量；用 $$ 把默认值交给容器内 shell，避免未设置时变成空串导致 unhealthy
         # OpenSandbox execd 镜像必须包含 /execd 运行时工件；不要改成业务沙箱镜像。
-        # 业务脚本运行镜像由 st49 创建沙箱时通过 image_ref/SANDBOX_STANDARD_IMAGE 传给 OpenSandbox。
+        # 业务脚本运行镜像由 st49 新建沙箱时通过 image_ref/SANDBOX_STANDARD_IMAGE 传给 OpenSandbox。
         export OPENSANDBOX_EXECD_IMAGE="$${OPENSANDBOX_EXECD_IMAGE:-opensandbox/execd:v1.0.15}"
         export OPENSANDBOX_EGRESS_IMAGE="$${OPENSANDBOX_EGRESS_IMAGE:-opensandbox/egress:v1.0.10}"
         export OPENSANDBOX_ALLOWED_HOST_PATHS="$${OPENSANDBOX_ALLOWED_HOST_PATHS:-/var/lib/docker/volumes/st49/_data}"
@@ -104,7 +104,7 @@ services:
       - AUTH_USERS_FILE=${AUTH_USERS_FILE:-/app/backend/data/auth_users.txt}
       - SHUTONG_USER_DATA_ROOT=${SHUTONG_USER_DATA_ROOT:-/app/backend/data/users}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}
-      # 方案 B：st49 通过宿主机端口访问 OpenSandbox；OpenSandbox 与其创建的沙箱同处默认 bridge，避免 server proxy 连不上 172.17.x.x:44772。
+      # 方案 B：st49 通过宿主机端口访问 OpenSandbox；OpenSandbox 与其新建的沙箱同处默认 bridge，避免 server proxy 连不上 172.17.x.x:44772。
       - OPENSANDBOX_DOMAIN=host.docker.internal:${OPENSANDBOX_HOST_PORT:-8091}
       - OPENSANDBOX_PROTOCOL=http
       - UNIFIED_TOOL_GATEWAY_ENABLED=1
@@ -129,9 +129,9 @@ services:
       - SANDBOX_ALLOWED_HOSTS=
       # 网关 asyncio 等待整段沙箱执行（建容器/首次 pip/跑脚本）；默认在脚本超时基础上 +600s，见 SANDBOX_SCRIPT_GATEWAY_SLACK_MS
       - SANDBOX_SCRIPT_GATEWAY_SLACK_MS=${SANDBOX_SCRIPT_GATEWAY_SLACK_MS:-600000}
-      # 默认不在后端启动时拉起所有历史用户沙箱；用户登录或手动预热时再按需创建。
+      # 默认不在后端启动时拉起所有历史用户沙箱；用户登录或手动预热时再按需新建。
       - SANDBOX_PREWARM_ALL_USERS=${SANDBOX_PREWARM_ALL_USERS:-0}
-      # 普通受保护接口默认不触发沙箱预热，避免打开页面就创建当前用户沙箱；需要时显式设为 1。
+      # 普通受保护接口默认不触发沙箱预热，避免打开页面就新建当前用户沙箱；需要时显式设为 1。
       - SANDBOX_PREWARM_ON_USER_REQUEST=${SANDBOX_PREWARM_ON_USER_REQUEST:-0}
       - SANDBOX_CLEANUP_ORPHANS_ON_START=${SANDBOX_CLEANUP_ORPHANS_ON_START:-1}
       - SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC=${SANDBOX_ORPHAN_CLEANUP_MIN_AGE_SEC:-60}

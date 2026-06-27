@@ -1,7 +1,10 @@
 """测试 LLM 配置化（get_llm_from_config）"""
+import json
 import os
 import sys
 import types
+import zipfile
+from io import BytesIO
 import pytest
 
 # 测试前设置 env，避免 QwenLLM 初始化报错
@@ -21,6 +24,62 @@ def _llm_test_keys(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ZHIPUAI_API_KEY", "test-zhipu-key")
     monkeypatch.setenv("MOONSHOT_API_KEY", "test-moonshot-key")
+
+
+def test_traced_llm_client_logs_prompt_for_all_call_modes(caplog):
+    import asyncio
+    import logging
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from app.agent.llm_client import _instrument_llm_client
+
+    class RawClient:
+        async def ainvoke(self, inp, *args, **kwargs):
+            return "async-ok"
+
+        def invoke(self, inp, *args, **kwargs):
+            return "sync-ok"
+
+        async def astream(self, inp, *args, **kwargs):
+            yield "stream-ok"
+
+        def stream(self, inp, *args, **kwargs):
+            yield "sync-stream-ok"
+
+    async def collect_stream(stream):
+        return [item async for item in stream]
+
+    client = _instrument_llm_client(
+        RawClient(),
+        provider_base_url="https://example.test/v1",
+        model_name="test-model",
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.agent.llm_client"):
+        assert asyncio.run(
+            client.ainvoke(
+                [
+                    SystemMessage(content="系统提示词全文"),
+                    HumanMessage(content="用户提示词全文"),
+                ]
+            )
+        ) == "async-ok"
+        assert client.invoke("直接字符串提示词全文") == "sync-ok"
+        assert asyncio.run(collect_stream(client.astream([HumanMessage(content="流式提示词全文")]))) == ["stream-ok"]
+        assert list(client.stream([HumanMessage(content="同步流式提示词全文")])) == ["sync-stream-ok"]
+
+    assert caplog.text.count("[Prompt]") == 4
+    assert "method=ainvoke" in caplog.text
+    assert "method=invoke" in caplog.text
+    assert "method=astream" in caplog.text
+    assert "method=stream" in caplog.text
+    assert "model=test-model" in caplog.text
+    assert "系统提示词全文" in caplog.text
+    assert "用户提示词全文" in caplog.text
+    assert "直接字符串提示词全文" in caplog.text
+    assert "流式提示词全文" in caplog.text
+    assert "同步流式提示词全文" in caplog.text
 
 
 def test_builtin_llm_provider_presets_use_compatible_base_urls():
@@ -70,8 +129,62 @@ def test_settings_refreshes_old_jeniya_builtin_provider_presets():
     assert out["custom-jeniya-deepseek"]["base_url"] == "https://jeniya.top/v1"
 
 
+def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
+    """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 或密钥绑定信息。"""
+    from app.core.llm_bundle import (
+        LLM_MANIFEST_NAME,
+        build_llm_bundle_zip_bytes,
+        read_llm_bundle_manifest,
+    )
+    from app.core.scenario_bundle import extract_scenario_bundle_dir
+
+    provider = {
+        "base_url": "https://example.test/v1",
+        "model": "example-chat",
+        "api_key": "plain-secret",
+        "api_key_env": "EXAMPLE_API_KEY",
+        "api_key_ref": "vault-example",
+        "api_key_set": True,
+        "temperature": 0.2,
+        "max_tokens": 128,
+        "top_p": 0.9,
+        "extra_body": {"enable_thinking": False},
+    }
+
+    raw = build_llm_bundle_zip_bytes("example", provider, default_llm="example")
+    with zipfile.ZipFile(BytesIO(raw)) as zf:
+        assert LLM_MANIFEST_NAME in zf.namelist()
+        manifest_text = zf.read(LLM_MANIFEST_NAME).decode("utf-8")
+    manifest = json.loads(manifest_text)
+    manifest_provider = manifest["provider"]
+    assert "plain-secret" not in manifest_text
+    assert "api_key" not in manifest_provider
+    assert "api_key_env" not in manifest_provider
+    assert "api_key_ref" not in manifest_provider
+
+    bundle_dir = extract_scenario_bundle_dir(raw)
+    try:
+        _manifest, provider_id, bundled = read_llm_bundle_manifest(bundle_dir)
+    finally:
+        import shutil
+
+        shutil.rmtree(bundle_dir, ignore_errors=True)
+
+    assert provider_id == "example"
+    assert bundled["base_url"] == "https://example.test/v1"
+    assert bundled["model"] == "example-chat"
+    assert "api_key" not in bundled
+    assert "api_key_env" not in bundled
+    assert "api_key_ref" not in bundled
+    assert bundled["api_key_set"] is True
+    assert bundled["temperature"] == 0.2
+    assert bundled["max_tokens"] == 128
+    assert bundled["top_p"] == 0.9
+    assert bundled["extra_body"] == {"enable_thinking": False}
+
+
 def test_get_llm_from_config_qwen():
-    """使用 qwen provider 创建 LLM"""
+    """使用 qwen provider 新建 LLM"""
     os.environ["QWEN_API_KEY"] = "test-key"  # 隔离：避免被其他测试先设置的 setdefault 覆盖
     from app.agent.llm_client import get_llm_from_config
 
@@ -87,8 +200,50 @@ def test_get_llm_from_config_qwen():
     assert llm.api_key == "test-key"
 
 
+def test_resolve_llm_api_key_prefers_vault_ref():
+    from app.agent.llm_client import resolve_llm_api_key
+
+    cfg = {
+        "api_key_env": "JENIYA_API_KEY",
+        "api_key": "inline-should-not-win",
+        "api_key_ref": "vault-a",
+    }
+    assert resolve_llm_api_key(cfg, {"vault-a": "from-vault"}) == "from-vault"
+
+
+def test_build_llm_credential_notice_mentions_model():
+    from app.agent.llm_client import build_llm_credential_notice
+
+    notice = build_llm_credential_notice(
+        "qwen",
+        {"model": "qwen3-max", "label": "通义千问"},
+    )
+    assert "qwen3-max" in notice
+    assert "没有配置密钥或密钥错误" in notice
+
+
+def test_llm_credential_notice_for_agent_when_key_missing(monkeypatch):
+    from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
+
+    monkeypatch.delenv("QWEN_API_KEY", raising=False)
+    notice = _llm_credential_notice_for_agent(
+        None,
+        {
+            "default_llm": "qwen",
+            "llm_providers": {
+                "qwen": {
+                    "model": "qwen3-max",
+                    "api_key_env": "QWEN_API_KEY",
+                }
+            },
+        },
+    )
+    assert notice is not None
+    assert "qwen3-max" in notice
+
+
 def test_get_llm_from_config_jeniya():
-    """使用 jeniya provider 创建 LLM"""
+    """使用 jeniya provider 新建 LLM"""
     from app.agent.llm_client import get_llm_from_config
 
     llm = get_llm_from_config("jeniya", {

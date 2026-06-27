@@ -63,20 +63,13 @@ export function useShortcutPresets(args: {
     if (!hc) return undefined
     const skillLookup = Object.fromEntries((args.skills() || []).map((s) => [s.id, s.name || s.id]))
     const refs = Array.isArray(hc.skill_refs) ? hc.skill_refs : []
-    const refName = (id: string) => {
-      const fromCurrent = String(skillLookup[id] || '').trim()
-      if (fromCurrent) return fromCurrent
-      const hit = refs.find((row) => String(row?.id || '').trim() === id)
-      return String(hit?.name || '').trim()
-    }
     const skillIds: string[] = []
     const seen = new Set<string>()
     for (const item of Array.isArray(hc.skill_ids) ? hc.skill_ids : []) {
       const id = String(item || '').trim()
       if (!id || seen.has(id)) continue
       const exists = Boolean(skillLookup[id])
-      const name = refName(id)
-      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists && (!name || name === id)) {
+      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists) {
         continue
       }
       skillIds.push(id)
@@ -234,7 +227,7 @@ export function useShortcutPresets(args: {
       availableAgentIds.has(id),
     )
     if (!targetExperts.length) {
-      await appAlert({ title: '无法创建会话', message: '该场景中的专家在当前账号下不可用，请先编辑场景后重试', variant: 'warning' })
+      await appAlert({ title: '无法新建会话', message: '该场景中的专家在当前账号下不可用，请先编辑场景后重试', variant: 'warning' })
       return null
     }
     if (targetExperts.length < (p.agent_ids || []).length) {
@@ -270,7 +263,7 @@ export function useShortcutPresets(args: {
         detail?: string
       }
       if (j.status !== 'ok' || !j.data?.id) {
-        await appAlert({ title: '创建会话失败', message: typeof j.detail === 'string' ? j.detail : '创建会话失败', variant: 'danger' })
+        await appAlert({ title: '新建会话失败', message: typeof j.detail === 'string' ? j.detail : '新建会话失败', variant: 'danger' })
         return null
       }
       const newId = j.data.id
@@ -289,7 +282,7 @@ export function useShortcutPresets(args: {
       args.emitScenarioNewSession(newId, j.data.id ? { id: newId, title: j.data.title, updated_at: j.data.updated_at, agent_ids: j.data.agent_ids } : undefined)
       return newId
     } catch {
-      await appAlert({ title: '创建会话失败', message: '创建会话失败，请检查网络', variant: 'danger' })
+      await appAlert({ title: '新建会话失败', message: '新建会话失败，请检查网络', variant: 'danger' })
       return null
     }
   }
