@@ -221,20 +221,7 @@
                   title="导入场景包（ZIP）"
                   @click="pickScenarioImportFile"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 3h6v18h-6" />
-                    <path d="M4 12h11" />
-                    <path d="m11 8 4 4-4 4" />
-                  </svg>
+                  <ResourceImportIcon class="main-sidebar-svg-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -315,20 +302,7 @@
                   title="导入专家包（ZIP）"
                   @click="pickAgentImportFile"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 3h6v18h-6" />
-                    <path d="M4 12h11" />
-                    <path d="m11 8 4 4-4 4" />
-                  </svg>
+                  <ResourceImportIcon class="main-sidebar-svg-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -423,20 +397,7 @@
                   title="导入技能包（ZIP）"
                   @click="triggerSkillZipImport"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 3h6v18h-6" />
-                    <path d="M4 12h11" />
-                    <path d="m11 8 4 4-4 4" />
-                  </svg>
+                  <ResourceImportIcon class="main-sidebar-svg-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -524,20 +485,7 @@
                   :disabled="mcpZipImporting"
                   @click="triggerMcpZipImport"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 3h6v18h-6" />
-                    <path d="M4 12h11" />
-                    <path d="m11 8 4 4-4 4" />
-                  </svg>
+                  <ResourceImportIcon class="main-sidebar-svg-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -624,20 +572,7 @@
                   title="导入模型包（ZIP）"
                   @click="pickLlmImportFile"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M14 3h6v18h-6" />
-                    <path d="M4 12h11" />
-                    <path d="m11 8 4 4-4 4" />
-                  </svg>
+                  <ResourceImportIcon class="main-sidebar-svg-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -1459,6 +1394,7 @@ import { appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import SessionMemberAvatars from '@/features/shell/SessionMemberAvatars.vue'
+import ResourceImportIcon from '@/components/icons/ResourceImportIcon.vue'
 import { displaySessionTitle, formatSessionDate as formatDate } from '@/features/shell/sessionListDisplay'
 import { useGroupSessions } from '@/features/shell/useGroupSessions'
 import {
