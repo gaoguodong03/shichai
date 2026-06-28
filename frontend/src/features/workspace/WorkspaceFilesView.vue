@@ -8,34 +8,38 @@
       <div class="flex items-center gap-2">
         <button
           type="button"
-          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+          class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="refreshAll"
           :disabled="loading || !sessionId"
         >
+          <span class="workspace-file-asset-icon" :style="workspaceIconStyle(refreshIconUrl)" aria-hidden="true" />
           刷新
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+          class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="createFile"
           :disabled="loading || !sessionId"
         >
+          <span class="workspace-file-asset-icon" :style="workspaceIconStyle(newFileIconUrl)" aria-hidden="true" />
           新建文件
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+          class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="createFolder"
           :disabled="loading || !sessionId"
         >
+          <span class="workspace-file-asset-icon" :style="workspaceIconStyle(newFolderIconUrl)" aria-hidden="true" />
           新建文件夹
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+          class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
           @click="uploadInputRef?.click()"
           :disabled="loading || uploading || !sessionId"
         >
+          <span class="workspace-file-asset-icon" :style="workspaceIconStyle(uploadIconUrl)" aria-hidden="true" />
           {{ uploading ? '上传中…' : '上传文件' }}
         </button>
         <input ref="uploadInputRef" type="file" class="hidden" @change="onUpload" />
@@ -76,8 +80,12 @@
           :class="selectedPath === e.path ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-primary'"
           @click="onEntryClick(e)"
         >
-          <div class="truncate font-medium">
-            <span class="mr-1 text-muted">{{ e.is_dir ? '[DIR]' : '[FILE]' }}</span>
+          <div class="truncate font-medium flex items-center gap-1.5">
+            <span
+              class="workspace-file-asset-icon text-muted"
+              :style="workspaceIconStyle(e.is_dir ? folderIconUrl : fileIconUrl)"
+              aria-hidden="true"
+            />
             {{ e.name }}
           </div>
           <div class="truncate text-xs text-muted mt-0.5">{{ e.path }}</div>
@@ -106,6 +114,13 @@ import { computed, ref, watch } from 'vue'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import FileDetailView from './FileDetailView.vue'
 import { uploadWorkspaceFile } from './workspaceUpload'
+import { workspaceIconStyle } from './workspaceIconStyle'
+import newFileIconUrl from '@/assets/icons/workspace/new-file.svg'
+import newFolderIconUrl from '@/assets/icons/workspace/new-folder.svg'
+import fileIconUrl from '@/assets/icons/workspace/file.svg'
+import folderIconUrl from '@/assets/icons/workspace/folder.svg'
+import refreshIconUrl from '@/assets/icons/workspace/refresh.svg'
+import uploadIconUrl from '@/assets/icons/workspace/upload.svg'
 
 type Entry = { name: string; path: string; is_dir?: boolean }
 
@@ -291,3 +306,15 @@ watch(() => props.sessionId, () => {
   loadDir('')
 }, { immediate: true })
 </script>
+
+<style scoped>
+.workspace-file-asset-icon {
+  width: 1rem;
+  height: 1rem;
+  display: inline-block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: var(--workspace-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--workspace-icon-url) center / contain no-repeat;
+}
+</style>

@@ -114,7 +114,7 @@
               : 'bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg'
           ]"
         >
-          <span class="text-base leading-none">＋</span>
+          <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
           <span>新建会话</span>
         </button>
         <div
@@ -212,7 +212,7 @@
                   class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="createScenarioPreset"
                 >
-                  <span class="text-base leading-none">＋</span>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
                   <span>新建场景</span>
                 </button>
                 <button
@@ -229,19 +229,7 @@
                   title="搜索场景"
                   @click="toggleSearch('scenario')"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5" />
-                  </svg>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceSearchIconUrl)" aria-hidden="true" />
                 </button>
               </div>
               <input
@@ -293,7 +281,7 @@
                   class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
                 >
-                  <span class="text-base leading-none">＋</span>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
                   <span>新建专家</span>
                 </button>
                 <button
@@ -310,19 +298,7 @@
                   title="搜索专家"
                   @click="toggleSearch('agent')"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5" />
-                  </svg>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceSearchIconUrl)" aria-hidden="true" />
                 </button>
               </div>
               <input
@@ -388,7 +364,7 @@
                   class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="createEmptySkill"
                 >
-                  <span class="text-base leading-none">＋</span>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
                   <span>新建技能</span>
                 </button>
                 <button
@@ -405,19 +381,7 @@
                   title="搜索技能"
                   @click="toggleSearch('skill')"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5" />
-                  </svg>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceSearchIconUrl)" aria-hidden="true" />
                 </button>
               </div>
               <input
@@ -475,7 +439,7 @@
                   class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
                 >
-                  <span class="text-base leading-none">＋</span>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
                   <span>新建工具</span>
                 </button>
                 <button
@@ -493,19 +457,7 @@
                   title="搜索工具"
                   @click="toggleSearch('mcp')"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5" />
-                  </svg>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceSearchIconUrl)" aria-hidden="true" />
                 </button>
               </div>
               <input
@@ -563,7 +515,7 @@
                   class="flex-1 h-10 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-1 transition-colors shadow-sm bg-nav-selected-bg text-nav-selected-text hover:bg-nav-hover-bg"
                   @click="selectedId = '__new__'"
                 >
-                  <span class="text-base leading-none">＋</span>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceNewIconUrl)" aria-hidden="true" />
                   <span>新建模型</span>
                 </button>
                 <button
@@ -580,19 +532,7 @@
                   title="搜索模型"
                   @click="toggleSearch('llm')"
                 >
-                  <svg
-                    class="main-sidebar-svg-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="M20 20l-3.5-3.5" />
-                  </svg>
+                  <span class="main-sidebar-asset-icon" :style="resourceIconStyle(resourceSearchIconUrl)" aria-hidden="true" />
                 </button>
               </div>
               <input
@@ -1395,6 +1335,9 @@ import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
 import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import SessionMemberAvatars from '@/features/shell/SessionMemberAvatars.vue'
 import ResourceImportIcon from '@/components/icons/ResourceImportIcon.vue'
+import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
+import resourceNewIconUrl from '@/assets/icons/resources/new.svg'
+import resourceSearchIconUrl from '@/assets/icons/resources/search.svg'
 import { displaySessionTitle, formatSessionDate as formatDate } from '@/features/shell/sessionListDisplay'
 import { useGroupSessions } from '@/features/shell/useGroupSessions'
 import {

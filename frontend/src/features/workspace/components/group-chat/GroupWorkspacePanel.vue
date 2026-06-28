@@ -39,12 +39,7 @@
                     :disabled="groupWorkspaceUploading || groupWorkspaceLoading"
                     @click="loadGroupWorkspace"
                   >
-                    <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M21 12a9 9 0 0 1-15.1 6.6" />
-                      <path d="M3 12A9 9 0 0 1 18.1 5.4" />
-                      <path d="M6 18H3v3" />
-                      <path d="M18 6h3V3" />
-                    </svg>
+                    <span class="group-chat-workspace-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(refreshIconUrl)" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -54,11 +49,7 @@
                     :disabled="groupWorkspaceUploading"
                     @click="createGroupWorkspaceDir"
                   >
-                    <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M4 7h4l2 3h10v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z" />
-                      <path d="M12 11v6" />
-                      <path d="M9 14h6" />
-                    </svg>
+                    <span class="group-chat-workspace-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(newFolderIconUrl)" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -68,12 +59,7 @@
                     :disabled="groupWorkspaceUploading"
                     @click="createGroupWorkspaceFile"
                   >
-                    <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <path d="M12 12v4" />
-                      <path d="M10 14h4" />
-                    </svg>
+                    <span class="group-chat-workspace-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(newFileIconUrl)" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -83,11 +69,7 @@
                     :disabled="groupWorkspaceUploading"
                     @click="groupWorkspaceUploadInputRef?.click()"
                   >
-                    <svg class="group-chat-workspace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 16V4" />
-                      <path d="M8 8l4-4 4 4" />
-                      <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-                    </svg>
+                    <span class="group-chat-workspace-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(uploadIconUrl)" aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -97,20 +79,7 @@
                     :disabled="groupWorkspaceUploading"
                     @click="toggleWorkspacePreview()"
                   >
-                    <svg
-                      class="group-chat-workspace-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.6"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect x="3" y="4" width="18" height="16" rx="2" />
-                      <path v-if="!groupWorkspacePreviewCollapsed" d="M11 8l-3 4 3 4" />
-                      <path v-else d="M13 8l3 4-3 4" />
-                      <path d="M12 4v16" />
-                    </svg>
+                    <span class="group-chat-workspace-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(previewIconUrl)" aria-hidden="true" />
                   </button>
                   <input
                     ref="groupWorkspaceUploadInputRef"
@@ -150,7 +119,7 @@
                       :disabled="groupWorkspaceUploading"
                       @click="groupWorkspaceEnterDir(e)"
                     >
-                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      <span class="group-chat-workspace-svg group-chat-workspace-icon-mask" :style="workspaceIconStyle(folderIconUrl)" aria-hidden="true" />
                       <span class="truncate" :title="e.name">{{ e.name }}</span>
                     </button>
                     <button
@@ -161,7 +130,7 @@
                       :disabled="groupWorkspaceUploading"
                       @click="previewWorkspaceFile(e)"
                     >
-                      <svg class="group-chat-workspace-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                      <span class="group-chat-workspace-svg group-chat-workspace-icon-mask" :style="workspaceIconStyle(fileIconUrl)" aria-hidden="true" />
                       <span class="truncate" :title="e.name">{{ e.name }}</span>
                     </button>
                     <div class="group-chat-workspace-item-actions">
@@ -170,24 +139,33 @@
                         type="button"
                         class="group-chat-workspace-item-action"
                         title="下载"
+                        aria-label="下载"
                         :disabled="groupWorkspaceUploading"
                         @click.stop="downloadGroupWorkspaceFile(e)"
-                      >↓</button>
+                      >
+                        <span class="group-chat-workspace-action-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(downloadIconUrl)" aria-hidden="true" />
+                      </button>
                       <button
                         v-if="!e.is_dir"
                         type="button"
                         class="group-chat-workspace-item-action"
                         title="重命名"
+                        aria-label="重命名"
                         :disabled="groupWorkspaceUploading"
                         @click.stop="renameGroupWorkspaceEntry(e)"
-                      >R</button>
+                      >
+                        <span class="group-chat-workspace-action-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(renameIconUrl)" aria-hidden="true" />
+                      </button>
                       <button
                         type="button"
                         class="group-chat-workspace-item-action group-chat-workspace-item-action-danger"
                         :title="e.is_dir ? '删除空目录' : '删除文件'"
+                        :aria-label="e.is_dir ? '删除空目录' : '删除文件'"
                         :disabled="groupWorkspaceUploading"
                         @click.stop="deleteGroupWorkspaceEntry(e)"
-                      >×</button>
+                      >
+                        <span class="group-chat-workspace-action-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(deleteIconUrl)" aria-hidden="true" />
+                      </button>
                     </div>
                   </li>
                   <li v-if="!groupWorkspaceEntries.length && !groupWorkspaceLoading" class="group-chat-workspace-muted">空</li>
@@ -256,6 +234,17 @@
 
 <script setup lang="ts">
 import { useGroupChatWorkspacePanelContext } from './groupChatWorkspaceContext'
+import { workspaceIconStyle } from '../../workspaceIconStyle'
+import deleteIconUrl from '@/assets/icons/workspace/delete.svg'
+import downloadIconUrl from '@/assets/icons/workspace/download.svg'
+import newFileIconUrl from '@/assets/icons/workspace/new-file.svg'
+import newFolderIconUrl from '@/assets/icons/workspace/new-folder.svg'
+import fileIconUrl from '@/assets/icons/workspace/file.svg'
+import folderIconUrl from '@/assets/icons/workspace/folder.svg'
+import previewIconUrl from '@/assets/icons/workspace/preview.svg'
+import refreshIconUrl from '@/assets/icons/workspace/refresh.svg'
+import renameIconUrl from '@/assets/icons/workspace/rename.svg'
+import uploadIconUrl from '@/assets/icons/workspace/upload.svg'
 
 const {
   showGroupWorkspace,

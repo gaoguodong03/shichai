@@ -110,7 +110,7 @@
               :class="['group-chat-header-btn', showGroupWorkspace && 'group-chat-header-btn-active']"
               @click="toggleGroupWorkspaceOpen"
             >
-              <svg class="group-chat-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span class="group-chat-svg-icon group-chat-workspace-icon-mask" :style="workspaceIconStyle(folderIconUrl)" aria-hidden="true" />
               文件
             </button>
           </div>
@@ -122,6 +122,8 @@ import {
   useGroupChatSessionContext,
   useGroupChatWorkspacePanelContext,
 } from './groupChatWorkspaceContext'
+import { workspaceIconStyle } from '../../workspaceIconStyle'
+import folderIconUrl from '@/assets/icons/workspace/folder.svg'
 
 const {
   props,

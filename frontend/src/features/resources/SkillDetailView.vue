@@ -78,17 +78,20 @@
               v-for="e in sidebarEntries"
               :key="e.key"
               type="button"
-              class="w-full px-3 py-2.5 text-left text-sm transition-colors border-b border-border/40"
+              class="w-full px-3 py-2.5 text-left text-base transition-colors border-b border-border/40"
               :class="e.active
                 ? 'bg-accent-subtle text-accent-subtle-text'
                 : 'hover:bg-list-hover text-primary'"
               @click="onSidebarEntryClick(e)"
             >
-              <div class="truncate font-medium">
-                <span class="mr-1 text-muted">{{ e.isDir ? '[DIR]' : '[FILE]' }}</span>
-                {{ e.name }}
+              <div class="skill-sidebar-entry-title">
+                <span
+                  class="skill-sidebar-entry-icon"
+                  :style="resourceIconStyle(e.isDir ? skillFolderIconUrl : skillFileIconUrl)"
+                  aria-hidden="true"
+                />
+                <span class="truncate">{{ e.name }}</span>
               </div>
-              <div class="truncate text-xs text-muted mt-0.5">{{ e.displayPath }}</div>
             </button>
           </div>
         </aside>
@@ -291,6 +294,9 @@ import {
   resolveMcpDeclaration,
 } from './mcpDependencyMatch'
 import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
+import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
+import skillFileIconUrl from '@/assets/icons/workspace/file.svg'
+import skillFolderIconUrl from '@/assets/icons/workspace/folder.svg'
 import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPartPath } from './resourcePartPaths'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
@@ -1077,6 +1083,24 @@ watch(activeTab, async (tab) => {
 </script>
 
 <style scoped>
+.skill-sidebar-entry-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+.skill-sidebar-entry-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: var(--resource-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--resource-icon-url) center / contain no-repeat;
+  opacity: 0.82;
+}
+
 .skill-markdown-preview :deep(h1) { font-size: 1.4rem; font-weight: 700; margin: 0 0 0.5rem; }
 .skill-markdown-preview :deep(h2) { font-size: 1.2rem; font-weight: 600; margin: 0.75rem 0 0.4rem; }
 .skill-markdown-preview :deep(h3) { font-size: 1.05rem; font-weight: 600; margin: 0.6rem 0 0.3rem; }

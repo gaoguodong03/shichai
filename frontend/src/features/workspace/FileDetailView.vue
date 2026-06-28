@@ -21,9 +21,10 @@
         </h1>
         <button
           v-if="!editingName && isEditableText"
-          class="px-2 py-1 text-xs text-muted hover:text-accent"
+          class="inline-flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-accent"
           @click="startEditName"
         >
+          <span class="file-detail-action-icon" :style="workspaceIconStyle(renameIconUrl)" aria-hidden="true" />
           重命名
         </button>
       </div>
@@ -54,18 +55,20 @@
         </button>
         <button
           type="button"
-          class="px-3 py-1.5 text-sm rounded-lg border border-danger text-danger hover:bg-danger-subtle"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-danger text-danger hover:bg-danger-subtle"
           @click="emit('delete-file')"
         >
+          <span class="file-detail-action-icon" :style="workspaceIconStyle(deleteIconUrl)" aria-hidden="true" />
           删除
         </button>
         <a
           v-if="!editingContent"
           :href="downloadUrl"
-          class="px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-accent text-text-inverse rounded-lg hover:bg-accent-hover"
           :download="displayName || 'download'"
           @click.prevent="downloadFile"
         >
+          <span class="file-detail-action-icon" :style="workspaceIconStyle(downloadIconUrl)" aria-hidden="true" />
           下载
         </a>
       </div>
@@ -148,6 +151,10 @@ import * as XLSX from 'xlsx'
 import MarkdownIt from 'markdown-it'
 import { appAlert } from '@/composables/useAppDialog'
 import { apiRequest, apiUrl } from '@/api/base'
+import { workspaceIconStyle } from './workspaceIconStyle'
+import deleteIconUrl from '@/assets/icons/workspace/delete.svg'
+import downloadIconUrl from '@/assets/icons/workspace/download.svg'
+import renameIconUrl from '@/assets/icons/workspace/rename.svg'
 
 const props = defineProps<{ path: string; workspaceId: string }>()
 const emit = defineEmits<{
@@ -571,6 +578,16 @@ onBeforeUnmount(() => {
 .file-detail-markdown :deep(pre) { background: var(--color-list-hover); padding: 0.5rem 0.75rem; border-radius: 0.25rem; overflow-x: auto; margin: 0.5rem 0; }
 .file-detail-markdown :deep(code) { background: var(--color-list-hover); padding: 0.125rem 0.25rem; border-radius: 0.125rem; font-size: 0.875em; }
 .file-detail-markdown :deep(a) { color: var(--color-accent); text-decoration: underline; }
+
+.file-detail-action-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: inline-block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: var(--workspace-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--workspace-icon-url) center / contain no-repeat;
+}
 
 .file-detail-article-layout {
   display: flex;

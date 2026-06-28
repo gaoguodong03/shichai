@@ -2113,6 +2113,18 @@
   width: 14px;
   height: 14px;
 }
+.group-chat-workspace-action-icon {
+  width: 13px;
+  height: 13px;
+}
+.group-chat-workspace-icon-mask,
+.group-chat-toolbar-icon-mask {
+  display: inline-block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask: var(--workspace-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--workspace-icon-url) center / contain no-repeat;
+}
 .group-chat-workspace-toolbar-sm:hover {
   color: var(--color-text);
   background: var(--color-border-light);
