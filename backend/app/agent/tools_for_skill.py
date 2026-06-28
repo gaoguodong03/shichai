@@ -6,6 +6,7 @@ Linkup/Exa 等 URL 工具。内置工作区工具与 call_api 按专家 agent_pr
 run_skill_script_<skill_id> → wrap。
 """
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Optional
 
 from app.api.settings_skill_store import get_mcp_servers_for_skill
@@ -71,6 +72,42 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             raise ValueError("路径不在当前工作区")
         return normalized
 
+    async def _recover_single_timestamped_source(rel_path: str) -> str | None:
+        rel = Path(rel_path)
+        name = rel.name
+        match = re.match(r"^(?P<prefix>.+-)(?:19|20)\d{12}(?:\d{2})?(?P<suffix>\.[^/.]+)$", name)
+        if not match:
+            return None
+        parent = rel.parent.as_posix()
+        rel_prefix = "" if parent == "." else parent
+        svc = get_shared_sandbox_service()
+        items = await svc.list_workspace_files_flat(
+            user_id=user_id,
+            session_id=workspace_id,
+            workspace_path=ws_root,
+            rel_prefix=rel_prefix,
+        )
+        workspace_root = sandbox_session_dir(workspace_id).rstrip("/")
+        pattern = re.compile(
+            "^"
+            + re.escape(match.group("prefix"))
+            + r"(?:19|20)\d{12}(?:\d{2})?"
+            + re.escape(match.group("suffix"))
+            + "$"
+        )
+        candidates: list[str] = []
+        for item in items or []:
+            raw_path = str((item or {}).get("path") or "").replace("\\", "/").rstrip("/")
+            if raw_path.startswith(workspace_root + "/"):
+                workspace_rel = raw_path[len(workspace_root) + 1 :]
+            else:
+                workspace_rel = raw_path
+            candidate_rel = Path(workspace_rel)
+            if candidate_rel.parent.as_posix() == rel_prefix and pattern.match(candidate_rel.name):
+                candidates.append(candidate_rel.as_posix())
+        unique = sorted(set(candidates))
+        return unique[0] if len(unique) == 1 else None
+
     async def _edit_workspace_file(path: str, old_text: str, new_text: str) -> str:
         rel = _rel_safe(path)
         svc = get_shared_sandbox_service()
@@ -125,7 +162,27 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
                 tool_call_id=f"mv:{src_rel}->{dst_rel}",
             )
         except Exception as e:
-            return f"错误：重命名失败 - {e}"
+            recovered_src_rel = None
+            try:
+                recovered_src_rel = await _recover_single_timestamped_source(src_rel)
+            except Exception:
+                recovered_src_rel = None
+            if not recovered_src_rel or recovered_src_rel == src_rel:
+                return f"错误：重命名失败 - {e}"
+            try:
+                await svc.exec_workspace_shell(
+                    user_id=user_id,
+                    session_id=workspace_id,
+                    workspace_path=ws_root,
+                    argv=[
+                        "mv",
+                        f"{sandbox_session_dir(workspace_id)}/{recovered_src_rel}".rstrip("/"),
+                        f"{sandbox_session_dir(workspace_id)}/{dst_rel}".rstrip("/"),
+                    ],
+                    tool_call_id=f"mv:{recovered_src_rel}->{dst_rel}",
+                )
+            except Exception as fallback_error:
+                return f"错误：重命名失败 - {fallback_error}"
         return f"已重命名文件：{dst_rel}"
 
     async def _mkdir_workspace(path: str) -> str:

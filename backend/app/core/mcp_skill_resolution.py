@@ -37,6 +37,16 @@ def build_mcp_server_index(
     return by_id, by_name
 
 
+def _unique_name_contains_match(candidate: str, by_name: Mapping[str, Mapping[str, Any]]) -> Optional[Mapping[str, Any]]:
+    key = normalized_name_key(candidate)
+    if not key:
+        return None
+    matches = [row for name_key, row in by_name.items() if key in name_key]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def resolve_skill_mcp_declaration(
     declared: str,
     *,
@@ -54,6 +64,11 @@ def resolve_skill_mcp_declaration(
         if not key:
             continue
         row = by_name.get(key)
+        if row is not None:
+            resolved = str(row.get("id") or "").strip()
+            if resolved:
+                return resolved
+        row = _unique_name_contains_match(candidate, by_name)
         if row is not None:
             resolved = str(row.get("id") or "").strip()
             if resolved:

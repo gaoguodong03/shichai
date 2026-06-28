@@ -151,7 +151,7 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 约束：
 
 - `path` 必须是当前会话工作区相对路径，不写 `backend/data/`、`workspaces/<会话ID>/` 或宿主机绝对路径。
-- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-YYYYMMDDHHMMSS00.扩展名`，例如 `materials/技术管理手感-2026062519304500.md`。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-YYYYMMDDHHMMSS00.扩展名`，例如 `materials/技术管理手感-<时间戳>.md`。
 - `content` 必须是要保存的完整正文；不能只写摘要、占位符或“见上文”。
 - 只有 `write_workspace_file` 或 `edit_workspace_file` 返回成功后，专家才能在最终答复中说文件已保存。
 - 修改已有文件时，不覆盖源文件；读取源文件后应新建符合 `文件名-YYYYMMDDHHMMSS00.扩展名` 的新文件，并在新文件开头记录 `source_path`。
@@ -544,6 +544,13 @@ allowed-tools:
 
 - 必填：<参数>。
 - 缺少必填参数时，先向用户追问；脚本 stdout 或隐藏状态块返回 `next_action.skill_session=keep`。
+
+## 关键规则
+
+- `description` 只写触发条件和边界，不写完整执行流程。
+- 需要读取或保存工作区文件时，必须使用工作区相对路径；只有文件工具或脚本确认成功后，才能说“已保存”。
+- 需要用户补充且下一轮必须回到同一专家时使用 `skill_session=keep`；只是把确认问题交给用户并由主持人重新判断时使用 `skill_session=release`。
+- 脚本型 Skill 通过 stdout JSON 控制流程；非脚本型 Skill 通过正文末尾的隐藏状态块控制流程。
 
 ## 执行步骤
 

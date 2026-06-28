@@ -1,5 +1,6 @@
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
 from app.agent.skill_agent_runtime import create_skill_execution_agent
+from app.agent.tool_spec import ToolSpec
 
 
 class _FakeSkill:
@@ -57,3 +58,22 @@ def test_create_skill_execution_agent_injects_self_awareness_after_skill_content
     assert skill_content in prompt
     assert self_awareness in prompt
     assert prompt.index(skill_content) < prompt.index(self_awareness)
+
+
+def test_create_skill_execution_agent_omits_legacy_prompt_scaffolding():
+    skill_content = "按技能正文执行。"
+
+    agent = create_skill_execution_agent(
+        llm=object(),
+        tools=[ToolSpec(name="read_file", description="读文件")],
+        skill_full_content=skill_content,
+        extra_system_prompt="额外系统提示",
+    )
+    prompt = agent.system_prompt
+
+    assert "你是一个有用的 AI 助手，正在按以下技能说明执行用户请求。" not in prompt
+    assert '不要输出任何形如 `{"action":"tool_call", ...}` 的 JSON 作为正文（那是历史兼容格式，已移除）。' not in prompt
+    assert "额外系统提示" in prompt
+    assert skill_content in prompt
+    assert "当你需要使用工具时，**必须**使用模型的结构化工具调用" in prompt
+    assert "- read_file: 读文件" in prompt

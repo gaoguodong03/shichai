@@ -15,6 +15,20 @@ def test_resolve_skill_mcp_declarations_by_declared_name():
     assert missing == []
 
 
+def test_resolve_skill_mcp_declarations_by_display_name():
+    servers = [{"id": "mcp-local", "name": "Exa 搜索"}]
+    resolved, missing = resolve_skill_mcp_declarations(["Exa 搜索"], [], servers)
+    assert resolved == ["mcp-local"]
+    assert missing == []
+
+
+def test_resolve_skill_mcp_declarations_by_unique_legacy_short_name():
+    servers = [{"id": "mcp-local", "name": "Exa 搜索"}]
+    resolved, missing = resolve_skill_mcp_declarations(["exa"], [], servers)
+    assert resolved == ["mcp-local"]
+    assert missing == []
+
+
 def test_resolve_skill_mcp_declarations_by_ref_name():
     servers = [{"id": "mcp-local", "name": "Linkup Search"}]
     refs = [{"id": "stale-id", "name": "Linkup Search"}]
@@ -28,3 +42,13 @@ def test_resolve_skill_mcp_declarations_unresolved():
     resolved, missing = resolve_skill_mcp_declarations(["mcp-missing"], [], servers)
     assert resolved == []
     assert missing == ["mcp-missing"]
+
+
+def test_resolve_skill_mcp_declarations_does_not_guess_ambiguous_short_name():
+    servers = [
+        {"id": "mcp-a", "name": "Exa 搜索"},
+        {"id": "mcp-b", "name": "Exa 抓取"},
+    ]
+    resolved, missing = resolve_skill_mcp_declarations(["exa"], [], servers)
+    assert resolved == []
+    assert missing == ["exa"]

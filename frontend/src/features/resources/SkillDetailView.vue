@@ -155,7 +155,7 @@
                       :key="srv.id"
                       type="button"
                       class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
-                      @click="addMcpServer(srv.id)"
+                      @click="addMcpServer(srv.name || srv.id)"
                     >
                       + {{ srv.name || srv.id }}
                     </button>
@@ -444,8 +444,8 @@ function removeMcpServer(id: string) {
   )
 }
 
-function addMcpServer(id: string) {
-  const v = String(id || '').trim()
+function addMcpServer(name: string) {
+  const v = String(name || '').trim()
   if (!v || form.value.allowed_tools.mcp.includes(v)) return
   form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
   form.value.allowed_tools.mcp_refs = mergeReferenceRowsForIds(

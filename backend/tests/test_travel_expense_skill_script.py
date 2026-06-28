@@ -34,7 +34,7 @@ def test_travel_expense_script_runs_without_pandas_for_single_city():
 
     assert payload["execution_status"] == "succeeded"
     assert payload["result_code"] == "travel_standards.extracted"
-    assert payload["next_action"]["skill_session"] == "release"
+    assert payload["next_action"]["skill_session"] == "keep"
     assert payload["artifacts"]["matched_records"] == 1
     assert "江苏南京市（常规时段）住宿费标准" in payload["artifacts"]["description"]
     assert "其他人员380元/人·天" in payload["artifacts"]["description"]
@@ -44,6 +44,7 @@ def test_travel_expense_script_does_not_treat_person_type_as_other_region():
     payload = _run_script("--query", "北京上海广州深圳其他人员住宿标准")
 
     assert payload["execution_status"] == "succeeded"
+    assert payload["next_action"]["skill_session"] == "keep"
     assert payload["artifacts"]["matched_records"] == 4
     assert payload["artifacts"]["keywords"]["person_type"] == "others"
     description = payload["artifacts"]["description"]

@@ -20,6 +20,15 @@ export function buildMcpServerIndex(servers: McpServerRow[]) {
   return { byId, byName }
 }
 
+function uniqueNameContainsMatch(candidate: string, index: ReturnType<typeof buildMcpServerIndex>): McpServerRow | null {
+  const key = normalizedMcpNameKey(candidate)
+  if (!key) return null
+  const matches = Array.from(index.byName.entries())
+    .filter(([nameKey]) => nameKey.includes(key))
+    .map(([, server]) => server)
+  return matches.length === 1 ? matches[0] : null
+}
+
 export function resolveMcpDeclaration(
   declaredId: string,
   mcpRefs: ReferenceSnapshot[],
@@ -34,6 +43,8 @@ export function resolveMcpDeclaration(
     if (!nameKey) continue
     const hit = index.byName.get(nameKey)
     if (hit) return hit
+    const fuzzyHit = uniqueNameContainsMatch(candidate, index)
+    if (fuzzyHit) return fuzzyHit
   }
   return null
 }

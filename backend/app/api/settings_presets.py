@@ -816,6 +816,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     from app.api.agents import load_agent_instances, save_agent_instances
     from app.api.settings_skills import (
         _merge_imported_skill_requirements_and_prewarm,
+        _mcp_name_map_for_import,
         _read_skill_file,
         _remap_frontmatter_mcp_refs,
         _sanitize_skill_frontmatter_for_write,
@@ -911,7 +912,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             if not (skill_dir / "SKILL.md").is_file():
                 continue
             fm, body = _read_skill_file(skill_dir)
-            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map)
+            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map, _mcp_name_map_for_import(mcp_rows_to_import))
             _sanitize_skill_frontmatter_for_write(fm)
             _write_skill_file(skill_dir, fm, body)
         merged_agents = _upsert_rows_by_id(load_agent_instances(), agent_rows_to_import, "agent_id")

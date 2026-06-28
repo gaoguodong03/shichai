@@ -45,7 +45,7 @@
 
 ```json
 {
-  "path": "notes/result-2026062519304500.md",
+  "path": "notes/result-<时间戳>.md",
   "content": "完整文件内容"
 }
 ```

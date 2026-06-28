@@ -59,9 +59,9 @@ def test_generate_image_saves_data_url_to_workspace(
 
     artifacts = result["artifacts"]
     assert result["execution_status"] == "succeeded"
-    assert artifacts["file_path"].startswith("generated_images/image-")
-    assert re.match(r"^generated_images/image-\d{16}-[0-9a-f]{8}\.png$", artifacts["file_path"])
-    assert not re.search(r"\d{8}-\d{6}", artifacts["file_path"])
+    assert artifacts["file_path"].startswith("generated_images/图片-")
+    assert re.match(r"^generated_images/图片-\d{16}-[0-9a-f]{8}\.png$", artifacts["file_path"])
+    assert not re.search(r"/图片-\d{8}-\d{6}", artifacts["file_path"])
     assert artifacts["file_path"].endswith(".png")
     assert artifacts["download_url"] == f"/api/workspaces/s1/files/download?path={artifacts['file_path']}"
     assert artifacts["output"] == artifacts["download_url"]
@@ -92,7 +92,7 @@ def test_generate_image_without_workspace_uses_single_generated_images_dir(
 
     artifacts = result["artifacts"]
     assert result["execution_status"] == "succeeded"
-    assert artifacts["file_path"].startswith("generated_images/image-")
+    assert artifacts["file_path"].startswith("generated_images/图片-")
     assert "/generated_images/generated_images/" not in artifacts["local_path"]
     assert (tmp_path / "data" / artifacts["file_path"]).read_bytes() == b"fake-jpg"
 

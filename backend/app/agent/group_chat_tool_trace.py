@@ -181,9 +181,8 @@ def guard_unverified_delivery_claims(
     calls = tool_calls or []
     raw_results = [str(item or "") for item in (tool_raw_results or [])]
     mentioned_paths = _extract_mentioned_paths(text)
-    has_relevant_tool_activity = bool(calls or raw_results)
     has_explicit_file_delivery = bool(_EXPLICIT_FILE_DELIVERY_RE.search(text) or mentioned_paths)
-    if not has_relevant_tool_activity and not has_explicit_file_delivery:
+    if not has_explicit_file_delivery:
         return content
 
     success_paths = _verified_existing_paths(_extract_success_paths_from_tool_results(raw_results), workspace_root)

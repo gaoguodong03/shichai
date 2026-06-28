@@ -169,7 +169,7 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 _WORKSPACE_TASK_FILE_RULE = (
     "- 调度任务由平台通过本轮提示词传入，不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
     "- 除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用"
-    "`文件名-YYYYMMDDHHMMSS00.扩展名` 格式，例如 `report-2026062519304500.md`；"
+    "`文件名-YYYYMMDDHHMMSS00.扩展名` 格式，例如 `report-<时间戳>.md`；"
     "不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"
     "- 只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出"
     "「报告已保存至工作区」或类似结论。\n"
@@ -241,9 +241,6 @@ def create_skill_execution_agent(
     system_prompt = ""
     if extra_system_prompt and extra_system_prompt.strip():
         system_prompt += extra_system_prompt.strip() + "\n\n"
-    system_prompt += """你是一个有用的 AI 助手，正在按以下技能说明执行用户请求。
-
-"""
     system_prompt += skill_full_content
     if expert_self_awareness and expert_self_awareness.strip():
         system_prompt += "\n\n---\n\n" + expert_self_awareness.strip()
@@ -265,7 +262,6 @@ def create_skill_execution_agent(
 """
     system_prompt += """
 当你需要使用工具时，**必须**使用模型的结构化工具调用（tool_calls / function calling）来调用工具；
-不要输出任何形如 `{"action":"tool_call", ...}` 的 JSON 作为正文（那是历史兼容格式，已移除）。
 
 当你不需要使用工具时，直接回复用户的问题。
 

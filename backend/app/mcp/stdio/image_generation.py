@@ -120,7 +120,7 @@ def _save_data_url(result: str, *, workspace_id: str, output_subdir: str) -> dic
 
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d%H%M%S") + "00"
-    filename = f"image-{ts}-{uuid4().hex[:8]}.{ext}"
+    filename = f"图片-{ts}-{uuid4().hex[:8]}.{ext}"
     output_path = output_dir / filename
     output_path.write_bytes(image_bytes)
 

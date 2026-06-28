@@ -12,6 +12,7 @@ from app.api.settings_skill_frontmatter import (
     ALLOWED_TOOLS_FM_KEY,
     AUTO_TOOLS_FM_KEY,
     mcp_ids_from_frontmatter,
+    normalize_allowed_tools_payload,
     normalized_allowed_tools_dict,
 )
 from app.api.settings_skill_store import get_mcp_servers_for_skill
@@ -46,6 +47,30 @@ def test_normalized_allowed_tools_from_legacy_only():
     out = normalized_allowed_tools_dict(fm)
     assert out["mcp"] == ["file-reader"]
     assert out["python"] == ""
+
+
+def test_normalized_allowed_tools_writes_mcp_names(monkeypatch):
+    fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": ["mcp-local"], "python": ""}}
+
+    monkeypatch.setattr(
+        "app.api.settings_skill_frontmatter.load_mcp_config",
+        lambda: [{"id": "mcp-local", "name": "Exa 搜索"}],
+    )
+
+    out = normalized_allowed_tools_dict(fm)
+    assert out["mcp"] == ["Exa 搜索"]
+    assert out["mcp_refs"] == [{"id": "Exa 搜索", "name": "Exa 搜索"}]
+
+
+def test_normalize_allowed_tools_payload_writes_mcp_names(monkeypatch):
+    monkeypatch.setattr(
+        "app.api.settings_skill_frontmatter.load_mcp_config",
+        lambda: [{"id": "mcp-local", "name": "Linkup抓取网页"}],
+    )
+
+    out = normalize_allowed_tools_payload({"mcp": ["mcp-local"], "python": ""})
+    assert out["mcp"] == ["Linkup抓取网页"]
+    assert out["mcp_refs"] == [{"id": "Linkup抓取网页", "name": "Linkup抓取网页"}]
 
 
 def test_get_mcp_servers_reads_skill_md(tmp_path: Path, monkeypatch):
@@ -110,6 +135,20 @@ def test_validate_skill_mcp_server_ids_resolves_by_name():
         return_value=[{"id": "mcp-local", "name": "Exa", "enabled": True}],
     ):
         assert validate_skill_mcp_server_ids(["exa"], [{"id": "exa", "name": "Exa"}]) == ["mcp-local"]
+
+
+def test_mcp_rows_for_bundle_refs_reads_allowed_tool_names():
+    from app.core.settings_bundle_import import mcp_refs_from_skill_frontmatter, mcp_rows_for_bundle_refs
+
+    fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": ["Exa 搜索"], "python": ""}}
+    refs = mcp_refs_from_skill_frontmatter(fm)
+    assert refs == [{"id": "Exa 搜索", "name": ""}]
+
+    rows = mcp_rows_for_bundle_refs(
+        refs,
+        [{"id": "mcp-local", "name": "Exa 搜索", "transport": {"type": "http"}}],
+    )
+    assert rows == [{"id": "Exa 搜索", "name": "Exa 搜索", "transport": {"type": "http"}}]
 
 
 def test_python_requirements_from_allowed_and_auto_tools(tmp_path: Path):
@@ -204,7 +243,19 @@ def test_skill_import_zip_merges_root_mcp_servers(monkeypatch, tmp_path: Path):
     assert data["mcp_added"] == 1
 
     mcp_path = tmp_path / "users" / "u1" / "config" / "mcp_servers.json"
-    assert json.loads(mcp_path.read_text(encoding="utf-8"))[0]["id"] == "tool-a"
+    imported_mcp_id = json.loads(mcp_path.read_text(encoding="utf-8"))[0]["id"]
+    assert imported_mcp_id.startswith("mcp-")
+    skill_text = (
+        tmp_path
+        / "users"
+        / "u1"
+        / "resources"
+        / "skills"
+        / data["id"]
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "Tool A" in skill_text
+    assert imported_mcp_id not in skill_text
     assert not (tmp_path / "users" / "u1" / "skills" / data["id"] / "mcp_servers.json").exists()
 
 

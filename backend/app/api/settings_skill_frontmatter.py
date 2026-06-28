@@ -7,10 +7,8 @@ import yaml
 from pydantic import BaseModel
 
 from app.api.settings_mcp import load_mcp_config
-from app.core.settings_references import (
-    merge_reference_rows_for_ids as _merge_reference_rows_for_ids,
-    normalize_reference_rows as _normalize_reference_rows,
-)
+from app.core.settings_references import normalize_reference_rows as _normalize_reference_rows
+from app.core.mcp_skill_resolution import resolve_skill_mcp_declarations
 
 
 class SkillCreate(BaseModel):
@@ -111,15 +109,52 @@ def mcp_reference_rows_from_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, st
     return []
 
 
-def mcp_name_lookup() -> Dict[str, str]:
+def _mcp_ref_name_lookup(mcp_refs: Any) -> Dict[str, str]:
+    return {
+        str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
+        for row in _normalize_reference_rows(mcp_refs)
+        if str(row.get("id") or "").strip() and str(row.get("name") or "").strip()
+    }
+
+
+def _mcp_declarations_as_names(mcp_declarations: List[str], mcp_refs: Any = None) -> List[str]:
     try:
-        return {
-            str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
-            for row in load_mcp_config()
-            if str(row.get("id") or "").strip()
-        }
+        servers = load_mcp_config()
     except Exception:
-        return {}
+        servers = []
+    by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in servers
+        if isinstance(row, dict) and str(row.get("id") or "").strip()
+    }
+    ref_names = _mcp_ref_name_lookup(mcp_refs)
+    out: List[str] = []
+    seen: set[str] = set()
+    for raw in mcp_declarations:
+        decl = str(raw or "").strip()
+        if not decl:
+            continue
+        resolved, _missing = resolve_skill_mcp_declarations([decl], mcp_refs, servers)
+        local_id = resolved[0] if resolved else ""
+        row = by_id.get(local_id)
+        name = str((row or {}).get("name") or "").strip()
+        item = name or ref_names.get(decl) or decl
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _mcp_name_reference_rows(mcp_names: List[str]) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in mcp_names:
+        name = str(raw or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        rows.append({"id": name, "name": name})
+    return rows
 
 
 def runtime_tools_only(normalized: Dict[str, Any]) -> Dict[str, Any]:
@@ -131,15 +166,12 @@ def runtime_tools_only(normalized: Dict[str, Any]) -> Dict[str, Any]:
 
 def normalized_allowed_tools_dict(fm: Dict[str, Any]) -> Dict[str, Any]:
     """从当前 frontmatter 归一化 allowed-tools（合并旧 mcp_server_ids）。"""
-    mcp_ids = list(mcp_ids_from_frontmatter(fm))
+    mcp_refs = mcp_reference_rows_from_frontmatter(fm)
+    mcp_ids = _mcp_declarations_as_names(list(mcp_ids_from_frontmatter(fm)), mcp_refs)
     return {
         "mcp": mcp_ids,
         "python": python_doc_from_allowed_tools(fm),
-        "mcp_refs": _merge_reference_rows_for_ids(
-            mcp_ids,
-            mcp_reference_rows_from_frontmatter(fm),
-            mcp_name_lookup(),
-        ),
+        "mcp_refs": _mcp_name_reference_rows(mcp_ids),
     }
 
 
@@ -147,16 +179,13 @@ def normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     """校验并归一化 API 传入的 allowed_tools 体。"""
     mcp_raw = raw.get("mcp")
     mcp_list = list(dict.fromkeys(str(x).strip() for x in (mcp_raw if isinstance(mcp_raw, list) else []) if str(x).strip()))
+    mcp_list = _mcp_declarations_as_names(mcp_list, raw.get("mcp_refs"))
     py = raw.get("python", "")
     py_str = py if isinstance(py, str) else ("" if py is None else str(py))
     return {
         "mcp": mcp_list,
         "python": py_str,
-        "mcp_refs": _merge_reference_rows_for_ids(
-            mcp_list,
-            raw.get("mcp_refs"),
-            mcp_name_lookup(),
-        ),
+        "mcp_refs": _mcp_name_reference_rows(mcp_list),
     }
 
 

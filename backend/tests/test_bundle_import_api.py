@@ -602,7 +602,8 @@ def test_skill_bundle_import_merges_bundled_mcp(monkeypatch, tmp_path: Path):
     assert imported_mcp_id.startswith("mcp-")
     assert [row["id"] for row in mcp_rows] == [imported_mcp_id]
     skill_text = (ctx.skills_dir / str(result["imported_skill_id"]) / "SKILL.md").read_text(encoding="utf-8")
-    assert imported_mcp_id in skill_text
+    assert "Tool A" in skill_text
+    assert imported_mcp_id not in skill_text
     assert "tool-a" not in skill_text
     assert not (ctx.skills_dir / str(result["imported_skill_id"]) / "mcp_servers.json").exists()
 

@@ -208,8 +208,10 @@ def mcp_rows_for_bundle_refs(
             continue
         name = str((ref or {}).get("name") or "").strip()
         row = by_id.get(rid)
-        if row is None and name:
-            row = by_name.get(normalized_name_key(name))
+        if row is None:
+            lookup_name = name or rid
+            if lookup_name:
+                row = by_name.get(normalized_name_key(lookup_name))
         if row is None:
             continue
         copied = dict(row)
@@ -329,6 +331,16 @@ def _available_mcp_ids(existing_mcp_servers: Iterable[Dict[str, Any]], bundle_mc
         for row in bundle_mcp_servers
         if isinstance(row, dict) and str(row.get("id") or "").strip()
     )
+    out.update(
+        str(row.get("name") or "").strip()
+        for row in existing_mcp_servers
+        if isinstance(row, dict) and str(row.get("name") or "").strip()
+    )
+    out.update(
+        str(row.get("name") or "").strip()
+        for row in bundle_mcp_servers
+        if isinstance(row, dict) and str(row.get("name") or "").strip()
+    )
     return out
 
 
@@ -417,7 +429,8 @@ def find_missing_references_for_scene_bundle(
         skill_label = f"技能 {skill_name}"
         for ref in mcp_refs:
             mid = ref["id"]
-            if mid not in available_mcp:
+            name = str(ref.get("name") or "").strip()
+            if mid not in available_mcp and (not name or name not in available_mcp):
                 _add_missing_reference(missing, "tools", mid, name=ref.get("name", ""), required_by=skill_label, source="skill")
     return missing
 
@@ -453,7 +466,8 @@ def find_missing_references_for_expert_bundle(
         skill_label = f"技能 {skill_name}"
         for ref in mcp_refs:
             mid = ref["id"]
-            if mid not in available_mcp:
+            name = str(ref.get("name") or "").strip()
+            if mid not in available_mcp and (not name or name not in available_mcp):
                 _add_missing_reference(missing, "tools", mid, name=ref.get("name", ""), required_by=skill_label, source="skill")
     return missing
 

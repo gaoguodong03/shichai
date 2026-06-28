@@ -188,6 +188,83 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
+def test_write_workspace_file_tool_replaces_generated_timestamp(temp_user_data_root, monkeypatch):
+    """模型给出旧/未来时间戳时，工具边界改用服务器当前时间。"""
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    monkeypatch.setattr(write_tool_module, "_current_workspace_timestamp", lambda: "2026062609304500")
+
+    tool = create_write_workspace_file_tool("sess-timestamp")
+    out = asyncio.run(
+        tool.ainvoke(
+            {
+                "path": "web-crawler/candidates/候选清单-2026082509304500.md",
+                "content": "candidate list",
+            }
+        )
+    )
+
+    assert "web-crawler/candidates/候选清单-2026062609304500.md" in out
+    ws = get_workspace_root("sess-timestamp")
+    assert not (ws / "web-crawler/candidates/候选清单-2026082509304500.md").exists()
+    assert (ws / "web-crawler/candidates/候选清单-2026062609304500.md").read_text(encoding="utf-8") == "candidate list"
+
+
+def test_write_workspace_file_tool_replaces_timestamp_placeholder(temp_user_data_root, monkeypatch):
+    """模型误把占位符传给工具时，工具边界替换成服务器当前时间。"""
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    monkeypatch.setattr(write_tool_module, "_current_workspace_timestamp", lambda: "2026062609304500")
+
+    tool = create_write_workspace_file_tool("sess-placeholder")
+    out = asyncio.run(
+        tool.ainvoke(
+            {
+                "path": "image/配图方案-<时间戳>.md",
+                "content": "image plan",
+            }
+        )
+    )
+
+    assert "image/配图方案-2026062609304500.md" in out
+    ws = get_workspace_root("sess-placeholder")
+    assert (ws / "image/配图方案-2026062609304500.md").read_text(encoding="utf-8") == "image plan"
+
+
 def test_write_workspace_file_tool_advertises_project_filename_contract():
     from app.tools.write_workspace_file import WriteWorkspaceFileInput, create_write_workspace_file_tool
 
@@ -349,3 +426,117 @@ def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user
     assert "memory/facts.md" in out
     assert "llm_roundtrips" in out
     assert "orchestrator_audit" in out
+
+
+def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data_root, monkeypatch):
+    """模型传入猜测时间戳时，rename 可在唯一同前缀文件上恢复。"""
+    from app.api.files import get_workspace_root
+    from app.agent import tools_for_skill as tool_module
+    from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host, list_workspace_files_on_host
+    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+
+    class _FakeSandboxService:
+        async def exec_workspace_shell(
+            self,
+            *,
+            session_id,
+            workspace_path,
+            argv,
+            **_kwargs,
+        ):
+            return exec_workspace_shell_on_host(session_id=session_id, workspace_path=workspace_path, argv=argv)
+
+        async def list_workspace_files_flat(
+            self,
+            *,
+            session_id,
+            workspace_path,
+            rel_prefix="",
+            **_kwargs,
+        ):
+            return list_workspace_files_on_host(
+                session_id=session_id,
+                workspace_path=workspace_path,
+                rel_prefix=rel_prefix,
+            )
+
+    workspace_id = "sess-rename-timestamp"
+    ws = get_workspace_root(workspace_id)
+    real_file = ws / "image" / "配图方案-2026062602135500.md"
+    real_file.parent.mkdir(parents=True, exist_ok=True)
+    real_file.write_text("plan", encoding="utf-8")
+
+    monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    tools = _create_builtin_workspace_tools(workspace_id)
+    rename_tool = next(t for t in tools if t.name == "rename_workspace_file")
+
+    out = asyncio.run(
+        rename_tool.ainvoke(
+            {
+                "path": "image/配图方案-2026062602140000.md",
+                "new_name": "配图方案-最终版.md",
+            }
+        )
+    )
+
+    assert "已重命名文件：image/配图方案-最终版.md" in out
+    assert not real_file.exists()
+    assert (ws / "image" / "配图方案-最终版.md").read_text(encoding="utf-8") == "plan"
+
+
+def test_rename_workspace_file_does_not_guess_multiple_timestamped_sources(temp_user_data_root, monkeypatch):
+    """同前缀同扩展名有多个候选时，rename 不自动猜源文件。"""
+    from app.api.files import get_workspace_root
+    from app.agent import tools_for_skill as tool_module
+    from app.agent.sandbox_workspace_fs import exec_workspace_shell_on_host, list_workspace_files_on_host
+    from app.agent.tools_for_skill import _create_builtin_workspace_tools
+
+    class _FakeSandboxService:
+        async def exec_workspace_shell(
+            self,
+            *,
+            session_id,
+            workspace_path,
+            argv,
+            **_kwargs,
+        ):
+            return exec_workspace_shell_on_host(session_id=session_id, workspace_path=workspace_path, argv=argv)
+
+        async def list_workspace_files_flat(
+            self,
+            *,
+            session_id,
+            workspace_path,
+            rel_prefix="",
+            **_kwargs,
+        ):
+            return list_workspace_files_on_host(
+                session_id=session_id,
+                workspace_path=workspace_path,
+                rel_prefix=rel_prefix,
+            )
+
+    workspace_id = "sess-rename-multiple"
+    ws = get_workspace_root(workspace_id)
+    first = ws / "image" / "配图方案-2026062602135500.md"
+    second = ws / "image" / "配图方案-2026062602135600.md"
+    first.parent.mkdir(parents=True, exist_ok=True)
+    first.write_text("first", encoding="utf-8")
+    second.write_text("second", encoding="utf-8")
+
+    monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+    tools = _create_builtin_workspace_tools(workspace_id)
+    rename_tool = next(t for t in tools if t.name == "rename_workspace_file")
+
+    out = asyncio.run(
+        rename_tool.ainvoke(
+            {
+                "path": "image/配图方案-2026062602140000.md",
+                "new_name": "配图方案-最终版.md",
+            }
+        )
+    )
+
+    assert "错误：重命名失败" in out
+    assert first.read_text(encoding="utf-8") == "first"
+    assert second.read_text(encoding="utf-8") == "second"

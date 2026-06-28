@@ -101,9 +101,29 @@ def _normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().lower()
 
 
-def _remap_frontmatter_mcp_refs(fm: Dict[str, Any], mcp_id_map: Dict[str, str]) -> Dict[str, Any]:
+def _mcp_name_map_for_import(rows_to_import: List[Dict[str, Any]]) -> Dict[str, str]:
+    names: Dict[str, str] = {}
+    for row in load_mcp_config():
+        rid = str(row.get("id") or "").strip()
+        name = str(row.get("name") or "").strip()
+        if rid and name:
+            names[rid] = name
+    for row in rows_to_import or []:
+        rid = str(row.get("id") or "").strip()
+        name = str(row.get("name") or "").strip()
+        if rid and name:
+            names[rid] = name
+    return names
+
+
+def _remap_frontmatter_mcp_refs(
+    fm: Dict[str, Any],
+    mcp_id_map: Dict[str, str],
+    mcp_name_map: Dict[str, str] | None = None,
+) -> Dict[str, Any]:
     if not mcp_id_map:
         return fm
+    names = mcp_name_map or {}
 
     def remap_list(raw: Any) -> Any:
         if not isinstance(raw, list):
@@ -116,7 +136,10 @@ def _remap_frontmatter_mcp_refs(fm: Dict[str, Any], mcp_id_map: Dict[str, str]) 
                 for key in ("id", "server_id", "mcp_server_id"):
                     old = str(copied.get(key) or "").strip()
                     if old:
-                        copied[key] = mcp_id_map.get(old, old)
+                        new = mcp_id_map.get(old, old)
+                        copied[key] = names.get(new, new)
+                        if names.get(new):
+                            copied["name"] = names[new]
                         break
                 marker = json.dumps(copied, ensure_ascii=False, sort_keys=True)
                 if marker not in seen:
@@ -127,9 +150,10 @@ def _remap_frontmatter_mcp_refs(fm: Dict[str, Any], mcp_id_map: Dict[str, str]) 
             if not old:
                 continue
             new = mcp_id_map.get(old, old)
-            if new not in seen:
-                seen.add(new)
-                out.append(new)
+            label = names.get(new, new)
+            if label not in seen:
+                seen.add(label)
+                out.append(label)
         return out
 
     for section_key in (AUTO_TOOLS_FM_KEY, ALLOWED_TOOLS_FM_KEY):
@@ -312,8 +336,9 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         if copied_skill:
             shutil.copytree(src, dest)
         fm2, body2 = _read_skill_file(dest)
+        mcp_name_map = _mcp_name_map_for_import(mcp_rows_to_import)
         if copied_skill:
-            fm2 = _remap_frontmatter_mcp_refs(fm2, mcp_id_map)
+            fm2 = _remap_frontmatter_mcp_refs(fm2, mcp_id_map, mcp_name_map)
             fm2["name"] = str(fm2.get("name") or incoming_name)
             fm2["description"] = str(fm2.get("description") or "")
             _sanitize_skill_frontmatter_for_write(fm2)
@@ -479,7 +504,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             if not (skill_dir / "SKILL.md").is_file():
                 continue
             fm, body = _read_skill_file(skill_dir)
-            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map)
+            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map, _mcp_name_map_for_import(mcp_rows_to_import))
             _sanitize_skill_frontmatter_for_write(fm)
             _write_skill_file(skill_dir, fm, body)
         existing_mcp_ids = {str(row.get("id") or "").strip() for row in load_mcp_config()}
@@ -774,7 +799,7 @@ async def import_skill_zip(
         final_name = (str(fm.get("name") or "").strip() or skill_id)
         final_desc = str(fm.get("description") or "")
         mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map)
+        fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map, _mcp_name_map_for_import(mcp_rows_to_import))
         fm["name"] = final_name
         fm["description"] = final_desc
         _sanitize_skill_frontmatter_for_write(fm)

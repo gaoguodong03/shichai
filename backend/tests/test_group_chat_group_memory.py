@@ -309,6 +309,19 @@ def test_guard_delivery_claims_ignores_plain_non_file_generation_text():
     assert out == content
 
 
+def test_guard_delivery_claims_ignores_writing_plan_after_workspace_read():
+    gc = _get_tool_trace_module()
+    content = "已生成一版方向确认卡。请确认后我再生成完整正文。"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "list_workspace_directory", "arguments": {"path": "web-crawler/materials"}}],
+        tool_raw_results=["目录 web-crawler/materials 下的内容（含子目录）：\n方向确认卡"],
+    )
+
+    assert out == content
+
+
 def test_has_auto_continue_signal_detects_continue_intent():
     gc = _get_context_module()
     assert gc.has_auto_continue_signal("接下来我会继续执行下一步。") is True
