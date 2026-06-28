@@ -2,6 +2,14 @@ import { expect, test } from '@playwright/test'
 import { bootLoggedInApp, createE2eState, loginByStorage, mockApi } from './fixtures/mockApi'
 
 test.describe('验收 3/6：资源中心场景与专家', () => {
+  async function expectAlert(page: import('@playwright/test').Page, title: string, message: string) {
+    const dialog = page.getByRole('dialog', { name: title })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText(message)).toBeVisible()
+    await dialog.getByRole('button', { name: '知道了' }).click()
+    await expect(dialog).toHaveCount(0)
+  }
+
   test('用户可以查看并保存场景配置', async ({ page }) => {
     await bootLoggedInApp(page)
 
@@ -69,6 +77,35 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
     await expect(page.getByRole('heading', { name: '新建场景' })).toBeVisible()
     await expect(sidebar.getByText('0 位专家', { exact: true })).toHaveCount(0)
+  })
+
+  test('新建场景和专家必填为空时弹窗阻止保存', async ({ page }) => {
+    const state = createE2eState()
+    let scenarioSaveCount = 0
+    let agentCreateCount = 0
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/session-presets', async (route) => {
+      if (route.request().method() === 'PUT') scenarioSaveCount += 1
+      await route.fallback()
+    })
+    await page.route('**/api/agents', async (route) => {
+      if (route.request().method() === 'POST') agentCreateCount += 1
+      await route.fallback()
+    })
+
+    await page.goto('/resources/scenario')
+    await page.getByRole('button', { name: '新建场景' }).click()
+    await page.getByRole('button', { name: '保存' }).click()
+    await expectAlert(page, '无法保存场景', '场景名称不能为空')
+    expect(scenarioSaveCount).toBe(0)
+
+    await page.goto('/resources/agent')
+    await page.getByRole('button', { name: '新建专家' }).click()
+    await page.getByRole('button', { name: '保存' }).click()
+    await expectAlert(page, '无法保存专家', '专家名称不能为空')
+    expect(agentCreateCount).toBe(0)
   })
 
   test('导入场景包后不会被工作区空快捷场景覆盖', async ({ page }) => {

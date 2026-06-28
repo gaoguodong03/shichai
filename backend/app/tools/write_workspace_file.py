@@ -11,6 +11,11 @@ from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 
 _FINAL_FILENAME_TIMESTAMP_RE = re.compile(r"(?<=-)(?:19|20)\d{12}(?:\d{2})?(?=\.[^/.]+$)")
+_DSML_TOOL_CALL_RE = re.compile(r"<｜｜DSML｜｜(?:tool_calls|invoke|parameter)\b")
+_PLAIN_TOOL_CALL_RE = re.compile(
+    r"^\s*(?:write_workspace_file|edit_workspace_file|rename_workspace_file|list_workspace_directory|read_file)\s*\(",
+    re.S,
+)
 
 
 class WriteWorkspaceFileInput(BaseModel):
@@ -71,6 +76,27 @@ def _normalize_bool(value) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _looks_like_model_tool_call_payload(content: str) -> bool:
+    text = str(content or "").strip()
+    if not text:
+        return False
+    if _DSML_TOOL_CALL_RE.search(text):
+        return True
+    if _PLAIN_TOOL_CALL_RE.match(text):
+        return True
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(payload, dict):
+            return False
+        action = str(payload.get("action") or "").strip().lower()
+        has_tool_name = bool(payload.get("tool") or payload.get("name"))
+        return action == "tool_call" and has_tool_name
+    return False
+
+
 def _current_workspace_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
 
@@ -97,6 +123,11 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         if not content_value:
             return (
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
+            )
+        if _looks_like_model_tool_call_payload(content_value):
+            return (
+                "错误：content 包含模型工具调用协议，已拒绝写入工作区。"
+                "请使用结构化工具调用执行对应工具；如果要保存文件，请只把最终正文传给 content。"
             )
         normalized = _normalize_generated_timestamp(path_value.strip("/").replace("\\", "/"))
         if ".." in normalized:
@@ -132,7 +163,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
             "- path: 工作区内相对路径。项目生成的新文件名统一使用 文件名-YYYYMMDDHHMMSS00.扩展名，"
             "例如 'notes/report-<时间戳>.md'；工具会把 <时间戳> 或文件名末尾已有时间戳替换为服务器当前时间。"
             "用户明确指定已有路径或固定文件名时按用户原文使用。\n"
-            "- content: 要保存的完整文本内容。"
+            "- content: 要保存的完整文本内容，不能传入 DSML、JSON tool_call 或函数调用样式的模型工具调用协议。"
         ),
         coroutine=_write_to_workspace_file,
         args_schema=WriteWorkspaceFileInput,

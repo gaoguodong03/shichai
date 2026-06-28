@@ -5,7 +5,7 @@
         <h2 class="text-2xl font-semibold text-primary mb-1">配置工具</h2>
       </div>
       <div v-if="loading" class="p-4 text-muted">加载中...</div>
-      <form v-else-if="server" @submit.prevent="save" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
+      <form v-else-if="server" novalidate @submit.prevent="save" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
         <div>
           <label class="block text-sm font-medium text-primary mb-1">名称 *</label>
           <input
@@ -326,6 +326,26 @@ function buildDraft(): McpServerDraft {
   }
 }
 
+async function validateRequiredFields(): Promise<boolean> {
+  if (!form.value.name.trim()) {
+    await appAlert({ title: '无法保存工具', message: '工具名称不能为空', variant: 'warning' })
+    return false
+  }
+  if (form.value.transport.type === 'stdio' && !String(form.value.transport.command || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: '命令不能为空', variant: 'warning' })
+    return false
+  }
+  if (form.value.transport.type === 'sse' && !String(form.value.transport.url || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: 'URL 不能为空', variant: 'warning' })
+    return false
+  }
+  if ((form.value.transport.type === 'http' || form.value.transport.type === 'streamable_http') && !String(form.value.transport.base_url || form.value.transport.url || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: 'Base URL 不能为空', variant: 'warning' })
+    return false
+  }
+  return true
+}
+
 async function load(options: { silent?: boolean } = {}) {
   if (!props.serverId) return
   const showPageLoading = !options.silent && (!server.value || (server.value.id !== props.serverId && !saving.value))
@@ -346,6 +366,7 @@ async function load(options: { silent?: boolean } = {}) {
 
 async function save() {
   if (!server.value) return
+  if (!(await validateRequiredFields())) return
   saving.value = true
   try {
     const body = buildMcpServerPayload(buildDraft())

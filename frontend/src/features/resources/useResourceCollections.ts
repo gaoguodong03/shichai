@@ -36,13 +36,19 @@ export type McpServerRow = {
 
 export type LlmProviderMap = Record<string, { base_url?: string; model?: string; api_key_env?: string; label?: string }>
 
+const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
+
+function isPendingResourceId(id?: string | null) {
+  return id === '__new__' || String(id || '').startsWith(NEW_SKILL_DRAFT_PREFIX)
+}
+
 function syncSelectedResourceId(options: {
   active: boolean
   selectedId: Ref<string | null>
   ids: string[]
   preferredId?: string | null
 }) {
-  if (!options.active || options.selectedId.value === '__new__') return
+  if (!options.active || isPendingResourceId(options.selectedId.value)) return
 
   const ids = options.ids.filter(Boolean)
   const preferred = options.preferredId && ids.includes(options.preferredId) ? options.preferredId : null
@@ -305,25 +311,7 @@ export function useResourceCollections(args: {
   }
 
   async function createEmptySkill() {
-    try {
-      const r = await apiRequest('/settings/skills', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: '新 Skill',
-          description: '',
-        }),
-      })
-      const j = await r.json()
-      if (j.status === 'ok' && j.data?.id) {
-        selectedId.value = j.data.id
-        await fetchSkills()
-      } else {
-        await appAlert({ title: '新建 Skill 失败', message: j.detail || '新建 Skill 失败', variant: 'danger' })
-      }
-    } catch {
-      await appAlert({ title: '新建 Skill 失败', message: '新建 Skill 失败', variant: 'danger' })
-    }
+    selectedId.value = `${NEW_SKILL_DRAFT_PREFIX}${Date.now()}`
   }
 
   function onMCPCreated(id: string) {

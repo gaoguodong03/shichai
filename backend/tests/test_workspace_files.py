@@ -215,16 +215,16 @@ def test_write_workspace_file_tool_replaces_generated_timestamp(temp_user_data_r
     out = asyncio.run(
         tool.ainvoke(
             {
-                "path": "web-crawler/candidates/候选清单-2026082509304500.md",
+                "path": "web-crawler/候选清单-2026082509304500.md",
                 "content": "candidate list",
             }
         )
     )
 
-    assert "web-crawler/candidates/候选清单-2026062609304500.md" in out
+    assert "web-crawler/候选清单-2026062609304500.md" in out
     ws = get_workspace_root("sess-timestamp")
-    assert not (ws / "web-crawler/candidates/候选清单-2026082509304500.md").exists()
-    assert (ws / "web-crawler/candidates/候选清单-2026062609304500.md").read_text(encoding="utf-8") == "candidate list"
+    assert not (ws / "web-crawler/候选清单-2026082509304500.md").exists()
+    assert (ws / "web-crawler/候选清单-2026062609304500.md").read_text(encoding="utf-8") == "candidate list"
 
 
 def test_write_workspace_file_tool_replaces_timestamp_placeholder(temp_user_data_root, monkeypatch):
@@ -339,6 +339,45 @@ def test_write_workspace_file_allows_explicit_overwrite(temp_user_data_root, mon
     assert "已写入" in out
     ws = get_workspace_root("sess-explicit-overwrite")
     assert (ws / "article.md").read_text(encoding="utf-8") == "second"
+
+
+def test_write_workspace_file_rejects_dsml_tool_call_payload(temp_user_data_root, monkeypatch):
+    """write_workspace_file 不应把模型工具调用协议当作正文写入工作区。"""
+    from app.api.files import get_workspace_root
+    from app.tools import write_workspace_file as write_tool_module
+    from app.tools.write_workspace_file import create_write_workspace_file_tool
+
+    class _FakeSandboxService:
+        async def write_workspace_text(
+            self,
+            *,
+            user_id,
+            session_id,
+            workspace_path,
+            rel_path,
+            content,
+        ):
+            target = (workspace_path / rel_path).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+    monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+
+    payload = (
+        "<｜｜DSML｜｜tool_calls>\n"
+        '<｜｜DSML｜｜invoke name="write_workspace_file">\n'
+        '<｜｜DSML｜｜parameter name="path" string="true">notes/real.md</｜｜DSML｜｜parameter>\n'
+        '<｜｜DSML｜｜parameter name="content" string="true"># 正文</｜｜DSML｜｜parameter>\n'
+        "</｜｜DSML｜｜invoke>\n"
+        "</｜｜DSML｜｜tool_calls>"
+    )
+    tool = create_write_workspace_file_tool("sess-dsml-payload")
+
+    out = asyncio.run(tool.ainvoke({"path": "leaked.md", "content": payload}))
+
+    assert "错误：content 包含模型工具调用协议" in out
+    ws = get_workspace_root("sess-dsml-payload")
+    assert not (ws / "leaked.md").exists()
 
 
 def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data_root):

@@ -1,7 +1,15 @@
 import { expect, test } from '@playwright/test'
-import { bootLoggedInApp } from './fixtures/mockApi'
+import { bootLoggedInApp, createE2eState, loginByStorage, mockApi } from './fixtures/mockApi'
 
 test.describe('验收 4/6：资源中心技能、工具与模型', () => {
+  async function expectAlert(page: import('@playwright/test').Page, title: string, message: string) {
+    const dialog = page.getByRole('dialog', { name: title })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByText(message)).toBeVisible()
+    await dialog.getByRole('button', { name: '知道了' }).click()
+    await expect(dialog).toHaveCount(0)
+  }
+
   test('技能、工具和模型左栏展示名称、描述和悬停删除入口', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/skill')
 
@@ -60,6 +68,116 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
   })
 
+  test('技能详情操作按钮样式和新建态与场景保持一致', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/skill')
+
+    const exportButton = page.getByRole('button', { name: '导出', exact: true })
+    const editButton = page.getByRole('button', { name: '编辑', exact: true })
+    const deleteButton = page.getByRole('button', { name: '删除', exact: true })
+
+    await expect(exportButton).toHaveClass(/bg-list-hover/)
+    await expect(exportButton).toHaveClass(/text-primary/)
+    await expect(editButton).toHaveClass(/bg-accent/)
+    await expect(editButton).toHaveClass(/text-text-inverse/)
+    await expect(deleteButton).toHaveClass(/bg-danger-subtle/)
+    await expect(deleteButton).toHaveClass(/text-danger/)
+
+    await editButton.click()
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveClass(/bg-accent/)
+    await expect(page.getByRole('button', { name: '导出', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '删除', exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '新建技能' }).click()
+    await expect(page.getByRole('button', { name: '导出', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveClass(/bg-accent/)
+    await expect(page.getByRole('button', { name: '删除', exact: true })).toHaveClass(/bg-danger-subtle/)
+  })
+
+  test('新建技能先进入草稿编辑，空草稿不保存，已修改草稿切走时自动保存', async ({ page }) => {
+    const state = createE2eState()
+    let createSkillCount = 0
+    let updateExistingSkillCount = 0
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/skills**', async (route) => {
+      const url = new URL(route.request().url())
+      const path = url.pathname.replace(/^\/api/, '')
+      const method = route.request().method()
+      if (path === '/settings/skills' && method === 'POST') createSkillCount += 1
+      if (path === '/settings/skills/skill-qa' && method === 'PUT') updateExistingSkillCount += 1
+      await route.fallback()
+    })
+
+    await page.goto('/resources/skill')
+    const sidebar = page.getByRole('complementary')
+    const qaSkillButton = sidebar.getByRole('button', { name: /问答技能.*用于前端点击验收/ })
+    const writerSkillButton = sidebar.getByRole('button', { name: /写作技能.*把讨论整理为说明文档/ })
+    await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
+
+    await page.getByRole('button', { name: '新建技能' }).click()
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible()
+    await expect(page.getByPlaceholder('技能名称')).toBeEnabled()
+    await qaSkillButton.click()
+    await expect.poll(() => createSkillCount).toBe(0)
+
+    await page.getByRole('button', { name: '新建技能' }).click()
+    await page.getByPlaceholder('技能名称').fill('自动保存技能')
+    await page.getByPlaceholder('简短描述，用于技能选择').fill('切换时保存草稿')
+    await page.getByPlaceholder('SKILL.md 正文内容').fill('# 自动保存技能\n\n用于验证草稿保存。')
+    await qaSkillButton.click()
+    await expect.poll(() => createSkillCount).toBe(1)
+    await expect(sidebar.getByRole('button', { name: /自动保存技能.*切换时保存草稿/ })).toBeVisible()
+
+    await qaSkillButton.click()
+    await page.getByRole('button', { name: '编辑', exact: true }).click()
+    await page.getByPlaceholder('技能名称').fill('不应自动保存')
+    await writerSkillButton.click()
+    await expect.poll(() => updateExistingSkillCount).toBe(0)
+    await qaSkillButton.click()
+    await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
+  })
+
+  test('新建技能、工具和模型必填为空时弹窗阻止保存', async ({ page }) => {
+    const state = createE2eState()
+    let skillCreateCount = 0
+    let mcpCreateCount = 0
+    let llmSaveCount = 0
+
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/skills', async (route) => {
+      if (route.request().method() === 'POST') skillCreateCount += 1
+      await route.fallback()
+    })
+    await page.route('**/api/settings/mcp', async (route) => {
+      if (route.request().method() === 'POST') mcpCreateCount += 1
+      await route.fallback()
+    })
+    await page.route('**/api/settings/app', async (route) => {
+      if (route.request().method() === 'PUT') llmSaveCount += 1
+      await route.fallback()
+    })
+
+    await page.goto('/resources/skill')
+    await page.getByRole('button', { name: '新建技能' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expectAlert(page, '无法保存技能', '技能名称不能为空')
+    expect(skillCreateCount).toBe(0)
+
+    await page.goto('/resources/mcp')
+    await page.getByRole('button', { name: '新建工具' }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await expectAlert(page, '无法保存工具', '工具名称不能为空')
+    expect(mcpCreateCount).toBe(0)
+
+    await page.goto('/resources/llm')
+    await page.getByRole('button', { name: '新建模型' }).click()
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await expectAlert(page, '无法保存模型', '模型标识不能为空')
+    expect(llmSaveCount).toBe(0)
+  })
+
   test('用户可以新建工具并进入工具配置页', async ({ page }) => {
     await bootLoggedInApp(page)
 
@@ -70,7 +188,7 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await page.getByRole('button', { name: '新建工具' }).click()
     await expect(page.getByRole('heading', { name: '新建工具' })).toBeVisible()
     await page.getByPlaceholder('例如：文件系统 MCP').fill('自动化工具')
-    await page.getByPlaceholder('例如：python').fill('python')
+    await page.getByPlaceholder('例如：uvx').fill('python')
     await page.getByRole('button', { name: '新建', exact: true }).click()
 
     await expect(page.getByRole('heading', { name: '配置工具' })).toBeVisible()

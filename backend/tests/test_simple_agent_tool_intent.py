@@ -175,6 +175,212 @@ async def test_simple_agent_coerces_dsml_tool_calls_before_displaying_text():
     )
 
 
+@pytest.mark.asyncio
+async def test_simple_agent_coerces_plain_write_workspace_file_call_before_displaying_text():
+    response = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
+            'content="# Web 信息检索候选清单\\n\\n| 编号 | 标题 | URL | 摘要 | 来源工具 |")'
+        )
+    )
+    called = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        called["n"] += 1
+        last = state["messages"][-1]
+        assert str(last.content) == ""
+        assert last.tool_calls == [
+            {
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-2026062816200000.md",
+                    "content": "# Web 信息检索候选清单\n\n| 编号 | 标题 | URL | 摘要 | 来源工具 |",
+                },
+                "id": "text-tool-0",
+            }
+        ]
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
+                    tool_call_id="text-tool-0",
+                )
+            ],
+            "tool_attempt_debug": [{"matched": True}],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {
+                        "path": "web-crawler/候选清单-2026062816200000.md",
+                        "content": "# Web 信息检索候选清单\n\n| 编号 | 标题 | URL | 摘要 | 来源工具 |",
+                    },
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([response]),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=1,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
+
+    assert called["n"] == 1
+    assert "write_workspace_file(" not in str(out["messages"][-1].content)
+    assert any(
+        item.get("source") == "plain_text_tool_calls"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_stream_coerces_plain_write_workspace_file_call_without_visible_text():
+    response = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
+            'content="# Web 信息检索候选清单")'
+        )
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        calls.append(tool_call["name"])
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
+                    tool_call_id="text-tool-0",
+                )
+            ],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": tool_call["args"]}],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([response]),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=1,
+    )
+
+    visible_texts: list[str] = []
+    final_debug: list[dict] = []
+    async for ev in agent.astream({"messages": [HumanMessage(content="搜索资料")]}, stream_mode=["updates"]):
+        if ev.get("type") == "agent_step" and isinstance(ev.get("message"), AIMessage):
+            text = str(ev["message"].content or "").strip()
+            if text:
+                visible_texts.append(text)
+        if ev.get("type") == "final_step":
+            final_debug = ev.get("tool_attempt_debug") or []
+
+    assert calls == ["write_workspace_file"]
+    assert all("write_workspace_file(" not in text for text in visible_texts)
+    assert any(item.get("source") == "plain_text_tool_calls" for item in final_debug)
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
+    write_call = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-20250401133000.md", '
+            'content="# 候选清单")'
+        )
+    )
+    stale_final = AIMessage(content="候选清单已保存：`web-crawler/候选清单-20250401133000.md`")
+
+    async def _tool_runner(state, tools):
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md",
+                    tool_call_id="text-tool-0",
+                )
+            ],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": {
+                        "path": "web-crawler/候选清单-20250401133000.md",
+                        "content": "# 候选清单",
+                    },
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([write_call, stale_final]),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=1,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
+
+    final_text = str(out["messages"][-1].content)
+    assert "web-crawler/候选清单-2026062816284700.md" in final_text
+    assert "web-crawler/候选清单-20250401133000.md" not in final_text
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_ignores_second_write_workspace_file_call_after_successful_write():
+    first_write = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-20250401133000.md", '
+            'content="# 候选清单")'
+        )
+    )
+    duplicate_write = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-20250401133100.md", '
+            'content="# 候选清单")'
+        )
+    )
+    call_count = 0
+
+    async def _tool_runner(state, tools):
+        nonlocal call_count
+        call_count += 1
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md",
+                    tool_call_id="text-tool-0",
+                )
+            ],
+            "tool_calls": [
+                {
+                    "tool": "write_workspace_file",
+                    "arguments": state["messages"][-1].tool_calls[0]["args"],
+                }
+            ],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([first_write, duplicate_write]),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=1,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
+
+    assert call_count == 1
+    assert any(
+        item.get("source") == "post_tool_synthesis_repeated_write_ignored"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
 def test_parse_dsml_tool_calls_supports_multiple_invokes():
     calls = _parse_dsml_tool_calls(
         '<｜｜DSML｜｜tool_calls>\n'

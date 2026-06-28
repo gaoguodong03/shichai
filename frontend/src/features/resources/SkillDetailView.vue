@@ -10,7 +10,7 @@
           </div>
           <div class="flex flex-shrink-0 items-center gap-2">
             <button
-              v-if="activeTab !== 'main'"
+              v-if="activeTab !== 'main' && !isDraftSkill"
               type="button"
               class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
               :disabled="partsLoading"
@@ -19,7 +19,7 @@
               新建文件
             </button>
             <button
-              v-if="activeTab !== 'main'"
+              v-if="activeTab !== 'main' && !isDraftSkill"
               type="button"
               class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
               :disabled="partsLoading"
@@ -28,8 +28,9 @@
               新建文件夹
             </button>
             <button
+              v-if="!isDraftSkill"
               type="button"
-              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg disabled:opacity-50"
               :disabled="exporting"
               @click="exportZip"
             >
@@ -37,7 +38,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover disabled:opacity-50"
               :disabled="saving || deleting || contentLoading"
               @click="handleEditSave"
             >
@@ -45,7 +46,7 @@
             </button>
             <button
               type="button"
-              class="inline-flex items-center justify-center px-3 py-1.5 text-sm font-medium rounded-lg border border-input-border bg-card text-primary hover:bg-list-hover disabled:opacity-50"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90 disabled:opacity-50"
               :disabled="deleting || saving"
               @click="deleteSkill"
             >
@@ -285,7 +286,7 @@
 
 <script setup lang="ts">
 import { apiRequest } from '@/api/base'
-import { ref, watch, computed, nextTick } from 'vue'
+import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
 import {
@@ -301,6 +302,13 @@ import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPar
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
 const MCP_REFERENCE_ID_KEYS = ['id', 'mcp_server_id']
+const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
+const DEFAULT_DRAFT_SKILL = {
+  name: '',
+  description: '',
+  body: '',
+  allowed_tools: { mcp: [] as string[], python: '', mcp_refs: [] as ReferenceSnapshot[] },
+}
 
 const props = defineProps<{ skillId: string }>()
 const emit = defineEmits<{ (e: 'updated', newSkillId?: string): void; (e: 'deleted'): void }>()
@@ -340,6 +348,7 @@ const form = ref({
 const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 const editMode = ref(false)
+const draftBaseline = ref('')
 
 const parts = ref<{ references: { name: string; path: string }[]; assets: { name: string; path: string }[]; scripts: { name: string; path: string }[]; other: { name: string; path: string }[] }>({
   references: [],
@@ -407,6 +416,76 @@ const missingPythonDependencies = computed(() =>
     return key && !sandboxRequirementKeys.value.has(key)
   })
 )
+const isDraftSkill = computed(() => isNewSkillDraftId(props.skillId))
+
+function isNewSkillDraftId(skillId?: string | null) {
+  return String(skillId || '').startsWith(NEW_SKILL_DRAFT_PREFIX)
+}
+
+function normalizedFormSnapshot() {
+  return JSON.stringify({
+    name: form.value.name.trim(),
+    description: form.value.description?.trim() ?? '',
+    body: form.value.body ?? '',
+    allowed_tools: {
+      mcp: [...(form.value.allowed_tools.mcp ?? [])],
+      python: form.value.allowed_tools.python ?? '',
+      mcp_refs: [...(form.value.allowed_tools.mcp_refs ?? [])],
+    },
+  })
+}
+
+function draftHasChanges() {
+  return normalizedFormSnapshot() !== draftBaseline.value
+}
+
+function resetDraftForm() {
+  const allowedTools = {
+    mcp: [...DEFAULT_DRAFT_SKILL.allowed_tools.mcp],
+    python: DEFAULT_DRAFT_SKILL.allowed_tools.python,
+    mcp_refs: [...DEFAULT_DRAFT_SKILL.allowed_tools.mcp_refs],
+  }
+  skill.value = {
+    id: props.skillId,
+    name: '新 Skill 草稿',
+    description: '',
+    allowed_tools: allowedTools,
+  }
+  skillContent.value = {
+    raw: '',
+    name: DEFAULT_DRAFT_SKILL.name,
+    description: DEFAULT_DRAFT_SKILL.description,
+    body: DEFAULT_DRAFT_SKILL.body,
+    allowed_tools: allowedTools,
+  }
+  form.value = {
+    name: DEFAULT_DRAFT_SKILL.name,
+    description: DEFAULT_DRAFT_SKILL.description,
+    body: DEFAULT_DRAFT_SKILL.body,
+    allowed_tools: {
+      mcp: [...allowedTools.mcp],
+      python: allowedTools.python,
+      mcp_refs: [...allowedTools.mcp_refs],
+    },
+  }
+  draftBaseline.value = normalizedFormSnapshot()
+  activeTab.value = 'main'
+  editMode.value = true
+  loading.value = false
+  contentLoading.value = false
+}
+
+async function validateSkillRequiredFields(): Promise<boolean> {
+  if (!form.value.name.trim()) {
+    await appAlert({ title: '无法保存技能', message: '技能名称不能为空', variant: 'warning' })
+    return false
+  }
+  if (!form.value.description.trim()) {
+    await appAlert({ title: '无法保存技能', message: '技能描述不能为空', variant: 'warning' })
+    return false
+  }
+  return true
+}
 
 function requirementKey(line: string) {
   let item = String(line || '').trim()
@@ -474,6 +553,10 @@ function resetFormFromLoadedContent() {
 }
 
 function toggleEditMode() {
+  if (isDraftSkill.value) {
+    editMode.value = true
+    return
+  }
   if (editMode.value) {
     resetFormFromLoadedContent()
     editMode.value = false
@@ -485,7 +568,7 @@ function toggleEditMode() {
 
 function handleEditSave() {
   if (editMode.value) {
-    void save()
+    void (isDraftSkill.value ? saveDraftSkill({ selectCreated: true, onlyIfChanged: false }) : save())
     return
   }
   toggleEditMode()
@@ -719,6 +802,10 @@ async function exportZip() {
 
 async function load(options: { silent?: boolean } = {}) {
   if (!props.skillId) return
+  if (isDraftSkill.value) {
+    resetDraftForm()
+    return
+  }
   const showPageLoading = !options.silent && (!skill.value || (skill.value.id !== props.skillId && !saving.value))
   if (showPageLoading) loading.value = true
   try {
@@ -756,6 +843,7 @@ async function load(options: { silent?: boolean } = {}) {
 
 async function loadContent(options: { silent?: boolean } = {}) {
   if (!props.skillId) return
+  if (isDraftSkill.value) return
   const showContentLoading = !options.silent && !hasLoadedSkillContent()
   if (showContentLoading) contentLoading.value = true
   try {
@@ -775,6 +863,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
       }
       resetFormFromLoadedContent()
       editMode.value = false
+      draftBaseline.value = ''
     }
   } finally {
     if (showContentLoading) contentLoading.value = false
@@ -783,6 +872,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
 
 async function loadParts() {
   if (!props.skillId) return
+  if (isDraftSkill.value) return
   partsLoading.value = true
   try {
     const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/parts`)
@@ -824,6 +914,7 @@ async function selectPartFile(type: PartType, path: string) {
 
 async function save() {
   if (!skill.value || !editMode.value) return
+  if (!(await validateSkillRequiredFields())) return
   saving.value = true
   try {
     const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, {
@@ -888,6 +979,61 @@ async function save() {
   }
 }
 
+async function saveDraftSkill(options: { selectCreated: boolean; onlyIfChanged: boolean; draftId?: string | null }) {
+  if (!isNewSkillDraftId(options.draftId ?? props.skillId) || saving.value) return
+  if (options.onlyIfChanged && !draftHasChanges()) return
+  if (!options.onlyIfChanged && !(await validateSkillRequiredFields())) return
+  if (options.onlyIfChanged && (!form.value.name.trim() || !form.value.description.trim())) return
+  const name = form.value.name.trim() || '新 Skill'
+  const description = form.value.description?.trim() ?? ''
+  saving.value = true
+  try {
+    const createResponse = await apiRequest('/settings/skills', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    })
+    const createJson = await createResponse.json()
+    if (!(createJson.status === 'ok' && createJson.data?.id)) {
+      await appAlert({ title: '新建 Skill 失败', message: createJson.detail || '新建 Skill 失败', variant: 'danger' })
+      return
+    }
+
+    const newId = String(createJson.data.id)
+    const allowedTools = {
+      mcp: form.value.allowed_tools.mcp ?? [],
+      python: form.value.allowed_tools.python ?? '',
+      mcp_refs: mergeReferenceRowsForIds(
+        form.value.allowed_tools.mcp ?? [],
+        form.value.allowed_tools.mcp_refs ?? [],
+        mcpNameLookup(),
+        MCP_REFERENCE_ID_KEYS,
+      ),
+    }
+    const updateResponse = await apiRequest(`/settings/skills/${encodeURIComponent(newId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        description,
+        body: form.value.body ?? '',
+        allowed_tools: allowedTools,
+      }),
+    })
+    const updateJson = await updateResponse.json()
+    if (updateJson.status !== 'ok') {
+      await appAlert({ title: '保存失败', message: updateJson.detail || '保存失败', variant: 'danger' })
+      return
+    }
+
+    editMode.value = false
+    draftBaseline.value = normalizedFormSnapshot()
+    emit('updated', options.selectCreated ? newId : undefined)
+  } finally {
+    saving.value = false
+  }
+}
+
 async function deleteSkill() {
   if (!skill.value) return
   const ok = await appConfirm({
@@ -897,6 +1043,10 @@ async function deleteSkill() {
     confirmText: '删除',
   })
   if (!ok) return
+  if (isDraftSkill.value) {
+    emit('deleted')
+    return
+  }
   deleting.value = true
   try {
     const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, { method: 'DELETE' })
@@ -1043,7 +1193,10 @@ async function addPartFolder() {
 
 watch(
   () => props.skillId,
-  async () => {
+  async (_newSkillId, oldSkillId) => {
+    if (isNewSkillDraftId(oldSkillId)) {
+      await saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: oldSkillId })
+    }
     // 切换 skill 时，先清空右侧文件预览，避免短暂显示上一个 skill 的内容
     selectedPartFile.value = null
     partDirPath.value = ''
@@ -1069,7 +1222,10 @@ watch(activeTab, async (tab) => {
     partMarkdownPreviewMode.value = true
     return
   }
-  if (!skill.value) return
+  if (!skill.value || isDraftSkill.value) {
+    activeTab.value = 'main'
+    return
+  }
   selectedPartFile.value = null
   partDirPath.value = ''
   partContent.value = ''
@@ -1078,6 +1234,11 @@ watch(activeTab, async (tab) => {
   const files = (parts.value[tab as PartType] || []).filter((x) => !shouldHideEntryByPath(x.path))
   if (files.length > 0) {
     selectPartFile(tab as PartType, files[0].path)
+  }
+})
+onBeforeUnmount(() => {
+  if (isDraftSkill.value && draftHasChanges()) {
+    void saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: props.skillId })
   }
 })
 </script>

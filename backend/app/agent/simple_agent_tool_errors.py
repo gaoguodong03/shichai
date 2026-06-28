@@ -5,6 +5,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.agent.simple_agent_finalization import (
+    _align_final_response_with_written_workspace_paths,
     _compact_multiline_text,
     _deterministic_tool_fallback_message,
     _json_loads_maybe,
@@ -178,7 +179,10 @@ def _final_response_or_tool_fallback(
 ) -> BaseMessage:
     _, debug = _coerce_text_tool_calls_to_structured(response)
     if debug is None:
-        return response
+        return _align_final_response_with_written_workspace_paths(response, raw_outputs)
     debug = {**debug, "source": "dsml_text_tool_calls_final_fallback"}
     tool_attempt_debug.append(debug)
-    return _deterministic_tool_fallback_message(raw_outputs)
+    return _align_final_response_with_written_workspace_paths(
+        _deterministic_tool_fallback_message(raw_outputs),
+        raw_outputs,
+    )

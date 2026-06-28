@@ -65,6 +65,12 @@ _RUN_SKILL_SCRIPT_METADATA_CODES = {"scripts_list", "manifest", "script_descript
 _RUN_SKILL_SCRIPT_CONTINUE_AFTER_SUCCESS_PATHS = {"init_skill.py"}
 _RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES = {"skill_initialized"}
 _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE = "continue"
+_WORKSPACE_WRITE_SUCCESS_MARKER = "已写入当前 Chat 工作区文件："
+_WORKSPACE_MUTATING_TOOL_NAMES = {
+    "write_workspace_file",
+    "edit_workspace_file",
+    "rename_workspace_file",
+}
 
 
 def _normalized_skill_script_path(value: Any) -> str:
@@ -135,6 +141,19 @@ def _run_skill_workflow_outputs_are_successful(tool_out: dict[str, Any]) -> bool
         ):
             return False
     return True
+
+
+def _has_successful_workspace_write_output(raw_outputs: list[str]) -> bool:
+    return any(_WORKSPACE_WRITE_SUCCESS_MARKER in str(raw or "") for raw in raw_outputs or [])
+
+
+def _has_workspace_mutating_tool_call(tool_calls: list[Any]) -> bool:
+    for tool_call in tool_calls or []:
+        if not isinstance(tool_call, dict):
+            continue
+        if str(tool_call.get("name") or tool_call.get("tool") or "").strip() in _WORKSPACE_MUTATING_TOOL_NAMES:
+            return True
+    return False
 
 
 def _is_run_skill_script_metadata_probe(tool_out: dict[str, Any]) -> bool:
@@ -332,6 +351,15 @@ class SimpleAgent:
             tool_attempt_debug.append(
                 {
                     "source": "post_tool_synthesis_repeated_tool_calls_ignored",
+                    "matched": True,
+                    "signature_preview": synthesis_signature[:240],
+                }
+            )
+            return None, None
+        if _has_successful_workspace_write_output(tool_raw_outputs) and _has_workspace_mutating_tool_call(tool_calls):
+            tool_attempt_debug.append(
+                {
+                    "source": "post_tool_synthesis_repeated_write_ignored",
                     "matched": True,
                     "signature_preview": synthesis_signature[:240],
                 }

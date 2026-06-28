@@ -756,7 +756,7 @@ async function saveProvider() {
 
   if (!nid) {
 
-    await appAlert({ title: '无法保存模型', message: '请填写标识', variant: 'warning' })
+    await appAlert({ title: '无法保存模型', message: '模型标识不能为空', variant: 'warning' })
 
     return
 

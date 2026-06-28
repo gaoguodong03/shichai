@@ -2,6 +2,7 @@ import { computed, ref, type Ref } from 'vue'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
+import { formatGroupSkillLabel } from '../groupSkillLabel'
 
 export const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 
@@ -62,12 +63,10 @@ export function useGroupMembers(args: {
   const showAddMemberModal = ref(false)
 
   function formatSkillId(skillId?: string) {
-    if (!skillId) return ''
-    if (skillId === 'default') return '默认'
-    const hit = (skills() || []).find((s) => s.id === skillId)
-    const label = (hit?.name || '').trim()
-    if (label) return label
-    return skillId
+    return formatGroupSkillLabel({
+      skillId,
+      skills: skills() || [],
+    })
   }
 
   function isHostBubbleMessage(msg: GroupMemberMessage): boolean {

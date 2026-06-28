@@ -4,7 +4,7 @@
       <div class="mb-4">
         <h2 class="text-2xl font-semibold text-primary mb-1">新建工具</h2>
       </div>
-      <form @submit.prevent="submit" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
+      <form novalidate @submit.prevent="submit" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
         <div class="space-y-2 border-b border-border-light pb-5">
           <label class="block text-sm font-medium text-primary mb-1">导入 mcpServers JSON</label>
           <textarea
@@ -331,8 +331,28 @@ function buildDraft(): McpServerDraft {
   }
 }
 
+async function validateRequiredFields(): Promise<boolean> {
+  if (!form.value.name.trim()) {
+    await appAlert({ title: '无法保存工具', message: '工具名称不能为空', variant: 'warning' })
+    return false
+  }
+  if (form.value.transport.type === 'stdio' && !String(form.value.transport.command || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: '命令不能为空', variant: 'warning' })
+    return false
+  }
+  if (form.value.transport.type === 'sse' && !String(form.value.transport.url || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: 'URL 不能为空', variant: 'warning' })
+    return false
+  }
+  if ((form.value.transport.type === 'http' || form.value.transport.type === 'streamable_http') && !String(form.value.transport.base_url || '').trim()) {
+    await appAlert({ title: '无法保存工具', message: 'Base URL 不能为空', variant: 'warning' })
+    return false
+  }
+  return true
+}
+
 async function submit() {
-  if (!form.value.name.trim()) return
+  if (!(await validateRequiredFields())) return
   saving.value = true
   try {
     const body = buildMcpServerPayload(buildDraft())

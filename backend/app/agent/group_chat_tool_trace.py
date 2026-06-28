@@ -10,12 +10,41 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 _WORKSPACE_DOWNLOAD_URL_RE = re.compile(r"/api/workspaces/[^\s)\"'<>]+/files/download\?path=[^\s)\"'<>]+")
 _WORKSPACE_WRITE_SUCCESS_RE = re.compile(r"已写入当前(?:\s*Chat)?\s*工作区文件[:：]\s*([^\s]+)")
+_WORKSPACE_FILE_EXTENSIONS = (
+    ".md",
+    ".txt",
+    ".csv",
+    ".json",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".html",
+    ".htm",
+)
+_WORKSPACE_FILE_EXTENSION_RE = r"(?:md|txt|csv|json|png|jpg|jpeg|webp|pdf|docx?|xlsx?|pptx?|html?)"
 _DELIVERY_CLAIM_RE = re.compile(
     r"(已生成|已经生成|生成完成|已保存|已经保存|保存到工作区|保存至工作区|图片链接|下载链接|可下载路径)"
 )
 _EXPLICIT_FILE_DELIVERY_RE = re.compile(r"(保存到工作区|保存至工作区|图片链接|下载链接|可下载路径)")
+_BARE_FILE_DELIVERY_CONTEXT_RE = re.compile(
+    r"(保存到工作区|保存至工作区|候选清单已保存|文件已保存|已保存[:：]|已经保存[:：]|图片链接|下载链接|可下载路径)"
+)
 _MENTIONED_WORKSPACE_PATH_RE = re.compile(
-    r"(?<![\w/])((?:generated_images|outputs|reports|materials|notes|drafts|images|exports)/[^\s`'\"）)>,，。；;]+)"
+    r"(?<![\w/:.])((?:[\w.\-\u4e00-\u9fff]+/)+[^\s`'\"）)>,，。；;]+"
+    rf"\.{_WORKSPACE_FILE_EXTENSION_RE})",
+    re.IGNORECASE,
+)
+_MENTIONED_WORKSPACE_BARE_FILE_RE = re.compile(
+    rf"(?<![\w/:.])([^\s`'\"）)>,，。；;/\\]+\.(?:{_WORKSPACE_FILE_EXTENSION_RE}))",
+    re.IGNORECASE,
 )
 
 
@@ -43,6 +72,12 @@ def _normalize_workspace_path(value: Any) -> str:
                 text = unquote(paths[0])
         except Exception:
             return ""
+    for sep in ("：", ":"):
+        if sep in text:
+            prefix, suffix = text.rsplit(sep, 1)
+            if any(marker in prefix for marker in ("保存", "工作区", "路径", "链接")):
+                text = suffix
+                break
     text = text.strip().strip("`\"'，。；;)")
     while text.startswith("./"):
         text = text[2:].lstrip("/")
@@ -78,10 +113,7 @@ def _extract_success_paths_from_payload(payload: dict[str, Any]) -> List[str]:
         if not isinstance(value, str):
             continue
         normalized = _normalize_workspace_path(value)
-        if normalized and (
-            "/" in normalized
-            or normalized.lower().endswith((".md", ".txt", ".csv", ".json", ".png", ".jpg", ".jpeg", ".webp", ".pdf"))
-        ):
+        if normalized and ("/" in normalized or normalized.lower().endswith(_WORKSPACE_FILE_EXTENSIONS)):
             paths.append(normalized)
     return paths
 
@@ -128,14 +160,20 @@ def _verified_existing_paths(paths: List[str], workspace_root: Path | None) -> L
 
 def _extract_mentioned_paths(content: str) -> List[str]:
     paths: List[str] = []
+    text = content or ""
     for url in _WORKSPACE_DOWNLOAD_URL_RE.findall(content or ""):
         normalized = _normalize_workspace_path(url)
         if normalized:
             paths.append(normalized)
-    for match in _MENTIONED_WORKSPACE_PATH_RE.finditer(content or ""):
+    for match in _MENTIONED_WORKSPACE_PATH_RE.finditer(text):
         normalized = _normalize_workspace_path(match.group(1))
         if normalized:
             paths.append(normalized)
+    if _BARE_FILE_DELIVERY_CONTEXT_RE.search(text):
+        for match in _MENTIONED_WORKSPACE_BARE_FILE_RE.finditer(text):
+            normalized = _normalize_workspace_path(match.group(1))
+            if normalized:
+                paths.append(normalized)
     deduped: List[str] = []
     seen = set()
     for path in paths:
@@ -147,6 +185,25 @@ def _extract_mentioned_paths(content: str) -> List[str]:
 
 
 def _raw_failure_summary(tool_raw_results: List[str]) -> str:
+    failure_markers = (
+        "错误",
+        "失败",
+        "不存在",
+        "异常",
+        "无法",
+        "未找到",
+        "error",
+        "failed",
+        "failure",
+        "exception",
+        "traceback",
+        "not found",
+    )
+
+    def _is_failure_line(value: str) -> bool:
+        lower = value.lower()
+        return any(marker in lower or marker in value for marker in failure_markers)
+
     lines: List[str] = []
     for raw in tool_raw_results or []:
         text = str(raw or "").strip()
@@ -154,13 +211,19 @@ def _raw_failure_summary(tool_raw_results: List[str]) -> str:
             continue
         payload = _json_loads_maybe(text)
         if isinstance(payload, dict):
-            for key in ("message", "error", "stderr", "gateway_error", "stdout"):
+            for key in ("error", "stderr", "gateway_error"):
                 value = str(payload.get(key) or "").strip()
                 if value:
                     lines.append(value.splitlines()[0][:240])
                     break
+            else:
+                value = str(payload.get("message") or "").strip()
+                if value and _is_failure_line(value):
+                    lines.append(value.splitlines()[0][:240])
         else:
-            lines.append(text.splitlines()[0][:240])
+            line = text.splitlines()[0][:240]
+            if _is_failure_line(line):
+                lines.append(line)
         if len(lines) >= 3:
             break
     return "\n".join(f"- {line}" for line in lines if line)

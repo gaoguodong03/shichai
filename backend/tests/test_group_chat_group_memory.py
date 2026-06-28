@@ -257,6 +257,51 @@ def test_guard_delivery_claims_replaces_unverified_generation_claim():
     assert "generated_images/missing.jpg" in out
 
 
+def test_guard_delivery_claims_replaces_unverified_web_crawler_candidate_claim():
+    gc = _get_tool_trace_module()
+    content = "候选清单已保存：`web-crawler/候选清单-20250414155900.md`"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert "web-crawler/候选清单-20250414155900.md" in out
+    assert "候选清单已保存" not in out
+
+
+def test_guard_delivery_claims_replaces_unverified_root_workspace_file_claim():
+    gc = _get_tool_trace_module()
+    content = "已生成报告，并保存到工作区：`report.md`"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert "report.md" in out
+    assert "已生成报告" not in out
+
+
+def test_guard_delivery_claims_replaces_unverified_saved_root_file_claim():
+    gc = _get_tool_trace_module()
+    content = "候选清单已保存：`report.md`"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert "report.md" in out
+    assert "候选清单已保存" not in out
+
+
 def test_guard_delivery_claims_keeps_successful_workspace_write_claim():
     gc = _get_tool_trace_module()
     content = "已生成周报，并保存到工作区：reports/weekly.md"
@@ -265,6 +310,38 @@ def test_guard_delivery_claims_keeps_successful_workspace_write_claim():
         content,
         tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
         tool_raw_results=["已写入当前 Chat 工作区文件：reports/weekly.md"],
+    )
+
+    assert out == content
+
+
+def test_guard_delivery_claims_keeps_successful_root_workspace_write_claim(tmp_path):
+    gc = _get_tool_trace_module()
+    content = "已生成报告，并保存到工作区：report.md"
+    raw_results = ["已写入当前 Chat 工作区文件：report.md"]
+    (tmp_path / "report.md").write_text("report", encoding="utf-8")
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "report.md"}}],
+        tool_raw_results=raw_results,
+        workspace_root=tmp_path,
+    )
+
+    assert out == content
+
+
+def test_guard_delivery_claims_keeps_successful_root_payload_file_claim(tmp_path):
+    gc = _get_tool_trace_module()
+    content = "已生成文档，并保存到工作区：report.docx"
+    raw_results = ['{"status":"success","artifacts":{"workspace_path":"report.docx"}}']
+    (tmp_path / "report.docx").write_text("doc", encoding="utf-8")
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "run_skill_script", "arguments": {"path": "report.docx"}}],
+        tool_raw_results=raw_results,
+        workspace_root=tmp_path,
     )
 
     assert out == content
@@ -296,9 +373,45 @@ def test_guard_delivery_claims_requires_existing_file_when_workspace_root_is_ava
     assert existing == content
 
 
+def test_guard_delivery_claims_summary_omits_successful_read_file_content():
+    gc = _get_tool_trace_module()
+    content = "全文已生成完毕，已保存到工作区：蒙太奇是什么-完整草稿-2026062817141600.md"
+    raw_results = [
+        "错误：文件不存在：蒙太奇是什么-完整草稿-2026062817270900.md。不要继续猜测文件名；请先调用 list_workspace_directory 查看真实路径。",
+        "# 《蒙太奇是什么？——从叙事剪辑看懂电影语言》大纲\n\n## 标题建议\n旧大纲内容",
+        "# 蒙太奇理論 Montage - 認識電影\n\n资料正文",
+    ]
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[{"tool": "read_file", "arguments": {"path": "蒙太奇是什么-完整草稿-2026062817270900.md"}}],
+        tool_raw_results=raw_results,
+    )
+
+    assert "本轮没有确认文件生成成功" in out
+    assert "错误：文件不存在：蒙太奇是什么-完整草稿-2026062817270900.md" in out
+    assert "- 蒙太奇是什么-完整草稿-2026062817141600.md" in out
+    assert "已保存到工作区：蒙太奇是什么-完整草稿-2026062817141600.md" not in out
+    assert "《蒙太奇是什么？——从叙事剪辑看懂电影语言》大纲" not in out
+    assert "蒙太奇理論 Montage" not in out
+
+
 def test_guard_delivery_claims_ignores_plain_non_file_generation_text():
     gc = _get_tool_trace_module()
     content = "已生成一版讨论思路，下面是正文内容。"
+
+    out = gc.guard_unverified_delivery_claims(
+        content,
+        tool_calls=[],
+        tool_raw_results=[],
+    )
+
+    assert out == content
+
+
+def test_guard_delivery_claims_ignores_plain_root_filename_reference():
+    gc = _get_tool_trace_module()
+    content = "已生成一版讨论思路，可以参考 report.md 的结构继续展开。"
 
     out = gc.guard_unverified_delivery_claims(
         content,

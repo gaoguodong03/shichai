@@ -243,6 +243,8 @@ def _raw_tool_outputs_summary(raw_outputs: list[str], *, limit: int = 2000) -> s
 _DIRECT_MARKDOWN_SUMMARY_KEYS = ("markdown", "summary", "answer", "content", "text", "result", "results", "output")
 _DIRECT_MARKDOWN_SUMMARY_KEY_SET = set(_DIRECT_MARKDOWN_SUMMARY_KEYS)
 _TOOL_SUMMARY_KEYS = (*_DIRECT_MARKDOWN_SUMMARY_KEYS, "stdout", "message")
+_WORKSPACE_WRITE_OUTPUT_RE = re.compile(r"已写入当前 Chat 工作区文件：\s*`?([^\s`]+)`?")
+_FINAL_FILENAME_TIMESTAMP_RE = re.compile(r"(?P<prefix>.+-)(?:19|20)\d{12}(?:\d{2})?(?P<suffix>\.[^/.]+)$")
 
 
 def _summary_text_from_value(value: Any) -> str:
@@ -316,12 +318,57 @@ def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
     parts = [
         "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
         "不要再次调用任何工具；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
+        "如果工具返回里包含“已写入当前 Chat 工作区文件”，最终答复必须使用工具返回的实际路径，不要沿用自己先前构造的路径。",
         "如果 read_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，不要把内部读文件失败作为最终答复，直接基于已有上下文完成发言。",
     ]
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     if summary:
         parts.append(f"工具返回摘要：\n{summary}")
     return HumanMessage(content="\n\n".join(parts))
+
+
+def _written_workspace_paths(raw_outputs: list[str]) -> list[str]:
+    paths: list[str] = []
+    for raw in raw_outputs or []:
+        for match in _WORKSPACE_WRITE_OUTPUT_RE.finditer(str(raw or "")):
+            path = match.group(1).strip().strip("`").replace("\\", "/").strip("/")
+            if path:
+                paths.append(path)
+    return paths
+
+
+def _replace_timestamped_path_mentions(text: str, actual_paths: list[str]) -> str:
+    updated = str(text or "")
+    for actual_path in reversed(actual_paths or []):
+        timestamp_match = _FINAL_FILENAME_TIMESTAMP_RE.match(actual_path)
+        if not timestamp_match:
+            continue
+        pattern = re.compile(
+            r"(?<![\w/.-])"
+            + re.escape(timestamp_match.group("prefix"))
+            + r"(?:19|20)\d{12}(?:\d{2})?"
+            + re.escape(timestamp_match.group("suffix"))
+            + r"(?![\w/.-])"
+        )
+        updated = pattern.sub(actual_path, updated)
+    return updated
+
+
+def _align_final_response_with_written_workspace_paths(
+    response: BaseMessage,
+    raw_outputs: list[str],
+) -> BaseMessage:
+    """Keep visible final paths consistent with server-normalized workspace writes."""
+    paths = _written_workspace_paths(raw_outputs)
+    if not paths:
+        return response
+    content = _extract_text_content(response)
+    if not content:
+        return response
+    updated = _replace_timestamped_path_mentions(content, paths)
+    if updated == content:
+        return response
+    return AIMessage(content=updated)
 
 
 def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:

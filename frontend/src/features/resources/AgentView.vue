@@ -13,7 +13,7 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)] gap-6 items-start">
-          <form @submit.prevent="saveAgent" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
+          <form novalidate @submit.prevent="saveAgent" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label class="block text-sm font-medium text-primary mb-1">名称</label>
@@ -440,6 +440,10 @@ function randomizePresetAvatar() {
 }
 
 async function saveAgent() {
+  if (!String(form.value.name || '').trim()) {
+    await appAlert({ title: '无法保存专家', message: '专家名称不能为空', variant: 'warning' })
+    return
+  }
   if (props.selectedAgentId === '__new__' && !String(form.value.avatar_url || '').trim()) {
     const url = pickRandomExpertAvatar()
     form.value.avatar_url = url
