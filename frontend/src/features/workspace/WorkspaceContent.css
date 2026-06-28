@@ -1108,6 +1108,17 @@
   outline: 2px solid var(--color-input-focus-ring);
   outline-offset: 2px;
 }
+.group-chat-bubble-action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.group-chat-bubble-action-btn:disabled:hover {
+  color: var(--color-text-muted);
+  background: transparent;
+}
+.group-chat-bubble-action-btn-trailing {
+  margin-left: auto;
+}
 .group-chat-bubble-action-danger:hover {
   color: var(--color-danger-text, #b91c1c);
   background: var(--color-danger-subtle, rgba(185, 28, 28, 0.1));

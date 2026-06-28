@@ -141,6 +141,119 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     assert len(snapshots_resp.json()["data"]["checkpoints"]) == 1
 
 
+def test_snapshots_expose_message_count_and_last_message_id(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "快照映射"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = _set_user()
+    try:
+        save_group_history(
+            session_id,
+            [
+                {
+                    "message_id": "msg-1",
+                    "role": "user",
+                    "content": "第一条",
+                    "timestamp": "2026-06-24T00:00:00Z",
+                }
+            ],
+        )
+        save_group_history(
+            session_id,
+            [
+                {
+                    "message_id": "msg-1",
+                    "role": "user",
+                    "content": "第一条",
+                    "timestamp": "2026-06-24T00:00:00Z",
+                },
+                {
+                    "message_id": "msg-2",
+                    "role": "assistant",
+                    "agent_id": "agent-demo",
+                    "content": "第二条",
+                    "timestamp": "2026-06-24T00:01:00Z",
+                },
+            ],
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
+    assert snapshots_resp.status_code == 200
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert len(checkpoints) >= 2
+    counts = [int(item["message_count"]) for item in checkpoints if isinstance(item, dict)]
+    assert 1 in counts and 2 in counts
+    assert any(item.get("last_message_id") == "msg-1" for item in checkpoints)
+    assert any(item.get("last_message_id") == "msg-2" for item in checkpoints)
+
+    rollback_resp = client.post(
+        f"/api/sessions/{session_id}/rollback",
+        json={"message_id": "msg-1"},
+    )
+    assert rollback_resp.status_code == 200
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+    messages = detail_resp.json()["data"]["messages"]
+    assert len(messages) == 1
+    assert messages[0]["message_id"] == "msg-1"
+
+
+def test_rollback_prefers_message_id_over_stale_checkpoint_id(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "回溯优先级"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = _set_user()
+    try:
+        save_group_history(
+            session_id,
+            [
+                {
+                    "message_id": "msg-1",
+                    "role": "user",
+                    "content": "第一条",
+                    "timestamp": "2026-06-24T00:00:00Z",
+                }
+            ],
+        )
+        save_group_history(
+            session_id,
+            [
+                {
+                    "message_id": "msg-1",
+                    "role": "user",
+                    "content": "第一条",
+                    "timestamp": "2026-06-24T00:00:00Z",
+                },
+                {
+                    "message_id": "msg-2",
+                    "role": "assistant",
+                    "agent_id": "agent-demo",
+                    "content": "第二条",
+                    "timestamp": "2026-06-24T00:01:00Z",
+                },
+            ],
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    snapshots = client.get(f"/api/sessions/{session_id}/snapshots").json()["data"]["checkpoints"]
+    latest_checkpoint_id = snapshots[-1]["id"]
+
+    rollback_resp = client.post(
+        f"/api/sessions/{session_id}/rollback",
+        json={"message_id": "msg-1", "checkpoint_id": latest_checkpoint_id},
+    )
+    assert rollback_resp.status_code == 200
+
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+    messages = detail_resp.json()["data"]["messages"]
+    assert len(messages) == 1
+    assert messages[0]["message_id"] == "msg-1"
+
+
 def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "回溯会话"})
     assert create_resp.status_code == 200

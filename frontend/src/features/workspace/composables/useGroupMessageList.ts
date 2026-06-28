@@ -37,14 +37,198 @@ export function useGroupMessageList(args: {
   showGroupWorkspace: Ref<boolean>
   loadGroupWorkspace: () => Promise<void> | void
   loadGroupDetail: () => Promise<void> | void
+  onSessionForked: (sessionId: string) => void | Promise<void>
+  onSessionRolledBack: () => void | Promise<void>
 }) {
-  const { groupDetail, showGroupWorkspace, loadGroupWorkspace, loadGroupDetail } = args
+  const {
+    groupDetail,
+    showGroupWorkspace,
+    loadGroupWorkspace,
+    loadGroupDetail,
+    onSessionForked,
+    onSessionRolledBack,
+  } = args
 
   const groupMessagesRef = ref<HTMLElement | null>(null)
   const groupDisplayMessages = ref<GroupMessage[]>([])
   const mdRef = ref<{ render: (s: string) => string } | null>(new MarkdownIt({ breaks: true }))
   const { scheduleHydrateAuthImages } = useAuthenticatedMessageImages(groupMessagesRef)
   let renderedSessionId = ''
+
+  type SessionCheckpoint = {
+    id: string
+    message_count?: number
+    last_message_id?: string
+    message_ids?: string[]
+    created_at?: string
+    reason?: string
+  }
+
+  const sessionCheckpoints = ref<SessionCheckpoint[]>([])
+  const sessionCheckpointsLoading = ref(false)
+  const messageStateActionKey = ref('')
+  let checkpointFetchSeq = 0
+
+  async function loadSessionCheckpoints() {
+    const id = (groupDetail.value?.id || '').trim()
+    if (!id) {
+      sessionCheckpoints.value = []
+      return
+    }
+    const seq = ++checkpointFetchSeq
+    sessionCheckpointsLoading.value = true
+    try {
+      const response = await apiRequest(`/sessions/${encodeURIComponent(id)}/snapshots`)
+      const payload = await response.json().catch(() => null)
+      if (seq !== checkpointFetchSeq) return
+      sessionCheckpoints.value = response.ok && payload?.status === 'ok' && Array.isArray(payload?.data?.checkpoints)
+        ? payload.data.checkpoints
+        : []
+    } catch {
+      if (seq === checkpointFetchSeq) sessionCheckpoints.value = []
+    } finally {
+      if (seq === checkpointFetchSeq) sessionCheckpointsLoading.value = false
+    }
+  }
+
+  function messageCountForMessage(msg: GroupMessage, displayIndex?: number): number | null {
+    const messages = groupDetail.value?.messages
+    if (!Array.isArray(messages) || !messages.length) return null
+    const messageId = (msg.message_id || '').trim()
+    if (messageId) {
+      const idx = messages.findIndex((item) => item.message_id === messageId)
+      if (idx >= 0) return idx + 1
+    }
+    if (displayIndex != null && displayIndex >= 0 && displayIndex < messages.length) {
+      return displayIndex + 1
+    }
+    return null
+  }
+
+  function resolveCheckpointForMessage(msg: GroupMessage, displayIndex?: number): string | null {
+    const checkpoints = sessionCheckpoints.value
+    if (!checkpoints.length) return null
+
+    const messageId = (msg.message_id || '').trim()
+    if (messageId) {
+      let byLastMessageId: string | null = null
+      for (const cp of checkpoints) {
+        if (cp.last_message_id === messageId) byLastMessageId = cp.id
+        const ids = cp.message_ids
+        if (ids?.length && ids[ids.length - 1] === messageId) byLastMessageId = cp.id
+      }
+      if (byLastMessageId) return byLastMessageId
+    }
+
+    const messageCount = messageCountForMessage(msg, displayIndex)
+    if (!messageCount) return null
+
+    let exactMatch: string | null = null
+    for (const cp of checkpoints) {
+      const count = Number(cp.message_count)
+      if (Number.isFinite(count) && count === messageCount) exactMatch = cp.id
+    }
+    if (exactMatch) return exactMatch
+
+    let best: string | null = null
+    let bestCount = -1
+    for (const cp of checkpoints) {
+      const count = Number(cp.message_count)
+      if (!Number.isFinite(count) || count > messageCount) continue
+      if (count >= bestCount) {
+        bestCount = count
+        best = cp.id
+      }
+    }
+    return best
+  }
+
+  function canMessageStateAction(msg: GroupMessage, displayIndex?: number): boolean {
+    if ((msg as GroupMessage)._streaming) return false
+    if (messageStateActionKey.value) return false
+    if (sessionCheckpointsLoading.value) return false
+    if (isMemberJoinedMessage(msg)) return false
+    return messageCountForMessage(msg, displayIndex) != null
+  }
+
+  function messageStateActionBusy(msg: GroupMessage): boolean {
+    const key = msg.message_id || ''
+    return Boolean(key && messageStateActionKey.value === key)
+  }
+
+  async function forkMessageState(msg: GroupMessage, displayIndex?: number) {
+    const sessionId = (groupDetail.value?.id || '').trim()
+    const messageId = (msg.message_id || '').trim()
+    const checkpointId = resolveCheckpointForMessage(msg, displayIndex)
+    if (!sessionId || !messageId || messageStateActionKey.value) return
+    const ok = await appConfirm({
+      title: '分叉会话',
+      message: '将此刻的工作区和聊天状态复制成一个新的会话分支。',
+      confirmText: '分叉',
+      variant: 'info',
+    })
+    if (!ok) return
+    messageStateActionKey.value = messageId
+    try {
+      const response = await apiRequest(`/sessions/${encodeURIComponent(sessionId)}/clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkpoint_id: checkpointId || undefined,
+          message_id: messageId,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || payload?.status !== 'ok' || !payload?.data?.session_id) {
+        await appAlert({ title: '分叉失败', message: payload?.detail || '分叉失败', variant: 'danger' })
+        return
+      }
+      await onSessionForked(String(payload.data.session_id))
+    } catch {
+      await appAlert({ title: '分叉失败', message: '分叉失败，请检查网络', variant: 'danger' })
+    } finally {
+      messageStateActionKey.value = ''
+    }
+  }
+
+  async function rollbackMessageState(msg: GroupMessage, displayIndex?: number) {
+    const sessionId = (groupDetail.value?.id || '').trim()
+    const messageId = (msg.message_id || '').trim()
+    const messageCount = messageCountForMessage(msg, displayIndex)
+    if (!sessionId || messageStateActionKey.value) return
+    if (!messageId && !messageCount) return
+    const ok = await appConfirm({
+      title: '回溯会话',
+      message: '确定回溯到该条发言对应的状态吗？此后的状态将被删除。',
+      confirmText: '回溯',
+      variant: 'warning',
+    })
+    if (!ok) return
+    messageStateActionKey.value = messageId || `idx-${displayIndex ?? -1}`
+    try {
+      const response = await apiRequest(`/sessions/${encodeURIComponent(sessionId)}/rollback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message_id: messageId || undefined,
+          message_count: messageCount ?? undefined,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || payload?.status !== 'ok') {
+        await appAlert({ title: '回溯失败', message: payload?.detail || '回溯失败', variant: 'danger' })
+        return
+      }
+      await onSessionRolledBack()
+      const messages = groupDetail.value?.messages
+      groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
+      await loadSessionCheckpoints()
+    } catch {
+      await appAlert({ title: '回溯失败', message: '回溯失败，请检查网络', variant: 'danger' })
+    } finally {
+      messageStateActionKey.value = ''
+    }
+  }
 
   function renderMarkdown(text: string) {
     return renderMarkdownHtml(mdRef.value, text)
@@ -254,6 +438,22 @@ export function useGroupMessageList(args: {
   }
 
   watch(
+    () => groupDetail.value?.id,
+    (sessionId) => {
+      if (sessionId) loadSessionCheckpoints()
+      else sessionCheckpoints.value = []
+    },
+    { immediate: true },
+  )
+
+  watch(
+    () => groupDetail.value?.messages?.length,
+    (len, prev) => {
+      if (len !== prev && groupDetail.value?.id) loadSessionCheckpoints()
+    },
+  )
+
+  watch(
     () => [groupDetail.value?.id, groupDetail.value?.messages] as const,
     ([sessionId, messages]) => {
       const nextSessionId = String(sessionId || '')
@@ -288,6 +488,10 @@ export function useGroupMessageList(args: {
     saveAgentMessageToFile,
     copyAgentMessageToClipboard,
     deleteGroupMessage,
+    forkMessageState,
+    rollbackMessageState,
+    canMessageStateAction,
+    messageStateActionBusy,
     scrollGroupToBottom,
     isNearGroupBottom,
     scrollLatestAssistantRowToLowerMiddle,

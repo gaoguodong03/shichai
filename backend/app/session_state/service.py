@@ -198,6 +198,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
     workspace_root = _workspace_root(session_id)
     history = load_group_history(session_id)
     markdown = _build_session_chat_markdown(history)
+    message_count = len(history)
     chat_hash = write_blob(store, markdown.encode("utf-8"))
     tree_hash = _store_workspace_tree(store, workspace_root)
     state_hash = _canonical_state_hash(meta_snapshot, tree_hash, chat_hash)
@@ -229,6 +230,9 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
             pass
 
     commit_id = f"commit-{uuid.uuid4().hex[:16]}"
+    last_message_id = ""
+    if history:
+        last_message_id = str(history[-1].get("message_id") or "").strip()
     commit_obj = {
         "id": commit_id,
         "parent": head,
@@ -238,7 +242,10 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
         "workspace_tree": tree_hash,
         "chat_blob": chat_hash,
         "session_meta": meta_snapshot,
+        "message_count": message_count,
     }
+    if last_message_id:
+        commit_obj["last_message_id"] = last_message_id
     write_commit(layout, commit_id, commit_obj)
     chain.append(commit_id)
     save_chain(layout, chain)
@@ -246,13 +253,47 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
     return commit_obj
 
 
+def _checkpoint_records(store, commit: Dict[str, Any]) -> List[Dict[str, Any]]:
+    chat_blob = str(commit.get("chat_blob") or "").strip()
+    if not chat_blob:
+        return []
+    try:
+        markdown = read_blob(store, chat_blob).decode("utf-8", errors="ignore")
+        return parse_session_chat_markdown(markdown)
+    except Exception:
+        return []
+
+
+def _enrich_checkpoint(store, commit: Dict[str, Any]) -> Dict[str, Any]:
+    enriched = dict(commit)
+    records = _checkpoint_records(store, commit)
+    if enriched.get("message_count") is None:
+        enriched["message_count"] = len(records)
+    else:
+        try:
+            enriched["message_count"] = int(enriched["message_count"])
+        except (TypeError, ValueError):
+            enriched["message_count"] = len(records)
+    if records:
+        last_message_id = str(records[-1].get("message_id") or "").strip()
+        if last_message_id and not str(enriched.get("last_message_id") or "").strip():
+            enriched["last_message_id"] = last_message_id
+        enriched["message_ids"] = [
+            str(record.get("message_id") or "").strip()
+            for record in records
+            if str(record.get("message_id") or "").strip()
+        ]
+    return enriched
+
+
 def list_session_checkpoints(session_id: str) -> List[Dict[str, Any]]:
     layout = ensure_session_layout(_current_user_ctx(), session_id)
+    store = _object_store()
     chain = load_chain(layout)
     checkpoints: List[Dict[str, Any]] = []
     for commit_id in chain:
         try:
-            checkpoints.append(read_commit(layout, commit_id))
+            checkpoints.append(_enrich_checkpoint(store, read_commit(layout, commit_id)))
         except Exception:
             continue
     return checkpoints
@@ -296,10 +337,160 @@ def _copy_session_state(source_session_id: str, target_session_id: str, snapshot
     }
 
 
-def clone_session_from_checkpoint(session_id: str) -> Dict[str, Any]:
-    source_snapshot = capture_session_checkpoint(session_id, reason="clone-source")
-    if source_snapshot.get("skipped"):
-        raise HTTPException(status_code=400, detail="Unable to snapshot source session")
+def _snapshot_from_checkpoint(session_id: str, checkpoint_id: str) -> Dict[str, Any]:
+    layout = _session_layout(session_id)
+    chain = load_chain(layout)
+    if checkpoint_id not in chain:
+        raise HTTPException(status_code=404, detail="Checkpoint not found")
+    commit = read_commit(layout, checkpoint_id)
+    return {
+        **commit,
+        "id": checkpoint_id,
+        "commit_id": checkpoint_id,
+    }
+
+
+def resolve_snapshot_for_message(
+    session_id: str,
+    *,
+    message_id: Optional[str] = None,
+    message_count: Optional[int] = None,
+) -> Dict[str, Any]:
+    history = load_group_history(session_id)
+    target_count = message_count
+    normalized_message_id = str(message_id or "").strip()
+    if normalized_message_id and not target_count:
+        for index, item in enumerate(history, 1):
+            if str(item.get("message_id") or "").strip() == normalized_message_id:
+                target_count = index
+                break
+    if not target_count:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    for checkpoint in reversed(list_session_checkpoints(session_id)):
+        checkpoint_id = str(checkpoint.get("id") or "").strip()
+        if not checkpoint_id:
+            continue
+        if normalized_message_id and checkpoint.get("last_message_id") == normalized_message_id:
+            return {**checkpoint, "id": checkpoint_id, "commit_id": checkpoint_id}
+        cp_count = int(checkpoint.get("message_count") or 0)
+        if cp_count != target_count:
+            continue
+        if normalized_message_id:
+            cp_last = str(checkpoint.get("last_message_id") or "").strip()
+            if cp_last and cp_last != normalized_message_id:
+                continue
+            message_ids = checkpoint.get("message_ids") or []
+            if (
+                isinstance(message_ids, list)
+                and len(message_ids) >= target_count
+                and str(message_ids[target_count - 1] or "").strip() != normalized_message_id
+            ):
+                continue
+        return {**checkpoint, "id": checkpoint_id, "commit_id": checkpoint_id}
+
+    return _synthesize_snapshot_at_message_count(
+        session_id,
+        target_count,
+        message_id=normalized_message_id or None,
+    )
+
+
+def _synthesize_snapshot_at_message_count(
+    session_id: str,
+    message_count: int,
+    *,
+    message_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    history = load_group_history(session_id)
+    if message_count < 1 or message_count > len(history):
+        raise HTTPException(status_code=404, detail="Message checkpoint not found")
+
+    truncated = history[:message_count]
+    store = _object_store()
+    markdown = _build_session_chat_markdown(truncated)
+    chat_hash = write_blob(store, markdown.encode("utf-8"))
+    tree_hash = ""
+    meta_snapshot = _session_meta_snapshot(session_id)
+    normalized_message_id = str(message_id or "").strip()
+    for checkpoint in reversed(list_session_checkpoints(session_id)):
+        if normalized_message_id and checkpoint.get("last_message_id") == normalized_message_id:
+            tree_hash = str(checkpoint.get("workspace_tree") or "")
+            if isinstance(checkpoint.get("session_meta"), dict):
+                meta_snapshot = copy.deepcopy(checkpoint["session_meta"])
+            break
+    if not tree_hash:
+        for checkpoint in reversed(list_session_checkpoints(session_id)):
+            count = int(checkpoint.get("message_count") or 0)
+            if count <= message_count and checkpoint.get("workspace_tree"):
+                tree_hash = str(checkpoint["workspace_tree"])
+                if isinstance(checkpoint.get("session_meta"), dict):
+                    meta_snapshot = copy.deepcopy(checkpoint["session_meta"])
+                break
+    if not tree_hash:
+        workspace_root = _workspace_root(session_id)
+        tree_hash = _store_workspace_tree(store, workspace_root)
+    state_hash = _canonical_state_hash(meta_snapshot, tree_hash, chat_hash)
+    snapshot: Dict[str, Any] = {
+        "workspace_tree": tree_hash,
+        "chat_blob": chat_hash,
+        "state_hash": state_hash,
+        "session_meta": meta_snapshot,
+        "message_count": message_count,
+        "synthesized": True,
+    }
+    last_message_id = str(truncated[-1].get("message_id") or "").strip()
+    if last_message_id:
+        snapshot["last_message_id"] = last_message_id
+    return snapshot
+
+
+def _apply_snapshot_to_session(session_id: str, snapshot: Dict[str, Any]) -> None:
+    layout = _session_layout(session_id)
+    store = _object_store()
+    workspace_root = _workspace_root(session_id)
+    tree_hash = str(snapshot.get("workspace_tree") or "").strip()
+    chat_blob = str(snapshot.get("chat_blob") or "").strip()
+    meta_snapshot = snapshot.get("session_meta") if isinstance(snapshot.get("session_meta"), dict) else {}
+    if not tree_hash or not chat_blob:
+        raise HTTPException(status_code=500, detail="Invalid checkpoint")
+
+    _restore_tree(store, workspace_root, tree_hash)
+    markdown = read_blob(store, chat_blob).decode("utf-8", errors="ignore")
+    layout.chat_md.write_text(markdown, encoding="utf-8")
+    with suppress_auto_checkpoint():
+        _restore_history(session_id, markdown)
+        meta = load_group_meta()
+        current = meta.get(session_id)
+        if isinstance(current, dict):
+            restored = copy.deepcopy(meta_snapshot)
+            restored["updated_at"] = _now()
+            restored.setdefault("created_at", current.get("created_at") or restored.get("created_at") or _now())
+            meta[session_id] = restored
+            save_group_meta(meta)
+
+
+def clone_session_from_checkpoint(
+    session_id: str,
+    *,
+    checkpoint_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    normalized_checkpoint_id = str(checkpoint_id or "").strip()
+    normalized_message_id = str(message_id or "").strip()
+    if normalized_checkpoint_id:
+        try:
+            source_snapshot = _snapshot_from_checkpoint(session_id, normalized_checkpoint_id)
+        except HTTPException:
+            if not normalized_message_id:
+                raise
+            source_snapshot = resolve_snapshot_for_message(session_id, message_id=normalized_message_id)
+    elif normalized_message_id:
+        source_snapshot = resolve_snapshot_for_message(session_id, message_id=normalized_message_id)
+    else:
+        source_snapshot = capture_session_checkpoint(session_id, reason="clone-source")
+        if source_snapshot.get("skipped"):
+            raise HTTPException(status_code=400, detail="Unable to snapshot source session")
     new_session_id = f"group-{uuid.uuid4().hex[:12]}"
     result = _copy_session_state(session_id, new_session_id, source_snapshot)
     cloned_meta = load_group_meta().get(new_session_id) or {}
@@ -319,31 +510,12 @@ async def rollback_session_to_checkpoint(session_id: str, checkpoint_id: str) ->
     if checkpoint_id not in chain:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
 
-    workspace_root = _workspace_root(session_id)
-    commit = read_commit(layout, checkpoint_id)
-    tree_hash = str(commit.get("workspace_tree") or "").strip()
-    chat_blob = str(commit.get("chat_blob") or "").strip()
-    meta_snapshot = commit.get("session_meta") if isinstance(commit.get("session_meta"), dict) else {}
-    if not tree_hash or not chat_blob:
-        raise HTTPException(status_code=500, detail="Invalid checkpoint")
-
     from app.agent.group_session_service import _cancel_group_session_run
 
     await _cancel_group_session_run(session_id, reason="rollback")
 
-    _restore_tree(store, workspace_root, tree_hash)
-    markdown = read_blob(store, chat_blob).decode("utf-8", errors="ignore")
-    layout.chat_md.write_text(markdown, encoding="utf-8")
-    with suppress_auto_checkpoint():
-        _restore_history(session_id, markdown)
-        meta = load_group_meta()
-        current = meta.get(session_id)
-        if isinstance(current, dict):
-            restored = copy.deepcopy(meta_snapshot)
-            restored["updated_at"] = _now()
-            restored.setdefault("created_at", current.get("created_at") or restored.get("created_at") or _now())
-            meta[session_id] = restored
-            save_group_meta(meta)
+    commit = read_commit(layout, checkpoint_id)
+    _apply_snapshot_to_session(session_id, commit)
 
     keep = chain[: chain.index(checkpoint_id) + 1]
     save_chain(layout, keep)
@@ -352,6 +524,98 @@ async def rollback_session_to_checkpoint(session_id: str, checkpoint_id: str) ->
     return {
         "session_id": session_id,
         "checkpoint_id": checkpoint_id,
+        "kept_commits": keep,
+    }
+
+
+async def rollback_session_to_message(
+    session_id: str,
+    *,
+    message_id: Optional[str] = None,
+    checkpoint_id: Optional[str] = None,
+    message_count: Optional[int] = None,
+) -> Dict[str, Any]:
+    normalized_message_id = str(message_id or "").strip()
+    normalized_checkpoint_id = str(checkpoint_id or "").strip()
+
+    if normalized_message_id or message_count:
+        snapshot = resolve_snapshot_for_message(
+            session_id,
+            message_id=normalized_message_id or None,
+            message_count=message_count,
+        )
+    elif normalized_checkpoint_id:
+        snapshot = _snapshot_from_checkpoint(session_id, normalized_checkpoint_id)
+    else:
+        raise HTTPException(status_code=400, detail="checkpoint_id, message_id or message_count is required")
+
+    resolved_checkpoint_id = str(snapshot.get("id") or snapshot.get("commit_id") or "").strip()
+    layout = _session_layout(session_id)
+    store = _object_store()
+    chain = load_chain(layout)
+
+    if resolved_checkpoint_id and resolved_checkpoint_id in chain and not snapshot.get("synthesized"):
+        return await rollback_session_to_checkpoint(session_id, resolved_checkpoint_id)
+
+    from app.agent.group_session_service import _cancel_group_session_run
+
+    await _cancel_group_session_run(session_id, reason="rollback")
+    _apply_snapshot_to_session(session_id, snapshot)
+
+    target_count = int(snapshot.get("message_count") or 0)
+    target_message_id = str(snapshot.get("last_message_id") or normalized_message_id or "").strip()
+    keep: List[str] = []
+    for commit_id in chain:
+        checkpoint = _enrich_checkpoint(store, read_commit(layout, commit_id))
+        cp_count = int(checkpoint.get("message_count") or 0)
+        if cp_count > target_count:
+            break
+        if cp_count == target_count and target_message_id:
+            cp_last = str(checkpoint.get("last_message_id") or "").strip()
+            if cp_last and cp_last != target_message_id:
+                continue
+        keep.append(commit_id)
+
+    last_kept_count = 0
+    last_kept_message_id = ""
+    if keep:
+        last_checkpoint = _enrich_checkpoint(store, read_commit(layout, keep[-1]))
+        last_kept_count = int(last_checkpoint.get("message_count") or 0)
+        last_kept_message_id = str(last_checkpoint.get("last_message_id") or "").strip()
+
+    needs_new_commit = (
+        snapshot.get("synthesized")
+        or not keep
+        or last_kept_count != target_count
+        or (target_message_id and last_kept_message_id != target_message_id)
+    )
+    if needs_new_commit:
+        commit_id = f"commit-{uuid.uuid4().hex[:16]}"
+        commit_obj = {
+            "id": commit_id,
+            "parent": keep[-1] if keep else None,
+            "created_at": _now(),
+            "reason": "rollback-synthesized",
+            "state_hash": snapshot.get("state_hash"),
+            "workspace_tree": snapshot.get("workspace_tree"),
+            "chat_blob": snapshot.get("chat_blob"),
+            "session_meta": copy.deepcopy(snapshot.get("session_meta") or {}),
+            "message_count": target_count,
+        }
+        if snapshot.get("last_message_id"):
+            commit_obj["last_message_id"] = snapshot["last_message_id"]
+        write_commit(layout, commit_id, commit_obj)
+        keep.append(commit_id)
+        resolved_checkpoint_id = commit_id
+    else:
+        resolved_checkpoint_id = keep[-1]
+
+    save_chain(layout, keep)
+    save_head(layout, resolved_checkpoint_id)
+    prune_commits(layout, keep)
+    return {
+        "session_id": session_id,
+        "checkpoint_id": resolved_checkpoint_id,
         "kept_commits": keep,
     }
 

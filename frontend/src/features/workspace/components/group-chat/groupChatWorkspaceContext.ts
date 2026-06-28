@@ -16,8 +16,6 @@ export interface GroupChatSessionContext {
   tocActiveKey: ContextValue
   jumpToSessionTopic: ContextValue
   renderSnippetMarkdown: ContextValue
-  onSessionForked: ContextValue
-  onSessionRolledBack: ContextValue
 }
 
 export interface GroupChatMessageContext {
@@ -50,6 +48,10 @@ export interface GroupChatMessageContext {
   deleteGroupMessage: ContextValue
   copyAgentMessageToClipboard: ContextValue
   saveAgentMessageToFile: ContextValue
+  forkMessageState: ContextValue
+  rollbackMessageState: ContextValue
+  canMessageStateAction: ContextValue
+  messageStateActionBusy: ContextValue
 }
 
 export interface GroupChatComposerContext {
