@@ -190,6 +190,10 @@ export function useBundleImports(options: {
     return item.display_name && item.display_name !== item.id ? item.display_name : typeLabel
   }
 
+  function importSummaryLine(label: string, added: number, kept: number): string {
+    return `${label}：新增 ${Math.max(0, added)} 个，保留 ${Math.max(0, kept)} 个`
+  }
+
   const scenarioConflictPreviewRows = computed(() => {
     const bp = scenarioBundlePreview.value?.bundle_preview
     if (!bp) return []
@@ -300,6 +304,8 @@ export function useBundleImports(options: {
             skills_skipped?: string[]
             skills_overwritten?: string[]
             skills_kept?: string[]
+            agent_imported_ids?: string[]
+            kept_agent_ids?: string[]
             skipped_by_name?: string[]
             overwritten_existing_ids?: string[]
             kept_existing_ids?: string[]
@@ -314,7 +320,13 @@ export function useBundleImports(options: {
       }
       const s = j.data?.summary
       const msg = s
-        ? `导入成功\n同名场景保留：${(s.kept_existing_ids || []).length} 个\n技能写入：${(s.skills_imported || []).length} 个，保留：${(s.skills_kept || []).length} 个\nMCP 新增：${s.mcp_added ?? 0} 条，保留：${s.mcp_skipped ?? 0} 条`
+        ? [
+            '导入成功',
+            importSummaryLine('场景', (s.preset_imported_ids || []).length, (s.kept_existing_ids || []).length),
+            importSummaryLine('专家', (s.agent_imported_ids || []).length, (s.kept_agent_ids || []).length),
+            importSummaryLine('技能', (s.skills_imported || []).length, (s.skills_kept || []).length),
+            importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_skipped ?? 0),
+          ].join('\n')
         : '导入成功'
       await options.fetchScenarioPresets()
       await options.fetchAgents()
@@ -475,6 +487,8 @@ export function useBundleImports(options: {
             kept_agent_ids?: string[]
             skills_overwritten?: string[]
             skills_kept?: string[]
+            mcp_added?: number
+            mcp_skipped?: number
           }
         }
       }
@@ -483,9 +497,15 @@ export function useBundleImports(options: {
       }
       const summary = j.data?.summary
       const keptCount = (summary?.kept_agent_ids || []).length
+      const agentAddedCount = summary?.imported_agent_id && keptCount === 0 ? 1 : 0
       const skillWriteCount = (summary?.skills_imported || []).length
       const skillKeptCount = (summary?.skills_kept || []).length
-      const msg = `导入成功${keptCount ? `\n同名专家保留：${keptCount} 个` : ''}\n技能写入 ${skillWriteCount} 个，保留 ${skillKeptCount} 个`
+      const msg = [
+        '导入成功',
+        importSummaryLine('专家', agentAddedCount, keptCount),
+        importSummaryLine('技能', skillWriteCount, skillKeptCount),
+        importSummaryLine('工具', summary?.mcp_added ?? 0, summary?.mcp_skipped ?? 0),
+      ].join('\n')
       await options.fetchAgents()
       await options.fetchSkills()
       await options.fetchMCP()

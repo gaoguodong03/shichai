@@ -100,6 +100,8 @@ def test_scene_bundle_import_keeps_same_name_tree(monkeypatch, tmp_path: Path):
     summary = result["summary"]
     assert summary["skipped_by_name"] == []
     assert summary["kept_existing_ids"] == ["local-scene"]
+    assert summary["agent_imported_ids"] == []
+    assert summary["kept_agent_ids"] == ["local-expert"]
     assert summary["skill_id_map"] == {"shared-skill": "local-skill"}
     assert summary["mcp_id_map"] == {"shared-mcp": "local-mcp"}
     assert local_skill.exists()
@@ -219,6 +221,8 @@ def test_scene_bundle_import_regenerates_ids_when_names_differ(monkeypatch, tmp_
     new_scene_id = summary["preset_imported_ids"][0]
     new_skill_id = summary["skill_id_map"]["shared-skill"]
     new_mcp_id = summary["mcp_id_map"]["shared-mcp"]
+    assert summary["kept_agent_ids"] == []
+    assert len(summary["agent_imported_ids"]) == 1
     assert new_scene_id != "shared-scene"
     assert new_skill_id != "shared-skill"
     assert new_mcp_id != "shared-mcp"

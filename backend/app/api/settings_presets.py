@@ -403,6 +403,7 @@ def _prepare_import_scene_by_name_identity(
     Dict[str, str],
     List[str],
     List[str],
+    List[str],
 ]:
     imported_skills, overwritten_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
     mcp_id_map, mcp_rows_to_import, _overwritten_mcp = _mcp_name_identity_import_plan(existing_mcp, mcp_bundle)
@@ -412,7 +413,7 @@ def _prepare_import_scene_by_name_identity(
         skill_id_map=skill_id_map,
         mcp_id_map=mcp_id_map,
     )
-    agent_id_map, agent_rows_to_import, _skipped_agents = _agent_name_identity_import_plan(
+    agent_id_map, agent_rows_to_import, kept_agent_ids = _agent_name_identity_import_plan(
         existing_agents,
         remapped_agents,
     )
@@ -446,6 +447,7 @@ def _prepare_import_scene_by_name_identity(
         mcp_id_map,
         agent_id_map,
         imported_skills,
+        kept_agent_ids,
         overwritten_skills,
     )
 
@@ -893,6 +895,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             mcp_id_map,
             agent_id_map,
             imported_skills,
+            kept_agent_ids,
             overwritten_skills,
         ) = _prepare_import_scene_by_name_identity(
             norm,
@@ -952,6 +955,12 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "skills_overwritten": [],
                 "skills_kept": overwritten_skills,
                 "skills_skipped": [],
+                "agent_imported_ids": [
+                    str(row.get("agent_id") or "").strip()
+                    for row in agent_rows_to_import
+                    if str(row.get("agent_id") or "").strip()
+                ],
+                "kept_agent_ids": kept_agent_ids,
                 "skill_id_map": skill_id_map,
                 "mcp_id_map": mcp_id_map,
                 "agent_id_map": agent_id_map,

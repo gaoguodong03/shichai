@@ -54,6 +54,66 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
     await expect(page.getByRole('button', { name: /Scripts/ })).toBeVisible()
   })
 
+  test('导入技能包后展示统一新增保留摘要', async ({ page }) => {
+    const state = createE2eState()
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/skills/import-zip', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: {
+            id: 'skill-imported',
+            name: '导入技能',
+            kept_skill_ids: [],
+            mcp_added: 1,
+            mcp_skipped: 0,
+          },
+        }),
+      })
+    })
+
+    await page.goto('/resources/skill')
+    await expect(page.getByTitle('导入技能包（ZIP）')).toBeVisible()
+    await page.setInputFiles('input[type="file"][accept=".zip,application/zip"]', {
+      name: 'skill.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from('mock zip'),
+    })
+    await expect(page.getByRole('heading', { name: '导入技能' })).toBeVisible()
+    await page.getByRole('button', { name: '确认导入' }).click()
+    await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
+    await expect(page.getByText('技能：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 1 个，保留 0 个')).toBeVisible()
+  })
+
+  test('导入工具包成功弹窗使用工具摘要', async ({ page }) => {
+    const state = createE2eState()
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/settings/mcp/import-zip', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: { summary: { mcp_added: 1, mcp_skipped: 2 } },
+        }),
+      })
+    })
+
+    await page.goto('/resources/mcp')
+    await expect(page.getByTitle('导入工具包（ZIP）')).toBeVisible()
+    await page.setInputFiles('input[type="file"][accept=".zip,application/zip"]', {
+      name: 'tools.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from('mock zip'),
+    })
+    await expectAlert(page, '导入成功', '工具：新增 1 个，保留 2 个')
+  })
+
   test('技能详情页不展示公开链接入口，编辑按钮在编辑态变为保存', async ({ page }) => {
     await bootLoggedInApp(page, '/resources/skill')
 

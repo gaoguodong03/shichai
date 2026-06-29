@@ -144,11 +144,16 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
             },
             summary: {
               preset_imported_ids: ['scenario-imported'],
+              kept_existing_ids: [],
+              agent_imported_ids: ['agent-qa'],
+              kept_agent_ids: [],
               skills_imported: [],
+              skills_kept: [],
               skills_skipped: [],
               skipped_by_name: [],
               overwritten_existing_ids: [],
               mcp_added: 0,
+              mcp_skipped: 0,
             },
           },
         }),
@@ -174,6 +179,10 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByRole('heading', { name: '导入场景' })).toBeVisible()
     await page.getByRole('button', { name: '确认导入' }).click()
     await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
+    await expect(page.getByText('场景：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('专家：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('技能：新增 0 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 0 个，保留 0 个')).toBeVisible()
     await page.waitForTimeout(300)
 
     expect(emptyPresetPutCount).toBe(0)
@@ -247,7 +256,59 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await bootLoggedInApp(page, '/resources/agent')
 
     await expect(page.getByRole('heading', { name: '配置专家' })).toBeVisible()
+    await expect(page.getByTitle('导入专家包（ZIP）')).toBeVisible()
+    await expect(page.getByRole('button', { name: '导出' })).toBeVisible()
     await expect(page.getByRole('button', { name: '分享', exact: true })).toHaveCount(0)
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
+  })
+
+  test('专家导入成功后展示统一新增保留摘要', async ({ page }) => {
+    const state = createE2eState()
+    let importCallCount = 0
+    await loginByStorage(page)
+    await mockApi(page, state)
+    await page.route('**/api/dha/instances/import-bundle', async (route) => {
+      importCallCount += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          data: importCallCount === 1
+            ? {
+                bundle_preview: {
+                  agent_id: 'agent-imported',
+                  name: '导入专家',
+                  skills: ['skill-imported'],
+                  mcps: [{ id: 'mcp-imported', name: '导入工具' }],
+                },
+              }
+            : {
+                summary: {
+                  imported_agent_id: 'agent-imported',
+                  kept_agent_ids: [],
+                  skills_imported: ['skill-imported'],
+                  skills_kept: [],
+                  mcp_added: 1,
+                  mcp_skipped: 0,
+                },
+              },
+        }),
+      })
+    })
+
+    await page.goto('/resources/agent')
+    await expect(page.getByTitle('导入专家包（ZIP）')).toBeVisible()
+    await page.setInputFiles('input[type="file"][accept=".zip,application/zip"]', {
+      name: 'expert.zip',
+      mimeType: 'application/zip',
+      buffer: Buffer.from('mock zip'),
+    })
+    await expect(page.getByRole('heading', { name: '导入专家' })).toBeVisible()
+    await page.getByRole('button', { name: '确认导入' }).click()
+    await expect(page.getByRole('heading', { name: '导入成功' })).toBeVisible()
+    await expect(page.getByText('专家：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('技能：新增 1 个，保留 0 个')).toBeVisible()
+    await expect(page.getByText('工具：新增 1 个，保留 0 个')).toBeVisible()
   })
 })

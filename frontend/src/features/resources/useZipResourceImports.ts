@@ -9,6 +9,10 @@ function isZipFile(file: File) {
   return name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 }
 
+function importSummaryLine(label: string, added: number, kept: number): string {
+  return `${label}：新增 ${Math.max(0, added)} 个，保留 ${Math.max(0, kept)} 个`
+}
+
 export function useZipResourceImports(options: {
   selectedId: Ref<string | null>
   fetchSkills: () => Promise<void>
@@ -68,13 +72,16 @@ export function useZipResourceImports(options: {
       const j = await r.json().catch(() => ({}))
       if (j?.status === 'ok') {
         await options.fetchSkills()
+        await options.fetchMCP()
         if (j?.data?.id) options.selectedId.value = j.data.id
         const kept = j?.data?.kept_skill_ids || j?.data?.summary?.kept_skill_ids || []
+        const skillAdded = j?.data?.id && !kept.length ? 1 : 0
         skillImportResult.value = {
           ok: true,
-          message: kept.length
-            ? `导入成功：${j?.data?.name || '技能'}（已保留本地同名技能）`
-            : `导入成功：${j?.data?.name || '技能'}`,
+          message: [
+            importSummaryLine('技能', skillAdded, kept.length),
+            importSummaryLine('工具', j?.data?.mcp_added ?? j?.data?.summary?.mcp_added ?? 0, j?.data?.mcp_skipped ?? j?.data?.summary?.mcp_skipped ?? 0),
+          ].join('\n'),
         }
       } else {
         skillImportResult.value = { ok: false, message: j?.detail || '导入技能失败' }
@@ -117,7 +124,7 @@ export function useZipResourceImports(options: {
       const summary = j?.data?.summary || {}
       await appAlert({
         title: '导入成功',
-        message: `新增 ${summary.mcp_added ?? 0} 个，保留 ${summary.mcp_skipped ?? 0} 个`,
+        message: importSummaryLine('工具', summary.mcp_added ?? 0, summary.mcp_skipped ?? 0),
         variant: 'success',
       })
     } catch (err) {
