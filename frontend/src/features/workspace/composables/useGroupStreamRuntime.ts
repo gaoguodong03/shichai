@@ -6,8 +6,8 @@ export type GroupStreamRuntime = {
   phase: string
   abort: AbortController | null
   runToken: number
-  agentId?: string
-  skillId?: string
+  agentName?: string
+  skill?: string
   restored?: boolean
 }
 
@@ -67,7 +67,7 @@ export function useGroupStreamRuntime(args: {
   function finishGroupStream(sessionId: string, runToken: number, phase = '') {
     if (!isCurrentGroupRun(sessionId, runToken)) return
     if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
-    patchGroupStreamState(sessionId, { streaming: false, phase, abort: null, agentId: '', skillId: '', restored: false })
+    patchGroupStreamState(sessionId, { streaming: false, phase, abort: null, agentName: '', skill: '', restored: false })
     emitSessionRunState(sessionId, false)
   }
 
@@ -85,8 +85,8 @@ export function useGroupStreamRuntime(args: {
       phase: '已停止',
       abort: null,
       runToken: Number(state.runToken || 0) + 1,
-      agentId: '',
-      skillId: '',
+      agentName: '',
+      skill: '',
       restored: false,
     })
     emitSessionRunState(sessionId, false)

@@ -15,13 +15,12 @@ async def get_group_archive(group_session_id: str):
     messages = load_group_history(group_session_id)
     instances = load_agent_instances()
     agent_map = {
-        d.get("agent_id"): {
-            "name": d.get("name") or d.get("agent_id"),
-            "role": d.get("role") or "",
-            "avatar_url": str(d.get("avatar_url") or "").strip(),
+        str(d.get("name") or "").strip(): {
+            "name": str(d.get("name") or "").strip(),
+            "description": d.get("description") or "",
         }
         for d in instances
-        if d.get("agent_id")
+        if str(d.get("name") or "").strip()
     }
     return {
         "status": "ok",

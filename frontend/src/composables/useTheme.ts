@@ -7,7 +7,7 @@ const LOGIN_STORAGE_KEY = 'dha_logged_in'
 const USER_STORAGE_KEY = 'dha_user'
 const USER_ID_STORAGE_KEY = 'dha_user_id'
 
-export const THEME_AUTH_CHANGED_EVENT = 'dha-theme-auth-changed'
+export const THEME_AUTH_CHANGED_EVENT = 'agent-theme-auth-changed'
 
 export type Theme = 'light' | 'dark'
 export type ThemePreference = 'light' | 'dark' | 'system'

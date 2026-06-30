@@ -3,53 +3,48 @@ import { apiRequest } from '@/api/base'
 import { appAlert } from '@/composables/useAppDialog'
 import { USER_STORAGE_KEY } from './workspacePreferences'
 
-const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
-const SHORTCUT_STORAGE_KEY_BASE = 'dha.group.shortcuts.v1'
-const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
+const SHORTCUT_STORAGE_KEY_BASE = 'agent.group.shortcuts.v1'
 
 export type ShortcutHostConfig = {
-  skill_ids: string[]
-  skill_refs?: { id: string; name?: string }[]
-  display_name?: string
+  leader_agent_name?: string
   system_prompt?: string
-  llm_provider_id?: string
-  mcp_server_ids?: string[]
+  llm_name?: string
+  skill_name?: string
+  skill_directory?: string
 }
 
 export type ShortcutPreset = {
-  id: string
   name: string
-  agent_ids: string[]
-  leader_agent_id?: string
+  agent_names: string[]
+  leader_agent_name?: string
   host_config?: ShortcutHostConfig
   description?: string
-  discussion_goal_example?: string
 }
 
 type ShortcutExpert = {
-  agent_id: string
-  name?: string
+  agent_name?: string
+  name: string
 }
 
 type ShortcutGroupDetail = {
   id: string
   title?: string
   messages?: unknown[]
-  agent_ids?: string[]
+  agent_names?: string[]
   agent_map?: Record<string, { name?: string }>
 }
 
 export function useShortcutPresets(args: {
   selectedGroupSessionId: () => string | null
   agentInstances: () => ShortcutExpert[]
-  skills: () => { id: string; name: string }[]
+  skills: () => { directory_name: string; name: string }[]
   groupDetail: Ref<ShortcutGroupDetail | null>
   groupStreaming: ComputedRef<boolean>
   parseGroupResponse: (id: string, body: unknown) => ShortcutGroupDetail | null
   loadGroupDetail: (options?: { silent?: boolean }) => Promise<void>
   emitScenarioNewSession: (
     sessionId: string,
-    session?: { id: string; title?: string; updated_at?: string; agent_ids?: string[] },
+    session?: { id: string; title?: string; updated_at?: string; agent_names?: string[] },
   ) => void
 }) {
   const shortcutPresets = ref<ShortcutPreset[]>([])
@@ -61,25 +56,15 @@ export function useShortcutPresets(args: {
 
   function normalizeShortcutHostConfig(hc: ShortcutHostConfig | undefined): ShortcutHostConfig | undefined {
     if (!hc) return undefined
-    const skillLookup = Object.fromEntries((args.skills() || []).map((s) => [s.id, s.name || s.id]))
-    const refs = Array.isArray(hc.skill_refs) ? hc.skill_refs : []
-    const skillIds: string[] = []
-    const seen = new Set<string>()
-    for (const item of Array.isArray(hc.skill_ids) ? hc.skill_ids : []) {
-      const id = String(item || '').trim()
-      if (!id || seen.has(id)) continue
-      const exists = Boolean(skillLookup[id])
-      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists) {
-        continue
-      }
-      skillIds.push(id)
-      seen.add(id)
+    const skillDirectory = String(hc.skill_directory || '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
+    const out: ShortcutHostConfig = {
+      leader_agent_name: String(hc.leader_agent_name || '').trim(),
+      llm_name: String(hc.llm_name || '').trim(),
+      system_prompt: String(hc.system_prompt || ''),
+      skill_name: String(hc.skill_name || '').trim(),
+      skill_directory: skillDirectory,
     }
-    return {
-      ...hc,
-      skill_ids: skillIds,
-      skill_refs: refs.filter((row) => skillIds.includes(String(row?.id || '').trim())),
-    }
+    return out.leader_agent_name || out.llm_name || out.system_prompt || out.skill_name || out.skill_directory ? out : undefined
   }
 
   function getCurrentUserShortcutStorageKey(): string {
@@ -100,23 +85,21 @@ export function useShortcutPresets(args: {
     const seen = new Set<string>()
     for (const item of input) {
       const raw = item as Partial<ShortcutPreset>
-      const id = String(raw?.id || '').trim()
       const name = String(raw?.name || '').trim()
-      const agentIds = Array.isArray(raw?.agent_ids)
-        ? Array.from(new Set(raw.agent_ids.map((x) => String(x || '').trim()).filter(Boolean)))
+      const agentNames = Array.isArray(raw?.agent_names)
+        ? Array.from(new Set(raw.agent_names.map((x) => String(x || '').trim()).filter(Boolean)))
         : []
-      if (!id || !name || !agentIds.length || seen.has(id)) continue
-      seen.add(id)
-      const lid = String(raw?.leader_agent_id || '').trim()
+      const key = name.trim().toLowerCase()
+      if (!name || !agentNames.length || seen.has(key)) continue
+      seen.add(key)
+      const lid = String(raw?.leader_agent_name || '').trim()
       const hc = normalizeShortcutHostConfig(raw?.host_config as ShortcutHostConfig | undefined)
       out.push({
-        id,
         name,
-        agent_ids: agentIds,
-        leader_agent_id: hc ? VIRTUAL_SCENE_HOST_ID : lid || agentIds[0] || '',
+        agent_names: agentNames,
+        leader_agent_name: hc?.leader_agent_name || lid || agentNames[0] || '',
         host_config: hc,
         description: String(raw?.description || '').trim(),
-        discussion_goal_example: String(raw?.discussion_goal_example || '').trim(),
       })
     }
     return out
@@ -177,17 +160,15 @@ export function useShortcutPresets(args: {
   function saveShortcutPresets(syncRemote = true) {
     const payload = shortcutPresets.value.map((p) => {
       const row: Record<string, unknown> = {
-        id: p.id,
         name: p.name,
-        agent_ids: p.agent_ids,
+        agent_names: p.agent_names,
         description: p.description || '',
-        discussion_goal_example: p.discussion_goal_example || '',
       }
       if (p.host_config) {
         row.host_config = p.host_config
-        row.leader_agent_id = VIRTUAL_SCENE_HOST_ID
+        row.leader_agent_name = p.host_config.leader_agent_name || '四九'
       } else {
-        row.leader_agent_id = p.leader_agent_id || p.agent_ids[0] || ''
+        row.leader_agent_name = p.leader_agent_name || p.agent_names[0] || ''
       }
       return row
     })
@@ -213,40 +194,40 @@ export function useShortcutPresets(args: {
     const isPlaceholderTitle = title === '' || title === '新对话' || title === '新群聊'
     if (!isPlaceholderTitle) return ''
     if ((detail.messages || []).length > 0) return ''
-    if ((detail.agent_ids || []).length > 0) return ''
+    if ((detail.agent_names || []).length > 0) return ''
     return selectedId
   }
 
   async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
-    const availableAgentIds = new Set(
+    const availableAgentNames = new Set(
       (args.agentInstances() || [])
-        .map((x) => String(x?.agent_id || '').trim())
+        .map((x) => String(x?.agent_name || x?.name || '').trim())
         .filter(Boolean),
     )
-    const targetExperts = Array.from(new Set((p.agent_ids || []).filter((x) => !!x))).filter((id) =>
-      availableAgentIds.has(id),
+    const targetExperts = Array.from(new Set((p.agent_names || []).filter((x) => !!x))).filter((id) =>
+      availableAgentNames.has(id),
     )
     if (!targetExperts.length) {
       await appAlert({ title: '无法新建会话', message: '该场景中的专家在当前账号下不可用，请先编辑场景后重试', variant: 'warning' })
       return null
     }
-    if (targetExperts.length < (p.agent_ids || []).length) {
+    if (targetExperts.length < (p.agent_names || []).length) {
       await appAlert({ title: '已跳过部分专家', message: '已自动跳过当前账号下不可用的专家', variant: 'warning' })
     }
     const title = (p.name || '').trim() || '新对话'
     const body: Record<string, unknown> = {
       title,
-      agent_ids: targetExperts,
+      agent_names: targetExperts,
     }
     if (p.host_config) {
       body.host_config = p.host_config
-      body.leader_agent_id = VIRTUAL_SCENE_HOST_ID
+      body.leader_agent_name = p.host_config.leader_agent_name || '四九'
     } else {
-      const lid = (p.leader_agent_id || p.agent_ids[0] || '').trim()
-      if (lid && availableAgentIds.has(lid)) {
-        body.leader_agent_id = lid
+      const lid = (p.leader_agent_name || p.agent_names[0] || '').trim()
+      if (lid && availableAgentNames.has(lid)) {
+        body.leader_agent_name = lid
       } else if (targetExperts[0]) {
-        body.leader_agent_id = targetExperts[0]
+        body.leader_agent_name = targetExperts[0]
       }
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
@@ -259,7 +240,7 @@ export function useShortcutPresets(args: {
       })
       const j = (await r.json().catch(() => ({}))) as {
         status?: string
-        data?: { id?: string; title?: string; updated_at?: string; agent_ids?: string[] }
+        data?: { id?: string; title?: string; updated_at?: string; agent_names?: string[] }
         detail?: string
       }
       if (j.status !== 'ok' || !j.data?.id) {
@@ -279,7 +260,7 @@ export function useShortcutPresets(args: {
         }
         await args.loadGroupDetail({ silent: true })
       }
-      args.emitScenarioNewSession(newId, j.data.id ? { id: newId, title: j.data.title, updated_at: j.data.updated_at, agent_ids: j.data.agent_ids } : undefined)
+      args.emitScenarioNewSession(newId, j.data.id ? { id: newId, title: j.data.title, updated_at: j.data.updated_at, agent_names: j.data.agent_names } : undefined)
       return newId
     } catch {
       await appAlert({ title: '新建会话失败', message: '新建会话失败，请检查网络', variant: 'danger' })
@@ -287,8 +268,8 @@ export function useShortcutPresets(args: {
     }
   }
 
-  async function applyShortcutPreset(id: string) {
-    const p = shortcutPresets.value.find((x) => x.id === id)
+  async function applyShortcutPreset(name: string) {
+    const p = shortcutPresets.value.find((x) => x.name === name)
     if (!p) return
     const newId = await createSessionFromScenarioPreset(p)
     if (!newId) return
@@ -298,8 +279,8 @@ export function useShortcutPresets(args: {
 
   function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
     const map = args.groupDetail.value?.agent_map || {}
-    const names = (preset.agent_ids || [])
-      .map((id) => (args.agentInstances() || []).find((x) => x.agent_id === id)?.name || map[id]?.name || id)
+    const names = (preset.agent_names || [])
+      .map((id) => (args.agentInstances() || []).find((x) => (x.agent_name || x.name) === id)?.name || map[id]?.name || id)
       .filter(Boolean)
     return names.join('、')
   }

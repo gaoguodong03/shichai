@@ -5,7 +5,18 @@
         <h2 class="text-2xl font-semibold text-primary mb-1">新建工具</h2>
       </div>
       <form novalidate @submit.prevent="submit" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6">
-        <div class="space-y-2 border-b border-border-light pb-5">
+        <div>
+          <label class="block text-sm font-medium text-primary mb-1">工具类型 *</label>
+          <select
+            v-model="toolType"
+            class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
+          >
+            <option value="mcp">MCP</option>
+            <option value="http_api">HTTP API</option>
+          </select>
+        </div>
+
+        <div v-if="toolType === 'mcp'" class="space-y-2 border-b border-border-light pb-5">
           <label class="block text-sm font-medium text-primary mb-1">导入 mcpServers JSON</label>
           <textarea
             v-model="importJson"
@@ -34,7 +45,42 @@
             placeholder="例如：文件系统 MCP"
           />
         </div>
-        <div>
+        <template v-if="toolType === 'http_api'">
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">请求方法 *</label>
+            <select v-model="httpApi.type" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">Base URL *</label>
+            <input v-model="httpApi.base_url" type="url" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="https://api.example.com" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">Path</label>
+            <input v-model="httpApi.path" type="text" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="/v1/search" />
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-primary mb-1">Header JSON</label>
+              <textarea v-model="httpApi.headerJson" rows="4" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="{ &quot;Authorization&quot;: &quot;Bearer ${vault:token}&quot; }" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-primary mb-1">Query JSON</label>
+              <textarea v-model="httpApi.queryJson" rows="4" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring" placeholder="{ &quot;q&quot;: &quot;keyword&quot; }" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">Body</label>
+            <textarea v-model="httpApi.body" rows="4" class="w-full px-3 py-2 border border-input-border bg-input-bg text-primary rounded-lg font-mono text-sm themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring" />
+          </div>
+        </template>
+
+        <div v-if="toolType === 'mcp'">
           <label class="block text-sm font-medium text-primary mb-1">传输类型 *</label>
           <select
             v-model="form.transport.type"
@@ -48,7 +94,7 @@
             <option value="custom">自定义</option>
           </select>
         </div>
-        <template v-if="form.transport.type === 'stdio'">
+        <template v-if="toolType === 'mcp' && form.transport.type === 'stdio'">
           <div>
             <label class="block text-sm font-medium text-primary mb-1">命令 *</label>
             <input
@@ -69,7 +115,7 @@
             />
           </div>
         </template>
-        <template v-if="form.transport.type === 'sse'">
+        <template v-if="toolType === 'mcp' && form.transport.type === 'sse'">
           <div>
             <label class="block text-sm font-medium text-primary mb-1">URL *</label>
             <input
@@ -81,7 +127,7 @@
             />
           </div>
         </template>
-        <template v-if="form.transport.type === 'http' || form.transport.type === 'streamable_http'">
+        <template v-if="toolType === 'mcp' && (form.transport.type === 'http' || form.transport.type === 'streamable_http')">
           <div>
             <label class="block text-sm font-medium text-primary mb-1">Base URL *</label>
             <input
@@ -93,7 +139,7 @@
             />
           </div>
         </template>
-        <template v-if="form.transport.type === 'custom'">
+        <template v-if="toolType === 'mcp' && form.transport.type === 'custom'">
           <div>
             <label class="block text-sm font-medium text-primary mb-1">自定义 transport JSON</label>
             <textarea
@@ -105,7 +151,7 @@
           </div>
         </template>
 
-        <div v-if="form.transport.type === 'stdio' || form.transport.type === 'custom'" class="space-y-3 border-t border-border-light pt-4">
+        <div v-if="toolType === 'mcp' && (form.transport.type === 'stdio' || form.transport.type === 'custom')" class="space-y-3 border-t border-border-light pt-4">
           <div class="flex items-center justify-between gap-3">
             <label class="block text-sm font-medium text-primary">环境变量</label>
             <button type="button" @click="addEnvRow" class="text-sm text-accent hover:underline">添加</button>
@@ -121,7 +167,7 @@
           </div>
         </div>
 
-        <div v-if="form.transport.type === 'sse' || form.transport.type === 'http' || form.transport.type === 'streamable_http' || form.transport.type === 'custom'" class="space-y-3 border-t border-border-light pt-4">
+        <div v-if="toolType === 'mcp' && (form.transport.type === 'sse' || form.transport.type === 'http' || form.transport.type === 'streamable_http' || form.transport.type === 'custom')" class="space-y-3 border-t border-border-light pt-4">
           <div class="flex items-center justify-between gap-3">
             <label class="block text-sm font-medium text-primary">请求头</label>
             <button type="button" @click="addHeaderRow" class="text-sm text-accent hover:underline">添加</button>
@@ -180,6 +226,7 @@ interface KeyValueRow {
 
 let rowSeq = 0
 const saving = ref(false)
+const toolType = ref<'mcp' | 'http_api'>('mcp')
 const importJson = ref('')
 const customTransportJson = ref('')
 const envRows = ref<KeyValueRow[]>([])
@@ -194,6 +241,15 @@ const form = ref({
     base_url: '',
   },
   metadata: { description: '' },
+})
+const httpApi = ref({
+  type: 'GET',
+  base_url: '',
+  path: '',
+  headerJson: '',
+  queryJson: '',
+  body: '',
+  timeout_seconds: 60,
 })
 
 const stdioArgs = computed({
@@ -336,6 +392,20 @@ async function validateRequiredFields(): Promise<boolean> {
     await appAlert({ title: '无法保存工具', message: '工具名称不能为空', variant: 'warning' })
     return false
   }
+  if (toolType.value === 'http_api') {
+    if (!httpApi.value.base_url.trim()) {
+      await appAlert({ title: '无法保存工具', message: 'Base URL 不能为空', variant: 'warning' })
+      return false
+    }
+    try {
+      if (httpApi.value.headerJson.trim()) JSON.parse(httpApi.value.headerJson)
+      if (httpApi.value.queryJson.trim()) JSON.parse(httpApi.value.queryJson)
+    } catch {
+      await appAlert({ title: '无法保存工具', message: 'Header/Query 必须是合法 JSON', variant: 'warning' })
+      return false
+    }
+    return true
+  }
   if (form.value.transport.type === 'stdio' && !String(form.value.transport.command || '').trim()) {
     await appAlert({ title: '无法保存工具', message: '命令不能为空', variant: 'warning' })
     return false
@@ -351,19 +421,36 @@ async function validateRequiredFields(): Promise<boolean> {
   return true
 }
 
+function buildHttpApiPayload() {
+  return {
+    name: form.value.name.trim(),
+    type: 'http_api',
+    description: form.value.metadata.description || '',
+    config: {
+      type: httpApi.value.type,
+      base_url: httpApi.value.base_url.trim(),
+      path: httpApi.value.path.trim(),
+      header: httpApi.value.headerJson.trim() ? JSON.parse(httpApi.value.headerJson) : {},
+      query: httpApi.value.queryJson.trim() ? JSON.parse(httpApi.value.queryJson) : {},
+      body: httpApi.value.body,
+      timeout_seconds: httpApi.value.timeout_seconds,
+    },
+  }
+}
+
 async function submit() {
   if (!(await validateRequiredFields())) return
   saving.value = true
   try {
-    const body = buildMcpServerPayload(buildDraft())
+    const body = toolType.value === 'http_api' ? buildHttpApiPayload() : buildMcpServerPayload(buildDraft())
     const r = await apiRequest('/settings/mcp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     const j = await r.json()
-    if (j.status === 'ok' && j.data?.id) {
-      emit('created', j.data.id)
+    if (j.status === 'ok' && j.data?.name) {
+      emit('created', j.data.name)
     } else {
       await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }

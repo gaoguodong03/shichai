@@ -102,7 +102,7 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
         headers=headers,
     )
     assert created.status_code == 200
-    server_id = created.json()["data"]["id"]
+    server_id = created.json()["data"]["name"]
 
     exported = client.get(f"/api/settings/mcp/{server_id}/export-zip", headers=headers)
     assert exported.status_code == 200
@@ -110,8 +110,8 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
     with zipfile.ZipFile(BytesIO(exported.content)) as zf:
         rows = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
     assert "enabled" not in rows[0]
-    assert rows[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
-    assert rows[0]["transport"]["env"]["QWEN_AUDIO_MODEL"] == "qwen3-asr-1.7b"
+    assert "${vault:asr}" in rows[0]["server_config"]
+    assert "qwen3-asr-1.7b" in rows[0]["server_config"]
 
     deleted = client.delete(f"/api/settings/mcp/{server_id}", headers=headers)
     assert deleted.status_code == 200
@@ -126,8 +126,8 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
 
     listed = client.get("/api/settings/mcp", headers=headers)
     assert listed.status_code == 200
-    restored = next(x for x in listed.json()["data"]["servers"] if x["id"] == server_id)
-    assert restored["transport"]["env"]["QWEN_AUDIO_API_KEY"] == "${vault:asr}"
+    restored = next(x for x in listed.json()["data"]["servers"] if x["name"] == server_id)
+    assert "${vault:asr}" in restored["server_config"]
 
 
 def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend_flow_client: TestClient):
@@ -151,7 +151,7 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
         headers=headers,
     )
     assert created_tool.status_code == 200
-    tool_id = created_tool.json()["data"]["id"]
+    tool_id = created_tool.json()["data"]["name"]
 
     created_skill = client.post(
         "/api/settings/skills",
@@ -159,7 +159,7 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
         headers=headers,
     )
     assert created_skill.status_code == 200
-    skill_id = created_skill.json()["data"]["id"]
+    skill_id = created_skill.json()["data"]["directory_name"]
     updated_skill = client.put(
         f"/api/settings/skills/{skill_id}",
         json={"allowed_tools": {"mcp": [tool_id], "python": ""}},
@@ -171,29 +171,26 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     assert exported_skill.status_code == 200
     with zipfile.ZipFile(BytesIO(exported_skill.content)) as zf:
         skill_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
-    assert [row["id"] for row in skill_tools] == [tool_id]
-    assert skill_tools[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == ""
-    assert skill_tools[0]["transport"]["env"]["QWEN_AUDIO_MODEL"] == "qwen3-asr-1.7b"
+    assert [row["name"] for row in skill_tools] == [tool_id]
+    assert "sk-live-secret" not in json.dumps(skill_tools, ensure_ascii=False)
+    assert "qwen3-asr-1.7b" in json.dumps(skill_tools, ensure_ascii=False)
     assert "sk-live-secret" not in exported_skill.content.decode("latin-1")
 
     created_expert = client.post(
         "/api/agents",
         json={
-            "agent_id": "expert-with-skill-tool",
             "name": "带技能工具的专家",
-            "skill_ids": [skill_id],
-            "mcp_server_ids": [],
+            "skills": [{"name": "导出工具技能", "directory_name": skill_id}],
         },
         headers=headers,
     )
     assert created_expert.status_code == 200
 
-    exported_expert = client.get("/api/dha/instances/expert-with-skill-tool/export-bundle", headers=headers)
+    exported_expert = client.get("/api/agents/带技能工具的专家/export-bundle", headers=headers)
     assert exported_expert.status_code == 200
     with zipfile.ZipFile(BytesIO(exported_expert.content)) as zf:
         expert_tools = json.loads(zf.read("mcp_servers.json").decode("utf-8"))
-    assert [row["id"] for row in expert_tools] == [tool_id]
-    assert expert_tools[0]["transport"]["env"]["QWEN_AUDIO_API_KEY"] == ""
+    assert [row["name"] for row in expert_tools] == [tool_id]
     assert "sk-live-secret" not in exported_expert.content.decode("latin-1")
 
 
@@ -211,12 +208,12 @@ def test_mcp_settings_omits_legacy_enable_and_runtime_state(frontend_flow_client
         headers=headers,
     )
     assert created.status_code == 200
-    server_id = created.json()["data"]["id"]
+    server_id = created.json()["data"]["name"]
     assert "enabled" not in created.json()["data"]
 
     listed = client.get("/api/settings/mcp", headers=headers)
     assert listed.status_code == 200
-    row = next(x for x in listed.json()["data"]["servers"] if x["id"] == server_id)
+    row = next(x for x in listed.json()["data"]["servers"] if x["name"] == server_id)
     assert "enabled" not in row
     assert "status" not in row
     assert "tool_count" not in row
@@ -239,7 +236,7 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
 
     updated = client.put(
         f"/api/sessions/{session_id}",
-        json={"title": "前端全流程会话-已更新", "agent_ids": []},
+        json={"title": "前端全流程会话-已更新", "agent_names": []},
         headers=headers,
     )
     assert updated.status_code == 200
@@ -333,6 +330,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     headers = _headers("frontend-chat@example.test")
     answer = "2+2 等于 4。"
     monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: _FakeLLM([AIMessage(content=answer)]))
+    monkeypatch.setattr(group_chat, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
 
     skill = client.post(
         "/api/settings/skills",
@@ -340,18 +338,15 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
         headers=headers,
     )
     assert skill.status_code == 200
-    skill_id = skill.json()["data"]["id"]
+    skill_id = skill.json()["data"]["directory_name"]
 
     agent_profile = client.post(
         "/api/agents",
         json={
-            "agent_id": "agent-qa-flow",
             "name": "问答专家",
-            "role": "回答用户提出的问题",
+            "description": "回答用户提出的问题",
             "system_prompt": "直接回答用户问题。",
-            "skill_ids": [skill_id],
-            "mcp_server_ids": [],
-            "file_capabilities": {"read": False, "write": False},
+            "skills": [{"name": "QA Flow Skill", "directory_name": skill_id}],
         },
         headers=headers,
     )
@@ -359,7 +354,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
 
     create = client.post(
         "/api/sessions",
-        json={"title": "问答检查会话", "agent_ids": ["agent-qa-flow"]},
+        json={"title": "问答检查会话", "agent_names": ["问答专家"]},
         headers=headers,
     )
     assert create.status_code == 200
@@ -372,7 +367,6 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     )
     assert chat.status_code == 200
     data = chat.json()["data"]
-    assert data["route"]["agent_id"] == "agent-qa-flow"
     assert data["message"]["content"] == answer
     assert data["end"]["waiting_for_user"] is True
     assert data["interrupted"] is False
@@ -381,7 +375,7 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     assert detail.status_code == 200
     messages = detail.json()["data"]["messages"]
     assert any(m["role"] == "user" and "2+2" in m["content"] for m in messages)
-    assert any(m["role"] == "assistant" and m.get("agent_id") == "agent-qa-flow" and m["content"] == answer for m in messages)
+    assert any(m["role"] == "assistant" and m.get("agent_name") == "问答专家" and m["content"] == answer for m in messages)
 
     exported = client.post(f"/api/sessions/{session_id}/export", headers=headers)
     assert exported.status_code == 200
@@ -436,7 +430,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         manifest_text = zf.read("llm_bundle.json").decode("utf-8")
         manifest = json.loads(manifest_text)
     assert "sk-inline-secret" not in manifest_text
-    assert manifest["provider_id"] == "qwen"
+    assert manifest["name"] == "qwen3-max"
     assert manifest["provider"]["model"] == "qwen3-max"
     assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert "api_key" not in manifest["provider"]
@@ -450,7 +444,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert preview_llm.status_code == 200
     preview = preview_llm.json()["data"]["bundle_preview"]
-    assert preview["provider_id"] == "qwen"
+    assert preview["name"] == "qwen3-max"
     assert preview["provider"]["model"] == "qwen3-max"
     assert "api_key" not in preview["provider"]
 
@@ -461,15 +455,15 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         headers=headers,
     )
     assert imported_llm.status_code == 200
-    assert imported_llm.json()["data"]["summary"]["imported_provider_id"] == "qwen"
+    assert imported_llm.json()["data"]["summary"]["imported_name"] == "qwen3-max"
 
     host_profile = client.put(
         "/api/settings/host-profile",
-        json={"display_name": "测试主持人", "skill_ids": [], "mcp_server_ids": []},
+        json={"leader_agent_name": "测试主持人", "skill_name": "", "skill_directory": ""},
         headers=headers,
     )
     assert host_profile.status_code == 200
-    assert host_profile.json()["data"]["display_name"] == "测试主持人"
+    assert host_profile.json()["data"]["leader_agent_name"] == "测试主持人"
 
     secret = client.post(
         "/api/settings/api-secrets",
@@ -488,23 +482,20 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     agent_profile = client.post(
         "/api/agents",
         json={
-            "agent_id": "agent-front-flow",
             "name": "前端流程专家",
-            "role": "验证资源中心专家 CRUD",
-            "skill_ids": [],
-            "mcp_server_ids": [],
-            "file_capabilities": {"read": True, "write": True},
+            "description": "验证资源中心专家 CRUD",
+            "skills": [],
         },
         headers=headers,
     )
     assert agent_profile.status_code == 200
     agent_update = client.put(
-        "/api/agents/agent-front-flow",
-        json={"role": "已更新角色"},
+        "/api/agents/前端流程专家",
+        json={"description": "已更新描述"},
         headers=headers,
     )
     assert agent_update.status_code == 200
-    assert agent_update.json()["data"]["role"] == "已更新角色"
+    assert agent_update.json()["data"]["description"] == "已更新描述"
 
     presets = client.put(
         "/api/settings/session-presets",
@@ -513,10 +504,9 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
                 {
                     "id": "scenario-front-flow",
                     "name": "前端流程场景",
-                    "agent_ids": ["agent-front-flow"],
+                    "agent_names": ["前端流程专家"],
                     "description": "覆盖场景保存",
-                    "discussion_goal_example": "验证场景",
-                    "leader_agent_id": "agent-front-flow",
+                    "host_config": {"leader_agent_name": "主持人", "skill_name": "", "skill_directory": ""},
                 }
             ]
         },
@@ -525,7 +515,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert presets.status_code == 200
     preset_list = client.get("/api/settings/session-presets", headers=headers)
     assert preset_list.status_code == 200
-    assert any(x["id"] == "scenario-front-flow" for x in preset_list.json()["data"]["presets"])
+    assert any(x["name"] == "前端流程场景" for x in preset_list.json()["data"]["presets"])
 
     skill = client.post(
         "/api/settings/skills",
@@ -533,7 +523,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         headers=headers,
     )
     assert skill.status_code == 200
-    skill_id = skill.json()["data"]["id"]
+    skill_id = skill.json()["data"]["directory_name"]
     skill_update = client.put(
         f"/api/settings/skills/{skill_id}",
         json={
@@ -591,7 +581,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         headers=headers,
     )
     assert mcp.status_code == 200
-    mcp_id = mcp.json()["data"]["id"]
+    mcp_id = mcp.json()["data"]["name"]
     mcp_update = client.put(
         f"/api/settings/mcp/{mcp_id}",
         json={"name": "前端流程 MCP 2"},
@@ -599,6 +589,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert mcp_update.status_code == 200
     assert mcp_update.json()["data"]["name"] == "前端流程 MCP 2"
+    mcp_id = "前端流程 MCP 2"
 
     sandbox = client.put("/api/settings/sandbox", json={"image_variant": "standard"}, headers=headers)
     assert sandbox.status_code == 200
@@ -618,5 +609,5 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
 
     assert client.delete(f"/api/settings/mcp/{mcp_id}", headers=headers).status_code == 200
     assert client.delete(f"/api/settings/skills/{skill_id}", headers=headers).status_code == 200
-    assert client.delete("/api/agents/agent-front-flow", headers=headers).status_code == 200
+    assert client.delete("/api/agents/前端流程专家", headers=headers).status_code == 200
     assert client.delete("/api/settings/api-secrets/TEST_KEY", headers=headers).status_code == 200

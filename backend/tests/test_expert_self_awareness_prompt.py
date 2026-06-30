@@ -22,7 +22,12 @@ def test_build_expert_self_awareness_block_with_multi_skills():
             "skill-b": _FakeSkill("技能B", "负责B能力"),
         }
     )
-    agent_profile = {"skill_ids": ["skill-a", "skill-b"]}
+    agent_profile = {
+        "skills": [
+            {"name": "技能A", "directory_name": "skill-a"},
+            {"name": "技能B", "directory_name": "skill-b"},
+        ]
+    }
 
     block = build_expert_self_awareness_block(agent_profile, loader)
 
@@ -33,7 +38,7 @@ def test_build_expert_self_awareness_block_with_multi_skills():
 
 def test_build_expert_self_awareness_block_fallback_when_description_missing():
     loader = _FakeSkillsLoader({"skill-a": _FakeSkill("技能A", "")})
-    agent_profile = {"skill_ids": ["skill-a"]}
+    agent_profile = {"skills": [{"name": "技能A", "directory_name": "skill-a"}]}
 
     block = build_expert_self_awareness_block(agent_profile, loader)
 

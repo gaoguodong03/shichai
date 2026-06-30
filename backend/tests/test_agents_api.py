@@ -38,58 +38,63 @@ def test_agents_crud(client: TestClient):
     create = client.post(
         "/api/agents",
         json={
-            "agent_id": "agent-ut-api",
             "name": "单测专家",
-            "role": "测试角色",
-            "skill_ids": ["s1"],
-            "mcp_server_ids": ["m1"],
-            "url_capability": False,
-            "file_capabilities": {"read": True, "write": False},
+            "description": "测试描述",
+            "system_prompt": "测试提示",
+            "skills": [{"name": "Skill 1", "directory_name": "skill-one"}],
+            "llm_name": "deepseek-v4-flash",
         },
     )
     assert create.status_code == 200
     created = create.json()["data"]
-    assert created["agent_id"] == "agent-ut-api"
-    assert created["url_capability"] is False
-    assert created["file_capabilities"]["read"] is True
-    assert created["file_capabilities"]["write"] is False
+    assert "agent_id" not in created
+    assert created["name"] == "单测专家"
+    assert created["description"] == "测试描述"
+    assert created["system_prompt"] == "测试提示"
+    assert created["llm_name"] == "deepseek-v4-flash"
+    assert created["skills"] == [{"name": "Skill 1", "directory_name": "skill-one"}]
+    assert "role" not in created
+    assert "tool_names" not in created
+    assert "url_capability" not in created
+    assert "file_capabilities" not in created
+    assert "avatar_url" not in created
 
     listed = client.get("/api/agents")
     assert listed.status_code == 200
     rows = listed.json()["data"]["instances"]
-    assert any(r["agent_id"] == "agent-ut-api" for r in rows)
+    assert any(r["name"] == "单测专家" for r in rows)
 
     update = client.put(
-        "/api/agents/agent-ut-api",
-        json={"name": "单测专家2", "url_capability": True},
+        "/api/agents/单测专家",
+        json={"name": "单测专家2", "description": "更新描述"},
     )
     assert update.status_code == 200
     assert update.json()["data"]["name"] == "单测专家2"
-    assert update.json()["data"]["url_capability"] is True
+    assert update.json()["data"]["description"] == "更新描述"
 
-    delete = client.delete("/api/agents/agent-ut-api")
+    delete = client.delete("/api/agents/单测专家2")
     assert delete.status_code == 200
     assert delete.json()["data"]["deleted"] is True
 
-    missing = client.put("/api/agents/agent-ut-api", json={"name": "x"})
+    missing = client.put("/api/agents/单测专家2", json={"name": "x"})
     assert missing.status_code == 404
 
     old_crud = client.get("/api/dha/instances")
     assert old_crud.status_code == 404
 
 
-def test_agents_routes(client: TestClient):
-    c = client.post("/api/agents", json={"agent_id": "agent-route", "name": "Agent 专家"})
+def test_agents_routes_use_name_identity(client: TestClient):
+    c = client.post("/api/agents", json={"name": "Agent 专家"})
     assert c.status_code == 200
-    assert c.json()["data"]["agent_id"] == "agent-route"
+    assert "agent_id" not in c.json()["data"]
 
     l = client.get("/api/agents")
     assert l.status_code == 200
-    assert any(x["agent_id"] == "agent-route" for x in l.json()["data"]["instances"])
+    assert any(x["name"] == "Agent 专家" for x in l.json()["data"]["instances"])
 
-    u = client.put("/api/agents/agent-route", json={"role": "更新后的角色"})
+    u = client.put("/api/agents/Agent 专家", json={"description": "更新后的描述"})
     assert u.status_code == 200
-    assert u.json()["data"]["role"] == "更新后的角色"
+    assert u.json()["data"]["description"] == "更新后的描述"
 
-    d = client.delete("/api/agents/agent-route")
+    d = client.delete("/api/agents/Agent 专家")
     assert d.status_code == 200

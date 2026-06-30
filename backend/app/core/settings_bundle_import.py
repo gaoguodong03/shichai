@@ -9,18 +9,19 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 import yaml
 
 from app.core.host_config import normalize_host_config_dict
-from app.core.scenario_bundle import list_skill_ids_in_bundle_skills_dir
+from app.core.name_based_resources import normalize_tool_row
+from app.core.scenario_bundle import list_skill_directories_in_bundle_skills_dir
 
 
 def normalized_name_key(raw: Any) -> str:
     return str(raw or "").strip().casefold()
 
 
-def _new_local_id(prefix: str, used_ids: Set[str]) -> str:
-    candidate = f"{prefix}-{uuid.uuid4().hex[:8]}"
-    while candidate in used_ids:
-        candidate = f"{prefix}-{uuid.uuid4().hex[:8]}"
-    used_ids.add(candidate)
+def _new_skill_directory_name(used_directory_names: Set[str]) -> str:
+    candidate = f"skill-{uuid.uuid4().hex[:8]}"
+    while candidate in used_directory_names:
+        candidate = f"skill-{uuid.uuid4().hex[:8]}"
+    used_directory_names.add(candidate)
     return candidate
 
 
@@ -28,67 +29,55 @@ def mcp_name_identity_import_plan(
     existing_servers: List[Dict[str, Any]],
     bundle_servers: List[Dict[str, Any]],
 ) -> Tuple[Dict[str, str], List[Dict[str, Any]], List[str]]:
-    """Plan MCP import by name only.
-
-    Bundle ids are transient. Same name maps to the local id and keeps local content;
-    a new name receives a generated local id before it is saved.
-    """
-    existing_name_to_id: Dict[str, str] = {}
-    used_ids: Set[str] = set()
+    """Plan tool import by name only. Same name keeps local content."""
+    existing_names: Set[str] = set()
     for row in existing_servers:
-        rid = str(row.get("id") or "").strip()
-        if rid:
-            used_ids.add(rid)
         name_key = normalized_name_key(row.get("name"))
-        if rid and name_key and name_key not in existing_name_to_id:
-            existing_name_to_id[name_key] = rid
+        if name_key:
+            existing_names.add(name_key)
 
-    id_map: Dict[str, str] = {}
+    name_map: Dict[str, str] = {}
     rows_to_import: List[Dict[str, Any]] = []
-    kept_existing_ids: List[str] = []
+    kept_existing_names: List[str] = []
     for incoming in bundle_servers:
-        incoming_id = str(incoming.get("id") or "").strip()
-        if not incoming_id:
-            continue
+        incoming_name = str(incoming.get("name") or "").strip()
         name_key = normalized_name_key(incoming.get("name"))
-        existing_id = existing_name_to_id.get(name_key) if name_key else ""
-        if existing_id:
-            id_map[incoming_id] = existing_id
-            kept_existing_ids.append(existing_id)
+        if not incoming_name or not name_key:
             continue
-        else:
-            target_id = _new_local_id("mcp", used_ids)
-        copied = dict(incoming)
-        copied["id"] = target_id
-        id_map[incoming_id] = target_id
+        if name_key in existing_names:
+            name_map[incoming_name] = incoming_name
+            kept_existing_names.append(incoming_name)
+            continue
+        copied = normalize_tool_row(dict(incoming))
+        name_map[incoming_name] = incoming_name
         rows_to_import.append(copied)
         if name_key:
-            existing_name_to_id[name_key] = target_id
-    return id_map, rows_to_import, list(dict.fromkeys(kept_existing_ids))
+            existing_names.add(name_key)
+    return name_map, rows_to_import, list(dict.fromkeys(kept_existing_names))
 
 
-def upsert_rows_by_id(
+def upsert_rows_by_name(
     existing_rows: List[Dict[str, Any]],
     incoming_rows: List[Dict[str, Any]],
-    id_key: str,
+    name_key: str,
 ) -> List[Dict[str, Any]]:
-    by_id: Dict[str, Dict[str, Any]] = {}
+    by_name: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     for row in existing_rows:
-        rid = str(row.get(id_key) or "").strip()
-        if not rid:
+        name = str(row.get(name_key) or "").strip()
+        if not name:
             continue
-        if rid not in by_id:
-            order.append(rid)
-        by_id[rid] = dict(row)
+        if name not in by_name:
+            order.append(name)
+        by_name[name] = dict(row)
     for row in incoming_rows:
-        rid = str(row.get(id_key) or "").strip()
-        if not rid:
+        name = str(row.get(name_key) or "").strip()
+        if not name:
             continue
-        if rid not in by_id:
-            order.append(rid)
-        by_id[rid] = dict(row)
-    return [by_id[rid] for rid in order if rid in by_id]
+        if name not in by_name:
+            order.append(name)
+        by_name[name] = dict(row)
+    return [by_name[name] for name in order if name in by_name]
 
 
 def _read_skill_frontmatter(skill_dir: Path) -> Dict[str, Any]:
@@ -112,60 +101,55 @@ def _dedupe_nonempty(values: Iterable[Any]) -> List[str]:
     return list(dict.fromkeys(str(x).strip() for x in values if str(x).strip()))
 
 
-def _reference_items(raw: Any, *, id_keys: Tuple[str, ...] = ("id",), name_keys: Tuple[str, ...] = ("name",)) -> List[Dict[str, str]]:
+def _reference_items(raw: Any, *, name_keys: Tuple[str, ...] = ("name", "label")) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     seen: Set[str] = set()
     values = raw if isinstance(raw, list) else []
     for item in values:
-        ref_id = ""
         name = ""
         if isinstance(item, dict):
-            for key in id_keys:
-                ref_id = str(item.get(key) or "").strip()
-                if ref_id:
-                    break
             for key in name_keys:
                 name = str(item.get(key) or "").strip()
                 if name:
                     break
         else:
-            ref_id = str(item or "").strip()
-        if not ref_id or ref_id in seen:
+            name = str(item or "").strip()
+        if not name or name in seen:
             continue
-        seen.add(ref_id)
-        out.append({"id": ref_id, "name": name})
+        seen.add(name)
+        out.append({"name": name})
     return out
 
 
 def mcp_refs_from_skill_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, str]]:
-    labels = fm.get("reference-labels") if isinstance(fm.get("reference-labels"), dict) else {}
-    label_rows = _reference_items(labels.get("mcp") if isinstance(labels, dict) else None)
-    label_by_id = {row["id"]: row.get("name", "") for row in label_rows if row.get("id")}
-    auto = fm.get("auto-tools")
-    if isinstance(auto, dict) and "mcp" in auto:
-        refs = _reference_items(auto.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
-        return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
     allowed = fm.get("allowed-tools")
-    if isinstance(allowed, dict) and "mcp" in allowed:
-        refs = _reference_items(allowed.get("mcp"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
-        return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
-    refs = _reference_items(fm.get("mcp_server_ids"), id_keys=("id", "server_id", "mcp_server_id"), name_keys=("name", "label"))
-    return [{**ref, "name": ref.get("name") or label_by_id.get(ref["id"], "")} for ref in refs]
+    if not isinstance(allowed, dict):
+        return []
+    refs: List[Dict[str, str]] = []
+    seen: Set[str] = set()
+    for key in ("mcp", "http_api"):
+        for row in _reference_items(allowed.get(key), name_keys=("name", "label")):
+            name = row.get("name")
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            refs.append(row)
+    return refs
 
 
-def mcp_ids_from_skill_frontmatter(fm: Dict[str, Any]) -> List[str]:
-    return [item["id"] for item in mcp_refs_from_skill_frontmatter(fm)]
+def tool_names_from_skill_frontmatter(fm: Dict[str, Any]) -> List[str]:
+    return [item["name"] for item in mcp_refs_from_skill_frontmatter(fm)]
 
 
-def collect_mcp_ids_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str]) -> List[str]:
-    return [ref["id"] for ref in collect_mcp_refs_from_skill_dirs(skills_root, skill_ids)]
+def collect_tool_names_from_skill_dirs(skills_root: Path, skill_directories: Iterable[str]) -> List[str]:
+    return [ref["name"] for ref in collect_mcp_refs_from_skill_dirs(skills_root, skill_directories)]
 
 
-def collect_mcp_refs_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str]) -> List[Dict[str, str]]:
+def collect_mcp_refs_from_skill_dirs(skills_root: Path, skill_directories: Iterable[str]) -> List[Dict[str, str]]:
     refs: List[Dict[str, str]] = []
     seen: Set[str] = set()
     root = skills_root.resolve()
-    for sid in _dedupe_nonempty(skill_ids):
+    for sid in _dedupe_nonempty(skill_directories):
         if ".." in sid or "/" in sid or "\\" in sid:
             continue
         skill_dir = (skills_root / sid).resolve()
@@ -176,9 +160,9 @@ def collect_mcp_refs_from_skill_dirs(skills_root: Path, skill_ids: Iterable[str]
         if not (skill_dir / "SKILL.md").is_file():
             continue
         for ref in mcp_refs_from_skill_frontmatter(_read_skill_frontmatter(skill_dir)):
-            mid = ref["id"]
-            if mid not in seen:
-                seen.add(mid)
+            tool_name = ref["name"]
+            if tool_name not in seen:
+                seen.add(tool_name)
                 refs.append(ref)
     return refs
 
@@ -187,11 +171,6 @@ def mcp_rows_for_bundle_refs(
     mcp_refs: Iterable[Dict[str, str]],
     all_servers: Iterable[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    by_id = {
-        str(row.get("id") or "").strip(): row
-        for row in all_servers
-        if isinstance(row, dict) and str(row.get("id") or "").strip()
-    }
     by_name: Dict[str, Dict[str, Any]] = {}
     for row in all_servers:
         if not isinstance(row, dict):
@@ -203,30 +182,21 @@ def mcp_rows_for_bundle_refs(
     out: List[Dict[str, Any]] = []
     seen: Set[str] = set()
     for ref in mcp_refs:
-        rid = str((ref or {}).get("id") or "").strip()
-        if not rid:
-            continue
         name = str((ref or {}).get("name") or "").strip()
-        row = by_id.get(rid)
-        if row is None:
-            lookup_name = name or rid
-            if lookup_name:
-                row = by_name.get(normalized_name_key(lookup_name))
+        if not name:
+            continue
+        row = by_name.get(normalized_name_key(name))
         if row is None:
             continue
-        copied = dict(row)
-        if str(copied.get("id") or "").strip() != rid:
-            copied["id"] = rid
-        if name and not str(copied.get("name") or "").strip():
-            copied["name"] = name
-        out_id = str(copied.get("id") or "").strip()
-        if out_id and out_id not in seen:
-            seen.add(out_id)
+        copied = normalize_tool_row(dict(row))
+        out_name = str(copied.get("name") or "").strip()
+        if out_name and out_name not in seen:
+            seen.add(out_name)
             out.append(copied)
     return out
 
 
-def _skill_ids_under(root: Path) -> Set[str]:
+def _skill_directories_under(root: Path) -> Set[str]:
     if not root.is_dir():
         return set()
     return {
@@ -236,14 +206,14 @@ def _skill_ids_under(root: Path) -> Set[str]:
     }
 
 
-def _skill_dir_for_id(
-    sid: str,
+def _skill_dir_for_directory_name(
+    directory_name: str,
     *,
     bundle_dir: Optional[Path],
     user_skills_dir: Path,
     extra_skill_roots: Iterable[Path] = (),
 ) -> Optional[Path]:
-    if not sid or ".." in sid or "/" in sid or "\\" in sid:
+    if not directory_name or ".." in directory_name or "/" in directory_name or "\\" in directory_name:
         return None
     roots: List[Path] = []
     if bundle_dir is not None:
@@ -254,7 +224,7 @@ def _skill_dir_for_id(
         if not root:
             continue
         base = root.resolve()
-        cand = (root / sid).resolve()
+        cand = (root / directory_name).resolve()
         try:
             cand.relative_to(base)
         except ValueError:
@@ -275,20 +245,20 @@ def _missing_type_label(kind: str) -> str:
 def _add_missing_reference(
     missing: Dict[str, List[Dict[str, Any]]],
     kind: str,
-    ref_id: str,
+    ref_name: str,
     *,
     name: str = "",
     required_by: str,
     source: str,
 ) -> None:
-    rid = str(ref_id or "").strip()
-    if not rid:
+    ref_name = str(ref_name or "").strip()
+    if not ref_name:
         return
     type_label = _missing_type_label(kind)
-    display_name = str(name or "").strip() or f"{type_label} {rid}"
+    display_name = str(name or "").strip() or f"{type_label} {ref_name}"
     bucket = missing.setdefault(kind, [])
     for item in bucket:
-        if item.get("id") == rid and item.get("source") == source:
+        if item.get("name") == ref_name and item.get("source") == source:
             reqs = item.setdefault("required_by", [])
             if required_by and required_by not in reqs:
                 reqs.append(required_by)
@@ -298,8 +268,7 @@ def _add_missing_reference(
             return
     bucket.append(
         {
-            "id": rid,
-            "name": str(name or ""),
+            "name": str(name or ref_name),
             "display_name": display_name,
             "type_label": type_label,
             "required_by": [required_by] if required_by else [],
@@ -308,29 +277,20 @@ def _add_missing_reference(
     )
 
 
-def _available_skill_ids(
+def _available_skill_directories(
     bundle_dir: Optional[Path],
     user_skills_dir: Path,
     extra_skill_roots: Iterable[Path],
 ) -> Set[str]:
-    out = set(list_skill_ids_in_bundle_skills_dir(bundle_dir)) if bundle_dir is not None else set()
-    out.update(_skill_ids_under(user_skills_dir))
+    out = set(list_skill_directories_in_bundle_skills_dir(bundle_dir)) if bundle_dir is not None else set()
+    out.update(_skill_directories_under(user_skills_dir))
     for root in extra_skill_roots:
-        out.update(_skill_ids_under(root))
+        out.update(_skill_directories_under(root))
     return out
 
 
-def _available_mcp_ids(existing_mcp_servers: Iterable[Dict[str, Any]], bundle_mcp_servers: Iterable[Dict[str, Any]]) -> Set[str]:
-    out = {
-        str(row.get("id") or "").strip()
-        for row in existing_mcp_servers
-        if str(row.get("id") or "").strip()
-    }
-    out.update(
-        str(row.get("id") or "").strip()
-        for row in bundle_mcp_servers
-        if isinstance(row, dict) and str(row.get("id") or "").strip()
-    )
+def _available_tool_names(existing_mcp_servers: Iterable[Dict[str, Any]], bundle_mcp_servers: Iterable[Dict[str, Any]]) -> Set[str]:
+    out: Set[str] = set()
     out.update(
         str(row.get("name") or "").strip()
         for row in existing_mcp_servers
@@ -351,7 +311,7 @@ def _skill_mcp_refs_for_missing_check(
     user_skills_dir: Path,
     extra_skill_roots: Iterable[Path],
 ) -> Tuple[List[Dict[str, str]], str]:
-    skill_dir = _skill_dir_for_id(
+    skill_dir = _skill_dir_for_directory_name(
         sid,
         bundle_dir=bundle_dir,
         user_skills_dir=user_skills_dir,
@@ -375,46 +335,44 @@ def find_missing_references_for_scene_bundle(
     extra_skill_roots: Iterable[Path] = (),
 ) -> Dict[str, List[Dict[str, Any]]]:
     missing = _empty_missing_references()
-    preset_name = str(preset.get("name") or preset.get("id") or "场景").strip()
+    preset_name = str(preset.get("name") or "场景").strip()
     scene_label = f"场景 {preset_name}"
     host_label = "场景主持人"
 
-    bundle_expert_by_id = {
-        str(row.get("agent_id") or "").strip(): row
+    bundle_expert_by_name = {
+        str(row.get("name") or "").strip(): row
         for row in bundle_experts
-        if str(row.get("agent_id") or "").strip()
+        if str(row.get("name") or "").strip()
     }
-    existing_expert_ids = {
-        str(row.get("agent_id") or "").strip()
+    existing_expert_names = {
+        str(row.get("name") or "").strip()
         for row in existing_experts
-        if str(row.get("agent_id") or "").strip()
+        if str(row.get("name") or "").strip()
     }
-    available_skills = _available_skill_ids(bundle_dir, user_skills_dir, extra_skill_roots)
-    available_mcp = _available_mcp_ids(existing_mcp_servers, bundle_mcp_servers)
+    available_skills = _available_skill_directories(bundle_dir, user_skills_dir, extra_skill_roots)
+    available_mcp = _available_tool_names(existing_mcp_servers, bundle_mcp_servers)
 
-    preset_agent_ids = _dedupe_nonempty(preset.get("agent_ids") or preset.get("expert_ids") or [])
-    for aid in preset_agent_ids:
-        if aid not in bundle_expert_by_id and aid not in existing_expert_ids:
-            _add_missing_reference(missing, "experts", aid, required_by=scene_label, source="scene")
+    preset_agents = _dedupe_nonempty(preset.get("agent_names") or [])
+    for agent_name in preset_agents:
+        if agent_name not in bundle_expert_by_name and agent_name not in existing_expert_names:
+            _add_missing_reference(missing, "experts", agent_name, required_by=scene_label, source="scene")
 
     host_config = normalize_host_config_dict(preset.get("host_config"))
     skill_refs: Dict[str, List[str]] = {}
-    for sid in _dedupe_nonempty(host_config.get("skill_ids") or []):
-        skill_refs.setdefault(sid, []).append(host_label)
-    for mid in _dedupe_nonempty(host_config.get("mcp_server_ids") or []):
-        if mid not in available_mcp:
-            _add_missing_reference(missing, "tools", mid, required_by=host_label, source="scene")
+    host_skill_directory = str(host_config.get("skill_directory") or "").strip()
+    if host_skill_directory:
+        skill_refs.setdefault(host_skill_directory, []).append(host_label)
 
     for expert in bundle_experts:
-        aid = str(expert.get("agent_id") or "").strip()
-        expert_name = str(expert.get("name") or aid or "未命名专家").strip()
+        expert_name = str(expert.get("name") or "未命名专家").strip()
         expert_label = f"专家 {expert_name}"
-        for sid in _dedupe_nonempty(expert.get("skill_ids") or []):
+        for sid in _dedupe_nonempty(
+            [
+                x.get("directory_name") if isinstance(x, dict) else x
+                for x in (expert.get("skills") or [])
+            ]
+        ):
             skill_refs.setdefault(sid, []).append(expert_label)
-        for mid in _dedupe_nonempty(expert.get("mcp_server_ids") or []):
-            if mid not in available_mcp:
-                _add_missing_reference(missing, "tools", mid, required_by=expert_label, source="expert")
-
     for sid, required_by_list in skill_refs.items():
         if sid not in available_skills:
             for required_by in required_by_list:
@@ -428,7 +386,7 @@ def find_missing_references_for_scene_bundle(
         )
         skill_label = f"技能 {skill_name}"
         for ref in mcp_refs:
-            mid = ref["id"]
+            mid = ref["name"]
             name = str(ref.get("name") or "").strip()
             if mid not in available_mcp and (not name or name not in available_mcp):
                 _add_missing_reference(missing, "tools", mid, name=ref.get("name", ""), required_by=skill_label, source="skill")
@@ -445,15 +403,17 @@ def find_missing_references_for_expert_bundle(
     extra_skill_roots: Iterable[Path] = (),
 ) -> Dict[str, List[Dict[str, Any]]]:
     missing = _empty_missing_references()
-    expert_name = str(expert.get("name") or expert.get("agent_id") or "未命名专家").strip()
+    expert_name = str(expert.get("name") or "未命名专家").strip()
     expert_label = f"专家 {expert_name}"
-    available_skills = _available_skill_ids(bundle_dir, user_skills_dir, extra_skill_roots)
-    available_mcp = _available_mcp_ids(existing_mcp_servers, bundle_mcp_servers)
+    available_skills = _available_skill_directories(bundle_dir, user_skills_dir, extra_skill_roots)
+    available_mcp = _available_tool_names(existing_mcp_servers, bundle_mcp_servers)
 
-    for mid in _dedupe_nonempty(expert.get("mcp_server_ids") or []):
-        if mid not in available_mcp:
-            _add_missing_reference(missing, "tools", mid, required_by=expert_label, source="expert")
-    for sid in _dedupe_nonempty(expert.get("skill_ids") or []):
+    for sid in _dedupe_nonempty(
+        [
+            x.get("directory_name") if isinstance(x, dict) else x
+            for x in (expert.get("skills") or [])
+        ]
+    ):
         if sid not in available_skills:
             _add_missing_reference(missing, "skills", sid, required_by=expert_label, source="skill")
             continue
@@ -465,7 +425,7 @@ def find_missing_references_for_expert_bundle(
         )
         skill_label = f"技能 {skill_name}"
         for ref in mcp_refs:
-            mid = ref["id"]
+            mid = ref["name"]
             name = str(ref.get("name") or "").strip()
             if mid not in available_mcp and (not name or name not in available_mcp):
                 _add_missing_reference(missing, "tools", mid, name=ref.get("name", ""), required_by=skill_label, source="skill")
@@ -473,7 +433,7 @@ def find_missing_references_for_expert_bundle(
 
 
 def find_missing_references_for_skill_bundle(
-    skill_id: str,
+    skill_directory: str,
     bundle_mcp_servers: List[Dict[str, Any]],
     bundle_dir: Optional[Path],
     user_skills_dir: Path,
@@ -482,16 +442,16 @@ def find_missing_references_for_skill_bundle(
     extra_skill_roots: Iterable[Path] = (),
 ) -> Dict[str, List[Dict[str, Any]]]:
     missing = _empty_missing_references()
-    available_mcp = _available_mcp_ids(existing_mcp_servers, bundle_mcp_servers)
+    available_mcp = _available_tool_names(existing_mcp_servers, bundle_mcp_servers)
     mcp_refs, skill_name = _skill_mcp_refs_for_missing_check(
-        skill_id,
+        skill_directory,
         bundle_dir=bundle_dir,
         user_skills_dir=user_skills_dir,
         extra_skill_roots=extra_skill_roots,
     )
     skill_label = f"技能 {skill_name}"
     for ref in mcp_refs:
-        mid = ref["id"]
+        mid = ref["name"]
         if mid not in available_mcp:
             _add_missing_reference(missing, "tools", mid, name=ref.get("name", ""), required_by=skill_label, source="skill")
     return missing
@@ -500,73 +460,73 @@ def find_missing_references_for_skill_bundle(
 def skill_name_identity_import_plan(
     bundle_dir: Path,
     user_skills_dir: Path,
-    skill_ids: List[str] | None = None,
+    skill_directories: List[str] | None = None,
 ) -> Tuple[Dict[str, str], List[Tuple[str, str]], List[str]]:
     """Plan Skill import by name only without copying files."""
-    skill_ids = list(skill_ids) if skill_ids is not None else list_skill_ids_in_bundle_skills_dir(bundle_dir)
+    skill_directories = list(skill_directories) if skill_directories is not None else list_skill_directories_in_bundle_skills_dir(bundle_dir)
     user_skills_dir.mkdir(parents=True, exist_ok=True)
-    existing_name_to_id: Dict[str, str] = {}
-    used_ids: Set[str] = set()
+    existing_name_to_directory: Dict[str, str] = {}
+    used_directory_names: Set[str] = set()
     for child in sorted(user_skills_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
             continue
-        sid = child.name
-        used_ids.add(sid)
+        directory_name = child.name
+        used_directory_names.add(directory_name)
         fm = _read_skill_frontmatter(child)
-        name_key = normalized_name_key(fm.get("name") or sid)
-        if name_key and name_key not in existing_name_to_id:
-            existing_name_to_id[name_key] = sid
+        name_key = normalized_name_key(fm.get("name") or directory_name)
+        if name_key and name_key not in existing_name_to_directory:
+            existing_name_to_directory[name_key] = directory_name
 
-    id_map: Dict[str, str] = {}
+    directory_map: Dict[str, str] = {}
     copy_pairs: List[Tuple[str, str]] = []
     kept_existing: List[str] = []
     skills_root = bundle_dir / "skills"
-    for incoming_id in skill_ids:
-        src = skills_root / incoming_id
+    for incoming_directory in skill_directories:
+        src = skills_root / incoming_directory
         if not src.is_dir() or not (src / "SKILL.md").is_file():
             continue
         fm = _read_skill_frontmatter(src)
-        name_key = normalized_name_key(fm.get("name") or incoming_id)
-        existing_id = existing_name_to_id.get(name_key) if name_key else ""
-        if existing_id:
-            id_map[incoming_id] = existing_id
-            kept_existing.append(existing_id)
+        name_key = normalized_name_key(fm.get("name") or incoming_directory)
+        existing_directory = existing_name_to_directory.get(name_key) if name_key else ""
+        if existing_directory:
+            directory_map[incoming_directory] = existing_directory
+            kept_existing.append(existing_directory)
             continue
-        target_id = _new_local_id("skill", used_ids)
-        id_map[incoming_id] = target_id
-        copy_pairs.append((incoming_id, target_id))
+        target_directory = _new_skill_directory_name(used_directory_names)
+        directory_map[incoming_directory] = target_directory
+        copy_pairs.append((incoming_directory, target_directory))
         if name_key:
-            existing_name_to_id[name_key] = target_id
-    return id_map, copy_pairs, list(dict.fromkeys(kept_existing))
+            existing_name_to_directory[name_key] = target_directory
+    return directory_map, copy_pairs, list(dict.fromkeys(kept_existing))
 
 
-def bundle_skill_name_map(bundle_dir: Path, skill_ids: List[str] | None = None) -> Dict[str, str]:
-    skill_ids = list(skill_ids) if skill_ids is not None else list_skill_ids_in_bundle_skills_dir(bundle_dir)
+def bundle_skill_name_map(bundle_dir: Path, skill_directories: List[str] | None = None) -> Dict[str, str]:
+    skill_directories = list(skill_directories) if skill_directories is not None else list_skill_directories_in_bundle_skills_dir(bundle_dir)
     skills_root = bundle_dir / "skills"
     out: Dict[str, str] = {}
-    for sid in skill_ids:
-        skill_id = str(sid or "").strip()
-        if not skill_id:
+    for sid in skill_directories:
+        skill_directory = str(sid or "").strip()
+        if not skill_directory:
             continue
-        fm = _read_skill_frontmatter(skills_root / skill_id)
-        out[skill_id] = str(fm.get("name") or skill_id).strip()
+        fm = _read_skill_frontmatter(skills_root / skill_directory)
+        out[skill_directory] = str(fm.get("name") or skill_directory).strip()
     return out
 
 
 def copy_bundle_skills_to_user_by_name(bundle_dir: Path, user_skills_dir: Path) -> Tuple[List[str], List[str], Dict[str, str]]:
     """Copy bundle skills using name as the import identity.
 
-    Returns (imported_skill_ids, kept_existing_skill_ids, bundle_id_to_local_id_map).
+    Returns (imported_skill_directories, kept_existing_skill_directories, bundle_directory_to_local_directory_map).
     """
-    id_map, copy_pairs, overwritten = skill_name_identity_import_plan(bundle_dir, user_skills_dir)
+    directory_map, copy_pairs, overwritten = skill_name_identity_import_plan(bundle_dir, user_skills_dir)
     skills_root = bundle_dir / "skills"
     imported: List[str] = []
-    for incoming_id, target_id in copy_pairs:
-        src = skills_root / incoming_id
-        dest = user_skills_dir / target_id
+    for incoming_directory, target_directory in copy_pairs:
+        src = skills_root / incoming_directory
+        dest = user_skills_dir / target_directory
         if src.is_dir() and (src / "SKILL.md").is_file():
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(src, dest)
-            imported.append(target_id)
-    return imported, overwritten, id_map
+            imported.append(target_directory)
+    return imported, overwritten, directory_map

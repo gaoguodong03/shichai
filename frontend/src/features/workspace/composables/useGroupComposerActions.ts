@@ -17,8 +17,8 @@ type LastSentDraft = {
 }
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
-type StreamContent = { text?: string; agent_id?: string; meta?: { phase?: string } }
-type StreamRoute = { agent_id?: string; skill_id?: string }
+type StreamContent = { text?: string; agent_name?: string; meta?: { phase?: string } }
+type StreamRoute = { agent_name?: string; skill?: string }
 
 export function useGroupComposerActions(args: {
   selectedGroupSessionId: () => string | null
@@ -41,7 +41,7 @@ export function useGroupComposerActions(args: {
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
-  appendStreamingContent: (agentId: string, text: string) => void
+  appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   buildMessageWithFileReferences: (base: string) => string
@@ -76,7 +76,7 @@ export function useGroupComposerActions(args: {
 
   async function confirmGroupNext(
     _nextSpeaker: string,
-    extra?: { ignoreAutoAgentId?: string; ignoreAutoSkillId?: string },
+    extra?: { ignoreAutoAgentName?: string; ignoreAutoSkill?: string },
   ) {
     const detail = args.groupDetail.value
     const id = detail?.id
@@ -89,11 +89,11 @@ export function useGroupComposerActions(args: {
       action?: string
       message?: string
       host_takeover_requested?: boolean
-      ignore_auto_agent_id?: string
-      ignore_auto_skill_id?: string
+      ignore_auto_agent_name?: string
+      ignore_auto_skill?: string
     } = { action: 'continue' }
-    if (extra?.ignoreAutoAgentId) body.ignore_auto_agent_id = extra.ignoreAutoAgentId
-    if (extra?.ignoreAutoSkillId) body.ignore_auto_skill_id = extra.ignoreAutoSkillId
+    if (extra?.ignoreAutoAgentName) body.ignore_auto_agent_name = extra.ignoreAutoAgentName
+    if (extra?.ignoreAutoSkill) body.ignore_auto_skill = extra.ignoreAutoSkill
     const base = builtMessage()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),

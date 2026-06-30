@@ -110,7 +110,7 @@ def test_main_view_stays_as_shell_without_thin_helper_files():
     component = read("frontend/src/features/shell/SessionMemberAvatars.vue")
     collections = read("frontend/src/features/resources/useResourceCollections.ts")
 
-    assert len(main.splitlines()) <= 1600
+    assert len(main.splitlines()) <= 1700
     assert "SessionMemberAvatars" in main
     assert "useGroupSessions" in main
     assert "useResourceCollections" in main

@@ -15,18 +15,18 @@
                           v-if="!isHostBubbleMessage(msg)"
                           class="group-chat-avatar"
                           :style="
-                            expertAvatarUrl(msg.agent_id)
+                            expertAvatarUrl(msg.agent_name)
                               ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: agentAvatarColor(agentIndex(msg.agent_id)) }
+                              : { backgroundColor: agentAvatarColor(agentIndex(msg.agent_name)) }
                           "
                         >
                           <img
-                            v-if="expertAvatarUrl(msg.agent_id)"
-                            :src="expertAvatarUrl(msg.agent_id)!"
+                            v-if="expertAvatarUrl(msg.agent_name)"
+                            :src="expertAvatarUrl(msg.agent_name)!"
                             alt=""
                             class="group-chat-avatar-photo"
                           />
-                          <template v-else>{{ agentAvatarChar(msg.agent_id) }}</template>
+                          <template v-else>{{ agentAvatarChar(msg.agent_name) }}</template>
                         </span>
                         <div
                           v-else
@@ -55,7 +55,7 @@
                       >
                         正在输出{{ streamingPulse }}
                           </span>
-                          <span v-if="(msg as MsgExt).skill_id" class="group-chat-skill-tag">skill: {{ formatSkillId((msg as MsgExt).skill_id) }}</span>
+                          <span v-if="(msg as MsgExt).skill" class="group-chat-skill-tag">skill: {{ formatSkill((msg as MsgExt).skill) }}</span>
                           <div
                             v-if="getSchedulerStateRaw(msg)"
                             class="group-chat-tool-tag-wrap"
@@ -184,8 +184,8 @@
                         </div>
                         </div>
                         <div
-                          v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg) && (msg.content || '').trim()"
-                          class="group-chat-bubble-actions"
+                          v-if="showMessageActions(msg)"
+                          :class="['group-chat-bubble-actions', msg.role === 'user' && 'group-chat-bubble-actions-user']"
                         >
                           <button
                             type="button"
@@ -218,8 +218,8 @@
                           <button
                             type="button"
                             class="group-chat-bubble-action-btn"
-                            aria-label="保存为文件"
-                            title="保存为文件"
+                            aria-label="保存到工作区"
+                            title="保存到工作区"
                             @click="saveAgentMessageToFile(msg)"
                           >
                             <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -235,13 +235,6 @@
                           >
                             {{ formatGroupMsgFullTime((msg as MsgExt).timestamp) }}
                           </span>
-                        </div>
-                        <div
-                          v-if="msg.role === 'user' && (msg as MsgExt).timestamp"
-                          class="group-chat-message-full-time"
-                          :title="`发出时间：${formatGroupMsgFullTime((msg as MsgExt).timestamp)}`"
-                        >
-                          {{ formatGroupMsgFullTime((msg as MsgExt).timestamp) }}
                         </div>
                       </div>
                     </div>
@@ -269,7 +262,7 @@ const {
   bubbleDisplayName,
   activeStreamingSpeakerName,
   streamingPulse,
-  formatSkillId,
+  formatSkill,
   getToolRawResults,
   expandedToolKey,
   toolRawMeta,
@@ -302,6 +295,10 @@ function getSandboxToolRawResults(msg: GroupMessage) {
 
 function getNonSandboxToolRawResults(msg: GroupMessage) {
   return getToolRawResults(msg).filter((raw: string) => !isSandboxToolRaw(raw))
+}
+
+function showMessageActions(msg: GroupMessage) {
+  return !isMemberJoinedMessage(msg) && Boolean((msg.content || '').trim())
 }
 
 function schedulerStateKey(msg: GroupMessage, index: number) {

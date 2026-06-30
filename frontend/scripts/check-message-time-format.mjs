@@ -21,12 +21,12 @@ assert.equal(formatGroupMsgFullTime(''), '', '空时间戳不应显示占位文�
 
 assert.match(
   messagesVue,
-  /class="group-chat-bubble-actions"[\s\S]*?class="group-chat-message-full-time group-chat-message-full-time-inline"/,
-  '专家消息完整时间应显示在三个操作按钮右侧',
+  /v-if="showMessageActions\(msg\)"[\s\S]*?class="group-chat-message-full-time group-chat-message-full-time-inline"/,
+  '消息完整时间应显示在三个操作按钮右侧',
 )
 
 assert.match(
   messagesVue,
-  /v-if="msg\.role === 'user' && \(msg as MsgExt\)\.timestamp"[\s\S]*?class="group-chat-message-full-time"/,
-  '用户消息完整时间应保留在气泡下方',
+  /msg\.role === 'user' && 'group-chat-bubble-actions-user'/,
+  '用户消息操作行应保留在气泡下方并右对齐',
 )

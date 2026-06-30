@@ -1,4 +1,4 @@
-"""专家导入依赖校验：技能、MCP。"""
+"""专家导入依赖校验：技能。"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,14 +16,14 @@ class AgentImportValidation:
         return not self.missing_skills and not self.missing_mcp_servers
 
 
-def _mcp_id_maps(servers: Sequence[Mapping[str, Any]]) -> Dict[str, bool]:
-    by_id: Dict[str, bool] = {}
+def _mcp_name_maps(servers: Sequence[Mapping[str, Any]]) -> Dict[str, bool]:
+    by_name: Dict[str, bool] = {}
     for s in servers or []:
-        sid = str(s.get("id") or "").strip()
-        if not sid:
+        name = str(s.get("name") or "").strip()
+        if not name:
             continue
-        by_id[sid] = True
-    return by_id
+        by_name[name] = True
+    return by_name
 
 
 def validate_agent_instance_row(
@@ -33,23 +33,14 @@ def validate_agent_instance_row(
     mcp_servers: Sequence[Mapping[str, Any]],
 ) -> AgentImportValidation:
     out = AgentImportValidation()
-    mcp_map = _mcp_id_maps(mcp_servers)
+    _ = mcp_servers
 
-    for sid in row.get("skill_ids") or []:
-        sk = str(sid).strip()
+    for skill in row.get("skills") or []:
+        sk = str(skill.get("directory_name") if isinstance(skill, Mapping) else skill).strip()
         if not sk:
             continue
         if not skill_has_content(sk):
-            out.missing_skills.append({"skill_id": sk})
-
-    for mid in row.get("mcp_server_ids") or []:
-        m = str(mid).strip()
-        if not m:
-            continue
-        if m not in mcp_map:
-            out.missing_mcp_servers.append({"mcp_server_id": m})
-        elif not mcp_map[m]:
-            out.disabled_mcp_servers.append({"mcp_server_id": m})
+            out.missing_skills.append({"skill": sk})
 
     return out
 

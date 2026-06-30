@@ -8,60 +8,57 @@ from app.core.expert_bundle import read_expert_bundle_manifest
 
 
 def test_merge_single_expert_skip_on_same_name():
-    user = [{"agent_id": "a1", "name": "Old", "role": "", "system_prompt": "", "skill_ids": [], "mcp_server_ids": [], "is_leader": False, "llm_provider_id": "", "avatar_url": ""}]
-    # minimal fields strip_agent_row_for_disk may need file_capabilities - merge uses strip from scenario
+    user = [{"name": "Old", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""}]
     bundle_row = {
-        "agent_id": "a9",
         "name": "Old",
         "role": "",
         "system_prompt": "",
-        "skill_ids": [],
-        "mcp_server_ids": [],
+        "skills": [],
+        "tool_names": [],
         "is_leader": False,
-        "llm_provider_id": "",
+        "llm_name": "",
         "avatar_url": "",
     }
-    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, id_conflict="skip")
+    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="skip")
     assert skipped is True
     assert fid is None
     assert overwritten == []
     assert len(merged) == 1
-    assert merged[0]["agent_id"] == "a1"
+    assert merged[0]["name"] == "Old"
 
 
 def test_merge_single_expert_overwrite_all_same_name_and_keep_import():
     user = [
-        {"agent_id": "a1", "name": "Same", "role": "", "system_prompt": "", "skill_ids": [], "mcp_server_ids": [], "is_leader": False, "llm_provider_id": "", "avatar_url": ""},
-        {"agent_id": "a2", "name": "Same", "role": "", "system_prompt": "", "skill_ids": [], "mcp_server_ids": [], "is_leader": False, "llm_provider_id": "", "avatar_url": ""},
+        {"name": "Same", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""},
+        {"name": "Same", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""},
     ]
     bundle_row = {
-        "agent_id": "a9",
         "name": "Same",
         "role": "r",
         "system_prompt": "p",
-        "skill_ids": [],
-        "mcp_server_ids": [],
+        "skills": [],
+        "tool_names": [],
         "is_leader": False,
-        "llm_provider_id": "",
+        "llm_name": "",
         "avatar_url": "",
     }
-    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, id_conflict="overwrite")
+    merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="overwrite")
     assert skipped is False
-    assert fid == "a9"
-    assert overwritten == ["a1", "a2"]
-    assert [x["agent_id"] for x in merged] == ["a9"]
+    assert fid == "Same"
+    assert overwritten == ["Same"]
+    assert [x["name"] for x in merged] == ["Same"]
+    assert merged[0]["role"] == "r"
 
 
 def test_expert_bundle_zip_roundtrip():
     expert = {
-        "agent_id": "e1",
         "name": "E",
         "role": "",
         "system_prompt": "",
-        "skill_ids": [],
-        "mcp_server_ids": [],
+        "skills": [],
+        "tool_names": [],
         "is_leader": False,
-        "llm_provider_id": "",
+        "llm_name": "",
         "avatar_url": "",
     }
     root = Path(tempfile.mkdtemp())

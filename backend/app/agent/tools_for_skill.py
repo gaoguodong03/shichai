@@ -1,16 +1,17 @@
 """按 Agent 组装工具列表的统一入口（统一会话）。
 
-build_tools_for_group_chat：按「本轮解析出的 Skill」在 SKILL.md frontmatter 中声明的 mcp_server_ids 决定可加载的 MCP（未声明则不调 MCP）；
-专家的 agent_profile.mcp_server_ids 若配置则与上述列表取交集，作为实例级收紧；不再从全局运行时额外注入
-Linkup/Exa 等 URL 工具。内置工作区工具与 call_api 按专家 agent_profile 的 file_capabilities / url_capability 注入；
-run_skill_script_<skill_id> → wrap。
+build_tools_for_group_chat：按「本轮解析出的 Skill」在 SKILL.md frontmatter 中声明的工具名称决定可加载的 MCP（未声明则不调 MCP）；
+工具完全由当前 Skill frontmatter 声明决定；不再用专家资源字段二次收紧。
+内置工作区工具与 call_api 是运行时自带能力，不作为专家资源字段保存。
+run_skill_script_<directory_name> → wrap。
 """
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
+from app.api.settings_mcp import load_mcp_config
 from app.api.settings_skill_store import get_mcp_servers_for_skill
-from app.api.agents import merge_file_capabilities
+from app.api.settings_secrets import load_api_secret_values
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 from app.mcp.manager import ensure_user_mcp_config_loaded
@@ -19,6 +20,7 @@ from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.agent.workspace_visibility import is_internal_diagnostic_workspace_path
 from app.tools.call_api import call_api
+from app.tools.http_api_tool import create_http_api_tool
 from app.tools.read_file import create_read_file_tool
 from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_skill_md
 from app.tools.write_workspace_file import create_write_workspace_file_tool
@@ -289,38 +291,47 @@ _FILE_CAP_TO_TOOL = (
 
 
 def _filter_builtin_workspace_tools(all_builtin: List, agent_profile: Dict[str, Any]) -> List:
-    caps = merge_file_capabilities(agent_profile.get("file_capabilities"))
-    allowed = {name for key, name in _FILE_CAP_TO_TOOL if caps.get(key)}
+    _ = agent_profile
+    allowed = {name for _key, name in _FILE_CAP_TO_TOOL}
     return [t for t in all_builtin if getattr(t, "name", "") in allowed]
 
 
 async def build_tools_for_group_chat(
     agent_profile: Dict[str, Any],
     workspace_id: str,
-    resolved_skill_id: Optional[str] = None,
+    resolved_skill: Optional[str] = None,
 ) -> List:
     """
     按「本轮生效的 Skill」组装群聊 MCP 工具。
-    - 仅允许 get_mcp_servers_for_skill(resolved_skill_id) 中的 MCP（仅 SKILL.md frontmatter 声明）；
-    - 若 agent_profile["mcp_server_ids"] 非空，与上式取交集，作为实例级收紧；
-    - 不再合并专家上全部 skill_ids 的 MCP，也不从全局运行时额外注入 Linkup/Exa。
-    - 内置工作区工具按 agent_profile["file_capabilities"]；call_api 仅当 agent_profile["url_capability"] 为真；
-    - 为 agent_profile["skill_ids"] 中每个 skill 注入 run_skill_script_<skill_id>（磁盘上存在 SKILL 时）。
+    - 仅允许 get_mcp_servers_for_skill(resolved_skill) 中的工具（仅 SKILL.md frontmatter 声明）；
+    - 不再合并专家上全部 skills 的工具，也不从专家资源字段额外收紧；
+    - 内置工作区工具与 call_api 是运行时自带能力；
+    - 为 agent_profile["skills"] 中每个 skill 注入 run_skill_script_<directory_name>（磁盘上存在 SKILL 时）。
     """
-    rid = str(resolved_skill_id or "").strip() or "default"
-    skill_servers = list(dict.fromkeys(get_mcp_servers_for_skill(rid)))
-    instance_server_ids = agent_profile.get("mcp_server_ids") or []
-    if instance_server_ids:
-        allowed_server_ids = {str(x).strip() for x in instance_server_ids if str(x).strip()}
-        server_ids = [x for x in skill_servers if x in allowed_server_ids]
-    else:
-        server_ids = skill_servers
+    rid = str(resolved_skill or "").strip() or "default"
+    configured_tool_names = list(dict.fromkeys(get_mcp_servers_for_skill(rid)))
+
+    configured_rows = {
+        str(row.get("name") or "").strip(): row
+        for row in load_mcp_config()
+        if isinstance(row, dict) and str(row.get("name") or "").strip()
+    }
+    http_api_rows = [
+        configured_rows[name]
+        for name in configured_tool_names
+        if str((configured_rows.get(name) or {}).get("type") or "") == "http_api"
+    ]
+    tool_server_names = [
+        name
+        for name in configured_tool_names
+        if str((configured_rows.get(name) or {}).get("type") or "mcp") == "mcp"
+    ]
 
     mgr = None
     all_tools = []
     # 仅当本轮技能声明了 MCP 依赖时才加载用户 MCP 配置并连接对应 server；
     # 避免纯脚本类技能被 Linkup/Exa 等远程 MCP 冷启动拖慢。
-    if server_ids:
+    if tool_server_names:
         try:
             mgr = await ensure_user_mcp_config_loaded(get_current_user().username)
             all_tools = mgr.get_tools()
@@ -329,18 +340,18 @@ async def build_tools_for_group_chat(
             all_tools = []
 
     # 需要时才连接 MCP server
-    if server_ids and mgr is not None:
-        available_server_ids = {
-            str(c.get("id")).strip()
+    if tool_server_names and mgr is not None:
+        available_tool_names = {
+            str(c.get("name")).strip()
             for c in (getattr(mgr, "server_configs", []) or [])
-            if str(c.get("id", "")).strip()
+            if str(c.get("name", "")).strip()
         }
-        server_ids = list(dict.fromkeys(sid for sid in server_ids if sid in available_server_ids))
-        await mgr.ensure_servers_loaded(server_ids)
+        tool_server_names = list(dict.fromkeys(sid for sid in tool_server_names if sid in available_tool_names))
+        await mgr.ensure_servers_loaded(tool_server_names)
         all_tools = mgr.get_tools()
 
-    if server_ids:
-        tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in server_ids]
+    if tool_server_names:
+        tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in tool_server_names]
     else:
         tools = []
     tools = _filter_redundant_workspace_mcp_tools(tools)
@@ -349,15 +360,24 @@ async def build_tools_for_group_chat(
         _create_builtin_workspace_tools(workspace_id), agent_profile
     )
     extras: List = [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
-    if bool(agent_profile.get("url_capability", True)):
-        extras.append(call_api)
+    if http_api_rows:
+        try:
+            secrets = load_api_secret_values()
+        except Exception:
+            secrets = {}
+        for row in http_api_rows:
+            tool = create_http_api_tool(row, secrets=secrets)
+            if getattr(tool, "name", "") not in tool_names:
+                extras.append(tool)
+                tool_names.add(getattr(tool, "name", ""))
+    extras.append(call_api)
     tools = tools + extras
     tool_names = {getattr(t, "name", "") for t in tools}
-    # 为 Agent 的每个技能注入 run_skill_script，名称带 skill_id 避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
-    for skill_id in (agent_profile.get("skill_ids") or []):
-        sid = str(skill_id or "").strip()
+    # 为 Agent 的每个技能注入 run_skill_script，名称带目录名避免覆盖，方便图标生成等用脚本而非 MCP 文件工具
+    for skill_ref in (agent_profile.get("skills") or []):
+        sid = str(skill_ref.get("directory_name") if isinstance(skill_ref, dict) else "").strip()
         if not sid or not skill_has_skill_md(sid):
-            # 跳过磁盘上不存在或仅有空壳的 skill_id（常见于改名后未同步专家配置）
+            # 跳过磁盘上不存在或仅有空壳的目录（常见于改名后未同步专家配置）
             continue
         run_tool = create_run_skill_script_tool(sid, workspace_id, "workspace_all")
         run_tool.name = build_skill_script_tool_name(sid)

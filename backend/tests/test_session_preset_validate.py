@@ -9,61 +9,70 @@ from app.core.host_config import normalize_host_config_dict
 
 
 def test_extract_presets_wrapped():
-    body = {"export_version": 1, "preset": {"id": "a", "name": "N", "agent_ids": ["x"]}}
+    body = {"export_version": 1, "preset": {"name": "N", "agent_names": ["专家 A"]}}
     assert len(extract_presets_from_import_body(body)) == 1
 
 
 def test_extract_presets_bare():
-    body = {"id": "a", "name": "N", "agent_ids": ["x"]}
-    assert extract_presets_from_import_body(body)[0]["id"] == "a"
+    body = {"name": "N", "agent_names": ["专家 A"]}
+    assert extract_presets_from_import_body(body)[0]["name"] == "N"
 
 
 def test_normalize_invalid():
     assert normalize_preset_dict_for_validation({}) is None
-    assert normalize_preset_dict_for_validation({"id": "a", "name": "", "agent_ids": ["x"]}) is None
+    assert normalize_preset_dict_for_validation({"name": "", "agent_names": ["专家 A"]}) is None
 
 
 def test_validate_missing_agent():
-    preset = {"id": "p", "name": "P", "agent_ids": ["missing"], "host_config": {"skill_ids": ["s1"]}}
+    preset = {
+        "name": "P",
+        "agent_names": ["缺失专家"],
+        "host_config": {"skill_name": "主持技能", "skill_directory": "skill-host"},
+    }
     v = validate_session_preset(
         preset,
-        agent_by_id={},
-        skill_has_content=lambda sid: sid == "s1",
-        mcp_servers=[{"id": "m1", "enabled": True}],
+        agent_by_name={},
+        skill_has_content=lambda directory_name: directory_name == "skill-host",
+        mcp_servers=[{"name": "检索工具", "type": "mcp"}],
     )
-    assert "missing" in v.missing_agent_ids
+    assert "缺失专家" in v.missing_agents
     d = validation_to_api_dict(v)
     assert d["valid"] is False
 
 
 def test_validate_host_skill_and_mcp():
     preset = {
-        "id": "p",
         "name": "P",
-        "agent_ids": ["a1"],
-        "host_config": {"skill_ids": ["hs"], "mcp_server_ids": ["hm"]},
+        "agent_names": ["专家 A"],
+        "host_config": {
+            "skill_name": "主持技能",
+            "skill_directory": "skill-host",
+        },
     }
-    agents = {"a1": {"skill_ids": ["es"], "mcp_server_ids": ["em"]}}
+    agents = {
+        "专家 A": {
+            "skills": [{"name": "专家技能", "directory_name": "skill-expert"}],
+        }
+    }
     v = validate_session_preset(
         preset,
-        agent_by_id=agents,
-        skill_has_content=lambda sid: sid in ("hs", "es"),
-        mcp_servers=[{"id": "hm", "enabled": True}, {"id": "em", "enabled": True}],
+        agent_by_name=agents,
+        skill_has_content=lambda directory_name: directory_name in ("skill-host", "skill-expert"),
+        mcp_servers=[],
     )
     assert v.valid
 
 
-def test_validate_empty_host_skill_ids_do_not_create_missing_group_host():
+def test_validate_empty_host_skills_do_not_create_missing_group_host():
     preset = {
-        "id": "p",
         "name": "P",
-        "agent_ids": ["a1"],
-        "host_config": {"skill_ids": []},
+        "agent_names": ["专家 A"],
+        "host_config": {"skill_name": "", "skill_directory": ""},
     }
-    agents = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
+    agents = {"专家 A": {"skills": []}}
     v = validate_session_preset(
         preset,
-        agent_by_id=agents,
+        agent_by_name=agents,
         skill_has_content=lambda _: False,
         mcp_servers=[],
     )
@@ -72,64 +81,44 @@ def test_validate_empty_host_skill_ids_do_not_create_missing_group_host():
     assert v.missing_skills == []
 
 
-def test_legacy_group_host_placeholder_is_not_a_default_dependency():
-    cfg = normalize_host_config_dict({"skill_ids": ["group-host"]})
+def test_group_host_without_skills_has_no_default_dependency():
+    cfg = normalize_host_config_dict({"skill_name": "", "skill_directory": ""})
 
-    assert cfg["skill_ids"] == []
+    assert cfg["skill_name"] == ""
+    assert cfg["skill_directory"] == ""
 
 
-def test_legacy_group_host_placeholder_with_stale_ref_is_not_a_dependency():
+def test_group_host_ignores_malformed_skill_refs():
     cfg = normalize_host_config_dict(
         {
-            "skill_ids": ["group-host"],
-            "skill_refs": [{"id": "group-host", "name": "网文协同写作主持人"}],
+            "skill_name": "",
+            "skill_directory": "skill-host",
         }
     )
 
-    assert cfg["skill_ids"] == []
-    assert cfg.get("skill_refs") is None
+    assert cfg["skill_name"] == ""
+    assert cfg["skill_directory"] == "skill-host"
 
 
 def test_host_config_normalizes_to_single_host_skill():
     cfg = normalize_host_config_dict(
         {
-            "skill_ids": ["host-a", "host-b"],
-            "skill_refs": [
-                {"id": "host-a", "name": "主持人 A"},
-                {"id": "host-b", "name": "主持人 B"},
-            ],
+            "skill_name": "主持人 A",
+            "skill_directory": "/host-a",
         }
     )
 
-    assert cfg["skill_ids"] == ["host-a"]
-    assert cfg["skill_refs"] == [{"id": "host-a", "name": "主持人 A"}]
-
-
-def test_validate_host_mcp_ignores_legacy_enabled_false():
-    preset = {
-        "id": "p",
-        "name": "P",
-        "agent_ids": ["a1"],
-        "host_config": {"mcp_server_ids": ["off"]},
-    }
-    agents = {"a1": {"skill_ids": [], "mcp_server_ids": []}}
-    v = validate_session_preset(
-        preset,
-        agent_by_id=agents,
-        skill_has_content=lambda _: True,
-        mcp_servers=[{"id": "off", "enabled": False}],
-    )
-    assert v.valid
-    assert v.disabled_mcp_servers == []
+    assert cfg["skill_name"] == "主持人 A"
+    assert cfg["skill_directory"] == "host-a"
 
 
 def test_skip_agent_skills_when_agent_missing():
-    preset = {"id": "p", "name": "P", "agent_ids": ["ghost"]}
+    preset = {"name": "P", "agent_names": ["幽灵专家"]}
     v = validate_session_preset(
         preset,
-        agent_by_id={},
+        agent_by_name={},
         skill_has_content=lambda _: False,
         mcp_servers=[],
     )
-    assert v.missing_agent_ids == ["ghost"]
+    assert v.missing_agents == ["幽灵专家"]
     assert not v.missing_skills

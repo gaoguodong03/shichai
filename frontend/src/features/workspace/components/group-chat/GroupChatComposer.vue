@@ -18,7 +18,7 @@
                 :streaming-phase="currentGroupStreamingPhase"
                 @invite-one-suggested="inviteOneSuggestedAgent"
                 @invite-suggested="inviteSuggestedAgents"
-                @dismiss-suggested="groupSuggestedAddAgentIds = []"
+                @dismiss-suggested="groupSuggestedAddAgentNames = []"
                 @ignore-auto-switch="ignoreAutoSwitchAndPause"
               />
               <div class="group-chat-input-blocks">
@@ -73,7 +73,7 @@
                           :style="
                             expertAvatarUrl(opt.id)
                               ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                              : { backgroundColor: agentAvatarColor(groupDetail?.agent_names?.indexOf(opt.id) ?? -1) }
                           "
                         >
                           <img
@@ -130,7 +130,7 @@
                             :style="
                               expertAvatarUrl(opt.id)
                                 ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_names?.indexOf(opt.id) ?? -1) }
                             "
                           >
                             <img
@@ -188,7 +188,7 @@
                             :style="
                               expertAvatarUrl(opt.id)
                                 ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_ids?.indexOf(opt.id) ?? -1) }
+                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_names?.indexOf(opt.id) ?? -1) }
                             "
                           >
                             <img
@@ -392,12 +392,12 @@
                           placeholder="搜索场景（名称/专家）"
                         />
                         <ul v-if="filteredShortcutPresets.length" class="group-chat-members-list">
-                          <li v-for="p in filteredShortcutPresets" :key="p.id" class="group-chat-members-item group-chat-members-item-clickable">
+                          <li v-for="p in filteredShortcutPresets" :key="p.name" class="group-chat-members-item group-chat-members-item-clickable">
                             <button
                               type="button"
                               class="group-chat-shortcut-pill"
                               :title="`${p.name}：${shortcutPresetExpertNamesText(p)}`"
-                              @click="applyShortcutPreset(p.id)"
+                              @click="applyShortcutPreset(p.name)"
                             >
                               <span class="group-chat-shortcut-name">{{ p.name }}</span>
                               <span class="group-chat-shortcut-experts">{{ shortcutPresetExpertNamesText(p) }}</span>
@@ -453,9 +453,9 @@
                                       : ((groupDetail?.agent_map || {})[id]?.name || id)
                                   }}
                                 </span>
-                                <span v-if="id === leaderDisplayId" class="group-chat-member-badge">主持人</span>
+                                <span v-if="id === leaderDisplayName" class="group-chat-member-badge">主持人</span>
                               </span>
-                              <button v-if="id !== leaderDisplayId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
+                              <button v-if="id !== leaderDisplayName" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
@@ -463,25 +463,25 @@
                         <section class="group-chat-add-remove-section">
                           <p class="group-chat-members-dropdown-title">可邀请的专家</p>
                           <ul v-if="invitableAgents.length" class="group-chat-members-list">
-                            <li v-for="d in invitableAgents" :key="d.agent_id" class="group-chat-members-item group-chat-member-skill-row">
+                            <li v-for="d in invitableAgents" :key="d.agent_name" class="group-chat-members-item group-chat-member-skill-row">
                               <span
                                 class="group-chat-avatar group-chat-avatar-sm"
                                 :style="
-                                  expertAvatarUrl(d.agent_id)
+                                  expertAvatarUrl(d.agent_name)
                                     ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: agentAvatarColor(agentIndex(d.agent_id)) }
+                                    : { backgroundColor: agentAvatarColor(agentIndex(d.agent_name)) }
                                 "
                               >
                                 <img
-                                  v-if="expertAvatarUrl(d.agent_id)"
-                                  :src="expertAvatarUrl(d.agent_id)!"
+                                  v-if="expertAvatarUrl(d.agent_name)"
+                                  :src="expertAvatarUrl(d.agent_name)!"
                                   alt=""
                                   class="group-chat-avatar-photo"
                                 />
-                                <template v-else>{{ (d.name || d.agent_id || '?').trim().slice(0, 1).toUpperCase() }}</template>
+                                <template v-else>{{ (d.name || d.agent_name || '?').trim().slice(0, 1).toUpperCase() }}</template>
                               </span>
-                              <span class="group-chat-add-member-label">{{ d.name || d.agent_id }}</span>
-                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_id)">邀请</button>
+                              <span class="group-chat-add-member-label">{{ d.name || d.agent_name }}</span>
+                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_name)">邀请</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无可邀请的专家</p>
@@ -550,7 +550,7 @@ const {
   currentGroupStreamingPhase,
   inviteOneSuggestedAgent,
   inviteSuggestedAgents,
-  groupSuggestedAddAgentIds,
+  groupSuggestedAddAgentNames,
   ignoreAutoSwitchAndPause,
   attachedFiles,
   removeAttachedFile,
@@ -598,7 +598,7 @@ const {
   agentAvatarColor,
   agentIndex,
   agentAvatarChar,
-  leaderDisplayId,
+  leaderDisplayName,
   removeMember,
   invitableAgents,
   inviteSingleMember,

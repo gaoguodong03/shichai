@@ -40,12 +40,12 @@ def _read_index_entries(index_file: Path) -> List[Dict[str, Any]]:
     for raw in index_file.read_text(encoding="utf-8").splitlines():
         line = raw.rstrip()
         stripped = line.strip()
-        if stripped.startswith("- agent:"):
+        if stripped.startswith("- agent_name:"):
             if current:
                 entries.append(current)
             current = {
-                "agent_id": stripped.removeprefix("- agent:").strip(),
-                "skill_id": "",
+                "agent_name": stripped.removeprefix("- agent_name:").strip(),
+                "skill": "",
                 "summary": "",
                 "files": [],
             }
@@ -54,7 +54,7 @@ def _read_index_entries(index_file: Path) -> List[Dict[str, Any]]:
         if not current:
             continue
         if stripped.startswith("skill:"):
-            current["skill_id"] = stripped.removeprefix("skill:").strip()
+            current["skill"] = stripped.removeprefix("skill:").strip()
             in_files = False
             continue
         if stripped.startswith("summary:"):
@@ -134,8 +134,8 @@ def upsert_index_entries(
             continue
         normalized_delta.append(
             {
-                "agent_id": _clean_index_value(entry.get("agent_id"), 80) or "unknown",
-                "skill_id": _clean_index_value(entry.get("skill_id"), 120) or "default",
+                "agent_name": _clean_index_value(entry.get("agent_name"), 80) or "unknown",
+                "skill": _clean_index_value(entry.get("skill"), 120) or "default",
                 "summary": _clean_index_value(entry.get("summary"), 180) or "更新工作区文件",
                 "files": files,
             }
@@ -148,14 +148,14 @@ def upsert_index_entries(
         if not files:
             continue
         clean_entry = {
-            "agent_id": _clean_index_value(entry.get("agent_id"), 80) or "unknown",
-            "skill_id": _clean_index_value(entry.get("skill_id"), 120) or "default",
+            "agent_name": _clean_index_value(entry.get("agent_name"), 80) or "unknown",
+            "skill": _clean_index_value(entry.get("skill"), 120) or "default",
             "summary": _clean_index_value(entry.get("summary"), 180) or "更新工作区文件",
             "files": files,
         }
         key = (
-            clean_entry["agent_id"],
-            clean_entry["skill_id"],
+            clean_entry["agent_name"],
+            clean_entry["skill"],
             tuple(clean_entry["files"]),
         )
         if key in seen_entries:
@@ -166,8 +166,8 @@ def upsert_index_entries(
     merged = merged[-max(1, int(max_entries)) :]
     lines = ["# Index", ""]
     for entry in merged:
-        lines.append(f"- agent: {entry['agent_id']}")
-        lines.append(f"  skill: {entry['skill_id']}")
+        lines.append(f"- agent_name: {entry['agent_name']}")
+        lines.append(f"  skill: {entry['skill']}")
         lines.append(f"  summary: {entry['summary']}")
         lines.append("  files:")
         for path in entry["files"]:
@@ -179,7 +179,7 @@ def upsert_index_entries(
 
 def build_dispatch_context(
     session_id: str,
-    target_agent_id: str,
+    target_agent_name: str,
     goal: str,
     k: int = 3,
     max_facts: int = 60,
@@ -209,8 +209,8 @@ def build_dispatch_context(
         lines.append("【工作区索引】")
         lines.append("下列路径是工作区相对路径，读取上述文件时使用工作区相对路径。")
         for entry in index_entries[-10:]:
-            agent = _clean_index_value(entry.get("agent_id"), 80) or "unknown"
-            skill = _clean_index_value(entry.get("skill_id"), 120) or "default"
+            agent = _clean_index_value(entry.get("agent_name"), 80) or "unknown"
+            skill = _clean_index_value(entry.get("skill"), 120) or "default"
             summary = _clean_index_value(entry.get("summary"), 180) or "更新工作区文件"
             lines.append(f"- {agent} / {skill}: {summary}")
             for path in entry.get("files") or []:

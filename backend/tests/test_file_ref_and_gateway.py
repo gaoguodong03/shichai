@@ -289,8 +289,8 @@ async def test_tool_gateway_does_not_retry_sandbox_environment_errors():
             task_id="task",
             turn_id="t1",
             tool_call_id="c1",
-            agent_id="a1",
-            skill_id="skill",
+            agent_name="专家A",
+            directory_name="skill",
             retry_count=2,
         )
     )
@@ -319,7 +319,7 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
     out = rss._execute_script_subprocess(
         script_full_path=script_path,
         script_path="probe.py",
-        skill_id="probe-skill",
+        directory_name="probe-skill",
         workspace_id="sess-probe",
         write_mode="workspace_all",
         input_json="",
@@ -346,7 +346,7 @@ def test_run_skill_script_subprocess_executes_shell_script(monkeypatch, tmp_path
     out = rss._execute_script_subprocess(
         script_full_path=script_path,
         script_path="probe.sh",
-        skill_id="probe-skill",
+        directory_name="probe-skill",
         workspace_id="sess-probe",
         write_mode="workspace_all",
         input_json="",
@@ -362,7 +362,7 @@ def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
     from app.tools import run_skill_script as rss
 
     cmd, env, cwd = rss._build_sandbox_exec_request(
-        skill_id="demo-skill",
+        directory_name="demo-skill",
         workspace_id="sess-1",
         script_path="tools/check.py",
         suffix=".py",
@@ -379,7 +379,7 @@ def test_build_sandbox_exec_request_for_shell_script_uses_bash():
     from app.tools import run_skill_script as rss
 
     cmd, env, cwd = rss._build_sandbox_exec_request(
-        skill_id="demo-skill",
+        directory_name="demo-skill",
         workspace_id="sess-1",
         script_path="tools/check.sh",
         suffix=".sh",
@@ -472,7 +472,7 @@ async def test_execute_mcp_call_direct_does_not_use_sandbox_gateway(monkeypatch)
 
     sess = _FakeSession()
     ok, result, err = await execute_mcp_call(
-        server_id="server-a",
+        server_name="server-a",
         tool_name="echo",
         kwargs={"q": "x"},
         session=sess,
@@ -483,7 +483,7 @@ async def test_execute_mcp_call_direct_does_not_use_sandbox_gateway(monkeypatch)
     assert result == {"ok": True, "kwargs": {"q": "x"}}
     # 第二次调用不应被上一次 idempotency 结果“粘住”
     ok2, result2, err2 = await execute_mcp_call(
-        server_id="server-a",
+        server_name="server-a",
         tool_name="echo",
         kwargs={"q": "y"},
         session=sess,
@@ -505,7 +505,7 @@ async def test_execute_mcp_call_treats_internal_cancel_as_tool_error(monkeypatch
             raise asyncio.CancelledError("remote stream ended")
 
     ok, result, err = await execute_mcp_call(
-        server_id="linkup",
+        server_name="linkup",
         tool_name="search",
         kwargs={"q": "x"},
         session=_CancelledSession(),
@@ -529,7 +529,7 @@ async def test_execute_mcp_call_surfaces_empty_runtime_error_without_sandbox_dia
             raise RuntimeError()
 
     ok, result, err = await execute_mcp_call(
-        server_id="mcp-empty",
+        server_name="mcp-empty",
         tool_name="web_search_exa",
         kwargs={"query": "x"},
         session=_RuntimeErrorSession(),
@@ -554,8 +554,8 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
     calls = []
     reconnects = []
 
-    async def _fake_execute_mcp_call(*, server_id, tool_name, kwargs, session, timeout_sec=None):
-        calls.append((server_id, tool_name, kwargs, session, timeout_sec))
+    async def _fake_execute_mcp_call(*, server_name, tool_name, kwargs, session, timeout_sec=None):
+        calls.append((server_name, tool_name, kwargs, session, timeout_sec))
         if len(calls) == 1:
             return (
                 False,
@@ -566,9 +566,9 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
         result = SimpleNamespace(content=[SimpleNamespace(text="ok after reconnect")])
         return True, result, ""
 
-    async def _fake_reconnect_server(server_id):
-        reconnects.append(server_id)
-        mgr.sessions[server_id] = "fresh-session"
+    async def _fake_reconnect_server(server_name):
+        reconnects.append(server_name)
+        mgr.sessions[server_name] = "fresh-session"
         return True
 
     monkeypatch.setattr(mcp_manager, "execute_mcp_call", _fake_execute_mcp_call)
@@ -579,7 +579,7 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
         description="search",
         inputSchema={"type": "object", "properties": {"query": {"type": "string"}}},
     )
-    tool = mgr._create_tool_spec(mcp_tool, session="stale-session", server_id="mcp-exa")
+    tool = mgr._create_tool_spec(mcp_tool, session="stale-session", server_name="mcp-exa")
     out = await tool.acall(query="pytest")
 
     assert out == "ok after reconnect"
@@ -606,7 +606,7 @@ async def test_mcp_tool_normalization_error_reports_server_and_tool(monkeypatch)
         description="search",
         inputSchema={"type": "object", "properties": {"query": {"type": "string"}}},
     )
-    tool = mgr._create_tool_spec(mcp_tool, session=object(), server_id="mcp-exa")
+    tool = mgr._create_tool_spec(mcp_tool, session=object(), server_name="mcp-exa")
     out = await tool.acall(query={"nested": "bad"})
 
     assert "Error:" in out
@@ -623,7 +623,6 @@ async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monk
     mgr = mcp_manager.MCPToolManager()
     mgr.server_configs = [
         {
-            "id": "mcp-legacy-off",
             "name": "Legacy Off",
             "enabled": False,
             "transport": {"type": "stdio", "command": "python"},
@@ -631,16 +630,16 @@ async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monk
     ]
     connected = []
 
-    async def _fake_connect_server(server_id, config):
-        connected.append((server_id, config))
-        mgr.sessions[server_id] = "session"
+    async def _fake_connect_server(server_name, config):
+        connected.append((server_name, config))
+        mgr.sessions[server_name] = "session"
         return True
 
     monkeypatch.setattr(mgr, "connect_server", _fake_connect_server)
 
-    await mgr.ensure_servers_loaded(["mcp-legacy-off"])
+    await mgr.ensure_servers_loaded(["Legacy Off"])
 
-    assert connected == [("mcp-legacy-off", mgr.server_configs[0])]
+    assert connected == [("Legacy Off", mgr.server_configs[0])]
 
 
 def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():
@@ -649,7 +648,6 @@ def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():
     context = _mcp_connection_log_context(
         "mcp-f0e12d4e",
         {
-            "id": "mcp-f0e12d4e",
             "name": "Remote Search",
             "transport": {
                 "type": "streamable_http",
@@ -662,7 +660,7 @@ def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():
         },
     )
 
-    assert "server_id=mcp-f0e12d4e" in context
+    assert "server_name=mcp-f0e12d4e" in context
     assert "name=Remote Search" in context
     assert "transport=streamable_http" in context
     assert "url=https://example.com/mcp" in context
@@ -686,7 +684,6 @@ async def test_mcp_streamable_http_missing_placeholder_fails_before_connect(monk
 
     mgr = mcp_manager.MCPToolManager()
     config = {
-        "id": "mcp-f0e12d4e",
         "name": "Linkup抓取网页",
         "transport": {
             "type": "http",
@@ -701,7 +698,7 @@ async def test_mcp_streamable_http_missing_placeholder_fails_before_connect(monk
     assert ok is False
     assert "MCP Server HTTP 传输缺少必需变量" in messages
     assert "LINKUP_API_KEY" in messages
-    assert "server_id=mcp-f0e12d4e" in messages
+    assert "server_name=mcp-f0e12d4e" in messages
     assert "url=https://mcp.linkup.so/mcp" in messages
 
 
@@ -742,7 +739,6 @@ async def test_mcp_streamable_http_protocol_error_logs_connection_context(monkey
 
     mgr = mcp_manager.MCPToolManager()
     config = {
-        "id": "mcp-f0e12d4e",
         "name": "Remote Search",
         "transport": {
             "type": "streamable_http",
@@ -757,7 +753,7 @@ async def test_mcp_streamable_http_protocol_error_logs_connection_context(monkey
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert ok is False
     assert "连接出现协议不兼容" in messages
-    assert "server_id=mcp-f0e12d4e" in messages
+    assert "server_name=mcp-f0e12d4e" in messages
     assert "name=Remote Search" in messages
     assert "url=https://example.com/mcp" in messages
     assert "secret-token" not in messages
@@ -793,14 +789,14 @@ async def test_execute_mcp_call_serializes_same_session(temp_user_data_root, mon
     sess = _UnsafeSession()
     r1, r2 = await asyncio.gather(
         execute_mcp_call(
-            server_id="s1",
+            server_name="s1",
             tool_name="echo",
             kwargs={"q": "a"},
             session=sess,
             timeout_sec=2.0,
         ),
         execute_mcp_call(
-            server_id="s1",
+            server_name="s1",
             tool_name="echo",
             kwargs={"q": "b"},
             session=sess,

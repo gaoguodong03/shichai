@@ -24,22 +24,12 @@ from app.api.group_chat_state import (
 )
 from app.api.settings_app import load_app_settings
 from app.api.settings_secrets import load_api_secret_values
-from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
-
 logger = logging.getLogger(__name__)
 
 
 def _maybe_upgrade_meta_to_scene_profile(meta_item: Dict[str, Any]) -> bool:
-    """Upgrade legacy virtual-host session metadata to scene orchestration when safe."""
-    profile = str(meta_item.get("orchestration_profile") or "").strip().lower()
-    host_config = meta_item.get("host_config")
-    if str(meta_item.get("leader_agent_id") or "").strip() != VIRTUAL_SCENE_HOST_ID:
-        return False
-    if not (isinstance(host_config, dict) and (meta_item.get("agent_ids") or [])):
-        return False
-    if profile in ("", "recruitment"):
-        meta_item["orchestration_profile"] = "scene"
-        return True
+    """No-op after the name-based session contract removed legacy meta upgrades."""
+    _ = meta_item
     return False
 
 
@@ -49,7 +39,7 @@ async def _ai_title_from_recent_user_messages(
     max_chars: int = 18,
     max_user_messages: int = 6,
     group_session_id: str = "",
-    llm_provider_id: str = "",
+    llm_name: str = "",
 ) -> str:
     """Generate a short Chinese title from recent user messages."""
     try:
@@ -111,16 +101,16 @@ def _schedule_group_title_refresh(
         started = time.perf_counter()
         try:
             app_settings = load_app_settings()
-            llm_provider_id = app_settings.get("default_llm", "qwen")
+            llm_name = app_settings.get("default_llm", "qwen3-max")
             secrets = load_api_secret_values()
-            llm = get_llm_from_config(llm_provider_id, app_settings.get("llm_providers"), secrets)
+            llm = get_llm_from_config(llm_name, app_settings.get("llm_providers"), secrets)
             ai_title = await _ai_title_from_recent_user_messages(
                 llm,
                 messages_snapshot,
                 max_chars=max_chars,
                 max_user_messages=max_user_messages,
                 group_session_id=session_id,
-                llm_provider_id=str(llm_provider_id or ""),
+                llm_name=str(llm_name or ""),
             )
             if not ai_title:
                 logger.info(

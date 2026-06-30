@@ -79,9 +79,9 @@ def _get_skills_dir() -> Path:
     return user_ctx.skills_dir.resolve()
 
 
-def skill_has_skill_md(skill_id: str) -> bool:
-    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 Agent 里陈旧 skill_id 指向空壳目录。"""
-    sid = (skill_id or "").strip()
+def skill_has_skill_md(directory_name: str) -> bool:
+    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 Agent 里陈旧 directory_name 指向空壳目录。"""
+    sid = (directory_name or "").strip()
     if not sid:
         return False
     try:
@@ -487,7 +487,7 @@ def _build_sandbox_script_command(
 
 def _build_sandbox_exec_request(
     *,
-    skill_id: str,
+    directory_name: str,
     workspace_id: str,
     script_path: str,
     suffix: str,
@@ -500,7 +500,7 @@ def _build_sandbox_exec_request(
     - input_json 通过环境变量注入并管道到 stdin
     """
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
-    skill_home = f"{SANDBOX_SKILLS_ROOT}/{skill_id}"
+    skill_home = f"{SANDBOX_SKILLS_ROOT}/{directory_name}"
     sandbox_script_path = f"{skill_home}/scripts/{script_path.lstrip('/')}"
     base_argv = _build_sandbox_script_command(
         sandbox_script_path,
@@ -547,7 +547,7 @@ def _execute_script_subprocess(
     *,
     script_full_path: Path,
     script_path: str,
-    skill_id: str,
+    directory_name: str,
     workspace_id: str,
     write_mode: str,
     input_json: str,
@@ -560,7 +560,7 @@ def _execute_script_subprocess(
     workspace_root.mkdir(parents=True, exist_ok=True)
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
     script_exec_path = (
-        f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts/{script_path.lstrip('/')}"
+        f"{SANDBOX_SKILLS_ROOT}/{directory_name}/scripts/{script_path.lstrip('/')}"
         if run_in_sandbox
         else str(script_full_path)
     )
@@ -580,12 +580,12 @@ def _execute_script_subprocess(
             timeout=timeout_sec,
             env={
                 **os.environ,
-                "SKILL_ID": skill_id,
+                "SKILL_ID": directory_name,
                 "SKILL_WRITE_MODE": write_mode,
                 "SKILL_WORKSPACE_ID": workspace_id,
                 "SKILL_WORKSPACE_ROOT": workspace_env_root,
                 "SKILL_SCRIPT_ROOT": (
-                    f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts"
+                    f"{SANDBOX_SKILLS_ROOT}/{directory_name}/scripts"
                     if run_in_sandbox
                     else str(script_root)
                 ),
@@ -638,16 +638,16 @@ def _execute_script_subprocess(
         }
 
 
-def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mode: str = "readonly"):
+def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", write_mode: str = "readonly"):
     """
     新建「执行当前技能下脚本」的工具，仅允许运行该 skill 的 scripts/ 目录内脚本。
     脚本可在 SKILL.md 或 scripts 中被描述，由 LLM 在需要时调用。
     """
     skills_dir = _get_skills_dir()
     owner_user_id = _get_current_user_id()
-    skill_home = (skills_dir / skill_id).resolve()
+    skill_home = (skills_dir / directory_name).resolve()
     script_root = (skill_home / "scripts").resolve()
-    # 仅当该 skill 目录真实存在且含 SKILL.md 时才新建 scripts/，避免 stale skill_id（如改名后未更新的 Agent）生成空壳目录
+    # 仅当该 skill 目录真实存在且含 SKILL.md 时才新建 scripts/，避免 stale directory_name（如改名后未更新的 Agent）生成空壳目录
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
@@ -741,15 +741,15 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             hint = ""
             if not available_scripts:
                 hint = (
-                    f"当前绑定 skill_id={skill_id!r}，脚本目录为 {str(script_root)}。"
-                    "若专家配置里仍有已改名/已删除的旧 skill_id，请只保留实际存在的目录名，"
+                    f"当前绑定 directory_name={directory_name!r}，脚本目录为 {str(script_root)}。"
+                    "若专家配置里仍有已改名/已删除的旧 directory_name，请只保留实际存在的目录名，"
                     f"脚本应放在该目录的 scripts/ 下。"
                 )
             return _json_result(
                 ok=False,
                 code="script_not_found",
                 message=f"脚本不存在或不在允许目录内: {script_path}" + (f" {hint}" if hint else ""),
-                skill_id=skill_id,
+                directory_name=directory_name,
                 script_root=str(script_root),
                 available_scripts=available_scripts,
             )
@@ -785,7 +785,7 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             )
         try:
             sandbox_command, sandbox_extra_env, sandbox_cwd = _build_sandbox_exec_request(
-                skill_id=skill_id,
+                directory_name=directory_name,
                 workspace_id=workspace_id,
                 script_path=script_path,
                 suffix=full.suffix.lower(),
@@ -794,12 +794,12 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             )
         except RuntimeError as e:
             return _json_result(ok=False, code="runtime_missing", message=str(e))
-        script_tool_name = build_skill_script_tool_name(skill_id)
+        script_tool_name = build_skill_script_tool_name(directory_name)
         current_user_id = owner_user_id
         if not current_user_id:
             logger.warning(
-                "st49_skill_script_blocked code=missing_user_context skill_id=%s workspace_id=%s script=%s",
-                skill_id,
+                "st49_skill_script_blocked code=missing_user_context directory_name=%s workspace_id=%s script=%s",
+                directory_name,
                 workspace_id,
                 script_path,
             )
@@ -813,10 +813,10 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
         ctx = ToolExecutionContext(
             session_id=workspace_id,
             workspace_id=str(workspace_root),
-            agent_id=f"skill:{skill_id}",
+            agent_name=f"skill:{directory_name}",
             user_id=current_user_id,
-            skill_id=skill_id,
-            task_id=f"skill-script:{skill_id}",
+            directory_name=directory_name,
+            task_id=f"skill-script:{directory_name}",
             turn_id=f"script:{uuid.uuid4().hex}",
             tool_call_id=f"run_skill_script:{script_path}:{uuid.uuid4().hex}",
             timeout_ms=max(1000, timeout_sec * 1000),
@@ -824,9 +824,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             sandbox_cwd=sandbox_cwd,
         )
         logger.info(
-            "st49_skill_script_execute_start code=skill_script_start user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s requirements_hash=%s requirements_present=%s",
+            "st49_skill_script_execute_start code=skill_script_start user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s argv_count=%s timeout_ms=%s cwd=%s requirements_hash=%s requirements_present=%s",
             current_user_id,
-            skill_id,
+            directory_name,
             script_tool_name,
             workspace_id,
             script_path,
@@ -837,12 +837,12 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             bool(requirements_b64),
         )
         sandbox_env = {
-            "SKILL_ID": skill_id,
+            "SKILL_ID": directory_name,
             "SKILL_WRITE_MODE": write_mode,
             "SKILL_WORKSPACE_ID": workspace_id,
             "SKILL_WORKSPACE_ROOT": sandbox_session_dir(workspace_id),
-            "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{skill_id}/scripts",
-            "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{skill_id}",
+            "SKILL_SCRIPT_ROOT": f"{SANDBOX_SKILLS_ROOT}/{directory_name}/scripts",
+            "SKILL_HOME": f"{SANDBOX_SKILLS_ROOT}/{directory_name}",
             "SKILL_REQUIREMENTS_B64": requirements_b64,
             "SKILL_REQUIREMENTS_HASH": requirements_hash if requirements_b64 else "",
             **sandbox_extra_env,
@@ -866,9 +866,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
             gateway_error = gw.error or "统一网关执行失败"
             sandbox_diag = _extract_sandbox_diag(gateway_error)
             logger.warning(
-                "st49_skill_script_execute_failed code=skill_script_gateway_failed user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s reason=%s elapsed_ms=%s sandbox_id=%s cwd=%s requirements_hash=%s err=%s",
+                "st49_skill_script_execute_failed code=skill_script_gateway_failed user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s reason=%s elapsed_ms=%s sandbox_id=%s cwd=%s requirements_hash=%s err=%s",
                 current_user_id,
-                skill_id,
+                directory_name,
                 script_tool_name,
                 workspace_id,
                 script_path,
@@ -941,9 +941,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "sandbox_trace": sandbox_trace,
             }
             logger.warning(
-                "st49_skill_script_execute_nonzero code=skill_script_nonzero user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
+                "st49_skill_script_execute_nonzero code=skill_script_nonzero user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
                 current_user_id,
-                skill_id,
+                directory_name,
                 script_tool_name,
                 workspace_id,
                 script_path,
@@ -968,9 +968,9 @@ def create_run_skill_script_tool(skill_id: str, workspace_id: str = "", write_mo
                 "message": "脚本执行成功。",
             }
             logger.info(
-                "st49_skill_script_execute_done code=skill_script_done user_id=%s skill_id=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
+                "st49_skill_script_execute_done code=skill_script_done user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s exit_code=%s elapsed_ms=%s stdout_len=%s stderr_len=%s sandbox_id=%s requirements_hash=%s installed_requirements_hash=%s verified_requirements_hash=%s",
                 current_user_id,
-                skill_id,
+                directory_name,
                 script_tool_name,
                 workspace_id,
                 script_path,

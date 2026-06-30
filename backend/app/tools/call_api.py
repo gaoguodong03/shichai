@@ -1,4 +1,4 @@
-"""调用外部 API / 服务，作为一等步骤能力（专家需开启 url_capability）。"""
+"""调用外部 API / 服务，作为运行时内置步骤能力。"""
 import ipaddress
 import json
 import os
@@ -172,6 +172,7 @@ def _call_api_impl(
     method: str = "GET",
     headers_json: str = "",
     body: str = "",
+    timeout_seconds: Optional[float] = None,
 ) -> str:
     """
     调用外部 HTTP API。
@@ -232,7 +233,7 @@ def _call_api_impl(
         return f"错误：{block}"
 
     import os as _os_env
-    timeout_sec = float(_os_env.getenv("CALL_API_TIMEOUT", "30"))
+    timeout_sec = float(timeout_seconds or _os_env.getenv("CALL_API_TIMEOUT", "30"))
     try:
         with httpx.Client(timeout=timeout_sec) as client:
             resp = client.request(method, url, content=body if body else None, headers=headers or None)
@@ -291,6 +292,11 @@ call_api = ToolSpec.from_function(
                 "type": "string",
                 "description": "可选请求体字符串，POST/PUT 时常用。",
                 "default": "",
+            },
+            "timeout_seconds": {
+                "type": "number",
+                "description": "可选超时时间（秒）。",
+                "default": 30,
             },
         },
         "required": ["url"],

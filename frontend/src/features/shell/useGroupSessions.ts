@@ -6,7 +6,7 @@ export type GroupSessionRow = {
   id: string
   title: string
   updated_at: string
-  agent_ids?: string[]
+  agent_names?: string[]
   runtime_state?: { running?: boolean }
 }
 
@@ -29,7 +29,7 @@ export function useGroupSessions(args: {
       id,
       title: String(row?.title || '新对话'),
       updated_at: String(row?.updated_at || new Date().toISOString()),
-      agent_ids: Array.isArray(row?.agent_ids) ? row.agent_ids : [],
+      agent_names: Array.isArray(row?.agent_names) ? row.agent_names : [],
     }
     groupSessions.value = [next, ...groupSessions.value.filter((s) => s.id !== id)]
   }
@@ -85,7 +85,7 @@ export function useGroupSessions(args: {
       const r = await apiRequest('/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: '新对话', agent_ids: [] }),
+        body: JSON.stringify({ title: '新对话', agent_names: [] }),
       })
       const j = await r.json()
       if (j.status === 'ok' && j.data?.id) {

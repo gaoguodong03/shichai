@@ -5,7 +5,7 @@ from app.agent.group_orchestration_fsm import (
     available_to_add_for_prompt,
     default_orchestration_profile_for_new_session,
     effective_orchestration_profile,
-    locked_skill_id_for_expert,
+    locked_skill_for_expert,
     resolve_group_entry_route,
     user_requests_exit_skill_session,
 )
@@ -14,26 +14,26 @@ from app.agent import skill_session_contract
 
 def test_effective_profile_explicit():
     assert (
-        effective_orchestration_profile({"orchestration_profile": "scene"}, agent_ids=["a"])
+        effective_orchestration_profile({"orchestration_profile": "scene"}, agent_names=["写作专家"])
         == ORCHESTRATION_SCENE
     )
     assert (
-        effective_orchestration_profile({"orchestration_profile": "recruitment"}, agent_ids=[])
+        effective_orchestration_profile({"orchestration_profile": "recruitment"}, agent_names=[])
         == ORCHESTRATION_RECRUITMENT
     )
 
 
 def test_effective_profile_migration_empty_agents():
-    assert effective_orchestration_profile({}, agent_ids=[]) == ORCHESTRATION_RECRUITMENT
+    assert effective_orchestration_profile({}, agent_names=[]) == ORCHESTRATION_RECRUITMENT
 
 
 def test_effective_profile_migration_nonempty_agents():
-    assert effective_orchestration_profile({}, agent_ids=["x"]) == ORCHESTRATION_SCENE
+    assert effective_orchestration_profile({}, agent_names=["写作专家"]) == ORCHESTRATION_SCENE
 
 
 def test_default_for_new_session():
-    assert default_orchestration_profile_for_new_session(agent_ids=[]) == ORCHESTRATION_RECRUITMENT
-    assert default_orchestration_profile_for_new_session(agent_ids=["a"]) == ORCHESTRATION_SCENE
+    assert default_orchestration_profile_for_new_session(agent_names=[]) == ORCHESTRATION_RECRUITMENT
+    assert default_orchestration_profile_for_new_session(agent_names=["写作专家"]) == ORCHESTRATION_SCENE
 
 
 def test_available_to_add_scene_empty():
@@ -43,47 +43,47 @@ def test_available_to_add_scene_empty():
 
 
 def test_resolve_skip_host_when_skill_lock():
-    meta = {"skill_session_owner_id": "agent-a"}
+    meta = {"skill_session_owner_name": "写作专家"}
     r = resolve_group_entry_route(
         meta_item=meta,
-        agent_ids=["agent-a"],
+        agent_names=["写作专家"],
         host_takeover_requested=False,
-        ignore_auto_agent_id="",
+        ignore_auto_agent_name="",
     )
     assert r.skip_host_dispatch is True
-    assert r.direct_agent_id == "agent-a"
+    assert r.direct_agent_name == "写作专家"
 
 
 def test_resolve_no_skip_on_host_takeover():
-    meta = {"skill_session_owner_id": "agent-a"}
+    meta = {"skill_session_owner_name": "写作专家"}
     r = resolve_group_entry_route(
         meta_item=meta,
-        agent_ids=["agent-a"],
+        agent_names=["写作专家"],
         host_takeover_requested=True,
-        ignore_auto_agent_id="",
+        ignore_auto_agent_name="",
     )
     assert r.skip_host_dispatch is False
 
 
 def test_resolve_no_skip_on_ignore_auto_same_expert():
-    meta = {"skill_session_owner_id": "agent-a"}
+    meta = {"skill_session_owner_name": "写作专家"}
     r = resolve_group_entry_route(
         meta_item=meta,
-        agent_ids=["agent-a"],
+        agent_names=["写作专家"],
         host_takeover_requested=False,
-        ignore_auto_agent_id="agent-a",
+        ignore_auto_agent_name="写作专家",
     )
     assert r.skip_host_dispatch is False
 
 
-def test_locked_skill_id_for_expert_match():
-    meta = {"skill_session_owner_id": "agent-a", "skill_session_skill_id": "sk1"}
-    assert locked_skill_id_for_expert(meta, expert_agent_id="agent-a", expert_skill_ids=["sk1", "sk2"]) == "sk1"
+def test_locked_skill_for_expert_match():
+    meta = {"skill_session_owner_name": "写作专家", "skill_session_skill": "sk1"}
+    assert locked_skill_for_expert(meta, expert_agent_name="写作专家", expert_skills=["sk1", "sk2"]) == "sk1"
 
 
-def test_locked_skill_id_for_expert_wrong_owner():
-    meta = {"skill_session_owner_id": "agent-a", "skill_session_skill_id": "sk1"}
-    assert locked_skill_id_for_expert(meta, expert_agent_id="agent-b", expert_skill_ids=["sk1"]) is None
+def test_locked_skill_for_expert_wrong_owner():
+    meta = {"skill_session_owner_name": "写作专家", "skill_session_skill": "sk1"}
+    assert locked_skill_for_expert(meta, expert_agent_name="检索专家", expert_skills=["sk1"]) is None
 
 
 def test_skill_session_ended_by_marker():

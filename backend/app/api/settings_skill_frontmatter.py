@@ -6,11 +6,6 @@ from typing import Any, Dict, List, Optional
 import yaml
 from pydantic import BaseModel
 
-from app.api.settings_mcp import load_mcp_config
-from app.core.settings_references import normalize_reference_rows as _normalize_reference_rows
-from app.core.mcp_skill_resolution import resolve_skill_mcp_declarations
-
-
 class SkillCreate(BaseModel):
     """新建 Skill 请求"""
 
@@ -28,8 +23,6 @@ class SkillUpdate(BaseModel):
 
 
 ALLOWED_TOOLS_FM_KEY = "allowed-tools"
-AUTO_TOOLS_FM_KEY = "auto-tools"
-REFERENCE_LABELS_FM_KEY = "reference-labels"
 
 
 def parse_frontmatter_lenient(frontmatter_text: str) -> Dict[str, Any]:
@@ -59,32 +52,30 @@ def parse_frontmatter_lenient(frontmatter_text: str) -> Dict[str, Any]:
         return result
 
 
-def mcp_ids_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
-    auto = fm.get(AUTO_TOOLS_FM_KEY)
-    if isinstance(auto, dict) and "mcp" in auto:
-        m = auto.get("mcp")
-        if isinstance(m, list):
-            return list(dict.fromkeys(str(x).strip() for x in m if str(x).strip()))
+def _list_tool_names(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
         return []
+    return list(dict.fromkeys(str(x).strip() for x in raw if str(x).strip()))
+
+
+def _http_api_names_from_section(section: Any) -> List[str]:
+    if not isinstance(section, dict):
+        return []
+    return _list_tool_names(section.get("http_api") or section.get("http-api"))
+
+
+def tool_names_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
-    if isinstance(at, dict) and "mcp" in at:
-        m = at.get("mcp")
-        if isinstance(m, list):
-            return list(dict.fromkeys(str(x).strip() for x in m if str(x).strip()))
-        return []
-    legacy = fm.get("mcp_server_ids")
-    if isinstance(legacy, list):
-        return list(dict.fromkeys(str(x).strip() for x in legacy if str(x).strip()))
+    if isinstance(at, dict):
+        names = _list_tool_names(at.get("mcp")) + _http_api_names_from_section(at)
+        return list(dict.fromkeys(names))
     return []
 
 
 def python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
-    auto = fm.get(AUTO_TOOLS_FM_KEY)
     py: Any = ""
-    if isinstance(auto, dict):
-        py = auto.get("python")
-    if (py is None or py == "") and isinstance(at, dict):
+    if isinstance(at, dict):
         py = at.get("python")
     if isinstance(py, str):
         return py
@@ -95,83 +86,22 @@ def python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
     return str(py)
 
 
-def mcp_reference_rows_from_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, str]]:
-    labels = fm.get(REFERENCE_LABELS_FM_KEY)
-    if isinstance(labels, dict):
-        rows = _normalize_reference_rows(labels.get("mcp"))
-        if rows:
-            return rows
-    for source in (fm.get(AUTO_TOOLS_FM_KEY), fm.get(ALLOWED_TOOLS_FM_KEY)):
-        if isinstance(source, dict):
-            rows = _normalize_reference_rows(source.get("mcp_refs"))
-            if rows:
-                return rows
-    return []
-
-
-def _mcp_ref_name_lookup(mcp_refs: Any) -> Dict[str, str]:
-    return {
-        str(row.get("id") or "").strip(): str(row.get("name") or "").strip()
-        for row in _normalize_reference_rows(mcp_refs)
-        if str(row.get("id") or "").strip() and str(row.get("name") or "").strip()
-    }
-
-
-def _mcp_declarations_as_names(mcp_declarations: List[str], mcp_refs: Any = None) -> List[str]:
-    try:
-        servers = load_mcp_config()
-    except Exception:
-        servers = []
-    by_id = {
-        str(row.get("id") or "").strip(): row
-        for row in servers
-        if isinstance(row, dict) and str(row.get("id") or "").strip()
-    }
-    ref_names = _mcp_ref_name_lookup(mcp_refs)
-    out: List[str] = []
-    seen: set[str] = set()
-    for raw in mcp_declarations:
-        decl = str(raw or "").strip()
-        if not decl:
-            continue
-        resolved, _missing = resolve_skill_mcp_declarations([decl], mcp_refs, servers)
-        local_id = resolved[0] if resolved else ""
-        row = by_id.get(local_id)
-        name = str((row or {}).get("name") or "").strip()
-        item = name or ref_names.get(decl) or decl
-        if item and item not in seen:
-            seen.add(item)
-            out.append(item)
-    return out
-
-
-def _mcp_name_reference_rows(mcp_names: List[str]) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    seen: set[str] = set()
-    for raw in mcp_names:
-        name = str(raw or "").strip()
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        rows.append({"id": name, "name": name})
-    return rows
-
-
 def runtime_tools_only(normalized: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "mcp": list(normalized.get("mcp") or []),
+        "http_api": list(normalized.get("http_api") or []),
         "python": str(normalized.get("python") or ""),
     }
 
 
 def normalized_allowed_tools_dict(fm: Dict[str, Any]) -> Dict[str, Any]:
-    """从当前 frontmatter 归一化 allowed-tools（合并旧 mcp_server_ids）。"""
-    mcp_refs = mcp_reference_rows_from_frontmatter(fm)
-    mcp_ids = _mcp_declarations_as_names(list(mcp_ids_from_frontmatter(fm)), mcp_refs)
+    """从当前 frontmatter 归一化 allowed-tools。"""
+    at = fm.get(ALLOWED_TOOLS_FM_KEY)
+    section = at if isinstance(at, dict) else {}
     return {
-        "mcp": mcp_ids,
+        "mcp": _list_tool_names(section.get("mcp")),
+        "http_api": _http_api_names_from_section(section),
         "python": python_doc_from_allowed_tools(fm),
-        "mcp_refs": _mcp_name_reference_rows(mcp_ids),
     }
 
 
@@ -179,25 +109,25 @@ def normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     """校验并归一化 API 传入的 allowed_tools 体。"""
     mcp_raw = raw.get("mcp")
     mcp_list = list(dict.fromkeys(str(x).strip() for x in (mcp_raw if isinstance(mcp_raw, list) else []) if str(x).strip()))
-    mcp_list = _mcp_declarations_as_names(mcp_list, raw.get("mcp_refs"))
+    http_raw = raw.get("http_api") or raw.get("http-api")
+    http_api_list = _list_tool_names(http_raw)
     py = raw.get("python", "")
     py_str = py if isinstance(py, str) else ("" if py is None else str(py))
     return {
         "mcp": mcp_list,
+        "http_api": http_api_list,
         "python": py_str,
-        "mcp_refs": _mcp_name_reference_rows(mcp_list),
     }
 
 
 def sanitize_skill_frontmatter_for_write(fm: Dict[str, Any]) -> None:
-    """写入前：保证 auto-tools/allowed-tools 存在并剥离已废弃键。"""
+    """写入前：只保留 Skill 资源契约字段。"""
     normalized = normalized_allowed_tools_dict(fm)
     runtime_tools = runtime_tools_only(normalized)
-    fm[AUTO_TOOLS_FM_KEY] = runtime_tools
-    fm[ALLOWED_TOOLS_FM_KEY] = runtime_tools
-    ref_labels = fm.get(REFERENCE_LABELS_FM_KEY) if isinstance(fm.get(REFERENCE_LABELS_FM_KEY), dict) else {}
-    ref_labels = dict(ref_labels)
-    ref_labels["mcp"] = normalized.get("mcp_refs") or []
-    fm[REFERENCE_LABELS_FM_KEY] = ref_labels
-    for k in ("enabled", "write_mode", "mcp_server_ids", "source", "url"):
-        fm.pop(k, None)
+    clean = {
+        "name": str(fm.get("name") or "").strip(),
+        "description": str(fm.get("description") or "").strip(),
+        ALLOWED_TOOLS_FM_KEY: runtime_tools,
+    }
+    fm.clear()
+    fm.update(clean)

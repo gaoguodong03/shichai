@@ -8,15 +8,6 @@ from typing import Any, Dict, List, Optional
 from app.agent.group_chat_host_messages import HOST_END_MESSAGE
 
 
-def _to_agent_style_id(raw_id: str) -> str:
-    sid = str(raw_id or "").strip()
-    if not sid:
-        return sid
-    if sid.startswith("agent-"):
-        return sid
-    return f"agent-{sid}"
-
-
 def extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
     if not text or not str(text).strip():
         return None
@@ -81,23 +72,23 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         task_done = data.get("task_done", True)
         next_speaker = (data.get("next_speaker") or "user").strip().lower()
         reason = data.get("reason", "")
-        suggested_add_agent_ids = None
-        ids_raw = data.get("suggested_add_agent_ids")
-        if isinstance(ids_raw, list) and ids_raw:
-            cleaned = [str(x).strip() for x in ids_raw if str(x).strip()]
+        suggested_add_agent_names = None
+        names_raw = data.get("suggested_add_agent_names")
+        if isinstance(names_raw, list) and names_raw:
+            cleaned = [str(x).strip() for x in names_raw if str(x).strip()]
             if cleaned:
-                suggested_add_agent_ids = list(dict.fromkeys(cleaned))
-        if not suggested_add_agent_ids:
-            sid = (data.get("suggested_add_agent_id") or "").strip()
-            if sid:
-                suggested_add_agent_ids = [sid]
+                suggested_add_agent_names = list(dict.fromkeys(cleaned))
+        if not suggested_add_agent_names:
+            single_name = (data.get("suggested_add_agent_name") or "").strip()
+            if single_name:
+                suggested_add_agent_names = [single_name]
         suggested_order = data.get("suggested_order")
         if isinstance(suggested_order, list):
-            suggested_order = [str(x).strip().lower() for x in suggested_order if str(x).strip()]
+            suggested_order = [str(x).strip() for x in suggested_order if str(x).strip()]
         else:
             suggested_order = None
         phase = (data.get("phase") or "").strip().lower() or None
-        owner_agent_id = (data.get("owner_agent_id") or "").strip() or None
+        owner_agent_name = (data.get("owner_agent_name") or "").strip() or None
         interrupt_reason = (data.get("interrupt_reason") or "").strip().lower() or None
         decision_source = (data.get("decision_source") or "").strip().lower() or "legacy"
         handoff_reason = (data.get("handoff_reason") or "").strip() or None
@@ -120,9 +111,9 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
             "current_phase": current_phase,
             "speaker_task": speaker_task,
             "suggested_order": suggested_order,
-            "suggested_add_agent_ids": suggested_add_agent_ids,
+            "suggested_add_agent_names": suggested_add_agent_names,
             "phase": phase,
-            "owner_agent_id": owner_agent_id,
+            "owner_agent_name": owner_agent_name,
             "interrupt_reason": interrupt_reason,
             "decision_source": decision_source,
             "handoff_reason": handoff_reason,
@@ -132,32 +123,20 @@ def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def match_workspace_speaker_to_agent_id(raw_speaker: str, agent_profiles: List[Dict[str, Any]]) -> str:
+def match_workspace_speaker_to_agent_name(raw_speaker: str, agent_profiles: List[Dict[str, Any]]) -> str:
     raw = str(raw_speaker or "").strip()
-    raw_lower = raw.lower()
+    raw_key = raw.casefold()
     if not raw:
         return ""
-    raw_agent_ids = [str(x or "").strip().lower() for x in re.findall(r"agent-[a-zA-Z0-9\-]+", raw)]
-    if raw_agent_ids:
-        for profile in agent_profiles or []:
-            aid = str((profile or {}).get("agent_id") or "").strip()
-            if aid and aid.lower() in raw_agent_ids:
-                return aid
     for profile in agent_profiles or []:
-        aid = str((profile or {}).get("agent_id") or "").strip()
-        if aid and aid.lower() == raw_lower:
-            return aid
-    for profile in agent_profiles or []:
-        aid = str((profile or {}).get("agent_id") or "").strip()
         name = str((profile or {}).get("name") or "").strip()
-        if aid and name and name == raw:
-            return aid
+        if name and name.casefold() == raw_key:
+            return name
     for profile in agent_profiles or []:
-        aid = str((profile or {}).get("agent_id") or "").strip()
         name = str((profile or {}).get("name") or "").strip()
-        role = str((profile or {}).get("role") or "").strip()
-        if aid and raw and (raw in name or raw in role):
-            return aid
+        description = str((profile or {}).get("description") or "").strip()
+        if raw and (raw in name or raw in description):
+            return name
     return ""
 
 
@@ -236,9 +215,9 @@ def host_decision_from_scheduler_state(
             "current_phase": phase_text,
             "speaker_task": task,
             "suggested_order": None,
-            "suggested_add_agent_ids": None,
+            "suggested_add_agent_names": None,
             "phase": None,
-            "owner_agent_id": None,
+            "owner_agent_name": None,
             "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
             "handoff_reason": reason,
@@ -254,9 +233,9 @@ def host_decision_from_scheduler_state(
             "current_phase": phase_text,
             "speaker_task": task,
             "suggested_order": None,
-            "suggested_add_agent_ids": None,
+            "suggested_add_agent_names": None,
             "phase": None,
-            "owner_agent_id": None,
+            "owner_agent_name": None,
             "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
             "handoff_reason": reason,
@@ -272,9 +251,9 @@ def host_decision_from_scheduler_state(
             "current_phase": phase_text,
             "speaker_task": task,
             "suggested_order": None,
-            "suggested_add_agent_ids": None,
+            "suggested_add_agent_names": None,
             "phase": None,
-            "owner_agent_id": None,
+            "owner_agent_name": None,
             "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
             "handoff_reason": reason,
@@ -282,23 +261,23 @@ def host_decision_from_scheduler_state(
         }
     if not task:
         return None
-    agent_id = match_workspace_speaker_to_agent_id(raw_speaker, agent_profiles)
-    if not agent_id:
+    agent_name = match_workspace_speaker_to_agent_name(raw_speaker, agent_profiles)
+    if not agent_name:
         return None
-    profile = next((d for d in agent_profiles if str((d or {}).get("agent_id") or "").strip() == agent_id), {})
-    name = str((profile or {}).get("name") or raw_speaker or agent_id).strip()
+    profile = next((d for d in agent_profiles if str((d or {}).get("name") or "").strip() == agent_name), {})
+    name = str((profile or {}).get("name") or raw_speaker or agent_name).strip()
     return {
         "task_done": True,
-        "next_speaker": agent_id,
+        "next_speaker": agent_name,
         "reason": reason,
         "announcement": f"下面由 {name} 发言。",
         "next_prompt": None,
         "current_phase": phase_text,
         "speaker_task": task,
         "suggested_order": None,
-        "suggested_add_agent_ids": None,
+        "suggested_add_agent_names": None,
         "phase": None,
-        "owner_agent_id": None,
+        "owner_agent_name": None,
         "interrupt_reason": None,
         "decision_source": "host_scheduler_state",
         "handoff_reason": reason,
@@ -341,16 +320,16 @@ def user_requests_host_takeover(
 def heuristic_recommend_agents(
     discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
 ) -> List[str]:
-    """Recommend Agent ids with simple keyword matching."""
+    """Recommend Agent names with simple keyword matching."""
     goal = (discussion_goal or "").strip().lower()
     scored = []
     for d in all_instances or []:
-        did = (d.get("agent_id") or "").strip()
-        if not did:
+        name_raw = (d.get("name") or "").strip()
+        if not name_raw:
             continue
-        name = str(d.get("name") or "").lower()
-        role = str(d.get("role") or "").lower()
-        hay = f"{did} {name} {role}"
+        name = name_raw.lower()
+        description = str(d.get("description") or "").lower()
+        hay = f"{name} {description}"
         score = 0
         for token in (goal.replace("，", " ").replace("。", " ").replace(",", " ").split() if goal else []):
             if token and token in hay:
@@ -363,16 +342,16 @@ def heuristic_recommend_agents(
             score += 5
         if any(k in goal for k in ("数据", "报表", "分析", "表格", "excel")) and any(k in hay for k in ("数据", "分析", "报表", "excel")):
             score += 5
-        scored.append((score, did))
+        scored.append((score, name_raw))
     scored.sort(key=lambda x: x[0], reverse=True)
-    picked = [did for s, did in scored if s > 0]
+    picked = [name for s, name in scored if s > 0]
     if max_n is not None:
         picked = picked[: max(0, int(max_n))]
     if not picked:
         for d in all_instances or []:
-            did = (d.get("agent_id") or "").strip()
-            if did and did not in picked:
-                picked.append(did)
+            name = (d.get("name") or "").strip()
+            if name and name not in picked:
+                picked.append(name)
             if max_n is not None and len(picked) >= max_n:
                 break
     if max_n is not None:
@@ -380,7 +359,7 @@ def heuristic_recommend_agents(
     return picked
 
 
-def extract_candidate_agent_ids_from_text(
+def extract_candidate_agent_names_from_text(
     text: str,
     all_instances: List[Dict[str, Any]],
     *,
@@ -391,47 +370,34 @@ def extract_candidate_agent_ids_from_text(
     if not t:
         return []
     out: List[str] = []
-    for aid in re.findall(r"agent-[a-zA-Z0-9\-]+", t, flags=re.I):
-        s = str(aid or "").strip()
-        if s:
-            out.append(s)
-        if len(out) >= max_n:
-            return list(dict.fromkeys(out))[:max_n]
     for d in all_instances or []:
-        did = str(d.get("agent_id") or "").strip()
-        if not did:
-            continue
         name = str(d.get("name") or "").strip().lower()
-        role = str(d.get("role") or "").strip().lower()
+        description = str(d.get("description") or "").strip().lower()
         if name and name in t:
-            out.append(did)
-        elif role and role in t:
-            out.append(did)
+            out.append(str(d.get("name") or "").strip())
+        elif description and description in t:
+            out.append(str(d.get("name") or "").strip())
         if len(out) >= max_n:
             break
     return list(dict.fromkeys(out))[:max_n]
 
 
-def extract_explicit_requested_agent_ids(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
+def extract_explicit_requested_agent_names(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
     """Extract experts explicitly named by the user."""
     text = (user_text or "").strip().lower()
     if not text:
         return []
     out: List[str] = []
     for d in all_instances or []:
-        did = (d.get("agent_id") or "").strip()
-        if not did:
-            continue
         name = str(d.get("name") or "").strip()
-        did_hit = did.lower() in text
         name_hit = bool(name) and (name.lower() in text)
-        if did_hit or name_hit:
-            out.append(did)
+        if name_hit:
+            out.append(name)
     return list(dict.fromkeys(out))
 
 
-def extract_forced_at_mention_agent_id(user_text: str, all_instances: List[Dict[str, Any]]) -> Optional[str]:
-    """Return an agent id only when the message starts with an expert @ mention."""
+def extract_forced_at_mention_agent_name(user_text: str, all_instances: List[Dict[str, Any]]) -> Optional[str]:
+    """Return an Agent name only when the message starts with an expert @ mention."""
     text = (user_text or "").strip()
     if not text.startswith("@"):
         return None
@@ -442,20 +408,15 @@ def extract_forced_at_mention_agent_id(user_text: str, all_instances: List[Dict[
     if not mention:
         return None
     for d in all_instances or []:
-        did = str(d.get("agent_id") or "").strip()
         name = str(d.get("name") or "").strip()
-        role = str(d.get("role") or "").strip()
-        if not did:
+        description = str(d.get("description") or "").strip()
+        if not name:
             continue
-        candidates = {
-            did.lower(),
-            _to_agent_style_id(did).lower(),
-            did.replace("agent-", "").lower(),
-        }
+        candidates = set()
         if name:
             candidates.add(name.lower())
-        if role:
-            candidates.add(role.lower())
+        if description:
+            candidates.add(description.lower())
         if mention in candidates:
-            return did
+            return name
     return None

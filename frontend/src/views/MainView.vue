@@ -139,14 +139,14 @@
           <button
             v-else
             v-for="scenario in newSessionMenuScenarios"
-            :key="scenario.id"
+            :key="scenario.name"
             type="button"
             role="menuitem"
             class="new-session-menu-item"
             @click="createScenarioSessionFromMenu(scenario)"
           >
             <span class="new-session-menu-item-title">{{ scenario.name || '未命名场景' }}</span>
-            <span class="new-session-menu-item-meta">{{ (scenario.agent_ids || []).length }} 位专家</span>
+            <span class="new-session-menu-item-meta">{{ (scenario.agent_names || []).length }} 位专家</span>
           </button>
         </div>
       </div>
@@ -186,7 +186,7 @@
                 />
               </div>
               <SessionMemberAvatars
-                :agent-ids="s.agent_ids || []"
+                :agent-names="s.agent_names || []"
                 :agent-instances="agentInstances"
                 :updated-at="s.updated_at"
               />
@@ -252,22 +252,22 @@
             <div
               v-else
               v-for="s in filteredScenarioPresets"
-              :key="s.id"
+              :key="s.name"
               :class="[
                 'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-                selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                selectedId === s.name ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
               ]"
-              @click="selectedId = s.id"
+              @click="selectedId = s.name"
             >
               <div class="flex-1 min-w-0 text-left">
                 <div class="truncate font-medium">{{ s.name }}</div>
-                <div class="truncate text-xs text-muted mt-0.5">{{ (s.agent_ids || []).length }} 位专家</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ (s.agent_names || []).length }} 位专家</div>
               </div>
               <button
                 type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
                 title="删除"
-                @click.stop="deleteScenarioPreset(s.id)"
+                @click.stop="deleteScenarioPreset(s.name)"
               >
                 ×
               </button>
@@ -321,36 +321,27 @@
             <div
               v-else
               v-for="d in filteredAgentInstances"
-              :key="d.agent_id"
+              :key="d.name"
               :class="[
                 'w-full flex items-center gap-1 px-3 py-2.5 rounded-lg text-sm transition-colors cursor-pointer group',
-                selectedId === d.agent_id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                selectedId === d.name ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
               ]"
-              @click="selectedId = d.agent_id"
+              @click="selectedId = d.name"
             >
               <div
                 class="shrink-0 w-9 h-9 rounded-xl border border-border-light overflow-hidden bg-page flex items-center justify-center text-muted text-sm font-semibold"
               >
-                <img
-                  v-if="d.avatar_url"
-                  :src="expertAvatarDisplayUrl(d.avatar_url)!"
-                  alt=""
-                  class="w-full h-full object-cover"
-                  width="36"
-                  height="36"
-                  decoding="async"
-                />
-                <span v-else>{{ (d.name || d.agent_id || '?').trim().charAt(0) || '?' }}</span>
+                <span>{{ (d.name || '?').trim().charAt(0) || '?' }}</span>
               </div>
               <div class="flex-1 min-w-0 text-left">
-              <div class="truncate font-medium">{{ d.name || d.agent_id }}</div>
-                <div class="truncate text-xs text-muted mt-0.5">{{ d.role || '（无角色）' }}</div>
+              <div class="truncate font-medium">{{ d.name }}</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ d.description || '（无描述）' }}</div>
               </div>
               <button
                 type="button"
                 class="p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100"
                 title="删除专家"
-                @click.stop="deleteAgentInstance(d.agent_id)"
+                @click.stop="deleteAgentInstance(d.name)"
               >
                 ×
               </button>
@@ -404,18 +395,18 @@
             <div
               v-else
               v-for="s in filteredSkills"
-              :key="s.id"
+              :key="s.directory_name"
               class="relative group"
             >
               <button
                 type="button"
-                @click="selectedId = s.id"
+                @click="selectedId = s.directory_name"
                 :class="[
                   'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
-                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                  selectedId === s.directory_name ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
                 ]"
               >
-                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate font-medium">{{ s.name }}</div>
                 <div class="truncate text-xs text-muted mt-0.5 min-h-4">
                   {{ s.description || '（无描述）' }}
                 </div>
@@ -423,9 +414,9 @@
               <button
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                :aria-label="`删除技能 ${s.name || s.id}`"
-                :title="`删除技能 ${s.name || s.id}`"
-                @click.stop="deleteSkill(s.id)"
+                :aria-label="`删除技能 ${s.name || s.directory_name}`"
+                :title="`删除技能 ${s.name || s.directory_name}`"
+                @click.stop="deleteSkill(s.directory_name)"
               >
                 ×
               </button>
@@ -480,18 +471,18 @@
             <div
               v-else
               v-for="s in filteredMcpServers"
-              :key="s.id"
+              :key="s.name"
               class="relative group"
             >
               <button
                 type="button"
-                @click="selectedId = s.id"
+                @click="selectedId = s.name"
                 :class="[
                   'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
-                  selectedId === s.id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                  selectedId === s.name ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
                 ]"
               >
-                <div class="truncate font-medium">{{ s.name || s.id }}</div>
+                <div class="truncate font-medium">{{ s.name }}</div>
                 <div class="truncate text-xs text-muted mt-0.5 min-h-4">
                   {{ s.description || s.metadata?.description || '（无描述）' }}
                 </div>
@@ -499,9 +490,9 @@
               <button
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                :aria-label="`删除工具 ${s.name || s.id}`"
-                :title="`删除工具 ${s.name || s.id}`"
-                @click.stop="deleteMcpServer(s.id)"
+                :aria-label="`删除工具 ${s.name}`"
+                :title="`删除工具 ${s.name}`"
+                @click.stop="deleteMcpServer(s.name)"
               >
                 ×
               </button>
@@ -551,38 +542,38 @@
               />
             </div>
             <div v-if="llmLoading" class="px-3 py-4 text-sm text-muted">加载中...</div>
-            <div v-else-if="!filteredLlmProviderIds.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
+            <div v-else-if="!filteredLlmModelNames.length" class="px-3 py-4 text-sm text-muted">暂无模型</div>
             <div
               v-else
-              v-for="id in filteredLlmProviderIds"
-              :key="id"
+              v-for="modelName in filteredLlmModelNames"
+              :key="modelName"
               class="relative group"
             >
               <button
                 type="button"
-                @click="selectedId = id"
+                @click="selectedId = modelName"
                 :class="[
                   'w-full text-left px-3 py-2.5 pr-10 rounded-lg text-sm transition-colors',
-                  selectedId === id ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
+                  selectedId === modelName ? 'bg-accent-subtle text-accent-subtle-text' : 'hover:bg-list-hover text-list-hover-text'
                 ]"
               >
                 <div class="truncate font-medium flex items-center gap-2">
-                  <span class="truncate">{{ llmProviders[id]?.label || id }}</span>
+                  <span class="truncate">{{ llmProviders[modelName]?.label || modelName }}</span>
                   <span
-                    v-if="id === llmDefault"
+                    v-if="modelName === llmDefault"
                     class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
                   >
                     默认
                   </span>
                 </div>
-                <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[id]?.model || '（无模型名）' }}</div>
+                <div class="truncate text-xs text-muted mt-0.5">{{ llmProviders[modelName]?.model || '（无模型名）' }}</div>
               </button>
               <button
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                :aria-label="`删除模型 ${llmProviders[id]?.label || id}`"
-                :title="`删除模型 ${llmProviders[id]?.label || id}`"
-                @click.stop="deleteLlmProvider(id)"
+                :aria-label="`删除模型 ${llmProviders[modelName]?.label || modelName}`"
+                :title="`删除模型 ${llmProviders[modelName]?.label || modelName}`"
+                @click.stop="deleteLlmProvider(modelName)"
               >
                 ×
               </button>
@@ -705,8 +696,8 @@
                         class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                       >
                         <option value="">使用应用默认</option>
-                        <option v-for="pid in llmProviderIds" :key="pid" :value="pid">
-                          {{ scenarioLlmOptionLabel(pid) }}
+                        <option v-for="modelName in llmModelNames" :key="modelName" :value="modelName">
+                          {{ scenarioLlmOptionLabel(modelName) }}
                         </option>
                       </select>
                     </div>
@@ -736,15 +727,15 @@
                     >
                       <button
                         v-for="sk in filteredScenarioLeaderSkills"
-                        :key="sk.id"
+                        :key="sk.directory_name"
                         type="button"
                         class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                        :class="scenarioLeaderSkillIds.includes(sk.id)
+                        :class="scenarioLeaderSkillIds.some((item) => item.directory_name === sk.directory_name)
                           ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
                           : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                        @click="toggleScenarioLeaderSkill(sk.id)"
+                        @click="toggleScenarioLeaderSkill(sk.directory_name)"
                       >
-                        {{ sk.name || sk.id }}
+                        {{ sk.name || sk.directory_name }}
                       </button>
                     </div>
                     <p v-if="skills.length && !filteredScenarioLeaderSkills.length" class="text-xs text-muted">没有匹配的 Skill</p>
@@ -754,9 +745,9 @@
                       <div class="flex flex-wrap gap-2">
                         <span
                           v-for="item in missingScenarioLeaderSkillRefs"
-                          :key="item.id"
+                          :key="item.directory_name"
                           class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
-                          :title="`缺失技能 ID：${item.id}`"
+                          :title="`缺失技能路径：${item.directory_name}`"
                         >
                           {{ item.name }}
                         </span>
@@ -768,23 +759,23 @@
                   <label class="block text-sm font-medium text-primary mb-2">协作专家</label>
                   <div class="flex flex-wrap gap-2">
                     <span
-                      v-for="id in scenarioDraft.agent_ids || []"
-                      :key="id"
+                      v-for="name in scenarioDraft.agent_names || []"
+                      :key="name"
                       class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border"
-                      :class="scenarioExpertMissing(id)
+                      :class="scenarioExpertMissing(name)
                         ? 'border-red-300 bg-red-50 text-red-700'
                         : 'border-accent/40 bg-accent-subtle text-accent-subtle-text'"
-                      :title="scenarioExpertMissing(id) ? `缺失专家 ID：${id}` : '已选择专家'"
+                      :title="scenarioExpertMissing(name) ? `缺失专家：${name}` : '已选择专家'"
                     >
-                      {{ agentDisplayName(id, scenarioDraft.agent_refs) }}
+                      {{ agentDisplayName(name) }}
                       <button
                         type="button"
                         class="ml-0.5 hover:text-danger"
-                        :class="scenarioExpertMissing(id) ? 'text-red-700/80' : 'text-accent-subtle-text/80'"
-                        @click="removeScenarioExpert(id)"
+                        :class="scenarioExpertMissing(name) ? 'text-red-700/80' : 'text-accent-subtle-text/80'"
+                        @click="removeScenarioExpert(name)"
                       >×</button>
                     </span>
-                    <span v-if="!(scenarioDraft.agent_ids || []).length" class="text-xs text-muted">暂无专家</span>
+                    <span v-if="!(scenarioDraft.agent_names || []).length" class="text-xs text-muted">暂无专家</span>
                   </div>
                   <div class="mt-3">
                     <input
@@ -796,12 +787,12 @@
                     <div class="flex flex-wrap gap-2">
                       <button
                         v-for="d in filteredScenarioAddableExperts"
-                        :key="d.agent_id"
+                        :key="d.name"
                         type="button"
                         class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
-                        @click="addScenarioExpert(d.agent_id)"
+                        @click="addScenarioExpert(d.name)"
                       >
-                        + {{ d.name || d.agent_id }}
+                        + {{ d.name }}
                       </button>
                       <span v-if="!scenarioAddableExperts.length" class="text-xs text-muted">可添加专家已为空</span>
                       <span v-else-if="!filteredScenarioAddableExperts.length" class="text-xs text-muted">无匹配专家</span>
@@ -811,9 +802,9 @@
                       <div class="flex flex-wrap gap-2">
                         <span
                           v-for="item in missingScenarioExpertRefs"
-                          :key="item.id"
+                          :key="item.name"
                           class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
-                          :title="`缺失专家 ID：${item.id}`"
+                          :title="`缺失专家：${item.name}`"
                         >
                           {{ item.name }}
                         </span>
@@ -843,7 +834,7 @@
                     type="button"
                     class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
                     :disabled="scenarioSaving"
-                    @click="deleteScenarioPreset(selectedScenarioPreset.id)"
+                    @click="deleteScenarioPreset(selectedScenarioPreset.name)"
                   >
                     删除
                   </button>
@@ -866,11 +857,11 @@
         </template>
         <template v-else-if="resourceSubModule === 'skill' && selectedId">
           <SkillDetailView
-            :skill-id="selectedId"
+            :directory-name="selectedId"
             @updated="
-              (newId?: string) => {
+              (newDirectoryName?: string) => {
                 fetchSkills({ silent: true })
-                if (newId) selectedId = newId
+                if (newDirectoryName) selectedId = newDirectoryName
               }
             "
             @deleted="selectedId = null; fetchSkills()"
@@ -885,7 +876,7 @@
           <MCPAddView @created="onMCPCreated" />
         </template>
         <template v-else-if="resourceSubModule === 'mcp' && selectedId">
-          <MCPDetailView :server-id="selectedId" @updated="fetchMCP({ silent: true })" @deleted="selectedId = null; fetchMCP()" />
+          <MCPDetailView :tool-name="selectedId" @updated="fetchMCP({ silent: true })" @deleted="selectedId = null; fetchMCP()" />
         </template>
         <template v-else-if="resourceSubModule === 'mcp'">
           <div class="flex flex-col h-full items-center justify-center text-muted text-sm p-4">
@@ -894,7 +885,7 @@
         </template>
         <template v-else-if="resourceSubModule === 'llm'">
           <LLMSettingsView
-            :provider-id="selectedId"
+            :llm-name="selectedId"
             :providers-version="llmProvidersVersion"
             @updated="(id: string | undefined) => { fetchLLM(); if (id) selectedId = id }"
           />
@@ -997,7 +988,7 @@
                 <div v-for="group in missingReferenceGroups(scenarioBundlePreview.bundle_preview.missing_references)" :key="group.key">
                   <div class="text-xs font-medium">{{ group.label }}</div>
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
-                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
+                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.name}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
@@ -1108,7 +1099,7 @@
                 <div v-for="group in missingReferenceGroups(agentBundlePreview.bundle_preview.missing_references)" :key="group.key">
                   <div class="text-xs font-medium">{{ group.label }}</div>
                   <ul class="mt-1 list-disc pl-4 text-xs space-y-0.5">
-                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.id}`">
+                    <li v-for="item in group.items" :key="`${group.key}-${item.source}-${item.name}`">
                       <span>{{ missingReferenceTitle(group, item) }}</span>
                       <span v-if="missingRequiredByText(item)" class="text-red-600 dark:text-red-300">
                         ，被 {{ missingRequiredByText(item) }} 依赖
@@ -1198,7 +1189,7 @@
           <h3 class="text-lg font-semibold mb-3">导入模型</h3>
           <template v-if="llmBundlePreview?.bundle_preview">
             <div class="mb-4 space-y-1 text-sm border border-border-light rounded-lg p-3 bg-page">
-              <div class="font-medium text-primary">{{ llmBundlePreview.bundle_preview.provider_id }}</div>
+              <div class="font-medium text-primary">{{ llmBundlePreview.bundle_preview.name }}</div>
               <p class="text-xs text-muted leading-5">
                 模型型号：{{ llmBundlePreview.bundle_preview.provider.model || '未填写' }}
               </p>
@@ -1206,10 +1197,10 @@
                 URL：{{ llmBundlePreview.bundle_preview.provider.base_url || '未填写' }}
               </p>
               <p
-                v-if="llmBundlePreview.bundle_preview.would_overwrite_provider_id"
+                v-if="llmBundlePreview.bundle_preview.would_conflict_name"
                 class="mt-2 text-xs rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-950/20 dark:border-amber-500/50 dark:text-amber-300"
               >
-                同标识模型已存在，确认后将更新该模型配置；不会导入 API Key 明文。
+                同名模型已存在，请先删除或改名后再导入；不会导入 API Key 明文。
               </p>
             </div>
           </template>
@@ -1332,7 +1323,6 @@ import SandboxSettingsView from '@/features/settings/SandboxSettingsView.vue'
 import ApiSecretsSettingsView from '@/features/settings/ApiSecretsSettingsView.vue'
 import { appConfirm } from '@/composables/useAppDialog'
 import { THEME_AUTH_CHANGED_EVENT, useTheme } from '@/composables/useTheme'
-import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import SessionMemberAvatars from '@/features/shell/SessionMemberAvatars.vue'
 import ResourceImportIcon from '@/components/icons/ResourceImportIcon.vue'
 import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
@@ -1412,8 +1402,8 @@ const {
   llmDefault,
   llmProviders,
   llmLoading,
-  llmProviderIds,
-  filteredLlmProviderIds,
+  llmModelNames,
+  filteredLlmModelNames,
   agentInstances,
   agentInstancesLoading,
   filteredAgentInstances,
@@ -1604,19 +1594,16 @@ const {
 const workspaceContentRef = ref<{
   refresh: () => void
   createSessionFromScenarioPreset: (p: {
-    id: string
     name: string
-    agent_ids: string[]
-    leader_agent_id?: string
+    agent_names: string[]
     host_config?: ScenarioHostConfig
     description?: string
-    discussion_goal_example?: string
   }) => Promise<string | null>
 } | null>(null)
 const newSessionMenuRoot = ref<HTMLElement | null>(null)
 const newSessionMenuOpen = ref(false)
 const newSessionMenuScenarios = computed(() =>
-  (scenarioPresets.value || []).filter((scenario) => (scenario.name || '').trim() || (scenario.agent_ids || []).length),
+  (scenarioPresets.value || []).filter((scenario) => (scenario.name || '').trim() || (scenario.agent_names || []).length),
 )
 
 function closeNewSessionMenu() {
@@ -1648,13 +1635,10 @@ async function createBlankSessionFromMenu() {
 }
 
 async function createScenarioSessionFromMenu(scenario: {
-  id: string
   name: string
-  agent_ids: string[]
-  leader_agent_id?: string
+  agent_names: string[]
   host_config?: ScenarioHostConfig
   description?: string
-  discussion_goal_example?: string
 }) {
   closeNewSessionMenu()
   await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)

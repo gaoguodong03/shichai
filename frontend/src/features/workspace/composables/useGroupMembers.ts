@@ -1,32 +1,30 @@
 import { computed, ref, type Ref } from 'vue'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
-import { expertAvatarDisplayUrl } from '@/constants/expertAvatars'
 import { formatGroupSkillLabel } from '../groupSkillLabel'
 
 export const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 
 type GroupMemberMessage = {
   role: string
-  agent_id?: string
-  skill_id?: string
+  agent_name?: string
+  skill?: string
 }
 
 type GroupMemberDetail = {
   id?: string
-  agent_ids: string[]
-  leader_agent_id?: string
-  agent_map: Record<string, { name?: string; avatar_url?: string }>
+  agent_names: string[]
+  leader_agent_name?: string
+  agent_map: Record<string, { name?: string }>
 }
 
 type AgentItem = {
-  agent_id: string
+  agent_name?: string
   name: string
-  avatar_url?: string
 }
 
 type SkillItem = {
-  id: string
+  directory_name: string
   name: string
 }
 
@@ -62,9 +60,9 @@ export function useGroupMembers(args: {
 
   const showAddMemberModal = ref(false)
 
-  function formatSkillId(skillId?: string) {
+  function formatSkill(skill?: string) {
     return formatGroupSkillLabel({
-      skillId,
+      skill,
       skills: skills() || [],
     })
   }
@@ -72,13 +70,13 @@ export function useGroupMembers(args: {
   function isHostBubbleMessage(msg: GroupMemberMessage): boolean {
     if (msg.role === 'host') return true
     if (msg.role !== 'assistant') return false
-    const mid = String(msg.agent_id || '').trim()
+    const mid = String(msg.agent_name || '').trim()
     if (!mid) return false
     if (mid === VIRTUAL_SCENE_HOST_ID) return true
-    const lid = String(groupDetail.value?.leader_agent_id || '').trim()
+    const lid = String(groupDetail.value?.leader_agent_name || '').trim()
     if (lid && mid === lid) {
-      const sid = msg.skill_id
-      const label = formatSkillId(sid)
+      const sid = msg.skill
+      const label = formatSkill(sid)
       if (label.includes('主持')) return true
       if (sid && String(sid).toLowerCase().includes('host')) return true
     }
@@ -86,7 +84,7 @@ export function useGroupMembers(args: {
   }
 
   function bubbleDisplayName(msg: GroupMemberMessage): string {
-    const aid = String(msg.agent_id || '').trim()
+    const aid = String(msg.agent_name || '').trim()
     if (isHostBubbleMessage(msg)) return effectiveHostDisplayName.value
     if (aid) {
       const name = (groupDetail.value?.agent_map || {})[aid]?.name
@@ -96,22 +94,24 @@ export function useGroupMembers(args: {
   }
 
   const invitableAgents = computed(() => {
-    const inGroup = new Set(groupDetail.value?.agent_ids || [])
-    return (agentInstances() || []).filter((d) => !inGroup.has(d.agent_id))
+    const inGroup = new Set(groupDetail.value?.agent_names || [])
+    return (agentInstances() || [])
+      .map((d) => ({ ...d, agent_name: d.agent_name || d.name }))
+      .filter((d) => d.agent_name && !inGroup.has(d.agent_name))
   })
 
-  const leaderAgentId = computed(() => (groupDetail.value?.leader_agent_id || '').trim())
-  const leaderDisplayId = computed(() => leaderAgentId.value || 'host')
+  const leaderAgentName = computed(() => (groupDetail.value?.leader_agent_name || '').trim())
+  const leaderDisplayName = computed(() => leaderAgentName.value || 'host')
   const orderedMemberIds = computed(() => {
-    const ids = [...(groupDetail.value?.agent_ids || [])]
-    const leader = leaderDisplayId.value
+    const ids = [...(groupDetail.value?.agent_names || [])]
+    const leader = leaderDisplayName.value
     const rest = ids.filter((id) => id !== leader)
     return [leader, ...rest]
   })
 
-  function agentIndex(agentId?: string): number {
-    const ids = groupDetail.value?.agent_ids || []
-    const index = ids.indexOf(agentId || '')
+  function agentIndex(agentName?: string): number {
+    const ids = groupDetail.value?.agent_names || []
+    const index = ids.indexOf(agentName || '')
     return index >= 0 ? index % AGENT_AVATAR_COLORS.length : 0
   }
 
@@ -119,26 +119,21 @@ export function useGroupMembers(args: {
     return AGENT_AVATAR_COLORS[index % AGENT_AVATAR_COLORS.length]
   }
 
-  function agentAvatarChar(agentId?: string): string {
-    const name = groupDetail.value?.agent_map?.[agentId || '']?.name || agentId || '?'
+  function agentAvatarChar(agentName?: string): string {
+    const name = groupDetail.value?.agent_map?.[agentName || '']?.name || agentName || '?'
     return name.slice(0, 1).toUpperCase()
   }
 
-  function expertAvatarUrl(agentId?: string): string | null {
-    if (!agentId) return null
-    const fromList = (agentInstances() || []).find((item) => item.agent_id === agentId)?.avatar_url
-    const listUrl = fromList && String(fromList).trim()
-    if (listUrl) return expertAvatarDisplayUrl(listUrl)
-    const fromMap = groupDetail.value?.agent_map?.[agentId]?.avatar_url
-    const mapUrl = fromMap && String(fromMap).trim()
-    return expertAvatarDisplayUrl(mapUrl)
+  function expertAvatarUrl(agentName?: string): string | null {
+    void agentName
+    return null
   }
 
-  function displayGroupSpeakerName(agentId: string): string {
-    const id = (agentId || '').trim()
+  function displayGroupSpeakerName(agentName: string): string {
+    const id = (agentName || '').trim()
     if (!id) return ''
     if (id === 'host' || id === VIRTUAL_SCENE_HOST_ID) return effectiveHostDisplayName.value || defaultHostDisplayName
-    const fromInstances = (agentInstances() || []).find((item) => item.agent_id === id)?.name
+    const fromInstances = (agentInstances() || []).find((item) => (item.agent_name || item.name) === id)?.name
     if (fromInstances && fromInstances.trim()) return fromInstances.trim()
     const fromMap = (groupDetail.value?.agent_map || {})[id]?.name
     if (fromMap && fromMap.trim()) return fromMap.trim()
@@ -146,14 +141,14 @@ export function useGroupMembers(args: {
     return id
   }
 
-  async function inviteSingleMember(agentId: string) {
+  async function inviteSingleMember(agentName: string) {
     const id = groupDetail.value?.id
     if (!id) return
     try {
       const response = await apiRequest(`/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ add_agent_ids: [agentId] }),
+        body: JSON.stringify({ add_agent_names: [agentName] }),
       })
       const payload = await response.json().catch(() => ({}))
       if ((payload as { status?: string }).status === 'ok') {
@@ -167,11 +162,11 @@ export function useGroupMembers(args: {
     }
   }
 
-  async function removeMember(agentId: string) {
+  async function removeMember(agentName: string) {
     const id = groupDetail.value?.id
-    const leader = (groupDetail.value?.leader_agent_id || '').trim()
-    if (agentId === 'host') return
-    if (leader && agentId === leader) return
+    const leader = (groupDetail.value?.leader_agent_name || '').trim()
+    if (agentName === 'host') return
+    if (leader && agentName === leader) return
     if (!id) return
     const ok = await appConfirm({
       title: '移出成员',
@@ -184,7 +179,7 @@ export function useGroupMembers(args: {
       const response = await apiRequest(`/sessions/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ remove_agent_ids: [agentId] }),
+        body: JSON.stringify({ remove_agent_names: [agentName] }),
       })
       const payload = await response.json().catch(() => ({}))
       if ((payload as { status?: string }).status === 'ok') {
@@ -201,9 +196,9 @@ export function useGroupMembers(args: {
   return {
     showAddMemberModal,
     invitableAgents,
-    leaderDisplayId,
+    leaderDisplayName,
     orderedMemberIds,
-    formatSkillId,
+    formatSkill,
     isHostBubbleMessage,
     bubbleDisplayName,
     agentIndex,

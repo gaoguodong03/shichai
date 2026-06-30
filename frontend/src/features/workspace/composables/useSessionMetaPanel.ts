@@ -6,7 +6,7 @@ import { publishBoolPreference, TOC_WORKSPACE_OPEN_STORAGE_KEY } from './workspa
 type SessionMetaMessage = {
   message_id?: string
   role: string
-  agent_id?: string
+  agent_name?: string
   content: string
 }
 
@@ -42,13 +42,13 @@ export function useSessionMetaPanel(args: {
     const map = detail?.agent_map || {}
     return (args.groupDisplayMessages.value || [])
       .map((m, idx) => ({ m, idx }))
-      .filter(({ m }) => m.role === 'assistant' && !!m.agent_id)
+      .filter(({ m }) => m.role === 'assistant' && !!m.agent_name)
       .map(({ m, idx }) => {
-        const did = (m.agent_id || '').trim()
+        const did = (m.agent_name || '').trim()
         const name = (map[did]?.name || did || '专家').trim()
         return {
           key: (m.message_id || `idx-${idx}`) + '-' + did,
-          agent_id: did,
+          agent_name: did,
           name,
           message_id: (m.message_id || `idx-${idx}`) as string,
           snippet: toSnippet(String(m.content || ''), 50),

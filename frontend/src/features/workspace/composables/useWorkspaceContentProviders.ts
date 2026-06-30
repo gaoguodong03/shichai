@@ -38,8 +38,8 @@ import {
 
 export type WorkspaceContentProps = {
   selectedGroupSessionId: string | null
-  agentInstances: { agent_id: string; name: string; role?: string; avatar_url?: string; skill_ids?: string[]; file_capability_labels?: string[]; file_capabilities?: Record<string, boolean>; url_capability?: boolean }[]
-  skills?: { id: string; name: string }[]
+  agentInstances: { agent_name?: string; name: string; description?: string; skills?: { name: string; directory_name: string }[] }[]
+  skills?: { directory_name?: string; name: string }[]
   middleColumnOpen?: boolean
 }
 
@@ -47,7 +47,7 @@ export type WorkspaceContentEmit = {
   (e: 'message-sent'): void
   (e: 'session-run-state', sessionId: string, running: boolean): void
   (e: 'agent-added'): void
-  (e: 'scenario-new-session', sessionId: string, session?: { id: string; title?: string; updated_at?: string; agent_ids?: string[] }): void
+  (e: 'scenario-new-session', sessionId: string, session?: { id: string; title?: string; updated_at?: string; agent_names?: string[] }): void
   (e: 'middle-column-open-request'): void
   (e: 'middle-column-toggle'): void
 }
@@ -88,7 +88,7 @@ export function useWorkspaceContentProviders(args: {
   })
   const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
   const effectiveHostDisplayName = computed(() => {
-    const hostConfigName = String(groupDetail.value?.host_config?.display_name || '').trim()
+    const hostConfigName = String(groupDetail.value?.host_config?.leader_agent_name || '').trim()
     if (hostConfigName) return hostConfigName
     return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
   })
@@ -96,7 +96,7 @@ export function useWorkspaceContentProviders(args: {
     try {
       const r = await apiRequest('/settings/host-profile')
       const j = await r.json().catch(() => ({}))
-      const next = String((j as { data?: { display_name?: string } })?.data?.display_name || '').trim()
+      const next = String((j as { data?: { leader_agent_name?: string } })?.data?.leader_agent_name || '').trim()
       hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
     } catch {
       hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME
@@ -105,9 +105,9 @@ export function useWorkspaceContentProviders(args: {
   const {
     showAddMemberModal,
     invitableAgents,
-    leaderDisplayId,
+    leaderDisplayName,
     orderedMemberIds,
-    formatSkillId,
+    formatSkill,
     isHostBubbleMessage,
     bubbleDisplayName,
     agentIndex,
@@ -121,7 +121,13 @@ export function useWorkspaceContentProviders(args: {
   } = useGroupMembers({
     groupDetail,
     agentInstances: () => props.agentInstances || [],
-    skills: () => props.skills || [],
+    skills: () => (props.skills || [])
+      .map((s) => {
+        const directoryName = String(s.directory_name || '').trim()
+        const name = String(s.name || '').trim()
+        return { directory_name: directoryName, name }
+      })
+      .filter((s) => s.directory_name && s.name),
     effectiveHostDisplayName,
     defaultHostDisplayName: DEFAULT_HOST_DISPLAY_NAME,
     loadGroupDetail,
@@ -141,7 +147,9 @@ export function useWorkspaceContentProviders(args: {
   } = useShortcutPresets({
     selectedGroupSessionId: () => props.selectedGroupSessionId,
     agentInstances: () => props.agentInstances || [],
-    skills: () => props.skills || [],
+    skills: () => (props.skills || [])
+      .map((s) => ({ directory_name: String(s.directory_name || '').trim(), name: String(s.name || '').trim() }))
+      .filter((s): s is { directory_name: string; name: string } => Boolean(s.directory_name && s.name)),
     groupDetail,
     groupStreaming,
     parseGroupResponse,
@@ -246,7 +254,7 @@ export function useWorkspaceContentProviders(args: {
   let composerActions: ReturnType<typeof useGroupComposerActions> | null = null
   async function confirmGroupNext(
     nextSpeaker: string,
-    extra?: { ignoreAutoAgentId?: string; ignoreAutoSkillId?: string },
+    extra?: { ignoreAutoAgentName?: string; ignoreAutoSkill?: string },
   ) {
     await composerActions?.confirmGroupNext(nextSpeaker, extra)
   }
@@ -284,7 +292,7 @@ export function useWorkspaceContentProviders(args: {
   const {
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
-    groupSuggestedAddAgentIds,
+    groupSuggestedAddAgentNames,
     suggestedInviteLoading,
     currentAutoSwitchHint,
     autoSwitchHintText,
@@ -305,11 +313,11 @@ export function useWorkspaceContentProviders(args: {
     toolbarDisplayShowHostAvatar,
     toolbarDisplayLabelText,
     streamingPulse,
-    extractAutoInvitedIds,
+    extractAutoInvitedNames,
     isExpertAssistantMessagePayload,
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,
-    resolveSuggestedIdsFromPayload,
+    resolveSuggestedNamesFromPayload,
     handleLoadedMessages,
     resetOrchestrationForSessionSwitch,
     clearAutoSwitchHint,
@@ -323,11 +331,11 @@ export function useWorkspaceContentProviders(args: {
     currentGroupStreaming,
     groupStreaming,
     orderedMemberIds,
-    leaderDisplayId,
+    leaderDisplayName,
     effectiveHostDisplayName,
     defaultHostDisplayName: DEFAULT_HOST_DISPLAY_NAME,
     agentInstances: () => props.agentInstances || [],
-    formatSkillId,
+    formatSkill,
     displayGroupSpeakerName,
     patchGroupStreamState,
     abortGroupStream,
@@ -365,15 +373,15 @@ export function useWorkspaceContentProviders(args: {
     groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
-    groupSuggestedAddAgentIds,
+    groupSuggestedAddAgentNames,
     patchGroupStreamState,
     scheduleHydrateAuthImages,
     scrollLatestAssistantRowToLowerMiddle,
     scrollGroupAssistantMessageIntoView,
     scrollToMessage,
     applyOrchestrationEndMeta,
-    extractAutoInvitedIds,
-    resolveSuggestedIdsFromPayload,
+    extractAutoInvitedNames,
+    resolveSuggestedNamesFromPayload,
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
@@ -521,7 +529,7 @@ export function useWorkspaceContentProviders(args: {
         groupError.value = null
         groupWaitingForUser.value = false
         groupSuggestedNextSpeaker.value = null
-        groupSuggestedAddAgentIds.value = []
+        groupSuggestedAddAgentNames.value = []
         loadGroupDetail()
       } else {
         closeGroupSessionEventsStream()
@@ -560,7 +568,7 @@ export function useWorkspaceContentProviders(args: {
     bubbleDisplayName,
     activeStreamingSpeakerName,
     streamingPulse,
-    formatSkillId,
+    formatSkill,
     getToolRawResults,
     expandedToolKey,
     toolRawMeta,
@@ -596,7 +604,7 @@ export function useWorkspaceContentProviders(args: {
     currentGroupStreamingPhase,
     inviteOneSuggestedAgent,
     inviteSuggestedAgents,
-    groupSuggestedAddAgentIds,
+    groupSuggestedAddAgentNames,
     ignoreAutoSwitchAndPause,
     attachedFiles,
     removeAttachedFile,
@@ -644,7 +652,7 @@ export function useWorkspaceContentProviders(args: {
     agentAvatarColor,
     agentIndex,
     agentAvatarChar,
-    leaderDisplayId,
+    leaderDisplayName,
     removeMember,
     invitableAgents,
     inviteSingleMember,

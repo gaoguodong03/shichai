@@ -9,7 +9,6 @@ from fastapi import HTTPException
 
 from app.api.settings_mcp import load_mcp_config
 from app.api.settings_skill_frontmatter import (
-    mcp_ids_from_frontmatter,
     normalized_allowed_tools_dict,
     parse_frontmatter_lenient,
 )
@@ -23,19 +22,19 @@ def _get_skills_dir() -> Path:
     return skills_dir_path()
 
 
-def skill_dir_for_id(skill_id: str) -> Optional[Path]:
-    sid = (skill_id or "").strip()
-    if not sid or ".." in sid or "/" in sid or "\\" in sid:
+def skill_dir_for_directory_name(directory_name: str) -> Optional[Path]:
+    safe_directory_name = (directory_name or "").strip()
+    if not safe_directory_name or ".." in safe_directory_name or "/" in safe_directory_name or "\\" in safe_directory_name:
         return None
     base = _get_skills_dir().resolve()
-    d = (base / sid).resolve()
+    d = (base / safe_directory_name).resolve()
     if d.is_dir() and str(d).startswith(str(base)) and (d / "SKILL.md").is_file():
         return d
     br = get_builtin_skills_dir()
     if not br.exists():
         return None
     br = br.resolve()
-    d2 = (br / sid).resolve()
+    d2 = (br / safe_directory_name).resolve()
     if d2.is_dir() and str(d2).startswith(str(br)) and (d2 / "SKILL.md").is_file():
         return d2
     return None
@@ -60,12 +59,12 @@ def write_skill_file(skill_dir: Path, frontmatter: Dict, body: str):
     skill_file.write_text(content, encoding="utf-8")
 
 
-def skill_display_name_from_dir(skill_dir: Path, fallback_id: str) -> str:
+def skill_display_name_from_dir(skill_dir: Path, fallback_directory_name: str) -> str:
     try:
         fm, _ = read_skill_file(skill_dir)
-        return str(fm.get("name") or fallback_id).strip() or fallback_id
+        return str(fm.get("name") or fallback_directory_name).strip() or fallback_directory_name
     except Exception:
-        return fallback_id
+        return fallback_directory_name
 
 
 def skill_item_from_skill_dir(skill_dir: Path) -> Optional[Dict[str, Any]]:
@@ -81,7 +80,7 @@ def skill_item_from_skill_dir(skill_dir: Path) -> Optional[Dict[str, Any]]:
         return None
     frontmatter = parse_frontmatter_lenient(parts[1])
     return {
-        "id": skill_dir.name,
+        "directory_name": skill_dir.name,
         "name": frontmatter.get("name", skill_dir.name),
         "description": frontmatter.get("description", ""),
         "path": str(skill_dir),
@@ -99,32 +98,31 @@ def load_skills_config() -> List[Dict[str, Any]]:
             if not skill_dir.is_dir():
                 continue
             item = skill_item_from_skill_dir(skill_dir)
-            if item is not None and not any(existing["id"] == item["id"] for existing in skills):
+            if item is not None and not any(existing["directory_name"] == item["directory_name"] for existing in skills):
                 skills.append(item)
     return skills
 
 
-def validate_skill_mcp_server_ids(
-    mcp_ids: Optional[List[str]],
-    mcp_refs: Optional[List[Dict[str, str]]] = None,
+def validate_skill_tool_names(
+    tool_names: Optional[List[str]],
 ) -> List[str]:
-    ids = [str(x).strip() for x in (mcp_ids or []) if str(x).strip()]
-    if not ids:
+    names = [str(x).strip() for x in (tool_names or []) if str(x).strip()]
+    if not names:
         return []
-    resolved, missing = resolve_skill_mcp_declarations(ids, mcp_refs, load_mcp_config())
+    resolved, missing = resolve_skill_mcp_declarations(names, load_mcp_config())
     if missing:
         raise HTTPException(status_code=400, detail=f"MCP Server 不存在: {', '.join(missing)}")
     return resolved
 
 
-def get_mcp_servers_for_skill(skill_id: str) -> List[str]:
-    d = skill_dir_for_id(skill_id)
+def get_mcp_servers_for_skill(directory_name: str) -> List[str]:
+    d = skill_dir_for_directory_name(directory_name)
     if not d:
         return []
     fm, _ = read_skill_file(d)
     allowed = normalized_allowed_tools_dict(fm)
-    ids = list(allowed.get("mcp") or [])
+    ids = list(allowed.get("mcp") or []) + list(allowed.get("http_api") or [])
     if not ids:
         return []
-    resolved, _missing = resolve_skill_mcp_declarations(ids, allowed.get("mcp_refs"), load_mcp_config())
+    resolved, _missing = resolve_skill_mcp_declarations(ids, load_mcp_config())
     return resolved

@@ -106,8 +106,8 @@ def runtime_state_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "running": True,
         "run_id": str(active.get("run_id") or ""),
-        "agent_id": str(active.get("agent_id") or ""),
-        "skill_id": str(active.get("skill_id") or ""),
+        "agent_name": str(active.get("agent_name") or ""),
+        "skill": str(active.get("skill") or ""),
         "phase": str(active.get("phase") or "running"),
         "started_at": active.get("started_at") or "",
     }
@@ -175,8 +175,8 @@ async def register_group_run(group_session_id: str, *, user_id: str, task: async
         "running": True,
         "run_id": run_id,
         "user_id": user_id,
-        "agent_id": "",
-        "skill_id": "",
+        "agent_name": "",
+        "skill": "",
         "phase": "routing",
         "started_at": started_at,
     }
@@ -230,14 +230,14 @@ async def cancel_group_session_run(group_session_id: str, *, reason: str) -> boo
 
 def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
     """Build the stable response shape used by the sessions API."""
-    ids = list(meta_item.get("agent_ids", []))
-    leader_id = meta_item.get("leader_agent_id", "")
+    names = list(meta_item.get("agent_names", []))
+    leader_name = meta_item.get("leader_agent_name", "")
     hc = meta_item.get("host_config")
     out = {
         "id": session_id,
         "title": meta_item.get("title", "新对话"),
-        "agent_ids": ids,
-        "leader_agent_id": leader_id,
+        "agent_names": names,
+        "leader_agent_name": leader_name,
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),
         "runtime_state": runtime_state_for_session(session_id, meta_item),
@@ -248,7 +248,7 @@ def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[st
     if prof in ("recruitment", "scene"):
         out["orchestration_profile"] = prof
     else:
-        out["orchestration_profile"] = effective_orchestration_profile(meta_item, agent_ids=list(meta_item.get("agent_ids") or []))
+        out["orchestration_profile"] = effective_orchestration_profile(meta_item, agent_names=list(meta_item.get("agent_names") or []))
     return out
 
 
@@ -375,23 +375,23 @@ def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
             continue
         if role == "assistant":
             cur = _ensure_current()
-            agent_id = (m.get("agent_id") or "").strip()
-            if not agent_id:
+            agent_name = (m.get("agent_name") or "").strip()
+            if not agent_name:
                 continue
             experts = cur.get("experts")
             if not isinstance(experts, dict):
                 experts = {}
                 cur["experts"] = experts
-            if agent_id not in experts:
-                experts[agent_id] = {"agent_id": agent_id, "messages": []}
+            if agent_name not in experts:
+                experts[agent_name] = {"agent_name": agent_name, "messages": []}
             item = {
                 "message_id": m.get("message_id"),
                 "content": m.get("content") or "",
                 "timestamp": m.get("timestamp"),
             }
-            if m.get("skill_id") is not None:
-                item["skill_id"] = m.get("skill_id")
-            experts[agent_id]["messages"].append(item)
+            if m.get("skill") is not None:
+                item["skill"] = m.get("skill")
+            experts[agent_name]["messages"].append(item)
 
     _flush()
     return segments

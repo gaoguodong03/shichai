@@ -13,7 +13,7 @@ import { formatGroupMsgFullTime, formatGroupMsgTime } from '../messageTimeFormat
 export type GroupMessage = {
   message_id?: string
   role: string
-  agent_id?: string
+  agent_name?: string
   content: string
   _streaming?: boolean
   [key: string]: unknown
@@ -28,7 +28,8 @@ type GroupMessageDetail = {
 type MsgExt = {
   timestamp?: string
   event_type?: string
-  agent_id?: string
+  agent_name?: string
+  role?: string
   content?: string
 }
 
@@ -58,13 +59,13 @@ export function useGroupMessageList(args: {
     const raw = (content ?? '').trim()
     if (!raw) return ''
     const fileRefMatches = Array.from(raw.matchAll(/【文件引用：([^】]+)】/g))
-    const fileExpandedBlockRegex = /(?:^|\n)\[文件:\s*[^\]]+\][\s\S]*?(?=\n【文件引用：|\n【给下一 (?:Agent|DHA) 的提示】|$)/g
+    const fileExpandedBlockRegex = /(?:^|\n)\[文件:\s*[^\]]+\][\s\S]*?(?=\n【文件引用：|\n【给下一 Agent 的提示】|$)/g
     const prefix = '【讨论目标】'
     const withoutGoalPrefix = raw.startsWith(prefix)
       ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
       : raw
     const cleaned = withoutGoalPrefix
-      .replace(/(?:^|\n{2,})【给下一 (?:Agent|DHA) 的提示】[\s\S]*?(?=\n{2,}【文件引用：|$)/g, '')
+      .replace(/(?:^|\n{2,})【给下一 Agent 的提示】[\s\S]*?(?=\n{2,}【文件引用：|$)/g, '')
       .replace(/(?:^|\n)【文件引用：[^】]+】/g, '')
       .replace(/(?:^|\n)【文件内容已解析】/g, '')
       .replace(fileExpandedBlockRegex, '')
@@ -112,15 +113,22 @@ export function useGroupMessageList(args: {
     return [...new Set(names)]
   }
 
+  function messageActionContent(msg: MsgExt): string {
+    const content = msg.content || ''
+    return msg.role === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
+  }
+
   function defaultAgentFilename(msg: MsgExt): string {
-    const name = (groupDetail.value?.agent_map || {})[msg.agent_id || '']?.name || 'agent'
+    const name = msg.role === 'user'
+      ? 'user'
+      : ((groupDetail.value?.agent_map || {})[msg.agent_name || '']?.name || 'agent')
     const ts = new Date().toISOString().slice(0, 19).replace('T', '').replace(/[-:]/g, '').slice(0, 12)
     return `agent-${name}-${ts}.md`
   }
 
   async function saveAgentMessageToFile(msg: MsgExt) {
     const id = groupDetail.value?.id
-    const content = (msg.content || '').trim()
+    const content = messageActionContent(msg).trim()
     if (!id || !content) return
     const defaultName = defaultAgentFilename(msg)
     const promptValue = await appPrompt({
@@ -151,7 +159,7 @@ export function useGroupMessageList(args: {
   }
 
   async function copyAgentMessageToClipboard(msg: MsgExt) {
-    const content = agentBodyContent(msg.content || '')
+    const content = messageActionContent(msg)
     if (!content) return
     try {
       await navigator.clipboard.writeText(content)

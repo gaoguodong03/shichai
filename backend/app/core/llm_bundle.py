@@ -29,12 +29,17 @@ def provider_for_settings_import(provider: Dict[str, Any]) -> Dict[str, Any]:
     return copied
 
 
-def build_llm_bundle_zip_bytes(provider_id: str, provider: Dict[str, Any], *, default_llm: str = "") -> bytes:
+def _model_name(llm_name: str, provider: Dict[str, Any]) -> str:
+    return str((provider or {}).get("model") or llm_name or "").strip()
+
+
+def build_llm_bundle_zip_bytes(llm_name: str, provider: Dict[str, Any], *, default_llm: str = "") -> bytes:
     clean = sanitize_llm_provider_for_bundle(provider)
+    name = _model_name(llm_name, clean)
     manifest = {
         "bundle_version": LLM_BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "provider_id": str(provider_id or "").strip(),
+        "name": name,
         "default_llm": str(default_llm or "").strip(),
         "provider": clean,
     }
@@ -51,10 +56,10 @@ def read_llm_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], str, Dic
     manifest = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ValueError("invalid_manifest")
-    provider_id = str(manifest.get("provider_id") or "").strip()
+    llm_name = str(manifest.get("name") or "").strip()
     provider = manifest.get("provider")
-    if not provider_id:
-        raise ValueError("missing_provider_id")
+    if not llm_name:
+        raise ValueError("missing_llm_name")
     if not isinstance(provider, dict):
         raise ValueError("missing_provider_in_manifest")
-    return manifest, provider_id, sanitize_llm_provider_for_bundle(provider)
+    return manifest, llm_name, sanitize_llm_provider_for_bundle(provider)

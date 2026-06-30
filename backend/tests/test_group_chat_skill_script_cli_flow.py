@@ -73,18 +73,15 @@ def _frontend_flow_env(tmp_path, monkeypatch):
     (config_dir / "sandbox").mkdir(parents=True, exist_ok=True)
     (config_dir / "sandbox" / "requirements.txt").write_text("pendulum==3.0.0\n", encoding="utf-8")
 
-    (config_dir / "dha_instances.json").write_text(
+    (config_dir / "agents.json").write_text(
         json.dumps(
             [
                 {
-                    "agent_id": "sandbox-dependency-expert",
                     "name": "沙箱依赖验证专家",
-                    "role": "验证沙箱 Python 包依赖是否可用",
+                    "description": "验证沙箱 Python 包依赖是否可用",
                     "system_prompt": "收到运行脚本请求时，使用 run_skill_script 调用指定脚本。",
-                    "skill_ids": ["sandbox-dependency-verify"],
-                    "mcp_server_ids": [],
-                    "is_leader": False,
-                    "llm_provider_id": "fake",
+                    "skills": [{"name": "沙箱依赖验证", "directory_name": "sandbox-dependency-verify"}],
+                    "llm_name": "fake",
                 }
             ],
             ensure_ascii=False,
@@ -153,7 +150,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
         "/api/sessions",
         json={
             "title": "固定测试标题",
-            "agent_ids": ["sandbox-dependency-expert"],
+            "agent_names": ["沙箱依赖验证专家"],
         },
         headers=headers,
     )
@@ -171,9 +168,9 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     data = chat_resp.json()["data"]
     assistant_msg = data["message"]
 
-    assert data["route"]["agent_id"] == "agent-sandbox-dependency-expert"
-    assert assistant_msg["agent_id"] == "agent-sandbox-dependency-expert"
-    assert assistant_msg["skill_id"] == "sandbox-dependency-verify"
+    assert data["route"]["agent_name"] == "沙箱依赖验证专家"
+    assert assistant_msg["agent_name"] == "沙箱依赖验证专家"
+    assert assistant_msg["skill"] == "sandbox-dependency-verify"
     assert "版本检查通过" in assistant_msg["content"]
     assert fake_gateway.calls
 

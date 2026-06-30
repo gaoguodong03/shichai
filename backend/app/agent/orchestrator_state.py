@@ -41,7 +41,7 @@ class OrchestrationContext:
     session_id: str
     phase: OrchestrationPhase = OrchestrationPhase.PLANNING
     active_task_id: Optional[str] = None
-    owner_agent_id: Optional[str] = None
+    owner_agent_name: Optional[str] = None
     interrupt_reason: InterruptReason = InterruptReason.NONE
     turn_id: str = ""
     token_version: int = 0
@@ -54,7 +54,7 @@ class OrchestrationContext:
             "session_id": self.session_id,
             "phase": self.phase.value,
             "active_task_id": self.active_task_id,
-            "owner_agent_id": self.owner_agent_id,
+            "owner_agent_name": self.owner_agent_name,
             "interrupt_reason": self.interrupt_reason.value,
             "turn_id": self.turn_id,
             "token_version": self.token_version,
@@ -75,9 +75,9 @@ class OrchestrationDecision:
     next_prompt: Optional[str] = None
     current_phase: str = ""
     speaker_task: str = ""
-    suggested_add_agent_ids: List[str] = field(default_factory=list)
+    suggested_add_agent_names: List[str] = field(default_factory=list)
     phase: OrchestrationPhase = OrchestrationPhase.PLANNING
-    owner_agent_id: Optional[str] = None
+    owner_agent_name: Optional[str] = None
     interrupt_reason: InterruptReason = InterruptReason.NONE
     decision_source: DecisionSource = DecisionSource.LEGACY
     handoff_reason: Optional[str] = None
@@ -93,9 +93,9 @@ class OrchestrationDecision:
             "next_prompt": None,
             "current_phase": self.current_phase or "",
             "speaker_task": str(speaker_task),
-            "suggested_add_agent_ids": list(self.suggested_add_agent_ids or []),
+            "suggested_add_agent_names": list(self.suggested_add_agent_names or []),
             "phase": self.phase.value,
-            "owner_agent_id": self.owner_agent_id,
+            "owner_agent_name": self.owner_agent_name,
             "interrupt_reason": self.interrupt_reason.value,
             "decision_source": self.decision_source.value,
             "handoff_reason": self.handoff_reason,
@@ -111,7 +111,7 @@ def build_end_payload(
     suggested_next_speaker: Optional[str] = None,
     phase: OrchestrationPhase = OrchestrationPhase.AWAITING_USER,
     interrupt_reason: InterruptReason = InterruptReason.NONE,
-    resume_target_agent_id: Optional[str] = None,
+    resume_target_agent_name: Optional[str] = None,
     required_user_fields: Optional[List[Dict[str, Any]]] = None,
     turn_id: str = "",
     token_version: int = 0,
@@ -124,8 +124,8 @@ def build_end_payload(
     normalized_waiting = bool(waiting_for_user)
     normalized_discussion_ended = bool(discussion_ended)
     normalized_required = list(required_user_fields or [])
-    normalized_suggested_next = (suggested_next_speaker or "").strip().lower() or None
-    normalized_resume_target = (resume_target_agent_id or "").strip().lower() or None
+    normalized_suggested_next = (suggested_next_speaker or "").strip() or None
+    normalized_resume_target = (resume_target_agent_name or "").strip() or None
 
     # Contract hardening: terminal end must be completed/non-waiting/no-interrupt.
     if normalized_discussion_ended:
@@ -164,7 +164,7 @@ def build_end_payload(
         "discussion_ended": normalized_discussion_ended,
         "phase": normalized_phase.value,
         "interrupt_reason": normalized_interrupt.value,
-        "resume_target_agent_id": normalized_resume_target,
+        "resume_target_agent_name": normalized_resume_target,
         "required_user_fields": normalized_required,
         "turn_id": turn_id or "",
         "token_version": int(token_version),

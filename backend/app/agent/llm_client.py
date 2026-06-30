@@ -12,34 +12,34 @@ logger = logging.getLogger(__name__)
 _JENIYA_BASE = "https://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS: Dict[str, Dict[str, Any]] = {
-    "qwen": {
+    "qwen3-max": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3-max",
         "api_key_env": "QWEN_API_KEY",
     },
-    "jeniya": {"base_url": _JENIYA_BASE, "model": "gpt-4o", "api_key_env": _JENIYA_KEY},
-    "gemini": {
+    "gpt-4o": {"base_url": _JENIYA_BASE, "model": "gpt-4o", "api_key_env": _JENIYA_KEY},
+    "gemini-3-pro-preview": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-3-pro-preview",
         "api_key_env": "GEMINI_API_KEY",
     },
-    "claude": {
+    "claude-sonnet-4-6": {
         "base_url": _JENIYA_BASE,
         "model": "claude-sonnet-4-6",
         "api_key_env": _JENIYA_KEY,
     },
-    "glm": {
+    "glm-4.7": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model": "glm-4.7",
         "api_key_env": "ZHIPUAI_API_KEY",
     },
-    "deepseek": {
+    "deepseek-chat": {
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-chat",
         "api_key_env": "DEEPSEEK_API_KEY",
         "thinking": False,
     },
-    "kimi": {
+    "moonshot-v1-128k": {
         "base_url": "https://api.moonshot.cn/v1",
         "model": "moonshot-v1-128k",
         "api_key_env": "MOONSHOT_API_KEY",
@@ -74,19 +74,19 @@ def bind_tools_compat(client: Any, tools: list[Any]) -> Any:
 
 
 def resolve_llm_provider_entry(
-    provider_id: str,
+    llm_name: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> tuple[str, Dict[str, Any]]:
-    """Resolve provider id to its config row, falling back to qwen defaults."""
+    """Resolve model name to its config row, falling back to qwen3-max defaults."""
     providers = providers_config or _DEFAULT_LLM_PROVIDERS
-    provider_key = str(provider_id or "").strip()
+    llm_key = str(llm_name or "").strip()
     providers_by_lower = {str(k).strip().lower(): v for k, v in providers.items()}
-    resolved_id = provider_key
-    cfg = providers.get(provider_key) or providers_by_lower.get(provider_key.lower())
+    resolved_name = llm_key
+    cfg = providers.get(llm_key) or providers_by_lower.get(llm_key.lower())
     if not cfg:
-        resolved_id = "qwen"
-        cfg = providers.get("qwen") or providers_by_lower.get("qwen") or {}
-    return resolved_id, dict(cfg or {})
+        resolved_name = "qwen3-max"
+        cfg = providers.get("qwen3-max") or providers_by_lower.get("qwen3-max") or {}
+    return resolved_name, dict(cfg or {})
 
 
 def resolve_llm_api_key(
@@ -106,18 +106,18 @@ def resolve_llm_api_key(
     return (str(api_key).strip() or None) if api_key else None
 
 
-def describe_llm_provider(provider_id: str, cfg: Dict[str, Any]) -> str:
+def describe_llm_provider(llm_name: str, cfg: Dict[str, Any]) -> str:
     """Human-readable model label for user-facing notices."""
-    model = str(cfg.get("model") or provider_id or "").strip() or str(provider_id or "").strip() or "unknown"
+    model = str(cfg.get("model") or llm_name or "").strip() or str(llm_name or "").strip() or "unknown"
     label = str(cfg.get("label") or "").strip()
     if label and label != model:
         return f"{label}（{model}）"
     return model
 
 
-def build_llm_credential_notice(provider_id: str, cfg: Dict[str, Any]) -> str:
+def build_llm_credential_notice(llm_name: str, cfg: Dict[str, Any]) -> str:
     """User-facing notice when an LLM provider has no usable API key."""
-    model_desc = describe_llm_provider(provider_id, cfg)
+    model_desc = describe_llm_provider(llm_name, cfg)
     return (
         f"模型型号为 {model_desc}，此时没有配置密钥或密钥错误。"
         "请前往「设置 → 密钥」添加密钥，并在「资源中心 → 配置模型」中为该模型选择密钥后重试。"
@@ -148,15 +148,15 @@ def is_llm_credential_error_message(text: str) -> bool:
 
 
 def get_llm_from_config(
-    provider_id: str,
+    llm_name: str,
     providers_config: Optional[Dict[str, Dict[str, Any]]] = None,
     api_secrets: Optional[Dict[str, str]] = None,
 ) -> "QwenLLM":
     """
-    根据 provider_id 从配置新建 LLM 客户端。
+    根据 llm_name 从配置新建 LLM 客户端。
     解析顺序：api_key_ref（密钥库）> 配置中的 api_key > api_key_env 环境变量。
     """
-    resolved_id, cfg = resolve_llm_provider_entry(provider_id, providers_config)
+    resolved_name, cfg = resolve_llm_provider_entry(llm_name, providers_config)
     if not cfg:
         return QwenLLM()
 

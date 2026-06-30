@@ -9,23 +9,23 @@ from typing import Any, Dict, Iterable
 from app.core.atomic_json import atomic_write_json
 
 
-def resource_filename_for_id(resource_id: str) -> str:
-    """Return a filesystem-safe JSON filename for a resource id."""
-    rid = str(resource_id or "").strip()
-    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in rid)
+def resource_directory_name(value: str) -> str:
+    """Return a filesystem-safe directory name for a resource name."""
+    raw = str(value or "").strip()
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in raw)
     return safe.strip("._") or "resource"
 
 
-def legacy_resource_json_filename_for_id(resource_id: str) -> str:
-    """Return the legacy flat JSON filename for a resource id."""
-    safe = resource_filename_for_id(resource_id)
+def legacy_resource_json_filename(value: str) -> str:
+    """Return the legacy flat JSON filename for cleanup."""
+    safe = resource_directory_name(value)
     return f"{safe}.json"
 
 
 def mirror_rows_to_resource_dir(
     rows: Iterable[Dict[str, Any]],
     resource_dir: Path,
-    id_key: str,
+    name_key: str,
     *,
     body_filename: str,
 ) -> None:
@@ -35,16 +35,15 @@ def mirror_rows_to_resource_dir(
     for row in rows or []:
         if not isinstance(row, dict):
             continue
-        rid = str(row.get(id_key) or "").strip()
-        if not rid:
+        name = str(row.get(name_key) or "").strip()
+        if not name:
             continue
-        dirname = resource_filename_for_id(rid)
+        dirname = resource_directory_name(name)
         desired.add(dirname)
         payload = dict(row)
-        payload.setdefault("id", rid)
         atomic_write_json(resource_dir / dirname / body_filename, payload)
 
-        legacy_file = resource_dir / legacy_resource_json_filename_for_id(rid)
+        legacy_file = resource_dir / legacy_resource_json_filename(name)
         try:
             legacy_file.unlink()
         except FileNotFoundError:

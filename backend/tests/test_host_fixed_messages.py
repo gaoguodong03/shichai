@@ -10,7 +10,7 @@ from app.agent.group_chat_host_messages import (
 
 def test_host_next_speaker_ignores_custom_announcement():
     msg = _build_host_next_speaker_message(
-        skill_id="group-host-webnovel",
+        skill="group-host-webnovel",
         next_speaker="agent-writer",
         agent_map={"agent-writer": {"name": "文字创作专家"}},
         announcement="好的，我理解了你的需求。",
@@ -24,18 +24,18 @@ def test_host_next_speaker_ignores_custom_announcement():
 
 def test_host_recommendation_uses_fixed_copy():
     msg = _build_host_recommendation_message(
-        skill_id="group-host-webnovel",
+        skill="group-host-webnovel",
         content="好的，我来为你协调这次的文章写作任务。",
         picked=["agent-writer", "agent-search"],
     )
 
     assert msg["content"] == HOST_ZERO_EXPERT_RECOMMENDATION
-    assert msg["suggested_add_agent_ids"] == ["agent-writer", "agent-search"]
+    assert msg["suggested_add_agent_names"] == ["agent-writer", "agent-search"]
 
 
 def test_host_next_speaker_end_phase_uses_fixed_copy():
     msg = _build_host_next_speaker_message(
-        skill_id="group-host-webnovel",
+        skill="group-host-webnovel",
         next_speaker="agent-writer",
         agent_map={"agent-writer": {"name": "文字创作专家"}},
         current_phase="end",
@@ -47,7 +47,7 @@ def test_host_next_speaker_end_phase_uses_fixed_copy():
 
 def test_host_pause_user_shows_speaker_task_or_default():
     msg = _build_host_pause_message(
-        skill_id="group-host-webnovel",
+        skill="group-host-webnovel",
         next_speaker="user",
         current_phase="阶段1：入口分流",
         speaker_task="请用户明确报告目标受众和篇幅。",
@@ -59,7 +59,7 @@ def test_host_pause_user_shows_speaker_task_or_default():
 
 def test_host_pause_user_without_task_uses_default_copy():
     msg = _build_host_pause_message(
-        skill_id="group-host-webnovel",
+        skill="group-host-webnovel",
         next_speaker="user",
     )
 

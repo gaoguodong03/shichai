@@ -7,13 +7,13 @@ import re
 _TOOL_NAME_INVALID_CHARS_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 
 
-def build_skill_script_tool_name(skill_id: str) -> str:
+def build_skill_script_tool_name(directory_name: str) -> str:
     """构造符合工具命名约束的 run_skill_script 工具名。
 
     部分模型供应商要求 function.name 严格匹配 ^[a-zA-Z0-9_\\.-]+$。
-    对包含中文/空格等字符的 skill_id，需要做安全化，否则会在请求阶段被拒绝。
+    对包含中文/空格等字符的 directory_name，需要做安全化，否则会在请求阶段被拒绝。
     """
-    raw = str(skill_id or "").strip()
+    raw = str(directory_name or "").strip()
     if not raw:
         return "run_skill_script_default"
     sanitized = _TOOL_NAME_INVALID_CHARS_RE.sub("_", raw).strip("_.-")

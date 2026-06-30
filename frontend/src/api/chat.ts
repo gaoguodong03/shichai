@@ -4,16 +4,15 @@ export interface ChatStreamRequestPayload {
   message?: string
   session_id: string
   client_message_id?: string
-  skill_ids?: string[]
   action?: string
   host_takeover_requested?: boolean
-  ignore_auto_agent_id?: string
-  ignore_auto_skill_id?: string
+  ignore_auto_agent_name?: string
+  ignore_auto_skill?: string
 }
 
 interface StreamChatEventHandlers {
   onRoute?: (data: Record<string, unknown>) => void
-  onContent?: (data: { text?: string; agent_id?: string; meta?: { phase?: string } }) => void
+  onContent?: (data: { text?: string; agent_name?: string; meta?: { phase?: string } }) => void
   onMessage?: (data: Record<string, unknown>) => void
   onEnd?: (data: Record<string, unknown>) => void
   onError?: (error: unknown) => void
@@ -27,7 +26,7 @@ interface SessionEventHandlers {
 
 interface ChatOnceResponseData {
   route?: Record<string, unknown> | null
-  contents?: Array<{ text?: string; agent_id?: string; meta?: { phase?: string } }>
+  contents?: Array<{ text?: string; agent_name?: string; meta?: { phase?: string } }>
   messages?: Record<string, unknown>[]
   message?: Record<string, unknown> | null
   end?: Record<string, unknown> | null
@@ -84,11 +83,10 @@ export async function streamSessionChat(
   const body = {
     message: payload.message ?? '',
     client_message_id: payload.client_message_id,
-    skill_ids: payload.skill_ids,
     action: payload.action,
     host_takeover_requested: payload.host_takeover_requested,
-    ignore_auto_agent_id: payload.ignore_auto_agent_id,
-    ignore_auto_skill_id: payload.ignore_auto_skill_id,
+    ignore_auto_agent_name: payload.ignore_auto_agent_name,
+    ignore_auto_skill: payload.ignore_auto_skill,
   }
   const response = await fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
     method: 'POST',
@@ -101,7 +99,7 @@ export async function streamSessionChat(
     response,
     (eventType, data) => {
       if (eventType === 'route') handlers.onRoute?.(data)
-      else if (eventType === 'content') handlers.onContent?.(data as { text?: string; agent_id?: string; meta?: { phase?: string } })
+      else if (eventType === 'content') handlers.onContent?.(data as { text?: string; agent_name?: string; meta?: { phase?: string } })
       else if (eventType === 'message') handlers.onMessage?.(data)
       else if (eventType === 'end') handlers.onEnd?.(data)
       else if (eventType === 'error') handlers.onError?.(data)
@@ -142,11 +140,10 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
     body: JSON.stringify({
       message: payload.message ?? '',
       client_message_id: payload.client_message_id,
-      skill_ids: payload.skill_ids,
       action: payload.action,
       host_takeover_requested: payload.host_takeover_requested,
-      ignore_auto_agent_id: payload.ignore_auto_agent_id,
-      ignore_auto_skill_id: payload.ignore_auto_skill_id,
+      ignore_auto_agent_name: payload.ignore_auto_agent_name,
+      ignore_auto_skill: payload.ignore_auto_skill,
     }),
   })
 }

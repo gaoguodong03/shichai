@@ -6,7 +6,7 @@
         <div class="flex items-center justify-between gap-3">
           <div class="min-w-[12rem]">
             <h1 class="text-base font-semibold text-primary truncate">技能</h1>
-            <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.id }}</p>
+            <p class="text-xs text-muted truncate">技能：{{ skill.name || skill.directory_name }}</p>
           </div>
           <div class="flex flex-shrink-0 items-center gap-2">
             <button
@@ -128,22 +128,22 @@
                   <label class="block text-xs font-medium text-muted mb-2">MCP</label>
                   <div v-if="form.allowed_tools.mcp.length" class="flex flex-wrap gap-2 mb-2">
                     <span
-                      v-for="id in form.allowed_tools.mcp"
-                      :key="id"
+                      v-for="toolName in form.allowed_tools.mcp"
+                      :key="toolName"
                       class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full border text-xs font-medium"
-                      :class="isMcpDependencyMissing(id)
+                      :class="isMcpDependencyMissing(toolName)
                         ? 'border-red-300 bg-red-50 text-red-700'
                         : 'border-accent bg-accent-subtle text-accent-subtle-text'"
-                      :title="isMcpDependencyMissing(id) ? '缺失 MCP 工具配置' : '已存在 MCP 工具配置'"
+                      :title="isMcpDependencyMissing(toolName) ? '缺失 MCP 工具配置' : '已存在 MCP 工具配置'"
                     >
-                      {{ mcpLabel(id) }}
+                      {{ mcpLabel(toolName) }}
                       <button
                         v-if="editMode"
                         type="button"
                         class="p-0.5 rounded-full hover:bg-accent/20"
-                        :class="isMcpDependencyMissing(id) ? 'text-red-700/80' : 'text-accent-subtle-text'"
+                        :class="isMcpDependencyMissing(toolName) ? 'text-red-700/80' : 'text-accent-subtle-text'"
                         title="移除"
-                        @click="removeMcpServer(id)"
+                        @click="removeMcpServer(toolName)"
                       >
                         ×
                       </button>
@@ -156,16 +156,59 @@
                   <div v-if="editMode" class="flex flex-wrap items-center gap-2">
                     <button
                       v-for="srv in addableMcpServers"
-                      :key="srv.id"
+                      :key="srv.name"
                       type="button"
                       class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
-                      @click="addMcpServer(srv.name || srv.id)"
+                      @click="addMcpServer(srv.name)"
                     >
-                      + {{ srv.name || srv.id }}
+                      + {{ srv.name }}
                     </button>
                     <span v-if="!addableMcpServers.length" class="text-xs text-muted">可添加 MCP 已为空</span>
                   </div>
-                  <p v-if="mcpServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在设置中配置。</p>
+                  <p v-if="mcpToolServers.length === 0" class="mt-2 text-xs text-muted">暂无 MCP 服务器，请先在资源中心-工具中配置。</p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-muted mb-2">HTTP API</label>
+                  <div v-if="form.allowed_tools.http_api.length" class="flex flex-wrap gap-2 mb-2">
+                    <span
+                      v-for="toolName in form.allowed_tools.http_api"
+                      :key="toolName"
+                      class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-full border text-xs font-medium"
+                      :class="isHttpApiDependencyMissing(toolName)
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-accent bg-accent-subtle text-accent-subtle-text'"
+                      :title="isHttpApiDependencyMissing(toolName) ? '缺失 HTTP API 工具配置' : '已存在 HTTP API 工具配置'"
+                    >
+                      {{ toolName }}
+                      <button
+                        v-if="editMode"
+                        type="button"
+                        class="p-0.5 rounded-full hover:bg-accent/20"
+                        :class="isHttpApiDependencyMissing(toolName) ? 'text-red-700/80' : 'text-accent-subtle-text'"
+                        title="移除"
+                        @click="removeHttpApiTool(toolName)"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </div>
+                  <div v-else class="text-xs text-muted mb-2">未声明 HTTP API（本技能会话不加载 HTTP API 工具）。</div>
+                  <p v-if="missingHttpApiDependencies.length" class="mt-2 text-xs text-red-600">
+                    缺失 HTTP API 工具配置：{{ missingHttpApiDependencies.join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
+                  </p>
+                  <div v-if="editMode" class="flex flex-wrap items-center gap-2">
+                    <button
+                      v-for="srv in addableHttpApiTools"
+                      :key="srv.name"
+                      type="button"
+                      class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border border-border-light bg-card text-muted hover:bg-list-hover"
+                      @click="addHttpApiTool(srv.name)"
+                    >
+                      + {{ srv.name }}
+                    </button>
+                    <span v-if="!addableHttpApiTools.length" class="text-xs text-muted">可添加 HTTP API 已为空</span>
+                  </div>
+                  <p v-if="httpApiTools.length === 0" class="mt-2 text-xs text-muted">暂无 HTTP API 工具，请先在资源中心-工具中配置。</p>
                 </div>
                 <div>
                   <label class="block text-xs font-medium text-muted mb-2">Python 依赖</label>
@@ -289,29 +332,23 @@ import { apiRequest } from '@/api/base'
 import { ref, watch, computed, nextTick, onBeforeUnmount } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
-import {
-  buildMcpServerIndex,
-  isMcpDeclarationMissing,
-  resolveMcpDeclaration,
-} from './mcpDependencyMatch'
-import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
 import { resourceIconStyle } from '@/features/resources/resourceIconStyle'
 import skillFileIconUrl from '@/assets/icons/workspace/file.svg'
 import skillFolderIconUrl from '@/assets/icons/workspace/folder.svg'
 import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPartPath } from './resourcePartPaths'
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
-const MCP_REFERENCE_ID_KEYS = ['id', 'mcp_server_id']
 const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
+type AllowedTools = { mcp: string[]; http_api: string[]; python: string }
 const DEFAULT_DRAFT_SKILL = {
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [] as string[], python: '', mcp_refs: [] as ReferenceSnapshot[] },
+  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: '' },
 }
 
-const props = defineProps<{ skillId: string }>()
-const emit = defineEmits<{ (e: 'updated', newSkillId?: string): void; (e: 'deleted'): void }>()
+const props = defineProps<{ directoryName: string }>()
+const emit = defineEmits<{ (e: 'updated', newDirectoryName?: string): void; (e: 'deleted'): void }>()
 
 const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'main', label: 'SKILL.md' },
@@ -321,19 +358,19 @@ const tabs: { id: 'main' | PartType; label: string }[] = [
   { id: 'other', label: 'Other' },
 ]
 
-const skill = ref<{ id: string; name: string; description?: string; path?: string; allowed_tools?: { mcp: string[]; python: string; mcp_refs?: ReferenceSnapshot[] } } | null>(null)
+const skill = ref<{ directory_name: string; name: string; description?: string; path?: string; allowed_tools?: Partial<AllowedTools> } | null>(null)
 const skillContent = ref<{
   raw: string
   name: string
   description: string
   body: string
-  allowed_tools: { mcp: string[]; python: string; mcp_refs: ReferenceSnapshot[] }
+  allowed_tools: AllowedTools
 }>({
   raw: '',
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [], python: '', mcp_refs: [] },
+  allowed_tools: { mcp: [], http_api: [], python: '' },
 })
 const loading = ref(false)
 const contentLoading = ref(false)
@@ -343,9 +380,9 @@ const form = ref({
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [] as string[], python: '', mcp_refs: [] as ReferenceSnapshot[] },
+  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: '' },
 })
-const mcpServers = ref<{ id: string; name: string; enabled: boolean }[]>([])
+const mcpServers = ref<{ name: string; enabled: boolean; type: 'mcp' | 'http_api' }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 const editMode = ref(false)
 const draftBaseline = ref('')
@@ -376,25 +413,24 @@ function hasLoadedSkillContent() {
   )
 }
 
-const mcpServerIndex = computed(() => buildMcpServerIndex(mcpServers.value))
-const resolvedMcpLocalIds = computed(() => {
-  const ids = new Set<string>()
-  for (const declared of form.value.allowed_tools.mcp) {
-    const resolved = resolveMcpDeclaration(declared, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
-    if (resolved?.id) ids.add(resolved.id)
-  }
-  return ids
-})
+const mcpToolServers = computed(() => mcpServers.value.filter((s) => s.type === 'mcp'))
+const httpApiTools = computed(() => mcpServers.value.filter((s) => s.type === 'http_api'))
+const mcpServerNames = computed(() => new Set(mcpToolServers.value.map((s) => s.name)))
+const httpApiToolNames = computed(() => new Set(httpApiTools.value.map((s) => s.name)))
 const addableMcpServers = computed(() =>
-  mcpServers.value.filter((s) => s.enabled !== false && !resolvedMcpLocalIds.value.has(s.id))
+  mcpToolServers.value.filter((s) => s.enabled !== false && !form.value.allowed_tools.mcp.includes(s.name))
+)
+const addableHttpApiTools = computed(() =>
+  httpApiTools.value.filter((s) => s.enabled !== false && !form.value.allowed_tools.http_api.includes(s.name))
 )
 const missingMcpDependencies = computed(() =>
-  form.value.allowed_tools.mcp.filter((id) =>
-    isMcpDeclarationMissing(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
-  )
+  form.value.allowed_tools.mcp.filter((id) => !mcpServerNames.value.has(id))
+)
+const missingHttpApiDependencies = computed(() =>
+  form.value.allowed_tools.http_api.filter((id) => !httpApiToolNames.value.has(id))
 )
 const missingMcpDependencyLabels = computed(() =>
-  missingMcpDependencies.value.map((id) => mcpLabel(id)),
+  missingMcpDependencies.value.map((name) => mcpLabel(name)),
 )
 const pythonDependencies = computed(() =>
   String(form.value.allowed_tools.python || '')
@@ -416,10 +452,10 @@ const missingPythonDependencies = computed(() =>
     return key && !sandboxRequirementKeys.value.has(key)
   })
 )
-const isDraftSkill = computed(() => isNewSkillDraftId(props.skillId))
+const isDraftSkill = computed(() => isNewSkillDraftId(props.directoryName))
 
-function isNewSkillDraftId(skillId?: string | null) {
-  return String(skillId || '').startsWith(NEW_SKILL_DRAFT_PREFIX)
+function isNewSkillDraftId(directoryName?: string | null) {
+  return String(directoryName || '').startsWith(NEW_SKILL_DRAFT_PREFIX)
 }
 
 function normalizedFormSnapshot() {
@@ -429,8 +465,8 @@ function normalizedFormSnapshot() {
     body: form.value.body ?? '',
     allowed_tools: {
       mcp: [...(form.value.allowed_tools.mcp ?? [])],
+      http_api: [...(form.value.allowed_tools.http_api ?? [])],
       python: form.value.allowed_tools.python ?? '',
-      mcp_refs: [...(form.value.allowed_tools.mcp_refs ?? [])],
     },
   })
 }
@@ -442,11 +478,11 @@ function draftHasChanges() {
 function resetDraftForm() {
   const allowedTools = {
     mcp: [...DEFAULT_DRAFT_SKILL.allowed_tools.mcp],
+    http_api: [...DEFAULT_DRAFT_SKILL.allowed_tools.http_api],
     python: DEFAULT_DRAFT_SKILL.allowed_tools.python,
-    mcp_refs: [...DEFAULT_DRAFT_SKILL.allowed_tools.mcp_refs],
   }
   skill.value = {
-    id: props.skillId,
+    directory_name: props.directoryName,
     name: '新 Skill 草稿',
     description: '',
     allowed_tools: allowedTools,
@@ -464,8 +500,8 @@ function resetDraftForm() {
     body: DEFAULT_DRAFT_SKILL.body,
     allowed_tools: {
       mcp: [...allowedTools.mcp],
+      http_api: [...allowedTools.http_api],
       python: allowedTools.python,
-      mcp_refs: [...allowedTools.mcp_refs],
     },
   }
   draftBaseline.value = normalizedFormSnapshot()
@@ -503,42 +539,36 @@ function isPythonDependencyMissing(dep: string) {
   return Boolean(key && !sandboxRequirementKeys.value.has(key))
 }
 
-function isMcpDependencyMissing(id: string) {
-  return isMcpDeclarationMissing(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
+function isMcpDependencyMissing(name: string) {
+  return !mcpServerNames.value.has(name)
 }
 
-function mcpNameLookup(): Record<string, string> {
-  return Object.fromEntries((mcpServers.value || []).map((s) => [s.id, s.name || s.id]))
+function mcpLabel(name: string) {
+  return name || 'MCP 工具'
 }
 
-function mcpLabel(id: string) {
-  const resolved = resolveMcpDeclaration(id, form.value.allowed_tools.mcp_refs, mcpServerIndex.value)
-  if (resolved?.name) return resolved.name
-  if (resolved?.id) return resolved.id
-  const snap = normalizeReferenceRows(form.value.allowed_tools.mcp_refs, MCP_REFERENCE_ID_KEYS).find((x) => x.id === id)
-  return snap?.name || `MCP 工具 ${id}`
-}
-
-function removeMcpServer(id: string) {
-  form.value.allowed_tools.mcp = form.value.allowed_tools.mcp.filter((x) => x !== id)
-  form.value.allowed_tools.mcp_refs = mergeReferenceRowsForIds(
-    form.value.allowed_tools.mcp,
-    form.value.allowed_tools.mcp_refs,
-    mcpNameLookup(),
-    MCP_REFERENCE_ID_KEYS,
-  )
+function removeMcpServer(name: string) {
+  form.value.allowed_tools.mcp = form.value.allowed_tools.mcp.filter((x) => x !== name)
 }
 
 function addMcpServer(name: string) {
   const v = String(name || '').trim()
   if (!v || form.value.allowed_tools.mcp.includes(v)) return
   form.value.allowed_tools.mcp = [...form.value.allowed_tools.mcp, v]
-  form.value.allowed_tools.mcp_refs = mergeReferenceRowsForIds(
-    form.value.allowed_tools.mcp,
-    form.value.allowed_tools.mcp_refs,
-    mcpNameLookup(),
-    MCP_REFERENCE_ID_KEYS,
-  )
+}
+
+function isHttpApiDependencyMissing(name: string) {
+  return !httpApiToolNames.value.has(name)
+}
+
+function removeHttpApiTool(name: string) {
+  form.value.allowed_tools.http_api = form.value.allowed_tools.http_api.filter((x) => x !== name)
+}
+
+function addHttpApiTool(name: string) {
+  const v = String(name || '').trim()
+  if (!v || form.value.allowed_tools.http_api.includes(v)) return
+  form.value.allowed_tools.http_api = [...form.value.allowed_tools.http_api, v]
 }
 
 function resetFormFromLoadedContent() {
@@ -547,8 +577,8 @@ function resetFormFromLoadedContent() {
   form.value.body = skillContent.value.body
   form.value.allowed_tools = {
     mcp: [...skillContent.value.allowed_tools.mcp],
+    http_api: [...skillContent.value.allowed_tools.http_api],
     python: skillContent.value.allowed_tools.python,
-    mcp_refs: [...skillContent.value.allowed_tools.mcp_refs],
   }
 }
 
@@ -714,11 +744,11 @@ async function loadMcpServers() {
     const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
-      mcpServers.value = j.data.servers.map((s: { id: string; name?: string; enabled?: boolean }) => ({
-        id: s.id,
-        name: s.name || s.id,
+      mcpServers.value = j.data.servers.map((s: { name?: string; enabled?: boolean; type?: string }) => ({
+        name: String(s.name || '').trim(),
         enabled: s.enabled ?? true,
-      }))
+        type: s.type === 'http_api' ? 'http_api' : 'mcp',
+      })).filter((s: { name: string }) => !!s.name)
     }
   } catch {
     mcpServers.value = []
@@ -773,10 +803,10 @@ async function addMissingPythonDependenciesToSandbox() {
 }
 
 async function exportZip() {
-  if (!props.skillId || !skill.value) return
+  if (!props.directoryName || !skill.value) return
   exporting.value = true
   try {
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/export-zip`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}/export-zip`)
     if (!r.ok) {
       let msg = '导出失败'
       try {
@@ -792,7 +822,7 @@ async function exportZip() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${props.skillId}.zip`
+    a.download = `${props.directoryName}.zip`
     a.click()
     URL.revokeObjectURL(url)
   } finally {
@@ -801,19 +831,19 @@ async function exportZip() {
 }
 
 async function load(options: { silent?: boolean } = {}) {
-  if (!props.skillId) return
+  if (!props.directoryName) return
   if (isDraftSkill.value) {
     resetDraftForm()
     return
   }
-  const showPageLoading = !options.silent && (!skill.value || (skill.value.id !== props.skillId && !saving.value))
+  const showPageLoading = !options.silent && (!skill.value || (skill.value.directory_name !== props.directoryName && !saving.value))
   if (showPageLoading) loading.value = true
   try {
     await Promise.all([loadMcpServers(), loadSandboxRequirements()])
     const r = await apiRequest('/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
-      const s = j.data.skills.find((x: { id: string }) => x.id === props.skillId) || null
+      const s = j.data.skills.find((x: { directory_name: string }) => x.directory_name === props.directoryName) || null
       if (s || !options.silent) skill.value = s
       if (s) {
         if (!options.silent && !hasLoadedSkillContent()) {
@@ -823,13 +853,8 @@ async function load(options: { silent?: boolean } = {}) {
             body: '',
             allowed_tools: {
               mcp: [...(s.allowed_tools?.mcp ?? [])],
+              http_api: [...(s.allowed_tools?.http_api ?? [])],
               python: s.allowed_tools?.python ?? '',
-              mcp_refs: mergeReferenceRowsForIds(
-                s.allowed_tools?.mcp ?? [],
-                s.allowed_tools?.mcp_refs ?? [],
-                mcpNameLookup(),
-                MCP_REFERENCE_ID_KEYS,
-              ),
             },
           }
         }
@@ -842,24 +867,24 @@ async function load(options: { silent?: boolean } = {}) {
 }
 
 async function loadContent(options: { silent?: boolean } = {}) {
-  if (!props.skillId) return
+  if (!props.directoryName) return
   if (isDraftSkill.value) return
   const showContentLoading = !options.silent && !hasLoadedSkillContent()
   if (showContentLoading) contentLoading.value = true
   try {
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/content`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}/content`)
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
       const at = j.data.allowed_tools
       const mcp = Array.isArray(at?.mcp) ? at.mcp.map((x: string) => String(x || '').trim()).filter(Boolean) : []
+      const httpApi = Array.isArray(at?.http_api) ? at.http_api.map((x: string) => String(x || '').trim()).filter(Boolean) : []
       const python = typeof at?.python === 'string' ? at.python : ''
-      const mcpRefs = mergeReferenceRowsForIds(mcp, at?.mcp_refs || [], mcpNameLookup(), MCP_REFERENCE_ID_KEYS)
       skillContent.value = {
         raw: j.data.raw ?? '',
         name: j.data.name ?? '',
         description: j.data.description ?? '',
         body: j.data.body ?? '',
-        allowed_tools: { mcp, python, mcp_refs: mcpRefs },
+        allowed_tools: { mcp, http_api: httpApi, python },
       }
       resetFormFromLoadedContent()
       editMode.value = false
@@ -871,11 +896,11 @@ async function loadContent(options: { silent?: boolean } = {}) {
 }
 
 async function loadParts() {
-  if (!props.skillId) return
+  if (!props.directoryName) return
   if (isDraftSkill.value) return
   partsLoading.value = true
   try {
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/parts`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}/parts`)
     const j = await r.json()
     if (j.status === 'ok' && j.data) {
       parts.value = {
@@ -898,7 +923,7 @@ async function selectPartFile(type: PartType, path: string) {
   partContent.value = ''
   try {
     const pathEnc = path.split('/').map(encodeURIComponent).join('/')
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}/parts/${type}/${pathEnc}`)
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}/parts/${type}/${pathEnc}`)
     const j = await r.json()
     if (j.status === 'ok' && j.data?.content != null) {
       partContent.value = j.data.content
@@ -917,7 +942,7 @@ async function save() {
   if (!(await validateSkillRequiredFields())) return
   saving.value = true
   try {
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, {
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -926,32 +951,22 @@ async function save() {
         body: form.value.body ?? '',
         allowed_tools: {
           mcp: form.value.allowed_tools.mcp ?? [],
+          http_api: form.value.allowed_tools.http_api ?? [],
           python: form.value.allowed_tools.python ?? '',
-          mcp_refs: mergeReferenceRowsForIds(
-            form.value.allowed_tools.mcp ?? [],
-            form.value.allowed_tools.mcp_refs ?? [],
-            mcpNameLookup(),
-            MCP_REFERENCE_ID_KEYS,
-          ),
         },
       }),
     })
     const j = await r.json()
     if (j.status === 'ok') {
       editMode.value = false
-      const newId =
-        j.data && typeof j.data === 'object' && typeof (j.data as { id?: string }).id === 'string'
-          ? (j.data as { id: string }).id
+      const newDirectoryName =
+        j.data && typeof j.data === 'object' && typeof (j.data as { directory_name?: string }).directory_name === 'string'
+          ? (j.data as { directory_name: string }).directory_name
           : undefined
       const optimisticAllowedTools = {
         mcp: [...(form.value.allowed_tools.mcp ?? [])],
+        http_api: [...(form.value.allowed_tools.http_api ?? [])],
         python: form.value.allowed_tools.python ?? '',
-        mcp_refs: mergeReferenceRowsForIds(
-          form.value.allowed_tools.mcp ?? [],
-          form.value.allowed_tools.mcp_refs ?? [],
-          mcpNameLookup(),
-          MCP_REFERENCE_ID_KEYS,
-        ),
       }
       skillContent.value = {
         raw: '',
@@ -962,13 +977,13 @@ async function save() {
       }
       resetFormFromLoadedContent()
       skill.value = {
-        ...(skill.value || { id: props.skillId, name: '' }),
-        id: newId || props.skillId,
+        ...(skill.value || { directory_name: props.directoryName, name: '' }),
+        directory_name: newDirectoryName || props.directoryName,
         name: skillContent.value.name,
         description: skillContent.value.description,
         allowed_tools: optimisticAllowedTools,
       }
-      emit('updated', newId)
+      emit('updated', newDirectoryName)
       await nextTick()
       await load({ silent: true })
     } else {
@@ -980,7 +995,7 @@ async function save() {
 }
 
 async function saveDraftSkill(options: { selectCreated: boolean; onlyIfChanged: boolean; draftId?: string | null }) {
-  if (!isNewSkillDraftId(options.draftId ?? props.skillId) || saving.value) return
+  if (!isNewSkillDraftId(options.draftId ?? props.directoryName) || saving.value) return
   if (options.onlyIfChanged && !draftHasChanges()) return
   if (!options.onlyIfChanged && !(await validateSkillRequiredFields())) return
   if (options.onlyIfChanged && (!form.value.name.trim() || !form.value.description.trim())) return
@@ -994,23 +1009,18 @@ async function saveDraftSkill(options: { selectCreated: boolean; onlyIfChanged: 
       body: JSON.stringify({ name, description }),
     })
     const createJson = await createResponse.json()
-    if (!(createJson.status === 'ok' && createJson.data?.id)) {
+    if (!(createJson.status === 'ok' && createJson.data?.directory_name)) {
       await appAlert({ title: '新建 Skill 失败', message: createJson.detail || '新建 Skill 失败', variant: 'danger' })
       return
     }
 
-    const newId = String(createJson.data.id)
+    const newDirectoryName = String(createJson.data.directory_name)
     const allowedTools = {
       mcp: form.value.allowed_tools.mcp ?? [],
+      http_api: form.value.allowed_tools.http_api ?? [],
       python: form.value.allowed_tools.python ?? '',
-      mcp_refs: mergeReferenceRowsForIds(
-        form.value.allowed_tools.mcp ?? [],
-        form.value.allowed_tools.mcp_refs ?? [],
-        mcpNameLookup(),
-        MCP_REFERENCE_ID_KEYS,
-      ),
     }
-    const updateResponse = await apiRequest(`/settings/skills/${encodeURIComponent(newId)}`, {
+    const updateResponse = await apiRequest(`/settings/skills/${encodeURIComponent(newDirectoryName)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1028,7 +1038,7 @@ async function saveDraftSkill(options: { selectCreated: boolean; onlyIfChanged: 
 
     editMode.value = false
     draftBaseline.value = normalizedFormSnapshot()
-    emit('updated', options.selectCreated ? newId : undefined)
+    emit('updated', options.selectCreated ? newDirectoryName : undefined)
   } finally {
     saving.value = false
   }
@@ -1049,7 +1059,7 @@ async function deleteSkill() {
   }
   deleting.value = true
   try {
-    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.skillId)}`, { method: 'DELETE' })
+    const r = await apiRequest(`/settings/skills/${encodeURIComponent(props.directoryName)}`, { method: 'DELETE' })
     const j = await r.json()
     if (j.status === 'ok') {
       emit('deleted')
@@ -1062,12 +1072,12 @@ async function deleteSkill() {
 }
 
 async function savePartFile() {
-  if (!selectedPartFile.value || !props.skillId) return
+  if (!selectedPartFile.value || !props.directoryName) return
   partSaving.value = true
   try {
     const pathEnc = selectedPartFile.value.path.split('/').map(encodeURIComponent).join('/')
     const r = await apiRequest(
-      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
+      `/settings/skills/${encodeURIComponent(props.directoryName)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1086,7 +1096,7 @@ async function savePartFile() {
 }
 
 async function deletePartFile() {
-  if (!selectedPartFile.value || !props.skillId) return
+  if (!selectedPartFile.value || !props.directoryName) return
   const ok = await appConfirm({
     title: '删除文件',
     message: '确定删除该文件？',
@@ -1097,7 +1107,7 @@ async function deletePartFile() {
   try {
     const pathEnc = selectedPartFile.value.path.split('/').map(encodeURIComponent).join('/')
     const r = await apiRequest(
-      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
+      `/settings/skills/${encodeURIComponent(props.directoryName)}/parts/${selectedPartFile.value.type}/${pathEnc}`,
       { method: 'DELETE' }
     )
     const j = await r.json()
@@ -1120,7 +1130,7 @@ async function deletePartFile() {
 }
 
 async function addPartFile() {
-  if (activeTab.value === 'main' || !props.skillId) return
+  if (activeTab.value === 'main' || !props.directoryName) return
   const name = await appPrompt({
     title: '新建文件',
     message: '请输入文件名。',
@@ -1135,7 +1145,7 @@ async function addPartFile() {
   }
   try {
     const r = await apiRequest(
-      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}`,
+      `/settings/skills/${encodeURIComponent(props.directoryName)}/parts/${activeTab.value}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1156,7 +1166,7 @@ async function addPartFile() {
 }
 
 async function addPartFolder() {
-  if (activeTab.value === 'main' || !props.skillId) return
+  if (activeTab.value === 'main' || !props.directoryName) return
   const name = (await appPrompt({
     title: '新建文件夹',
     message: '请输入文件夹名。',
@@ -1171,7 +1181,7 @@ async function addPartFolder() {
   }
   try {
     const r = await apiRequest(
-      `/settings/skills/${encodeURIComponent(props.skillId)}/parts/${activeTab.value}/mkdir`,
+      `/settings/skills/${encodeURIComponent(props.directoryName)}/parts/${activeTab.value}/mkdir`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1192,10 +1202,10 @@ async function addPartFolder() {
 }
 
 watch(
-  () => props.skillId,
-  async (_newSkillId, oldSkillId) => {
-    if (isNewSkillDraftId(oldSkillId)) {
-      await saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: oldSkillId })
+  () => props.directoryName,
+  async (_newDirectoryName, oldDirectoryName) => {
+    if (isNewSkillDraftId(oldDirectoryName)) {
+      await saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: oldDirectoryName })
     }
     // 切换 skill 时，先清空右侧文件预览，避免短暂显示上一个 skill 的内容
     selectedPartFile.value = null
@@ -1238,7 +1248,7 @@ watch(activeTab, async (tab) => {
 })
 onBeforeUnmount(() => {
   if (isDraftSkill.value && draftHasChanges()) {
-    void saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: props.skillId })
+    void saveDraftSkill({ selectCreated: false, onlyIfChanged: true, draftId: props.directoryName })
   }
 })
 </script>

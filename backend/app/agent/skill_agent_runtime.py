@@ -427,11 +427,11 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             return args
         idx = tool_name.find("_")
         if idx >= 0:
-            server_id = tool_name[:idx]
+            server_name = tool_name[:idx]
             original_tool_name = tool_name[idx + 1:]
             input_schema = _get_mcp_input_schema(tool_name, tools_list)
             from app.mcp.manager import normalize_mcp_kwargs_for_call
-            return normalize_mcp_kwargs_for_call(server_id, original_tool_name, args, input_schema=input_schema)
+            return normalize_mcp_kwargs_for_call(server_name, original_tool_name, args, input_schema=input_schema)
         return args
 
     workspace_id = str(state.get("workspace_id") or "") if isinstance(state, dict) else ""

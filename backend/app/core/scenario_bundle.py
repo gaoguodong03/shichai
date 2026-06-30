@@ -13,10 +13,11 @@ from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import unquote_plus, urlsplit
 
 from app.core.host_config import normalize_host_config_dict
+from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
 
 BUNDLE_VERSION = 1
 MANIFEST_NAME = "scenario_bundle.json"
-AGENTS_BUNDLE_FILE_NAME = "dha_instances.json"
+AGENTS_BUNDLE_FILE_NAME = "agents.json"
 MCP_NAME = "mcp_servers.json"
 SKILLS_PREFIX = "skills/"
 
@@ -199,6 +200,13 @@ def _sanitize_mcp_config_recursive(value: Any, key_name: str = "") -> Any:
 def sanitize_mcp_server_for_bundle(server: Dict[str, Any]) -> Dict[str, Any]:
     """Return a bundle-safe MCP config row: keep wiring, omit plaintext secrets."""
     copied = json.loads(json.dumps(server, ensure_ascii=False))
+    server_config = copied.get("server_config")
+    if isinstance(server_config, str) and server_config.strip():
+        try:
+            parsed = json.loads(server_config)
+            copied["server_config"] = json.dumps(_sanitize_mcp_config_recursive(parsed), ensure_ascii=False, indent=2)
+        except Exception:
+            copied["server_config"] = _sanitize_url_query(server_config)
     transport = copied.get("transport")
     if isinstance(transport, dict):
         copied["transport"] = _sanitize_mcp_config_recursive(transport)
@@ -215,30 +223,27 @@ def sanitize_mcp_servers_for_bundle(servers: List[Dict[str, Any]]) -> List[Dict[
     return [sanitize_mcp_server_for_bundle(row) for row in servers if isinstance(row, dict)]
 
 
-def collect_skill_and_mcp_ids_for_preset(
-    preset: Dict[str, Any], agent_by_id: Dict[str, Any]
+def collect_skill_directories_and_tool_names_for_preset(
+    preset: Dict[str, Any], agent_by_name: Dict[str, Any]
 ) -> Tuple[Set[str], Set[str]]:
-    skill_ids: Set[str] = set()
-    mcp_ids: Set[str] = set()
+    skill_directories: Set[str] = set()
+    tool_names: Set[str] = set()
     hc_raw = preset.get("host_config")
     if isinstance(hc_raw, dict):
         hc = normalize_host_config_dict(hc_raw)
-        skill_ids.update(str(x).strip() for x in (hc.get("skill_ids") or []) if str(x).strip())
-        mcp_ids.update(str(x).strip() for x in (hc.get("mcp_server_ids") or []) if str(x).strip())
-    for aid in preset.get("agent_ids") or []:
-        aid = str(aid).strip()
-        d = agent_by_id.get(aid)
+        skill_directory = str(hc.get("skill_directory") or "").strip()
+        if skill_directory:
+            skill_directories.add(skill_directory)
+    for agent_name in preset.get("agent_names") or []:
+        key = str(agent_name.get("name") if isinstance(agent_name, dict) else agent_name).strip()
+        d = agent_by_name.get(key)
         if not isinstance(d, dict):
             continue
-        for x in d.get("skill_ids") or []:
-            s = str(x).strip()
+        for x in d.get("skills") or []:
+            s = str(x.get("directory_name") if isinstance(x, dict) else x).strip()
             if s:
-                skill_ids.add(s)
-        for x in d.get("mcp_server_ids") or []:
-            s = str(x).strip()
-            if s:
-                mcp_ids.add(s)
-    return skill_ids, mcp_ids
+                skill_directories.add(s)
+    return skill_directories, tool_names
 
 
 def build_scenario_bundle_zip_bytes(
@@ -246,22 +251,22 @@ def build_scenario_bundle_zip_bytes(
     expert_rows: List[Dict[str, Any]],
     mcp_rows: List[Dict[str, Any]],
     skills_root: Path,
-    skill_ids: List[str],
+    skill_directories: List[str],
 ) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         manifest = {
             "bundle_version": BUNDLE_VERSION,
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "preset": preset_row,
+            "preset": strip_resource_ids(preset_row),
         }
         zf.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        zf.writestr(AGENTS_BUNDLE_FILE_NAME, json.dumps(expert_rows, ensure_ascii=False, indent=2) + "\n")
-        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows)
+        zf.writestr(AGENTS_BUNDLE_FILE_NAME, json.dumps(strip_resource_ids(expert_rows), ensure_ascii=False, indent=2) + "\n")
+        safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
         if safe_mcp_rows:
             zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
-        for sid in sorted(skill_ids):
+        for sid in sorted(skill_directories):
             sdir = (skills_root / sid).resolve()
             if not sdir.is_dir() or not (sdir / "SKILL.md").is_file():
                 continue
@@ -342,7 +347,7 @@ def read_bundle_manifest_and_lists(
     return manifest, preset, agent_list, mcp_list
 
 
-def list_skill_ids_in_bundle_skills_dir(bundle_dir: Path) -> List[str]:
+def list_skill_directories_in_bundle_skills_dir(bundle_dir: Path) -> List[str]:
     root = bundle_dir / "skills"
     if not root.is_dir():
         return []
@@ -364,7 +369,7 @@ def copy_bundle_skills_to_user(
     *,
     overwrite: bool,
 ) -> Tuple[List[str], List[str]]:
-    """将 bundle_dir/skills/<id>/ 复制到用户技能目录，目录名即 skill_id。"""
+    """将 bundle_dir/skills/<id>/ 复制到用户技能目录，目录名即 skill_directory。"""
     imported: List[str] = []
     skipped: List[str] = []
     skills_root = bundle_dir / "skills"
@@ -395,7 +400,7 @@ def copy_bundle_skills_to_user(
 
 
 def strip_agent_row_for_disk(row: Dict[str, Any]) -> Dict[str, Any]:
-    out = {k: v for k, v in row.items() if k not in ("expert_id", "file_capability_labels")}
+    out = {k: v for k, v in strip_resource_ids(row).items() if k not in ("file_capability_labels",)}
     return out
 
 
@@ -409,41 +414,36 @@ def merge_agent_instances_for_bundle(
     *,
     overwrite: bool,
 ) -> List[Dict[str, Any]]:
-    by_id: Dict[str, Dict[str, Any]] = {}
+    by_name: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     for row in user_instances:
-        aid = str(row.get("agent_id") or "").strip()
-        if not aid:
+        cleaned = strip_agent_row_for_disk(dict(row))
+        name = str(cleaned.get("name") or "").strip()
+        if not name:
             continue
-        by_id[aid] = strip_agent_row_for_disk(dict(row))
-        order.append(aid)
+        by_name[name] = cleaned
+        order.append(name)
     for row in bundle_instances:
-        aid = str(row.get("agent_id") or "").strip()
-        if not aid:
-            continue
         cleaned = strip_agent_row_for_disk(dict(row))
         incoming_name_key = _name_key(cleaned.get("name"))
-        conflict_ids = []
-        if aid in by_id:
-            conflict_ids.append(aid)
-        if incoming_name_key:
-            conflict_ids.extend(
-                old_id
-                for old_id, old_row in by_id.items()
-                if old_id != aid and _name_key(old_row.get("name")) == incoming_name_key
-            )
-        conflict_ids = list(dict.fromkeys(conflict_ids))
-        if conflict_ids:
-            if overwrite:
-                for old_id in conflict_ids:
-                    by_id.pop(old_id, None)
-                order = [old_id for old_id in order if old_id in by_id]
-                by_id[aid] = cleaned
-                order.append(aid)
-        else:
-            by_id[aid] = cleaned
-            order.append(aid)
-    return [by_id[k] for k in order if k in by_id]
+        incoming_name = str(cleaned.get("name") or "").strip()
+        if not incoming_name_key or not incoming_name:
+            continue
+        conflict_names = [
+            old_name
+            for old_name, old_row in by_name.items()
+            if _name_key(old_row.get("name")) == incoming_name_key
+        ]
+        conflict_names = list(dict.fromkeys(conflict_names))
+        if conflict_names:
+            if not overwrite:
+                continue
+            for old_name in conflict_names:
+                by_name.pop(old_name, None)
+            order = [old_name for old_name in order if old_name in by_name]
+        by_name[incoming_name] = cleaned
+        order.append(incoming_name)
+    return [by_name[k] for k in order if k in by_name]
 
 
 def merge_mcp_servers_for_bundle(
@@ -452,44 +452,31 @@ def merge_mcp_servers_for_bundle(
     *,
     skip_existing: bool,
 ) -> Tuple[List[Dict[str, Any]], int, int, int]:
-    by_id: Dict[str, Dict[str, Any]] = {}
+    by_name: Dict[str, Dict[str, Any]] = {}
     order: List[str] = []
     for s in user_servers:
-        sid = str(s.get("id") or "").strip()
-        if not sid:
+        name = str(s.get("name") or "").strip()
+        if not name:
             continue
-        by_id[sid] = dict(s)
-        order.append(sid)
+        key = _name_key(name)
+        by_name[key] = normalize_tool_row(s)
+        order.append(key)
     added = 0
     skipped = 0
     updated = 0
     for s in bundle_servers:
-        sid = str(s.get("id") or "").strip()
-        if not sid:
+        name = str(s.get("name") or "").strip()
+        if not name:
             continue
-        incoming_name_key = _name_key(s.get("name"))
-        conflict_ids = []
-        if sid in by_id:
-            conflict_ids.append(sid)
-        if incoming_name_key:
-            conflict_ids.extend(
-                old_id
-                for old_id, old_row in by_id.items()
-                if old_id != sid and _name_key(old_row.get("name")) == incoming_name_key
-            )
-        conflict_ids = list(dict.fromkeys(conflict_ids))
-        if conflict_ids:
+        incoming_name_key = _name_key(name)
+        if incoming_name_key in by_name:
             if skip_existing:
                 skipped += 1
                 continue
-            for old_id in conflict_ids:
-                by_id.pop(old_id, None)
-            order = [old_id for old_id in order if old_id in by_id]
-            by_id[sid] = dict(s)
-            order.append(sid)
+            by_name[incoming_name_key] = normalize_tool_row(s)
             updated += 1
         else:
-            by_id[sid] = dict(s)
-            order.append(sid)
+            by_name[incoming_name_key] = normalize_tool_row(s)
+            order.append(incoming_name_key)
             added += 1
-    return [by_id[i] for i in order if i in by_id], added, skipped, updated
+    return [by_name[i] for i in order if i in by_name], added, skipped, updated

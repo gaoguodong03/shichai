@@ -46,8 +46,8 @@ def _message_is_bound_skill_introspection_direct_final(msg: Dict[str, Any]) -> b
 def _store_skill_session_lock_for_turn(
     meta_item: Dict[str, Any],
     *,
-    owner_agent_id: str,
-    skill_id: str,
+    owner_agent_name: str,
+    skill: str,
     skill_session_over: Optional[bool],
     force_keep: bool = False,
 ) -> None:
@@ -55,7 +55,7 @@ def _store_skill_session_lock_for_turn(
     if skill_session_over is True:
         clear_skill_session_lock(meta_item)
     elif skill_session_over is False or force_keep:
-        persist_skill_session_lock(meta_item, owner_agent_id=owner_agent_id, skill_id=skill_id)
+        persist_skill_session_lock(meta_item, owner_agent_name=owner_agent_name, skill=skill)
     else:
         clear_skill_session_lock(meta_item)
 
@@ -79,16 +79,16 @@ def _clear_completed_skill_session_lock_from_history(
     messages: List[Dict[str, Any]],
 ) -> bool:
     """Clear stale locks unless the last matching expert turn explicitly asked to continue."""
-    owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
-    skill_id = str(meta_item.get("skill_session_skill_id") or "").strip()
-    if not owner or not skill_id:
+    owner = str(meta_item.get("skill_session_owner_name") or "").strip().casefold()
+    skill = str(meta_item.get("skill_session_skill") or "").strip()
+    if not owner or not skill:
         return False
     for msg in reversed(messages or []):
         if str(msg.get("role") or "") != "assistant":
             continue
-        if str(msg.get("agent_id") or "").strip().lower() != owner:
+        if str(msg.get("agent_name") or "").strip().casefold() != owner:
             continue
-        if str(msg.get("skill_id") or "").strip() != skill_id:
+        if str(msg.get("skill") or "").strip() != skill:
             continue
         if _message_is_bound_skill_introspection_direct_final(msg):
             clear_skill_session_lock(meta_item)

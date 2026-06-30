@@ -5,13 +5,17 @@ from typing import Any, Dict, List
 
 def build_expert_self_awareness_block(agent_profile: Dict[str, Any], skills_loader: Any) -> str:
     """构建专家“自我认知”提示块，列出绑定技能及描述。"""
-    ids = [str(x).strip() for x in (agent_profile.get("skill_ids") or []) if str(x).strip()]
-    if not ids:
+    directories = [
+        str(x.get("directory_name") if isinstance(x, dict) else "").strip()
+        for x in (agent_profile.get("skills") or [])
+    ]
+    directories = [x for x in directories if x]
+    if not directories:
         return ""
 
     lines: List[str] = []
     skills = getattr(skills_loader, "skills", {}) if skills_loader is not None else {}
-    for sid in ids:
+    for sid in directories:
         sk = skills.get(sid) if isinstance(skills, dict) else None
         if sk and sk.metadata.get("enabled", True):
             name = (sk.name or sid).strip()

@@ -2,69 +2,42 @@ import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { normalizedResourceQuery } from './useResourceSearch'
-import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
 import type { ResourceSubModule } from '@/features/shell/mainNavigation'
 import { SESSION_PRESETS_UPDATED_EVENT_NAME } from '@/features/workspace/composables/workspacePreferences'
 
+type SkillRef = { name: string; directory_name: string }
+
 export interface ScenarioHostConfig {
-  skill_ids: string[]
-  skill_refs?: ReferenceSnapshot[]
-  display_name?: string
+  leader_agent_name?: string
   system_prompt?: string
-  llm_provider_id?: string
-  mcp_server_ids?: string[]
-  file_capabilities?: {
-    read?: boolean
-    edit?: boolean
-    write?: boolean
-    delete?: boolean
-    rename?: boolean
-  }
-  url_capability?: boolean
+  llm_name?: string
+  skill_name?: string
+  skill_directory?: string
 }
 
 export interface ScenarioPreset {
-  id: string
   name: string
-  agent_ids: string[]
-  agent_refs?: ReferenceSnapshot[]
-  leader_agent_id?: string
+  agent_names: string[]
   host_config?: ScenarioHostConfig
   description?: string
-  discussion_goal_example?: string
 }
 
 type ScenarioDraft = {
-  id: string
   name: string
-  agent_ids: string[]
-  agent_refs: ReferenceSnapshot[]
+  agent_names: string[]
   description: string
 }
 
 type AgentItem = {
-  agent_id: string
-  name: string
-  role?: string
-}
-
-type SkillItem = {
-  id: string
   name: string
   description?: string
 }
 
-const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
-const LEGACY_DEFAULT_HOST_SKILL_ID = 'group-host'
-const DEFAULT_FILE_CAPS = {
-  read: true,
-  edit: true,
-  write: true,
-  rename: true,
-  mkdir: true,
-  list_dir: true,
+type SkillItem = {
+  directory_name: string
+  name: string
+  description?: string
 }
-const SCENARIO_REFERENCE_ID_KEYS = ['id', 'agent_id', 'skill_id']
 
 export function useScenarioEditor(options: {
   selectedId: Ref<string | null>
@@ -84,16 +57,13 @@ export function useScenarioEditor(options: {
   const scenarioExpertSearch = ref('')
   const scenarioLeaderSkillSearch = ref('')
   const scenarioLeaderDisplayName = ref('')
-  const scenarioLeaderSkillIds = ref<string[]>([])
+  const scenarioLeaderSkill = ref<SkillRef | null>(null)
+  const scenarioLeaderSkillIds = computed(() => scenarioLeaderSkill.value ? [scenarioLeaderSkill.value] : [])
   const scenarioLeaderSystemPrompt = ref('')
-  const scenarioLeaderLlmId = ref('')
-  const scenarioLeaderFileCaps = ref({ ...DEFAULT_FILE_CAPS })
-  const scenarioLeaderUrlCapability = ref(true)
+  const scenarioLeaderLlmName = ref('')
   const scenarioDraft = ref<ScenarioDraft>({
-    id: '',
     name: '',
-    agent_ids: [],
-    agent_refs: [],
+    agent_names: [],
     description: '',
   })
 
@@ -101,29 +71,31 @@ export function useScenarioEditor(options: {
 
   function isUnsavedScenarioDraftPreset(s: ScenarioPreset): boolean {
     return (
-      s.id.startsWith('scenario-') &&
       !(s.name || '').trim() &&
       !(s.description || '').trim() &&
-      !(s.agent_ids || []).length
+      !(s.agent_names || []).length
     )
   }
 
   const filteredScenarioPresets = computed(() => {
     const q = normalizedResourceQuery(scenarioSearch.value)
     const draftIds = new Set(scenarioDraftIds.value)
-    const list = (scenarioPresets.value || []).filter((s) => !draftIds.has(s.id) && !isUnsavedScenarioDraftPreset(s))
+    const list = (scenarioPresets.value || []).filter((s) => !draftIds.has(s.name) && !isUnsavedScenarioDraftPreset(s))
     if (!q) return list
     return list.filter((s) => `${s.name || ''} ${s.description || ''}`.toLowerCase().includes(q))
   })
 
   const selectedScenarioPreset = computed(() => {
     if (!selectedId.value) return null
-    return scenarioPresets.value.find((item) => item.id === selectedId.value) || null
+    if (selectedId.value === creatingScenarioId.value) {
+      return scenarioPresets.value.find((item) => !(item.name || '').trim()) || null
+    }
+    return scenarioPresets.value.find((item) => item.name === selectedId.value) || null
   })
 
   const scenarioAddableExperts = computed(() => {
-    const selected = new Set(scenarioDraft.value.agent_ids || [])
-    return (agentInstances.value || []).filter((d) => !selected.has(d.agent_id))
+    const selected = new Set(scenarioDraft.value.agent_names || [])
+    return (agentInstances.value || []).filter((d) => !selected.has(d.name))
   })
 
   const filteredScenarioAddableExperts = computed(() => {
@@ -131,7 +103,7 @@ export function useScenarioEditor(options: {
     const list = scenarioAddableExperts.value || []
     if (!q) return list
     return list.filter((d) => {
-      const hay = `${d.name || ''} ${d.role || ''}`.toLowerCase()
+      const hay = `${d.name || ''} ${d.description || ''}`.toLowerCase()
       return hay.includes(q)
     })
   })
@@ -141,79 +113,52 @@ export function useScenarioEditor(options: {
     const list = skills.value || []
     if (!q) return list
     return list.filter((s) => {
-      const hay = `${s.name || ''} ${s.description || ''} ${s.id || ''}`.toLowerCase()
+      const hay = `${s.name || ''} ${s.description || ''} ${s.directory_name || ''}`.toLowerCase()
       return hay.includes(q)
     })
   })
 
   const missingScenarioExpertRefs = computed(() =>
-    (scenarioDraft.value.agent_ids || [])
-      .filter((id) => scenarioExpertMissing(id))
-      .map((id) => ({
-        id,
-        name: referenceNameForId(id, scenarioDraft.value.agent_refs, agentNameLookup()) || id,
+    (scenarioDraft.value.agent_names || [])
+      .filter((name) => scenarioExpertMissing(name))
+      .map((name) => ({
+        name,
       })),
   )
 
   const missingScenarioLeaderSkillRefs = computed(() =>
-    (scenarioLeaderSkillIds.value || [])
-      .filter((id) => scenarioLeaderSkillMissing(id))
-      .map((id) => ({
-        id,
-        name: scenarioLeaderSkillLabel(id),
+    (scenarioLeaderSkill.value ? [scenarioLeaderSkill.value] : [])
+      .filter((skill) => scenarioLeaderSkillMissing(skill))
+      .map((skill) => ({
+        name: skill.name,
+        directory_name: skill.directory_name,
       })),
   )
 
-  function skillNameLookup(): Record<string, string> {
-    return Object.fromEntries((skills.value || []).map((s) => [s.id, s.name || s.id]))
+  function agentDisplayName(agentName: string): string {
+    const hit = (agentInstances.value || []).find((d) => d.name === agentName)
+    return hit?.name || agentName
   }
 
-  function agentNameLookup(): Record<string, string> {
-    return Object.fromEntries((agentInstances.value || []).map((d) => [d.agent_id, d.name || d.agent_id]))
+  function scenarioExpertMissing(agentName: string): boolean {
+    return Boolean(agentName && !(agentInstances.value || []).some((d) => d.name === agentName))
   }
 
-  function referenceNameForId(id: string, refs?: ReferenceSnapshot[], lookup?: Record<string, string>): string {
-    const key = String(id || '').trim()
-    if (!key) return ''
-    const current = String((lookup || {})[key] || '').trim()
-    if (current) return current
-    const hit = normalizeReferenceRows(refs || [], SCENARIO_REFERENCE_ID_KEYS).find((row) => row.id === key)
-    return hit?.name || ''
+  function scenarioLeaderSkillLabel(skill: SkillRef): string {
+    return skill.name || skill.directory_name
   }
 
-  function agentDisplayName(agentId: string, refs?: ReferenceSnapshot[]): string {
-    const hit = (agentInstances.value || []).find((d) => d.agent_id === agentId)
-    return hit?.name || referenceNameForId(agentId, refs) || agentId
+  function scenarioLeaderSkillMissing(skill: SkillRef): boolean {
+    return Boolean(skill.directory_name && !(skills.value || []).some((s) => s.directory_name === skill.directory_name || s.name === skill.name))
   }
 
-  function scenarioExpertMissing(agentId: string): boolean {
-    return Boolean(agentId && !(agentInstances.value || []).some((d) => d.agent_id === agentId))
-  }
-
-  function scenarioLeaderSkillLabel(skillId: string): string {
-    return referenceNameForId(skillId, selectedScenarioPreset.value?.host_config?.skill_refs, skillNameLookup()) || skillId
-  }
-
-  function scenarioLeaderSkillMissing(skillId: string): boolean {
-    return Boolean(skillId && !(skills.value || []).some((s) => s.id === skillId))
-  }
-
-  function normalizeScenarioLeaderSkillIds(raw: unknown): string[] {
-    const out: string[] = []
-    const seen = new Set<string>()
-    const skillLookup = skillNameLookup()
-    for (const item of Array.isArray(raw) ? raw : []) {
-      const id = String(item || '').trim()
-      if (!id || seen.has(id)) continue
-      const exists = Boolean(skillLookup[id])
-      if (id === LEGACY_DEFAULT_HOST_SKILL_ID && !exists) {
-        continue
-      }
-      out.push(id)
-      seen.add(id)
-      break
-    }
-    return out
+  function normalizeScenarioLeaderSkill(raw: unknown): SkillRef | null {
+    if (!raw || typeof raw !== 'object') return null
+    const directoryName = String((raw as any).skill_directory || '').trim().replace(/^[/\\]+/, '')
+    const name = String((raw as any).skill_name || '').trim()
+    if (!directoryName || !name) return null
+    const current = (skills.value || []).find((s) => s.directory_name === directoryName || s.name === name)
+    return { name: name || current?.name || directoryName, directory_name: directoryName }
   }
 
   function scenarioLlmOptionLabel(pid: string) {
@@ -223,17 +168,15 @@ export function useScenarioEditor(options: {
   }
 
   function resetScenarioDraft() {
-    scenarioDraft.value = { id: '', name: '', agent_ids: [], agent_refs: [], description: '' }
+    scenarioDraft.value = { name: '', agent_names: [], description: '' }
     resetScenarioHostConfig()
   }
 
   function resetScenarioHostConfig() {
     scenarioLeaderDisplayName.value = ''
-    scenarioLeaderSkillIds.value = []
+    scenarioLeaderSkill.value = null
     scenarioLeaderSystemPrompt.value = ''
-    scenarioLeaderLlmId.value = ''
-    scenarioLeaderFileCaps.value = { ...DEFAULT_FILE_CAPS }
-    scenarioLeaderUrlCapability.value = true
+    scenarioLeaderLlmName.value = ''
   }
 
   function syncScenarioDraftFromSelected() {
@@ -243,39 +186,29 @@ export function useScenarioEditor(options: {
       resetScenarioDraft()
       return
     }
-    const ids = [...(s.agent_ids || [])].filter((id) => id !== VIRTUAL_SCENE_HOST_ID)
+    const names = [...(s.agent_names || [])]
     scenarioDraft.value = {
-      id: s.id,
       name: s.name || '',
-      agent_ids: ids,
-      agent_refs: mergeReferenceRowsForIds(ids, s.agent_refs || [], undefined, SCENARIO_REFERENCE_ID_KEYS),
+      agent_names: names,
       description: s.description || '',
     }
     const hc = s.host_config
     if (hc && typeof hc === 'object') {
-      scenarioLeaderDisplayName.value = (hc.display_name as string) || ''
-      scenarioLeaderSkillIds.value = normalizeScenarioLeaderSkillIds(hc.skill_ids)
+      scenarioLeaderDisplayName.value = (hc.leader_agent_name as string) || ''
+      scenarioLeaderSkill.value = normalizeScenarioLeaderSkill(hc)
       scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
-      scenarioLeaderLlmId.value = (hc.llm_provider_id as string) || ''
-      const fc = (hc.file_capabilities || {}) as Record<string, boolean>
-      scenarioLeaderFileCaps.value = {
-        read: fc.read !== false,
-        edit: fc.edit !== false,
-        write: fc.write !== false,
-        rename: fc.rename !== false,
-        mkdir: fc.mkdir !== false,
-        list_dir: fc.list_dir !== false,
-      }
-      scenarioLeaderUrlCapability.value = hc.url_capability !== false
+      scenarioLeaderLlmName.value = (hc.llm_name as string) || ''
     } else {
       resetScenarioHostConfig()
     }
   }
 
-  function toggleScenarioLeaderSkill(skillId: string) {
-    const id = String(skillId || '').trim()
-    if (!id) return
-    scenarioLeaderSkillIds.value = scenarioLeaderSkillIds.value.includes(id) ? [] : [id]
+  function toggleScenarioLeaderSkill(directoryNameInput: string) {
+    const directoryName = String(directoryNameInput || '').trim()
+    if (!directoryName) return
+    const current = (skills.value || []).find((s) => s.directory_name === directoryName)
+    const existing = scenarioLeaderSkill.value?.directory_name === directoryName
+    scenarioLeaderSkill.value = existing ? null : { name: current?.name || directoryName, directory_name: directoryName }
   }
 
   function createScenarioPreset() {
@@ -283,17 +216,14 @@ export function useScenarioEditor(options: {
     const id = `scenario-${ts}`
     const draftIds = new Set(scenarioDraftIds.value)
     const next: ScenarioPreset = {
-      id,
       name: '',
-      agent_ids: [],
-      agent_refs: [],
+      agent_names: [],
       description: '',
-      leader_agent_id: VIRTUAL_SCENE_HOST_ID,
-      host_config: { skill_ids: [] },
+      host_config: {},
     }
     scenarioPresets.value = [
       next,
-      ...(scenarioPresets.value || []).filter((p) => !draftIds.has(p.id) && !isUnsavedScenarioDraftPreset(p)),
+      ...(scenarioPresets.value || []).filter((p) => !draftIds.has(p.name) && !isUnsavedScenarioDraftPreset(p)),
     ]
     scenarioDraftIds.value = [id]
     selectedId.value = id
@@ -301,42 +231,30 @@ export function useScenarioEditor(options: {
     syncScenarioDraftFromSelected()
   }
 
-  function removeScenarioExpert(agentId: string) {
-    setScenarioExpertIds((scenarioDraft.value.agent_ids || []).filter((id) => id !== agentId))
+  function removeScenarioExpert(agentName: string) {
+    setScenarioExpertNames((scenarioDraft.value.agent_names || []).filter((name) => name !== agentName))
   }
 
-  function setScenarioExpertIds(ids: string[]) {
-    scenarioDraft.value.agent_ids = ids
-    scenarioDraft.value.agent_refs = mergeReferenceRowsForIds(
-      scenarioDraft.value.agent_ids || [],
-      scenarioDraft.value.agent_refs,
-      agentNameLookup(),
-      SCENARIO_REFERENCE_ID_KEYS,
-    )
+  function setScenarioExpertNames(names: string[]) {
+    scenarioDraft.value.agent_names = [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))]
   }
 
-  function addScenarioExpert(agentId: string) {
-    if (!agentId) return
-    if ((scenarioDraft.value.agent_ids || []).includes(agentId)) return
-    setScenarioExpertIds([...(scenarioDraft.value.agent_ids || []), agentId])
+  function addScenarioExpert(agentName: string) {
+    if (!agentName) return
+    if ((scenarioDraft.value.agent_names || []).includes(agentName)) return
+    setScenarioExpertNames([...(scenarioDraft.value.agent_names || []), agentName])
   }
 
   async function persistScenarioPresets(nextPresets: ScenarioPreset[]) {
     const payload = {
       presets: nextPresets.map((p) => {
         const row: Record<string, unknown> = {
-          id: p.id,
           name: (p.name || '').trim(),
-          agent_ids: [...(p.agent_ids || [])],
-          agent_refs: mergeReferenceRowsForIds(p.agent_ids || [], p.agent_refs || [], agentNameLookup(), SCENARIO_REFERENCE_ID_KEYS),
+          agent_names: [...(p.agent_names || [])],
           description: p.description || '',
-          discussion_goal_example: (p as { discussion_goal_example?: string }).discussion_goal_example || '',
         }
         if (p.host_config && typeof p.host_config === 'object') {
           row.host_config = p.host_config
-          row.leader_agent_id = VIRTUAL_SCENE_HOST_ID
-        } else {
-          row.leader_agent_id = p.leader_agent_id || VIRTUAL_SCENE_HOST_ID
         }
         return row
       }),
@@ -357,52 +275,40 @@ export function useScenarioEditor(options: {
     const cur = selectedScenarioPreset.value
     if (!cur) return
     const name = (scenarioDraft.value.name || '').trim()
-    const rawIds = [...(scenarioDraft.value.agent_ids || [])]
+    const agentNames = [...(scenarioDraft.value.agent_names || [])]
     if (!name) {
       await appAlert({ title: '无法保存场景', message: '场景名称不能为空', variant: 'warning' })
       return
     }
-    if (!rawIds.length) {
+    if (!agentNames.length) {
       await appAlert({ title: '无法保存场景', message: '请至少选择 1 位协作专家', variant: 'warning' })
       return
     }
-    const skillIds = normalizeScenarioLeaderSkillIds(scenarioLeaderSkillIds.value)
+    const leaderSkill = scenarioLeaderSkill.value
     const host_config: ScenarioHostConfig = {
-      skill_ids: skillIds,
-      skill_refs: mergeReferenceRowsForIds(
-        skillIds,
-        selectedScenarioPreset.value?.host_config?.skill_refs || [],
-        skillNameLookup(),
-        SCENARIO_REFERENCE_ID_KEYS,
-      ),
+      leader_agent_name: scenarioLeaderDisplayName.value.trim() || undefined,
       system_prompt: scenarioLeaderSystemPrompt.value || undefined,
-      llm_provider_id: scenarioLeaderLlmId.value || undefined,
-      file_capabilities: { ...scenarioLeaderFileCaps.value },
-      url_capability: scenarioLeaderUrlCapability.value,
-    }
-    const leaderName = scenarioLeaderDisplayName.value.trim()
-    if (leaderName) {
-      host_config.display_name = leaderName
+      llm_name: scenarioLeaderLlmName.value || undefined,
+      skill_name: leaderSkill?.name || undefined,
+      skill_directory: leaderSkill?.directory_name || undefined,
     }
     scenarioSaving.value = true
     try {
       const next = (scenarioPresets.value || []).map((p) =>
-        p.id === cur.id
+        p.name === cur.name
           ? {
               ...p,
               name,
               description: scenarioDraft.value.description || '',
-              agent_ids: rawIds,
-              agent_refs: mergeReferenceRowsForIds(rawIds, scenarioDraft.value.agent_refs, agentNameLookup(), SCENARIO_REFERENCE_ID_KEYS),
-              leader_agent_id: VIRTUAL_SCENE_HOST_ID,
+              agent_names: agentNames,
               host_config,
             }
           : p,
       )
       await persistScenarioPresets(next)
       scenarioPresets.value = next
-      if (creatingScenarioId.value === cur.id) creatingScenarioId.value = null
-      scenarioDraftIds.value = scenarioDraftIds.value.filter((id) => id !== cur.id)
+      if (creatingScenarioId.value === cur.name) creatingScenarioId.value = null
+      scenarioDraftIds.value = scenarioDraftIds.value.filter((id) => id !== cur.name)
       syncScenarioDraftFromSelected()
     } catch (error) {
       await appAlert({ title: '保存场景失败', message: (error as Error).message || '保存场景失败', variant: 'danger' })
@@ -411,10 +317,10 @@ export function useScenarioEditor(options: {
     }
   }
 
-  async function deleteScenarioPreset(id: string) {
-    if (!id) return
-    const target = (scenarioPresets.value || []).find((item) => item.id === id)
-    const label = target?.name || id
+  async function deleteScenarioPreset(name: string) {
+    if (!name) return
+    const target = (scenarioPresets.value || []).find((item) => item.name === name)
+    const label = target?.name || name
     const ok = await appConfirm({
       title: '删除场景',
       message: `确定删除场景「${label}」吗？`,
@@ -424,13 +330,13 @@ export function useScenarioEditor(options: {
     if (!ok) return
     scenarioSaving.value = true
     try {
-      const next = (scenarioPresets.value || []).filter((p) => p.id !== id)
+      const next = (scenarioPresets.value || []).filter((p) => p.name !== name)
       await persistScenarioPresets(next)
       scenarioPresets.value = next
-      if (creatingScenarioId.value === id) creatingScenarioId.value = null
-      scenarioDraftIds.value = scenarioDraftIds.value.filter((draftId) => draftId !== id)
-      if (selectedId.value === id) {
-        selectedId.value = next[0]?.id || null
+      if (creatingScenarioId.value === name) creatingScenarioId.value = null
+      scenarioDraftIds.value = scenarioDraftIds.value.filter((draftId) => draftId !== name)
+      if (selectedId.value === name) {
+        selectedId.value = next[0]?.name || null
       }
       syncScenarioDraftFromSelected()
     } catch (error) {
@@ -451,7 +357,7 @@ export function useScenarioEditor(options: {
         scenarioPresets.value = []
       }
       if (resourceSubModule.value === 'scenario') {
-        const ids = scenarioPresets.value.map((s) => s.id)
+        const ids = scenarioPresets.value.map((s) => s.name).filter(Boolean)
         if (selectedId.value && !ids.includes(selectedId.value)) {
           selectedId.value = ids[0] || null
         } else if (!selectedId.value) {
@@ -487,9 +393,7 @@ export function useScenarioEditor(options: {
     scenarioLeaderDisplayName,
     scenarioLeaderSkillIds,
     scenarioLeaderSystemPrompt,
-    scenarioLeaderLlmId,
-    scenarioLeaderFileCaps,
-    scenarioLeaderUrlCapability,
+    scenarioLeaderLlmId: scenarioLeaderLlmName,
     scenarioDraft,
     isCreatingScenario,
     filteredScenarioPresets,

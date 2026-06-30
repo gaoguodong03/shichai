@@ -46,9 +46,9 @@ def _sandbox_outer_wait_timeout_ms(
 class ToolExecutionContext:
     session_id: str
     workspace_id: str
-    agent_id: str
+    agent_name: str
     user_id: str = ""
-    skill_id: str = ""
+    directory_name: str = ""
     task_id: str = ""
     turn_id: str = ""
     tool_call_id: str = ""
@@ -66,8 +66,8 @@ class ToolRequest:
     task_id: str
     turn_id: str
     tool_call_id: str
-    agent_id: str
-    skill_id: str
+    agent_name: str
+    directory_name: str
     idempotency_key: Optional[str] = None
     timeout_ms: int = 60_000
     retry_count: int = 2
@@ -268,8 +268,8 @@ class UnifiedToolGateway:
             task_id=context.task_id or "task",
             turn_id=context.turn_id or "turn",
             tool_call_id=context.tool_call_id or f"{tool_kind}:{tool_name}",
-            agent_id=context.agent_id or "agent",
-            skill_id=context.skill_id or "",
+            agent_name=context.agent_name or "agent",
+            directory_name=context.directory_name or "",
             timeout_ms=outer_timeout_ms,
             retry_count=int(context.retry_count if context.retry_count is not None else 1),
         )

@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 class SessionCreate(BaseModel):
     title: str = "新对话"
-    agent_ids: List[str] = []
-    leader_agent_id: Optional[str] = None  # 虚拟主持人 id
+    agent_names: List[str] = []
+    leader_agent_name: Optional[str] = None
     host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
 
 
@@ -46,11 +46,11 @@ async def list_sessions():
 
 @router.post("/sessions")
 async def create_session(body: SessionCreate):
-    """新建会话（默认仅主持人，agent_ids 为空）"""
+    """新建会话（默认仅主持人，agent_names 为空）"""
     data = create_session_internal(
         title=body.title or "新对话",
-        agent_ids=body.agent_ids,
-        leader_agent_id=body.leader_agent_id,
+        agent_names=body.agent_names,
+        leader_agent_name=body.leader_agent_name,
         host_config=body.host_config,
     )
     return {"status": "ok", "data": data}
@@ -152,10 +152,10 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
         error_event = error_event or {"error": str(e)}
 
     primary_message = message_events[-1] if message_events else None
-    route_agent_id = route_event.get("agent_id") if isinstance(route_event, dict) else None
-    if route_agent_id:
+    route_agent_name = route_event.get("agent_name") if isinstance(route_event, dict) else None
+    if route_agent_name:
         primary_message = next(
-            (msg for msg in reversed(message_events) if msg.get("agent_id") == route_agent_id),
+            (msg for msg in reversed(message_events) if msg.get("agent_name") == route_agent_name),
             primary_message,
         )
 

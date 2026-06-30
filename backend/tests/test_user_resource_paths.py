@@ -90,20 +90,18 @@ def test_save_agent_instances_mirrors_agents_resource_files(monkeypatch, tmp_pat
         save_agent_instances(
             [
                 {
-                    "agent_id": "agent-resource-flow",
                     "name": "资源目录专家",
-                    "role": "验证专家资源落盘",
-                    "skill_ids": [],
-                    "mcp_server_ids": [],
+                    "description": "验证专家资源落盘",
+                    "skills": [],
                 }
             ]
         )
 
         user_root = tmp_path / "users" / "user-resource-save"
-        agent_file = user_root / "resources" / "agents" / "agent-resource-flow" / "agent.json"
+        agent_file = user_root / "resources" / "agents" / "资源目录专家" / "agent.json"
         assert agent_file.is_file()
         agent_data = json.loads(agent_file.read_text(encoding="utf-8"))
-        assert agent_data["id"] == "agent-resource-flow"
+        assert "id" not in agent_data
         assert agent_data["name"] == "资源目录专家"
 
         save_agent_instances([])
@@ -125,20 +123,21 @@ def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tm
         body = SessionPresetsBody(
             presets=[
                 SessionPresetItem(
-                    id="scenario-resource-flow",
                     name="资源目录场景",
-                    agent_ids=["agent-resource-flow"],
+                    agent_names=["资源目录专家"],
                     description="验证场景资源落盘",
-                    leader_agent_id="agent-resource-flow",
+                    host_config={"leader_agent_name": "主持人"},
                 )
             ]
         )
         asyncio.run(update_session_presets(body))
 
         user_root = tmp_path / "users" / "user-resource-save"
-        scenario_file = user_root / "resources" / "scenarios" / "scenario-resource-flow" / "scenario.json"
+        scenario_file = user_root / "resources" / "scenarios" / "资源目录场景" / "scenario.json"
         assert scenario_file.is_file()
-        assert json.loads(scenario_file.read_text(encoding="utf-8"))["name"] == "资源目录场景"
+        scenario_data = json.loads(scenario_file.read_text(encoding="utf-8"))
+        assert scenario_data["name"] == "资源目录场景"
+        assert "id" not in scenario_data
 
         asyncio.run(update_session_presets(SessionPresetsBody(presets=[])))
         assert not scenario_file.exists()
@@ -157,16 +156,15 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
     token = set_current_user_identity(user_id="user-resource-recover", username="recover@example.com")
     try:
         user_root = tmp_path / "users" / "user-resource-recover"
-        scenario_file = user_root / "resources" / "scenarios" / "online-scene" / "scenario.json"
+        scenario_file = user_root / "resources" / "scenarios" / "线上导入场景" / "scenario.json"
         scenario_file.parent.mkdir(parents=True)
         scenario_file.write_text(
             json.dumps(
                 {
-                    "id": "online-scene",
                     "name": "线上导入场景",
-                    "agent_ids": ["online-expert"],
+                    "agent_names": ["线上专家"],
                     "description": "只剩资源目录镜像时也应能刷新出来",
-                    "leader_agent_id": "online-expert",
+                    "host_config": {"leader_agent_name": "主持人"},
                 },
                 ensure_ascii=False,
             ),
@@ -180,15 +178,13 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
 
         assert result["data"]["presets"] == [
             {
-                "id": "online-scene",
                 "name": "线上导入场景",
-                "agent_ids": ["online-expert"],
-                "leader_agent_id": "online-expert",
+                "agent_names": ["线上专家"],
+                "host_config": {"leader_agent_name": "主持人", "llm_name": "", "system_prompt": None, "skill_name": "", "skill_directory": ""},
                 "description": "只剩资源目录镜像时也应能刷新出来",
-                "discussion_goal_example": "",
             }
         ]
-        assert json.loads(preset_path.read_text(encoding="utf-8"))[0]["id"] == "online-scene"
+        assert json.loads(preset_path.read_text(encoding="utf-8"))[0]["name"] == "线上导入场景"
     finally:
         reset_current_user_identity(token)
 
@@ -211,9 +207,9 @@ def test_get_session_presets_does_not_log_noisy_ids(monkeypatch, tmp_path, caplo
             json.dumps(
                 [
                     {
-                        "id": "quiet-scene",
                         "name": "安静场景",
-                        "agent_ids": ["quiet-agent"],
+                        "agent_names": ["安静专家"],
+                        "host_config": {"leader_agent_name": "主持人"},
                     }
                 ],
                 ensure_ascii=False,
@@ -224,7 +220,7 @@ def test_get_session_presets_does_not_log_noisy_ids(monkeypatch, tmp_path, caplo
         with caplog.at_level(logging.INFO, logger="app.api.settings_presets"):
             result = asyncio.run(get_session_presets())
 
-        assert result["data"]["presets"][0]["id"] == "quiet-scene"
+        assert result["data"]["presets"][0]["name"] == "安静场景"
         assert "scenario_presets_get" not in caplog.text
         assert "aggregate_ids=" not in caplog.text
         assert "returned_ids=" not in caplog.text
@@ -244,19 +240,19 @@ def test_save_mcp_config_mirrors_tools_resource_files(monkeypatch, tmp_path):
         save_mcp_config(
             [
                 {
-                    "id": "tool-resource-flow",
                     "name": "资源目录工具",
                     "type": "mcp",
-                    "enabled": True,
                     "transport": {"type": "stdio", "command": "python", "args": ["server.py"]},
                 }
             ]
         )
 
         user_root = tmp_path / "users" / "user-resource-save"
-        tool_file = user_root / "resources" / "tools" / "tool-resource-flow" / "tool.json"
+        tool_file = user_root / "resources" / "tools" / "资源目录工具" / "tool.json"
         assert tool_file.is_file()
-        assert json.loads(tool_file.read_text(encoding="utf-8"))["name"] == "资源目录工具"
+        tool_data = json.loads(tool_file.read_text(encoding="utf-8"))
+        assert tool_data["name"] == "资源目录工具"
+        assert "id" not in tool_data
 
         save_mcp_config([])
         assert not tool_file.exists()

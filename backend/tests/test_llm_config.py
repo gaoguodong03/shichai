@@ -88,13 +88,13 @@ def test_builtin_llm_provider_presets_use_compatible_base_urls():
     from app.api.settings_app import _DEFAULT_LLM_PROVIDERS as settings_defaults
 
     expected = {
-        "qwen": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
-        "jeniya": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
-        "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
-        "claude": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
-        "glm": ("https://open.bigmodel.cn/api/paas/v4", "ZHIPUAI_API_KEY"),
-        "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
-        "kimi": ("https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
+        "qwen3-max": ("https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
+        "gpt-4o": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
+        "gemini-3-pro-preview": ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY"),
+        "claude-sonnet-4-6": ("https://jeniya.top/v1", "JENIYA_API_KEY"),
+        "glm-4.7": ("https://open.bigmodel.cn/api/paas/v4", "ZHIPUAI_API_KEY"),
+        "deepseek-chat": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+        "moonshot-v1-128k": ("https://api.moonshot.cn/v1", "MOONSHOT_API_KEY"),
     }
 
     for provider_id, (base_url, api_key_env) in expected.items():
@@ -104,29 +104,12 @@ def test_builtin_llm_provider_presets_use_compatible_base_urls():
         assert settings_defaults[provider_id]["api_key_env"] == api_key_env
 
 
-def test_settings_refreshes_old_jeniya_builtin_provider_presets():
-    """旧版本保存下来的内置 Jeniya 中转默认行，应在加载设置时刷新为 provider 原生预设。"""
+def test_builtin_llm_provider_names_are_model_names():
     from app.api.settings_app import _refresh_builtin_llm_provider_presets
 
-    providers = {
-        "deepseek": {
-            "base_url": "https://jeniya.top/v1",
-            "model": "deepseek-chat",
-            "api_key_env": "JENIYA_API_KEY",
-        },
-        "custom-jeniya-deepseek": {
-            "base_url": "https://jeniya.top/v1",
-            "model": "deepseek-chat",
-            "api_key_env": "JENIYA_API_KEY",
-            "api_key_ref": "user-vault",
-        },
-    }
+    out = _refresh_builtin_llm_provider_presets({})
 
-    out = _refresh_builtin_llm_provider_presets(providers)
-
-    assert out["deepseek"]["base_url"] == "https://api.deepseek.com"
-    assert out["deepseek"]["api_key_env"] == "DEEPSEEK_API_KEY"
-    assert out["custom-jeniya-deepseek"]["base_url"] == "https://jeniya.top/v1"
+    assert sorted(out) == sorted(row["model"] for row in out.values())
 
 
 def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
@@ -170,7 +153,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
 
         shutil.rmtree(bundle_dir, ignore_errors=True)
 
-    assert provider_id == "example"
+    assert provider_id == "example-chat"
     assert bundled["base_url"] == "https://example.test/v1"
     assert bundled["model"] == "example-chat"
     assert "api_key" not in bundled
@@ -229,9 +212,9 @@ def test_llm_credential_notice_for_agent_when_key_missing(monkeypatch):
     notice = _llm_credential_notice_for_agent(
         None,
         {
-            "default_llm": "qwen",
+            "default_llm": "qwen3-max",
             "llm_providers": {
-                "qwen": {
+                "qwen3-max": {
                     "model": "qwen3-max",
                     "api_key_env": "QWEN_API_KEY",
                 }
@@ -299,11 +282,11 @@ def test_get_llm_from_config_api_key_ref():
 
 
 def test_get_llm_from_config_unknown_fallback():
-    """未知 provider 回退到 qwen"""
+    """未知模型回退到 qwen3-max"""
     from app.agent.llm_client import get_llm_from_config
 
     llm = get_llm_from_config("unknown", {
-        "qwen": {
+        "qwen3-max": {
             "base_url": "https://fallback/v1",
             "model": "qwen",
             "api_key_env": "QWEN_API_KEY",
@@ -316,7 +299,7 @@ def test_get_llm_from_config_empty_uses_default():
     """空配置使用默认 provider"""
     from app.agent.llm_client import get_llm_from_config
 
-    llm = get_llm_from_config("qwen", None)
+    llm = get_llm_from_config("qwen3-max", None)
     assert llm.model is not None
     assert llm.base_url is not None
 

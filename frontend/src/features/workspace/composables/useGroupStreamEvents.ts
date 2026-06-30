@@ -8,13 +8,13 @@ type StreamEventState = {
 
 type StreamStatusPayload = {
   text?: string
-  agent_id?: string
+  agent_name?: string
   meta?: { phase?: string }
 }
 
 type StreamRoutePayload = {
-  agent_id?: string
-  skill_id?: string
+  agent_name?: string
+  skill?: string
 }
 
 const STREAMING_STATUS_DEFAULT = '正在运行中...'
@@ -26,15 +26,15 @@ export function useGroupStreamEvents(args: {
   groupTurnLimitReached: Ref<boolean>
   groupWaitingForUser: Ref<boolean>
   groupSuggestedNextSpeaker: Ref<string | null>
-  groupSuggestedAddAgentIds: Ref<string[]>
+  groupSuggestedAddAgentNames: Ref<string[]>
   patchGroupStreamState: (sessionId: string, patch: Record<string, unknown>) => void
   scheduleHydrateAuthImages: () => void
   scrollLatestAssistantRowToLowerMiddle: () => void
   scrollGroupAssistantMessageIntoView: (data: Record<string, unknown>) => void
   scrollToMessage: (messageId: string) => void
   applyOrchestrationEndMeta: (data: Record<string, unknown>) => void
-  extractAutoInvitedIds: (data: Record<string, unknown> | null | undefined) => string[]
-  resolveSuggestedIdsFromPayload: (data: Record<string, unknown> | null | undefined) => string[]
+  extractAutoInvitedNames: (data: Record<string, unknown> | null | undefined) => string[]
+  resolveSuggestedNamesFromPayload: (data: Record<string, unknown> | null | undefined) => string[]
   isExpertAssistantMessagePayload: (data: Record<string, unknown> | null | undefined) => boolean
   clearAttachedFiles: () => void
   clearAutoSwitchHint: () => void
@@ -49,15 +49,15 @@ export function useGroupStreamEvents(args: {
     groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
-    groupSuggestedAddAgentIds,
+    groupSuggestedAddAgentNames,
     patchGroupStreamState,
     scheduleHydrateAuthImages,
     scrollLatestAssistantRowToLowerMiddle,
     scrollGroupAssistantMessageIntoView,
     scrollToMessage,
     applyOrchestrationEndMeta,
-    extractAutoInvitedIds,
-    resolveSuggestedIdsFromPayload,
+    extractAutoInvitedNames,
+    resolveSuggestedNamesFromPayload,
     isExpertAssistantMessagePayload,
     clearAttachedFiles,
     clearAutoSwitchHint,
@@ -90,14 +90,14 @@ export function useGroupStreamEvents(args: {
     return STREAMING_STATUS_DEFAULT
   }
 
-  function ensureStreamingStatusPlaceholder(agentId: string, content = STREAMING_STATUS_DEFAULT, extra: Record<string, unknown> = {}) {
-    const id = String(agentId || '').trim()
+  function ensureStreamingStatusPlaceholder(agentName: string, content = STREAMING_STATUS_DEFAULT, extra: Record<string, unknown> = {}) {
+    const id = String(agentName || '').trim()
     if (!id) return
     const statusContent = String(content || STREAMING_STATUS_DEFAULT)
     const list = [...groupDisplayMessages.value]
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
     const isSameStreaming =
-      last?.role === 'assistant' && last?.agent_id === id && (last as { _streaming?: boolean })._streaming
+      last?.role === 'assistant' && last?.agent_name === id && (last as { _streaming?: boolean })._streaming
     if (isSameStreaming) {
       if ((last as { _streamingStatus?: boolean })._streamingStatus || !(last.content || '').trim()) {
         groupDisplayMessages.value = [
@@ -112,7 +112,7 @@ export function useGroupStreamEvents(args: {
       ...cleared,
       {
         role: 'assistant',
-        agent_id: id,
+        agent_name: id,
         content: statusContent,
         _streaming: true,
         _streamingStatus: true,
@@ -125,32 +125,32 @@ export function useGroupStreamEvents(args: {
 
   function showStreamingRoutePlaceholder(data: StreamRoutePayload, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
-    const agentId = String(data?.agent_id || '').trim()
-    if (!agentId) return
+    const agentName = String(data?.agent_name || '').trim()
+    if (!agentName) return
     const id = activeSessionId(sessionId)
     patchGroupStreamState(id, {
       phase: STREAMING_STATUS_DEFAULT,
-      agentId,
-      skillId: String(data?.skill_id || '').trim(),
+      agentName,
+      skill: String(data?.skill || '').trim(),
     })
-    ensureStreamingStatusPlaceholder(agentId, STREAMING_STATUS_DEFAULT, {
-      skill_id: String(data?.skill_id || '').trim(),
+    ensureStreamingStatusPlaceholder(agentName, STREAMING_STATUS_DEFAULT, {
+      skill: String(data?.skill || '').trim(),
     })
   }
 
   /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
-  function appendStreamingContent(agentId: string, text: string) {
+  function appendStreamingContent(agentName: string, text: string) {
     const list = [...groupDisplayMessages.value]
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
     const appendToExisting =
-      last?.role === 'assistant' && last?.agent_id === agentId && (last as { _streaming?: boolean })._streaming
+      last?.role === 'assistant' && last?.agent_name === agentName && (last as { _streaming?: boolean })._streaming
     if (appendToExisting) {
       const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : (last.content || '') + text
       const next = [...list.slice(0, -1), { ...last, content, _streamingStatus: false } as GroupMessage]
       groupDisplayMessages.value = next
     } else {
       const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-      groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_id: agentId, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
+      groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_name: agentName, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
       scrollLatestAssistantRowToLowerMiddle()
     }
     scrollLatestAssistantRowToLowerMiddle()
@@ -164,7 +164,7 @@ export function useGroupStreamEvents(args: {
     const replacedStreamingPlaceholder =
       data.role === 'assistant' &&
       last?.role === 'assistant' &&
-      last?.agent_id === data.agent_id &&
+      last?.agent_name === data.agent_name &&
       (last as { _streaming?: boolean })._streaming
     if (replacedStreamingPlaceholder) {
       const { _streaming: _, ...rest } = data
@@ -200,8 +200,8 @@ export function useGroupStreamEvents(args: {
     const phase = String(data?.meta?.phase || '').trim()
     if (!phase) return false
     const id = activeSessionId(sessionId)
-    const agentId = String(data?.agent_id || '').trim()
-    if (agentId) ensureStreamingStatusPlaceholder(agentId, streamingStatusTextForPhase(phase))
+    const agentName = String(data?.agent_name || '').trim()
+    if (agentName) ensureStreamingStatusPlaceholder(agentName, streamingStatusTextForPhase(phase))
     if (phase === 'file_resolving' || phase === 'preparing') {
       patchGroupStreamState(id, { phase: '正在处理文件引用…' })
       return true
@@ -247,14 +247,14 @@ export function useGroupStreamEvents(args: {
       if (data.next_prompt) {
         groupNextPrompt.value = (data.next_prompt as string || '').trim()
       }
-      if (extractAutoInvitedIds(data).length) {
-        groupSuggestedAddAgentIds.value = []
+      if (extractAutoInvitedNames(data).length) {
+        groupSuggestedAddAgentNames.value = []
         emitAgentAdded()
         loadGroupDetail()
       }
-      const suggestedIds = resolveSuggestedIdsFromPayload(data)
-      if (suggestedIds.length) {
-        groupSuggestedAddAgentIds.value = suggestedIds
+      const suggestedNames = resolveSuggestedNamesFromPayload(data)
+      if (suggestedNames.length) {
+        groupSuggestedAddAgentNames.value = suggestedNames
         clearStreamingPlaceholders()
         patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
       }
@@ -270,14 +270,14 @@ export function useGroupStreamEvents(args: {
       groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
         ? String(endData.suggested_next_speaker)
         : null
-      if (extractAutoInvitedIds(endData).length) {
-        groupSuggestedAddAgentIds.value = []
+      if (extractAutoInvitedNames(endData).length) {
+        groupSuggestedAddAgentNames.value = []
         emitAgentAdded()
         loadGroupDetail()
       }
-      const suggestedIds = resolveSuggestedIdsFromPayload(endData)
-      if (suggestedIds.length) {
-        groupSuggestedAddAgentIds.value = suggestedIds
+      const suggestedNames = resolveSuggestedNamesFromPayload(endData)
+      if (suggestedNames.length) {
+        groupSuggestedAddAgentNames.value = suggestedNames
         clearStreamingPlaceholders()
         patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
       }

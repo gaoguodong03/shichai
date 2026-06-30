@@ -1086,6 +1086,12 @@
   align-items: center;
   gap: 0.25rem;
 }
+.group-chat-bubble-actions-user {
+  align-self: flex-end;
+  justify-content: flex-end;
+  margin-left: 0;
+  margin-right: 0.1rem;
+}
 .group-chat-bubble-action-btn {
   display: inline-flex;
   align-items: center;

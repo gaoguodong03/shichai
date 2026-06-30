@@ -39,32 +39,32 @@ ORCHESTRATION_RECRUITMENT = "recruitment"
 ORCHESTRATION_SCENE = "scene"
 
 
-def effective_orchestration_profile(meta_item: Dict[str, Any], *, agent_ids: List[str]) -> str:
+def effective_orchestration_profile(meta_item: Dict[str, Any], *, agent_names: List[str]) -> str:
     """
     返回 recruitment | scene。
-    显式字段优先；缺省迁移：无成员视为招募房间，有成员视为场景（兼容旧会话）。
+    显式字段优先；缺省：无成员视为招募房间，有成员视为场景。
     """
     raw = str(meta_item.get("orchestration_profile") or "").strip().lower()
     if raw in (ORCHESTRATION_RECRUITMENT, ORCHESTRATION_SCENE):
         return raw
-    return ORCHESTRATION_RECRUITMENT if not agent_ids else ORCHESTRATION_SCENE
+    return ORCHESTRATION_RECRUITMENT if not agent_names else ORCHESTRATION_SCENE
 
 
-def default_orchestration_profile_for_new_session(*, agent_ids: List[str]) -> str:
+def default_orchestration_profile_for_new_session(*, agent_names: List[str]) -> str:
     """新建会话时写入 meta 的默认值。"""
-    return ORCHESTRATION_SCENE if agent_ids else ORCHESTRATION_RECRUITMENT
+    return ORCHESTRATION_SCENE if agent_names else ORCHESTRATION_RECRUITMENT
 
 
 def available_to_add_for_prompt(
     full_list: List[Dict[str, Any]],
     *,
     orchestration_profile: str,
-    agent_ids: Optional[List[str]] = None,
+    agent_names: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """仅真实空会话向模型提供可邀请名单。"""
     if orchestration_profile == ORCHESTRATION_SCENE:
         return []
-    if agent_ids:
+    if agent_names:
         return []
     return list(full_list or [])
 
@@ -74,50 +74,52 @@ class GroupEntryRoute:
     """单条用户消息进入流式编排时的入口判定。"""
 
     skip_host_dispatch: bool
-    direct_agent_id: Optional[str]
+    direct_agent_name: Optional[str]
     clear_skill_lock_before_host: bool
 
 
 def resolve_group_entry_route(
     *,
     meta_item: Dict[str, Any],
-    agent_ids: List[str],
+    agent_names: List[str],
     host_takeover_requested: bool,
-    ignore_auto_agent_id: str,
+    ignore_auto_agent_name: str,
     user_message: str = "",
 ) -> GroupEntryRoute:
     """
     是否跳过四九调度、直接由锁定专家处理本轮用户消息。
     （@ 点名由 group_chat 更前序分支处理，此处不再判断。）
 
-    规则：存在 skill_session_owner_id 且仍在本场 agent_ids 内，且用户未要求主持人接管/
+    规则：存在 skill_session_owner_name 且仍在本场 agent_names 内，且用户未要求主持人接管/
     未使用 ignore 排除该专家时，跳过主持人。
     """
-    lock = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
-    if not lock or lock not in agent_ids:
+    lock = str(meta_item.get("skill_session_owner_name") or "").strip()
+    agent_name_keys = {str(x or "").strip().casefold() for x in agent_names or [] if str(x or "").strip()}
+    lock_key = lock.casefold()
+    if not lock or lock_key not in agent_name_keys:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_agent_id=None,
+            direct_agent_name=None,
             clear_skill_lock_before_host=True,
         )
 
     if host_takeover_requested:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_agent_id=None,
+            direct_agent_name=None,
             clear_skill_lock_before_host=True,
         )
 
-    if ignore_auto_agent_id and ignore_auto_agent_id == lock:
+    if ignore_auto_agent_name and ignore_auto_agent_name.casefold() == lock_key:
         return GroupEntryRoute(
             skip_host_dispatch=False,
-            direct_agent_id=None,
+            direct_agent_name=None,
             clear_skill_lock_before_host=True,
         )
 
     return GroupEntryRoute(
         skip_host_dispatch=True,
-        direct_agent_id=lock,
+        direct_agent_name=lock,
         clear_skill_lock_before_host=False,
     )
 
@@ -125,31 +127,31 @@ def resolve_group_entry_route(
 def persist_skill_session_lock(
     meta_item: Dict[str, Any],
     *,
-    owner_agent_id: str,
-    skill_id: str,
+    owner_agent_name: str,
+    skill: str,
 ) -> None:
-    meta_item["skill_session_owner_id"] = str(owner_agent_id or "").strip().lower()
-    meta_item["skill_session_skill_id"] = str(skill_id or "").strip()
+    meta_item["skill_session_owner_name"] = str(owner_agent_name or "").strip()
+    meta_item["skill_session_skill"] = str(skill or "").strip()
 
 
 def clear_skill_session_lock(meta_item: Dict[str, Any]) -> None:
-    meta_item.pop("skill_session_owner_id", None)
-    meta_item.pop("skill_session_skill_id", None)
+    meta_item.pop("skill_session_owner_name", None)
+    meta_item.pop("skill_session_skill", None)
 
 
-def locked_skill_id_for_expert(
+def locked_skill_for_expert(
     meta_item: Dict[str, Any],
     *,
-    expert_agent_id: str,
-    expert_skill_ids: List[str],
+    expert_agent_name: str,
+    expert_skills: List[str],
 ) -> Optional[str]:
-    """若本轮为 Skill 会话续跑（四九未调度），返回应继续使用的 skill_id。"""
-    owner = str(meta_item.get("skill_session_owner_id") or "").strip().lower()
-    sid = str(meta_item.get("skill_session_skill_id") or "").strip()
-    eid = str(expert_agent_id or "").strip().lower()
-    ids = {str(x).strip() for x in expert_skill_ids if str(x).strip()}
-    if not owner or owner != eid or not sid:
+    """若本轮为 Skill 会话续跑（四九未调度），返回应继续使用的 Skill 目录名。"""
+    owner = str(meta_item.get("skill_session_owner_name") or "").strip().casefold()
+    skill = str(meta_item.get("skill_session_skill") or "").strip()
+    expert = str(expert_agent_name or "").strip().casefold()
+    skills = {str(x).strip() for x in expert_skills if str(x).strip()}
+    if not owner or owner != expert or not skill:
         return None
-    if sid in ids:
-        return sid
+    if skill in skills:
+        return skill
     return None

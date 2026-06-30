@@ -17,9 +17,9 @@ def test_extract_host_scheduler_state_from_json_block():
 
 
 def test_forced_at_mention_matches_agent_name():
-    agents = [{"agent_id": "agent-teacher", "name": "教师", "role": "出题"}]
+    agents = [{"name": "教师", "role": "出题"}]
 
-    assert hd.extract_forced_at_mention_agent_id("@教师 请继续", agents) == "agent-teacher"
+    assert hd.extract_forced_at_mention_agent_name("@教师 请继续", agents) == "教师"
 
 
 def test_host_decision_from_scheduler_state_maps_user():
@@ -77,16 +77,15 @@ def test_host_decision_from_scheduler_state_end_default_is_generic():
     assert "研讨" not in out["announcement"]
 
 
-def test_host_decision_from_scheduler_state_maps_name_with_agent_id():
+def test_host_decision_from_scheduler_state_maps_name():
     out = hd.host_decision_from_scheduler_state(
         {
             "current_phase": "阶段1：选题",
-            "next_speaker": "伴学研讨——引导教学的教师 (agent-6ffb9536)",
+            "next_speaker": "伴学研讨——引导教学的教师",
             "speaker_task": "请教师给出本轮讨论主题。",
         },
         [
             {
-                "agent_id": "agent-6ffb9536",
                 "name": "伴学研讨——引导教学的教师",
                 "role": "伴学研讨中的教师，负责选题、材料引导、教师追问与最终点评。",
             }
@@ -94,7 +93,7 @@ def test_host_decision_from_scheduler_state_maps_name_with_agent_id():
     )
 
     assert out is not None
-    assert out["next_speaker"] == "agent-6ffb9536"
+    assert out["next_speaker"] == "伴学研讨——引导教学的教师"
     assert out["current_phase"] == "阶段1：选题"
     assert out["speaker_task"] == "请教师给出本轮讨论主题。"
     assert out.get("next_prompt") is None

@@ -207,8 +207,8 @@ def _persist_group_memory_turn(
             session_id=session_id,
             entries_delta=[
                 {
-                    "agent_id": str((msg or {}).get("agent_id") or "unknown"),
-                    "skill_id": str((msg or {}).get("skill_id") or "default"),
+                    "agent_name": str((msg or {}).get("agent_name") or "unknown"),
+                    "skill": str((msg or {}).get("skill") or "default"),
                     "summary": _summarize_index_work(content),
                     "files": index_paths,
                 }
@@ -220,7 +220,7 @@ def _persist_group_memory_turn(
 
 def _build_next_prompt_with_memory(
     session_id: str,
-    target_agent_id: str,
+    target_agent_name: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
@@ -234,7 +234,7 @@ def _build_next_prompt_with_memory(
     try:
         dispatch = build_dispatch_context(
             session_id=session_id,
-            target_agent_id=target_agent_id,
+            target_agent_name=target_agent_name,
             goal=discussion_goal,
             k=mem["dispatch_top_k"],
             max_facts=mem["max_facts"],
@@ -266,12 +266,12 @@ def _ensure_structured_next_prompt(
     prompt: str,
     discussion_goal: str,
     context: str,
-    target_agent_id: str,
+    target_agent_name: str,
     *,
     host_round_instruction: Optional[str] = None,
 ) -> str:
     """Lightly validate next_prompt structure and fill missing execution anchors."""
-    _ = target_agent_id
+    _ = target_agent_name
     prompt_text = (prompt or "").strip()
     context_excerpt = _shorten_text(context, max_chars=1600)
     host_instruction = (host_round_instruction or "").strip()
@@ -342,7 +342,7 @@ def _ensure_structured_next_prompt(
 
 def _build_checked_next_prompt(
     session_id: str,
-    target_agent_id: str,
+    target_agent_name: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
@@ -350,7 +350,7 @@ def _build_checked_next_prompt(
 ) -> str:
     raw = _build_next_prompt_with_memory(
         session_id=session_id,
-        target_agent_id=target_agent_id,
+        target_agent_name=target_agent_name,
         discussion_goal=discussion_goal,
         context=context,
         app_settings=app_settings,
@@ -360,6 +360,6 @@ def _build_checked_next_prompt(
         prompt=raw,
         discussion_goal=discussion_goal,
         context=context,
-        target_agent_id=target_agent_id,
+        target_agent_name=target_agent_name,
         host_round_instruction=decision_next_prompt,
     )

@@ -1,4 +1,4 @@
-"""MCP 工具调用参数归一化：按 server_id / tool_name 分发到具体归一化函数，主流程在 manager 中只做一次调用。"""
+"""MCP 工具调用参数归一化：按 server_name / tool_name 分发到具体归一化函数，主流程在 manager 中只做一次调用。"""
 import json
 from typing import Any, Dict, Optional
 
@@ -104,9 +104,9 @@ def _linkup_linkup_search(call_kwargs: Dict[str, Any]) -> None:
         call_kwargs["depth"] = "standard"
 
 
-def _file_reader_filesystem_path(server_id: str, call_kwargs: Dict[str, Any]) -> None:
+def _file_reader_filesystem_path(server_name: str, call_kwargs: Dict[str, Any]) -> None:
     """file-reader / filesystem：__arg1 → path。"""
-    if server_id not in ("file-reader", "filesystem") or "__arg1" not in call_kwargs:
+    if server_name not in ("file-reader", "filesystem") or "__arg1" not in call_kwargs:
         return
     if "path" not in call_kwargs:
         call_kwargs["path"] = str(call_kwargs["__arg1"]) if call_kwargs["__arg1"] is not None else ""
@@ -137,7 +137,7 @@ def _strip_arg_placeholders(call_kwargs: Dict[str, Any]) -> None:
 
 
 def normalize_mcp_tool_kwargs(
-    server_id: Optional[str],
+    server_name: Optional[str],
     original_tool_name: str,
     kwargs: Dict[str, Any],
     input_schema: Optional[Dict[str, Any]] = None,
@@ -148,24 +148,24 @@ def normalize_mcp_tool_kwargs(
     """
     call_kwargs = dict(kwargs or {})
 
-    if server_id == "volces-icon" and original_tool_name == "generate_app_icon":
+    if server_name == "volces-icon" and original_tool_name == "generate_app_icon":
         _volces_icon_generate_app_icon(call_kwargs)
 
-    if server_id == "amap-maps" and original_tool_name == "maps_geo":
+    if server_name == "amap-maps" and original_tool_name == "maps_geo":
         _amap_maps_geo(call_kwargs)
 
-    if server_id == "amap-maps":
+    if server_name == "amap-maps":
         _amap_maps_route(call_kwargs, original_tool_name)
 
-    if server_id == "linkup" and original_tool_name == "linkup-search":
+    if server_name == "linkup" and original_tool_name == "linkup-search":
         _linkup_linkup_search(call_kwargs)
 
-    if server_id in ("file-reader", "filesystem"):
-        _file_reader_filesystem_path(server_id or "", call_kwargs)
+    if server_name in ("file-reader", "filesystem"):
+        _file_reader_filesystem_path(server_name or "", call_kwargs)
 
     _schema_first_param(call_kwargs, input_schema)
 
-    if server_id == "amap-maps" and original_tool_name == "maps_geo":
+    if server_name == "amap-maps" and original_tool_name == "maps_geo":
         _amap_maps_geo_beijing_city(call_kwargs)
 
     _strip_arg_placeholders(call_kwargs)

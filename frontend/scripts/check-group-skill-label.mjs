@@ -31,5 +31,5 @@ assert.equal(
     skills,
   }),
   'missing-skill',
-  '无法解析名称时才显示原始 skill_id',
+  '无法解析名称时才显示原始 skill_directory',
 )

@@ -13,7 +13,7 @@
             <div>
               <label class="block text-sm font-medium text-primary mb-1">名称</label>
               <input
-                v-model="form.host_display_name"
+                v-model="form.leader_agent_name"
                 type="text"
                 class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 placeholder="例如：四九"
@@ -22,12 +22,12 @@
             <div>
               <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
               <select
-                v-model="form.llm_provider_id"
+                v-model="form.llm_name"
                 class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
               >
                 <option value="">使用应用默认</option>
-                <option v-for="(meta, id) in llmProviders" :key="id" :value="id">
-                  {{ meta.label || id }}
+                <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
+                  {{ meta.label || name }}
                 </option>
               </select>
             </div>
@@ -60,15 +60,15 @@
               >
                 <button
                   v-for="s in visibleSkills"
-                  :key="s.id"
+                  :key="s.directory_name"
                   type="button"
                   class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  :class="form.skill_ids.includes(s.id)
+                  :class="form.skill_directory === s.directory_name
                     ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
                     : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                  @click="toggleSkill(s.id)"
+                  @click="toggleSkill(s)"
                 >
-                  {{ s.name || s.id }}
+                  {{ s.name || s.directory_name }}
                 </button>
               </div>
               <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
@@ -110,50 +110,30 @@ const loading = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const skillsLoading = ref(true)
-const HOST_NAME_UPDATED_EVENT_NAME = 'dha-host-display-name-updated'
+const HOST_NAME_UPDATED_EVENT_NAME = 'agent-host-display-name-updated'
 const INITIAL_SKILL_RENDER_LIMIT = 80
 
 type HostForm = {
-  host_display_name: string
+  leader_agent_name: string
   system_prompt: string
-  skill_ids: string[]
-  llm_provider_id: string
-  file_capabilities: {
-    read: boolean
-    edit: boolean
-    write: boolean
-    rename: boolean
-    mkdir: boolean
-    list_dir: boolean
-  }
-  url_capability: boolean
-}
-
-function defaultFileCaps() {
-  return {
-    read: true,
-    edit: true,
-    write: true,
-    rename: true,
-    mkdir: true,
-    list_dir: true,
-  }
+  skill_name: string
+  skill_directory: string
+  llm_name: string
 }
 
 function emptyForm(): HostForm {
   return {
-    host_display_name: '四九',
+    leader_agent_name: '四九',
     system_prompt: '',
-    skill_ids: [],
-    llm_provider_id: '',
-    file_capabilities: defaultFileCaps(),
-    url_capability: true,
+    skill_name: '',
+    skill_directory: '',
+    llm_name: '',
   }
 }
 
 const form = ref<HostForm>(emptyForm())
 const skillSearch = ref('')
-const skills = ref<Array<{ id: string; name: string; description?: string }>>([])
+const skills = ref<Array<{ directory_name: string; name: string; description?: string }>>([])
 const llmProviders = ref<Record<string, { label?: string; model?: string }>>({})
 
 const filteredSkills = computed(() => {
@@ -163,8 +143,8 @@ const filteredSkills = computed(() => {
   return list.filter((s) => {
     const name = String(s.name || '').toLowerCase()
     const desc = String(s.description || '').toLowerCase()
-    const id = String(s.id || '').toLowerCase()
-    return name.includes(q) || desc.includes(q) || id.includes(q)
+    const directoryName = String(s.directory_name || '').toLowerCase()
+    return name.includes(q) || desc.includes(q) || directoryName.includes(q)
   })
 })
 
@@ -173,11 +153,11 @@ const visibleSkills = computed(() => {
   const q = skillSearch.value.trim()
   if (q || list.length <= INITIAL_SKILL_RENDER_LIMIT) return list
 
-  const selected = new Set(form.value.skill_ids || [])
-  const visible = list.filter((s) => selected.has(s.id))
+  const selected = form.value.skill_directory
+  const visible = selected ? list.filter((s) => s.directory_name === selected) : []
   for (const s of list) {
     if (visible.length >= INITIAL_SKILL_RENDER_LIMIT) break
-    if (!selected.has(s.id)) visible.push(s)
+    if (s.directory_name !== selected) visible.push(s)
   }
   return visible
 })
@@ -186,30 +166,25 @@ const hiddenSkillCount = computed(() => Math.max(0, filteredSkills.value.length 
 
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
-  next.host_display_name = String(d.display_name ?? '四九')
+  next.leader_agent_name = String(d.leader_agent_name ?? '四九')
   next.system_prompt = String(d.system_prompt ?? '')
-  next.skill_ids = Array.isArray(d.skill_ids) ? d.skill_ids.map((x) => String(x || '').trim()).filter(Boolean) : []
-  next.llm_provider_id = String(d.llm_provider_id ?? '')
-  const fc = (d.file_capabilities || {}) as Record<string, unknown>
-  next.file_capabilities = {
-    read: fc.read !== false,
-    edit: fc.edit !== false,
-    write: fc.write !== false,
-    rename: fc.rename !== false,
-    mkdir: fc.mkdir !== false,
-    list_dir: fc.list_dir !== false,
-  }
-  next.url_capability = Boolean(d.url_capability ?? true)
+  next.llm_name = String(d.llm_name ?? '')
+  next.skill_name = String(d.skill_name ?? '').trim()
+  next.skill_directory = String(d.skill_directory ?? '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
   form.value = next
 }
 
-function toggleSkill(id: string) {
-  const s = String(id || '').trim()
-  if (!s) return
-  const set = new Set(form.value.skill_ids || [])
-  if (set.has(s)) set.delete(s)
-  else set.add(s)
-  form.value.skill_ids = Array.from(set)
+function toggleSkill(skill: { name: string; directory_name: string }) {
+  const directoryName = String(skill.directory_name || '').trim()
+  const name = String(skill.name || '').trim()
+  if (!directoryName || !name) return
+  if (form.value.skill_directory === directoryName) {
+    form.value.skill_name = ''
+    form.value.skill_directory = ''
+  } else {
+    form.value.skill_name = name
+    form.value.skill_directory = directoryName
+  }
 }
 
 async function loadSkills() {
@@ -219,10 +194,10 @@ async function loadSkills() {
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && Array.isArray(j?.data?.skills)) {
       skills.value = (j.data.skills as Array<Record<string, unknown>>).map((s) => ({
-        id: String(s.id || ''),
-        name: String(s.name || s.id || ''),
+        directory_name: String(s.directory_name || ''),
+        name: String(s.name || s.directory_name || ''),
         description: String(s.description || ''),
-      })).filter((s) => !!s.id)
+      })).filter((s) => !!s.directory_name && !!s.name)
     } else {
       skills.value = []
     }
@@ -255,7 +230,7 @@ async function load() {
     if (j?.status === 'ok' && j?.data) {
       const d = j.data as Record<string, unknown>
       applyHostData(d)
-      const hasAny = Boolean(form.value.host_display_name || form.value.system_prompt || form.value.skill_ids.length)
+      const hasAny = Boolean(form.value.leader_agent_name || form.value.system_prompt || form.value.skill_directory)
       if (!hasAny) {
         const rd = await apiRequest('/settings/host-profile/defaults')
         const jd = await rd.json().catch(() => ({}))
@@ -273,17 +248,15 @@ async function save() {
   saving.value = true
   saved.value = false
   try {
-    const skillIds = (form.value.skill_ids || []).map((s) => String(s || '').trim()).filter(Boolean)
     const r = await apiRequest('/settings/host-profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        display_name: form.value.host_display_name,
+        leader_agent_name: form.value.leader_agent_name,
         system_prompt: form.value.system_prompt,
-        skill_ids: skillIds,
-        llm_provider_id: form.value.llm_provider_id,
-        file_capabilities: form.value.file_capabilities,
-        url_capability: form.value.url_capability,
+        skill_name: form.value.skill_name,
+        skill_directory: form.value.skill_directory,
+        llm_name: form.value.llm_name,
       }),
     })
     const j = await r.json().catch(() => ({}))

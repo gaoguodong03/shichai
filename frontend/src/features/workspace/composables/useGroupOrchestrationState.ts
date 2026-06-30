@@ -5,20 +5,20 @@ import type { GroupMessage } from './useGroupMessageList'
 
 type GroupDetailLike = {
   id?: string
-  agent_ids: string[]
+  agent_names: string[]
   agent_map: Record<string, { name?: string }>
-  leader_agent_id?: string
+  leader_agent_name?: string
   orchestration_profile?: string
 }
 
 type AgentItem = {
-  agent_id: string
+  agent_name?: string
   name: string
 }
 
 type StreamStateLike = {
-  agentId?: string
-  skillId?: string
+  agentName?: string
+  skill?: string
 } | null
 
 type LastSentDraft = {
@@ -37,12 +37,12 @@ export function useGroupOrchestrationState(args: {
   currentGroupStreaming: ComputedRef<boolean>
   groupStreaming: ComputedRef<boolean>
   orderedMemberIds: ComputedRef<string[]>
-  leaderDisplayId: ComputedRef<string>
+  leaderDisplayName: ComputedRef<string>
   effectiveHostDisplayName: ComputedRef<string>
   defaultHostDisplayName: string
   agentInstances: () => AgentItem[]
-  formatSkillId: (skillId?: string) => string
-  displayGroupSpeakerName: (agentId: string) => string
+  formatSkill: (skill?: string) => string
+  displayGroupSpeakerName: (agentName: string) => string
   patchGroupStreamState: (sessionId: string, patch: Record<string, unknown>) => void
   abortGroupStream: (sessionId: string) => void
   clearStreamingPlaceholders: () => void
@@ -61,11 +61,11 @@ export function useGroupOrchestrationState(args: {
     currentGroupStreaming,
     groupStreaming,
     orderedMemberIds,
-    leaderDisplayId,
+    leaderDisplayName,
     effectiveHostDisplayName,
     defaultHostDisplayName,
     agentInstances,
-    formatSkillId,
+    formatSkill,
     displayGroupSpeakerName,
     patchGroupStreamState,
     abortGroupStream,
@@ -78,16 +78,16 @@ export function useGroupOrchestrationState(args: {
 
   const groupWaitingForUser = ref(false)
   const groupSuggestedNextSpeaker = ref<string | null>(null)
-  const groupSuggestedAddAgentIds = ref<string[]>([])
+  const groupSuggestedAddAgentNames = ref<string[]>([])
   const suggestedInviteLoading = ref(false)
-  const autoSwitchHint = ref<{ sessionId: string; expertId?: string; expertName?: string; skillId?: string; skillName?: string } | null>(null)
+  const autoSwitchHint = ref<{ sessionId: string; expertName?: string; expertDisplayName?: string; skill?: string; skillName?: string } | null>(null)
   const autoSwitchIgnoreLoading = ref(false)
   const lastSentDraft = ref<LastSentDraft | null>(null)
-  const lastRoute = ref<{ sessionId: string; expertId: string; skillId: string } | null>(null)
+  const lastRoute = ref<{ sessionId: string; expertName: string; skill: string } | null>(null)
   const groupTurnLimitReached = ref(false)
   const groupOrchestrationPhase = ref('')
   const groupInterruptReason = ref('')
-  const groupResumeTargetAgentId = ref<string | null>(null)
+  const groupResumeTargetAgentName = ref<string | null>(null)
   const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
 
   const currentAutoSwitchHint = computed(() => {
@@ -104,7 +104,7 @@ export function useGroupOrchestrationState(args: {
     return `${effectiveHostDisplayName.value}已帮您切换专家：${expert}`
   })
 
-  function toAgentStyleId(raw: string | null | undefined): string {
+  function toAgentStyleName(raw: string | null | undefined): string {
     const sid = String(raw || '').trim()
     if (!sid) return ''
     if (sid.startsWith('agent-')) return sid
@@ -114,77 +114,77 @@ export function useGroupOrchestrationState(args: {
   function buildExpertAliasMap(): Map<string, string> {
     const out = new Map<string, string>()
     for (const item of (agentInstances() || [])) {
-      const id = String(item.agent_id || '').trim()
+      const id = String(item.agent_name || item.name || '').trim()
       if (!id) continue
       out.set(id, id)
-      const agentId = toAgentStyleId(id)
-      if (agentId) out.set(agentId, id)
+      const agentName = toAgentStyleName(id)
+      if (agentName) out.set(agentName, id)
     }
     return out
   }
 
-  function extractSuggestedAddIds(payload: Record<string, unknown> | null | undefined): string[] {
+  function extractSuggestedAddNames(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
-    const agentIds = payload.suggested_add_agent_ids as string[] | undefined
-    if (Array.isArray(agentIds) && agentIds.length) return agentIds
-    const singleAgentId = payload.suggested_add_agent_id as string | undefined
-    if (typeof singleAgentId === 'string' && singleAgentId.trim()) return [singleAgentId.trim()]
+    const agentNames = payload.suggested_add_agent_names as string[] | undefined
+    if (Array.isArray(agentNames) && agentNames.length) return agentNames
+    const singleAgentName = payload.suggested_add_agent_name as string | undefined
+    if (typeof singleAgentName === 'string' && singleAgentName.trim()) return [singleAgentName.trim()]
     return []
   }
 
-  function extractAutoInvitedIds(payload: Record<string, unknown> | null | undefined): string[] {
+  function extractAutoInvitedNames(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
-    const agentIds = payload.auto_invited_agent_ids as string[] | undefined
-    if (Array.isArray(agentIds) && agentIds.length) return agentIds
+    const agentNames = payload.auto_invited_agent_names as string[] | undefined
+    if (Array.isArray(agentNames) && agentNames.length) return agentNames
     return []
   }
 
   function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null | undefined): boolean {
     if (!payload) return false
     if (payload.role !== 'assistant') return false
-    const agentId = String(payload.agent_id || '').trim()
-    const skillId = String(payload.skill_id || '').trim()
-    return Boolean(agentId && skillId)
+    const agentName = String(payload.agent_name || '').trim()
+    const skill = String(payload.skill || '').trim()
+    return Boolean(agentName && skill)
   }
 
   function updateAutoSwitchHint(payload: Record<string, unknown>, sessionId = selectedGroupSessionId() || '') {
     if (!payload || !sessionId) return
-    const routedExpertId = String(payload.agent_id || '').trim()
-    const routedSkillId = String(payload.skill_id || '').trim()
-    if (!routedExpertId && !routedSkillId) return
+    const routedExpertName = String(payload.agent_name || '').trim()
+    const routedSkill = String(payload.skill || '').trim()
+    if (!routedExpertName && !routedSkill) return
 
     const prevFromMessages = (() => {
       const list = groupDisplayMessages.value || []
       for (let index = list.length - 1; index >= 0; index--) {
-        const message = list[index] as GroupMessage & { agent_id?: string; skill_id?: string }
-        if (message?.role === 'assistant' && message.agent_id && (message as Record<string, unknown>).skill_id) {
-          return { expertId: String(message.agent_id || ''), skillId: String((message as Record<string, unknown>).skill_id || '') }
+        const message = list[index] as GroupMessage & { agent_name?: string; skill?: string }
+        if (message?.role === 'assistant' && message.agent_name && (message as Record<string, unknown>).skill) {
+          return { expertName: String(message.agent_name || ''), skill: String((message as Record<string, unknown>).skill || '') }
         }
       }
       return null
     })()
     const routeInThisSession = lastRoute.value?.sessionId === sessionId ? lastRoute.value : null
     const prev = routeInThisSession || prevFromMessages
-    const changedExpert = Boolean(routedExpertId && prev?.expertId && routedExpertId !== prev.expertId)
-    const changedSkill = Boolean(routedSkillId && prev?.skillId && routedSkillId !== prev.skillId)
+    const changedExpert = Boolean(routedExpertName && prev?.expertName && routedExpertName !== prev.expertName)
+    const changedSkill = Boolean(routedSkill && prev?.skill && routedSkill !== prev.skill)
 
     if (!prev) {
-      lastRoute.value = { sessionId, expertId: routedExpertId, skillId: routedSkillId }
-      patchGroupStreamState(sessionId, { agentId: routedExpertId, skillId: routedSkillId })
+      lastRoute.value = { sessionId, expertName: routedExpertName, skill: routedSkill }
+      patchGroupStreamState(sessionId, { agentName: routedExpertName, skill: routedSkill })
       autoSwitchHint.value = null
       return
     }
-    lastRoute.value = { sessionId, expertId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId }
-    patchGroupStreamState(sessionId, { agentId: routedExpertId || prev.expertId, skillId: routedSkillId || prev.skillId })
+    lastRoute.value = { sessionId, expertName: routedExpertName || prev.expertName, skill: routedSkill || prev.skill }
+    patchGroupStreamState(sessionId, { agentName: routedExpertName || prev.expertName, skill: routedSkill || prev.skill })
     if (!changedExpert && !changedSkill) return
 
-    const expertName = routedExpertId ? displayGroupSpeakerName(routedExpertId) : ''
-    const skillName = routedSkillId ? formatSkillId(routedSkillId) : ''
+    const expertDisplayName = routedExpertName ? displayGroupSpeakerName(routedExpertName) : ''
+    const skillName = routedSkill ? formatSkill(routedSkill) : ''
     autoSwitchHint.value = {
       sessionId,
-      expertId: changedExpert ? routedExpertId : '',
-      expertName: changedExpert ? expertName : '',
-      skillId: changedSkill ? routedSkillId : '',
+      expertName: changedExpert ? routedExpertName : '',
+      expertDisplayName: changedExpert ? expertDisplayName : '',
+      skill: changedSkill ? routedSkill : '',
       skillName: changedSkill ? skillName : '',
     }
   }
@@ -192,8 +192,8 @@ export function useGroupOrchestrationState(args: {
   function applyOrchestrationEndMeta(endData: Record<string, unknown>) {
     groupOrchestrationPhase.value = typeof endData.phase === 'string' ? endData.phase.trim() : ''
     groupInterruptReason.value = typeof endData.interrupt_reason === 'string' ? endData.interrupt_reason.trim() : ''
-    const resumeDha = typeof endData.resume_target_agent_id === 'string' ? endData.resume_target_agent_id.trim() : ''
-    groupResumeTargetAgentId.value = resumeDha || null
+    const resumeAgentName = typeof endData.resume_target_agent_name === 'string' ? endData.resume_target_agent_name.trim() : ''
+    groupResumeTargetAgentName.value = resumeAgentName || null
     const required = endData.required_user_fields
     groupRequiredUserFields.value = Array.isArray(required) ? (required as Array<Record<string, unknown>>) : []
   }
@@ -211,24 +211,24 @@ export function useGroupOrchestrationState(args: {
     return `中断原因：${reason}`
   })
 
-  const pendingSuggestedAddAgentIds = computed(() => {
+  const pendingSuggestedAddAgentNames = computed(() => {
     if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') return []
     const aliasMap = buildExpertAliasMap()
-    const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
-    const normalized = (groupSuggestedAddAgentIds.value || [])
+    const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))
+    const normalized = (groupSuggestedAddAgentNames.value || [])
       .map((id) => aliasMap.get(String(id || '').trim()) || '')
       .filter(Boolean)
-    return [...new Set(normalized)].filter((id) => !inGroup.has(toAgentStyleId(id)))
+    return [...new Set(normalized)].filter((id) => !inGroup.has(toAgentStyleName(id)))
   })
 
   const pendingSuggestedAgentItems = computed(() =>
-    pendingSuggestedAddAgentIds.value.map((id) => ({ id, name: suggestedAgentDisplayName(id) })),
+    pendingSuggestedAddAgentNames.value.map((id) => ({ id, name: suggestedAgentDisplayName(id) })),
   )
 
   function suggestedAgentDisplayName(id: string): string {
     const aliasMap = buildExpertAliasMap()
     const canonicalId = aliasMap.get(String(id || '').trim()) || id
-    return (agentInstances() || []).find((item) => item.agent_id === canonicalId)?.name
+    return (agentInstances() || []).find((item) => (item.agent_name || item.name) === canonicalId)?.name
       || groupDetail.value?.agent_map?.[canonicalId]?.name
       || groupDetail.value?.agent_map?.[id]?.name
       || canonicalId
@@ -242,13 +242,13 @@ export function useGroupOrchestrationState(args: {
       const response = await apiRequest(`/sessions/${encodeURIComponent(groupId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ add_agent_ids: ids }),
+        body: JSON.stringify({ add_agent_names: ids }),
       })
       const payload = await response.json().catch(() => ({}))
       if ((payload as { status?: string }).status === 'ok') {
-        groupSuggestedAddAgentIds.value = options.clearAll
+        groupSuggestedAddAgentNames.value = options.clearAll
           ? []
-          : groupSuggestedAddAgentIds.value.filter((id) => !ids.includes(id))
+          : groupSuggestedAddAgentNames.value.filter((id) => !ids.includes(id))
         groupWaitingForUser.value = false
         groupSuggestedNextSpeaker.value = null
         emitAgentAdded()
@@ -264,11 +264,11 @@ export function useGroupOrchestrationState(args: {
   }
 
   async function inviteSuggestedAgents() {
-    await addSuggestedAgent(pendingSuggestedAddAgentIds.value, { clearAll: true })
+    await addSuggestedAgent(pendingSuggestedAddAgentNames.value, { clearAll: true })
   }
 
-  async function inviteOneSuggestedAgent(agentId: string) {
-    await addSuggestedAgent(agentId ? [agentId] : [])
+  async function inviteOneSuggestedAgent(agentName: string) {
+    await addSuggestedAgent(agentName ? [agentName] : [])
   }
 
   async function ignoreAutoSwitchAndPause() {
@@ -311,21 +311,21 @@ export function useGroupOrchestrationState(args: {
   })
 
   const currentActiveStreamingMessage = computed<GroupMessage | null>(() => currentGroupStreaming.value ? activeStreamingMessage.value : null)
-  const activeStreamingDhaId = computed(() => (
-    currentActiveStreamingMessage.value?.agent_id
-    || currentGroupStreamState.value?.agentId
-    || (lastRoute.value?.sessionId === selectedGroupSessionId() ? lastRoute.value?.expertId || '' : '')
+  const activeStreamingAgentName = computed(() => (
+    currentActiveStreamingMessage.value?.agent_name
+    || currentGroupStreamState.value?.agentName
+    || (lastRoute.value?.sessionId === selectedGroupSessionId() ? lastRoute.value?.expertName || '' : '')
   ))
 
   const activeStreamingSpeakerName = computed(() => {
-    const id = activeStreamingDhaId.value
+    const id = activeStreamingAgentName.value
     if (!id) return ''
     return displayGroupSpeakerName(id)
   })
 
   const effectiveNextSpeaker = computed(() => {
     const suggested = groupSuggestedNextSpeaker.value
-    const active = activeStreamingDhaId.value
+    const active = activeStreamingAgentName.value
     const ids = orderedMemberIds.value
 
     if (groupStreaming.value) {
@@ -337,7 +337,7 @@ export function useGroupOrchestrationState(args: {
       if (s === 'host') return 'host'
       if (ids.includes(suggested)) return suggested
     }
-    const resume = (groupResumeTargetAgentId.value || '').trim()
+    const resume = (groupResumeTargetAgentName.value || '').trim()
     if (ids.includes(resume)) return resume
     return 'host'
   })
@@ -359,9 +359,9 @@ export function useGroupOrchestrationState(args: {
 
   const focusRoleForToolbar = computed(() => {
     if (groupStreaming.value) {
-      const active = activeStreamingDhaId.value
+      const active = activeStreamingAgentName.value
       if (active) return active
-      const routed = (lastRoute.value?.sessionId === selectedGroupSessionId() ? lastRoute.value?.expertId || '' : '').trim()
+      const routed = (lastRoute.value?.sessionId === selectedGroupSessionId() ? lastRoute.value?.expertName || '' : '').trim()
       if (isToolbarRoleValid(routed)) return routed
       return 'host'
     }
@@ -383,7 +383,7 @@ export function useGroupOrchestrationState(args: {
     const id = focusRoleForToolbar.value
     if (!id) return true
     if (id === 'host') return true
-    const leader = (leaderDisplayId.value || '').trim()
+    const leader = (leaderDisplayName.value || '').trim()
     return Boolean(leader && leader !== 'host' && id === leader)
   })
 
@@ -400,22 +400,22 @@ export function useGroupOrchestrationState(args: {
     return ['', '.', '..', '...'][bucket] || ''
   })
 
-  function parseAgentIdsFromHostContent(content: string | null | undefined): string[] {
+  function parseAgentNamesFromHostContent(content: string | null | undefined): string[] {
     if (!content) return []
     const matches = content.match(/agent-[a-zA-Z0-9\-]+/gi) || []
     return [...new Set(matches)]
   }
 
-  function resolveSuggestedIdsFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
+  function resolveSuggestedNamesFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
     if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') return []
-    const direct = extractSuggestedAddIds(payload)
+    const direct = extractSuggestedAddNames(payload)
     const aliasMap = buildExpertAliasMap()
-    const inGroup = new Set((groupDetail.value?.agent_ids || []).map((id) => toAgentStyleId(id)))
+    const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))
     const normalize = (ids: string[]) => {
       const uniq = [...new Set((ids || [])
         .map((id) => aliasMap.get(String(id || '').trim()) || '')
-        .filter((id) => !!id && !inGroup.has(toAgentStyleId(id))))]
+        .filter((id) => !!id && !inGroup.has(toAgentStyleName(id))))]
       return uniq.slice(0, 3)
     }
     if (direct.length) return normalize(direct)
@@ -424,30 +424,30 @@ export function useGroupOrchestrationState(args: {
     const content = String(payload.content || '')
     if (!content || (role !== 'host' && role !== 'assistant')) return []
     if (!/(建议邀请|邀请以下|推荐.*加入|补充.*专家|加入讨论)/.test(content)) return []
-    return normalize(parseAgentIdsFromHostContent(content))
+    return normalize(parseAgentNamesFromHostContent(content))
   }
 
   function handleLoadedMessages(messages: GroupMessage[]) {
-    const agentIds = groupDetail.value?.agent_ids ?? []
-    if (agentIds.length !== 0 || !messages.length) return
+    const agentNames = groupDetail.value?.agent_names ?? []
+    if (agentNames.length !== 0 || !messages.length) return
     const lastHost = [...messages].reverse().find((message) => message.role === 'host')
     const lastMsg = lastHost as {
-      suggested_add_agent_ids?: string[]
-      suggested_add_agent_id?: string
+      suggested_add_agent_names?: string[]
+      suggested_add_agent_name?: string
       content?: string
     } | undefined
     if (!lastMsg) return
-    const suggestedIds = extractSuggestedAddIds(lastMsg as Record<string, unknown>)
-    if (suggestedIds.length) {
-      groupSuggestedAddAgentIds.value = resolveSuggestedIdsFromPayload(lastMsg as Record<string, unknown>)
+    const suggestedNames = extractSuggestedAddNames(lastMsg as Record<string, unknown>)
+    if (suggestedNames.length) {
+      groupSuggestedAddAgentNames.value = resolveSuggestedNamesFromPayload(lastMsg as Record<string, unknown>)
       return
     }
     if (lastMsg.content) {
       const aliasMap = buildExpertAliasMap()
-      const parsed = parseAgentIdsFromHostContent(lastMsg.content)
+      const parsed = parseAgentNamesFromHostContent(lastMsg.content)
         .map((id) => aliasMap.get(id) || '')
         .filter(Boolean)
-      if (parsed.length) groupSuggestedAddAgentIds.value = parsed
+      if (parsed.length) groupSuggestedAddAgentNames.value = parsed
     }
   }
 
@@ -455,13 +455,13 @@ export function useGroupOrchestrationState(args: {
     groupWaitingForUser.value = false
     groupTurnLimitReached.value = false
     groupSuggestedNextSpeaker.value = null
-    groupSuggestedAddAgentIds.value = []
+    groupSuggestedAddAgentNames.value = []
   }
 
   return {
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
-    groupSuggestedAddAgentIds,
+    groupSuggestedAddAgentNames,
     suggestedInviteLoading,
     currentAutoSwitchHint,
     autoSwitchHintText,
@@ -471,7 +471,7 @@ export function useGroupOrchestrationState(args: {
     groupTurnLimitReached,
     groupOrchestrationPhase,
     groupInterruptReason,
-    groupResumeTargetAgentId,
+    groupResumeTargetAgentName,
     groupRequiredUserFields,
     orchestrationInterruptHint,
     pendingSuggestedAgentItems,
@@ -479,7 +479,7 @@ export function useGroupOrchestrationState(args: {
     inviteOneSuggestedAgent,
     ignoreAutoSwitchAndPause,
     currentActiveStreamingMessage,
-    activeStreamingDhaId,
+    activeStreamingAgentName,
     activeStreamingSpeakerName,
     effectiveNextSpeaker,
     nextSpeakerLabelText,
@@ -487,11 +487,11 @@ export function useGroupOrchestrationState(args: {
     toolbarDisplayShowHostAvatar,
     toolbarDisplayLabelText,
     streamingPulse,
-    extractAutoInvitedIds,
+    extractAutoInvitedNames,
     isExpertAssistantMessagePayload,
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,
-    resolveSuggestedIdsFromPayload,
+    resolveSuggestedNamesFromPayload,
     handleLoadedMessages,
     resetOrchestrationForSessionSwitch,
     clearAutoSwitchHint: () => { autoSwitchHint.value = null },

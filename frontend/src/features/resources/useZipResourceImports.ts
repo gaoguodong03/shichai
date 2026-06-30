@@ -73,9 +73,9 @@ export function useZipResourceImports(options: {
       if (j?.status === 'ok') {
         await options.fetchSkills()
         await options.fetchMCP()
-        if (j?.data?.id) options.selectedId.value = j.data.id
-        const kept = j?.data?.kept_skill_ids || j?.data?.summary?.kept_skill_ids || []
-        const skillAdded = j?.data?.id && !kept.length ? 1 : 0
+        if (j?.data?.directory_name) options.selectedId.value = j.data.directory_name
+        const kept = j?.data?.kept_skill_directories || j?.data?.summary?.kept_skill_directories || []
+        const skillAdded = j?.data?.directory_name && !kept.length ? 1 : 0
         skillImportResult.value = {
           ok: true,
           message: [

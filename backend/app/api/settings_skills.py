@@ -25,24 +25,23 @@ from app.core.session_preset_validate import (
     normalize_preset_dict_for_validation,
 )
 from app.core.settings_references import (
-    remap_bundle_references as _remap_bundle_references,
-    remove_skill_id_from_user_configs as _remove_skill_id_from_user_configs,
-    replace_skill_id_in_user_configs as _replace_skill_id_in_user_configs,
+    remove_skill_path_from_user_configs as _remove_skill_path_from_user_configs,
+    replace_skill_path_in_user_configs as _replace_skill_path_in_user_configs,
 )
 from app.core.settings_bundle_import import (
     bundle_skill_name_map as _bundle_skill_name_map,
-    collect_mcp_ids_from_skill_dirs,
+    collect_tool_names_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_expert_bundle as _find_missing_references_for_expert_bundle,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
     find_missing_references_for_skill_bundle as _find_missing_references_for_skill_bundle,
     mcp_name_identity_import_plan as _mcp_name_identity_import_plan,
     skill_name_identity_import_plan as _skill_name_identity_import_plan,
-    upsert_rows_by_id as _upsert_rows_by_id,
+    upsert_rows_by_name as _upsert_rows_by_name,
 )
 from app.core.scenario_bundle import (
     extract_scenario_bundle_dir,
-    list_skill_ids_in_bundle_skills_dir,
+    list_skill_directories_in_bundle_skills_dir,
 )
 from app.skills.loader import get_builtin_skills_dir, invalidate_skills_cache_for_user
 from app.core.security import user_context_dependency
@@ -52,8 +51,6 @@ from app.mcp.manager import dispose_mcp_runtime_for_user
 from app.core.sandbox_requirements import merge_requirements_lines, requirement_key
 from app.api.settings_skill_frontmatter import (
     ALLOWED_TOOLS_FM_KEY,
-    AUTO_TOOLS_FM_KEY,
-    REFERENCE_LABELS_FM_KEY,
     SkillCreate,
     SkillUpdate,
     normalize_allowed_tools_payload as _normalize_allowed_tools_payload,
@@ -67,9 +64,8 @@ from app.api.settings_skill_store import (
     get_mcp_servers_for_skill,
     load_skills_config,
     read_skill_file as _read_skill_file,
-    skill_dir_for_id as _skill_dir_for_id,
+    skill_dir_for_directory_name as _skill_dir_for_directory_name,
     skill_display_name_from_dir as _skill_display_name_from_dir,
-    validate_skill_mcp_server_ids as _validate_skill_mcp_server_ids,
     write_skill_file as _write_skill_file,
 )
 from app.api.settings_skill_parts import (
@@ -104,12 +100,12 @@ def _normalized_name_key(raw: Any) -> str:
 def _mcp_name_map_for_import(rows_to_import: List[Dict[str, Any]]) -> Dict[str, str]:
     names: Dict[str, str] = {}
     for row in load_mcp_config():
-        rid = str(row.get("id") or "").strip()
+        rid = str(row.get("name") or "").strip()
         name = str(row.get("name") or "").strip()
         if rid and name:
             names[rid] = name
     for row in rows_to_import or []:
-        rid = str(row.get("id") or "").strip()
+        rid = str(row.get("name") or "").strip()
         name = str(row.get("name") or "").strip()
         if rid and name:
             names[rid] = name
@@ -118,10 +114,10 @@ def _mcp_name_map_for_import(rows_to_import: List[Dict[str, Any]]) -> Dict[str, 
 
 def _remap_frontmatter_mcp_refs(
     fm: Dict[str, Any],
-    mcp_id_map: Dict[str, str],
+    tool_name_map: Dict[str, str],
     mcp_name_map: Dict[str, str] | None = None,
 ) -> Dict[str, Any]:
-    if not mcp_id_map:
+    if not tool_name_map:
         return fm
     names = mcp_name_map or {}
 
@@ -131,44 +127,25 @@ def _remap_frontmatter_mcp_refs(
         out: List[Any] = []
         seen: Set[str] = set()
         for item in raw:
-            if isinstance(item, dict):
-                copied = dict(item)
-                for key in ("id", "server_id", "mcp_server_id"):
-                    old = str(copied.get(key) or "").strip()
-                    if old:
-                        new = mcp_id_map.get(old, old)
-                        copied[key] = names.get(new, new)
-                        if names.get(new):
-                            copied["name"] = names[new]
-                        break
-                marker = json.dumps(copied, ensure_ascii=False, sort_keys=True)
-                if marker not in seen:
-                    seen.add(marker)
-                    out.append(copied)
-                continue
-            old = str(item or "").strip()
+            old = str(item.get("name") if isinstance(item, dict) else item or "").strip()
             if not old:
                 continue
-            new = mcp_id_map.get(old, old)
+            new = tool_name_map.get(old, old)
             label = names.get(new, new)
             if label not in seen:
                 seen.add(label)
                 out.append(label)
         return out
 
-    for section_key in (AUTO_TOOLS_FM_KEY, ALLOWED_TOOLS_FM_KEY):
-        section = fm.get(section_key)
-        if isinstance(section, dict) and "mcp" in section:
-            copied_section = dict(section)
-            copied_section["mcp"] = remap_list(copied_section.get("mcp"))
-            fm[section_key] = copied_section
-    if isinstance(fm.get("mcp_server_ids"), list):
-        fm["mcp_server_ids"] = remap_list(fm.get("mcp_server_ids"))
-    labels = fm.get(REFERENCE_LABELS_FM_KEY)
-    if isinstance(labels, dict) and "mcp" in labels:
-        copied_labels = dict(labels)
-        copied_labels["mcp"] = remap_list(copied_labels.get("mcp"))
-        fm[REFERENCE_LABELS_FM_KEY] = copied_labels
+    section = fm.get(ALLOWED_TOOLS_FM_KEY)
+    if isinstance(section, dict):
+        copied_section = dict(section)
+        for key in ("mcp", "http_api", "http-api"):
+            if key in copied_section:
+                copied_section["http_api" if key == "http-api" else key] = remap_list(copied_section.get(key))
+                if key == "http-api":
+                    copied_section.pop("http-api", None)
+        fm[ALLOWED_TOOLS_FM_KEY] = copied_section
     return fm
 
 
@@ -216,7 +193,7 @@ def _parse_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
         return []
     if not isinstance(parsed, list):
         return []
-    return [row for row in parsed if isinstance(row, dict) and str(row.get("id") or "").strip()]
+    return [row for row in parsed if isinstance(row, dict) and str(row.get("name") or "").strip()]
 
 
 def _read_mcp_bundle_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
@@ -229,9 +206,9 @@ def _read_mcp_bundle_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
         return []
 
 
-async def _merge_imported_skill_requirements_and_prewarm(skill_ids: List[str], skills_root: Path) -> Dict[str, Any]:
+async def _merge_imported_skill_requirements_and_prewarm(directory_names: List[str], skills_root: Path) -> Dict[str, Any]:
     incoming: List[str] = []
-    for sid in skill_ids:
+    for sid in directory_names:
         safe_id = str(sid or "").strip()
         if not safe_id or ".." in safe_id or "/" in safe_id or "\\" in safe_id:
             continue
@@ -266,8 +243,8 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
     try:
         tmp = extract_scenario_bundle_dir(raw)
         mcp_bundle = _read_mcp_bundle_rows(tmp)
-        skill_ids = list_skill_ids_in_bundle_skills_dir(tmp)
-        if not skill_ids:
+        directory_names = list_skill_directories_in_bundle_skills_dir(tmp)
+        if not directory_names:
             root_skill = tmp / "SKILL.md"
             if not root_skill.is_file():
                 raise HTTPException(status_code=400, detail="分享包中缺少技能目录")
@@ -287,7 +264,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                     shutil.copy2(child, dest_child)
             bundle_dir_for_refs = normalized
         else:
-            sid0 = skill_ids[0]
+            sid0 = directory_names[0]
             src = tmp / "skills" / sid0
             bundle_dir_for_refs = tmp
         fm, body = _read_skill_file(src)
@@ -295,7 +272,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         incoming_name_key = _normalized_name_key(incoming_name)
         base = _get_skills_dir()
         base.mkdir(parents=True, exist_ok=True)
-        existing_same_name_ids: List[str] = []
+        existing_same_name_directories: List[str] = []
         for child in sorted(base.iterdir(), key=lambda p: p.name):
             if not child.is_dir():
                 continue
@@ -305,7 +282,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 continue
             ename = str(efm.get("name") or child.name).strip()
             if _normalized_name_key(ename) == incoming_name_key:
-                existing_same_name_ids.append(child.name)
+                existing_same_name_directories.append(child.name)
         if dry_run:
             req_preview = _python_requirements_from_skill_dir(src)
             missing_references = _find_missing_references_for_skill_bundle(
@@ -320,42 +297,42 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                 "object_type": "skill",
                 "title": incoming_name,
                 "preview": {
-                    "skill_id": sid0,
+                    "directory_name": sid0,
                     "name": incoming_name,
-                    "overwrite_skill_ids": existing_same_name_ids,
-                    "skip_existing_skill_ids": [],
+                    "overwrite_directory_names": existing_same_name_directories,
+                    "skip_existing_directory_names": [],
                     "python_requirements": req_preview,
-                    "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
+                    "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "missing_references": missing_references,
                 },
             }
-        mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        target_id = existing_same_name_ids[0] if existing_same_name_ids else _next_available_skill_id(base, _slugify(incoming_name))
-        dest = base / target_id
-        copied_skill = not existing_same_name_ids
+        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        target_directory = existing_same_name_directories[0] if existing_same_name_directories else _next_available_directory_name(base, _slugify(incoming_name))
+        dest = base / target_directory
+        copied_skill = not existing_same_name_directories
         if copied_skill:
             shutil.copytree(src, dest)
         fm2, body2 = _read_skill_file(dest)
         mcp_name_map = _mcp_name_map_for_import(mcp_rows_to_import)
         if copied_skill:
-            fm2 = _remap_frontmatter_mcp_refs(fm2, mcp_id_map, mcp_name_map)
+            fm2 = _remap_frontmatter_mcp_refs(fm2, tool_name_map, mcp_name_map)
             fm2["name"] = str(fm2.get("name") or incoming_name)
             fm2["description"] = str(fm2.get("description") or "")
             _sanitize_skill_frontmatter_for_write(fm2)
             _write_skill_file(dest, fm2, body2)
             _refresh_skills_loader()
-        existing_mcp_ids = {str(row.get("id") or "").strip() for row in load_mcp_config()}
-        imported_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
-        mcp_added = len([mid for mid in imported_mcp_ids if mid and mid not in existing_mcp_ids])
-        mcp_skipped = len(kept_mcp_ids)
-        mcp_updated = len([mid for mid in imported_mcp_ids if mid and mid in existing_mcp_ids])
+        existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
+        imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
+        mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
+        mcp_skipped = len(kept_tool_names)
+        mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
         if mcp_rows_to_import:
-            merged_mcp = _upsert_rows_by_id(load_mcp_config(), mcp_rows_to_import, "id")
+            merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
-        requirements_result = await _merge_imported_skill_requirements_and_prewarm([target_id], base)
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm([target_directory], base)
         missing_references = _find_missing_references_for_skill_bundle(
-            target_id,
+            target_directory,
             mcp_bundle,
             None,
             base,
@@ -364,17 +341,17 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         )
         return {
             "object_type": "skill",
-            "imported_skill_id": target_id,
-            "name": str(fm2.get("name") or target_id),
+            "imported_directory_name": target_directory,
+            "name": str(fm2.get("name") or target_directory),
             "summary": {
-                "overwritten_skill_ids": existing_same_name_ids,
-                "kept_skill_ids": existing_same_name_ids,
+                "overwritten_directory_names": existing_same_name_directories,
+                "kept_directory_names": existing_same_name_directories,
                 "missing_references": missing_references,
-                "mcp_id_map": mcp_id_map,
+                "tool_name_map": tool_name_map,
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "mcp_kept_ids": kept_mcp_ids,
+                "tool_kept_names": kept_tool_names,
             },
             **requirements_result,
         }
@@ -394,17 +371,17 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
         mcp_bundle = [x for x in rows if isinstance(x, dict)] if isinstance(rows, list) else []
         if not mcp_bundle:
             raise HTTPException(status_code=400, detail="分享包中没有可导入的 MCP 配置")
-        preview = [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle]
+        preview = [{"name": str(x.get("name") or "")} for x in mcp_bundle]
         if dry_run:
             return {"object_type": "mcp", "preview": {"mcps": preview}}
         mcp_before = load_mcp_config()
-        mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(mcp_before, mcp_bundle)
-        existing_ids = {str(row.get("id") or "").strip() for row in mcp_before}
-        imported_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
-        merged_mcp = _upsert_rows_by_id(mcp_before, mcp_rows_to_import, "id")
-        mcp_added = len([mid for mid in imported_ids if mid and mid not in existing_ids])
-        mcp_skipped = len(kept_mcp_ids)
-        mcp_updated = len([mid for mid in imported_ids if mid and mid in existing_ids])
+        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(mcp_before, mcp_bundle)
+        existing_names = {str(row.get("name") or "").strip() for row in mcp_before}
+        imported_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
+        merged_mcp = _upsert_rows_by_name(mcp_before, mcp_rows_to_import, "name")
+        mcp_added = len([mid for mid in imported_names if mid and mid not in existing_names])
+        mcp_skipped = len(kept_tool_names)
+        mcp_updated = len([mid for mid in imported_names if mid and mid in existing_names])
         save_mcp_config(merged_mcp)
         await _invalidate_mcp_runtime_after_config_change()
         return {
@@ -413,8 +390,8 @@ async def _import_mcp_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[st
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "mcp_id_map": mcp_id_map,
-                "mcp_kept_ids": kept_mcp_ids,
+                "tool_name_map": tool_name_map,
+                "tool_kept_names": kept_tool_names,
             },
         }
     finally:
@@ -433,8 +410,8 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
         norm = normalize_expert_row_for_import(expert_raw)
         if norm is None:
             raise HTTPException(status_code=400, detail="专家分享包无效")
-        skill_ids_in_zip = list_skill_ids_in_bundle_skills_dir(tmp)
-        skill_names = _bundle_skill_name_map(tmp, skill_ids_in_zip)
+        directory_names_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
+        skill_names = _bundle_skill_name_map(tmp, directory_names_in_zip)
         mcp_path = tmp / "mcp_servers.json"
         mcp_bundle: List[Dict[str, Any]] = []
         if mcp_path.is_file():
@@ -442,14 +419,14 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             if isinstance(raw_m, list):
                 mcp_bundle = [x for x in raw_m if isinstance(x, dict)]
         user_skills = _agent_skills_dir()
-        skill_id_map, _skill_copy_pairs, overwritten_skill_ids = _skill_name_identity_import_plan(
+        directory_name_map, _skill_copy_pairs, overwritten_directory_names = _skill_name_identity_import_plan(
             tmp,
             user_skills,
-            skill_ids_in_zip,
+            directory_names_in_zip,
         )
-        mcp_id_map, _mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        same_name_agent_ids = [
-            str(x.get("agent_id") or "")
+        tool_name_map, _mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        same_name_agent_names = [
+            str(x.get("name") or "")
             for x in load_agent_instances()
             if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
@@ -466,18 +443,17 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                 "object_type": "expert",
                 "preview": {
                     "name": norm.get("name"),
-                    "agent_id": str(norm.get("agent_id") or ""),
-                    "skills": skill_ids_in_zip,
+                    "skills": directory_names_in_zip,
                     "skill_names": skill_names,
-                    "mcps": [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in mcp_bundle],
-                    "name_conflict_existing_ids": same_name_agent_ids,
-                    "would_overwrite_skills": overwritten_skill_ids,
+                    "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
+                    "name_conflict_existing_names": same_name_agent_names,
+                    "would_overwrite_skills": overwritten_directory_names,
                     "would_skip_skills": [],
-                    "would_remap_skill_ids": skill_id_map,
-                    "would_remap_mcp_server_ids": mcp_id_map,
-                    "would_overwrite_mcp_server_ids": [],
-                    "would_keep_mcp_server_ids": kept_mcp_ids,
-                    "would_skip_mcp_server_ids": [],
+                    "would_remap_skills": directory_name_map,
+                    "would_remap_tools": tool_name_map,
+                    "would_overwrite_tools": [],
+                    "would_keep_tools": kept_tool_names,
+                    "would_skip_tools": [],
                     "missing_references": missing_references,
                 },
             }
@@ -489,69 +465,56 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             load_mcp_config(),
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
-        imported_skills, kept_skills, skill_id_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
+        imported_skills, kept_skills, directory_name_map = _copy_bundle_skills_to_user_by_name(tmp, user_skills)
         invalidate_skills_cache_for_user(get_current_username() or "")
-        mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        _unused_preset, remapped_experts = _remap_bundle_references(
-            {},
-            [norm],
-            skill_id_map=skill_id_map,
-            mcp_id_map=mcp_id_map,
-        )
-        norm = remapped_experts[0] if remapped_experts else norm
+        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         for sid in imported_skills:
             skill_dir = user_skills / sid
             if not (skill_dir / "SKILL.md").is_file():
                 continue
             fm, body = _read_skill_file(skill_dir)
-            fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map, _mcp_name_map_for_import(mcp_rows_to_import))
+            fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
             _sanitize_skill_frontmatter_for_write(fm)
             _write_skill_file(skill_dir, fm, body)
-        existing_mcp_ids = {str(row.get("id") or "").strip() for row in load_mcp_config()}
-        imported_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
+        existing_mcp_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
+        imported_mcp_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
         if mcp_rows_to_import:
-            merged_mcp = _upsert_rows_by_id(load_mcp_config(), mcp_rows_to_import, "id")
+            merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
         requirements_result = await _merge_imported_skill_requirements_and_prewarm(imported_skills, user_skills)
         instances = load_agent_instances()
-        same_name_agent_ids = [
-            str(x.get("agent_id") or "")
+        same_name_agent_names = [
+            str(x.get("name") or "")
             for x in instances
-            if str(x.get("agent_id") or "").strip()
-            and str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
+            if str(x.get("name") or "").strip().lower() == str(norm.get("name") or "").strip().lower()
         ]
         skipped_by_name = False
-        kept_agent_ids: List[str] = same_name_agent_ids[:]
-        final_id: str | None = same_name_agent_ids[0] if same_name_agent_ids else None
-        if final_id:
+        kept_agent_names: List[str] = same_name_agent_names[:]
+        final_name: str | None = same_name_agent_names[0] if same_name_agent_names else None
+        if final_name:
             pass
         else:
-            used_agent_ids = {str(row.get("agent_id") or "").strip() for row in instances if str(row.get("agent_id") or "").strip()}
-            final_id = f"agent-{uuid.uuid4().hex[:8]}"
-            while final_id in used_agent_ids:
-                final_id = f"agent-{uuid.uuid4().hex[:8]}"
-            norm = dict(norm)
-            norm["agent_id"] = final_id
-            instances = _upsert_rows_by_id(instances, [norm], "agent_id")
+            final_name = str(norm.get("name") or "").strip()
+            instances = _upsert_rows_by_name(instances, [norm], "name")
         save_agent_instances(instances)
         return {
             "object_type": "expert",
             "summary": {
-                "imported_agent_id": final_id,
+                "imported_agent_name": final_name,
                 "skipped_by_name": skipped_by_name,
-                "overwritten_agent_ids": [],
-                "kept_agent_ids": kept_agent_ids,
+                "overwritten_agent_names": [],
+                "kept_agent_names": kept_agent_names,
                 "skills_imported": imported_skills,
                 "skills_overwritten": [],
                 "skills_kept": kept_skills,
                 "skills_skipped": [],
-                "skill_id_map": skill_id_map,
-                "mcp_id_map": mcp_id_map,
-                "mcp_added": len([mid for mid in imported_mcp_ids if mid and mid not in existing_mcp_ids]),
-                "mcp_updated": len([mid for mid in imported_mcp_ids if mid and mid in existing_mcp_ids]),
-                "mcp_skipped": len(kept_mcp_ids),
-                "mcp_kept_ids": kept_mcp_ids,
+                "skill_map": directory_name_map,
+                "tool_map": tool_name_map,
+                "mcp_added": len([name for name in imported_mcp_names if name and name not in existing_mcp_names]),
+                "mcp_updated": len([name for name in imported_mcp_names if name and name in existing_mcp_names]),
+                "mcp_skipped": len(kept_tool_names),
+                "mcp_kept_names": kept_tool_names,
                 "missing_references": missing_references,
                 **requirements_result,
             },
@@ -592,7 +555,7 @@ async def get_skills():
 def _slugify(name: str) -> str:
     """生成可作目录名的 slug：仅允许 ASCII 字母数字与连字符，避免中文/特殊字符目录名导致脚本路径、沙箱、工具名异常。
 
-    展示名仍可在 SKILL.md frontmatter.name 中使用中文；目录名（skill_id）与之一一对应但为稳定 ASCII。
+    展示名仍可在 SKILL.md frontmatter.name 中使用中文；目录名（directory_name）与之一一对应但为稳定 ASCII。
     """
     raw = (name or "").strip()
     # 仅保留 ASCII 的「词」字符与空白、连字符（显式 ASCII，避免 \\w 匹配到中文）
@@ -606,41 +569,40 @@ def _slugify(name: str) -> str:
 
 
 
-def _next_available_skill_id(base: Path, seed: str) -> str:
+def _next_available_directory_name(base: Path, seed: str) -> str:
     """基于 seed 生成不冲突的 skill 目录名。"""
-    skill_id = seed
+    directory_name = seed
     idx = 0
-    while (base / skill_id).exists():
+    while (base / directory_name).exists():
         idx += 1
-        skill_id = f"{seed}-{idx}"
-    return skill_id
+        directory_name = f"{seed}-{idx}"
+    return directory_name
 
 
 @router.post("/settings/skills")
 async def create_skill(skill: SkillCreate):
-    """新建 Skill：在 skills 目录下新建 <id>/SKILL.md"""
+    """新建 Skill：在 skills 目录下新建 <directory_name>/SKILL.md"""
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
     if not (skill.name or "").strip():
         raise HTTPException(status_code=400, detail="name is required")
-    raw_id = _slugify((skill.name or "skill").strip())
-    skill_id = _next_available_skill_id(base, raw_id)
-    skill_dir = base / skill_id
+    seed = _slugify((skill.name or "skill").strip())
+    directory_name = _next_available_directory_name(base, seed)
+    skill_dir = base / directory_name
     skill_dir.mkdir(parents=True, exist_ok=True)
     body = "\n## 说明\n\n（待补充）\n"
     frontmatter = {
         "name": (skill.name or "").strip(),
         "description": skill.description or "",
-        AUTO_TOOLS_FM_KEY: {"mcp": [], "python": ""},
-        ALLOWED_TOOLS_FM_KEY: {"mcp": [], "python": ""},
+        ALLOWED_TOOLS_FM_KEY: {"mcp": [], "http_api": [], "python": ""},
     }
     content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
     _refresh_skills_loader()
-    ret_name = (skill.name or skill_id).strip()
+    ret_name = (skill.name or directory_name).strip()
     ret_desc = skill.description or ""
     new_skill = {
-        "id": skill_id,
+        "directory_name": directory_name,
         "name": ret_name,
         "description": ret_desc,
         "path": str(skill_dir),
@@ -704,8 +666,8 @@ async def import_skill_zip(
     base = _get_skills_dir()
     base.mkdir(parents=True, exist_ok=True)
     fallback_seed = _slugify(Path(filename).stem or "skill")
-    skill_id = _next_available_skill_id(base, fallback_seed)
-    skill_dir = base / skill_id
+    directory_name = _next_available_directory_name(base, fallback_seed)
+    skill_dir = base / directory_name
     created_skill_dir = False
     mcp_bundle: List[Dict[str, Any]] = []
 
@@ -732,7 +694,7 @@ async def import_skill_zip(
             src_fm, _src_body = _read_skill_file(src_dir)
             incoming_name = str(src_fm.get("name") or "").strip() or fallback_seed
             incoming_name_key = _normalized_name_key(incoming_name)
-            existing_same_name_ids: List[str] = []
+            existing_same_name_directories: List[str] = []
             for child in sorted(base.iterdir(), key=lambda p: p.name):
                 if not child.is_dir():
                     continue
@@ -743,42 +705,42 @@ async def import_skill_zip(
                 existing_name = str(fm_existing.get("name") or "").strip() or child.name
                 if _normalized_name_key(existing_name) != incoming_name_key:
                     continue
-                existing_same_name_ids.append(child.name)
+                existing_same_name_directories.append(child.name)
 
-            if existing_same_name_ids:
-                skill_id = existing_same_name_ids[0]
-                skill_dir = base / skill_id
+            if existing_same_name_directories:
+                directory_name = existing_same_name_directories[0]
+                skill_dir = base / directory_name
                 fm, body = _read_skill_file(skill_dir)
-                final_name = (str(fm.get("name") or "").strip() or skill_id)
+                final_name = (str(fm.get("name") or "").strip() or directory_name)
                 final_desc = str(fm.get("description") or "")
-                mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-                existing_mcp_ids = {str(row.get("id") or "").strip() for row in load_mcp_config()}
-                imported_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
-                mcp_added = len([mid for mid in imported_mcp_ids if mid and mid not in existing_mcp_ids])
-                mcp_skipped = len(kept_mcp_ids)
-                mcp_updated = len([mid for mid in imported_mcp_ids if mid and mid in existing_mcp_ids])
+                tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+                existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
+                imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
+                mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
+                mcp_skipped = len(kept_tool_names)
+                mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
                 if mcp_rows_to_import:
-                    merged_mcp = _upsert_rows_by_id(load_mcp_config(), mcp_rows_to_import, "id")
+                    merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
                     save_mcp_config(merged_mcp)
                     await _invalidate_mcp_runtime_after_config_change()
-                requirements_result = await _merge_imported_skill_requirements_and_prewarm([skill_id], base)
+                requirements_result = await _merge_imported_skill_requirements_and_prewarm([directory_name], base)
                 return {
                     "status": "ok",
                     "data": {
-                        "id": skill_id,
+                        "directory_name": directory_name,
                         "name": final_name,
                         "description": final_desc,
                         "path": str(skill_dir),
                         "allowed_tools": _normalized_allowed_tools_dict(fm),
                         "skipped_by_name": False,
                         "kept_by_name": True,
-                        "overwritten_skill_ids": [],
-                        "kept_skill_ids": existing_same_name_ids,
+                        "overwritten_directory_names": [],
+                        "kept_directory_names": existing_same_name_directories,
                         "mcp_added": mcp_added,
                         "mcp_skipped": mcp_skipped,
                         "mcp_updated": mcp_updated,
-                        "mcp_id_map": mcp_id_map,
-                        "mcp_kept_ids": kept_mcp_ids,
+                        "tool_name_map": tool_name_map,
+                        "tool_kept_names": kept_tool_names,
                         **requirements_result,
                     },
                 }
@@ -789,49 +751,49 @@ async def import_skill_zip(
         fm, body = _read_skill_file(skill_dir)
         # 目录名优先使用 SKILL.md frontmatter.name（若可用）
         preferred_seed = _slugify(str(fm.get("name") or "").strip()) or fallback_seed
-        preferred_id = skill_id if existing_same_name_ids else _next_available_skill_id(base, preferred_seed)
-        if preferred_id != skill_id:
-            target_dir = base / preferred_id
+        preferred_directory = directory_name if existing_same_name_directories else _next_available_directory_name(base, preferred_seed)
+        if preferred_directory != directory_name:
+            target_dir = base / preferred_directory
             shutil.move(str(skill_dir), str(target_dir))
-            skill_id = preferred_id
+            directory_name = preferred_directory
             skill_dir = target_dir
             fm, body = _read_skill_file(skill_dir)
-        final_name = (str(fm.get("name") or "").strip() or skill_id)
+        final_name = (str(fm.get("name") or "").strip() or directory_name)
         final_desc = str(fm.get("description") or "")
-        mcp_id_map, mcp_rows_to_import, kept_mcp_ids = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        fm = _remap_frontmatter_mcp_refs(fm, mcp_id_map, _mcp_name_map_for_import(mcp_rows_to_import))
+        tool_name_map, mcp_rows_to_import, kept_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
+        fm = _remap_frontmatter_mcp_refs(fm, tool_name_map, _mcp_name_map_for_import(mcp_rows_to_import))
         fm["name"] = final_name
         fm["description"] = final_desc
         _sanitize_skill_frontmatter_for_write(fm)
         _write_skill_file(skill_dir, fm, body)
         _refresh_skills_loader()
-        existing_mcp_ids = {str(row.get("id") or "").strip() for row in load_mcp_config()}
-        imported_mcp_ids = {str(row.get("id") or "").strip() for row in mcp_rows_to_import}
-        mcp_added = len([mid for mid in imported_mcp_ids if mid and mid not in existing_mcp_ids])
-        mcp_skipped = len(kept_mcp_ids)
-        mcp_updated = len([mid for mid in imported_mcp_ids if mid and mid in existing_mcp_ids])
+        existing_tool_names = {str(row.get("name") or "").strip() for row in load_mcp_config()}
+        imported_tool_names = {str(row.get("name") or "").strip() for row in mcp_rows_to_import}
+        mcp_added = len([mid for mid in imported_tool_names if mid and mid not in existing_tool_names])
+        mcp_skipped = len(kept_tool_names)
+        mcp_updated = len([mid for mid in imported_tool_names if mid and mid in existing_tool_names])
         if mcp_rows_to_import:
-            merged_mcp = _upsert_rows_by_id(load_mcp_config(), mcp_rows_to_import, "id")
+            merged_mcp = _upsert_rows_by_name(load_mcp_config(), mcp_rows_to_import, "name")
             save_mcp_config(merged_mcp)
             await _invalidate_mcp_runtime_after_config_change()
-        requirements_result = await _merge_imported_skill_requirements_and_prewarm([skill_id], base)
+        requirements_result = await _merge_imported_skill_requirements_and_prewarm([directory_name], base)
 
         return {
             "status": "ok",
             "data": {
-                "id": skill_id,
+                "directory_name": directory_name,
                 "name": final_name,
                 "description": final_desc,
                 "path": str(skill_dir),
                 "allowed_tools": _normalized_allowed_tools_dict(fm),
                 "skipped_by_name": False,
-                "overwritten_skill_ids": existing_same_name_ids,
-                "kept_skill_ids": [],
+                "overwritten_directory_names": existing_same_name_directories,
+                "kept_directory_names": [],
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "mcp_id_map": mcp_id_map,
-                "mcp_kept_ids": kept_mcp_ids,
+                "tool_name_map": tool_name_map,
+                "tool_kept_names": kept_tool_names,
                 **requirements_result,
             },
         }
@@ -882,17 +844,17 @@ def _build_skill_zip_bytes(skill_dir: Path, mcp_rows: Optional[List[Dict[str, An
     return buf.getvalue()
 
 
-@router.get("/settings/skills/{skill_id}/export-zip")
-async def export_skill_zip(skill_id: str):
+@router.get("/settings/skills/{directory_name}/export-zip")
+async def export_skill_zip(directory_name: str):
     """导出当前技能目录为 ZIP，可用于备份或再次 import-zip 导入。"""
     base = _get_skills_dir().resolve()
-    skill_dir = (base / skill_id).resolve()
+    skill_dir = (base / directory_name).resolve()
     if not skill_dir.is_dir() or skill_dir.parent != base:
         raise HTTPException(status_code=404, detail="Skill not found")
     if not (skill_dir / "SKILL.md").is_file():
         raise HTTPException(status_code=404, detail="Skill not found")
     raw = _build_skill_zip_bytes(skill_dir, _mcp_rows_for_skill_dir(skill_dir))
-    filename = f"{skill_id}.zip"
+    filename = f"{directory_name}.zip"
     return StreamingResponse(
         io.BytesIO(raw),
         media_type="application/zip",
@@ -900,11 +862,11 @@ async def export_skill_zip(skill_id: str):
     )
 
 
-@router.put("/settings/skills/{skill_id}")
-async def update_skill(skill_id: str, skill_update: SkillUpdate):
+@router.put("/settings/skills/{directory_name}")
+async def update_skill(directory_name: str, skill_update: SkillUpdate):
     """更新 Skill：修改 SKILL.md 的 frontmatter 与/或正文 body"""
     base = _get_skills_dir()
-    skill_dir = base / skill_id
+    skill_dir = base / directory_name
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
     fm, body = _read_skill_file(skill_dir)
@@ -916,52 +878,54 @@ async def update_skill(skill_id: str, skill_update: SkillUpdate):
         if not isinstance(skill_update.allowed_tools, dict):
             raise HTTPException(status_code=400, detail="allowed_tools must be an object")
         normalized_tools = _normalize_allowed_tools_payload(skill_update.allowed_tools)
-        runtime_tools = _runtime_tools_only(normalized_tools)
-        fm[AUTO_TOOLS_FM_KEY] = runtime_tools
-        fm[ALLOWED_TOOLS_FM_KEY] = runtime_tools
-        ref_labels = fm.get(REFERENCE_LABELS_FM_KEY) if isinstance(fm.get(REFERENCE_LABELS_FM_KEY), dict) else {}
-        ref_labels = dict(ref_labels)
-        ref_labels["mcp"] = normalized_tools.get("mcp_refs") or []
-        fm[REFERENCE_LABELS_FM_KEY] = ref_labels
+        fm[ALLOWED_TOOLS_FM_KEY] = _runtime_tools_only(normalized_tools)
     if skill_update.body is not None:
         body = skill_update.body
     _sanitize_skill_frontmatter_for_write(fm)
     _write_skill_file(skill_dir, fm, body)
-    new_id = skill_id
+    new_directory_name = directory_name
     # 若名字变更，自动将目录名对齐到 frontmatter.name（并做冲突避让）
     current_name = str(fm.get("name") or "").strip()
     if current_name:
         desired_seed = _slugify(current_name)
-        if desired_seed and desired_seed != skill_id:
+        if desired_seed and desired_seed != directory_name:
             if (base / desired_seed).exists():
-                desired_seed = _next_available_skill_id(base, desired_seed)
+                desired_seed = _next_available_directory_name(base, desired_seed)
             target_dir = base / desired_seed
             if target_dir != skill_dir:
                 shutil.move(str(skill_dir), str(target_dir))
                 skill_dir = target_dir
-                new_id = desired_seed
-                _replace_skill_id_in_user_configs(skill_id, new_id)
+                new_directory_name = desired_seed
+                _replace_skill_path_in_user_configs(directory_name, new_directory_name)
     _refresh_skills_loader()
-    return {"status": "ok", "data": {"id": new_id, "updated": True, "renamed": new_id != skill_id, "old_id": skill_id}}
+    return {
+        "status": "ok",
+        "data": {
+            "directory_name": new_directory_name,
+            "updated": True,
+            "renamed": new_directory_name != directory_name,
+            "old_directory_name": directory_name,
+        },
+    }
 
-@router.delete("/settings/skills/{skill_id}")
-async def delete_skill(skill_id: str):
+@router.delete("/settings/skills/{directory_name}")
+async def delete_skill(directory_name: str):
     """删除 Skill：删除对应目录"""
     base = _get_skills_dir()
-    skill_dir = base / skill_id
+    skill_dir = base / directory_name
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    skill_name = _skill_display_name_from_dir(skill_dir, skill_id)
+    skill_name = _skill_display_name_from_dir(skill_dir, directory_name)
     shutil.rmtree(skill_dir)
-    _remove_skill_id_from_user_configs(skill_id, skill_name)
+    _remove_skill_path_from_user_configs(directory_name, skill_name)
     _refresh_skills_loader()
-    return {"status": "ok", "data": {"id": skill_id, "deleted": True}}
+    return {"status": "ok", "data": {"directory_name": directory_name, "deleted": True}}
 
-@router.get("/settings/skills/{skill_id}/content")
-async def get_skill_content(skill_id: str):
+@router.get("/settings/skills/{directory_name}/content")
+async def get_skill_content(directory_name: str):
     """获取技能 SKILL.md 的完整内容（raw 全文）及 frontmatter 解析结果，用于详情页展示。"""
     base = _get_skills_dir()
-    skill_dir = base / skill_id
+    skill_dir = base / directory_name
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
     path = skill_dir / "SKILL.md"
@@ -974,7 +938,7 @@ async def get_skill_content(skill_id: str):
         "status": "ok",
         "data": {
             "raw": raw,
-            "name": fm.get("name", skill_id),
+            "name": fm.get("name", directory_name),
             "description": fm.get("description", ""),
             "body": body,
             "allowed_tools": allowed,

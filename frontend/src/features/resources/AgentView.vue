@@ -28,12 +28,12 @@
               <div>
                 <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
                 <select
-                  v-model="form.llm_provider_id"
+                  v-model="form.llm_name"
                   class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 >
                   <option value="">使用应用默认</option>
-                  <option v-for="(meta, id) in llmProviders" :key="id" :value="id">
-                    {{ meta.label || id }}
+                  <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
+                    {{ meta.label || name }}
                   </option>
                 </select>
               </div>
@@ -42,7 +42,7 @@
             <div>
               <label class="block text-sm font-medium text-primary mb-1">描述</label>
               <textarea
-                v-model="form.role"
+                v-model="form.description"
                 rows="2"
                 class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 placeholder="请输入专家描述"
@@ -76,13 +76,13 @@
               >
                 <button
                   v-for="s in filteredSkills"
-                  :key="s.id"
+                  :key="s.directory_name"
                   type="button"
                   class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  :class="form.skill_ids.includes(s.id)
+                  :class="selectedSkillDirectories.includes(s.directory_name)
                     ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
                     : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                  @click="toggleSkill(s.id)"
+                  @click="toggleSkill(s)"
                 >
                   {{ s.name }}
                 </button>
@@ -95,9 +95,9 @@
                 <div class="flex flex-wrap gap-2">
                   <span
                     v-for="s in missingSkillBadges"
-                    :key="s.id"
+                    :key="s.directory_name"
                     class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
-                    :title="`缺失技能 ID：${s.id}`"
+                    :title="`缺失技能路径：${s.directory_name}`"
                   >
                     {{ s.name }}
                   </span>
@@ -154,19 +154,8 @@
                   <div class="shrink-0">
                     <div
                       class="w-32 h-32 rounded-3xl border border-border-light bg-page flex items-center justify-center overflow-hidden cursor-pointer"
-                      @click="showAvatarModal = true"
                     >
-                      <img
-                        v-if="avatarPreview"
-                        :src="expertAvatarDisplayUrl(avatarPreview)!"
-                        alt="Expert Avatar"
-                        class="w-full h-full object-cover"
-                        width="128"
-                        height="128"
-                        decoding="async"
-                      />
                       <div
-                        v-else
                         class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-300 to-pink-300 text-white text-3xl font-semibold"
                       >
                         <span>
@@ -174,13 +163,6 @@
                         </span>
                       </div>
                     </div>
-                    <input
-                      ref="avatarInputRef"
-                      type="file"
-                      accept="image/*"
-                      class="hidden"
-                      @change="onAvatarChange"
-                    />
                   </div>
 
                   <div class="flex-1 flex flex-col justify-center">
@@ -188,7 +170,7 @@
                       {{ form.name || '未命名专家' }}
                     </p>
                     <p class="text-sm text-muted leading-snug whitespace-pre-line break-words">
-                      {{ form.role || '尚未填写描述' }}
+                      {{ form.description || '尚未填写描述' }}
                     </p>
                   </div>
                 </div>
@@ -199,12 +181,12 @@
                     <template v-if="displaySkillBadges.length">
                       <span
                         v-for="s in displaySkillBadges"
-                        :key="s.id"
+                        :key="s.directory_name"
                         class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
                         :class="s.missing
                           ? 'border-red-300 bg-red-50 text-red-700'
                           : 'border-accent/40 bg-nav-selected-bg text-nav-selected-text'"
-                        :title="s.missing ? `缺失技能 ID：${s.id}` : '已选择技能'"
+                        :title="s.missing ? `缺失技能路径：${s.directory_name}` : '已选择技能'"
                       >
                         {{ s.name }}
                       </span>
@@ -235,77 +217,6 @@
       </div>
     </template>
 
-    <Teleport to="body">
-      <div
-        v-if="showAvatarModal"
-        class="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/40"
-        role="dialog"
-        aria-modal="true"
-        aria-label="选择头像"
-        @click.self="showAvatarModal = false"
-      >
-        <div
-          class="w-full max-w-md rounded-2xl border border-border-light bg-card shadow-xl p-5 text-left"
-          @click.stop
-        >
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-base font-semibold text-primary">专家头像</h3>
-            <button
-              type="button"
-              class="text-muted hover:text-primary text-xl leading-none px-1"
-              aria-label="关闭"
-              @click="showAvatarModal = false"
-            >
-              ×
-            </button>
-          </div>
-          <p class="text-xs text-muted mb-3">点选一张内置图，或使用相册上传；也可随机一张。</p>
-          <div class="flex flex-wrap gap-2 mb-4">
-            <button
-              v-for="url in EXPERT_PRESET_AVATAR_URLS"
-              :key="url"
-              type="button"
-              class="shrink-0 w-12 h-12 rounded-xl border-2 overflow-hidden transition-colors focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-              :class="form.avatar_url === url ? 'border-accent ring-1 ring-accent/30' : 'border-border-light hover:border-muted'"
-              @click="selectPresetAvatar(url)"
-            >
-              <img
-                :src="expertAvatarDisplayUrl(url)!"
-                alt=""
-                class="w-full h-full object-cover"
-                width="48"
-                height="48"
-                loading="lazy"
-                decoding="async"
-              />
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
-              @click="randomizePresetAvatar"
-            >
-              随机一张
-            </button>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium bg-accent text-text-inverse hover:bg-accent-hover"
-              @click="avatarInputRef?.click()"
-            >
-              从相册上传
-            </button>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted border border-border-light hover:bg-list-hover ml-auto"
-              @click="showAvatarModal = false"
-            >
-              完成
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -313,93 +224,52 @@
 import { apiRequest } from '@/api/base'
 import { ref, watch, onMounted, computed } from 'vue'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
-import { EXPERT_PRESET_AVATAR_URLS, expertAvatarDisplayUrl, pickRandomExpertAvatar } from '@/constants/expertAvatars'
-import { mergeReferenceRowsForIds, normalizeReferenceRows, type ReferenceSnapshot } from './referenceSnapshots'
-
-const AGENT_REFERENCE_ID_KEYS = ['id', 'skill_id']
+type SkillRef = { name: string; directory_name: string }
 
 const props = defineProps<{
   selectedAgentId: string | null
-  agentInstances: { agent_id: string; name: string; role?: string; system_prompt?: string; skill_ids?: string[]; skill_refs?: ReferenceSnapshot[]; mcp_server_ids?: string[]; is_leader?: boolean; llm_provider_id?: string; avatar_url?: string; file_capabilities?: Record<string, boolean>; file_capability_labels?: string[]; url_capability?: boolean }[]
+  agentInstances: { name: string; description?: string; system_prompt?: string; skills?: SkillRef[]; llm_name?: string }[]
 }>()
 
 const emit = defineEmits<{
-  (e: 'created', agentId: string): void
+  (e: 'created', agentName: string): void
   (e: 'updated'): void
   (e: 'cancel'): void
 }>()
 
-const skills = ref<{ id: string; name: string; description?: string }[]>([])
+const skills = ref<{ directory_name: string; name: string; description?: string }[]>([])
 const skillSearch = ref('')
 const llmProviders = ref<Record<string, { label: string }>>({})
-const avatarPreview = ref<string | null>(null)
-const avatarInputRef = ref<HTMLInputElement | null>(null)
-const showAvatarModal = ref(false)
-
-const defaultFileCaps = () => ({
-  read: true,
-  edit: true,
-  write: true,
-  rename: true,
-  mkdir: true,
-  list_dir: true,
-})
 
 const form = ref({
   name: '',
-  role: '',
+  description: '',
   system_prompt: '',
-  skill_ids: [] as string[],
-  skill_refs: [] as ReferenceSnapshot[],
-  is_leader: false,
-  llm_provider_id: '',
-  avatar_url: '',
-  file_capabilities: defaultFileCaps(),
-  url_capability: true,
+  skills: [] as SkillRef[],
+  llm_name: '',
 })
 
 watch(
   () => [props.selectedAgentId, props.agentInstances],
   () => {
     if (props.selectedAgentId === '__new__') {
-      const randomAv = pickRandomExpertAvatar()
       form.value = {
         name: '',
-        role: '',
+        description: '',
         system_prompt: '',
-        skill_ids: [],
-        skill_refs: [],
-        is_leader: false,
-        llm_provider_id: '',
-        avatar_url: randomAv,
-        file_capabilities: defaultFileCaps(),
-        url_capability: true,
+        skills: [],
+        llm_name: '',
       }
-      avatarPreview.value = randomAv
     } else if (props.selectedAgentId) {
-      const d = props.agentInstances.find((x) => x.agent_id === props.selectedAgentId)
+      const d = props.agentInstances.find((x) => x.name === props.selectedAgentId)
       if (d) {
-        const fc = d.file_capabilities || {}
         form.value = {
           name: d.name,
-          role: d.role || '',
+          description: d.description || '',
           system_prompt: d.system_prompt || '',
-          skill_ids: d.skill_ids || [],
-          skill_refs: mergeReferenceRowsForIds(d.skill_ids || [], d.skill_refs || [], skillNameLookup(), AGENT_REFERENCE_ID_KEYS),
-          is_leader: d.is_leader || false,
-          llm_provider_id: d.llm_provider_id || '',
-          avatar_url: (d as any).avatar_url || '',
-          file_capabilities: {
-            read: fc.read !== false,
-            edit: fc.edit !== false,
-            write: fc.write !== false,
-            rename: fc.rename !== false,
-            mkdir: fc.mkdir !== false,
-            list_dir: fc.list_dir !== false,
-          },
-          url_capability: d.url_capability !== false,
+          skills: normalizeSkillRefs(d.skills || []),
+          llm_name: d.llm_name || '',
         }
-        avatarPreview.value = form.value.avatar_url || null
       }
     }
   },
@@ -410,33 +280,14 @@ async function fetchSkills() {
   const r = await apiRequest('/settings/skills')
   const j = await r.json()
   if (j.status === 'ok' && j.data?.skills) {
-    skills.value = j.data.skills
+    skills.value = (j.data.skills || [])
+      .map((s: any) => ({
+        ...s,
+        directory_name: String(s.directory_name || '').trim(),
+        name: String(s.name || s.directory_name || '').trim(),
+      }))
+      .filter((s: { directory_name: string; name: string }) => s.directory_name && s.name)
   }
-}
-
-function persistAvatarQuiet() {
-  if (props.selectedAgentId && props.selectedAgentId !== '__new__') {
-    apiRequest(`/agents/${encodeURIComponent(props.selectedAgentId)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ avatar_url: form.value.avatar_url }),
-    }).catch(() => {})
-  }
-}
-
-function selectPresetAvatar(url: string) {
-  form.value.avatar_url = url
-  avatarPreview.value = url
-  persistAvatarQuiet()
-  showAvatarModal.value = false
-}
-
-function randomizePresetAvatar() {
-  const url = pickRandomExpertAvatar()
-  form.value.avatar_url = url
-  avatarPreview.value = url
-  persistAvatarQuiet()
-  showAvatarModal.value = false
 }
 
 async function saveAgent() {
@@ -444,16 +295,18 @@ async function saveAgent() {
     await appAlert({ title: '无法保存专家', message: '专家名称不能为空', variant: 'warning' })
     return
   }
-  if (props.selectedAgentId === '__new__' && !String(form.value.avatar_url || '').trim()) {
-    const url = pickRandomExpertAvatar()
-    form.value.avatar_url = url
-    avatarPreview.value = url
+  const body = {
+    name: form.value.name,
+    description: form.value.description,
+    system_prompt: form.value.system_prompt,
+    llm_name: form.value.llm_name,
+    skills: normalizeSkillRefs(form.value.skills),
   }
   if (props.selectedAgentId && props.selectedAgentId !== '__new__') {
     const r = await apiRequest(`/agents/${encodeURIComponent(props.selectedAgentId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
+      body: JSON.stringify(body),
     })
     const j = await r.json()
     if (j.status === 'ok') {
@@ -465,60 +318,62 @@ async function saveAgent() {
     const r = await apiRequest('/agents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form.value, mcp_server_ids: [] }),
+      body: JSON.stringify(body),
     })
     const j = await r.json()
-    if (j.status === 'ok' && j.data?.agent_id) {
-      emit('created', j.data.agent_id as string)
+    if (j.status === 'ok' && j.data?.name) {
+      emit('created', j.data.name as string)
     } else {
       await appAlert({ title: '新建失败', message: j.detail || '新建失败', variant: 'danger' })
     }
   }
 }
 
-function toggleSkill(id: string) {
-  const current = form.value.skill_ids
-  if (current.includes(id)) {
-    form.value.skill_ids = current.filter((x) => x !== id)
-  } else {
-    form.value.skill_ids = [...current, id]
+function normalizeSkillRefs(raw: SkillRef[]): SkillRef[] {
+  const out: SkillRef[] = []
+  const seen = new Set<string>()
+  for (const item of raw || []) {
+    const directoryName = String(item.directory_name || '').trim()
+    const name = String(item.name || '').trim()
+    if (!directoryName || !name || seen.has(name)) continue
+    out.push({ name, directory_name: directoryName })
+    seen.add(name)
   }
-  form.value.skill_refs = mergeReferenceRowsForIds(
-    form.value.skill_ids,
-    form.value.skill_refs,
-    skillNameLookup(),
-    AGENT_REFERENCE_ID_KEYS,
-  )
+  return out
 }
 
-function skillNameLookup(): Record<string, string> {
-  return Object.fromEntries((skills.value || []).map((s) => [s.id, s.name || s.id]))
+function toggleSkill(skill: { name: string; directory_name: string }) {
+  const directoryName = String(skill.directory_name || '').trim()
+  const name = String(skill.name || '').trim()
+  if (!directoryName || !name) return
+  const current = normalizeSkillRefs(form.value.skills)
+  if (current.some((x) => x.directory_name === directoryName || x.name === name)) {
+    form.value.skills = current.filter((x) => x.directory_name !== directoryName && x.name !== name)
+  } else {
+    form.value.skills = [...current, { name, directory_name: directoryName }]
+  }
 }
 
-function skillLabel(id: string): string {
-  const current = (skills.value || []).find((s) => s.id === id)
-  if (current) return current.name || current.id
-  return normalizeReferenceRows(form.value.skill_refs, AGENT_REFERENCE_ID_KEYS).find((row) => row.id === id)?.name || id
-}
+const selectedSkillDirectories = computed(() => form.value.skills.map((s) => s.directory_name))
 
-function skillMissing(id: string): boolean {
-  return Boolean(id && !(skills.value || []).some((s) => s.id === id))
+function skillMissing(ref: SkillRef): boolean {
+  return Boolean(ref.directory_name && !(skills.value || []).some((s) => s.directory_name === ref.directory_name || s.name === ref.name))
 }
 
 const displaySkillBadges = computed(() => {
-  if (!form.value.skill_ids.length) return []
+  if (!form.value.skills.length) return []
   const picked = []
-  for (const id of form.value.skill_ids) {
-    picked.push({ id, name: skillLabel(id), missing: skillMissing(id) })
+  for (const skill of normalizeSkillRefs(form.value.skills)) {
+    picked.push({ ...skill, missing: skillMissing(skill) })
     if (picked.length >= 15) break
   }
   return picked
 })
 
 const missingSkillBadges = computed(() =>
-  (form.value.skill_ids || [])
-    .filter((id) => skillMissing(id))
-    .map((id) => ({ id, name: skillLabel(id), missing: true })),
+  normalizeSkillRefs(form.value.skills)
+    .filter((skill) => skillMissing(skill))
+    .map((skill) => ({ ...skill, missing: true })),
 )
 
 const filteredSkills = computed(() => {
@@ -527,7 +382,8 @@ const filteredSkills = computed(() => {
   return skills.value.filter((s) => {
     const name = (s.name || '').toLowerCase()
     const description = (s.description || '').toLowerCase()
-    return name.includes(q) || description.includes(q)
+    const directoryName = (s.directory_name || '').toLowerCase()
+    return name.includes(q) || description.includes(q) || directoryName.includes(q)
   })
 })
 
@@ -535,7 +391,7 @@ async function exportAgentBundle() {
   const id = props.selectedAgentId
   if (!id || id === '__new__') return
   try {
-    const r = await apiRequest(`/dha/instances/${encodeURIComponent(id)}/export-bundle`)
+    const r = await apiRequest(`/agents/${encodeURIComponent(id)}/export-bundle`)
     if (!r.ok) {
       const j = (await r.json().catch(() => ({}))) as { detail?: string }
       throw new Error(j.detail || '导出失败')
@@ -575,30 +431,14 @@ async function deleteAgent() {
   }
 }
 
-function onAvatarChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    if (typeof reader.result === 'string') {
-      avatarPreview.value = reader.result
-      form.value.avatar_url = reader.result
-      persistAvatarQuiet()
-      showAvatarModal.value = false
-    }
-  }
-  reader.readAsDataURL(file)
-}
-
 async function fetchAppSettings() {
   const r = await apiRequest('/settings/app')
   const j = await r.json()
   if (j.status === 'ok' && j.data?.llm_providers) {
     llmProviders.value = Object.fromEntries(
       Object.entries(j.data.llm_providers).map(([k, v]: [string, any]) => [
-        k,
-        { label: v.model ? `${k} (${v.model})` : k },
+        String(v.model || k),
+        { label: String(v.model || k) },
       ])
     )
   }

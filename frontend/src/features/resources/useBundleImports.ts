@@ -8,8 +8,7 @@ type ImportResult = { ok: boolean; message: string }
 type MissingReferenceSource = 'scene' | 'expert' | 'skill' | 'tool'
 
 interface MissingReference {
-  id: string
-  name?: string
+  name: string
   display_name?: string
   type_label?: string
   required_by?: string[]
@@ -30,45 +29,43 @@ interface MissingReferenceGroup {
 
 type ScenarioBundlePreview = {
   bundle_preview?: {
-    preset_id: string
     preset_name: string
-    experts: { agent_id: string; name: string }[]
+    experts: { name: string }[]
     skills: string[]
     skill_names?: Record<string, string>
-    mcps: { id: string; name: string }[]
+    mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
-    name_conflict_existing_ids?: string[]
+    name_conflict_existing_names?: string[]
     name_conflict_mode?: 'skip' | 'overwrite'
     would_overwrite_experts?: Record<string, string[]>
-    would_remap_skill_ids?: Record<string, string>
-    would_remap_mcp_server_ids?: Record<string, string>
-    would_overwrite_mcp_server_ids?: string[]
+    would_remap_skills?: Record<string, string>
+    would_remap_tools?: Record<string, string>
+    would_overwrite_tools?: string[]
   }
 }
 
 type AgentBundlePreview = {
   bundle_preview?: {
-    agent_id: string
     name?: string
     skills: string[]
     skill_names?: Record<string, string>
-    mcps: { id: string; name: string }[]
+    mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
     would_skip_skills?: string[]
-    name_conflict_existing_ids?: string[]
+    name_conflict_existing_names?: string[]
     name_conflict_mode?: 'skip' | 'overwrite'
-    would_remap_skill_ids?: Record<string, string>
-    would_remap_mcp_server_ids?: Record<string, string>
-    would_overwrite_mcp_server_ids?: string[]
+    would_remap_skills?: Record<string, string>
+    would_remap_tools?: Record<string, string>
+    would_overwrite_tools?: string[]
   }
 }
 
 type LlmBundlePreview = {
   bundle_preview?: {
-    provider_id: string
+    name: string
     provider: {
       base_url?: string
       model?: string
@@ -79,16 +76,16 @@ type LlmBundlePreview = {
       [key: string]: unknown
     }
     default_llm?: string
-    would_overwrite_provider_id?: boolean
+    would_conflict_name?: boolean
   }
 }
 
-type SkillListItem = { id: string; name: string }
+type SkillListItem = { directory_name: string; name: string }
 
 export function useBundleImports(options: {
   skills: Ref<SkillListItem[]>
   selectedId: Ref<string | null>
-  selectedScenarioPreset: ComputedRef<{ id: string } | null>
+  selectedScenarioPreset: ComputedRef<{ name: string } | null>
   isCreatingScenario: ComputedRef<boolean>
   fetchScenarioPresets: () => Promise<void>
   fetchAgents: () => Promise<void>
@@ -134,10 +131,10 @@ export function useBundleImports(options: {
       const bp = scenarioBundlePreview.value?.bundle_preview
       if (!bp) return false
       return Boolean(
-        (bp.name_conflict_existing_ids || []).length
+        (bp.name_conflict_existing_names || []).length
         || Object.values(bp.would_overwrite_experts || {}).some((ids) => (ids || []).length)
         || (bp.would_overwrite_skills || []).length
-        || (bp.would_overwrite_mcp_server_ids || []).length,
+        || (bp.would_overwrite_tools || []).length,
       )
     },
   )
@@ -146,21 +143,21 @@ export function useBundleImports(options: {
       const bp = agentBundlePreview.value?.bundle_preview
       if (!bp) return false
       return Boolean(
-        (bp.name_conflict_existing_ids || []).length
+        (bp.name_conflict_existing_names || []).length
         || (bp.would_overwrite_skills || []).length
-        || (bp.would_overwrite_mcp_server_ids || []).length,
+        || (bp.would_overwrite_tools || []).length,
       )
     },
   )
 
-  function displaySkillNames(skillIds: string[], skillNameMap?: Record<string, string>): string[] {
-    const byId = new Map((options.skills.value || []).map((s) => [s.id, s.name || s.id]))
-    return (skillIds || [])
-      .map((sid) => skillNameMap?.[sid] || byId.get(sid) || sid)
+  function displaySkillNames(skillDirectories: string[], skillNameMap?: Record<string, string>): string[] {
+    const byDirectoryName = new Map((options.skills.value || []).map((s) => [s.directory_name, s.name || s.directory_name]))
+    return (skillDirectories || [])
+      .map((directoryName) => skillNameMap?.[directoryName] || byDirectoryName.get(directoryName) || directoryName)
       .filter(Boolean)
   }
 
-  function displayMcpNames(mcps: { id: string; name: string }[]): string[] {
+  function displayMcpNames(mcps: { name: string }[]): string[] {
     return (mcps || []).map((m) => m.name || '').filter(Boolean)
   }
 
@@ -187,7 +184,7 @@ export function useBundleImports(options: {
     const typeLabel = item.type_label || (group.key === 'tools' ? 'MCP 工具' : group.label)
     const name = String(item.name || '').trim()
     if (name) return `${typeLabel} ${name}`
-    return item.display_name && item.display_name !== item.id ? item.display_name : typeLabel
+    return item.display_name || typeLabel
   }
 
   function importSummaryLine(label: string, added: number, kept: number): string {
@@ -198,29 +195,24 @@ export function useBundleImports(options: {
     const bp = scenarioBundlePreview.value?.bundle_preview
     if (!bp) return []
     const rows: string[] = []
-    const scenarioConflicts = bp.name_conflict_existing_ids || []
+    const scenarioConflicts = bp.name_conflict_existing_names || []
     if (scenarioConflicts.length) {
       rows.push(`场景：${bp.preset_name}`)
     }
-    const expertNames = new Map((bp.experts || []).map((item) => [item.agent_id, item.name || '']))
-    for (const [incomingId, existingNames] of Object.entries(bp.would_overwrite_experts || {})) {
+    for (const [incomingName, existingNames] of Object.entries(bp.would_overwrite_experts || {})) {
       if (!(existingNames || []).length) continue
-      const name = expertNames.get(incomingId)
-      if (name) rows.push(`专家：${name}`)
+      if (incomingName) rows.push(`专家：${incomingName}`)
     }
     const overwrittenSkillIds = new Set(bp.would_overwrite_skills || [])
-    for (const [oldId, newId] of Object.entries(bp.would_remap_skill_ids || {})) {
+    for (const [oldId, newId] of Object.entries(bp.would_remap_skills || {})) {
       if (!overwrittenSkillIds.has(newId)) continue
       const fallbackName = displaySkillNames([newId])[0]
       const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
       if (name) rows.push(`技能：${name}`)
     }
-    const overwrittenMcpIds = new Set(bp.would_overwrite_mcp_server_ids || [])
-    const mcpNames = new Map((bp.mcps || []).map((item) => [item.id, item.name || '']))
-    for (const [oldId, newId] of Object.entries(bp.would_remap_mcp_server_ids || {})) {
-      if (!overwrittenMcpIds.has(newId)) continue
-      const name = mcpNames.get(oldId)
-      if (name) rows.push(`工具：${name}`)
+    const overwrittenTools = new Set(bp.would_overwrite_tools || [])
+    for (const toolName of overwrittenTools) {
+      if (toolName) rows.push(`工具：${toolName}`)
     }
     return rows
   })
@@ -229,22 +221,18 @@ export function useBundleImports(options: {
     const bp = agentBundlePreview.value?.bundle_preview
     if (!bp) return []
     const rows: string[] = []
-    if ((bp.name_conflict_existing_ids || []).length) {
+    if ((bp.name_conflict_existing_names || []).length) {
       rows.push(`专家：${bp.name || '未命名专家'}`)
     }
     const overwrittenSkillIds = new Set(bp.would_overwrite_skills || [])
-    for (const [oldId, newId] of Object.entries(bp.would_remap_skill_ids || {})) {
+    for (const [oldId, newId] of Object.entries(bp.would_remap_skills || {})) {
       if (!overwrittenSkillIds.has(newId)) continue
       const fallbackName = displaySkillNames([newId])[0]
       const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
       if (name) rows.push(`技能：${name}`)
     }
-    const overwrittenMcpIds = new Set(bp.would_overwrite_mcp_server_ids || [])
-    const mcpNames = new Map((bp.mcps || []).map((item) => [item.id, item.name || '']))
-    for (const [oldId, newId] of Object.entries(bp.would_remap_mcp_server_ids || {})) {
-      if (!overwrittenMcpIds.has(newId)) continue
-      const name = mcpNames.get(oldId)
-      if (name) rows.push(`工具：${name}`)
+    for (const toolName of bp.would_overwrite_tools || []) {
+      if (toolName) rows.push(`工具：${toolName}`)
     }
     return rows
   })
@@ -299,16 +287,16 @@ export function useBundleImports(options: {
         detail?: string
         data?: {
           summary?: {
-            preset_imported_ids?: string[]
+            preset_imported_names?: string[]
             skills_imported?: string[]
             skills_skipped?: string[]
             skills_overwritten?: string[]
             skills_kept?: string[]
-            agent_imported_ids?: string[]
-            kept_agent_ids?: string[]
+            agent_imported_names?: string[]
+            kept_agent_names?: string[]
             skipped_by_name?: string[]
-            overwritten_existing_ids?: string[]
-            kept_existing_ids?: string[]
+            overwritten_existing_names?: string[]
+            kept_existing_names?: string[]
             mcp_added?: number
             mcp_updated?: number
             mcp_skipped?: number
@@ -322,8 +310,8 @@ export function useBundleImports(options: {
       const msg = s
         ? [
             '导入成功',
-            importSummaryLine('场景', (s.preset_imported_ids || []).length, (s.kept_existing_ids || []).length),
-            importSummaryLine('专家', (s.agent_imported_ids || []).length, (s.kept_agent_ids || []).length),
+            importSummaryLine('场景', (s.preset_imported_names || []).length, (s.kept_existing_names || []).length),
+            importSummaryLine('专家', (s.agent_imported_names || []).length, (s.kept_agent_names || []).length),
             importSummaryLine('技能', (s.skills_imported || []).length, (s.skills_kept || []).length),
             importSummaryLine('工具', s.mcp_added ?? 0, s.mcp_skipped ?? 0),
           ].join('\n')
@@ -343,9 +331,9 @@ export function useBundleImports(options: {
 
   async function exportScenarioBundle() {
     const cur = options.selectedScenarioPreset.value
-    if (!cur?.id || options.isCreatingScenario.value) return
+    if (!cur?.name || options.isCreatingScenario.value) return
     try {
-      const r = await apiRequest(`/settings/session-presets/${encodeURIComponent(cur.id)}/export-bundle`)
+      const r = await apiRequest(`/settings/session-presets/${encodeURIComponent(cur.name)}/export-bundle`)
       if (!r.ok) {
         const j = (await r.json().catch(() => ({}))) as { detail?: string }
         throw new Error(j.detail || '导出失败')
@@ -354,7 +342,7 @@ export function useBundleImports(options: {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `scenario-bundle-${cur.id.replace(/[/\\]/g, '_')}.zip`
+      a.download = `scenario-bundle-${cur.name.replace(/[/\\]/g, '_')}.zip`
       a.click()
       URL.revokeObjectURL(url)
     } catch (e) {
@@ -426,18 +414,18 @@ export function useBundleImports(options: {
       const j = (await r.json().catch(() => ({}))) as {
         status?: string
         detail?: string
-        data?: { summary?: { imported_provider_id?: string; overwritten?: boolean } }
+        data?: { summary?: { imported_name?: string; overwritten?: boolean } }
       }
       if (j?.status !== 'ok') {
         throw new Error(j.detail || '导入失败')
       }
       await options.fetchLLM()
-      const providerId = j.data?.summary?.imported_provider_id || llmBundlePreview.value?.bundle_preview?.provider_id || ''
-      if (providerId) options.selectedId.value = providerId
+      const modelName = j.data?.summary?.imported_name || llmBundlePreview.value?.bundle_preview?.name || ''
+      if (modelName) options.selectedId.value = modelName
       options.onLlmListChanged?.()
       llmImportResult.value = {
         ok: true,
-        message: providerId ? `导入成功\n模型：${providerId}` : '导入成功',
+        message: modelName ? `导入成功\n模型：${modelName}` : '导入成功',
       }
     } catch (e) {
       llmImportResult.value = { ok: false, message: (e as Error).message || '导入失败' }
@@ -454,7 +442,7 @@ export function useBundleImports(options: {
     const fd = new FormData()
     appendAgentBundleOptions(fd, file, true)
     const preview = await loadBundlePreview<AgentBundlePreview>({
-      endpoint: '/dha/instances/import-bundle',
+      endpoint: '/agents/import-bundle',
       formData: fd,
       errorTitle: '无法读取专家包',
       fallbackMessage: '专家包预览失败',
@@ -474,17 +462,17 @@ export function useBundleImports(options: {
     try {
       const fd = new FormData()
       appendAgentBundleOptions(fd, pendingAgentBundleFile.value, false)
-      const r = await apiRequest('/dha/instances/import-bundle', { method: 'POST', body: fd })
+      const r = await apiRequest('/agents/import-bundle', { method: 'POST', body: fd })
       const j = (await r.json().catch(() => ({}))) as {
         status?: string
         detail?: string
         data?: {
           summary?: {
-            imported_agent_id?: string
+            imported_agent_name?: string
             skills_imported?: string[]
             skipped_by_name?: boolean
-            overwritten_agent_ids?: string[]
-            kept_agent_ids?: string[]
+            overwritten_agent_names?: string[]
+            kept_agent_names?: string[]
             skills_overwritten?: string[]
             skills_kept?: string[]
             mcp_added?: number
@@ -496,8 +484,8 @@ export function useBundleImports(options: {
         throw new Error(j.detail || '导入失败')
       }
       const summary = j.data?.summary
-      const keptCount = (summary?.kept_agent_ids || []).length
-      const agentAddedCount = summary?.imported_agent_id && keptCount === 0 ? 1 : 0
+      const keptCount = (summary?.kept_agent_names || []).length
+      const agentAddedCount = summary?.imported_agent_name && keptCount === 0 ? 1 : 0
       const skillWriteCount = (summary?.skills_imported || []).length
       const skillKeptCount = (summary?.skills_kept || []).length
       const msg = [
@@ -606,7 +594,7 @@ function appendScenarioBundleOptions(fd: FormData, file: File, dryRun: boolean) 
   fd.append('overwrite_experts', 'true')
   fd.append('overwrite_skills', 'true')
   fd.append('mcp_skip_existing', 'false')
-  fd.append('preset_id_conflict', 'overwrite')
+  fd.append('name_conflict', 'overwrite')
 }
 
 function appendAgentBundleOptions(fd: FormData, file: File, dryRun: boolean) {
@@ -614,7 +602,6 @@ function appendAgentBundleOptions(fd: FormData, file: File, dryRun: boolean) {
   fd.append('dry_run', dryRun ? 'true' : 'false')
   fd.append('overwrite_skills', 'true')
   fd.append('mcp_skip_existing', 'false')
-  fd.append('id_conflict', 'overwrite')
 }
 
 function appendLlmBundleOptions(fd: FormData, file: File, dryRun: boolean) {

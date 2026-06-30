@@ -7,7 +7,7 @@ export type AtMentionOption = {
 }
 
 type MentionGroupDetail = {
-  agent_ids: string[]
+  agent_names: string[]
   agent_map: Record<string, { name?: string }>
 }
 
@@ -43,7 +43,7 @@ export function useGroupAtMentions(args: {
   const atMentionOptions = computed(() => {
     const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || defaultHostDisplayName }
     const detail = groupDetail.value
-    const ids = detail?.agent_ids || []
+    const ids = detail?.agent_names || []
     const map = detail?.agent_map || {}
     const experts = ids.map((id) => ({ type: 'agent' as const, id, label: map[id]?.name || id }))
     const list = [host, ...experts]

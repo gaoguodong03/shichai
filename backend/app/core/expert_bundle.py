@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import io
 import json
-import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
 
 EXPERT_BUNDLE_VERSION = 1
 EXPERT_MANIFEST_NAME = "expert_bundle.json"
@@ -19,59 +20,49 @@ def merge_single_expert_into_instances(
     instances: List[Dict[str, Any]],
     expert_row: Dict[str, Any],
     *,
-    id_conflict: str,
+    name_conflict: str,
 ) -> Tuple[List[Dict[str, Any]], str | None, bool, List[str]]:
     """
-    合并单条专家。id_conflict: skip | overwrite（按 name 判冲突）。
-    返回 (新列表, 最终 agent_id, 是否因同名未写入, 被覆盖的旧 agent_id 列表)。
+    合并单条专家。name_conflict: skip | overwrite。
+    返回 (新列表, 最终 name, 是否因同名未写入, 被覆盖的旧 name 列表)。
     """
     from app.core.scenario_bundle import strip_agent_row_for_disk
 
     order: List[str] = []
-    by_id: Dict[str, Dict[str, Any]] = {}
+    by_name: Dict[str, Dict[str, Any]] = {}
     for d in instances:
-        aid = str(d.get("agent_id") or "").strip()
-        if not aid:
+        name = str(d.get("name") or "").strip()
+        if not name:
             continue
-        if aid not in by_id:
-            order.append(aid)
-        by_id[aid] = strip_agent_row_for_disk(dict(d))
+        if name not in by_name:
+            order.append(name)
+        by_name[name] = strip_agent_row_for_disk(dict(d))
 
     work = strip_agent_row_for_disk(dict(expert_row))
-    aid0 = str(work.get("agent_id") or "").strip()
-    incoming_name_key = str(work.get("name") or "").strip().lower()
-    same_name_ids = [
-        aid
-        for aid, row in by_id.items()
+    incoming_name = str(work.get("name") or "").strip()
+    incoming_name_key = incoming_name.lower()
+    same_names = [
+        name
+        for name, row in by_name.items()
         if str(row.get("name") or "").strip().lower() == incoming_name_key and incoming_name_key
     ]
-    if same_name_ids and id_conflict == "skip":
-        return [by_id[i] for i in order if i in by_id], None, True, []
+    if same_names and name_conflict == "skip":
+        return [by_name[name] for name in order if name in by_name], None, True, []
 
-    overwritten_agent_ids: List[str] = []
-    if same_name_ids and id_conflict == "overwrite":
-        overwritten_agent_ids.extend(same_name_ids)
-        for aid in same_name_ids:
-            by_id.pop(aid, None)
-        order = [aid for aid in order if aid in by_id]
+    overwritten_agent_names: List[str] = []
+    if same_names and name_conflict == "overwrite":
+        overwritten_agent_names.extend(same_names)
+        for name in same_names:
+            by_name.pop(name, None)
+        order = [name for name in order if name in by_name]
 
-    if not aid0:
-        aid0 = f"agent-{uuid.uuid4().hex[:8]}"
-        work["agent_id"] = aid0
+    if not incoming_name:
+        return [by_name[name] for name in order if name in by_name], None, True, []
 
-    if aid0 in by_id:
-        nid = f"agent-{uuid.uuid4().hex[:8]}"
-        while nid in by_id:
-            nid = f"agent-{uuid.uuid4().hex[:8]}"
-        work["agent_id"] = nid
-        by_id[nid] = work
-        order.append(nid)
-        return [by_id[i] for i in order if i in by_id], nid, False, overwritten_agent_ids
-
-    by_id[aid0] = work
-    if aid0 not in order:
-        order.append(aid0)
-    return [by_id[i] for i in order if i in by_id], aid0, False, overwritten_agent_ids
+    by_name[incoming_name] = work
+    if incoming_name not in order:
+        order.append(incoming_name)
+    return [by_name[name] for name in order if name in by_name], incoming_name, False, overwritten_agent_names
 
 
 def read_expert_bundle_manifest(bundle_dir: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -91,7 +82,7 @@ def build_expert_bundle_zip_bytes(
     expert_row: Dict[str, Any],
     mcp_rows: List[Dict[str, Any]],
     skills_root: Path,
-    skill_ids: List[str],
+    skill_directories: List[str],
 ) -> bytes:
     from app.core.scenario_bundle import strip_agent_row_for_disk
     from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
@@ -101,15 +92,15 @@ def build_expert_bundle_zip_bytes(
     manifest = {
         "bundle_version": EXPERT_BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
-        "expert": clean,
+        "expert": strip_resource_ids(clean),
     }
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(EXPERT_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-        safe_mcp_rows = sanitize_mcp_servers_for_bundle(mcp_rows)
+        safe_mcp_rows = [normalize_tool_row(row) for row in sanitize_mcp_servers_for_bundle(mcp_rows)]
         if safe_mcp_rows:
             zf.writestr(MCP_NAME, json.dumps(safe_mcp_rows, ensure_ascii=False, indent=2) + "\n")
         root = skills_root.resolve()
-        for sid in sorted(skill_ids):
+        for sid in sorted(skill_directories):
             sdir = (skills_root / sid).resolve()
             if not sdir.is_dir() or not (sdir / "SKILL.md").is_file():
                 continue

@@ -8,6 +8,7 @@ MCP Server 管理器：规范、轻量的调用方式。
 """
 import os
 import re
+import json
 import logging
 import asyncio
 import threading
@@ -137,7 +138,7 @@ def _redact_mcp_url(raw_url: Any) -> str:
 
 
 def _mcp_connection_log_context(
-    server_id: str,
+    server_name: str,
     config: Dict[str, Any],
     *,
     transport: Optional[Dict[str, Any]] = None,
@@ -151,7 +152,7 @@ def _mcp_connection_log_context(
     header_names = sorted(str(k) for k in (raw_headers or {}).keys())
     raw_url = url if url is not None else (transport_cfg.get("url") or transport_cfg.get("base_url") or "")
     parts = [
-        f"server_id={server_id}",
+        f"server_name={server_name}",
         f"name={str(config.get('name') or '').strip() or '<unnamed>'}",
         f"transport={str(transport_cfg.get('type') or 'stdio').strip() or 'stdio'}",
     ]
@@ -162,8 +163,40 @@ def _mcp_connection_log_context(
     return " ".join(parts)
 
 
+def _server_key(config: Dict[str, Any]) -> str:
+    return str((config or {}).get("name") or "").strip()
+
+
+def _transport_from_server_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(config.get("transport"), dict):
+        return dict(config.get("transport") or {})
+    raw = str(config.get("server_config") or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    servers = parsed.get("mcpServers") if isinstance(parsed, dict) else None
+    if not isinstance(servers, dict) or not servers:
+        return {}
+    name = _server_key(config)
+    selected = servers.get(name) if name else None
+    if not isinstance(selected, dict):
+        selected = next((item for item in servers.values() if isinstance(item, dict)), {})
+    transport = dict(selected or {})
+    if "type" not in transport:
+        if transport.get("command"):
+            transport["type"] = "stdio"
+        elif transport.get("url"):
+            transport["type"] = "sse"
+        elif transport.get("base_url"):
+            transport["type"] = "streamable_http"
+    return transport
+
+
 def normalize_mcp_kwargs_for_call(
-    server_id: Optional[str],
+    server_name: Optional[str],
     original_tool_name: str,
     kwargs: Dict[str, Any],
     input_schema: Optional[Dict[str, Any]] = None,
@@ -172,12 +205,12 @@ def normalize_mcp_kwargs_for_call(
     规范化 MCP 工具调用参数。委托给 tool_arg_normalizers，便于 manager/chat 复用同一逻辑。
     """
     from app.mcp.tool_arg_normalizers import normalize_mcp_tool_kwargs
-    return normalize_mcp_tool_kwargs(server_id, original_tool_name, kwargs, input_schema)
+    return normalize_mcp_tool_kwargs(server_name, original_tool_name, kwargs, input_schema)
 
 
 async def execute_mcp_call(
     *,
-    server_id: str,
+    server_name: str,
     tool_name: str,
     kwargs: Dict[str, Any],
     session: ClientSession,
@@ -234,19 +267,19 @@ async def execute_mcp_call(
         return (
             False,
             None,
-            f"MCP tool timeout: server={server_id} tool={tool_name} timeout_sec={timeout_label}",
+            f"MCP tool timeout: server={server_name} tool={tool_name} timeout_sec={timeout_label}",
         )
     except asyncio.CancelledError as e:
         task = asyncio.current_task()
         if task is not None and task.cancelling():
             raise
         detail = _exception_detail(e)
-        logger.warning("MCP tool call cancelled server=%s tool=%s %s", server_id, tool_name, detail)
-        return False, None, f"MCP tool cancelled: server={server_id} tool={tool_name} {detail}"
+        logger.warning("MCP tool call cancelled server=%s tool=%s %s", server_name, tool_name, detail)
+        return False, None, f"MCP tool cancelled: server={server_name} tool={tool_name} {detail}"
     except Exception as e:  # noqa: BLE001
         detail = _exception_detail(e)
-        logger.warning("MCP tool call failed server=%s tool=%s %s", server_id, tool_name, detail, exc_info=True)
-        return False, None, f"MCP tool call failed: server={server_id} tool={tool_name} {detail}"
+        logger.warning("MCP tool call failed server=%s tool=%s %s", server_name, tool_name, detail, exc_info=True)
+        return False, None, f"MCP tool call failed: server={server_name} tool={tool_name} {detail}"
 
 
 def _subst_mcp_placeholders(val: str, secrets: Optional[Dict[str, str]] = None) -> str:
@@ -429,28 +462,32 @@ class MCPToolManager:
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.server_configs = json.load(f)
+            self.server_configs = [
+                c for c in self.server_configs
+                if isinstance(c, dict) and str(c.get("type") or "mcp") == "mcp" and _server_key(c)
+            ]
             logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
             for config in self.server_configs:
-                logger.info(f"  - {config.get('id')}: {config.get('name')}")
+                logger.info(f"  - {config.get('name')}")
         else:
             logger.warning(f"MCP 配置文件不存在: {config_path}")
             # 默认配置示例
             self.server_configs = []
     
-    async def connect_server(self, server_id: str, config: Dict[str, Any]) -> bool:
+    async def connect_server(self, server_name: str, config: Dict[str, Any]) -> bool:
         """连接 MCP Server"""
         now = time.time()
-        blocked_until = float(self._server_retry_not_before.get(server_id, 0.0) or 0.0)
+        blocked_until = float(self._server_retry_not_before.get(server_name, 0.0) or 0.0)
         if blocked_until > now:
             remain = blocked_until - now
             logger.warning(
                 "MCP Server 处于失败冷却期，跳过重连（剩余 %.1fs） context=%s",
                 remain,
-                _mcp_connection_log_context(server_id, config),
+                _mcp_connection_log_context(server_name, config),
             )
             return False
         try:
-            transport = config.get("transport", {})
+            transport = _transport_from_server_config(config)
             transport_type = transport.get("type", "stdio")
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
@@ -516,9 +553,9 @@ class MCPToolManager:
                     logger.error(f"MCP Session 初始化失败: {e}", exc_info=True)
                     raise
                 
-                self.sessions[server_id] = session
-                await self._load_tools_from_server(server_id, session)
-                self._server_retry_not_before.pop(server_id, None)
+                self.sessions[server_name] = session
+                await self._load_tools_from_server(server_name, session)
+                self._server_retry_not_before.pop(server_name, None)
                 return True
 
             elif transport_type in ("http", "streamable_http", "sse") and _streamable_http_available:
@@ -534,14 +571,14 @@ class MCPToolManager:
                     logger.error(
                         "MCP Server HTTP 传输缺少必需变量: %s context=%s",
                         missing_label,
-                        _mcp_connection_log_context(server_id, config, transport=transport, url=raw_url),
+                        _mcp_connection_log_context(server_name, config, transport=transport, url=raw_url),
                     )
                     return False
 
                 url = raw_url
                 url = _subst_mcp_placeholders(url, secrets)  # ${vault:...} 密钥库；${VAR} 环境变量
                 if not url:
-                    logger.error(f"MCP Server {server_id}: HTTP 传输缺少 url 或 base_url")
+                    logger.error(f"MCP Server {server_name}: HTTP 传输缺少 url 或 base_url")
                     return False
                 headers = {k: _subst_mcp_placeholders(str(v), secrets) for k, v in raw_headers.items()}
                 auth = headers.get("Authorization")
@@ -572,20 +609,20 @@ class MCPToolManager:
                     logger.error(
                         "MCP Server Streamable HTTP 初始化超时（%.1fs） context=%s",
                         session_init_timeout,
-                        _mcp_connection_log_context(server_id, config, transport=transport, url=url, headers=headers),
+                        _mcp_connection_log_context(server_name, config, transport=transport, url=url, headers=headers),
                     )
                     raise
                 except Exception as e:
                     logger.error(
                         "MCP Server Streamable HTTP 连接失败: %s context=%s",
                         _exception_detail(e),
-                        _mcp_connection_log_context(server_id, config, transport=transport, url=url, headers=headers),
+                        _mcp_connection_log_context(server_name, config, transport=transport, url=url, headers=headers),
                         exc_info=True,
                     )
                     raise
-                self.sessions[server_id] = session
-                await self._load_tools_from_server(server_id, session)
-                self._server_retry_not_before.pop(server_id, None)
+                self.sessions[server_name] = session
+                await self._load_tools_from_server(server_name, session)
+                self._server_retry_not_before.pop(server_name, None)
                 return True
 
             else:
@@ -599,38 +636,38 @@ class MCPToolManager:
             cooldown_sec = int(os.getenv("MCP_CONNECT_RETRY_COOLDOWN_SEC", "300"))
             error_detail = _exception_detail(e)
             if cooldown_sec > 0 and _looks_like_protocol_mismatch_error(error_detail):
-                self._server_retry_not_before[server_id] = time.time() + cooldown_sec
+                self._server_retry_not_before[server_name] = time.time() + cooldown_sec
                 logger.warning(
                     "MCP Server 连接出现协议不兼容，进入冷却 %ss（可用 MCP_CONNECT_RETRY_COOLDOWN_SEC 调整） context=%s",
                     cooldown_sec,
-                    _mcp_connection_log_context(server_id, config),
+                    _mcp_connection_log_context(server_name, config),
                 )
             logger.error(
                 "Failed to connect MCP server: %s context=%s",
                 error_detail,
-                _mcp_connection_log_context(server_id, config),
+                _mcp_connection_log_context(server_name, config),
                 exc_info=True,
             )
             return False
     
-    async def _load_tools_from_server(self, server_id: str, session: ClientSession):
+    async def _load_tools_from_server(self, server_name: str, session: ClientSession):
         """从 MCP Server 加载工具"""
         try:
             tools_result = await session.list_tools()
             for mcp_tool in tools_result.tools:
-                # 新建项目内 ToolSpec（传入 server_id 用于生成唯一名称）
-                tool_spec = self._create_tool_spec(mcp_tool, session, server_id)
-                tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
+                # 新建项目内 ToolSpec（传入 server_name 用于生成唯一名称）
+                tool_spec = self._create_tool_spec(mcp_tool, session, server_name)
+                tool_name = f"{server_name}_{mcp_tool.name}" if server_name else mcp_tool.name
                 self.tools[tool_name] = tool_spec
         except Exception as e:
-            logger.error(f"Failed to load tools from server {server_id}: {e}", exc_info=True)
+            logger.error(f"Failed to load tools from server {server_name}: {e}", exc_info=True)
 
-    async def _reconnect_server(self, server_id: str) -> bool:
+    async def _reconnect_server(self, server_name: str) -> bool:
         """Best-effort reconnect for a specific server when session is closed."""
-        cfg = next((c for c in self.server_configs if c.get("id") == server_id), None)
+        cfg = next((c for c in self.server_configs if _server_key(c) == server_name), None)
         if not cfg:
             return False
-        old = self.sessions.pop(server_id, None)
+        old = self.sessions.pop(server_name, None)
         if old is not None:
             try:
                 await old.__aexit__(None, None, None)
@@ -638,16 +675,16 @@ class MCPToolManager:
                 # best effort; manager-level cleanup still handles leftovers
                 pass
         # 清理该 server 的工具，避免 stale session 继续被调用
-        stale_prefix = f"{server_id}_"
+        stale_prefix = f"{server_name}_"
         for name in [n for n in list(self.tools.keys()) if n.startswith(stale_prefix)]:
             self.tools.pop(name, None)
-        return await self.connect_server(server_id, cfg)
+        return await self.connect_server(server_name, cfg)
     
-    def _create_tool_spec(self, mcp_tool, session: ClientSession, server_id: Optional[str] = None) -> ToolSpec:
+    def _create_tool_spec(self, mcp_tool, session: ClientSession, server_name: Optional[str] = None) -> ToolSpec:
         """将 MCP 工具转换为项目内 ToolSpec。"""
         # 保存原始工具名和 session 引用
         original_tool_name = mcp_tool.name
-        tool_name = f"{server_id}_{mcp_tool.name}" if server_id else mcp_tool.name
+        tool_name = f"{server_name}_{mcp_tool.name}" if server_name else mcp_tool.name
         # 将 inputSchema 转为 dict 并保存，供 normalize_mcp_kwargs_for_call 做 __arg1 等通用映射
         _input_schema = getattr(mcp_tool, "inputSchema", None)
         if hasattr(_input_schema, "model_dump"):
@@ -660,11 +697,11 @@ class MCPToolManager:
             try:
                 try:
                     call_kwargs = normalize_mcp_kwargs_for_call(
-                        server_id, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
+                        server_name, original_tool_name, dict(kwargs or {}), input_schema=_input_schema
                     )
                 except Exception as e:
                     detail = _exception_detail(e)
-                    sid = server_id or ""
+                    sid = server_name or ""
                     logger.warning(
                         "MCP tool argument normalization failed server=%s tool=%s %s",
                         sid,
@@ -677,9 +714,9 @@ class MCPToolManager:
                         f"server={sid} tool={original_tool_name} {detail}"
                     )
                 logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
-                active_session = self.sessions.get(server_id or "", session)
+                active_session = self.sessions.get(server_name or "", session)
                 ok, result, err = await execute_mcp_call(
-                    server_id=server_id or "",
+                    server_name=server_name or "",
                     tool_name=original_tool_name,
                     kwargs=call_kwargs,
                     session=active_session,
@@ -688,7 +725,7 @@ class MCPToolManager:
                 # 远端 streamable_http 连接被回收或异常中断时，首次调用可能只返回很弱的 SDK 错误；
                 # 这里在 MCP 层重连一次，不把问题包装成 sandbox 失败。
                 if (not ok) and _looks_like_retryable_mcp_call_error(err):
-                    sid = server_id or ""
+                    sid = server_name or ""
                     if sid:
                         logger.warning(
                             "MCP 调用疑似会话失效，尝试重连后重试: server=%s tool=%s err=%s",
@@ -701,7 +738,7 @@ class MCPToolManager:
                             retry_session = self.sessions.get(sid)
                             if retry_session is not None:
                                 ok, result, err = await execute_mcp_call(
-                                    server_id=sid,
+                                    server_name=sid,
                                     tool_name=original_tool_name,
                                     kwargs=call_kwargs,
                                     session=retry_session,
@@ -711,7 +748,7 @@ class MCPToolManager:
                     if _looks_like_closed_resource_error(err):
                         return (
                             "Error: MCP session closed by remote server "
-                            f"(server={server_id or ''}, tool={original_tool_name}). "
+                            f"(server={server_name or ''}, tool={original_tool_name}). "
                             "Please retry once; if it persists, check upstream MCP service health."
                         )
                     return f"Error: {err or 'MCP tool call failed'}"
@@ -749,34 +786,36 @@ class MCPToolManager:
         await self.load_config(config_path)
 
         for config in self.server_configs:
-            server_id = config.get("id", f"server_{len(self.sessions)}")
+            server_name = _server_key(config)
+            if not server_name:
+                continue
             # lazy server: 不在启动期建立连接，首次需要时再连接
             if config.get("lazy", False):
-                logger.info("MCP Server %s 标记为 lazy，跳过启动初始化", server_id)
+                logger.info("MCP Server %s 标记为 lazy，跳过启动初始化", server_name)
                 continue
             try:
                 # 单个 server 失败不应影响其它 server 与主服务启动
                 tmo = float(config.get("metadata", {}).get("init_timeout_sec", 15.0))
-                logger.info("初始化 MCP Server: %s (timeout=%.1fs)", server_id, tmo)
-                success = await asyncio.wait_for(self.connect_server(server_id, config), timeout=tmo)
+                logger.info("初始化 MCP Server: %s (timeout=%.1fs)", server_name, tmo)
+                success = await asyncio.wait_for(self.connect_server(server_name, config), timeout=tmo)
                 if not success:
-                    logger.error("MCP Server %s 初始化失败（已跳过）", server_id)
+                    logger.error("MCP Server %s 初始化失败（已跳过）", server_name)
             except asyncio.TimeoutError:
-                logger.error("MCP Server %s 初始化超时（已跳过）", server_id, exc_info=True)
+                logger.error("MCP Server %s 初始化超时（已跳过）", server_name, exc_info=True)
             except asyncio.CancelledError as e:
                 # 某些 stdio/http 初始化会触发 anyio cancel scope；这里降级处理，避免阻塞整个系统
-                logger.error("MCP Server %s 初始化被取消（已跳过）: %s", server_id, e, exc_info=True)
+                logger.error("MCP Server %s 初始化被取消（已跳过）: %s", server_name, e, exc_info=True)
             except BaseException as e:
-                logger.error("MCP Server %s 初始化异常（已跳过）: %s", server_id, e, exc_info=True)
+                logger.error("MCP Server %s 初始化异常（已跳过）: %s", server_name, e, exc_info=True)
         
         logger.info("加载 mcp 工具完成")
 
-    async def ensure_servers_loaded(self, server_ids: List[str]) -> None:
-        """确保给定 server_ids 的 MCP 工具已加载（lazy 服务器也会在首次需要时加载）。"""
-        if not server_ids:
+    async def ensure_servers_loaded(self, server_names: List[str]) -> None:
+        """确保给定 server_names 的 MCP 工具已加载（lazy 服务器也会在首次需要时加载）。"""
+        if not server_names:
             return
         now = time.time()
-        for sid in server_ids:
+        for sid in server_names:
             if not sid:
                 continue
             if sid in self.sessions:
@@ -786,7 +825,7 @@ class MCPToolManager:
             if blocked_until > now:
                 logger.info("ensure_servers_loaded: MCP server %s 在冷却期内，跳过连接", sid)
                 continue
-            cfg = next((c for c in self.server_configs if c.get("id") == sid), None)
+            cfg = next((c for c in self.server_configs if _server_key(c) == sid), None)
             if not cfg:
                 logger.warning("ensure_servers_loaded: 未找到 MCP server 配置: %s", sid)
                 continue

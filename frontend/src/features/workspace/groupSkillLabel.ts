@@ -1,17 +1,17 @@
 export type GroupSkillLabelItem = {
-  id?: string
+  directory_name?: string
   name?: string
 }
 
 export function formatGroupSkillLabel(args: {
-  skillId?: string
+  skill?: string
   skills?: GroupSkillLabelItem[]
 }): string {
-  const skillId = String(args.skillId || '').trim()
-  if (!skillId) return ''
-  if (skillId === 'default') return '默认'
+  const skill = String(args.skill || '').trim()
+  if (!skill) return ''
+  if (skill === 'default') return '默认'
 
-  const hit = (args.skills || []).find((skill) => String(skill.id || '').trim() === skillId)
+  const hit = (args.skills || []).find((item) => String(item.directory_name || '').trim() === skill)
   const label = String(hit?.name || '').trim()
-  return label || skillId
+  return label || skill
 }

@@ -13,19 +13,19 @@ def test_merge_session_presets_skip_by_name(tmp_path, monkeypatch):
     _write_presets(
         presets_path,
         [
-            {"id": "s1", "name": "同名场景", "agent_ids": ["a1"]},
-            {"id": "s2", "name": "其他场景", "agent_ids": ["a2"]},
+            {"name": "同名场景", "agent_names": ["专家1"], "host_config": {"leader_agent_name": "主持人"}},
+            {"name": "其他场景", "agent_names": ["专家2"], "host_config": {"leader_agent_name": "主持人"}},
         ],
     )
 
-    merged, imported_ids, skipped_by_name, overwritten_ids = settings_presets_api._merge_session_presets_into_file(
-        [{"id": "incoming", "name": "同名场景", "agent_ids": ["x1"]}],
+    merged, imported_names, skipped_by_name, overwritten_names = settings_presets_api._merge_session_presets_into_file(
+        [{"name": "同名场景", "agent_names": ["新专家"], "host_config": {"leader_agent_name": "主持人"}}],
         "skip",
     )
-    assert imported_ids == []
+    assert imported_names == []
     assert skipped_by_name == ["同名场景"]
-    assert overwritten_ids == []
-    assert [x["id"] for x in merged] == ["s1", "s2"]
+    assert overwritten_names == []
+    assert [x["name"] for x in merged] == ["同名场景", "其他场景"]
 
 
 def test_merge_session_presets_overwrite_all_same_name(tmp_path, monkeypatch):
@@ -34,19 +34,17 @@ def test_merge_session_presets_overwrite_all_same_name(tmp_path, monkeypatch):
     _write_presets(
         presets_path,
         [
-            {"id": "s1", "name": "同名场景", "agent_ids": ["a1"]},
-            {"id": "s2", "name": "同名场景", "agent_ids": ["a2"]},
-            {"id": "s3", "name": "保留", "agent_ids": ["a3"]},
+            {"name": "同名场景", "agent_names": ["专家1"], "host_config": {"leader_agent_name": "主持人"}},
+            {"name": "同名场景", "agent_names": ["专家2"], "host_config": {"leader_agent_name": "主持人"}},
+            {"name": "保留", "agent_names": ["专家3"], "host_config": {"leader_agent_name": "主持人"}},
         ],
     )
 
-    merged, imported_ids, skipped_by_name, overwritten_ids = settings_presets_api._merge_session_presets_into_file(
-        [{"id": "s3", "name": "同名场景", "agent_ids": ["x1"]}],
+    merged, imported_names, skipped_by_name, overwritten_names = settings_presets_api._merge_session_presets_into_file(
+        [{"name": "同名场景", "agent_names": ["新专家"], "host_config": {"leader_agent_name": "主持人"}}],
         "overwrite",
     )
     assert skipped_by_name == []
-    assert overwritten_ids == ["s1", "s2"]
-    assert len(imported_ids) == 1
-    merged_ids = [x["id"] for x in merged]
-    assert "s3" in merged_ids
-    assert imported_ids[0] != "s3"
+    assert overwritten_names == ["同名场景", "同名场景"]
+    assert imported_names == ["同名场景"]
+    assert [x["name"] for x in merged] == ["保留", "同名场景"]

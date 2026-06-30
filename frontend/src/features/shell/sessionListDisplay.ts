@@ -1,7 +1,7 @@
-export function displaySessionTitle(s: { title: string; agent_ids?: string[] }): string {
+export function displaySessionTitle(s: { title: string; agent_names?: string[] }): string {
   const raw = (s.title || '').trim()
   if (!raw || raw === '新对话') {
-    const agentCount = s.agent_ids?.length || 0
+    const agentCount = s.agent_names?.length || 0
     if (agentCount === 0) return '空白会话'
     if (agentCount === 1) return '单专家协作会话'
     if (agentCount <= 3) return `${agentCount} 专家协作会话`

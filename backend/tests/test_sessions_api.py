@@ -62,6 +62,36 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     assert get_after_delete.status_code == 404
 
 
+def test_sessions_api_uses_agent_names_contract(client: TestClient):
+    agent_resp = client.post("/api/agents", json={"name": "运行时专家"})
+    assert agent_resp.status_code == 200
+
+    create_resp = client.post(
+        "/api/sessions",
+        json={"title": "名称协议会话", "agent_names": ["运行时专家"], "leader_agent_name": "运行时专家"},
+    )
+    assert create_resp.status_code == 200
+    created = create_resp.json()["data"]
+    assert created["agent_names"] == ["运行时专家"]
+    assert created["leader_agent_name"] == "运行时专家"
+    assert "agent_ids" not in created
+    assert "leader_agent_id" not in created
+
+    session_id = created["id"]
+    detail_resp = client.get(f"/api/sessions/{session_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()["data"]
+    assert detail["agent_names"] == ["运行时专家"]
+    assert "agent_ids" not in detail
+    assert detail["agent_map"]["运行时专家"]["name"] == "运行时专家"
+
+    update_resp = client.put(f"/api/sessions/{session_id}", json={"agent_names": []})
+    assert update_resp.status_code == 200
+    updated = update_resp.json()["data"]
+    assert updated["agent_names"] == []
+    assert "agent_ids" not in updated
+
+
 def test_export_session_default_filename_uses_workspace_timestamp_contract(monkeypatch, tmp_path):
     from app.api import files as files_api
     from app.api import group_chat_state
@@ -91,10 +121,10 @@ def test_export_session_default_filename_uses_workspace_timestamp_contract(monke
 
 
 def test_update_empty_session_can_become_scene_without_join_messages(client: TestClient):
-    agent_resp = client.post("/api/agents", json={"agent_id": "agent-scene-flow", "name": "场景专家"})
+    agent_resp = client.post("/api/agents", json={"name": "场景专家"})
     assert agent_resp.status_code == 200
 
-    create_resp = client.post("/api/sessions", json={"title": "新对话", "agent_ids": []})
+    create_resp = client.post("/api/sessions", json={"title": "新对话", "agent_names": []})
     assert create_resp.status_code == 200
     session_id = create_resp.json()["data"]["id"]
 
@@ -102,15 +132,15 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
         f"/api/sessions/{session_id}",
         json={
             "title": "问答验收场景",
-            "agent_ids": ["agent-scene-flow"],
-            "leader_agent_id": "agent-scene-flow",
+            "agent_names": ["场景专家"],
+            "leader_agent_name": "场景专家",
         },
     )
     assert update_resp.status_code == 200
     updated = update_resp.json()["data"]
     assert updated["id"] == session_id
     assert updated["title"] == "问答验收场景"
-    assert updated["agent_ids"] == ["agent-scene-flow"]
+    assert updated["agent_names"] == ["场景专家"]
     assert updated["orchestration_profile"] == "scene"
 
     detail_resp = client.get(f"/api/sessions/{session_id}")
@@ -122,10 +152,10 @@ def test_update_session_clears_stale_scheduler_state(client: TestClient):
     from app.api.group_chat_state import load_group_meta, save_group_meta
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
-    agent_resp = client.post("/api/agents", json={"agent_id": "agent-clean-scheduler", "name": "清理专家"})
+    agent_resp = client.post("/api/agents", json={"name": "清理专家"})
     assert agent_resp.status_code == 200
 
-    create_resp = client.post("/api/sessions", json={"title": "旧调度状态会话", "agent_ids": []})
+    create_resp = client.post("/api/sessions", json={"title": "旧调度状态会话", "agent_names": []})
     assert create_resp.status_code == 200
     session_id = create_resp.json()["data"]["id"]
 
@@ -143,7 +173,7 @@ def test_update_session_clears_stale_scheduler_state(client: TestClient):
 
     update_resp = client.put(
         f"/api/sessions/{session_id}",
-        json={"agent_ids": ["agent-clean-scheduler"]},
+        json={"agent_names": ["清理专家"]},
     )
     assert update_resp.status_code == 200
 
@@ -158,20 +188,20 @@ def test_update_session_clears_stale_scheduler_state(client: TestClient):
 def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     host_resp = client.put(
         "/api/settings/host-profile",
-        json={"display_name": "全局主持", "skill_ids": [], "mcp_server_ids": []},
+        json={"leader_agent_name": "全局主持"},
     )
     assert host_resp.status_code == 200
 
-    agent_resp = client.post("/api/agents", json={"agent_id": "agent-scene-host-name", "name": "场景专家"})
+    agent_resp = client.post("/api/agents", json={"name": "场景主持名称专家"})
     assert agent_resp.status_code == 200
 
     create_resp = client.post(
         "/api/sessions",
         json={
             "title": "场景主持名称回归",
-            "agent_ids": ["agent-scene-host-name"],
-            "leader_agent_id": "agent-scene-host",
-            "host_config": {"display_name": "场景主持", "skill_ids": []},
+            "agent_names": ["场景主持名称专家"],
+            "leader_agent_name": "agent-scene-host",
+                "host_config": {"leader_agent_name": "场景主持"},
         },
     )
     assert create_resp.status_code == 200
@@ -181,13 +211,13 @@ def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     assert detail_resp.status_code == 200
     detail = detail_resp.json()["data"]
     assert detail["agent_map"]["agent-scene-host"]["name"] == "场景主持"
-    assert detail["host_config"]["display_name"] == "场景主持"
+    assert detail["host_config"]["leader_agent_name"] == "场景主持"
 
 
 def test_new_regular_session_uses_latest_default_host_profile(client: TestClient):
     host_resp = client.put(
         "/api/settings/host-profile",
-        json={"display_name": "上线默认主持", "skill_ids": [], "mcp_server_ids": []},
+        json={"leader_agent_name": "上线默认主持"},
     )
     assert host_resp.status_code == 200
 
@@ -198,7 +228,7 @@ def test_new_regular_session_uses_latest_default_host_profile(client: TestClient
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()["data"]
-    assert detail["leader_agent_id"] == "agent-scene-host"
+    assert detail["leader_agent_name"] == "agent-scene-host"
     assert detail["agent_map"]["agent-scene-host"]["name"] == "上线默认主持"
     assert "host_config" not in detail or detail["host_config"] in ({}, None)
 

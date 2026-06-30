@@ -66,8 +66,8 @@ def list_skill_part_dir(skill_dir: Path, part_type: str) -> List[Dict[str, str]]
     return items
 
 
-def _skill_dir_or_404(skill_id: str) -> Path:
-    skill_dir = _get_skills_dir() / skill_id
+def _skill_dir_or_404(directory_name: str) -> Path:
+    skill_dir = _get_skills_dir() / directory_name
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
     return skill_dir
@@ -96,10 +96,10 @@ def _resolve_part_path(skill_dir: Path, part_type: str, path: str, *, allow_skil
 
 
 def register_skill_part_routes(router: APIRouter) -> None:
-    @router.get("/settings/skills/{skill_id}/parts")
-    async def get_skill_parts(skill_id: str):
+    @router.get("/settings/skills/{directory_name}/parts")
+    async def get_skill_parts(directory_name: str):
         """获取某 skill 目录下 references、assets、scripts 的文件列表。"""
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         return {
             "status": "ok",
             "data": {
@@ -110,12 +110,12 @@ def register_skill_part_routes(router: APIRouter) -> None:
             },
         }
 
-    @router.get("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
-    async def get_skill_part_file(skill_id: str, part_type: str, file_path: str):
+    @router.get("/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}")
+    async def get_skill_part_file(directory_name: str, part_type: str, file_path: str):
         """获取某 skill 下 references/assets/scripts 中指定文件的内容。"""
         if file_path.startswith("/"):
             raise HTTPException(status_code=400, detail="Invalid file path")
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         full_path = _resolve_part_path(skill_dir, part_type, file_path, allow_skill_root=False)
         if not full_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
@@ -125,10 +125,10 @@ def register_skill_part_routes(router: APIRouter) -> None:
             raise HTTPException(status_code=500, detail=f"Cannot read file: {e}")
         return {"status": "ok", "data": {"path": file_path, "content": content}}
 
-    @router.post("/settings/skills/{skill_id}/parts/{part_type}")
-    async def create_skill_part_file(skill_id: str, part_type: str, body: PartFileCreate):
+    @router.post("/settings/skills/{directory_name}/parts/{part_type}")
+    async def create_skill_part_file(directory_name: str, part_type: str, body: PartFileCreate):
         """在 skill 的 references/assets/scripts 下新建文件。"""
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         full_path = _resolve_part_path(skill_dir, part_type, body.path, allow_skill_root=True)
         if part_type == "other" and str(full_path.relative_to(skill_dir.resolve())).replace("\\", "/") == "SKILL.md":
             raise HTTPException(status_code=400, detail="Cannot create SKILL.md in other")
@@ -136,10 +136,10 @@ def register_skill_part_routes(router: APIRouter) -> None:
         full_path.write_text(body.content or "", encoding="utf-8")
         return {"status": "ok", "data": {"path": (body.path or "").strip().lstrip("/").replace("\\", "/")}}
 
-    @router.post("/settings/skills/{skill_id}/parts/{part_type}/mkdir")
-    async def create_skill_part_dir(skill_id: str, part_type: str, body: PartDirCreate):
+    @router.post("/settings/skills/{directory_name}/parts/{part_type}/mkdir")
+    async def create_skill_part_dir(directory_name: str, part_type: str, body: PartDirCreate):
         """在 skill 的 references/assets/scripts/other 下新建目录。"""
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         full_dir = _resolve_part_path(skill_dir, part_type, (body.path or "").rstrip("/"), allow_skill_root=True)
         if part_type == "other" and str(full_dir.relative_to(skill_dir.resolve())).replace("\\", "/") == "SKILL.md":
             raise HTTPException(status_code=400, detail="Cannot create SKILL.md in other")
@@ -149,24 +149,24 @@ def register_skill_part_routes(router: APIRouter) -> None:
             keep.write_text("", encoding="utf-8")
         return {"status": "ok", "data": {"path": (body.path or "").strip().lstrip("/").rstrip("/").replace("\\", "/"), "created": True}}
 
-    @router.put("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
-    async def update_skill_part_file(skill_id: str, part_type: str, file_path: str, body: PartFileUpdate):
+    @router.put("/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}")
+    async def update_skill_part_file(directory_name: str, part_type: str, file_path: str, body: PartFileUpdate):
         """更新 skill 下 references/assets/scripts 中指定文件的内容。"""
         if file_path.startswith("/"):
             raise HTTPException(status_code=400, detail="Invalid file path")
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         full_path = _resolve_part_path(skill_dir, part_type, file_path, allow_skill_root=False)
         if not full_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         full_path.write_text(body.content, encoding="utf-8")
         return {"status": "ok", "data": {"path": file_path}}
 
-    @router.delete("/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}")
-    async def delete_skill_part_file(skill_id: str, part_type: str, file_path: str):
+    @router.delete("/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}")
+    async def delete_skill_part_file(directory_name: str, part_type: str, file_path: str):
         """删除 skill 下 references/assets/scripts 中的指定文件。"""
         if file_path.startswith("/"):
             raise HTTPException(status_code=400, detail="Invalid file path")
-        skill_dir = _skill_dir_or_404(skill_id)
+        skill_dir = _skill_dir_or_404(directory_name)
         full_path = _resolve_part_path(skill_dir, part_type, file_path, allow_skill_root=False)
         if not full_path.is_file():
             raise HTTPException(status_code=404, detail="File not found")

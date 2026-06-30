@@ -33,7 +33,7 @@ def test_next_prompt_fallback_when_memory_disabled():
     app_settings = {"group_memory": {"enabled": False}}
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
-        target_agent_id="agent-a",
+        target_agent_name="专家A",
         discussion_goal="写周报",
         context="最近讨论内容",
         app_settings=app_settings,
@@ -56,7 +56,7 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     monkeypatch.setattr(group_chat_memory_prompt, "build_dispatch_context", _fake_dispatch_context)
     out = gc._build_next_prompt_with_memory(
         session_id="group-test",
-        target_agent_id="agent-a",
+        target_agent_name="专家A",
         discussion_goal="写周报",
         context="ignored",
         app_settings={"group_memory": {"enabled": True, "dispatch_top_k": 2, "max_facts": 20}},
@@ -78,7 +78,7 @@ def test_next_prompt_short_fallback_avoids_meta_task_preface():
         prompt="请说明边界",
         discussion_goal="伴学研讨",
         context="学生正在讨论 AI 是否替代了本来该被考察的能力。",
-        target_agent_id="agent-peer",
+        target_agent_name="同伴专家",
     )
 
     assert "先用 1-2 句确认你理解的子任务" not in out
@@ -93,10 +93,10 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
 
     host_msg = {
         "role": "host",
-        "agent_id": "agent-scene-host",
+        "agent_name": "场景主持人",
         "content": "请用户补充或继续提问。",
         "timestamp": "2026-05-13T12:30:50+00:00",
-        "skill_id": "group-host-general",
+        "skill": "group-host-general",
     }
 
     gc._persist_group_memory_turn(
@@ -114,10 +114,10 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
 
     assistant_msg = {
         "role": "assistant",
-        "agent_id": "agent-data",
+        "agent_name": "数据专家",
         "content": "- 用户希望输出周报\n- 需要包含趋势图表",
         "timestamp": "2026-05-13T12:31:50+00:00",
-        "skill_id": "weekly-report",
+        "skill": "weekly-report",
     }
     gc._persist_group_memory_turn(
         session_id="group-test",
@@ -142,10 +142,10 @@ def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path)
 
     assistant_msg = {
         "role": "assistant",
-        "agent_id": "agent-writer",
+        "agent_name": "写作专家",
         "content": "已完成周报初稿，并保存到工作区。",
         "timestamp": "2026-05-13T12:31:50+00:00",
-        "skill_id": "weekly-report",
+        "skill": "weekly-report",
         "tool_debug": {
             "tool_calls": [
                 {
@@ -167,7 +167,7 @@ def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path)
     )
 
     index = (ws / "memory" / "index.md").read_text(encoding="utf-8")
-    assert "agent: agent-writer" in index
+    assert "agent_name: 写作专家" in index
     assert "skill: weekly-report" in index
     assert "summary: 已完成周报初稿，并保存到工作区。" in index
     assert "- reports/weekly.md" in index

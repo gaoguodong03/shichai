@@ -327,7 +327,7 @@ function inferKnownMapFieldNameFromOptionKey(optionKey: string): string | null {
 export function buildMcpServerPayload(
   draft: McpServerDraft,
   options: Record<string, unknown> = {},
-): { name: string; transport: Record<string, unknown>; metadata: { description: string } } {
+): { name: string; type: 'mcp'; description: string; server_config: string } {
   const transport = { ...draft.transport }
   const mapFieldNames = new Set(Object.keys(transport))
 
@@ -349,10 +349,9 @@ export function buildMcpServerPayload(
 
   return {
     name: draft.name,
-    transport,
-    metadata: {
-      description: draft.metadata?.description ?? '',
-    },
+    type: 'mcp',
+    description: draft.metadata?.description ?? '',
+    server_config: JSON.stringify({ mcpServers: { [draft.name]: transport } }, null, 2),
   }
 }
 

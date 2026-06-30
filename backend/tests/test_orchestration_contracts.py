@@ -12,16 +12,16 @@ from app.agent.orchestrator_state import (
 def test_normalize_respects_next_speaker_without_binding_last_expert():
     """不再根据 task_done 把 next_speaker 绑回 last_speaker；以主持人 JSON 为准。"""
     out = normalize_scheduler_decision(
-        {"next_speaker": "agent-b", "task_done": False, "reason": "x"},
-        agent_ids=["agent-a", "agent-b"],
-        current_owner_agent_id="agent-a",
+        {"next_speaker": "检索专家", "task_done": False, "reason": "x"},
+        agent_names=["写作专家", "检索专家"],
+        current_owner_agent_name="写作专家",
     )
-    assert out["next_speaker"] == "agent-b"
+    assert out["next_speaker"] == "检索专家"
 
 
 def test_orchestration_decision_migrates_legacy_next_prompt_to_speaker_task():
     payload = OrchestrationDecision(
-        next_speaker="agent-a",
+        next_speaker="写作专家",
         next_prompt="请继续写大纲",
     ).to_dict()
 
@@ -32,15 +32,15 @@ def test_orchestration_decision_migrates_legacy_next_prompt_to_speaker_task():
 def test_normalize_scheduler_decision_filters_suggested_add_by_recruitable_ids():
     out = normalize_scheduler_decision(
         {
-            "next_speaker": "writer",
+            "next_speaker": "写作专家",
             "task_done": True,
-            "suggested_add_agent_ids": ["writer", "illustrator", "newcomer", "illustrator"],
+            "suggested_add_agent_names": ["写作专家", "插画专家", "新专家", "插画专家"],
         },
-        agent_ids=["host", "writer", "illustrator"],
-        recruitable_ids=["newcomer", "contact"],
-        current_owner_agent_id="writer",
+        agent_names=["主持人", "写作专家", "插画专家"],
+        recruitable_names=["新专家", "联系人"],
+        current_owner_agent_name="写作专家",
     )
-    assert out["suggested_add_agent_ids"] == ["newcomer"]
+    assert out["suggested_add_agent_names"] == ["新专家"]
     assert out["next_speaker"] == "user"
     assert out["phase"] == OrchestrationPhase.RECRUITING.value
     assert out["interrupt_reason"] == InterruptReason.NEED_RECRUIT_EXPERT.value
@@ -54,7 +54,7 @@ def test_end_payload_hardens_terminal_semantics():
         phase=OrchestrationPhase.AWAITING_USER,
         interrupt_reason=InterruptReason.NEED_USER_INPUT,
         required_user_fields=[{"name": "topic", "required": True}],
-        resume_target_agent_id="Writer",
+        resume_target_agent_name="写作专家",
     )
     assert payload["discussion_ended"] is True
     assert payload["waiting_for_user"] is False
@@ -62,7 +62,7 @@ def test_end_payload_hardens_terminal_semantics():
     assert payload["interrupt_reason"] == InterruptReason.NONE.value
     assert payload["suggested_next_speaker"] is None
     assert payload["required_user_fields"] == []
-    assert payload["resume_target_agent_id"] == "writer"
+    assert payload["resume_target_agent_name"] == "写作专家"
 
 
 def test_end_payload_sets_need_user_input_when_required_fields_present():
@@ -113,7 +113,7 @@ def test_end_payload_defaults_suggested_to_user_when_waiting_and_omitted():
 def test_normalize_scheduler_accepts_invite_next_speaker():
     out = normalize_scheduler_decision(
         {"next_speaker": "invite", "speaker_task": "请邀请文字创作专家"},
-        agent_ids=["agent-a"],
+        agent_names=["写作专家"],
     )
     assert out["next_speaker"] == "invite"
     assert out["phase"] == OrchestrationPhase.RECRUITING.value

@@ -5,23 +5,21 @@ import asyncio
 import io
 import json
 import time
-import uuid
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional
 
-import yaml
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
+from app.core.name_based_resources import normalize_tool_row
 from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
-from app.core.settings_bundle_import import mcp_name_identity_import_plan, upsert_rows_by_id
-from app.core.settings_references import merge_reference_rows_for_ids, normalize_reference_rows
 from app.core.user_context import get_current_user_context, get_current_username
-from app.core.user_settings_paths import mcp_config_path, skills_dir_path
+from app.core.user_settings_paths import mcp_config_path
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -55,13 +53,21 @@ class MCPTransport(BaseModel):
 class MCPServerCreate(BaseModel):
     """新建 MCP Server 请求"""
     name: str
-    transport: MCPTransport
+    type: str = "mcp"
+    description: str = ""
+    transport: Optional[MCPTransport] = None
+    server_config: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
 class MCPServerUpdate(BaseModel):
     """更新 MCP Server 请求"""
     name: Optional[str] = None
+    type: Optional[str] = None
+    description: Optional[str] = None
     transport: Optional[MCPTransport] = None
+    server_config: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
 def load_mcp_config() -> List[Dict[str, Any]]:
@@ -71,14 +77,31 @@ def load_mcp_config() -> List[Dict[str, Any]]:
         with open(config_path, 'r', encoding='utf-8') as f:
             rows = json.load(f)
         if isinstance(rows, list):
-            return [_strip_legacy_runtime_fields(row) for row in rows if isinstance(row, dict)]
+            out = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    out.append(normalize_tool_row(row))
+                except Exception:
+                    continue
+            return out
     return []
 
 def save_mcp_config(servers: List[Dict[str, Any]]):
     """保存 MCP 配置"""
     config_path = mcp_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    servers = [_strip_legacy_runtime_fields(row) for row in servers or [] if isinstance(row, dict)]
+    servers = [normalize_tool_row(row) for row in servers or [] if isinstance(row, dict)]
+    seen: set[str] = set()
+    unique_servers: List[Dict[str, Any]] = []
+    for row in servers:
+        key = str(row.get("name") or "").strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_servers.append(row)
+    servers = unique_servers
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(servers, f, ensure_ascii=False, indent=2)
     user_ctx = get_current_user_context(default_fallback=False)
@@ -87,13 +110,11 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
         for row in servers or []:
             if not isinstance(row, dict):
                 continue
-            copied = dict(row)
-            copied.setdefault("type", "mcp")
-            resource_rows.append(copied)
+            resource_rows.append(dict(row))
         mirror_rows_to_resource_dir(
             resource_rows,
             user_ctx.tools_dir.resolve(),
-            "id",
+            "name",
             body_filename="tool.json",
         )
 
@@ -106,73 +127,6 @@ def _strip_legacy_runtime_fields(server: Dict[str, Any]) -> Dict[str, Any]:
     return copied
 
 
-def _frontmatter_mcp_ids(fm: Dict[str, Any]) -> List[str]:
-    for key in ("auto-tools", "allowed-tools"):
-        tools = fm.get(key)
-        if isinstance(tools, dict):
-            raw = tools.get("mcp")
-            if isinstance(raw, list):
-                return list(dict.fromkeys(str(x).strip() for x in raw if str(x).strip()))
-    legacy = fm.get("mcp_server_ids")
-    if isinstance(legacy, list):
-        return list(dict.fromkeys(str(x).strip() for x in legacy if str(x).strip()))
-    return []
-
-
-def _read_skill_frontmatter(skill_file: Path) -> tuple[Dict[str, Any], str]:
-    text = skill_file.read_text(encoding="utf-8")
-    if not text.strip().startswith("---"):
-        return {}, text
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return {}, text
-    parsed = yaml.safe_load(parts[1]) or {}
-    return parsed if isinstance(parsed, dict) else {}, parts[2].lstrip("\n")
-
-
-def _write_skill_frontmatter(skill_file: Path, fm: Dict[str, Any], body: str) -> None:
-    content = "---\n" + yaml.dump(fm, allow_unicode=True, default_flow_style=False) + "---\n" + body
-    skill_file.write_text(content, encoding="utf-8")
-
-
-def _mark_mcp_id_missing_in_skills(server_id: str, server_name: str = "") -> None:
-    """删除 MCP 前，为仍声明它的 Skill 保存名称快照。"""
-    sid = str(server_id or "").strip()
-    if not sid:
-        return
-    try:
-        root = skills_dir_path().resolve()
-    except Exception:
-        return
-    if not root.is_dir():
-        return
-    for child in root.iterdir():
-        if not child.is_dir():
-            continue
-        skill_file = child / "SKILL.md"
-        if not skill_file.is_file():
-            continue
-        try:
-            fm, body = _read_skill_frontmatter(skill_file)
-            mcp_ids = _frontmatter_mcp_ids(fm)
-            if sid not in mcp_ids:
-                continue
-            labels = fm.get("reference-labels") if isinstance(fm.get("reference-labels"), dict) else {}
-            labels = dict(labels)
-            refs = merge_reference_rows_for_ids(
-                mcp_ids,
-                labels.get("mcp"),
-                {sid: server_name} if server_name else {},
-            )
-            if refs == normalize_reference_rows(labels.get("mcp")):
-                continue
-            labels["mcp"] = refs
-            fm["reference-labels"] = labels
-            _write_skill_frontmatter(skill_file, fm, body)
-        except Exception:
-            continue
-
-
 def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
     safe_rows = sanitize_mcp_servers_for_bundle([server])
     buf = io.BytesIO()
@@ -182,8 +136,13 @@ def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
 
 
 def _content_disposition_attachment(filename: str) -> str:
-    safe = str(filename or "mcp-export.zip").replace("\\", "\\\\").replace('"', '\\"')
-    return f'attachment; filename="{safe}"'
+    filename = str(filename or "mcp-export.zip")
+    try:
+        filename.encode("ascii")
+        safe = filename.replace("\\", "\\\\").replace('"', '\\"')
+        return f'attachment; filename="{safe}"'
+    except UnicodeEncodeError:
+        return f"attachment; filename=\"mcp-export.zip\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 def _read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
@@ -208,16 +167,7 @@ def _read_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
 async def get_mcp_servers():
     """获取 MCP Server 列表"""
     servers = load_mcp_config()
-    result = []
-    for server in servers:
-        server_id = server.get("id", "")
-        server_info = {
-            "id": server_id,
-            "name": server.get("name", ""),
-            "transport": server.get("transport", {}),
-            "metadata": server.get("metadata", {})
-        }
-        result.append(server_info)
+    result = [dict(server) for server in servers]
     
     return {
         "status": "ok",
@@ -227,19 +177,19 @@ async def get_mcp_servers():
     }
 
 
-@router.get("/settings/mcp/{server_id}/export-zip")
-async def export_mcp_server_zip(server_id: str):
-    sid = str(server_id or "").strip()
-    if not sid:
-        raise HTTPException(status_code=400, detail="server_id required")
-    hit = next((x for x in load_mcp_config() if str(x.get("id") or "").strip() == sid), None)
+@router.get("/settings/mcp/{tool_name}/export-zip")
+async def export_mcp_server_zip(tool_name: str):
+    name = str(tool_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="tool name required")
+    hit = next((x for x in load_mcp_config() if str(x.get("name") or "").strip() == name), None)
     if not hit:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
     raw = _build_single_mcp_bundle_zip_bytes(dict(hit))
     return StreamingResponse(
         io.BytesIO(raw),
         media_type="application/zip",
-        headers={"Content-Disposition": _content_disposition_attachment(f"{sid}.zip")},
+        headers={"Content-Disposition": _content_disposition_attachment(f"{name}.zip")},
     )
 
 
@@ -247,17 +197,17 @@ async def export_mcp_server_zip(server_id: str):
 async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Form(False)):
     raw = await file.read()
     rows = _read_mcp_bundle_rows(raw)
-    preview = [{"id": str(x.get("id") or ""), "name": str(x.get("name") or "")} for x in rows]
+    rows = [normalize_tool_row(row) for row in rows]
+    preview = [{"name": str(x.get("name") or ""), "type": str(x.get("type") or "")} for x in rows]
     if dry_run:
-        return {"status": "ok", "data": {"object_type": "mcp", "preview": {"mcps": preview}}}
+        return {"status": "ok", "data": {"object_type": "tool", "preview": {"tools": preview}}}
     existing = load_mcp_config()
-    mcp_id_map, rows_to_import, kept_mcp_ids = mcp_name_identity_import_plan(existing, rows)
-    existing_ids = {str(row.get("id") or "").strip() for row in existing}
-    imported_ids = {str(row.get("id") or "").strip() for row in rows_to_import}
-    merged = upsert_rows_by_id(existing, rows_to_import, "id")
-    mcp_added = len([mid for mid in imported_ids if mid and mid not in existing_ids])
-    mcp_skipped = len(kept_mcp_ids)
-    mcp_updated = len([mid for mid in imported_ids if mid and mid in existing_ids])
+    existing_names = {str(row.get("name") or "").strip().casefold() for row in existing}
+    rows_to_import = [row for row in rows if str(row.get("name") or "").strip().casefold() not in existing_names]
+    merged = existing + rows_to_import
+    mcp_added = len(rows_to_import)
+    mcp_skipped = len(rows) - len(rows_to_import)
+    mcp_updated = 0
     save_mcp_config(merged)
     await _invalidate_mcp_runtime_after_config_change()
     return {
@@ -268,8 +218,8 @@ async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Fo
                 "mcp_added": mcp_added,
                 "mcp_skipped": mcp_skipped,
                 "mcp_updated": mcp_updated,
-                "mcp_id_map": mcp_id_map,
-                "mcp_kept_ids": kept_mcp_ids,
+                "tools_added": mcp_added,
+                "tools_skipped": mcp_skipped,
             },
         },
     }
@@ -277,18 +227,15 @@ async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Fo
 
 @router.post("/settings/mcp")
 async def create_mcp_server(server: MCPServerCreate):
-    """新建 MCP Server"""
+    """新建工具"""
     servers = load_mcp_config()
-    
-    # 生成 ID
-    server_id = f"mcp-{uuid.uuid4().hex[:8]}"
-    
-    new_server = {
-        "id": server_id,
-        "name": server.name,
-        "transport": server.transport.model_dump(exclude_none=True),
-        "metadata": server.metadata or {}
-    }
+    if any(str(s.get("name") or "").strip().casefold() == server.name.strip().casefold() for s in servers):
+        raise HTTPException(status_code=409, detail="同名工具已存在")
+
+    raw_server = server.model_dump(exclude_none=True)
+    if server.transport is not None:
+        raw_server["transport"] = server.transport.model_dump(exclude_none=True)
+    new_server = normalize_tool_row(raw_server)
     
     servers.append(new_server)
     save_mcp_config(servers)
@@ -299,72 +246,77 @@ async def create_mcp_server(server: MCPServerCreate):
         "data": new_server
     }
 
-@router.put("/settings/mcp/{server_id}")
-async def update_mcp_server(server_id: str, server_update: MCPServerUpdate):
-    """更新 MCP Server"""
+@router.put("/settings/mcp/{tool_name}")
+async def update_mcp_server(tool_name: str, server_update: MCPServerUpdate):
+    """更新工具"""
     servers = load_mcp_config()
-    
-    # 查找服务器
+    current_name = str(tool_name or "").strip()
     server_index = None
     for i, s in enumerate(servers):
-        if s.get("id") == server_id:
+        if str(s.get("name") or "").strip() == current_name:
             server_index = i
             break
     
     if server_index is None:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
     
-    # 更新字段
-    server = servers[server_index]
-    if server_update.name is not None:
-        server["name"] = server_update.name
+    server = dict(servers[server_index])
+    update_data = server_update.model_dump(exclude_none=True)
     if server_update.transport is not None:
-        server["transport"] = server_update.transport.model_dump(exclude_none=True)
-    if server_update.metadata is not None:
-        server["metadata"] = server_update.metadata
+        update_data["transport"] = server_update.transport.model_dump(exclude_none=True)
+    server.update(update_data)
+    normalized = normalize_tool_row(server)
+    new_name = str(normalized.get("name") or "").strip()
+    if new_name.casefold() != current_name.casefold() and any(
+        str(s.get("name") or "").strip().casefold() == new_name.casefold()
+        for idx, s in enumerate(servers)
+        if idx != server_index
+    ):
+        raise HTTPException(status_code=409, detail="同名工具已存在")
+    servers[server_index] = normalized
     
     save_mcp_config(servers)
     await _invalidate_mcp_runtime_after_config_change()
 
     return {
         "status": "ok",
-        "data": server
+        "data": normalized
     }
 
-@router.delete("/settings/mcp/{server_id}")
-async def delete_mcp_server(server_id: str):
-    """删除 MCP Server"""
+@router.delete("/settings/mcp/{tool_name}")
+async def delete_mcp_server(tool_name: str):
+    """删除工具"""
     servers = load_mcp_config()
-    
-    # 查找并删除
+    name = str(tool_name or "").strip()
     original_count = len(servers)
-    target = next((s for s in servers if s.get("id") == server_id), None)
-    servers = [s for s in servers if s.get("id") != server_id]
+    target = next((s for s in servers if str(s.get("name") or "").strip() == name), None)
+    servers = [s for s in servers if str(s.get("name") or "").strip() != name]
     
     if len(servers) == original_count:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
     
-    _mark_mcp_id_missing_in_skills(server_id, str((target or {}).get("name") or server_id))
     save_mcp_config(servers)
     await _invalidate_mcp_runtime_after_config_change()
 
     return {
         "status": "ok",
         "data": {
-            "id": server_id,
+            "name": name,
             "deleted": True
         }
     }
 
-@router.post("/settings/mcp/{server_id}/test")
-async def test_mcp_server(server_id: str):
+@router.post("/settings/mcp/{tool_name}/test")
+async def test_mcp_server(tool_name: str):
     """测试 MCP Server 连接（真实调用 MCP Manager）"""
     servers = load_mcp_config()
+    tool_key = str(tool_name or "").strip()
 
-    # 查找服务器配置
-    server = next((s for s in servers if s.get("id") == server_id), None)
+    server = next((s for s in servers if str(s.get("name") or "").strip() == tool_key), None)
     if server is None:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if server.get("type") != "mcp":
+        raise HTTPException(status_code=400, detail="只有 MCP 工具支持连接测试")
 
     mcp_manager = await _mcp_runtime_for_request()
 
@@ -373,8 +325,8 @@ async def test_mcp_server(server_id: str):
     start = time.perf_counter()
     try:
         # 如果当前没有 session，则尝试连接
-        if server_id not in mcp_manager.sessions:
-            ok = await mcp_manager.connect_server(server_id, server)
+        if tool_key not in mcp_manager.sessions:
+            ok = await mcp_manager.connect_server(tool_key, server)
             if not ok:
                 elapsed = int((time.perf_counter() - start) * 1000)
                 return {
@@ -382,11 +334,11 @@ async def test_mcp_server(server_id: str):
                     "data": {
                         "connected": False,
                         "response_time": elapsed,
-                        "error": f"Failed to connect to MCP server {server_id}",
+                        "error": f"Failed to connect to MCP server {tool_key}",
                     },
                 }
         # 调用 list_tools 做一次简单健康检查
-        session = mcp_manager.sessions.get(server_id)
+        session = mcp_manager.sessions.get(tool_key)
         if not session:
             elapsed = int((time.perf_counter() - start) * 1000)
             return {
@@ -394,7 +346,7 @@ async def test_mcp_server(server_id: str):
                 "data": {
                     "connected": False,
                     "response_time": elapsed,
-                    "error": f"No active session for MCP server {server_id}",
+                    "error": f"No active session for MCP server {tool_key}",
                 },
             }
         try:
@@ -433,25 +385,26 @@ async def test_mcp_server(server_id: str):
             },
         }
 
-@router.get("/settings/mcp/{server_id}/tools")
-async def get_mcp_server_tools(server_id: str):
+@router.get("/settings/mcp/{tool_name}/tools")
+async def get_mcp_server_tools(tool_name: str):
     """获取 MCP Server 工具列表（含 input_schema），用于前端动态渲染参数表单"""
     mcp_manager = await _mcp_runtime_for_request()
 
     # 找到对应 server 配置
-    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    tool_key = str(tool_name or "").strip()
+    config = next((c for c in mcp_manager.server_configs if str(c.get("name") or "").strip() == tool_key), None)
     if not config:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
 
     # 确保已连接
-    if server_id not in mcp_manager.sessions:
-        ok = await mcp_manager.connect_server(server_id, config)
+    if tool_key not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(tool_key, config)
         if not ok:
-            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {tool_key}")
 
-    session = mcp_manager.sessions.get(server_id)
+    session = mcp_manager.sessions.get(tool_key)
     if not session:
-        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {tool_key}")
 
     try:
         tools_result = await session.list_tools()
@@ -489,27 +442,28 @@ class MCPToolCallBody(BaseModel):
     arguments: Dict[str, Any] = {}
 
 
-@router.post("/settings/mcp/{server_id}/tools/{tool_name}/call")
-async def call_mcp_tool(server_id: str, tool_name: str, body: MCPToolCallBody):
+@router.post("/settings/mcp/{server_name}/tools/{tool_name}/call")
+async def call_mcp_tool(server_name: str, tool_name: str, body: MCPToolCallBody):
     """调用指定 MCP Server 上的某个工具，用于前端测试面板"""
     mcp_manager = await _mcp_runtime_for_request()
 
-    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    tool_key = str(server_name or "").strip()
+    config = next((c for c in mcp_manager.server_configs if str(c.get("name") or "").strip() == tool_key), None)
     if not config:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
 
     # 确保连接
-    if server_id not in mcp_manager.sessions:
-        ok = await mcp_manager.connect_server(server_id, config)
+    if tool_key not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(tool_key, config)
         if not ok:
-            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {tool_key}")
 
-    session = mcp_manager.sessions.get(server_id)
+    session = mcp_manager.sessions.get(tool_key)
     if not session:
-        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {tool_key}")
 
     ok, result, err = await execute_mcp_call(
-        server_id=server_id,
+        server_name=tool_key,
         tool_name=tool_name,
         kwargs=body.arguments or {},
         session=session,
@@ -550,27 +504,28 @@ class MCPSandboxCallBody(BaseModel):
     arguments: Dict[str, Any] = {}
 
 
-@router.post("/settings/mcp/{server_id}/sandbox-call")
-async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
+@router.post("/settings/mcp/{tool_name}/sandbox-call")
+async def call_mcp_sandbox(tool_name: str, body: MCPSandboxCallBody):
     """
     沙箱调用：在指定 MCP Server 上选择第一个可用工具进行一次调用。
     前端只需提供 arguments，不需要关心工具名。
     """
     mcp_manager = await _mcp_runtime_for_request()
 
-    config = next((c for c in mcp_manager.server_configs if c.get("id") == server_id), None)
+    tool_key = str(tool_name or "").strip()
+    config = next((c for c in mcp_manager.server_configs if str(c.get("name") or "").strip() == tool_key), None)
     if not config:
-        raise HTTPException(status_code=404, detail="MCP Server not found")
+        raise HTTPException(status_code=404, detail="Tool not found")
 
     # 确保连接
-    if server_id not in mcp_manager.sessions:
-        ok = await mcp_manager.connect_server(server_id, config)
+    if tool_key not in mcp_manager.sessions:
+        ok = await mcp_manager.connect_server(tool_key, config)
         if not ok:
-            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {server_id}")
+            raise HTTPException(status_code=500, detail=f"Failed to connect MCP server {tool_key}")
 
-    session = mcp_manager.sessions.get(server_id)
+    session = mcp_manager.sessions.get(tool_key)
     if not session:
-        raise HTTPException(status_code=500, detail=f"No active session for MCP server {server_id}")
+        raise HTTPException(status_code=500, detail=f"No active session for MCP server {tool_key}")
 
     # 获取工具列表，选择第一个工具名
     try:
@@ -582,15 +537,15 @@ async def call_mcp_sandbox(server_id: str, body: MCPSandboxCallBody):
 
     tools = getattr(tools_result, "tools", []) or []
     if not tools:
-        raise HTTPException(status_code=500, detail=f"MCP server {server_id} has no tools")
+        raise HTTPException(status_code=500, detail=f"MCP server {tool_key} has no tools")
 
     tool_name = getattr(tools[0], "name", None)
     if not tool_name:
-        raise HTTPException(status_code=500, detail=f"First tool of MCP server {server_id} has no name")
+        raise HTTPException(status_code=500, detail=f"First tool of MCP server {tool_key} has no name")
 
     # 调用第一个工具
     ok, result, err = await execute_mcp_call(
-        server_id=server_id,
+        server_name=tool_key,
         tool_name=tool_name,
         kwargs=body.arguments or {},
         session=session,

@@ -16,7 +16,7 @@
 
 
 
-      <div v-else-if="!effectiveProviderId" class="text-sm text-muted py-6">
+      <div v-else-if="!effectiveLlmName" class="text-sm text-muted py-6">
 
         请在左侧选择一个模型，或点击「新建 LLM」。
 
@@ -38,25 +38,17 @@
 
             <div class="min-w-0 flex-1">
 
-              <label class="block text-sm text-muted mb-1">提供商</label>
+              <label class="block text-sm text-muted mb-1">名称</label>
 
-              <input
-
-                v-model="edit.id"
-
-                type="text"
-
-                placeholder="例如：qwen、jeniya、gemini"
-
-                class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary placeholder-muted focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
-
-              />
+              <div class="w-full px-3 py-2 bg-input-bg border border-input-border rounded-lg text-primary">
+                {{ isNew ? ((edit.model || '').trim() || '保存时使用模型型号') : effectiveLlmName }}
+              </div>
 
             </div>
 
             <button
 
-              v-if="!isNew && form.default_llm !== effectiveProviderId"
+              v-if="!isNew && form.default_llm !== effectiveLlmName"
 
               type="button"
 
@@ -343,7 +335,7 @@ import { appAlert, appConfirm } from '@/composables/useAppDialog'
 
 const props = defineProps<{
 
-  providerId?: string | null
+  llmName?: string | null
 
   /** 父级刷新模型列表时递增，用于导入/覆盖后同步详情 */
   providersVersion?: number
@@ -392,7 +384,7 @@ const form = ref<{
 
   >
 
-}>({ default_llm: 'qwen', llm_providers: {} })
+}>({ default_llm: 'qwen3-max', llm_providers: {} })
 
 
 
@@ -447,7 +439,7 @@ const edit = ref({
 
 })
 
-const providerFingerprint = computed(() => `${edit.value.id} ${edit.value.base_url} ${edit.value.model}`.toLowerCase())
+const providerFingerprint = computed(() => `${effectiveLlmName.value || ''} ${edit.value.base_url} ${edit.value.model}`.toLowerCase())
 const isQwenLike = computed(() => /qwen|dashscope|aliyun|百炼|bailian/.test(providerFingerprint.value))
 const isDeepSeekLike = computed(() => isDeepSeekFingerprint(providerFingerprint.value))
 const isGlmLike = computed(() => /glm|zhipu|bigmodel|智谱/.test(providerFingerprint.value))
@@ -554,9 +546,9 @@ function buildAdvancedConfig() {
 
 
 
-const effectiveProviderId = computed(() => (props.providerId || '').trim() || null)
+const effectiveLlmName = computed(() => (props.llmName || '').trim() || null)
 
-const isNew = computed(() => effectiveProviderId.value === '__new__')
+const isNew = computed(() => effectiveLlmName.value === '__new__')
 
 const defaultLlmLabel = computed(() => (form.value.default_llm || '').trim())
 
@@ -592,17 +584,17 @@ async function loadSecrets() {
 
 
 
-function applyProviderToEdit(pid: string) {
-  const meta = form.value.llm_providers[pid]
+function applyProviderToEdit(llmName: string) {
+  const meta = form.value.llm_providers[llmName]
   if (!meta) return
 
   const params = paramsFromMeta(meta as Record<string, unknown>)
-  if (isDeepSeekFingerprint(`${pid} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
+  if (isDeepSeekFingerprint(`${llmName} ${meta.base_url ?? ''} ${meta.model ?? ''}`) && params.thinking === '') {
     params.thinking = 'false'
   }
 
   edit.value = {
-    id: pid,
+    id: llmName,
     base_url: meta.base_url ?? '',
     model: meta.model ?? '',
     api_key_env: meta.api_key_env ?? '',
@@ -611,10 +603,10 @@ function applyProviderToEdit(pid: string) {
   }
 }
 
-async function syncEditForProvider(pid: string | null) {
-  if (!pid) return
+async function syncEditForProvider(llmName: string | null) {
+  if (!llmName) return
 
-  if (pid === '__new__') {
+  if (llmName === '__new__') {
     edit.value = {
       id: '',
       base_url: 'https://jeniya.top/v1',
@@ -626,11 +618,11 @@ async function syncEditForProvider(pid: string | null) {
     return
   }
 
-  if (!form.value.llm_providers[pid]) {
+  if (!form.value.llm_providers[llmName]) {
     await load({ silent: true })
   }
 
-  applyProviderToEdit(pid)
+  applyProviderToEdit(llmName)
 }
 
 async function load(options: { silent?: boolean } = {}) {
@@ -643,7 +635,7 @@ async function load(options: { silent?: boolean } = {}) {
 
     if (j?.status === 'ok' && j?.data) {
       form.value = {
-        default_llm: j.data.default_llm ?? 'qwen',
+        default_llm: j.data.default_llm ?? 'qwen3-max',
         llm_providers: { ...(j.data.llm_providers || {}) },
       }
     }
@@ -714,11 +706,11 @@ async function saveAll(nextSelectedId?: string) {
 
 onMounted(async () => {
   await load()
-  await syncEditForProvider(effectiveProviderId.value)
+  await syncEditForProvider(effectiveLlmName.value)
 })
 
 watch(
-  () => effectiveProviderId.value,
+  () => effectiveLlmName.value,
   (pid) => {
     void syncEditForProvider(pid)
   },
@@ -730,7 +722,7 @@ watch(
     if (props.providersVersion == null) return
     void (async () => {
       await load({ silent: true })
-      await syncEditForProvider(effectiveProviderId.value)
+      await syncEditForProvider(effectiveLlmName.value)
     })()
   },
 )
@@ -748,15 +740,15 @@ watch(
 
 async function saveProvider() {
 
-  const pid = effectiveProviderId.value
+  const pid = effectiveLlmName.value
 
   if (!pid) return
 
-  const nid = (edit.value.id || '').trim().toLowerCase().replace(/\s+/g, '-')
+  const nid = (edit.value.model || '').trim()
 
   if (!nid) {
 
-    await appAlert({ title: '无法保存模型', message: '模型标识不能为空', variant: 'warning' })
+    await appAlert({ title: '无法保存模型', message: '模型型号不能为空', variant: 'warning' })
 
     return
 
@@ -776,7 +768,7 @@ async function saveProvider() {
 
     if (form.value.llm_providers[nid]) {
 
-      await appAlert({ title: '无法保存模型', message: '该标识已存在', variant: 'warning' })
+      await appAlert({ title: '无法保存模型', message: '同名模型已存在', variant: 'warning' })
 
       return
 
@@ -816,7 +808,7 @@ async function saveProvider() {
 
   if (nid !== pid && form.value.llm_providers[nid]) {
 
-    await appAlert({ title: '无法保存模型', message: '该标识已存在', variant: 'warning' })
+    await appAlert({ title: '无法保存模型', message: '同名模型已存在', variant: 'warning' })
 
     return
 
@@ -866,7 +858,7 @@ async function saveProvider() {
 
 async function setAsDefault() {
 
-  const pid = effectiveProviderId.value
+  const pid = effectiveLlmName.value
 
   if (!pid || pid === '__new__') return
 
@@ -880,7 +872,7 @@ async function setAsDefault() {
 
 async function exportProviderBundle() {
 
-  const pid = effectiveProviderId.value
+  const pid = effectiveLlmName.value
 
   if (!pid || pid === '__new__') return
 
@@ -922,7 +914,7 @@ async function exportProviderBundle() {
 
 async function removeProvider() {
 
-  const pid = effectiveProviderId.value
+  const pid = effectiveLlmName.value
 
   if (!pid || pid === '__new__') return
 
@@ -942,7 +934,7 @@ async function removeProvider() {
 
   if (form.value.default_llm === pid) {
 
-    form.value.default_llm = Object.keys(next)[0] || 'qwen'
+    form.value.default_llm = Object.keys(next)[0] || 'qwen3-max'
 
   }
 

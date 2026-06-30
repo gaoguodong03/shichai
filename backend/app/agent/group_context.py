@@ -34,13 +34,13 @@ def messages_to_context(
         role = m.get("role", "")
         content = (m.get("content") or "").strip()
         content = _clip_context_message(content, max_chars_per_message)
-        agent_id = m.get("agent_id", "")
+        agent_name = m.get("agent_name", "")
         if role == "user":
             lines.append(f"【用户】{content}")
         elif role == "host":
             lines.append(f"【主持人】{content}")
         else:
-            name = agent_id or "助手"
+            name = agent_name or "助手"
             lines.append(f"【{name}】{content}")
     context = "\n\n".join(lines)
     if len(context) > max_chars:
@@ -81,7 +81,7 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
         if is_group_context_noise(content):
             skipped += 1
             continue
-        key = (str(m.get("role") or ""), str(m.get("agent_id") or ""), content)
+        key = (str(m.get("role") or ""), str(m.get("agent_name") or ""), content)
         if key in seen:
             skipped += 1
             continue
@@ -126,7 +126,7 @@ def title_from_first_message(text: str, max_chars: int = 10) -> str:
     if not text or not isinstance(text, str):
         return ""
     s = text.strip()
-    for prefix in ("【讨论目标】", "【给下一 Agent 的提示】", "【给下一 DHA 的提示】"):
+    for prefix in ("【讨论目标】", "【给下一 Agent 的提示】"):
         if s.startswith(prefix):
             s = s[len(prefix) :].lstrip("\n ")
     first_line = s.split("\n")[0].strip() if s else ""

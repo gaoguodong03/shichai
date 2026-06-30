@@ -1,8 +1,8 @@
 import { chatOnceRequest, streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
-type StreamContent = { text?: string; agent_id?: string; meta?: { phase?: string } }
-type StreamRoute = { agent_id?: string; skill_id?: string }
+type StreamContent = { text?: string; agent_name?: string; meta?: { phase?: string } }
+type StreamRoute = { agent_name?: string; skill?: string }
 
 export function createGroupChatStreamRunner(deps: {
   isSelectedSession: (sessionId: string) => boolean
@@ -11,7 +11,7 @@ export function createGroupChatStreamRunner(deps: {
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
   consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
-  appendStreamingContent: (agentId: string, text: string) => void
+  appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
 }) {
@@ -36,10 +36,10 @@ export function createGroupChatStreamRunner(deps: {
             deps.showStreamingRoutePlaceholder(data, sessionId)
           },
           onContent: (data) => {
-            if (data?.text != null && data?.agent_id) {
+            if (data?.text != null && data?.agent_name) {
               if (deps.consumeStreamingStatusContent(data, sessionId)) return
               if (!isSelectedStreamSession()) return
-              deps.appendStreamingContent(data.agent_id, data.text)
+              deps.appendStreamingContent(data.agent_name, data.text)
             }
           },
           onMessage: (data) => {
@@ -89,10 +89,10 @@ export function createGroupChatStreamRunner(deps: {
         if (data.route) deps.updateAutoSwitchHint(data.route, sessionId)
         if (Array.isArray(data.contents)) {
           for (const chunk of data.contents) {
-            if (chunk?.text != null && chunk?.agent_id) {
+            if (chunk?.text != null && chunk?.agent_name) {
               if (deps.consumeStreamingStatusContent(chunk, sessionId)) continue
               if (!isSelectedStreamSession()) continue
-              deps.appendStreamingContent(chunk.agent_id, chunk.text)
+              deps.appendStreamingContent(chunk.agent_name, chunk.text)
             }
           }
         }

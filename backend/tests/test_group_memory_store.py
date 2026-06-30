@@ -39,7 +39,7 @@ def test_build_dispatch_context_uses_only_facts(tmp_path: Path):
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
-        target_agent_id="agent-data",
+        target_agent_name="数据专家",
         goal="数据 周报",
         k=1,
     )
@@ -63,8 +63,8 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
         session_id,
         [
             {
-                "agent_id": "agent-writer",
-                "skill_id": "weekly-report",
+                "agent_name": "写作专家",
+                "skill": "weekly-report",
                 "summary": "生成周报草稿",
                 "files": ["reports/weekly.md", "reports/weekly.md"],
             }
@@ -75,8 +75,8 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
         session_id,
         [
             {
-                "agent_id": "agent-chart",
-                "skill_id": "charting",
+                "agent_name": "图表专家",
+                "skill": "charting",
                 "summary": "生成趋势图",
                 "files": ["charts/trend.png"],
             }
@@ -87,14 +87,14 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
 
     assert entries == [
         {
-            "agent_id": "agent-writer",
-            "skill_id": "weekly-report",
+            "agent_name": "写作专家",
+            "skill": "weekly-report",
             "summary": "生成周报草稿",
             "files": ["reports/weekly.md"],
         },
         {
-            "agent_id": "agent-chart",
-            "skill_id": "charting",
+            "agent_name": "图表专家",
+            "skill": "charting",
             "summary": "生成趋势图",
             "files": ["charts/trend.png"],
         },
@@ -107,13 +107,13 @@ def test_upsert_index_entries_dedup_and_dispatch_render(tmp_path: Path):
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
-        target_agent_id="agent-next",
+        target_agent_name="接力专家",
         goal="继续写报告",
     )
 
     assert ctx["has_memory"] is True
     assert "工作区索引" in ctx["rendered"]
-    assert "agent-writer / weekly-report: 生成周报草稿" in ctx["rendered"]
+    assert "写作专家 / weekly-report: 生成周报草稿" in ctx["rendered"]
     assert "- reports/weekly.md" in ctx["rendered"]
     assert "读取上述文件时使用工作区相对路径" in ctx["rendered"]
 
@@ -126,7 +126,7 @@ def test_build_dispatch_context_without_facts_has_no_memory(tmp_path: Path):
     ctx = build_dispatch_context(
         session_id=session_id,
         workspace_root=ws,
-        target_agent_id="agent-data",
+        target_agent_name="数据专家",
         goal="数据 周报",
         k=1,
     )

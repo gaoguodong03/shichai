@@ -16,7 +16,7 @@ export type WorkspaceUploadResponse = {
   [key: string]: unknown
 }
 
-const TOKEN_STORAGE_KEY = 'dha_token'
+const TOKEN_STORAGE_KEY = 'agent_token'
 
 export function uploadWorkspaceFile(
   workspaceId: string,

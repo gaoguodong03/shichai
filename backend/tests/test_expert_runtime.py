@@ -14,8 +14,8 @@ class FakeSkillsLoader:
             for sid in self._contents
         }
 
-    def get_skill_full_content(self, skill_id):
-        return self._contents.get(skill_id)
+    def get_skill_full_content(self, directory_name):
+        return self._contents.get(directory_name)
 
 
 class FakeLlm:
@@ -24,12 +24,15 @@ class FakeLlm:
 
 def test_resolve_expert_skill_uses_locked_skill_first():
     loader = FakeSkillsLoader({"sk1": "body 1", "sk2": "body 2"})
-    meta = {"skill_session_owner_id": "agent-a", "skill_session_skill_id": "sk2"}
+    meta = {"skill_session_owner_name": "专家A", "skill_session_skill": "sk2"}
 
-    skill_id, content, debug = asyncio.run(
+    skill, content, debug = asyncio.run(
         resolve_expert_skill(
-            agent_profile={"agent_id": "agent-a", "skill_ids": ["sk1", "sk2"]},
-            agent_id="agent-a",
+            agent_profile={
+                "name": "专家A",
+                "skills": [{"name": "Skill sk1", "directory_name": "sk1"}, {"name": "Skill sk2", "directory_name": "sk2"}],
+            },
+            agent_name="专家A",
             discussion_goal="goal",
             messages=[],
             meta_item=meta,
@@ -40,7 +43,7 @@ def test_resolve_expert_skill_uses_locked_skill_first():
         )
     )
 
-    assert skill_id == "sk2"
+    assert skill == "sk2"
     assert content == "body 2"
     assert debug["strategy"] == "locked_skill_session"
 
@@ -49,8 +52,8 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     loader = FakeSkillsLoader({"sk1": "技能正文"})
     calls = {}
 
-    async def fake_tool_builder(agent_profile, workspace_id, resolved_skill_id):
-        calls["tool_builder"] = (agent_profile["agent_id"], workspace_id, resolved_skill_id)
+    async def fake_tool_builder(agent_profile, workspace_id, resolved_skill):
+        calls["tool_builder"] = (agent_profile["name"], workspace_id, resolved_skill)
         return [SimpleNamespace(name="read_file", description="读文件")]
 
     def fake_agent_factory(
@@ -74,13 +77,12 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     runtime = asyncio.run(
         build_expert_turn_runtime(
             agent_profile={
-                "agent_id": "agent-a",
                 "name": "专家A",
-                "role": "写作专家",
+                "description": "写作专家",
                 "system_prompt": "专家系统提示",
-                "skill_ids": ["sk1"],
+                "skills": [{"name": "Skill sk1", "directory_name": "sk1"}],
             },
-            agent_id="agent-a",
+            agent_name="专家A",
             group_session_id="g1",
             discussion_goal="goal",
             messages=[],
@@ -96,11 +98,11 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
     )
 
     assert runtime.blocked is False
-    assert runtime.skill_id == "sk1"
+    assert runtime.skill == "sk1"
     assert runtime.skill_route_debug["strategy"] == "single_loaded_skill"
-    assert calls["tool_builder"] == ("agent-a", "g1", "sk1")
+    assert calls["tool_builder"] == ("专家A", "g1", "sk1")
     assert "专家系统提示" in runtime.skill_content
-    assert "你的角色：写作专家" in runtime.skill_content
+    assert "你的职责：写作专家" in runtime.skill_content
     assert "技能正文" in runtime.skill_content
     assert "Skill 会话状态" in runtime.skill_content
     assert calls["agent_factory"]["tools"] == runtime.tools
@@ -117,8 +119,8 @@ def test_build_expert_turn_runtime_blocks_when_skill_content_missing():
 
     runtime = asyncio.run(
         build_expert_turn_runtime(
-            agent_profile={"agent_id": "agent-a", "skill_ids": ["missing"]},
-            agent_id="agent-a",
+            agent_profile={"name": "专家A", "skills": [{"name": "Missing", "directory_name": "missing"}]},
+            agent_name="专家A",
             group_session_id="g1",
             discussion_goal="goal",
             messages=[],

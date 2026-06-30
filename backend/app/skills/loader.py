@@ -9,12 +9,12 @@ from functools import lru_cache
 class Skill:
     """Skill 类"""
 
-    def __init__(self, name: str, description: str, content: str, metadata: Dict[str, Any] = None, skill_id: str = None):
+    def __init__(self, name: str, description: str, content: str, metadata: Dict[str, Any] = None, directory_name: str = None):
         self.name = name
         self.description = description
         self.content = content
         self.metadata = metadata or {}
-        self.skill_id = skill_id or name  # 目录名，用于筛选
+        self.directory_name = directory_name or name  # 目录名，用于筛选
 
     def get_instruction(self) -> str:
         """获取技能指令"""
@@ -32,7 +32,7 @@ class SkillsLoader:
     def _record_diagnostic(self, skill_path: Path, code: str, message: str) -> None:
         self.diagnostics.append(
             {
-                "skill_id": skill_path.name,
+                "directory_name": skill_path.name,
                 "path": str(skill_path),
                 "code": code,
                 "message": message,
@@ -74,8 +74,8 @@ class SkillsLoader:
             name = frontmatter.get("name", skill_path.name)
             description = frontmatter.get("description", "")
             metadata = frontmatter
-            skill_id = skill_path.name  # 目录名
-            return Skill(name, description, body, metadata, skill_id)
+            directory_name = skill_path.name  # 目录名
+            return Skill(name, description, body, metadata, directory_name)
         except (yaml.YAMLError, ValueError) as e:
             self._record_diagnostic(skill_path, "invalid_frontmatter", f"Invalid SKILL.md frontmatter: {e}")
             return None
@@ -95,7 +95,7 @@ class SkillsLoader:
             if skill_dir.is_dir():
                 skill = self.load_skill(skill_dir)
                 if skill:
-                    self.skills[skill.skill_id] = skill  # 用 skill_id（目录名）作为 key
+                    self.skills[skill.directory_name] = skill  # 用 directory_name（目录名）作为 key
 
         return self.skills
 
@@ -112,13 +112,13 @@ class SkillsLoader:
         ]
 
     def relevance_score_for_message(self, user_text: str, skill: Skill) -> float:
-        """通用相关度：skill_id / name / description 关键词与 user_text 的匹配强度，无场景硬编码。"""
+        """通用相关度：directory_name / name / description 关键词与 user_text 的匹配强度，无场景硬编码。"""
         t = (user_text or "").strip()
         if not t:
             return 0.0
         tl = t.lower()
         score = 0.0
-        sid = (skill.skill_id or "").strip()
+        sid = (skill.directory_name or "").strip()
         # 用户显式写出目录名或常见变体
         if sid:
             if sid in t or sid in tl:
@@ -143,14 +143,14 @@ class SkillsLoader:
         """按 name/description 关键词为候选 skill 与 combined_text 的匹配度打分并择优。"""
         ids = [str(x).strip() for x in candidate_ids if str(x).strip()]
         debug: Dict[str, Any] = {
-            "selected_skill_id": None,
+            "selected_directory_name": None,
             "strategy": "none",
             "scores": [],
         }
         if not ids:
             return debug
         if len(ids) == 1:
-            debug["selected_skill_id"] = ids[0]
+            debug["selected_directory_name"] = ids[0]
             debug["strategy"] = "single_candidate"
             return debug
 
@@ -166,28 +166,28 @@ class SkillsLoader:
             if not skill:
                 continue
             score = self.relevance_score_for_message(query, skill)
-            ranking_kw.append({"skill_id": sid, "score": float(score)})
+            ranking_kw.append({"directory_name": sid, "score": float(score)})
         if not ranking_kw:
             debug["strategy"] = "no_candidates"
             return debug
-        ranking_kw.sort(key=lambda x: (-x["score"], order.get(str(x["skill_id"]), 999)))
+        ranking_kw.sort(key=lambda x: (-x["score"], order.get(str(x["directory_name"]), 999)))
         debug["scores"] = ranking_kw[:5]
         debug["strategy"] = "keyword"
         top = float(ranking_kw[0]["score"])
         if top > 0:
-            debug["selected_skill_id"] = ranking_kw[0]["skill_id"]
+            debug["selected_directory_name"] = ranking_kw[0]["directory_name"]
         return debug
 
-    def pick_best_skill_id_for_message(self, combined_text: str, candidate_ids: List[str]) -> Optional[str]:
-        """在 candidate_ids 中按各 SKILL 的元数据与 combined_text 的相关度选出最佳 skill_id。
+    def pick_best_directory_name_for_message(self, combined_text: str, candidate_ids: List[str]) -> Optional[str]:
+        """在 candidate_ids 中按各 SKILL 的元数据与 combined_text 的相关度选出最佳 directory_name。
 
         不依赖 group_chat 内场景关键词表；新技能只需写好 name/description。无法区分时返回 None，由调用方按列表顺序回退。
         """
-        return self.pick_best_skill_with_debug(combined_text, candidate_ids).get("selected_skill_id")
+        return self.pick_best_skill_with_debug(combined_text, candidate_ids).get("selected_directory_name")
 
-    def get_skill_full_content(self, skill_id: str) -> Optional[str]:
+    def get_skill_full_content(self, directory_name: str) -> Optional[str]:
         """获取指定技能的完整内容（含 frontmatter 后的正文）。"""
-        skill = self.skills.get(skill_id)
+        skill = self.skills.get(directory_name)
         if not skill:
             return None
         return f"## {skill.name}\n{skill.description or ''}\n\n{skill.get_instruction()}"

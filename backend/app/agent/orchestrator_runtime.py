@@ -16,24 +16,25 @@ _INTERRUPT_MAP = {r.value: r for r in InterruptReason}
 _SOURCE_MAP = {s.value: s for s in DecisionSource}
 
 
-def _clean_ids(values: Any, valid: List[str]) -> List[str]:
+def _clean_names(values: Any, valid: List[str]) -> List[str]:
     if not isinstance(values, list):
         return []
-    valid_set = set(valid or [])
+    valid_map = {str(x or "").strip().casefold(): str(x or "").strip() for x in valid or [] if str(x or "").strip()}
     out: List[str] = []
     for v in values:
-        sid = str(v or "").strip().lower()
-        if sid and sid in valid_set and sid not in out:
-            out.append(sid)
+        key = str(v or "").strip().casefold()
+        name = valid_map.get(key)
+        if name and name not in out:
+            out.append(name)
     return out
 
 
 def normalize_scheduler_decision(
     raw: Optional[Dict[str, Any]],
     *,
-    agent_ids: List[str],
-    recruitable_ids: Optional[List[str]] = None,
-    current_owner_agent_id: Optional[str] = None,
+    agent_names: List[str],
+    recruitable_names: Optional[List[str]] = None,
+    current_owner_agent_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Normalize host/leader decision to a stable orchestration payload.
 
@@ -42,16 +43,19 @@ def normalize_scheduler_decision(
     - Invalid next_speaker falls back to user with conflict interrupt.
     """
     data = dict(raw or {})
-    next_speaker = str(data.get("next_speaker") or "user").strip().lower()
+    valid_name_map = {str(x or "").strip().casefold(): str(x or "").strip() for x in agent_names or [] if str(x or "").strip()}
+    next_raw = str(data.get("next_speaker") or "user").strip()
+    next_key = next_raw.casefold()
+    next_speaker = valid_name_map.get(next_key, next_raw)
     reason = str(data.get("reason") or "")
     announcement = str(data.get("announcement") or reason)
     task_done = bool(data.get("task_done", True))
     current_phase = str(data.get("current_phase") or "").strip()
     speaker_task = str(data.get("speaker_task") or data.get("next_prompt") or "").strip()
 
-    suggested = _clean_ids(
-        data.get("suggested_add_agent_ids") or [],
-        recruitable_ids or [],
+    suggested = _clean_names(
+        data.get("suggested_add_agent_names") or [],
+        recruitable_names or [],
     )
     if suggested:
         next_speaker = "user"
@@ -63,7 +67,7 @@ def normalize_scheduler_decision(
     if suggested:
         interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT
 
-    if next_speaker not in agent_ids and next_speaker not in ("user", "end", "invite"):
+    if next_speaker not in agent_names and next_speaker not in ("user", "end", "invite"):
         next_speaker = "user"
         if interrupt_reason == InterruptReason.NONE:
             interrupt_reason = InterruptReason.CONFLICT_DETECTED
@@ -91,12 +95,12 @@ def normalize_scheduler_decision(
     if not isinstance(required_user_fields, list):
         required_user_fields = []
 
-    owner_agent_id = str(data.get("owner_agent_id") or "").strip() or None
-    if not owner_agent_id:
-        if next_speaker in agent_ids:
-            owner_agent_id = next_speaker
-        elif not task_done and current_owner_agent_id:
-            owner_agent_id = current_owner_agent_id
+    owner_agent_name = str(data.get("owner_agent_name") or "").strip() or None
+    if not owner_agent_name:
+        if next_speaker in agent_names:
+            owner_agent_name = next_speaker
+        elif not task_done and current_owner_agent_name:
+            owner_agent_name = current_owner_agent_name
 
     decision = OrchestrationDecision(
         task_done=task_done,
@@ -106,9 +110,9 @@ def normalize_scheduler_decision(
         next_prompt=None,
         current_phase=current_phase,
         speaker_task=speaker_task,
-        suggested_add_agent_ids=suggested,
+        suggested_add_agent_names=suggested,
         phase=phase,
-        owner_agent_id=owner_agent_id,
+        owner_agent_name=owner_agent_name,
         interrupt_reason=interrupt_reason,
         decision_source=source,
         handoff_reason=(data.get("handoff_reason") or reason or None),

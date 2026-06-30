@@ -34,54 +34,50 @@ class AppSettingsBody(BaseModel):
 _JENIYA_BASE = "https://jeniya.top/v1"
 _JENIYA_KEY = "JENIYA_API_KEY"
 _DEFAULT_LLM_PROVIDERS = {
-    "qwen": {
+    "qwen3-max": {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3-max",
         "api_key_env": "QWEN_API_KEY",
     },
-    "jeniya": {
+    "gpt-4o": {
         "base_url": _JENIYA_BASE,
         "model": "gpt-4o",
         "api_key_env": _JENIYA_KEY,
     },
-    "gemini": {
+    "gemini-3-pro-preview": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-3-pro-preview",
         "api_key_env": "GEMINI_API_KEY",
     },
-    "claude": {
+    "claude-sonnet-4-6": {
         "base_url": _JENIYA_BASE,
         "model": "claude-sonnet-4-6",
         "api_key_env": _JENIYA_KEY,
     },
-    "glm": {
+    "glm-4.7": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "model": "glm-4.7",
         "api_key_env": "ZHIPUAI_API_KEY",
     },
-    "deepseek": {
+    "deepseek-chat": {
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-chat",
         "api_key_env": "DEEPSEEK_API_KEY",
         "thinking": False,
     },
-    "kimi": {
+    "moonshot-v1-128k": {
         "base_url": "https://api.moonshot.cn/v1",
         "model": "moonshot-v1-128k",
         "api_key_env": "MOONSHOT_API_KEY",
     },
 }
 
-_PROVIDER_IDS_MIGRATED_FROM_JENIYA_PRESET = {"gemini", "glm", "deepseek", "kimi"}
-
 _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
-    "display_name": "四九",
+    "leader_agent_name": "四九",
     "system_prompt": "",
-    "skill_ids": [],
-    "llm_provider_id": "",
-    "mcp_server_ids": [],
-    "file_capabilities": normalize_host_config_dict({}).get("file_capabilities") or {},
-    "url_capability": True,
+    "llm_name": "",
+    "skill_name": "",
+    "skill_directory": "",
 }
 
 
@@ -90,10 +86,10 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         raw = {}
     base_cfg = normalize_host_config_dict(raw)
-    display_name = str(raw.get("display_name") or "").strip() or str(_DEFAULT_HOST_PROFILE["display_name"])
+    leader_name = str(raw.get("leader_agent_name") or "").strip() or str(_DEFAULT_HOST_PROFILE["leader_agent_name"])
     out = dict(_DEFAULT_HOST_PROFILE)
     out.update(base_cfg)
-    out["display_name"] = display_name
+    out["leader_agent_name"] = leader_name
     return out
 
 
@@ -119,17 +115,6 @@ def _refresh_builtin_llm_provider_presets(providers: Any) -> Dict[str, Dict[str,
             meta["model"] = v.get("model")
         if not meta.get("api_key_env"):
             meta["api_key_env"] = v.get("api_key_env")
-        if (
-            k in _PROVIDER_IDS_MIGRATED_FROM_JENIYA_PRESET
-            and str(meta.get("base_url") or "").strip().rstrip("/") == _JENIYA_BASE
-            and str(meta.get("api_key_env") or "").strip() == _JENIYA_KEY
-            and not str(meta.get("api_key") or "").strip()
-            and not str(meta.get("api_key_ref") or "").strip()
-        ):
-            meta["base_url"] = v.get("base_url")
-            meta["api_key_env"] = v.get("api_key_env")
-            if k == "deepseek" and "thinking" not in meta:
-                meta["thinking"] = False
     return out
 
 
@@ -137,7 +122,7 @@ def load_app_settings() -> Dict[str, Any]:
     """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
     path = app_settings_path()
     data = {
-        "default_llm": "qwen",
+        "default_llm": "qwen3-max",
         "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
         "host_profile": dict(_DEFAULT_HOST_PROFILE),
     }
@@ -193,13 +178,11 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
 class HostProfileBody(BaseModel):
     """主持人独立配置（账号级默认）。"""
 
-    display_name: Optional[str] = None
+    leader_agent_name: Optional[str] = None
     system_prompt: Optional[str] = None
-    skill_ids: Optional[List[str]] = None
-    llm_provider_id: Optional[str] = None
-    mcp_server_ids: Optional[List[str]] = None
-    file_capabilities: Optional[Dict[str, bool]] = None
-    url_capability: Optional[bool] = None
+    llm_name: Optional[str] = None
+    skill_name: Optional[str] = None
+    skill_directory: Optional[str] = None
 
 
 def _host_profile_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -220,13 +203,11 @@ async def update_host_profile(body: HostProfileBody):
     hp = current.get("host_profile") if isinstance(current.get("host_profile"), dict) else {}
     merged = dict(hp if isinstance(hp, dict) else {})
     for k in (
-        "display_name",
+        "leader_agent_name",
         "system_prompt",
-        "skill_ids",
-        "llm_provider_id",
-        "mcp_server_ids",
-        "file_capabilities",
-        "url_capability",
+        "llm_name",
+        "skill_name",
+        "skill_directory",
     ):
         if k in incoming:
             merged[k] = incoming[k]
@@ -299,16 +280,16 @@ async def update_app_settings(body: AppSettingsBody):
     return {"status": "ok", "data": _sanitize_app_settings_for_client(load_app_settings())}
 
 
-@router.get("/settings/llm-providers/{provider_id}/export-bundle")
-async def export_llm_provider_bundle(provider_id: str):
+@router.get("/settings/llm-providers/{llm_name}/export-bundle")
+async def export_llm_provider_bundle(llm_name: str):
     settings = load_app_settings()
     providers = settings.get("llm_providers") if isinstance(settings.get("llm_providers"), dict) else {}
-    provider = providers.get(provider_id) if isinstance(providers, dict) else None
+    provider = providers.get(llm_name) if isinstance(providers, dict) else None
     if not isinstance(provider, dict):
         raise HTTPException(status_code=404, detail="模型不存在")
 
-    raw = build_llm_bundle_zip_bytes(provider_id, provider, default_llm=str(settings.get("default_llm") or ""))
-    safe = str(provider_id).replace("..", "").replace("/", "").replace("\\", "") or "llm"
+    raw = build_llm_bundle_zip_bytes(llm_name, provider, default_llm=str(settings.get("default_llm") or ""))
+    safe = str(llm_name).replace("..", "").replace("/", "").replace("\\", "") or "llm"
     filename = f"llm-bundle-{safe}.zip"
     from app.api.settings_skills import _content_disposition_attachment
 
@@ -334,14 +315,14 @@ async def import_llm_provider_bundle(
     tmp: Optional[Path] = None
     try:
         tmp = extract_scenario_bundle_dir(raw)
-        manifest, provider_id, provider = read_llm_bundle_manifest(tmp)
+        manifest, llm_name, provider = read_llm_bundle_manifest(tmp)
         current = load_app_settings()
         current_providers = current.get("llm_providers") if isinstance(current.get("llm_providers"), dict) else {}
         preview = {
-            "provider_id": provider_id,
+            "name": llm_name,
             "provider": provider,
             "default_llm": str(manifest.get("default_llm") or ""),
-            "would_overwrite_provider_id": provider_id in (current_providers or {}),
+            "would_conflict_name": llm_name in (current_providers or {}),
         }
         if dry_run:
             return {
@@ -354,18 +335,20 @@ async def import_llm_provider_bundle(
             }
 
         next_providers = dict(current_providers or {})
-        next_providers[provider_id] = provider_for_settings_import(provider)
+        if llm_name in next_providers:
+            raise HTTPException(status_code=409, detail="同名模型已存在")
+        next_providers[llm_name] = provider_for_settings_import(provider)
         default_llm = str(current.get("default_llm") or "")
         if not default_llm:
-            default_llm = provider_id
+            default_llm = llm_name
         save_app_settings({"default_llm": default_llm, "llm_providers": next_providers})
         return {
             "status": "ok",
             "data": {
                 "dry_run": False,
                 "summary": {
-                    "imported_provider_id": provider_id,
-                    "overwritten": bool(preview["would_overwrite_provider_id"]),
+                    "imported_name": llm_name,
+                    "overwritten": False,
                 },
             },
         }

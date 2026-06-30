@@ -31,7 +31,7 @@ export interface GroupChatMessageContext {
   bubbleDisplayName: ContextValue
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
-  formatSkillId: ContextValue
+  formatSkill: ContextValue
   getToolRawResults: ContextValue
   expandedToolKey: ContextValue
   toolRawMeta: ContextValue
@@ -67,7 +67,7 @@ export interface GroupChatComposerContext {
   currentGroupStreamingPhase: ContextValue
   inviteOneSuggestedAgent: ContextValue
   inviteSuggestedAgents: ContextValue
-  groupSuggestedAddAgentIds: ContextValue
+  groupSuggestedAddAgentNames: ContextValue
   ignoreAutoSwitchAndPause: ContextValue
   attachedFiles: ContextValue
   removeAttachedFile: ContextValue
@@ -115,7 +115,7 @@ export interface GroupChatComposerContext {
   agentAvatarColor: ContextValue
   agentIndex: ContextValue
   agentAvatarChar: ContextValue
-  leaderDisplayId: ContextValue
+  leaderDisplayName: ContextValue
   removeMember: ContextValue
   invitableAgents: ContextValue
   inviteSingleMember: ContextValue
