@@ -127,7 +127,6 @@ import folderIconUrl from '@/assets/icons/workspace/folder.svg'
 
 const {
   props,
-  emit,
   groupDetail,
   sessionMetaPopoverRootRef,
   sessionMetaPopoverOpen,

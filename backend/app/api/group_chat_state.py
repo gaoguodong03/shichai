@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -285,7 +286,14 @@ def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bo
 
 
 def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
-    path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+    from app.session_state.paths import migrate_session_layout, resolve_history_path
+
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+    else:
+        migrate_session_layout(user_ctx, group_session_id)
+        path = resolve_history_path(user_ctx, group_session_id)
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -296,17 +304,33 @@ def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
 
 
 def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -> None:
-    path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+    from app.session_state.paths import ensure_session_layout
+
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+    else:
+        layout = ensure_session_layout(user_ctx, group_session_id)
+        path = layout.history
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
     schedule_group_session_event(
         group_session_id,
         "messages_updated",
         {"message_count": len(messages or [])},
     )
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(group_session_id, reason="history_update")
+    except Exception:
+        logger.warning("session_state history checkpoint failed: %s", group_session_id, exc_info=True)
 
 
 def cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
-    """Remove group history files that are no longer referenced by meta."""
+    """Remove orphan session history files and empty session directories."""
+    from app.session_state.paths import LEGACY_WORKSPACES_DIR
+
     root = ensure_sessions_dir()
     valid_ids = set((meta or {}).keys())
     deleted = 0
@@ -319,6 +343,18 @@ def cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
             deleted += 1
         except OSError:
             logger.warning("清理孤儿会话历史失败: %s", p, exc_info=True)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        for child in root.iterdir():
+            if not child.is_dir() or child.name in valid_ids:
+                continue
+            if child.name in (LEGACY_WORKSPACES_DIR,):
+                continue
+            try:
+                shutil.rmtree(child)
+                deleted += 1
+            except OSError:
+                logger.warning("清理孤儿会话目录失败: %s", child, exc_info=True)
     return deleted
 
 

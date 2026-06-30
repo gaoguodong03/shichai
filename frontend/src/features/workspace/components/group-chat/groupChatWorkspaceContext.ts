@@ -48,6 +48,10 @@ export interface GroupChatMessageContext {
   deleteGroupMessage: ContextValue
   copyAgentMessageToClipboard: ContextValue
   saveAgentMessageToFile: ContextValue
+  forkMessageState: ContextValue
+  rollbackMessageState: ContextValue
+  canMessageStateAction: ContextValue
+  messageStateActionBusy: ContextValue
 }
 
 export interface GroupChatComposerContext {

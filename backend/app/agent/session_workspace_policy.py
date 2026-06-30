@@ -18,15 +18,21 @@ def sandbox_session_dir(session_id: str) -> str:
 
 
 def host_sessions_root_from_workspace(workspace_path: Path) -> Path:
-    """Infer host `workspaces` directory from a session workspace path."""
+    """Infer host sessions directory from a session workspace path."""
     wp = workspace_path.resolve()
+    if wp.name == "workspace" and wp.parent.name.startswith("group-"):
+        return wp.parent.parent
     if wp.parent.name == "workspaces":
-        return wp.parent
-    return wp
+        return wp.parent.parent
+    return wp.parent
 
 
 def host_session_dir(host_workspace_or_sessions_root: Path, session_id: str) -> Path:
     root = host_workspace_or_sessions_root.resolve()
     if root.name == "workspaces":
         return (root / session_id).resolve()
-    return root
+    session_root = (root / session_id).resolve()
+    workspace = session_root / "workspace"
+    if workspace.exists() or not (root / "workspaces" / session_id).exists():
+        return workspace
+    return (root / "workspaces" / session_id).resolve()

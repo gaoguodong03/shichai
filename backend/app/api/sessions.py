@@ -21,6 +21,12 @@ from app.agent.group_session_service import (
     stop_group_session_run,
     update_group_session,
 )
+from app.session_state.service import (
+    capture_session_checkpoint,
+    clone_session_from_checkpoint,
+    list_session_checkpoints,
+    rollback_session_to_message,
+)
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
 logger = logging.getLogger(__name__)
@@ -31,6 +37,17 @@ class SessionCreate(BaseModel):
     agent_names: List[str] = []
     leader_agent_name: Optional[str] = None
     host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
+
+
+class SessionRollback(BaseModel):
+    checkpoint_id: Optional[str] = None
+    message_id: Optional[str] = None
+    message_count: Optional[int] = None
+
+
+class SessionClone(BaseModel):
+    checkpoint_id: Optional[str] = None
+    message_id: Optional[str] = None
 
 
 @router.get("/sessions")
@@ -184,3 +201,47 @@ async def session_export(session_id: str):
         return {"status": "ok", "data": {"path": rel_path, "download_url": download_url}}
     except HTTPException:
         raise
+
+
+@router.post("/sessions/{session_id}/snapshot")
+async def session_snapshot(session_id: str):
+    """为当前会话创建一个状态快照。"""
+    return {"status": "ok", "data": capture_session_checkpoint(session_id, reason="manual_snapshot")}
+
+
+@router.get("/sessions/{session_id}/snapshots")
+async def session_snapshots(session_id: str):
+    """列出当前会话已保存的状态链。"""
+    return {"status": "ok", "data": {"checkpoints": list_session_checkpoints(session_id)}}
+
+
+@router.post("/sessions/{session_id}/clone")
+async def session_clone(session_id: str, body: SessionClone = SessionClone()):
+    """复制当前会话并新建一个窗口；可指定 checkpoint 或 message_id 从该时刻分叉。"""
+    checkpoint_id = (body.checkpoint_id or "").strip() or None
+    message_id = (body.message_id or "").strip() or None
+    return {
+        "status": "ok",
+        "data": clone_session_from_checkpoint(
+            session_id,
+            checkpoint_id=checkpoint_id,
+            message_id=message_id,
+        ),
+    }
+
+
+@router.post("/sessions/{session_id}/rollback")
+async def session_rollback(session_id: str, body: SessionRollback):
+    """回溯到指定 message_id / message_count / checkpoint，并删除其后的状态记录。"""
+    checkpoint_id = (body.checkpoint_id or "").strip() or None
+    message_id = (body.message_id or "").strip() or None
+    message_count = body.message_count if isinstance(body.message_count, int) and body.message_count > 0 else None
+    if not checkpoint_id and not message_id and not message_count:
+        raise HTTPException(status_code=400, detail="checkpoint_id, message_id or message_count is required")
+    data = await rollback_session_to_message(
+        session_id,
+        checkpoint_id=checkpoint_id,
+        message_id=message_id,
+        message_count=message_count,
+    )
+    return {"status": "ok", "data": data}

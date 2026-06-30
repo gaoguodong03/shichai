@@ -1,8 +1,8 @@
-"""Session CRUD and metadata service for group-chat backed sessions."""
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import uuid
 from datetime import datetime, timezone
@@ -33,12 +33,15 @@ from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import get_current_user
 from app.agent.group_orchestration_fsm import default_orchestration_profile_for_new_session
+from app.session_state.markdown import format_session_chat_markdown
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
 )
 from app.agent.group_chat_title_meta import (
     _maybe_upgrade_meta_to_scene_profile,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class GroupSessionUpdate(BaseModel):
@@ -129,6 +132,13 @@ def create_session_internal(
     _save_group_meta(meta)
     _save_group_history(gsid, [])
     # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(gsid, reason="session_created")
+    except Exception:
+        logger.warning("session_state initial checkpoint failed: %s", gsid, exc_info=True)
+    # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
     return _build_session_payload(gsid, meta[gsid])
 
 def export_session_to_markdown(session_id: str, filename: Optional[str] = None) -> tuple:
@@ -138,21 +148,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
     messages = _load_group_history(session_id)
     if not messages:
         raise HTTPException(status_code=400, detail="会话无消息，无法导出")
-    lines = ["# 对话导出\n", f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n", "---\n"]
-    for msg in messages:
-        role = msg.get("role", "")
-        content = (msg.get("content") or "").strip()
-        agent_name = msg.get("agent_name", "")
-        if role == "user":
-            lines.append("## 用户\n\n")
-        elif role == "host":
-            lines.append("## 主持人\n\n")
-        else:
-            label = agent_name or "助手"
-            lines.append(f"## {label}\n\n")
-        lines.append(content)
-        lines.append("\n\n")
-    md = "".join(lines)
+    md = format_session_chat_markdown(messages)
     ws_root = get_workspace_root(session_id)
     fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}00.md"
     fn = fn.replace("..", "").replace("/", "")
@@ -392,6 +388,12 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         pass
     meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_group_meta(meta)
+    try:
+        from app.session_state.service import capture_session_checkpoint
+
+        capture_session_checkpoint(group_session_id, reason="session_updated")
+    except Exception:
+        logger.warning("session_state update checkpoint failed: %s", group_session_id, exc_info=True)
     return {"status": "ok", "data": _build_session_payload(group_session_id, meta[group_session_id])}
 
 async def delete_group_session(group_session_id: str):
@@ -409,19 +411,26 @@ async def delete_group_session(group_session_id: str):
         raise HTTPException(status_code=404, detail="Group session not found")
     del meta[group_session_id]
     _save_group_meta(meta, preserve_unmentioned=False)
-    # 删除群聊历史
-    path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
-    if path.exists():
-        path.unlink()
-    # 顺手清理孤儿历史（避免旧残留持续堆积）
     _cleanup_orphan_group_histories(meta)
-    # 删除该会话对应的工作区目录（若存在）
-    try:
-        ws_root = get_workspace_root_path(group_session_id, user=current_user)
-        if ws_root.exists() and ws_root.is_dir():
-            shutil.rmtree(ws_root)
-    except Exception:
-        logger.warning("删除群聊 %s 的 workspace 目录失败，可手动清理。", group_session_id, exc_info=True)
+    # 删除会话目录（history / chat.md / workspace / state）
+    user_ctx = current_user.ctx
+    from app.session_state.paths import SessionLayoutPaths, legacy_history_path
+
+    layout = SessionLayoutPaths.from_user_ctx(user_ctx, group_session_id)
+    legacy_history = legacy_history_path(user_ctx, group_session_id)
+    if legacy_history.exists():
+        legacy_history.unlink()
+    legacy_ws = user_ctx.sessions_dir / "workspaces" / group_session_id
+    if legacy_ws.exists():
+        try:
+            shutil.rmtree(legacy_ws)
+        except Exception:
+            logger.warning("删除群聊 %s 的 legacy workspace 失败。", group_session_id, exc_info=True)
+    if layout.session_root.exists():
+        try:
+            shutil.rmtree(layout.session_root)
+        except Exception:
+            logger.warning("删除群聊 %s 的会话目录失败，可手动清理。", group_session_id, exc_info=True)
     return {"status": "ok", "data": {"id": group_session_id, "deleted": True}}
 
 async def stop_group_session_run(group_session_id: str):

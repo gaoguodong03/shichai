@@ -228,6 +228,34 @@
                               <path d="M7 3v5h8" />
                             </svg>
                           </button>
+                          <button
+                            type="button"
+                            class="group-chat-bubble-action-btn group-chat-bubble-action-btn-trailing"
+                            :disabled="!canMessageStateAction(msg, i)"
+                            aria-label="从此刻分叉会话"
+                            title="从此刻分叉会话"
+                            @click="forkMessageState(msg, i)"
+                          >
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <circle cx="6" cy="6" r="2" />
+                              <circle cx="18" cy="18" r="2" />
+                              <path d="M6 8v4a4 4 0 0 0 4 4h4" />
+                              <path d="M14 10h4v4" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            class="group-chat-bubble-action-btn"
+                            :disabled="!canMessageStateAction(msg, i)"
+                            aria-label="回溯到此发言"
+                            title="回溯到此发言"
+                            @click="rollbackMessageState(msg, i)"
+                          >
+                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                              <path d="M21 3v5h-5" />
+                            </svg>
+                          </button>
                           <span
                             v-if="(msg as MsgExt).timestamp"
                             class="group-chat-message-full-time group-chat-message-full-time-inline"
@@ -279,6 +307,9 @@ const {
   deleteGroupMessage,
   copyAgentMessageToClipboard,
   saveAgentMessageToFile,
+  forkMessageState,
+  rollbackMessageState,
+  canMessageStateAction,
 } = useGroupChatMessageContext()
 
 function messageToolKey(msg: GroupMessage, index: number) {
