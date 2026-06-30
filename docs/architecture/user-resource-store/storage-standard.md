@@ -49,6 +49,7 @@ resources/scenarios/<scenario_id>/scenario.json
   "id": "scenario-ppt-writing-v1",
   "name": "编写PPT",
   "description": "把用户想法转成PPT大纲、配图并组装PPTX",
+  "system_prompt": "仅适用于该场景的项目规则",
   "agent_ids": ["agent-ppt-guide", "agent-image"],
   "leader_agent_id": "agent-scene-host",
   "discussion_goal_example": "帮我做一个面向学生的AI工具介绍PPT",

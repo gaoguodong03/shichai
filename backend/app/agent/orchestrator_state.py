@@ -24,6 +24,7 @@ class InterruptReason(str, Enum):
     TOOL_UNAVAILABLE = "tool_unavailable"
     TIMEOUT_OR_BUDGET_EXCEEDED = "timeout_or_budget_exceeded"
     CONFLICT_DETECTED = "conflict_detected"
+    PROTOCOL_ERROR = "protocol_error"
 
 
 class DecisionSource(str, Enum):

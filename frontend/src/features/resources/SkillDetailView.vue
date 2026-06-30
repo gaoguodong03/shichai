@@ -123,7 +123,7 @@
                 />
               </div>
               <div class="rounded-xl border border-border bg-card px-4 py-3 shadow-sm space-y-4">
-                <div class="text-xs font-medium text-primary mb-1">技能运行时依赖</div>
+                <div class="text-xs font-medium text-primary mb-1">工具</div>
                 <div>
                   <label class="block text-xs font-medium text-muted mb-2">MCP</label>
                   <div v-if="form.allowed_tools.mcp.length" class="flex flex-wrap gap-2 mb-2">
@@ -149,7 +149,7 @@
                       </button>
                     </span>
                   </div>
-                  <div v-else class="text-xs text-muted mb-2">未声明 MCP（本技能会话不加载 MCP 工具）。</div>
+                  <div v-else class="text-xs text-muted mb-2">未声明 MCP 工具，本技能会话不加载 MCP 工具。</div>
                   <p v-if="missingMcpDependencies.length" class="mt-2 text-xs text-red-600">
                     缺失 MCP 工具配置：{{ missingMcpDependencyLabels.join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
                   </p>
@@ -192,7 +192,7 @@
                       </button>
                     </span>
                   </div>
-                  <div v-else class="text-xs text-muted mb-2">未声明 HTTP API（本技能会话不加载 HTTP API 工具）。</div>
+                  <div v-else class="text-xs text-muted mb-2">未声明 HTTP API 工具，本技能会话不加载 HTTP API 工具。</div>
                   <p v-if="missingHttpApiDependencies.length" class="mt-2 text-xs text-red-600">
                     缺失 HTTP API 工具配置：{{ missingHttpApiDependencies.join('，') }}。请先在资源中心-工具中补齐，否则该技能运行时不会加载这些工具。
                   </p>
@@ -243,7 +243,7 @@
                       {{ addingPythonDependencies ? '添加并安装中…' : `一键添加全部缺失依赖（${missingPythonDependencies.length}）` }}
                     </button>
                   </div>
-                  <div v-else class="text-xs text-muted">未声明 Python 依赖</div>
+                  <div v-else class="text-xs text-muted">未声明 Python 依赖，本技能会话不安装额外 Python 依赖。</div>
                   <p v-if="!editMode && missingPythonDependencies.length" class="mt-2 text-xs text-red-600">
                     红色依赖未加入设置-沙箱-requirements.txt，可一键添加全部并等待安装完成。
                   </p>

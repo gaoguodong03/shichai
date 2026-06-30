@@ -157,11 +157,13 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(row.locator('.group-chat-message-stack > .group-chat-bubble-actions')).toBeVisible()
     await expect(row.locator('.group-chat-bubble-action-btn')).toHaveCount(3)
     await expect(row.getByRole('button', { name: '删除该发言' })).toHaveAttribute('title', '删除该发言')
+    await expect(row.getByRole('button', { name: '从此刻分叉会话' })).toHaveCount(0)
+    await expect(row.getByRole('button', { name: '回溯到此发言' })).toHaveCount(0)
 
     await row.getByRole('button', { name: '拷贝发言内容' }).click()
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(assistantContent)
 
-    await row.getByRole('button', { name: '保存为文件' }).click()
+    await row.getByRole('button', { name: '保存到工作区' }).click()
     await expect(page.getByRole('dialog', { name: '保存为工作区文件' })).toBeVisible()
     await page.getByRole('button', { name: '取消' }).click()
     expect(workspaceFilePostCount).toBe(0)

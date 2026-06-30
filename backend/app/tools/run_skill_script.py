@@ -19,6 +19,7 @@ from typing import Any, Optional
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_mount_policy import SANDBOX_SKILLS_ROOT
 from app.agent.session_workspace_policy import sandbox_session_dir
+from app.agent.structured_output_contracts import SkillScriptStdoutPayload, strict_json_object_from_text
 from app.agent.tool_spec import ToolSpec
 from app.agent.tool_gateway import ToolExecutionContext, UnifiedToolGateway
 from app.api.files import get_workspace_root_path
@@ -328,6 +329,18 @@ def _validate_against_manifest(
 def _json_result(**kwargs: Any) -> str:
     """统一结构化输出。"""
     return json.dumps(kwargs, ensure_ascii=False)
+
+
+def _validate_skill_script_stdout(stdout: str) -> str | None:
+    raw = str(stdout or "").strip()
+    if not raw:
+        return "脚本 stdout 必须输出标准 JSON 对象。"
+    try:
+        payload = strict_json_object_from_text(raw, schema_name="SkillScriptStdoutPayload")
+        SkillScriptStdoutPayload.model_validate(payload)
+    except Exception as exc:
+        return f"脚本 stdout 不符合标准 JSON 协议: {exc}"
+    return None
 
 
 def _extract_sandbox_diag(gateway_error: str) -> dict[str, Any]:
@@ -957,6 +970,29 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 str(sandbox_trace.get("verified_requirements_hash") or ""),
             )
         else:
+            stdout_protocol_error = _validate_skill_script_stdout(stdout)
+            if stdout_protocol_error:
+                result_payload = {
+                    "ok": False,
+                    "code": "skill_script_stdout_protocol_error",
+                    "message": stdout_protocol_error,
+                    "returncode": int(exit_code or 0),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "script": script_path,
+                    "sandbox_trace": sandbox_trace,
+                }
+                logger.warning(
+                    "st49_skill_script_stdout_protocol_error user_id=%s directory_name=%s tool=%s workspace_id=%s script=%s stdout_len=%s stderr_len=%s",
+                    current_user_id,
+                    directory_name,
+                    script_tool_name,
+                    workspace_id,
+                    script_path,
+                    len(stdout),
+                    len(stderr),
+                )
+                return _json_result(**result_payload)
             result_payload = {
                 "ok": True,
                 "code": "script_executed",

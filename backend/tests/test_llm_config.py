@@ -112,6 +112,22 @@ def test_builtin_llm_provider_names_are_model_names():
     assert sorted(out) == sorted(row["model"] for row in out.values())
 
 
+def test_app_settings_preserves_top_level_system_prompt(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
+    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.api.settings_app import load_app_settings, save_app_settings
+
+    token = set_current_user_identity(user_id="u-settings", username="u-settings")
+    try:
+        save_app_settings({"system_prompt": "全局项目规则"})
+
+        assert load_app_settings()["system_prompt"] == "全局项目规则"
+    finally:
+        reset_current_user_identity(token)
+
+
 def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     """模型包应包含完整非密钥配置与调用参数，但不得导出 API Key 或密钥绑定信息。"""
     from app.core.llm_bundle import (

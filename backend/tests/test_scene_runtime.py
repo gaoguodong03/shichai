@@ -1,6 +1,7 @@
 """Scene runtime entrypoint tests."""
 
 from app.agent.group_orchestration_fsm import ORCHESTRATION_RECRUITMENT, ORCHESTRATION_SCENE
+from app.agent import scene_runtime
 from app.agent.scene_runtime import SceneRuntime, pick_scene_host_skill
 
 
@@ -84,3 +85,13 @@ def test_scene_runtime_preserves_empty_host_skills():
 
     assert runtime.host_profile["skills"] == []
     assert runtime.host_bubble_skill() == ""
+
+
+def test_context_system_prompt_combines_global_and_scene_prompts():
+    assert hasattr(scene_runtime, "build_context_system_prompt")
+    prompt = scene_runtime.build_context_system_prompt(
+        app_settings={"system_prompt": "全局项目规则"},
+        meta_item={"system_prompt": "场景级项目规则"},
+    )
+
+    assert prompt == "全局项目规则\n\n场景级项目规则"

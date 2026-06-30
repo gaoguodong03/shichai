@@ -245,6 +245,9 @@ def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[st
     }
     if isinstance(hc, dict):
         out["host_config"] = hc
+    system_prompt = str(meta_item.get("system_prompt") or "").strip()
+    if system_prompt:
+        out["system_prompt"] = system_prompt
     prof = str(meta_item.get("orchestration_profile") or "").strip().lower()
     if prof in ("recruitment", "scene"):
         out["orchestration_profile"] = prof

@@ -8,6 +8,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
+from app.agent.structured_output_contracts import McpToolResultPayload
 from app.agent.tool_spec import ToolSpec
 
 _AUDIO_ASR_TOOL_NAME = "audio-asr_transcribe_audio_file"
@@ -102,19 +103,13 @@ def _forced_mcp_file_ref_tool_call(messages: list[BaseMessage], tools: list[Tool
 
 
 def _text_artifact_from_mcp_result(payload: dict[str, Any]) -> str:
-    if str(payload.get("execution_status") or "").strip() != "succeeded":
+    try:
+        parsed = McpToolResultPayload.model_validate(payload)
+    except Exception:
         return ""
-    artifacts = payload.get("artifacts")
-    if not isinstance(artifacts, dict):
+    if parsed.execution_status != "succeeded":
         return ""
-    transcript = artifacts.get("text")
-    return transcript.strip() if isinstance(transcript, str) and transcript.strip() else ""
-
-
-def _legacy_script_text_from_stdout(payload: dict[str, Any]) -> str:
-    if payload.get("ok") is not True:
-        return ""
-    transcript = payload.get("text")
+    transcript = parsed.artifacts.get("text")
     return transcript.strip() if isinstance(transcript, str) and transcript.strip() else ""
 
 
@@ -147,7 +142,7 @@ def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage
             continue
         if not isinstance(payload, dict):
             continue
-        text = _text_artifact_from_mcp_result(payload) or _legacy_script_text_from_stdout(payload)
+        text = _text_artifact_from_mcp_result(payload)
         if text:
             return AIMessage(content=text)
     return None

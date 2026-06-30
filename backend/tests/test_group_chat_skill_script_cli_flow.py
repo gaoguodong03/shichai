@@ -49,7 +49,16 @@ class _FakeScriptGateway:
             ok=True,
             output={
                 "exit_code": 0,
-                "stdout": "pendulum==3.0.0",
+                "stdout": json.dumps(
+                    {
+                        "execution_status": "succeeded",
+                        "result_code": "package.version_checked",
+                        "message": "pendulum==3.0.0",
+                        "artifacts": {"package": "pendulum", "version": "3.0.0"},
+                        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                    },
+                    ensure_ascii=False,
+                ),
                 "stderr": "",
             },
             elapsed_ms=12,
@@ -103,7 +112,14 @@ description: 运行 check_pkg_version.py 检查包版本。
 parser = argparse.ArgumentParser()
 parser.add_argument('--package', required=True)
 args = parser.parse_args()
-print(f'{args.package}==3.0.0')
+import json
+print(json.dumps({
+    "execution_status": "succeeded",
+    "result_code": "package.version_checked",
+    "message": f"{args.package}==3.0.0",
+    "artifacts": {"package": args.package, "version": "3.0.0"},
+    "next_action": {"agent_turn": "respond", "skill_session": "release"},
+}, ensure_ascii=False))
 """,
         encoding="utf-8",
     )
@@ -184,4 +200,4 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
 
     raw_results = assistant_msg.get("tool_raw_results") or []
     assert raw_results
-    assert "pendulum==3.0.0" in raw_results[0]
+    assert "package.version_checked" in raw_results[0]

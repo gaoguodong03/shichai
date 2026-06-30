@@ -93,7 +93,12 @@ def test_skill_session_ended_by_marker():
 
 
 def test_strip_skill_session_state_blocks_over_true():
-    raw = '说明文字\n\n[[SKILL_SESSION_STATE]]\n{"over": true}\n[[/SKILL_SESSION_STATE]]'
+    raw = (
+        '说明文字\n\n[[SKILL_SESSION_STATE]]\n'
+        '{"execution_status":"succeeded","result_code":"ok","message":"完成",'
+        '"artifacts":{},"next_action":{"agent_turn":"respond","skill_session":"release"}}'
+        '\n[[/SKILL_SESSION_STATE]]'
+    )
     over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
     assert over is True
     assert "SKILL_SESSION_STATE" not in stripped
@@ -101,7 +106,12 @@ def test_strip_skill_session_state_blocks_over_true():
 
 
 def test_strip_skill_session_state_blocks_over_false():
-    raw = '还要再问\n[[SKILL_SESSION_STATE]]{"over": false}[[/SKILL_SESSION_STATE]]'
+    raw = (
+        '还要再问\n[[SKILL_SESSION_STATE]]'
+        '{"execution_status":"blocked","result_code":"input.missing","message":"还要再问",'
+        '"artifacts":{},"next_action":{"agent_turn":"respond","skill_session":"keep"}}'
+        '[[/SKILL_SESSION_STATE]]'
+    )
     over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
     assert over is False
     assert stripped.strip() == "还要再问"
@@ -110,7 +120,7 @@ def test_strip_skill_session_state_blocks_over_false():
 def test_strip_skill_session_state_blocks_alias_skill_session_over():
     raw = 'x\n[[SKILL_SESSION_STATE]]\n{"skill_session_over": true}\n[[/SKILL_SESSION_STATE]]'
     over, stripped = skill_session_contract.strip_skill_session_state_blocks_and_get_over(raw)
-    assert over is True
+    assert over is None
     assert stripped.strip() == "x"
 
 
@@ -121,7 +131,12 @@ def test_strip_end_markers_for_display():
 
 def test_resolve_skill_session_state_reads_script_stdout_over():
     raw_tool_outputs = [
-        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
+        (
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"succeeded\\",'
+            '\\"result_code\\":\\"ok\\",\\"message\\":\\"已转写完成\\",'
+            '\\"artifacts\\":{},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"release\\"}}"}'
+        )
     ]
     resolved = skill_session_contract.resolve_skill_session_state(
         "已转写完成",
@@ -150,10 +165,45 @@ def test_resolve_skill_session_state_reads_next_action_skill_session():
     assert resolved.source == "script_stdout"
 
 
+def test_resolve_skill_session_state_rejects_legacy_skill_session_over_stdout():
+    raw_tool_outputs = ['{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}']
+
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "脚本完成",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_demo"],
+    )
+
+    assert resolved.source == "none"
+    assert resolved.over is None
+    assert resolved.signals.script_stdout is None
+
+
+def test_resolve_skill_session_state_rejects_nonstandard_script_stdout_fields():
+    raw_tool_outputs = [
+        (
+            '{"ok": true, "stdout": "{\\"execution_status\\": \\"succeeded\\", '
+            '\\"message\\": \\"ok\\", '
+            '\\"next_action\\": {\\"agent_turn\\": \\"respond\\", \\"skill_session\\": \\"release\\"}}"}'
+        )
+    ]
+
+    resolved = skill_session_contract.resolve_skill_session_state(
+        "脚本完成",
+        raw_tool_outputs,
+        tool_names=["run_skill_script_demo"],
+    )
+
+    assert resolved.source == "none"
+    assert resolved.over is None
+    assert resolved.signals.script_stdout is None
+
+
 def test_resolve_skill_session_state_next_action_beats_legacy_over():
     raw_tool_outputs = [
         (
-            '{"ok": true, "skill_session_over": true, '
+            '{"execution_status": "blocked", "result_code": "input.missing", '
+            '"message": "还需要继续", "artifacts": {}, '
             '"next_action": {"agent_turn": "respond", "skill_session": "keep"}}'
         )
     ]
@@ -169,10 +219,11 @@ def test_resolve_skill_session_state_next_action_beats_legacy_over():
 def test_resolve_skill_session_state_reads_travel_script_stdout_over():
     raw_tool_outputs = [
         (
-            '{"ok": true, "stdout": "{\\"ok\\": true, '
-            '\\"skill_session_over\\": true, '
-            '\\"matched_records\\": 1, '
-            '\\"description\\": \\"西安市住宿费标准：其他人员350元/人·天。\\"}"}'
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"succeeded\\",'
+            '\\"result_code\\":\\"travel.matched\\",'
+            '\\"message\\":\\"西安市住宿费标准：其他人员350元/人·天。\\",'
+            '\\"artifacts\\":{\\"matched_records\\":1},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"release\\"}}"}'
         )
     ]
     resolved = skill_session_contract.resolve_skill_session_state(
@@ -206,9 +257,19 @@ def test_resolve_skill_session_state_ignores_non_script_tool_over_when_named():
 
 def test_resolve_skill_session_state_false_assistant_block_beats_script_stdout_true():
     raw_tool_outputs = [
-        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": true}"}'
+        (
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"succeeded\\",'
+            '\\"result_code\\":\\"ok\\",\\"message\\":\\"完成\\",'
+            '\\"artifacts\\":{},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"release\\"}}"}'
+        )
     ]
-    raw = '还需要你确认\n[[SKILL_SESSION_STATE]]{"over": false}[[/SKILL_SESSION_STATE]]'
+    raw = (
+        '还需要你确认\n[[SKILL_SESSION_STATE]]'
+        '{"execution_status":"blocked","result_code":"input.missing","message":"还需要你确认",'
+        '"artifacts":{},"next_action":{"agent_turn":"respond","skill_session":"keep"}}'
+        '[[/SKILL_SESSION_STATE]]'
+    )
     resolved = skill_session_contract.resolve_skill_session_state(raw, raw_tool_outputs)
     assert resolved.over is False
     assert resolved.source == "assistant_state_block"
@@ -217,9 +278,19 @@ def test_resolve_skill_session_state_false_assistant_block_beats_script_stdout_t
 
 def test_resolve_skill_session_state_script_false_beats_assistant_block_true():
     raw_tool_outputs = [
-        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": false}"}'
+        (
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"blocked\\",'
+            '\\"result_code\\":\\"input.missing\\",\\"message\\":\\"继续\\",'
+            '\\"artifacts\\":{},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"keep\\"}}"}'
+        )
     ]
-    raw = '已完成\n[[SKILL_SESSION_STATE]]{"over": true}[[/SKILL_SESSION_STATE]]'
+    raw = (
+        '已完成\n[[SKILL_SESSION_STATE]]'
+        '{"execution_status":"succeeded","result_code":"ok","message":"完成",'
+        '"artifacts":{},"next_action":{"agent_turn":"respond","skill_session":"release"}}'
+        '[[/SKILL_SESSION_STATE]]'
+    )
     resolved = skill_session_contract.resolve_skill_session_state(raw, raw_tool_outputs)
     assert resolved.over is False
     assert resolved.source == "script_stdout"
@@ -231,7 +302,12 @@ def test_resolve_skill_session_state_script_false_beats_assistant_block_true():
 
 def test_resolve_skill_session_state_script_false_beats_legacy_marker():
     raw_tool_outputs = [
-        '{"ok": true, "stdout": "{\\"ok\\": true, \\"skill_session_over\\": false}"}'
+        (
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"blocked\\",'
+            '\\"result_code\\":\\"input.missing\\",\\"message\\":\\"继续\\",'
+            '\\"artifacts\\":{},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"keep\\"}}"}'
+        )
     ]
     resolved = skill_session_contract.resolve_skill_session_state("完成 [[SKILL_SESSION_END]]", raw_tool_outputs)
     assert resolved.over is False
@@ -251,10 +327,10 @@ def test_resolve_skill_session_state_legacy_marker_releases_without_explicit_sig
 def test_resolve_skill_session_state_explicit_script_false_keeps_lock():
     raw_tool_outputs = [
         (
-            '{"ok": true, "stdout": "{\\"ok\\": true, '
-            '\\"code\\": \\"transcribed\\", '
-            '\\"skill_session_over\\": false, '
-            '\\"text\\": \\"转写文本\\"}"}'
+            '{"ok": true, "stdout": "{\\"execution_status\\":\\"blocked\\",'
+            '\\"result_code\\":\\"transcribed\\",\\"message\\":\\"转写文本\\",'
+            '\\"artifacts\\":{\\"text\\":\\"转写文本\\"},'
+            '\\"next_action\\":{\\"agent_turn\\":\\"respond\\",\\"skill_session\\":\\"keep\\"}}"}'
         )
     ]
     resolved = skill_session_contract.resolve_skill_session_state(

@@ -17,10 +17,8 @@ from app.agent.group_chat_expert_resolution import (
 )
 from app.agent.group_host_decision import (
     extract_candidate_agent_names_from_text as _extract_candidate_agent_names_from_text,
-    extract_host_scheduler_state as _extract_host_scheduler_state,
     heuristic_recommend_agents as _heuristic_recommend_agents,
-    host_decision_from_scheduler_state as _host_decision_from_scheduler_state,
-    parse_host_response as _parse_host_response,
+    parse_strict_host_scheduler_output as _parse_strict_host_scheduler_output,
 )
 from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
 from app.agent.group_chat_host_messages import HOST_ZERO_EXPERT_RECOMMENDATION
@@ -115,19 +113,21 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 
 你仍按主持人 Skill 判断下一步调度，你只需要在本轮回复中给出以下结构化结果：
 
-**只输出 JSON（可用 ```json 包裹），不要输出任何面向用户的自然语言。**
+**只输出一个 JSON 对象**，可以使用单个 ```json 代码块包裹；代码块外不得有任何文字。
 
 ```json
 {
   "current_phase": "阶段：xxxx",
   "next_speaker": "专家名称",
-  "speaker_task": "请根据用户目标完成本阶段任务"
+  "speaker_task": "请根据用户目标完成本阶段任务",
+  "reason": "简短调度原因"
 }
 ```
 
 `current_phase` 用于保存当前场景流程阶段；
 `next_speaker` 写场景内 Agent 名称、`"invite"` 、`"user"` 或 `"end"`。
 `speaker_task` 平台会把它作为后台任务文本交给下一位发言人执行。
+字段只允许 `current_phase`、`next_speaker`、`speaker_task`、`reason`、`suggested_add_agent_names`；不要输出 `task_done`、`next_prompt`、`current_phase.txt`、`next_speaker.txt`、`speaker_task.txt`。
 专家发言完成后，平台会先交回主持人调度；这里的 `next_speaker` 是主持人本次调度出的下一步目标，只能是场景内 Agent 名称、 `"invite"` 、`"user"` 或 `"end"`。
 你必须先判断任务目标是否已经完成：如果上一位专家已经给出明确答案、文件、查询结果或可交付结论，就不要再安排专家做“总结答复”或复述同一结果。
 任务已完成且整个会话应结束时：`current_phase` 写 `"end"`，且 `next_speaker` 写 `"end"`。
@@ -316,21 +316,33 @@ async def _host_decide_by_agent(
                 "model": str(getattr(llm, "model", "") or ""),
             },
         )
-        scheduler_state = _extract_host_scheduler_state(content_str) if scene_mode else {}
-        if scene_mode and any((scheduler_state.get("current_phase"), scheduler_state.get("next_speaker"), scheduler_state.get("speaker_task"))):
-            _persist_host_scheduler_state_meta(meta_item, scheduler_state)
-            state_decision = _host_decision_from_scheduler_state(scheduler_state, agent_profiles)
-            if state_decision:
-                logger.info(
-                    "group_chat_scheduler_host_state_decision session=%s next_speaker=%s",
-                    group_session_id,
-                    state_decision.get("next_speaker"),
-                )
-                return state_decision
-        parsed = _parse_host_response(content_str)
-        if parsed:
+        parsed = _parse_strict_host_scheduler_output(
+            content_str,
+            agent_profiles,
+            orchestration_profile=orchestration_profile,
+        )
+        if parsed.get("interrupt_reason") == "protocol_error":
+            logger.warning(
+                "group_chat_scheduler_host_protocol_error session=%s agent=%s model_output=%r reason=%s",
+                group_session_id,
+                str(host_agent.get("name") or host_display_name),
+                content_str[:1000],
+                parsed.get("reason"),
+            )
             return parsed
-        return None
+        scheduler_state = {
+            "current_phase": str(parsed.get("current_phase") or "").strip(),
+            "next_speaker": str(parsed.get("next_speaker") or "").strip(),
+            "speaker_task": str(parsed.get("speaker_task") or "").strip(),
+        }
+        if any(scheduler_state.values()):
+            _persist_host_scheduler_state_meta(meta_item, scheduler_state)
+        logger.info(
+            "group_chat_scheduler_host_state_decision session=%s next_speaker=%s",
+            group_session_id,
+            parsed.get("next_speaker"),
+        )
+        return parsed
     except Exception as e:
         err_text = str(e)
         if is_llm_credential_error_message(err_text):

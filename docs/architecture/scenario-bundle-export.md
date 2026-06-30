@@ -27,7 +27,7 @@ flowchart LR
 
 | 路径 | 内容 |
 |------|------|
-| `scenario_bundle.json` | `bundle_version`、`exported_at`（UTC ISO）、`preset`（**整份场景行原样**，含 `id`、`agent_ids`、`host_config` 等） |
+| `scenario_bundle.json` | `bundle_version`、`exported_at`（UTC ISO）、`preset`（**整份场景行原样**，含 `id`、`agent_ids`、顶层 `system_prompt`、`host_config` 等） |
 | `dha_instances.json` | 场景中每个 `agent_id` 对应专家的一条记录（经 `strip_agent_row_for_disk` 处理） |
 | `mcp_servers.json` | **仅当**收集到的 `mcp_ids` 非空时写入；为当前用户配置里这些 id 的 MCP 条目 |
 | `skills/<skill_id>/...` | 每个技能目录下含 `SKILL.md` 才会打包；路径为 `skills/{skill_id}/相对文件` |

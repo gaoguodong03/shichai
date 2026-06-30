@@ -125,6 +125,10 @@ import {
 import { workspaceIconStyle } from '../../workspaceIconStyle'
 import folderIconUrl from '@/assets/icons/workspace/folder.svg'
 
+const emit = defineEmits<{
+  (event: 'middle-column-toggle'): void
+}>()
+
 const {
   props,
   groupDetail,

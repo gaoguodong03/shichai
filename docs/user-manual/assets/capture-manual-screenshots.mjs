@@ -226,7 +226,7 @@ await shot('resources-files.png', [
 
 await goto('/settings/app')
 await shot('settings-host.png', [
-  { label: 1, selector: 'text=主持人设置' },
+  { label: 1, selector: 'text=全局' },
   { label: 2, selector: 'text=默认主持人' },
   { label: 3, selector: 'text=模型' },
   { label: 4, selector: 'button:has-text("保存")' },

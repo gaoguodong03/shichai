@@ -200,6 +200,7 @@ def normalize_scenario_row(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "name": name,
         "description": str(row.get("description") or ""),
+        "system_prompt": str(row.get("system_prompt") or "") if row.get("system_prompt") is not None else "",
         "host_config": _normalize_scenario_host_config(row.get("host_config")),
         "agent_names": agent_names,
     }

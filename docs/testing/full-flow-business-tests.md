@@ -57,7 +57,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
 - `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
 - `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
-- `frontend/e2e/settings.spec.ts`：主持人设置、配色、密钥、账号、安全和沙箱 requirements。
+- `frontend/e2e/settings.spec.ts`：全局设置、配色、密钥、账号、安全和沙箱 requirements。
 
 通过标准：Playwright `chrome` 项目全部通过，无控制台致命错误、无页面白屏、无找不到可见控件的失败。
 
@@ -89,7 +89,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 
 - `test_frontend_workspace_session_and_file_flow`：串起会话新建/更新/停止/删除，以及工作区文件目录、文本、上传、移动、删除；
 - `test_frontend_session_question_answer_flow`：新建问答 Skill 与专家，在会话里发出一个问题，检查返回答案、会话历史落盘与会话导出；
-- `test_frontend_resource_center_and_settings_flow`：串起资源中心与设置页的主要 CRUD，包括场景、专家、Skill、Skill parts、MCP、LLM 设置、主持人设置、API 密钥、沙箱设置。
+- `test_frontend_resource_center_and_settings_flow`：串起资源中心与设置页的主要 CRUD，包括场景、专家、Skill、Skill parts、MCP、LLM 设置、全局设置、API 密钥、沙箱设置。
 
 该文件会把真实 Docker/OpenSandbox 预热和 MCP 连接替换成测试替身，因此适合作为本地与 CI 的稳定业务链路门禁。底层沙箱复用、requirements 注入、脚本执行等真实行为仍由 `test_sandbox_service.py` 与 `test_group_chat_skill_script_cli_flow.py` 覆盖。
 

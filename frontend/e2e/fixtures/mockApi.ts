@@ -12,7 +12,9 @@ type Session = {
   title: string
   updated_at: string
   agent_ids: string[]
+  agent_names?: string[]
   messages: Message[]
+  system_prompt?: string
   leader_agent_id?: string
   host_config?: Record<string, unknown>
 }
@@ -30,6 +32,7 @@ type Agent = {
 
 type Skill = {
   id: string
+  directory_name?: string
   name: string
   description: string
   allowed_tools?: {
@@ -49,6 +52,8 @@ type ScenarioPreset = {
   id: string
   name: string
   description: string
+  system_prompt?: string
+  agent_names?: string[]
   agent_ids: string[]
   leader_agent_id: string
   updated_at: string
@@ -121,12 +126,14 @@ export function createE2eState(): E2eState {
     skills: [
       {
         id: 'skill-qa',
+        directory_name: 'skill-qa',
         name: '问答技能',
         description: '用于前端点击验收',
         allowed_tools: { mcp: ['mcp-files'], python: 'requests==2.31.0\npandas==2.2.2\n' },
       },
       {
         id: 'skill-write',
+        directory_name: 'skill-write',
         name: '写作技能',
         description: '把讨论整理为说明文档',
         allowed_tools: { mcp: [], python: '' },
@@ -145,10 +152,12 @@ export function createE2eState(): E2eState {
         id: 'scenario-qa',
         name: '问答验收场景',
         description: '用于 UI 自动化验收',
+        system_prompt: '场景级项目规则',
+        agent_names: ['问答专家', '写作专家'],
         agent_ids: ['agent-qa', 'agent-writer'],
         leader_agent_id: 'agent-qa',
         updated_at: now,
-        host_config: { name: '四九', skill_ids: ['skill-qa'] },
+        host_config: { leader_agent_name: '四九', skill_name: '问答技能', skill_directory: 'skill-qa' },
       },
     ],
     secrets: [{ id: 'qwen-main', label: 'Qwen 主密钥', key_set: true }],
@@ -171,6 +180,7 @@ export function createE2eState(): E2eState {
     },
     appSettings: {
       default_llm: 'qwen',
+      system_prompt: '全局项目规则',
       llm_providers: {
         qwen: {
           label: 'Qwen',
@@ -238,10 +248,12 @@ function sessionResponse(session: Session, state: E2eState) {
     updated_at: session.updated_at,
     messages: session.messages,
     agent_ids: session.agent_ids,
+    agent_names: session.agent_names || [],
     agent_map: Object.fromEntries(state.agents.map((a) => [a.agent_id, { name: a.name, role: a.role }])),
     orchestration_profile: session.host_config ? 'scene' : 'recruitment',
   }
   if (session.leader_agent_id) response.leader_agent_id = session.leader_agent_id
+  if (session.system_prompt) response.system_prompt = session.system_prompt
   if (session.host_config) response.host_config = session.host_config
   return response
 }
@@ -295,13 +307,15 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { sessions: state.sessions })
     }
     if (path === '/sessions' && method === 'POST') {
-      const body = readBody<{ title?: string; agent_ids?: unknown[]; leader_agent_id?: string; host_config?: Record<string, unknown> }>(route)
+      const body = readBody<{ title?: string; agent_ids?: unknown[]; agent_names?: unknown[]; leader_agent_id?: string; system_prompt?: string; host_config?: Record<string, unknown> }>(route)
       const next: Session = {
         id: `session-new-${state.sessions.length + 1}`,
         title: String(body.title || '新对话'),
         updated_at: now,
         agent_ids: Array.isArray(body.agent_ids) ? body.agent_ids.map(String) : [],
+        agent_names: Array.isArray(body.agent_names) ? body.agent_names.map(String) : [],
         messages: [],
+        system_prompt: String(body.system_prompt || ''),
         leader_agent_id: body.leader_agent_id,
         host_config: body.host_config,
       }
@@ -421,6 +435,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         state.scenarios = body.presets.map((p) => ({
           ...p,
           description: p.description || '',
+          system_prompt: p.system_prompt || '',
           updated_at: p.updated_at || now,
         }))
       }
@@ -453,6 +468,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const body = readBody<Record<string, unknown>>(route)
       const skill = {
         id,
+        directory_name: id,
         name: String(body.name || '新技能'),
         description: String(body.description || ''),
         allowed_tools: (body.allowed_tools as Skill['allowed_tools']) || { mcp: [], python: '' },

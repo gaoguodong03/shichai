@@ -8,6 +8,7 @@ export type GroupDetail = {
   agent_map: Record<string, { name?: string; description?: string }>
   agent_names: string[]
   leader_agent_name?: string
+  system_prompt?: string
   host_config?: { leader_agent_name?: string; llm_name?: string; system_prompt?: string; skill_name?: string; skill_directory?: string }
   runtime_state?: { running?: boolean; agent_name?: string; skill?: string; phase?: string; started_at?: string }
   /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
@@ -33,6 +34,7 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
     agent_map,
     agent_names,
     leader_agent_name: String(raw.leader_agent_name ?? ''),
+    system_prompt: String(raw.system_prompt ?? '').trim() || undefined,
     host_config,
     runtime_state,
     orchestration_profile: orch === 'scene' || orch === 'recruitment' ? orch : undefined,

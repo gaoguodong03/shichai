@@ -147,13 +147,13 @@
    - 最后经 **`wrap_filesystem_tools`** 等与文件系统相关的包装，与实现一致。
 
 4. **Skill 正文与专家人设**
-   注入模型侧的不只是 SKILL 文件：在 `resolved_skill_id` 对应正文前，会拼接专家的 **`system_prompt`** 与 **`role`**（「你的角色：…」），再交给 `create_skill_execution_agent`。
+   注入模型侧的不只是 SKILL 文件：在 `resolved_skill_id` 对应正文前，会先拼接平台级 **`app_settings.system_prompt`** 与会话/场景级 **`meta.system_prompt`**，再拼接专家的 **`system_prompt`** 与 **`role`**（「你的角色：…」），最后交给 `create_skill_execution_agent`。
 
 5. **构造用户侧提示**
    - **讨论目标 `discussion_goal`**：一般取**首条用户消息**经规范化后的摘要；若无则使用占位「待用户提出讨论主题」。
    - **默认用户内容**：包含「群聊讨论目标」「最近讨论」（由历史消息转成的上下文字符串）；若本次请求带 **`custom_prompt`**，仅在**本轮请求中第一位专家**消耗一次。
    - 若内容中已含「最近讨论 / 历史对话」等区块，则避免再重复追加同一段上下文。
-   - **`extra_system_prompt`** 在群聊流中通常为空；全局 system 已废弃，主持人人设改在主持人 Agent 与主持技能上维护。
+   - **`extra_system_prompt`** 在群聊流中承载平台级与场景级上下文规则；主持人专属人设仍由 `host_profile.system_prompt` / `host_config.system_prompt` 与主持人 Skill 维护。
 
 6. **流式 Agent 执行（步进语义）**
    产品形态是「模型一步 → 需要则工具一步 → 直到不再请求工具」的 ReAct 循环，当前实际执行器是 **`SimpleAgent.astream`**：对外事件类型为 **`agent_step`** / **`tool_step`** / **`final_step`**（对应文档里常说的模型步 / 工具步 / 结束步）。`create_skill_execution_agent` 将技能全文、工具名与说明写入系统提示并 `bind_tools`；群聊侧订阅流事件，将 **`agent_step`** 中的文本以 SSE **`content`** 增量推送，**`tool_step`** 多用于内部追踪（避免把原始工具输出直接灌进气泡）。超时等由环境变量（如 `LLM_AGENT_TIMEOUT`）控制。

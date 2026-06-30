@@ -749,7 +749,7 @@ flowchart TB
 | 专家资源目录 | `resources/agents/{agent_id}/agent.json` | `core/resource_store.py` 镜像、导入导出 |
 | Skill | `resources/skills/{skill_id}/...` | `api/settings_skills.py`、`skills/loader.py` |
 | MCP | `config/mcp_servers.json` | `api/settings_mcp.py`、`mcp/manager.py` |
-| LLM 和主持人设置 | `config/app_settings.json` | `api/settings_app.py`、`agent/llm_client.py` |
+| LLM、全局规则和主持人设置 | `config/app_settings.json` | `api/settings_app.py`、`agent/llm_client.py` |
 | 密钥引用和密钥库 | `config/api_secrets.json`、`vault/secrets.enc.json` | `api/settings_secrets.py` |
 | 沙箱依赖 | `config/sandbox/requirements.txt` | `api/sandbox_settings.py`、`tools/run_skill_script.py` |
 

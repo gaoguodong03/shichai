@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test'
 import { bootLoggedInApp, createE2eState, loginByStorage, mockApi } from './fixtures/mockApi'
 
 test.describe('验收 4/6：资源中心技能、工具与模型', () => {
+  function skillToolSectionTitle(page: import('@playwright/test').Page) {
+    return page.locator('main .text-xs.font-medium.text-primary.mb-1').filter({ hasText: /^工具$/ })
+  }
+
   async function expectAlert(page: import('@playwright/test').Page, title: string, message: string) {
     const dialog = page.getByRole('dialog', { name: title })
     await expect(dialog).toBeVisible()
@@ -47,11 +51,23 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
 
     await expect(page.getByText('问答技能')).toBeVisible()
     await expect(page.getByPlaceholder('技能名称')).toHaveValue('问答技能')
-    await expect(page.getByText('技能运行时依赖')).toBeVisible()
+    await expect(skillToolSectionTitle(page)).toBeVisible()
+    await expect(page.getByText('技能运行时依赖')).toHaveCount(0)
     await expect(page.getByText('文件系统工具')).toBeVisible()
     await expect(page.getByText('requests==2.31.0')).toBeVisible()
     await expect(page.getByRole('button', { name: /References/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Scripts/ })).toBeVisible()
+  })
+
+  test('技能详情页工具空状态使用统一描述', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/skill')
+
+    await page.getByText('写作技能').click()
+
+    await expect(skillToolSectionTitle(page)).toBeVisible()
+    await expect(page.getByText('未声明 MCP 工具，本技能会话不加载 MCP 工具。')).toBeVisible()
+    await expect(page.getByText('未声明 HTTP API 工具，本技能会话不加载 HTTP API 工具。')).toBeVisible()
+    await expect(page.getByText('未声明 Python 依赖，本技能会话不安装额外 Python 依赖。')).toBeVisible()
   })
 
   test('导入技能包后展示统一新增保留摘要', async ({ page }) => {

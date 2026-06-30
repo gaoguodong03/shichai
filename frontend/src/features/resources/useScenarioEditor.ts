@@ -20,12 +20,14 @@ export interface ScenarioPreset {
   agent_names: string[]
   host_config?: ScenarioHostConfig
   description?: string
+  system_prompt?: string
 }
 
 type ScenarioDraft = {
   name: string
   agent_names: string[]
   description: string
+  system_prompt: string
 }
 
 type AgentItem = {
@@ -65,6 +67,7 @@ export function useScenarioEditor(options: {
     name: '',
     agent_names: [],
     description: '',
+    system_prompt: '',
   })
 
   const isCreatingScenario = computed(() => !!selectedId.value && selectedId.value === creatingScenarioId.value)
@@ -73,6 +76,7 @@ export function useScenarioEditor(options: {
     return (
       !(s.name || '').trim() &&
       !(s.description || '').trim() &&
+      !(s.system_prompt || '').trim() &&
       !(s.agent_names || []).length
     )
   }
@@ -82,7 +86,7 @@ export function useScenarioEditor(options: {
     const draftIds = new Set(scenarioDraftIds.value)
     const list = (scenarioPresets.value || []).filter((s) => !draftIds.has(s.name) && !isUnsavedScenarioDraftPreset(s))
     if (!q) return list
-    return list.filter((s) => `${s.name || ''} ${s.description || ''}`.toLowerCase().includes(q))
+    return list.filter((s) => `${s.name || ''} ${s.description || ''} ${s.system_prompt || ''}`.toLowerCase().includes(q))
   })
 
   const selectedScenarioPreset = computed(() => {
@@ -168,7 +172,7 @@ export function useScenarioEditor(options: {
   }
 
   function resetScenarioDraft() {
-    scenarioDraft.value = { name: '', agent_names: [], description: '' }
+    scenarioDraft.value = { name: '', agent_names: [], description: '', system_prompt: '' }
     resetScenarioHostConfig()
   }
 
@@ -191,6 +195,7 @@ export function useScenarioEditor(options: {
       name: s.name || '',
       agent_names: names,
       description: s.description || '',
+      system_prompt: s.system_prompt || '',
     }
     const hc = s.host_config
     if (hc && typeof hc === 'object') {
@@ -219,6 +224,7 @@ export function useScenarioEditor(options: {
       name: '',
       agent_names: [],
       description: '',
+      system_prompt: '',
       host_config: {},
     }
     scenarioPresets.value = [
@@ -252,6 +258,7 @@ export function useScenarioEditor(options: {
           name: (p.name || '').trim(),
           agent_names: [...(p.agent_names || [])],
           description: p.description || '',
+          system_prompt: p.system_prompt || '',
         }
         if (p.host_config && typeof p.host_config === 'object') {
           row.host_config = p.host_config
@@ -300,6 +307,7 @@ export function useScenarioEditor(options: {
               ...p,
               name,
               description: scenarioDraft.value.description || '',
+              system_prompt: scenarioDraft.value.system_prompt || '',
               agent_names: agentNames,
               host_config,
             }

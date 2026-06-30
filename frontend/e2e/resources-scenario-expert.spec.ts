@@ -22,6 +22,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
 
     await page.getByPlaceholder('请输入场景描述').fill('通过 UI 自动化保存的场景说明')
+    await page.getByPlaceholder('写入仅适用于该场景的项目规则，会同时提供给主持人和场景内专家。').fill('场景级自动化验收规则')
     await page.getByRole('button', { name: '保存' }).click()
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })

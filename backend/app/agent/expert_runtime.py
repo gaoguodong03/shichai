@@ -5,7 +5,6 @@ turn a clear build path: resolve Skill -> build tools -> create executable agent
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
@@ -17,6 +16,7 @@ from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.agent.group_orchestration_fsm import clear_skill_session_lock, locked_skill_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
+from app.agent.structured_output_contracts import ExpertSkillSelectionPayload, parse_strict_pydantic_object
 from app.agent.tools_for_skill import build_tools_for_group_chat
 
 logger = logging.getLogger(__name__)
@@ -56,31 +56,6 @@ def _skill_directory_names(agent_profile: Dict[str, Any]) -> List[str]:
                 names.append(directory_name)
         return names
     return []
-
-
-def _extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
-    if not text or not str(text).strip():
-        return None
-    s = str(text).strip()
-    for opener in ("```json", "```"):
-        if opener in s:
-            try:
-                inner = s.split(opener, 1)[1].split("```", 1)[0].strip()
-                if inner.startswith("json"):
-                    inner = inner[4:].strip()
-                obj = json.loads(inner)
-                return obj if isinstance(obj, dict) else None
-            except Exception:
-                pass
-    try:
-        lo = s.find("{")
-        hi = s.rfind("}")
-        if lo >= 0 and hi > lo:
-            obj = json.loads(s[lo : hi + 1])
-            return obj if isinstance(obj, dict) else None
-    except Exception:
-        pass
-    return None
 
 
 async def expert_llm_pick_skill(
@@ -126,17 +101,14 @@ async def expert_llm_pick_skill(
         raw = out.content if hasattr(out, "content") else str(out)
         if isinstance(raw, list):
             raw = "".join(str(x) for x in raw)
-        parsed = _extract_json_object_from_llm_text(str(raw))
-        if parsed:
-            picked = str(parsed.get("selected_skill") or "").strip()
-            valid = {str(x).strip() for x in skill_directories}
-            if picked and picked in valid:
-                debug["selected_skill"] = picked
-                return picked, debug
-            debug["strategy"] = "expert_llm_pick_invalid_id"
-            debug["invalid_pick"] = picked
-        else:
-            debug["strategy"] = "expert_llm_pick_parse_fail"
+        parsed = parse_strict_pydantic_object(str(raw), ExpertSkillSelectionPayload)
+        picked = parsed.selected_skill.strip()
+        valid = {str(x).strip() for x in skill_directories}
+        if picked and picked in valid:
+            debug["selected_skill"] = picked
+            return picked, debug
+        debug["strategy"] = "expert_llm_pick_invalid_id"
+        debug["invalid_pick"] = picked
     except Exception as e:
         logger.warning("专家 Skill 选型 LLM 失败，将回退关键词路由: %s", e)
         debug["strategy"] = "expert_llm_pick_error"

@@ -207,7 +207,7 @@ npm run build
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
 - `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
 - `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
-- `frontend/e2e/settings.spec.ts`：主持人设置、配色、密钥、账号、安全和沙箱 requirements。
+- `frontend/e2e/settings.spec.ts`：全局设置、配色、密钥、账号、安全和沙箱 requirements。
 
 调试时可打开浏览器：
 

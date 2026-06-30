@@ -29,6 +29,7 @@ class AppSettingsBody(BaseModel):
 
     default_llm: Optional[str] = None
     llm_providers: Optional[Dict[str, Dict[str, Any]]] = None
+    system_prompt: Optional[str] = None
 
 
 _JENIYA_BASE = "https://jeniya.top/v1"
@@ -124,20 +125,21 @@ def load_app_settings() -> Dict[str, Any]:
     data = {
         "default_llm": "qwen3-max",
         "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
+        "system_prompt": "",
         "host_profile": dict(_DEFAULT_HOST_PROFILE),
     }
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
-                if isinstance(loaded, dict) and "system_prompt" in loaded:
-                    loaded = dict(loaded)
-                    loaded.pop("system_prompt", None)
                 if isinstance(loaded, dict):
                     hp = loaded.get("host_profile")
                     if isinstance(hp, dict):
                         loaded = dict(loaded)
                         loaded["host_profile"] = normalize_host_profile(hp)
+                    if "system_prompt" in loaded:
+                        loaded = dict(loaded)
+                        loaded["system_prompt"] = str(loaded.get("system_prompt") or "")
                 data.update(loaded)
                 data.pop("router_tfidf", None)
                 providers = _refresh_builtin_llm_provider_presets(data.get("llm_providers") or {})

@@ -17,6 +17,15 @@ from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 
 
+def build_context_system_prompt(*, app_settings: Mapping[str, Any], meta_item: Mapping[str, Any]) -> str:
+    """Combine platform-wide and scene-level context rules for host/expert turns."""
+    sections = [
+        str((app_settings or {}).get("system_prompt") or "").strip(),
+        str((meta_item or {}).get("system_prompt") or "").strip(),
+    ]
+    return "\n\n".join(section for section in sections if section)
+
+
 def pick_scene_host_skill(skill_directories: List[str]) -> str:
     """Pick the host Skill for a scene/host runtime in a predictable way."""
     ids = [str(x).strip() for x in (skill_directories or []) if str(x).strip()]

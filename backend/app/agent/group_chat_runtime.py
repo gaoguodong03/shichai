@@ -45,7 +45,6 @@ from app.agent.group_host_decision import (
     extract_explicit_requested_agent_names as _extract_explicit_requested_agent_names,
     extract_forced_at_mention_agent_name as _extract_forced_at_mention_agent_name,
     heuristic_recommend_agents as _heuristic_recommend_agents,
-    host_text_field as _host_text_field,
     user_requests_host_takeover as _user_requests_host_takeover,
 )
 from app.agent.expert_runtime import build_expert_turn_runtime
@@ -66,7 +65,7 @@ from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.feature_flags import is_feature_enabled
 from app.core.security import get_current_user
 from app.core.scene_scheduler import finalize_host_scheduler_decision
-from app.agent.scene_runtime import SceneRuntime
+from app.agent.scene_runtime import SceneRuntime, build_context_system_prompt
 from app.agent.group_orchestration_fsm import (
     clear_skill_session_lock,
     resolve_group_entry_route,
@@ -248,8 +247,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
 
-    # 主持人提示词由场景 host_config 维护。
-    extra_system_prompt = ""
+    extra_system_prompt = build_context_system_prompt(app_settings=app_settings, meta_item=m)
 
     scene_runtime = SceneRuntime.from_group_session(
         session_id=group_session_id,

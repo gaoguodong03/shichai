@@ -205,12 +205,13 @@ def test_normalize_agent_row_keeps_only_name_llm_prompt_description_and_skills()
     }
 
 
-def test_normalize_scenario_row_keeps_minimal_host_and_agent_names():
+def test_normalize_scenario_row_keeps_minimal_prompt_host_and_agent_names():
     row = normalize_scenario_row(
         {
             "id": "scenario-old",
             "name": "协同写作v1.1",
             "description": "",
+            "system_prompt": "场景级项目规则",
             "discussion_goal_example": "旧字段",
             "agents": ["文档合著专家v1.1"],
             "agent_names": ["图片生成专家v1.0", "信息检索专家v1.0"],
@@ -232,6 +233,7 @@ def test_normalize_scenario_row_keeps_minimal_host_and_agent_names():
     assert row == {
         "name": "协同写作v1.1",
         "description": "",
+        "system_prompt": "场景级项目规则",
         "host_config": {
             "leader_agent_name": "协同写作场景主持人",
             "llm_name": "deepseek-v4-flash",

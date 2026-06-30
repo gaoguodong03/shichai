@@ -15,7 +15,7 @@ export const resourceChildren: { id: ResourceSubModule; label: string }[] = [
 ]
 
 export const settingsCategories: { id: SettingsCategoryId; label: string }[] = [
-  { id: 'app', label: '主持人设置' },
+  { id: 'app', label: '全局' },
   { id: 'theme', label: '配色' },
   { id: 'secrets', label: '密钥' },
   { id: 'account-security', label: '账号' },

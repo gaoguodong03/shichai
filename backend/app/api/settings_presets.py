@@ -174,6 +174,7 @@ class SessionPresetItem(BaseModel):
     name: str
     agent_names: List[str]
     description: Optional[str] = ""
+    system_prompt: Optional[str] = ""
     host_config: Optional[Dict[str, Any]] = None
 
 
@@ -208,6 +209,7 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         "name": name,
         "agent_names": agent_names,
         "description": str(item.description or ""),
+        "system_prompt": str(item.system_prompt or ""),
     }
     if hc_norm is not None:
         row["host_config"] = hc_norm
@@ -244,6 +246,7 @@ def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetI
             name=str(row["name"]),
             agent_names=list(row["agent_names"]),
             description=str(row.get("description") or ""),
+            system_prompt=str(row.get("system_prompt") or ""),
             host_config=hc if isinstance(hc, dict) else None,
         )
     except Exception:

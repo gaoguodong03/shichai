@@ -677,6 +677,15 @@
                     placeholder="请输入场景描述"
                   />
                 </div>
+                <div>
+                  <label class="block text-sm font-medium text-primary mb-1">场景系统提示词（可选）</label>
+                  <textarea
+                    v-model="scenarioDraft.system_prompt"
+                    rows="6"
+                    class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                    placeholder="写入仅适用于该场景的项目规则，会同时提供给主持人和场景内专家。"
+                  />
+                </div>
                 <div class="border border-border-light rounded-lg px-5 py-6 space-y-6">
                   <label class="block text-sm font-medium text-primary mb-2">场景主持人</label>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -703,7 +712,7 @@
                     </div>
                   </div>
                   <div>
-                    <label class="block text-sm font-medium text-primary mb-1">系统提示词（可选）</label>
+                    <label class="block text-sm font-medium text-primary mb-1">主持人系统提示词（可选）</label>
                     <textarea
                       v-model="scenarioLeaderSystemPrompt"
                       rows="6"
@@ -1598,6 +1607,7 @@ const workspaceContentRef = ref<{
     agent_names: string[]
     host_config?: ScenarioHostConfig
     description?: string
+    system_prompt?: string
   }) => Promise<string | null>
 } | null>(null)
 const newSessionMenuRoot = ref<HTMLElement | null>(null)
@@ -1639,6 +1649,7 @@ async function createScenarioSessionFromMenu(scenario: {
   agent_names: string[]
   host_config?: ScenarioHostConfig
   description?: string
+  system_prompt?: string
 }) {
   closeNewSessionMenu()
   await workspaceContentRef.value?.createSessionFromScenarioPreset(scenario)

@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 class GroupSessionUpdate(BaseModel):
     title: Optional[str] = None
+    system_prompt: Optional[str] = None
     leader_agent_name: Optional[str] = None
     host_config: Optional[Dict[str, Any]] = None
     orchestration_profile: Optional[str] = None  # recruitment | scene
@@ -90,6 +91,7 @@ def create_session_internal(
     agent_names: Optional[List[str]] = None,
     leader_agent_name: Optional[str] = None,
     host_config: Optional[Dict[str, Any]] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """新建一条会话（默认虚拟场景主持人 + host_config）。"""
     instances = load_agent_instances()
@@ -127,6 +129,9 @@ def create_session_internal(
     }
     if meta_host_config is not None:
         row["host_config"] = meta_host_config
+    scene_system_prompt = str(system_prompt or "").strip()
+    if scene_system_prompt:
+        row["system_prompt"] = scene_system_prompt
     row["orchestration_profile"] = default_orchestration_profile_for_new_session(agent_names=names)
     meta[gsid] = row
     _save_group_meta(meta)
@@ -282,6 +287,12 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         else:
             # 用户主动修改标题后，停止自动主题覆盖
             meta[group_session_id]["title_auto_generated"] = False
+    if body.system_prompt is not None:
+        scene_system_prompt = str(body.system_prompt or "").strip()
+        if scene_system_prompt:
+            meta[group_session_id]["system_prompt"] = scene_system_prompt
+        else:
+            meta[group_session_id].pop("system_prompt", None)
     if body.host_config is not None:
         meta[group_session_id]["host_config"] = normalize_host_config_dict(body.host_config)
         meta[group_session_id]["leader_agent_name"] = VIRTUAL_SCENE_HOST_ID

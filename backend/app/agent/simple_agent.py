@@ -48,6 +48,7 @@ from app.agent.simple_agent_tool_ids import (
     _normalize_tool_message_ids,
     _tool_call_args,
 )
+from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -108,18 +109,25 @@ def _iter_run_skill_raw_output_payloads(tool_out: dict[str, Any]) -> list[dict[s
     return payloads
 
 
+def _iter_strict_skill_stdout_payloads(tool_out: dict[str, Any]) -> list[SkillScriptStdoutPayload]:
+    out: list[SkillScriptStdoutPayload] = []
+    for payload in _iter_run_skill_raw_output_payloads(tool_out):
+        try:
+            out.append(SkillScriptStdoutPayload.model_validate(payload))
+        except Exception:
+            continue
+    return out
+
+
 def _run_skill_outputs_request_agent_turn_continue(tool_out: dict[str, Any]) -> bool:
-    payloads = _iter_run_skill_raw_output_payloads(tool_out)
+    payloads = _iter_strict_skill_stdout_payloads(tool_out)
     if not payloads:
         return False
     saw_continue = False
     for payload in payloads:
-        if payload.get("ok") is False or str(payload.get("execution_status") or "").strip().lower() == "failed":
+        if payload.execution_status == "failed":
             return False
-        next_action = payload.get("next_action")
-        if not isinstance(next_action, dict):
-            continue
-        if str(next_action.get("agent_turn") or "").strip().lower() == _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
+        if payload.next_action.agent_turn == _RUN_SKILL_SCRIPT_AGENT_TURN_CONTINUE:
             saw_continue = True
     return saw_continue
 

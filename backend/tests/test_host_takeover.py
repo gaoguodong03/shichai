@@ -48,30 +48,21 @@ def test_user_requests_host_takeover_false_when_not_mentioned():
     assert not gc._user_requests_host_takeover("【主持人补充指令】请撰写报告", explicit_flag=None, host_display_name="四九")
 
 
-def test_parse_host_response_migrates_legacy_next_prompt_to_speaker_task():
+def test_strict_host_response_rejects_legacy_next_prompt():
     gc = _get_host_decision_module()
-    raw = """开场白
-```json
-{"task_done": false, "next_speaker": "专家甲", "next_prompt": "请结合上文补充要点", "reason": "继续"}
-```
-"""
-    out = gc.parse_host_response(raw)
-    assert out is not None
-    assert out.get("speaker_task") == "请结合上文补充要点"
-    assert out.get("next_prompt") is None
-    assert out.get("next_speaker") == "专家甲"
+    raw = '```json\n{"task_done": false, "next_speaker": "专家甲", "next_prompt": "请结合上文补充要点", "reason": "继续"}\n```'
+    out = gc.parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], orchestration_profile="scene")
+    assert out["next_speaker"] == "user"
+    assert out["announcement"] == gc.HOST_PROTOCOL_ERROR_MESSAGE
+    assert out["interrupt_reason"] == "protocol_error"
 
 
-def test_parse_host_response_without_next_prompt():
+def test_strict_host_response_accepts_required_fields():
     gc = _get_host_decision_module()
-    raw = """说明
-```json
-{"task_done": true, "next_speaker": "user"}
-```
-"""
-    out = gc.parse_host_response(raw)
-    assert out is not None
-    assert out.get("next_prompt") is None
+    raw = '```json\n{"current_phase": "补充信息", "next_speaker": "user", "speaker_task": "请补充信息"}\n```'
+    out = gc.parse_strict_host_scheduler_output(raw, [], orchestration_profile="recruitment")
+    assert out["next_speaker"] == "user"
+    assert out["speaker_task"] == "请补充信息"
 
 
 def test_host_pause_message_user_shows_speaker_task():
@@ -258,9 +249,10 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
                 "messages": [
                     gc.AIMessage(
                         content=(
-                            "current_phase.txt: 阶段1：选题\n"
-                            "next_speaker.txt: 伴学研讨——引导教学的教师\n"
-                            "speaker_task.txt: 请提出本轮研讨主题。"
+                            '```json\n{"current_phase": "阶段1：选题", '
+                            '"next_speaker": "伴学研讨——引导教学的教师", '
+                            '"speaker_task": "请提出本轮研讨主题。", '
+                            '"reason": "进入选题"}\n```'
                         )
                     )
                 ]
@@ -389,7 +381,8 @@ async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monke
                 "messages": [
                     gc.AIMessage(
                         content=(
-                            '```json\n{"next_speaker": "伴学研讨——引导教学的教师", '
+                            '```json\n{"current_phase": "阶段2：材料支撑", '
+                            '"next_speaker": "伴学研讨——引导教学的教师", '
                             '"speaker_task": "请教师收窄成可讨论的问题。", '
                             '"reason": "继续交给教师"}\n```'
                         )
@@ -454,8 +447,8 @@ async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypat
                 "messages": [
                     gc.AIMessage(
                         content=(
-                            "请用户确认新建 Skill 的用途。\n"
-                            '```json\n{"task_done": true, "next_speaker": "user", '
+                            '```json\n{"current_phase": "需求确认", "next_speaker": "user", '
+                            '"speaker_task": "请用户确认新建 Skill 的用途。", '
                             '"reason": "需要确认 Skill 需求"}\n```'
                         )
                     )
@@ -488,9 +481,13 @@ async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypat
 
     assert "【后台调度状态】" not in calls["user_prompt"]
     assert "网页爬取专家" not in calls["user_prompt"]
-    assert out["decision_source"] == "legacy"
+    assert out["decision_source"] == "host_scheduler_state"
     assert out["next_speaker"] == "user"
-    assert meta_item["scheduler_state"]["speaker_task"] == "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。"
+    assert meta_item["scheduler_state"] == {
+        "current_phase": "需求确认",
+        "next_speaker": "user",
+        "speaker_task": "请用户确认新建 Skill 的用途。",
+    }
 
 
 @pytest.mark.asyncio
@@ -509,7 +506,7 @@ async def test_host_decide_hides_invitable_list_when_room_has_participants(monke
             return {
                 "messages": [
                     gc.AIMessage(
-                        content='```json\n{"task_done": false, "next_speaker": "写作专家", "next_prompt": "请继续", "reason": "继续交给场内专家"}\n```'
+                        content='```json\n{"current_phase": "继续写作", "next_speaker": "写作专家", "speaker_task": "请继续", "reason": "继续交给场内专家"}\n```'
                     )
                 ]
             }
@@ -556,7 +553,7 @@ def test_leader_prompt_hides_skill_details_from_host():
     assert "先判断任务目标是否已经完成" in prompt
     assert "不要再安排专家做“总结答复”" in prompt
     assert "speaker_task" in prompt
-    assert "next_prompt" not in prompt
+    assert "不要输出 task_done、next_prompt" in prompt
 
 
 def test_leader_prompt_hides_invitable_list_when_room_has_participants():
@@ -589,7 +586,7 @@ def test_leader_prompt_shows_invitable_list_only_for_empty_room():
     assert "专家B" in prompt
 
 
-async def test_leader_decide_migrates_legacy_next_prompt_to_speaker_task():
+async def test_leader_decide_rejects_legacy_next_prompt():
     from app.agent.leader_scheduler import leader_decide
 
     class FakeClient:
@@ -616,6 +613,41 @@ async def test_leader_decide_migrates_legacy_next_prompt_to_speaker_task():
         "最近对话",
     )
 
-    assert out["next_speaker"] == "专家甲"
-    assert out["speaker_task"] == "请继续写大纲"
-    assert out.get("next_prompt") is None
+    from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE
+
+    assert out["next_speaker"] == "user"
+    assert out["announcement"] == HOST_PROTOCOL_ERROR_MESSAGE
+    assert out["interrupt_reason"] == "protocol_error"
+
+
+@pytest.mark.asyncio
+async def test_leader_decide_protocol_error_is_user_visible():
+    from app.agent.leader_scheduler import leader_decide
+    from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE
+    from langchain_core.messages import AIMessage
+
+    class FakeClient:
+        async def ainvoke(self, _messages):
+            return AIMessage(
+                content=(
+                    "我来安排：\n"
+                    '```json\n{"current_phase": "阶段1", "next_speaker": "专家甲", "speaker_task": "请写大纲"}\n```'
+                )
+            )
+
+    class FakeLLM:
+        def get_client(self):
+            return FakeClient()
+
+    out = await leader_decide(
+        FakeLLM(),
+        [{"name": "专家甲", "description": "写作"}],
+        "写大纲",
+        "【用户】写大纲",
+        orchestration_profile="scene",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["announcement"] == HOST_PROTOCOL_ERROR_MESSAGE
+    assert out["interrupt_reason"] == "protocol_error"
+    assert out["decision_source"] == "system_guard"

@@ -1,6 +1,5 @@
 """领导人专家调度：决定 current_phase、next_speaker 与 speaker_task。"""
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -12,6 +11,10 @@ from app.agent.orchestrator_state import (
     InterruptReason,
     OrchestrationDecision,
     OrchestrationPhase,
+)
+from app.agent.group_host_decision import (
+    HOST_PROTOCOL_ERROR_MESSAGE,
+    parse_strict_host_scheduler_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,7 +47,7 @@ def _build_leader_prompt(
 若**当前参与者无法完成工作**（例如缺少某类专家、需要专业能力不在现有成员中），你可以建议用户邀请新成员。可邀请的专家列表：
 {chr(10).join(add_lines)}
 
-此时请在 JSON 中同时输出 **suggested_add_agent_names**：要邀请的 Agent 名称数组（从上面列表中选），并设 **next_speaker="user"**，由用户确认后添加成员再继续。格式示例：{{"current_phase": "招募确认", "next_speaker": "user", "speaker_task": "建议邀请图片生成专家参与，请用户确认是否添加。", "suggested_add_agent_names": ["图片生成专家"]}}
+        此时请在 JSON 中同时输出 **suggested_add_agent_names**：要邀请的 Agent 名称数组（从上面列表中选），并设 **next_speaker="user"**，由用户确认后添加成员再继续。格式示例：{{"current_phase": "招募确认", "next_speaker": "user", "speaker_task": "建议邀请图片生成专家参与，请用户确认是否添加。", "reason": "当前缺少图片生成能力", "suggested_add_agent_names": ["图片生成专家"]}}
 """
 
     recruit_rule = ""
@@ -66,7 +69,9 @@ def _build_leader_prompt(
         recruit_output = "- 不要输出 suggested_add_agent_names。\n"
 
     return f"""你是群聊主持人，只做调度，不代写专家正文，也不要为专家指定 Skill。
-你必须输出一段 JSON（可用 ```json 包裹），字段至少包含：current_phase、next_speaker、speaker_task。
+你必须只输出一个 JSON 对象，可以使用单个 ```json 代码块包裹；代码块外不得有任何文字。
+字段只允许 current_phase、next_speaker、speaker_task、reason、suggested_add_agent_names。
+不要输出 task_done、next_prompt、current_phase.txt、next_speaker.txt、speaker_task.txt 或其他字段。
 当 next_speaker 是某专家时，speaker_task 必须是对方可直接执行的任务说明；next_speaker 只能是在场 Agent 名称或 \"user\" 或 \"end\"。
 
 ## 参与者
@@ -86,7 +91,7 @@ def _build_leader_prompt(
 - 只有在仍缺关键信息、用户明确要求继续，或存在新的子任务时，才把 next_speaker 设为某个专家。
 {recruit_rule}{scene_extra}
 {recruit_output}
-**本路径要求：仅输出一段 JSON**（必须包含 current_phase、next_speaker、speaker_task；可含 suggested_add_agent_names）。"""
+**本路径要求：仅输出严格 JSON**（必须包含 current_phase、next_speaker、speaker_task；可含 reason、suggested_add_agent_names）。"""
 
 
 async def leader_decide(
@@ -135,87 +140,31 @@ async def leader_decide(
         content = (response.content or "").strip()
         logger.info("[LLM_ROUNDTRIP][leader_decide] model_output:\n%s", content)
 
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        if "{" in content:
-            start = content.find("{")
-            content = content[start:]
-        data = json.loads(content)
-        task_done = data.get("task_done", True)
-        next_speaker = (data.get("next_speaker") or "user").strip()
-        reason = data.get("reason", "")
-        current_phase = str(data.get("current_phase") or "").strip()
-        # 解析建议邀请的新成员（主持人完成不了工作时可建议新增）
-        suggested_add_agent_names = None
-        raw_suggested = data.get("suggested_add_agent_names")
-        if isinstance(raw_suggested, list) and raw_suggested:
-            suggested_add_agent_names = [str(x).strip() for x in raw_suggested if x]
-        elif isinstance(raw_suggested, str) and raw_suggested.strip():
-            suggested_add_agent_names = [raw_suggested.strip()]
-        # 构建主持词 announcement，供前端展示
-        announcement = ""
-        if next_speaker == "user":
-            announcement = "请用户补充或继续提问。"
-            if suggested_add_agent_names:
-                announcement = "当前成员无法完成该工作，建议邀请新成员参与。请用户确认是否添加。"
-        elif next_speaker == "end":
-            announcement = "会话结束。"
-        elif next_speaker and agent_list:
-            for d in agent_list:
-                if str(d.get("name") or "").strip() == next_speaker:
-                    name = d.get("name") or next_speaker
-                    announcement = f"下面由 {name} 发言。"
-                    break
-            if not announcement:
-                announcement = f"下面由 {next_speaker} 发言。"
-        raw_task = data.get("speaker_task")
-        if raw_task is None:
-            raw_task = data.get("next_prompt")
-        speaker_task = str(raw_task or "").strip()
-        out = {
-            "task_done": task_done,
-            "next_speaker": next_speaker,
-            "reason": reason,
-            "announcement": announcement or reason,
-            "next_prompt": None,
-            "current_phase": current_phase,
-            "speaker_task": speaker_task,
-        }
-        if suggested_add_agent_names:
-            out["suggested_add_agent_names"] = suggested_add_agent_names
-        phase = OrchestrationPhase.AWAITING_USER if next_speaker == "user" else (
-            OrchestrationPhase.COMPLETED if next_speaker == "end" else OrchestrationPhase.EXECUTING
+        decision = parse_strict_host_scheduler_output(
+            content,
+            agent_list,
+            orchestration_profile=orchestration_profile,
         )
-        interrupt_reason = InterruptReason.NEED_RECRUIT_EXPERT if suggested_add_agent_names else InterruptReason.NONE
-        decision = OrchestrationDecision(
-            task_done=bool(task_done),
-            next_speaker=next_speaker,
-            reason=reason,
-            announcement=announcement or reason,
-            next_prompt=None,
-            current_phase=current_phase,
-            speaker_task=speaker_task,
-            suggested_add_agent_names=suggested_add_agent_names or [],
-            phase=phase,
-            owner_agent_name=next_speaker if next_speaker not in ("user", "end") else None,
-            interrupt_reason=interrupt_reason,
-            decision_source=DecisionSource.LEGACY,
-            handoff_reason=reason or None,
-        )
-        return decision.to_dict()
+        if decision.get("interrupt_reason") == InterruptReason.PROTOCOL_ERROR.value:
+            logger.warning(
+                "leader_scheduler_protocol_error session=%s llm_name=%s output=%r reason=%s",
+                group_session_id,
+                llm_name,
+                content[:1000],
+                decision.get("reason"),
+            )
+        return decision
     except Exception as e:
         logger.warning(f"领导人调度解析失败: {e}，固定交还 user（由下轮主持人重试）")
         decision = OrchestrationDecision(
             task_done=True,
             next_speaker="user",
             reason=f"解析失败: {e}",
-            announcement="请用户补充或继续提问。",
+            announcement=HOST_PROTOCOL_ERROR_MESSAGE,
             next_prompt=None,
             phase=OrchestrationPhase.AWAITING_USER,
             owner_agent_name=None,
-            interrupt_reason=InterruptReason.CONFLICT_DETECTED,
+            interrupt_reason=InterruptReason.PROTOCOL_ERROR,
             decision_source=DecisionSource.SYSTEM_GUARD,
             handoff_reason="leader_parse_failed",
         )

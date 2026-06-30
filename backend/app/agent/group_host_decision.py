@@ -1,288 +1,172 @@
 """Pure host-decision parsing helpers for group chat."""
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional
 
 from app.agent.group_chat_host_messages import HOST_END_MESSAGE
+from app.agent.orchestrator_state import InterruptReason, OrchestrationPhase
+from app.agent.structured_output_contracts import (
+    HostSchedulerDecisionPayload,
+    StructuredOutputProtocolError,
+    parse_strict_pydantic_object,
+)
 
 
-def extract_json_object_from_llm_text(text: str) -> Optional[Dict[str, Any]]:
-    if not text or not str(text).strip():
-        return None
-    s = str(text).strip()
-    if "```json" in s:
-        try:
-            inner = s.split("```json", 1)[1].split("```", 1)[0].strip()
-            obj = json.loads(inner)
-            return obj if isinstance(obj, dict) else None
-        except Exception:
-            pass
-    if "```" in s:
-        try:
-            inner = s.split("```", 1)[1].split("```", 1)[0].strip()
-            if inner.startswith("json"):
-                inner = inner[4:].strip()
-            obj = json.loads(inner)
-            return obj if isinstance(obj, dict) else None
-        except Exception:
-            pass
-    try:
-        lo = s.find("{")
-        hi = s.rfind("}")
-        if lo >= 0 and hi > lo:
-            obj = json.loads(s[lo : hi + 1])
-            return obj if isinstance(obj, dict) else None
-    except Exception:
-        pass
-    return None
+HOST_PROTOCOL_ERROR_MESSAGE = "主持人输出格式错误，请重试或联系管理员。"
 
 
-def parse_host_response(content: str) -> Optional[Dict[str, Any]]:
-    """Parse host output and extract the host announcement plus JSON decision."""
-    if not content or not content.strip():
-        return None
-    text = content.strip()
-    announcement = ""
-    json_str = ""
-    if "```json" in text:
-        parts = text.split("```json", 1)
-        announcement = (parts[0] or "").strip()
-        rest = parts[1].split("```", 1)[0].strip() if len(parts) > 1 else ""
-        json_str = rest
-    elif "```" in text:
-        parts = text.split("```", 2)
-        announcement = (parts[0] or "").strip()
-        if len(parts) >= 2:
-            json_str = (parts[1] or "").strip()
-    else:
-        for sep in ("\n{", "{"):
-            if sep in text:
-                idx = text.find(sep) if sep == "{" else text.find(sep) + 1
-                announcement = text[:idx].strip()
-                json_str = text[idx:].strip()
-                break
-        else:
-            return None
-    if not json_str:
-        return None
-    try:
-        data = json.loads(json_str)
-        task_done = data.get("task_done", True)
-        next_speaker = (data.get("next_speaker") or "user").strip().lower()
-        reason = data.get("reason", "")
-        suggested_add_agent_names = None
-        names_raw = data.get("suggested_add_agent_names")
-        if isinstance(names_raw, list) and names_raw:
-            cleaned = [str(x).strip() for x in names_raw if str(x).strip()]
-            if cleaned:
-                suggested_add_agent_names = list(dict.fromkeys(cleaned))
-        if not suggested_add_agent_names:
-            single_name = (data.get("suggested_add_agent_name") or "").strip()
-            if single_name:
-                suggested_add_agent_names = [single_name]
-        suggested_order = data.get("suggested_order")
-        if isinstance(suggested_order, list):
-            suggested_order = [str(x).strip() for x in suggested_order if str(x).strip()]
-        else:
-            suggested_order = None
-        phase = (data.get("phase") or "").strip().lower() or None
-        owner_agent_name = (data.get("owner_agent_name") or "").strip() or None
-        interrupt_reason = (data.get("interrupt_reason") or "").strip().lower() or None
-        decision_source = (data.get("decision_source") or "").strip().lower() or "legacy"
-        handoff_reason = (data.get("handoff_reason") or "").strip() or None
-        required_user_fields = data.get("required_user_fields")
-        if not isinstance(required_user_fields, list):
-            required_user_fields = []
-        if not announcement and reason:
-            announcement = reason
-        current_phase = str(data.get("current_phase") or data.get("phase_label") or "").strip()
-        raw_task = data.get("speaker_task")
-        if raw_task is None:
-            raw_task = data.get("next_prompt")
-        speaker_task = str(raw_task or "").strip()
-        return {
-            "task_done": task_done,
-            "next_speaker": next_speaker,
-            "reason": reason,
-            "announcement": announcement or "请下一位发言。",
-            "next_prompt": None,
-            "current_phase": current_phase,
-            "speaker_task": speaker_task,
-            "suggested_order": suggested_order,
-            "suggested_add_agent_names": suggested_add_agent_names,
-            "phase": phase,
-            "owner_agent_name": owner_agent_name,
-            "interrupt_reason": interrupt_reason,
-            "decision_source": decision_source,
-            "handoff_reason": handoff_reason,
-            "required_user_fields": required_user_fields,
-        }
-    except Exception:
-        return None
+def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, Any]:
+    return {
+        "task_done": True,
+        "next_speaker": "user",
+        "reason": reason,
+        "announcement": HOST_PROTOCOL_ERROR_MESSAGE,
+        "next_prompt": None,
+        "current_phase": "",
+        "speaker_task": HOST_PROTOCOL_ERROR_MESSAGE,
+        "suggested_order": None,
+        "suggested_add_agent_names": None,
+        "phase": OrchestrationPhase.AWAITING_USER.value,
+        "owner_agent_name": None,
+        "interrupt_reason": InterruptReason.PROTOCOL_ERROR.value,
+        "decision_source": "system_guard",
+        "handoff_reason": reason,
+        "required_user_fields": [],
+    }
 
 
-def match_workspace_speaker_to_agent_name(raw_speaker: str, agent_profiles: List[Dict[str, Any]]) -> str:
-    raw = str(raw_speaker or "").strip()
-    raw_key = raw.casefold()
-    if not raw:
-        return ""
+def _agent_name_map(agent_profiles: List[Dict[str, Any]]) -> Dict[str, str]:
+    out: Dict[str, str] = {}
     for profile in agent_profiles or []:
         name = str((profile or {}).get("name") or "").strip()
-        if name and name.casefold() == raw_key:
-            return name
-    for profile in agent_profiles or []:
-        name = str((profile or {}).get("name") or "").strip()
-        description = str((profile or {}).get("description") or "").strip()
-        if raw and (raw in name or raw in description):
-            return name
-    return ""
+        if name:
+            out[name.casefold()] = name
+        for key in ("id", "agent_id"):
+            value = str((profile or {}).get(key) or "").strip()
+            if value and name:
+                out[value.casefold()] = name
+    return out
 
 
-def host_text_field(content: str, names: tuple[str, ...]) -> str:
-    labels = [re.escape(name) for name in names if name]
-    if not labels:
-        return ""
-    all_labels = (
-        r"current_phase(?:\.txt)?|next_speaker(?:\.txt)?|speaker_task(?:\.txt)?|"
-        r"current_phase\.txt|next_speaker\.txt|speaker_task\.txt"
-    )
-    pattern = (
-        r"(?ims)^\s*`?(?:"
-        + "|".join(labels)
-        + r")`?\s*[:：]\s*(.*?)"
-        + r"(?=^\s*`?(?:"
-        + all_labels
-        + r")`?\s*[:：]|\Z)"
-    )
-    match = re.search(pattern, content or "")
-    return match.group(1).strip() if match else ""
-
-
-def extract_host_scheduler_state(content: str) -> Dict[str, str]:
-    """Extract scheduler file state from host output without requiring tool calls."""
-    text = str(content or "").strip()
-    state = {"current_phase": "", "next_speaker": "", "speaker_task": ""}
-    if not text:
-        return state
-    obj = extract_json_object_from_llm_text(text)
-    if isinstance(obj, dict):
-        state["current_phase"] = str(
-            obj.get("current_phase")
-            or obj.get("current_phase.txt")
-            or obj.get("phase_label")
-            or ""
-        ).strip()
-        state["next_speaker"] = str(obj.get("next_speaker") or obj.get("next_speaker.txt") or "").strip()
-        state["speaker_task"] = str(
-            obj.get("speaker_task")
-            or obj.get("speaker_task.txt")
-            or obj.get("next_prompt")
-            or ""
-        ).strip()
-    if not state["current_phase"]:
-        state["current_phase"] = host_text_field(text, ("current_phase.txt", "current_phase"))
-    if not state["next_speaker"]:
-        state["next_speaker"] = host_text_field(text, ("next_speaker.txt", "next_speaker"))
-    if not state["speaker_task"]:
-        state["speaker_task"] = host_text_field(text, ("speaker_task.txt", "speaker_task"))
-    return state
-
-
-def host_decision_from_scheduler_state(
-    state: Dict[str, str],
+def _strict_host_decision_from_payload(
+    payload: HostSchedulerDecisionPayload,
     agent_profiles: List[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    raw_speaker = str((state or {}).get("next_speaker") or "").strip()
-    task = str((state or {}).get("speaker_task") or "").strip()
-    phase_text = str((state or {}).get("current_phase") or "").strip()
-    if not raw_speaker:
-        return None
-    raw_lower = raw_speaker.lower()
-    user_speakers = {"user"}
-    reason = "主持人已输出调度状态，平台已保存为后台状态"
-    if phase_text:
-        reason += f"（{phase_text}）"
-    end_speakers = {"end"}
-    if raw_lower in end_speakers:
+    *,
+    orchestration_profile: str = "recruitment",
+) -> Dict[str, Any]:
+    scene_mode = str(orchestration_profile or "").strip().lower() == "scene"
+    raw_next = payload.next_speaker.strip()
+    next_key = raw_next.casefold()
+    names = _agent_name_map(agent_profiles)
+    suggested = list(payload.suggested_add_agent_names or [])
+    if scene_mode and suggested:
+        raise StructuredOutputProtocolError("scene mode forbids suggested_add_agent_names", schema_name="HostSchedulerDecisionPayload")
+    if suggested and next_key != "user":
+        raise StructuredOutputProtocolError("suggested_add_agent_names requires next_speaker=user", schema_name="HostSchedulerDecisionPayload")
+    if next_key == "invite" and scene_mode:
+        raise StructuredOutputProtocolError("scene mode forbids invite", schema_name="HostSchedulerDecisionPayload")
+    if next_key == "end":
+        if payload.current_phase.strip() != "end":
+            raise StructuredOutputProtocolError("end requires current_phase=end", schema_name="HostSchedulerDecisionPayload")
         return {
             "task_done": True,
             "next_speaker": "end",
-            "reason": reason,
+            "reason": payload.reason or "主持人严格协议调度",
             "announcement": HOST_END_MESSAGE,
             "next_prompt": None,
-            "current_phase": phase_text,
-            "speaker_task": task,
+            "current_phase": payload.current_phase,
+            "speaker_task": payload.speaker_task,
             "suggested_order": None,
-            "suggested_add_agent_names": None,
+            "suggested_add_agent_names": suggested or None,
             "phase": None,
             "owner_agent_name": None,
             "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
-            "handoff_reason": reason,
+            "handoff_reason": payload.reason,
             "required_user_fields": [],
         }
-    if raw_lower in user_speakers:
+    if next_key == "user":
+        if not payload.speaker_task.strip():
+            raise StructuredOutputProtocolError("user requires speaker_task", schema_name="HostSchedulerDecisionPayload")
         return {
             "task_done": True,
             "next_speaker": "user",
-            "reason": reason,
+            "reason": payload.reason or "主持人严格协议调度",
             "announcement": "请用户继续发言。",
             "next_prompt": None,
-            "current_phase": phase_text,
-            "speaker_task": task,
+            "current_phase": payload.current_phase,
+            "speaker_task": payload.speaker_task,
             "suggested_order": None,
-            "suggested_add_agent_names": None,
+            "suggested_add_agent_names": suggested or None,
             "phase": None,
             "owner_agent_name": None,
-            "interrupt_reason": None,
+            "interrupt_reason": InterruptReason.NEED_RECRUIT_EXPERT.value if suggested else None,
             "decision_source": "host_scheduler_state",
-            "handoff_reason": reason,
+            "handoff_reason": payload.reason,
             "required_user_fields": [],
         }
-    if raw_lower == "invite":
+    if next_key == "invite":
+        if not payload.speaker_task.strip():
+            raise StructuredOutputProtocolError("invite requires speaker_task", schema_name="HostSchedulerDecisionPayload")
         return {
             "task_done": True,
             "next_speaker": "invite",
-            "reason": reason,
+            "reason": payload.reason or "主持人严格协议调度",
             "announcement": "",
             "next_prompt": None,
-            "current_phase": phase_text,
-            "speaker_task": task,
+            "current_phase": payload.current_phase,
+            "speaker_task": payload.speaker_task,
             "suggested_order": None,
-            "suggested_add_agent_names": None,
+            "suggested_add_agent_names": suggested or None,
             "phase": None,
             "owner_agent_name": None,
-            "interrupt_reason": None,
+            "interrupt_reason": InterruptReason.NEED_RECRUIT_EXPERT.value,
             "decision_source": "host_scheduler_state",
-            "handoff_reason": reason,
+            "handoff_reason": payload.reason,
             "required_user_fields": [],
         }
-    if not task:
-        return None
-    agent_name = match_workspace_speaker_to_agent_name(raw_speaker, agent_profiles)
+    agent_name = names.get(next_key)
     if not agent_name:
-        return None
+        raise StructuredOutputProtocolError("next_speaker is not in allowed participants", schema_name="HostSchedulerDecisionPayload")
+    if not payload.speaker_task.strip():
+        raise StructuredOutputProtocolError("agent next_speaker requires speaker_task", schema_name="HostSchedulerDecisionPayload")
     profile = next((d for d in agent_profiles if str((d or {}).get("name") or "").strip() == agent_name), {})
-    name = str((profile or {}).get("name") or raw_speaker or agent_name).strip()
+    display_name = str((profile or {}).get("name") or agent_name).strip()
     return {
         "task_done": True,
         "next_speaker": agent_name,
-        "reason": reason,
-        "announcement": f"下面由 {name} 发言。",
+        "reason": payload.reason or "主持人严格协议调度",
+        "announcement": f"下面由 {display_name} 发言。",
         "next_prompt": None,
-        "current_phase": phase_text,
-        "speaker_task": task,
+        "current_phase": payload.current_phase,
+        "speaker_task": payload.speaker_task,
         "suggested_order": None,
-        "suggested_add_agent_names": None,
+        "suggested_add_agent_names": suggested or None,
         "phase": None,
         "owner_agent_name": None,
         "interrupt_reason": None,
         "decision_source": "host_scheduler_state",
-        "handoff_reason": reason,
+        "handoff_reason": payload.reason,
         "required_user_fields": [],
     }
+
+
+def parse_strict_host_scheduler_output(
+    content: str,
+    agent_profiles: List[Dict[str, Any]],
+    *,
+    orchestration_profile: str = "recruitment",
+) -> Dict[str, Any]:
+    try:
+        payload = parse_strict_pydantic_object(content, HostSchedulerDecisionPayload)
+        return _strict_host_decision_from_payload(
+            payload,
+            agent_profiles,
+            orchestration_profile=orchestration_profile,
+        )
+    except StructuredOutputProtocolError as exc:
+        return host_protocol_error_decision(str(exc))
 
 
 def user_requests_host_takeover(

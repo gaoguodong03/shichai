@@ -23,6 +23,10 @@ for (const label of ['拷贝发言内容', '删除该发言', '保存到工作�
   assert.match(messagesVue, new RegExp(label), `消息操作按钮应包含“${label}”`)
 }
 
+for (const label of ['从此刻分叉会话', '回溯到此发言']) {
+  assert.doesNotMatch(messagesVue, new RegExp(label), `消息操作栏不应再包含“${label}”`)
+}
+
 assert.match(
   messageListTs,
   /function messageActionContent\(msg: MsgExt\)[\s\S]*?msg\.role === 'user'[\s\S]*?formatUserBubbleForDisplay/,

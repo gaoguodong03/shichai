@@ -7,8 +7,12 @@ test.describe('验收 5/6：设置中心', () => {
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await expect(page).toHaveURL(/\/settings\/app$/)
-    await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
+    await expect(page.getByText('配置平台级上下文规则')).toHaveCount(0)
+    await expect(page.locator('form > section')).toHaveCount(2)
+    await expect(page.locator('form > section').nth(0).getByText('项目整体系统提示词（可选）')).toBeVisible()
+    await expect(page.locator('form > section').nth(1).getByRole('heading', { name: '配置主持人' })).toBeVisible()
     await expect(page.getByRole('button', { name: '恢复默认' })).toHaveCount(0)
+    await page.getByPlaceholder('写入适用于所有会话、场景、主持人和专家的项目规则。').fill('自动化验收全局规则')
     await page.getByPlaceholder('例如：你是群聊主持人，只负责决定下一位发言人与 next_prompt，不代写专家正文。').fill('自动化验收主持人提示词')
     await page.getByRole('button', { name: '保存' }).click()
     await expect(page.getByText('已保存')).toBeVisible()
@@ -18,15 +22,15 @@ test.describe('验收 5/6：设置中心', () => {
     await expect(page.locator('body')).toBeVisible()
   })
 
-  test('设置入口重复点击仍默认停留在主持人设置', async ({ page }) => {
+  test('设置入口重复点击仍默认停留在全局', async ({ page }) => {
     await bootLoggedInApp(page, '/settings/app')
-    await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
+    await expect(page.getByText('配置平台级上下文规则')).toHaveCount(0)
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
 
     await expect(page).toHaveURL(/\/settings\/app$/)
-    await expect(page.getByRole('button', { name: '主持人设置' })).toHaveClass(/bg-accent-subtle/)
-    await expect(page.getByText('主持人是专家分支角色')).toBeVisible()
+    await expect(page.getByRole('button', { name: '全局' })).toHaveClass(/bg-accent-subtle/)
+    await expect(page.getByText('配置平台级上下文规则')).toHaveCount(0)
   })
 
   test('修改全局主持人名称后工作空间同步显示新名称', async ({ page }) => {

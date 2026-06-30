@@ -7,6 +7,8 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
+from app.agent.structured_output_contracts import SkillScriptStdoutPayload
+
 
 def _extract_text_content(message: BaseMessage) -> str:
     content = getattr(message, "content", "")
@@ -47,20 +49,18 @@ def _successful_tool_payload(tool_out: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _payload_requests_final(payload: dict[str, Any]) -> bool:
-    for key in ("final", "done", "skill_session_end", "session_end"):
-        value = payload.get(key)
-        if value is True:
-            return True
-        if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on", "done", "final"}:
-            return True
+    try:
+        parsed = SkillScriptStdoutPayload.model_validate(payload)
+        return parsed.next_action.agent_turn == "respond"
+    except Exception:
+        pass
     stdout_payload = _json_loads_maybe(payload.get("stdout"))
     if isinstance(stdout_payload, dict):
-        for key in ("final", "done", "skill_session_end", "session_end"):
-            value = stdout_payload.get(key)
-            if value is True:
-                return True
-            if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on", "done", "final"}:
-                return True
+        try:
+            parsed = SkillScriptStdoutPayload.model_validate(stdout_payload)
+            return parsed.next_action.agent_turn == "respond"
+        except Exception:
+            return False
     return False
 
 

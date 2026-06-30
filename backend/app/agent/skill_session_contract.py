@@ -5,6 +5,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Tuple
 
+from pydantic import ValidationError
+
+from app.agent.structured_output_contracts import SkillScriptStdoutPayload
+
 
 SKILL_SESSION_END_MARKERS = ("[[SKILL_SESSION_END]]", "【技能会话结束】")
 SKILL_SESSION_STATE_START = "[[SKILL_SESSION_STATE]]"
@@ -21,7 +25,6 @@ GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
 `keep` 表示保留 Skill 会话锁，`release` 表示释放。
 """
 
-SCRIPT_SKILL_SESSION_OVER_KEYS = ("skill_session_over", "over")
 SCRIPT_NEXT_ACTION_SESSION_VALUES = {
     "keep": False,
     "release": True,
@@ -73,6 +76,16 @@ def _boolish(value: Any) -> Optional[bool]:
     return None
 
 
+def _skill_session_over_from_strict_payload(payload: Any) -> Optional[bool]:
+    if not isinstance(payload, dict):
+        return None
+    try:
+        parsed = SkillScriptStdoutPayload.model_validate(payload)
+    except ValidationError:
+        return None
+    return SCRIPT_NEXT_ACTION_SESSION_VALUES.get(parsed.next_action.skill_session)
+
+
 def skill_session_ended_by_expert_output(content: str) -> bool:
     """Return true when legacy expert-output markers end the current Skill session."""
     t = str(content or "")
@@ -94,21 +107,9 @@ def strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bo
         inner = s[lo + len(start) : hi].strip()
         s = (s[:lo] + s[hi + len(end) :]).rstrip()
         obj = _json_loads_maybe(inner)
-        if isinstance(obj, dict):
-            next_action = obj.get("next_action")
-            if isinstance(next_action, dict):
-                parsed_action = SCRIPT_NEXT_ACTION_SESSION_VALUES.get(
-                    str(next_action.get("skill_session") or "").strip().lower()
-                )
-                if parsed_action is not None:
-                    last_over = parsed_action
-                    continue
-            for key in SCRIPT_SKILL_SESSION_OVER_KEYS:
-                if key not in obj:
-                    continue
-                parsed = _boolish(obj.get(key))
-                if parsed is not None:
-                    last_over = parsed
+        parsed = _skill_session_over_from_strict_payload(obj)
+        if parsed is not None:
+            last_over = parsed
     return last_over, s
 
 
@@ -150,22 +151,11 @@ def skill_session_over_from_tool_outputs(
     "stop this tool loop", not "release the group Skill session lock".
     """
     last_next_action: Optional[bool] = None
-    last_legacy_over: Optional[bool] = None
     for payload in _iter_tool_payloads(raw_outputs, tool_names):
-        next_action = payload.get("next_action")
-        if isinstance(next_action, dict):
-            parsed_action = SCRIPT_NEXT_ACTION_SESSION_VALUES.get(
-                str(next_action.get("skill_session") or "").strip().lower()
-            )
-            if parsed_action is not None:
-                last_next_action = parsed_action
-        for key in SCRIPT_SKILL_SESSION_OVER_KEYS:
-            if key not in payload:
-                continue
-            parsed = _boolish(payload.get(key))
-            if parsed is not None:
-                last_legacy_over = parsed
-    return last_next_action if last_next_action is not None else last_legacy_over
+        parsed_action = _skill_session_over_from_strict_payload(payload)
+        if parsed_action is not None:
+            last_next_action = parsed_action
+    return last_next_action
 
 
 def _choose_skill_session_state(signals: SkillSessionSignals) -> tuple[Optional[bool], str]:

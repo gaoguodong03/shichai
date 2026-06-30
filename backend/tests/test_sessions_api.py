@@ -214,6 +214,70 @@ def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     assert detail["host_config"]["leader_agent_name"] == "场景主持"
 
 
+def test_scene_session_preserves_scene_system_prompt(client: TestClient):
+    agent_resp = client.post("/api/agents", json={"name": "场景规则专家"})
+    assert agent_resp.status_code == 200
+
+    create_resp = client.post(
+        "/api/sessions",
+        json={
+            "title": "场景规则会话",
+            "agent_names": ["场景规则专家"],
+            "system_prompt": "场景级项目规则",
+            "host_config": {"leader_agent_name": "场景主持"},
+        },
+    )
+    assert create_resp.status_code == 200
+    created = create_resp.json()["data"]
+    assert created["system_prompt"] == "场景级项目规则"
+
+    detail_resp = client.get(f"/api/sessions/{created['id']}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["data"]["system_prompt"] == "场景级项目规则"
+
+
+def test_session_presets_preserve_top_level_system_prompt(client: TestClient):
+    agent_resp = client.post("/api/agents", json={"name": "场景预设规则专家"})
+    assert agent_resp.status_code == 200
+
+    save_resp = client.put(
+        "/api/settings/session-presets",
+        json={
+            "presets": [
+                {
+                    "name": "规则场景",
+                    "agent_names": ["场景预设规则专家"],
+                    "description": "场景说明",
+                    "system_prompt": "场景预设规则",
+                    "host_config": {"leader_agent_name": "规则主持"},
+                }
+            ]
+        },
+    )
+    assert save_resp.status_code == 200
+
+    list_resp = client.get("/api/settings/session-presets")
+    assert list_resp.status_code == 200
+    preset = list_resp.json()["data"]["presets"][0]
+    assert preset["system_prompt"] == "场景预设规则"
+    assert preset["host_config"]["system_prompt"] is None
+
+
+def test_app_and_host_system_prompts_are_independent(client: TestClient):
+    app_resp = client.put("/api/settings/app", json={"system_prompt": "全局平台规则"})
+    assert app_resp.status_code == 200
+    assert app_resp.json()["data"]["system_prompt"] == "全局平台规则"
+
+    host_resp = client.put("/api/settings/host-profile", json={"system_prompt": "主持人调度规则"})
+    assert host_resp.status_code == 200
+    assert host_resp.json()["data"]["system_prompt"] == "主持人调度规则"
+
+    app_get = client.get("/api/settings/app")
+    host_get = client.get("/api/settings/host-profile")
+    assert app_get.json()["data"]["system_prompt"] == "全局平台规则"
+    assert host_get.json()["data"]["system_prompt"] == "主持人调度规则"
+
+
 def test_new_regular_session_uses_latest_default_host_profile(client: TestClient):
     host_resp = client.put(
         "/api/settings/host-profile",

@@ -19,6 +19,7 @@ export type ShortcutPreset = {
   leader_agent_name?: string
   host_config?: ShortcutHostConfig
   description?: string
+  system_prompt?: string
 }
 
 type ShortcutExpert = {
@@ -100,6 +101,7 @@ export function useShortcutPresets(args: {
         leader_agent_name: hc?.leader_agent_name || lid || agentNames[0] || '',
         host_config: hc,
         description: String(raw?.description || '').trim(),
+        system_prompt: String(raw?.system_prompt || '').trim(),
       })
     }
     return out
@@ -163,6 +165,7 @@ export function useShortcutPresets(args: {
         name: p.name,
         agent_names: p.agent_names,
         description: p.description || '',
+        system_prompt: p.system_prompt || '',
       }
       if (p.host_config) {
         row.host_config = p.host_config
@@ -218,6 +221,7 @@ export function useShortcutPresets(args: {
     const body: Record<string, unknown> = {
       title,
       agent_names: targetExperts,
+      system_prompt: p.system_prompt || '',
     }
     if (p.host_config) {
       body.host_config = p.host_config

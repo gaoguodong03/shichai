@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 class SessionCreate(BaseModel):
     title: str = "新对话"
     agent_names: List[str] = []
+    system_prompt: Optional[str] = None
     leader_agent_name: Optional[str] = None
     host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
 
@@ -69,6 +70,7 @@ async def create_session(body: SessionCreate):
         agent_names=body.agent_names,
         leader_agent_name=body.leader_agent_name,
         host_config=body.host_config,
+        system_prompt=body.system_prompt,
     )
     return {"status": "ok", "data": data}
 
