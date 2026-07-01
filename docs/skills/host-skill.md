@@ -127,7 +127,7 @@ name: <场景名称>主持人
 description: 当“<场景>”需要协调多个专家时使用；负责流程拆解、专家调度、确认点管理和 speaker_task 交接。
 allowed-tools:
   mcp: []
-  python: ''
+  python: []
 ---
 
 # <场景名称>主持人

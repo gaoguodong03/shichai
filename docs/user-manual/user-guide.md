@@ -83,7 +83,7 @@
 1. 点击“资源中心 → 技能”。
 2. 点击“新建技能”，或选择已有技能。
 3. 编辑技能名称、描述和 `SKILL.md` 正文。
-4. 在“技能运行时依赖”中查看 MCP 工具依赖和 Python requirements。
+4. 在“技能运行时依赖”中查看工具依赖和 Python requirements。Python 依赖会按 pip 解析闭包判断是否已被沙箱 requirements 覆盖。
 5. 若页面提示沙箱 requirements 缺失依赖，可点击一键添加，或到“设置 → 沙箱”手动维护。
 6. 在文件树中维护 `references/`、`assets/`、`scripts/` 等附加文件。
 7. 点击“保存”。
@@ -171,7 +171,7 @@
 3. 在 requirements 文本框维护当前账号需要的 Python 依赖。
 4. 点击“保存沙箱版本”或“保存”。
 
-如果技能页提示依赖缺失，通常需要先到这里补齐 requirements。
+如果技能页提示依赖缺失，通常需要先到这里补齐 requirements，或在技能页一键添加缺失项。
 
 ## 5. 导出与导入
 

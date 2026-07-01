@@ -33,7 +33,7 @@ name: 示例技能
 description: 用于一句话说明触发场景，帮助专家选择是否使用该 Skill。
 allowed-tools:
   mcp: []
-  python: ''
+  python: []
 ---
 ```
 
@@ -219,7 +219,7 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 Python 包不要在脚本里临时 `pip install`。按下面顺序处理：
 
-1. 在 `SKILL.md` frontmatter 的 `allowed-tools.python` 中声明依赖，每行一个包：
+1. 在 `SKILL.md` frontmatter 的 `allowed-tools.python` 中声明依赖，使用数组，每个元素一个包：
 
 ```yaml
 ---
@@ -227,14 +227,14 @@ name: 示例技能
 description: 当用户需要处理表格并生成统计结果时使用。
 allowed-tools:
   mcp: []
-  python: |
-    pandas>=2.2
-    openpyxl>=3.1
+  python:
+    - pandas>=2.2
+    - openpyxl>=3.1
 ---
 ```
 
 2. 用户导入 Skill 时，系统会把这些依赖合并到当前账号的 `config/sandbox/requirements.txt` 并预热沙箱。
-3. 已存在的 Skill，可在资源中心的 Skill 详情页查看 Python 依赖；红色依赖表示尚未加入“设置 - 沙箱 - requirements.txt”，可一键添加并等待安装完成。
+3. 已存在的 Skill，可在资源中心的 Skill 详情页查看 Python 依赖；红色依赖表示未被“设置 - 沙箱 - requirements.txt”的 pip 解析闭包覆盖，可一键添加并等待安装完成。
 4. 脚本里按普通 Python 方式 `import pandas` 即可；如果依赖缺失，要返回结构化错误，而不是输出 traceback 给用户。
 
 推荐缺依赖写法：
@@ -511,7 +511,7 @@ name: <技能名称>
 description: 当用户需要<流程任务>时使用；边界是<相邻任务如何交回主持人或其他专家>。
 allowed-tools:
   mcp: []
-  python: ''
+  python: []
 ---
 
 # <技能名称>
@@ -605,8 +605,8 @@ name: <技能名称>
 description: 当用户需要<确定性处理任务>时使用；输入为<输入>，产出<结果>。
 allowed-tools:
   mcp: []
-  python: |
-    <需要的 Python 依赖>
+  python:
+    - <需要的 Python 依赖>
 ---
 
 # <技能名称>
@@ -704,7 +704,7 @@ allowed-tools:
 - `script_path` 只写脚本文件名，例如 `analyze_table.py`。
 - stdout 只输出一个 JSON 对象。
 - 只有脚本 stdout 中的 `artifacts` 或实际文件检查确认产物存在后，才能向用户说明已生成文件。
-- Python 依赖统一写在 frontmatter 的 `allowed-tools.python`。
+- Python 依赖统一写在 frontmatter 的 `allowed-tools.python` 数组中。
 
 ## 输出格式
 
