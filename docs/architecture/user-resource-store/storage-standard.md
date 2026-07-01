@@ -397,7 +397,7 @@ rename
 - 移动旧 `skills/` 到 `resources/skills/`。
 - 拆分旧 MCP 配置到 `resources/tools/`。
 - 拆分旧模型配置到 `resources/models/`。
-- 将密钥迁移到 `vault/secrets.enc.json`。
+- 新写入密钥保存到 `vault/secrets.enc.json`。
 - 输出迁移报告。
 
 ## 10. 开发验收标准

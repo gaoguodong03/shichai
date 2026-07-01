@@ -76,7 +76,7 @@ flowchart TB
 
   subgraph Data["用户隔离数据 backend/data/users/{user_id}"]
     UserProfile["profile.json"]
-    Config["config/<br/>app_settings.json<br/>api_secrets.json<br/>mcp_servers.json<br/>session_presets.json<br/>dha_instances.json<br/>sandbox/requirements.txt"]
+    Config["config/<br/>app_settings.json<br/>mcp_servers.json<br/>session_presets.json<br/>dha_instances.json<br/>sandbox/requirements.txt"]
     Resources["resources/<br/>scenarios / agents / skills / tools / models"]
     Sessions["sessions/<br/>group_sessions_meta.json<br/>group_history_{session_id}.json<br/>workspaces/{session_id}/..."]
     Vault["vault/secrets.enc.json"]
@@ -400,7 +400,7 @@ flowchart TB
 | Skill | `/api/settings/skills*` | `backend/app/api/settings_skills.py` | `settings_skill_parts.py`、`settings_skill_store.py`、`skills/loader.py` | `resources/skills/{skill_id}/...` |
 | MCP | `/api/settings/mcp*` | `backend/app/api/settings_mcp.py` | `mcp/manager.py`、`core/settings_bundle_import.py` | `config/mcp_servers.json` |
 | 模型和主持人 | `/api/settings/app`、`/api/settings/host-profile*` | `backend/app/api/settings_app.py` | `agent/llm_client.py` 运行时读取 | `config/app_settings.json` |
-| 密钥 | `/api/settings/api-secrets*` | `backend/app/api/settings_secrets.py` | `core/user_settings_paths.py` | `config/api_secrets.json`、`vault/secrets.enc.json` |
+| 密钥 | `/api/settings/api-secrets*` | `backend/app/api/settings_secrets.py` | `core/user_settings_paths.py` | `vault/secrets.enc.json` |
 | 沙箱设置 | `/api/settings/sandbox*` | `backend/app/api/sandbox_settings.py` | `agent/sandbox_image_policy.py`、`core/sandbox_requirements.py` | `config/sandbox/requirements.txt`、沙箱配置 |
 
 ### 3.1 后端接口逐项说明
@@ -517,10 +517,10 @@ flowchart TB
 | `POST` | `/api/settings/host-profile/reset` | 将主持人配置恢复为内置默认值。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
 | `GET` | `/api/settings/app` | 获取应用设置；包含默认 LLM 和供应商配置，返回前会隐藏 `api_key` 明文。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
 | `PUT` | `/api/settings/app` | 更新应用设置；主要用于默认模型、供应商 base_url/model/key 引用等配置。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
-| `GET` | `/api/settings/api-secrets` | 列出密钥库条目；只返回 `id`、标签和是否已设置，不返回明文 key。 | `backend/app/api/settings_secrets.py` | `config/api_secrets.json` |
-| `POST` | `/api/settings/api-secrets` | 新增密钥；用于 LLM Provider 或 MCP 配置通过 `api_key_ref` 引用。 | `backend/app/api/settings_secrets.py` | `config/api_secrets.json` |
-| `PUT` | `/api/settings/api-secrets/{secret_id}` | 更新密钥标签或 key；传空 key 可清除已保存明文。 | `backend/app/api/settings_secrets.py` | `config/api_secrets.json` |
-| `DELETE` | `/api/settings/api-secrets/{secret_id}` | 删除指定密钥条目。 | `backend/app/api/settings_secrets.py` | `config/api_secrets.json` |
+| `GET` | `/api/settings/api-secrets` | 列出密钥库条目；只返回 `id`、标签和是否已设置，不返回明文 key。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
+| `POST` | `/api/settings/api-secrets` | 新增密钥；用于 LLM Provider 或 MCP 配置通过 `api_key_ref` 引用。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
+| `PUT` | `/api/settings/api-secrets/{secret_id}` | 更新密钥标签或 key；传空 key 可清除已保存明文。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
+| `DELETE` | `/api/settings/api-secrets/{secret_id}` | 删除指定密钥条目。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
 
 #### 沙箱镜像与 Python 依赖
 
@@ -725,7 +725,6 @@ flowchart TB
   Workspaces --> Memory["memory/facts.md<br/>memory/llm_roundtrips.jsonl"]
 
   Config --> App["app_settings.json"]
-  Config --> Secrets["api_secrets.json"]
   Config --> MCP["mcp_servers.json"]
   Config --> Presets["session_presets.json"]
   Config --> DHA["dha_instances.json"]
@@ -750,7 +749,7 @@ flowchart TB
 | Skill | `resources/skills/{skill_id}/...` | `api/settings_skills.py`、`skills/loader.py` |
 | MCP | `config/mcp_servers.json` | `api/settings_mcp.py`、`mcp/manager.py` |
 | LLM、全局规则和主持人设置 | `config/app_settings.json` | `api/settings_app.py`、`agent/llm_client.py` |
-| 密钥引用和密钥库 | `config/api_secrets.json`、`vault/secrets.enc.json` | `api/settings_secrets.py` |
+| 密钥引用和密钥库 | `vault/secrets.enc.json` | `api/settings_secrets.py` |
 | 沙箱依赖 | `config/sandbox/requirements.txt` | `api/sandbox_settings.py`、`tools/run_skill_script.py` |
 
 ## 7. 新增功能接入图

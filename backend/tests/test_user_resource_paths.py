@@ -57,7 +57,28 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         reset_current_user_identity(token)
 
 
-def test_api_secret_values_use_current_user_context_dir(monkeypatch, tmp_path):
+def test_api_secret_values_use_current_user_vault(monkeypatch, tmp_path):
+    import json
+
+    from app.api.settings_secrets import load_api_secret_values
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    user_vault = tmp_path / "users" / "user-secret-owner" / "vault"
+    user_vault.mkdir(parents=True)
+    (user_vault / "secrets.enc.json").write_text(
+        json.dumps({"items": {"jeniya": {"label": "Jeniya", "api_key": "from-user-vault"}}}),
+        encoding="utf-8",
+    )
+
+    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    try:
+        assert load_api_secret_values() == {"jeniya": "from-user-vault"}
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_api_secret_values_ignore_legacy_config_file(monkeypatch, tmp_path):
     import json
 
     from app.api.settings_secrets import load_api_secret_values
@@ -67,13 +88,40 @@ def test_api_secret_values_use_current_user_context_dir(monkeypatch, tmp_path):
     user_config = tmp_path / "users" / "user-secret-owner" / "config"
     user_config.mkdir(parents=True)
     (user_config / "api_secrets.json").write_text(
-        json.dumps({"items": {"jeniya": {"label": "Jeniya", "api_key": "from-user-id-dir"}}}),
+        json.dumps({"items": {"legacy": {"label": "Legacy", "api_key": "from-legacy-config"}}}),
         encoding="utf-8",
     )
 
     token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
     try:
-        assert load_api_secret_values() == {"jeniya": "from-user-id-dir"}
+        assert load_api_secret_values() == {}
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_create_api_secret_writes_current_user_vault_only(monkeypatch, tmp_path):
+    import asyncio
+    import json
+
+    from app.api.settings_secrets import ApiSecretCreate, create_api_secret
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-secret-owner", username="owner@example.com")
+    try:
+        asyncio.run(
+            create_api_secret(
+                ApiSecretCreate(id="jeniya", label="Jeniya", api_key="from-user-vault")
+            )
+        )
+
+        user_root = tmp_path / "users" / "user-secret-owner"
+        vault_path = user_root / "vault" / "secrets.enc.json"
+        config_path = user_root / "config" / "api_secrets.json"
+        assert vault_path.is_file()
+        assert not config_path.exists()
+        data = json.loads(vault_path.read_text(encoding="utf-8"))
+        assert data["items"]["jeniya"]["api_key"] == "from-user-vault"
     finally:
         reset_current_user_identity(token)
 
@@ -182,6 +230,7 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
                 "agent_names": ["线上专家"],
                 "host_config": {"leader_agent_name": "主持人", "llm_name": "", "system_prompt": None, "skill_name": "", "skill_directory": ""},
                 "description": "只剩资源目录镜像时也应能刷新出来",
+                "system_prompt": "",
             }
         ]
         assert json.loads(preset_path.read_text(encoding="utf-8"))[0]["name"] == "线上导入场景"

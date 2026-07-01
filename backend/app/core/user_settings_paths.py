@@ -17,10 +17,6 @@ def app_settings_path() -> Path:
     return (require_user_context().config_dir / "app_settings.json").resolve()
 
 
-def api_secrets_path() -> Path:
-    return (require_user_context().config_dir / "api_secrets.json").resolve()
-
-
 def mcp_config_path() -> Path:
     return (require_user_context().config_dir / "mcp_servers.json").resolve()
 

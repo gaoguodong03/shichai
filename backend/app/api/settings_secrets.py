@@ -9,9 +9,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.atomic_json import atomic_write_json
 from app.core.security import user_context_dependency
-from app.core.user_context import get_current_user_context, get_current_username
-from app.core.user_settings_paths import api_secrets_path
+from app.core.user_context import get_current_user_context
+from app.core.user_settings_paths import vault_secrets_path
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
@@ -38,7 +39,7 @@ def _load_api_secret_values_from_path(path: Path) -> Dict[str, str]:
 
 def load_api_secrets_raw() -> Dict[str, Any]:
     """加载密钥库原始 JSON（含 api_key 明文，仅服务端使用）。"""
-    path = api_secrets_path()
+    path = vault_secrets_path()
     default: Dict[str, Any] = {"items": {}}
     if path.exists():
         try:
@@ -52,10 +53,8 @@ def load_api_secrets_raw() -> Dict[str, Any]:
 
 
 def save_api_secrets_raw(data: Dict[str, Any]) -> None:
-    path = api_secrets_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    path = vault_secrets_path()
+    atomic_write_json(path, data)
 
 
 def load_api_secret_values_for_user(username: str) -> Dict[str, str]:
@@ -65,7 +64,7 @@ def load_api_secret_values_for_user(username: str) -> Dict[str, str]:
     un = (username or "").strip()
     if not un:
         return {}
-    path = (get_user_context_for(un).config_dir / "api_secrets.json").resolve()
+    path = (get_user_context_for(un).vault_dir / "secrets.enc.json").resolve()
     return _load_api_secret_values_from_path(path)
 
 
@@ -74,7 +73,7 @@ def load_api_secret_values() -> Dict[str, str]:
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
         return {}
-    path = (user_ctx.config_dir / "api_secrets.json").resolve()
+    path = (user_ctx.vault_dir / "secrets.enc.json").resolve()
     return _load_api_secret_values_from_path(path)
 
 
