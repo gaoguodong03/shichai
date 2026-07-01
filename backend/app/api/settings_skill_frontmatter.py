@@ -72,25 +72,40 @@ def tool_names_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
     return []
 
 
-def python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
+def python_requirements_from_allowed_tools(fm: Dict[str, Any]) -> List[str]:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
     py: Any = ""
     if isinstance(at, dict):
         py = at.get("python")
     if isinstance(py, str):
-        return py
-    if py is None:
-        return ""
-    if isinstance(py, list):
-        return "\n".join(str(x).strip() for x in py if str(x).strip())
-    return str(py)
+        raw = py.splitlines()
+    elif py is None:
+        raw = []
+    elif isinstance(py, list):
+        raw = [str(x or "") for x in py]
+    else:
+        raw = str(py).splitlines()
+    out: List[str] = []
+    seen: set[str] = set()
+    for line in raw:
+        item = str(line or "").strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
+    """Backward-compatible text view for old callers that expect requirements text."""
+    return "\n".join(python_requirements_from_allowed_tools(fm))
 
 
 def runtime_tools_only(normalized: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "mcp": list(normalized.get("mcp") or []),
         "http_api": list(normalized.get("http_api") or []),
-        "python": str(normalized.get("python") or ""),
+        "python": list(normalized.get("python") or []),
     }
 
 
@@ -101,7 +116,7 @@ def normalized_allowed_tools_dict(fm: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "mcp": _list_tool_names(section.get("mcp")),
         "http_api": _http_api_names_from_section(section),
-        "python": python_doc_from_allowed_tools(fm),
+        "python": python_requirements_from_allowed_tools(fm),
     }
 
 
@@ -111,12 +126,19 @@ def normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     mcp_list = list(dict.fromkeys(str(x).strip() for x in (mcp_raw if isinstance(mcp_raw, list) else []) if str(x).strip()))
     http_raw = raw.get("http_api") or raw.get("http-api")
     http_api_list = _list_tool_names(http_raw)
-    py = raw.get("python", "")
-    py_str = py if isinstance(py, str) else ("" if py is None else str(py))
+    py = raw.get("python", [])
+    if isinstance(py, list):
+        py_list = list(dict.fromkeys(str(x).strip() for x in py if str(x).strip()))
+    elif isinstance(py, str):
+        py_list = list(dict.fromkeys(x.strip() for x in py.splitlines() if x.strip()))
+    elif py is None:
+        py_list = []
+    else:
+        py_list = [str(py).strip()] if str(py).strip() else []
     return {
         "mcp": mcp_list,
         "http_api": http_api_list,
-        "python": py_str,
+        "python": py_list,
     }
 
 

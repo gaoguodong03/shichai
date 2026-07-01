@@ -1,6 +1,7 @@
 """用户沙箱设置与 Python requirements API。"""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from app.agent.sandbox_image_policy import (
     write_sandbox_variant,
 )
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.core.python_dependency_status import resolve_dependency_status
 from app.core.sandbox_requirements import merge_requirements_lines, sandbox_requirements_error_detail
 from app.core.security import user_context_dependency
 from app.core.user_context import get_current_user_context, get_current_username
@@ -34,6 +36,10 @@ class SandboxSettingsBody(BaseModel):
 
 
 class SandboxRequirementsMergeBody(BaseModel):
+    requirements: List[str] = []
+
+
+class SandboxRequirementsStatusBody(BaseModel):
     requirements: List[str] = []
 
 
@@ -200,3 +206,20 @@ async def merge_sandbox_requirements(body: SandboxRequirementsMergeBody):
     if prewarm is None:
         return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": False}}
     return {"status": "ok", "data": {"added": added, "content": merged, "saved": True, "validated": True, **prewarm}}
+
+
+@router.post("/settings/sandbox/requirements/status")
+async def sandbox_requirements_status(body: SandboxRequirementsStatusBody):
+    path = _sandbox_requirements_path()
+    settings_content = ""
+    if path.exists():
+        try:
+            settings_content = path.read_text(encoding="utf-8")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"读取 requirements.txt 失败: {e}")
+    result = await asyncio.to_thread(
+        resolve_dependency_status,
+        settings_requirements=settings_content,
+        skill_requirements=body.requirements or [],
+    )
+    return {"status": "ok", "data": result}

@@ -59,6 +59,22 @@ def frontend_flow_client(monkeypatch):
         monkeypatch.setattr(sandbox_settings, "_prewarm_current_user", fake_prewarm_current_user)
         monkeypatch.setattr(settings_mcp, "ensure_user_mcp_config_loaded", fake_ensure_user_mcp_config_loaded)
         monkeypatch.setattr(settings_mcp, "dispose_mcp_runtime_for_user", fake_dispose_mcp_runtime_for_user)
+        monkeypatch.setattr(
+            sandbox_settings,
+            "resolve_dependency_status",
+            lambda **_kwargs: {
+                "resolver": {"ok": True, "message": ""},
+                "requirements": [
+                    {
+                        "requirement": "pandas==2.2.0",
+                        "name": "pandas",
+                        "status": "satisfied",
+                        "message": "",
+                        "missing_packages": [],
+                    }
+                ],
+            },
+        )
 
         try:
             with TestClient(app) as client:
@@ -162,7 +178,7 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     skill_id = created_skill.json()["data"]["directory_name"]
     updated_skill = client.put(
         f"/api/settings/skills/{skill_id}",
-        json={"allowed_tools": {"mcp": [tool_id], "python": ""}},
+        json={"allowed_tools": {"mcp": [tool_id], "python": []}},
         headers=headers,
     )
     assert updated_skill.status_code == 200
@@ -530,7 +546,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
             "name": "Front Flow Skill",
             "description": "已更新技能",
             "body": "## 用途\n\n验证技能编辑。\n",
-            "allowed_tools": {"mcp": [], "python": "requests==2.31.0"},
+            "allowed_tools": {"mcp": [], "python": ["requests==2.31.0"]},
         },
         headers=headers,
     )
@@ -606,6 +622,13 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert requirements_merge.status_code == 200
     assert "pandas==2.2.0" in requirements_merge.json()["data"]["content"]
+    requirements_status = client.post(
+        "/api/settings/sandbox/requirements/status",
+        json={"requirements": ["pandas==2.2.0"]},
+        headers=headers,
+    )
+    assert requirements_status.status_code == 200
+    assert requirements_status.json()["data"]["requirements"][0]["status"] == "satisfied"
 
     assert client.delete(f"/api/settings/mcp/{mcp_id}", headers=headers).status_code == 200
     assert client.delete(f"/api/settings/skills/{skill_id}", headers=headers).status_code == 200

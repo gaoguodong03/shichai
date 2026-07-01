@@ -214,7 +214,7 @@
                   <label class="block text-xs font-medium text-muted mb-2">Python 依赖</label>
                   <textarea
                     v-if="editMode"
-                    v-model="form.allowed_tools.python"
+                    v-model="pythonDependencyText"
                     rows="4"
                     class="w-full px-3 py-2 text-xs font-mono border border-input-border rounded-lg bg-input-bg text-primary resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring"
                     placeholder="每行一个 Python 依赖，例如：requests>=2.31"
@@ -228,7 +228,7 @@
                         :class="isPythonDependencyMissing(dep)
                           ? 'border-red-300 bg-red-50 text-red-700'
                           : 'border-border bg-input-bg text-primary'"
-                        :title="isPythonDependencyMissing(dep) ? '沙箱 requirements.txt 中缺失' : '已存在于沙箱 requirements.txt'"
+                        :title="pythonDependencyTitle(dep)"
                       >
                         {{ dep }}
                       </span>
@@ -245,7 +245,10 @@
                   </div>
                   <div v-else class="text-xs text-muted">未声明 Python 依赖，本技能会话不安装额外 Python 依赖。</div>
                   <p v-if="!editMode && missingPythonDependencies.length" class="mt-2 text-xs text-red-600">
-                    红色依赖未加入设置-沙箱-requirements.txt，可一键添加全部并等待安装完成。
+                    红色依赖未被设置-沙箱-requirements.txt 的 pip 解析闭包覆盖，可一键添加缺失依赖并等待安装完成。
+                  </p>
+                  <p v-if="!editMode && pythonDependencyStatusLoading" class="mt-2 text-xs text-muted">
+                    正在解析 Python 依赖状态...
                   </p>
                   <p v-if="sandboxDependencyMessage" class="mt-2 text-xs" :class="sandboxDependencyError ? 'text-red-600' : 'text-accent'">
                     {{ sandboxDependencyMessage }}
@@ -339,12 +342,21 @@ import { dirnameOfPath, normalizePartPath, shouldHideEntryByPath, validateNewPar
 
 type PartType = 'references' | 'assets' | 'scripts' | 'other'
 const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
-type AllowedTools = { mcp: string[]; http_api: string[]; python: string }
+type AllowedTools = { mcp: string[]; http_api: string[]; python: string[] }
+type PythonDependencyState = 'satisfied' | 'missing' | 'conflict' | 'invalid' | 'skipped' | 'unknown'
+type PythonDependencyStatus = {
+  requirement: string
+  name?: string
+  status: PythonDependencyState
+  message?: string
+  covered_by?: string
+  missing_packages?: { name: string; version?: string }[]
+}
 const DEFAULT_DRAFT_SKILL = {
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: '' },
+  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: [] as string[] },
 }
 
 const props = defineProps<{ directoryName: string }>()
@@ -370,7 +382,7 @@ const skillContent = ref<{
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [], http_api: [], python: '' },
+  allowed_tools: { mcp: [], http_api: [], python: [] },
 })
 const loading = ref(false)
 const contentLoading = ref(false)
@@ -380,7 +392,7 @@ const form = ref({
   name: '',
   description: '',
   body: '',
-  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: '' },
+  allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: [] as string[] },
 })
 const mcpServers = ref<{ name: string; enabled: boolean; type: 'mcp' | 'http_api' }[]>([])
 const activeTab = ref<'main' | PartType>('main')
@@ -399,10 +411,11 @@ const partContent = ref('')
 const partContentLoading = ref(false)
 const partSaving = ref(false)
 const exporting = ref(false)
-const sandboxRequirementsContent = ref('')
 const addingPythonDependencies = ref(false)
 const sandboxDependencyMessage = ref('')
 const sandboxDependencyError = ref(false)
+const pythonDependencyStatusLoading = ref(false)
+const pythonDependencyStatuses = ref<PythonDependencyStatus[]>([])
 const partMarkdownPreviewMode = ref(true)
 function hasLoadedSkillContent() {
   return Boolean(
@@ -432,24 +445,24 @@ const missingHttpApiDependencies = computed(() =>
 const missingMcpDependencyLabels = computed(() =>
   missingMcpDependencies.value.map((name) => mcpLabel(name)),
 )
-const pythonDependencies = computed(() =>
-  String(form.value.allowed_tools.python || '')
-    .split(/\r?\n/g)
-    .map((x) => x.trim())
-    .filter(Boolean)
-)
-const sandboxRequirementKeys = computed(() => {
-  const keys = new Set<string>()
-  for (const line of String(sandboxRequirementsContent.value || '').split(/\r?\n/g)) {
-    const key = requirementKey(line)
-    if (key) keys.add(key)
+const pythonDependencies = computed(() => normalizePythonRequirements(form.value.allowed_tools.python))
+const pythonDependencyText = computed({
+  get: () => pythonDependencies.value.join('\n'),
+  set: (value: string) => {
+    form.value.allowed_tools.python = normalizePythonRequirements(value)
+  },
+})
+const pythonDependencyStatusByRequirement = computed(() => {
+  const out = new Map<string, PythonDependencyStatus>()
+  for (const item of pythonDependencyStatuses.value) {
+    out.set(String(item.requirement || '').trim(), item)
   }
-  return keys
+  return out
 })
 const missingPythonDependencies = computed(() =>
   pythonDependencies.value.filter((dep) => {
-    const key = requirementKey(dep)
-    return key && !sandboxRequirementKeys.value.has(key)
+    const status = pythonDependencyStatusByRequirement.value.get(dep)?.status
+    return status === 'missing'
   })
 )
 const isDraftSkill = computed(() => isNewSkillDraftId(props.directoryName))
@@ -466,7 +479,7 @@ function normalizedFormSnapshot() {
     allowed_tools: {
       mcp: [...(form.value.allowed_tools.mcp ?? [])],
       http_api: [...(form.value.allowed_tools.http_api ?? [])],
-      python: form.value.allowed_tools.python ?? '',
+      python: pythonDependencies.value,
     },
   })
 }
@@ -479,7 +492,7 @@ function resetDraftForm() {
   const allowedTools = {
     mcp: [...DEFAULT_DRAFT_SKILL.allowed_tools.mcp],
     http_api: [...DEFAULT_DRAFT_SKILL.allowed_tools.http_api],
-    python: DEFAULT_DRAFT_SKILL.allowed_tools.python,
+    python: [...DEFAULT_DRAFT_SKILL.allowed_tools.python],
   }
   skill.value = {
     directory_name: props.directoryName,
@@ -501,7 +514,7 @@ function resetDraftForm() {
     allowed_tools: {
       mcp: [...allowedTools.mcp],
       http_api: [...allowedTools.http_api],
-      python: allowedTools.python,
+      python: [...allowedTools.python],
     },
   }
   draftBaseline.value = normalizedFormSnapshot()
@@ -523,20 +536,28 @@ async function validateSkillRequiredFields(): Promise<boolean> {
   return true
 }
 
-function requirementKey(line: string) {
-  let item = String(line || '').trim()
-  if (!item || item.startsWith('#')) return ''
-  if (item.startsWith('-') || item.startsWith('git+') || item.startsWith('http://') || item.startsWith('https://')) {
-    return item.toLowerCase()
-  }
-  item = item.split('#', 1)[0].trim().split(';', 1)[0].trim()
-  const matched = item.match(/^\s*([A-Za-z0-9_.-]+)/)
-  return (matched?.[1] || item).toLowerCase().replace(/_/g, '-')
+function normalizePythonRequirements(raw: unknown): string[] {
+  const lines = Array.isArray(raw)
+    ? raw.map((x) => String(x || ''))
+    : String(raw || '').split(/\r?\n/g)
+  return Array.from(new Set(lines.map((x) => x.trim()).filter(Boolean)))
 }
 
 function isPythonDependencyMissing(dep: string) {
-  const key = requirementKey(dep)
-  return Boolean(key && !sandboxRequirementKeys.value.has(key))
+  const status = pythonDependencyStatusByRequirement.value.get(dep)?.status || 'unknown'
+  return !['satisfied', 'skipped'].includes(status)
+}
+
+function pythonDependencyTitle(dep: string) {
+  const item = pythonDependencyStatusByRequirement.value.get(dep)
+  if (!item) return '依赖状态尚未解析'
+  if (item.status === 'satisfied') return '已被设置-沙箱 requirements.txt 的 pip 解析闭包覆盖'
+  if (item.status === 'skipped') return '当前环境标记不生效'
+  if (item.status === 'missing') {
+    const missing = (item.missing_packages || []).map((x) => `${x.name}${x.version ? `==${x.version}` : ''}`).join('，')
+    return missing ? `缺失解析包：${missing}` : '未被 pip 解析闭包覆盖'
+  }
+  return item.message || '依赖解析失败'
 }
 
 function isMcpDependencyMissing(name: string) {
@@ -578,7 +599,7 @@ function resetFormFromLoadedContent() {
   form.value.allowed_tools = {
     mcp: [...skillContent.value.allowed_tools.mcp],
     http_api: [...skillContent.value.allowed_tools.http_api],
-    python: skillContent.value.allowed_tools.python,
+    python: [...skillContent.value.allowed_tools.python],
   }
 }
 
@@ -755,15 +776,35 @@ async function loadMcpServers() {
   }
 }
 
-async function loadSandboxRequirements() {
+async function loadPythonDependencyStatus() {
+  const requirements = pythonDependencies.value
+  pythonDependencyStatuses.value = []
+  if (!requirements.length || isDraftSkill.value) return
+  pythonDependencyStatusLoading.value = true
   try {
-    const r = await apiRequest('/settings/sandbox/requirements')
+    const r = await apiRequest('/settings/sandbox/requirements/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requirements }),
+    })
     const j = await r.json().catch(() => ({}))
-    if (j?.status === 'ok') {
-      sandboxRequirementsContent.value = String(j?.data?.content ?? '')
+    if (j?.status === 'ok' && Array.isArray(j?.data?.requirements)) {
+      pythonDependencyStatuses.value = j.data.requirements
+    } else {
+      pythonDependencyStatuses.value = requirements.map((requirement) => ({
+        requirement,
+        status: 'unknown',
+        message: String(j?.detail || '依赖状态解析失败'),
+      }))
     }
-  } catch {
-    sandboxRequirementsContent.value = ''
+  } catch (e) {
+    pythonDependencyStatuses.value = requirements.map((requirement) => ({
+      requirement,
+      status: 'unknown',
+      message: String(e || '依赖状态解析失败'),
+    }))
+  } finally {
+    pythonDependencyStatusLoading.value = false
   }
 }
 
@@ -780,23 +821,20 @@ async function addMissingPythonDependenciesToSandbox() {
       body: JSON.stringify({ requirements }),
     })
     const j = await r.json().catch(() => ({}))
-    if (j?.data?.content != null) {
-      sandboxRequirementsContent.value = String(j.data.content)
-    } else {
-      await loadSandboxRequirements()
-    }
     if (j?.status === 'ok') {
       const added = Array.isArray(j?.data?.added) ? j.data.added.length : 0
       sandboxDependencyMessage.value = added ? `已添加 ${added} 个依赖到设置-沙箱，并安装完成。` : '依赖已存在于设置-沙箱。'
+      await loadPythonDependencyStatus()
       setTimeout(() => { sandboxDependencyMessage.value = '' }, 3000)
     } else {
       sandboxDependencyError.value = true
       sandboxDependencyMessage.value = String(j?.detail || '依赖已写入，但重新加载失败，请到设置-沙箱查看。')
+      await loadPythonDependencyStatus()
     }
   } catch (e) {
     sandboxDependencyError.value = true
     sandboxDependencyMessage.value = String(e || '添加依赖失败')
-    await loadSandboxRequirements()
+    await loadPythonDependencyStatus()
   } finally {
     addingPythonDependencies.value = false
   }
@@ -839,7 +877,7 @@ async function load(options: { silent?: boolean } = {}) {
   const showPageLoading = !options.silent && (!skill.value || (skill.value.directory_name !== props.directoryName && !saving.value))
   if (showPageLoading) loading.value = true
   try {
-    await Promise.all([loadMcpServers(), loadSandboxRequirements()])
+    await loadMcpServers()
     const r = await apiRequest('/settings/skills')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.skills) {
@@ -854,7 +892,7 @@ async function load(options: { silent?: boolean } = {}) {
             allowed_tools: {
               mcp: [...(s.allowed_tools?.mcp ?? [])],
               http_api: [...(s.allowed_tools?.http_api ?? [])],
-              python: s.allowed_tools?.python ?? '',
+              python: normalizePythonRequirements(s.allowed_tools?.python ?? []),
             },
           }
         }
@@ -878,7 +916,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
       const at = j.data.allowed_tools
       const mcp = Array.isArray(at?.mcp) ? at.mcp.map((x: string) => String(x || '').trim()).filter(Boolean) : []
       const httpApi = Array.isArray(at?.http_api) ? at.http_api.map((x: string) => String(x || '').trim()).filter(Boolean) : []
-      const python = typeof at?.python === 'string' ? at.python : ''
+      const python = normalizePythonRequirements(at?.python ?? [])
       skillContent.value = {
         raw: j.data.raw ?? '',
         name: j.data.name ?? '',
@@ -889,6 +927,7 @@ async function loadContent(options: { silent?: boolean } = {}) {
       resetFormFromLoadedContent()
       editMode.value = false
       draftBaseline.value = ''
+      await loadPythonDependencyStatus()
     }
   } finally {
     if (showContentLoading) contentLoading.value = false
@@ -952,7 +991,7 @@ async function save() {
         allowed_tools: {
           mcp: form.value.allowed_tools.mcp ?? [],
           http_api: form.value.allowed_tools.http_api ?? [],
-          python: form.value.allowed_tools.python ?? '',
+          python: pythonDependencies.value,
         },
       }),
     })
@@ -966,7 +1005,7 @@ async function save() {
       const optimisticAllowedTools = {
         mcp: [...(form.value.allowed_tools.mcp ?? [])],
         http_api: [...(form.value.allowed_tools.http_api ?? [])],
-        python: form.value.allowed_tools.python ?? '',
+        python: pythonDependencies.value,
       }
       skillContent.value = {
         raw: '',
@@ -1018,7 +1057,7 @@ async function saveDraftSkill(options: { selectCreated: boolean; onlyIfChanged: 
     const allowedTools = {
       mcp: form.value.allowed_tools.mcp ?? [],
       http_api: form.value.allowed_tools.http_api ?? [],
-      python: form.value.allowed_tools.python ?? '',
+      python: pythonDependencies.value,
     }
     const updateResponse = await apiRequest(`/settings/skills/${encodeURIComponent(newDirectoryName)}`, {
       method: 'PUT',

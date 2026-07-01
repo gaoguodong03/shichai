@@ -37,7 +37,7 @@ def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_bloc
         "description: 当用户需要[TODO: 任务类型]时使用，输入为[TODO: 文件/参数/链接]，产出[TODO: 结果形式]。\n"
         "allowed-tools:\n"
         "  mcp: []\n"
-        "  python: ''\n"
+        "  python: []\n"
         "---\n\n"
         "# Toutiao Summary\n"
     )

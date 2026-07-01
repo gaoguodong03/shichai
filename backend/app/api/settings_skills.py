@@ -594,7 +594,7 @@ async def create_skill(skill: SkillCreate):
     frontmatter = {
         "name": (skill.name or "").strip(),
         "description": skill.description or "",
-        ALLOWED_TOOLS_FM_KEY: {"mcp": [], "http_api": [], "python": ""},
+        ALLOWED_TOOLS_FM_KEY: {"mcp": [], "http_api": [], "python": []},
     }
     content = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False) + "---\n" + body
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
@@ -606,7 +606,7 @@ async def create_skill(skill: SkillCreate):
         "name": ret_name,
         "description": ret_desc,
         "path": str(skill_dir),
-        "allowed_tools": {"mcp": [], "python": ""},
+        "allowed_tools": {"mcp": [], "http_api": [], "python": []},
     }
     return {"status": "ok", "data": new_skill}
 
