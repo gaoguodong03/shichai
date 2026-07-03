@@ -160,8 +160,10 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(row.getByRole('button', { name: '从此刻分叉会话' })).toHaveCount(0)
     await expect(row.getByRole('button', { name: '回溯到此发言' })).toHaveCount(0)
 
-    await row.getByRole('button', { name: '拷贝发言内容' }).click()
+    const copyButton = row.getByRole('button', { name: '拷贝发言内容' })
+    await copyButton.click()
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(assistantContent)
+    await expect(row.getByRole('button', { name: '已复制' })).toBeVisible()
 
     await row.getByRole('button', { name: '保存到工作区' }).click()
     await expect(page.getByRole('dialog', { name: '保存为工作区文件' })).toBeVisible()

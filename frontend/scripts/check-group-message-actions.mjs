@@ -23,6 +23,11 @@ for (const label of ['拷贝发言内容', '删除该发言', '保存到工作�
   assert.match(messagesVue, new RegExp(label), `消息操作按钮应包含“${label}”`)
 }
 
+assert.match(messagesVue, /isMessageCopied\(msg\) \? '已复制' : '拷贝发言内容'/, '复制成功后按钮应显示已复制反馈')
+assert.match(messagesVue, /group-chat-bubble-action-btn-copied/, '复制成功反馈应使用专门的按钮状态样式')
+assert.match(messageListTs, /function isMessageCopied\(msg: MsgExt\)/, '复制成功反馈状态应由消息列表逻辑提供')
+assert.match(messageListTs, /await navigator\.clipboard\.writeText\(content\)[\s\S]*?markMessageCopied\(msg\)/, '只有剪贴板写入成功后才应标记已复制')
+
 for (const label of ['从此刻分叉会话', '回溯到此发言']) {
   assert.doesNotMatch(messagesVue, new RegExp(label), `消息操作栏不应再包含“${label}”`)
 }

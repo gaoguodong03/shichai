@@ -189,15 +189,29 @@
                         >
                           <button
                             type="button"
-                            class="group-chat-bubble-action-btn"
-                            aria-label="拷贝发言内容"
-                            title="拷贝发言内容"
+                            :class="['group-chat-bubble-action-btn', isMessageCopied(msg) && 'group-chat-bubble-action-btn-copied']"
+                            :aria-label="isMessageCopied(msg) ? '已复制' : '拷贝发言内容'"
+                            :title="isMessageCopied(msg) ? '已复制' : '拷贝发言内容'"
                             @click="copyAgentMessageToClipboard(msg)"
                           >
-                            <svg class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <svg
+                              v-if="isMessageCopied(msg)"
+                              class="group-chat-action-icon"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              stroke-width="1.8"
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M20 6 9 17l-5-5" />
+                            </svg>
+                            <svg v-else class="group-chat-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                               <rect x="8" y="8" width="11" height="13" rx="2" />
                               <path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                             </svg>
+                            <span v-if="isMessageCopied(msg)" class="group-chat-action-copy-feedback">已复制</span>
                           </button>
                           <button
                             v-if="msg.message_id"
@@ -278,6 +292,7 @@ const {
   extractUserFileReferenceNames,
   deleteGroupMessage,
   copyAgentMessageToClipboard,
+  isMessageCopied,
   saveAgentMessageToFile,
 } = useGroupChatMessageContext()
 

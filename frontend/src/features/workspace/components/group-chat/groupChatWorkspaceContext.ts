@@ -47,6 +47,7 @@ export interface GroupChatMessageContext {
   extractUserFileReferenceNames: ContextValue
   deleteGroupMessage: ContextValue
   copyAgentMessageToClipboard: ContextValue
+  isMessageCopied: ContextValue
   saveAgentMessageToFile: ContextValue
   forkMessageState: ContextValue
   rollbackMessageState: ContextValue

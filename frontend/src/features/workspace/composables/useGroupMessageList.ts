@@ -1,4 +1,4 @@
-import { nextTick, ref, watch, type Ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm, appPrompt } from '@/composables/useAppDialog'
@@ -68,7 +68,9 @@ export function useGroupMessageList(args: {
   const sessionCheckpoints = ref<SessionCheckpoint[]>([])
   const sessionCheckpointsLoading = ref(false)
   const messageStateActionKey = ref('')
+  const copiedMessageActionKey = ref('')
   let checkpointFetchSeq = 0
+  let copiedMessageTimer: ReturnType<typeof window.setTimeout> | null = null
 
   async function loadSessionCheckpoints() {
     const id = (groupDetail.value?.id || '').trim()
@@ -302,6 +304,26 @@ export function useGroupMessageList(args: {
     return msg.role === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
   }
 
+  function messageCopyActionKey(msg: MsgExt): string {
+    const messageId = typeof (msg as { message_id?: unknown }).message_id === 'string'
+      ? (msg as { message_id?: string }).message_id
+      : ''
+    return messageId || `${msg.role || 'message'}:${messageActionContent(msg)}`
+  }
+
+  function markMessageCopied(msg: MsgExt) {
+    copiedMessageActionKey.value = messageCopyActionKey(msg)
+    if (copiedMessageTimer) window.clearTimeout(copiedMessageTimer)
+    copiedMessageTimer = window.setTimeout(() => {
+      if (copiedMessageActionKey.value === messageCopyActionKey(msg)) copiedMessageActionKey.value = ''
+      copiedMessageTimer = null
+    }, 1600)
+  }
+
+  function isMessageCopied(msg: MsgExt) {
+    return copiedMessageActionKey.value === messageCopyActionKey(msg)
+  }
+
   function defaultAgentFilename(msg: MsgExt): string {
     const name = msg.role === 'user'
       ? 'user'
@@ -347,10 +369,15 @@ export function useGroupMessageList(args: {
     if (!content) return
     try {
       await navigator.clipboard.writeText(content)
+      markMessageCopied(msg)
     } catch {
       await appAlert({ title: '复制失败', message: '复制失败，请检查浏览器剪贴板权限', variant: 'danger' })
     }
   }
+
+  onBeforeUnmount(() => {
+    if (copiedMessageTimer) window.clearTimeout(copiedMessageTimer)
+  })
 
   async function deleteGroupMessage(msg: { message_id?: string; role?: string }) {
     const id = groupDetail.value?.id
@@ -495,6 +522,7 @@ export function useGroupMessageList(args: {
     formatGroupMsgFullTime,
     saveAgentMessageToFile,
     copyAgentMessageToClipboard,
+    isMessageCopied,
     deleteGroupMessage,
     forkMessageState,
     rollbackMessageState,
