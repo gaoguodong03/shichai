@@ -6,6 +6,7 @@ build_tools_for_group_chat：按「本轮解析出的 Skill」在 SKILL.md front
 run_skill_script_<directory_name> → wrap。
 """
 from pathlib import Path
+import json
 import re
 from typing import Any, Dict, List, Optional
 
@@ -14,7 +15,11 @@ from app.api.settings_skill_store import get_mcp_servers_for_skill
 from app.api.settings_secrets import load_api_secret_values
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
-from app.mcp.manager import ensure_user_mcp_config_loaded
+from app.mcp.manager import (
+    _missing_mcp_placeholders,
+    _transport_from_server_config,
+    ensure_user_mcp_config_loaded,
+)
 from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
@@ -296,6 +301,87 @@ def _filter_builtin_workspace_tools(all_builtin: List, agent_profile: Dict[str, 
     return [t for t in all_builtin if getattr(t, "name", "") in allowed]
 
 
+def _mcp_configuration_issues(
+    tool_server_names: List[str],
+    configured_rows: Dict[str, Dict[str, Any]],
+    secrets: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    for server_name in tool_server_names:
+        row = configured_rows.get(server_name)
+        if not isinstance(row, dict):
+            issues.append(
+                {
+                    "server": server_name,
+                    "code": "mcp_config_missing",
+                    "message": "Skill 声明了该 MCP 工具，但资源中心没有对应配置。",
+                    "missing": [],
+                }
+            )
+            continue
+        transport = _transport_from_server_config(row)
+        transport_type = str(transport.get("type") or "stdio")
+        missing: List[str] = []
+        if transport_type == "stdio":
+            for value in (transport.get("env") or {}).values():
+                missing.extend(_missing_mcp_placeholders(value, secrets))
+        elif transport_type in ("http", "streamable_http", "sse"):
+            raw_url = str(transport.get("url") or transport.get("base_url") or "")
+            missing.extend(_missing_mcp_placeholders(raw_url, secrets))
+            for value in (transport.get("headers") or {}).values():
+                missing.extend(_missing_mcp_placeholders(value, secrets))
+        if missing:
+            missing = sorted(set(missing))
+            issues.append(
+                {
+                    "server": server_name,
+                    "code": "mcp_secret_missing",
+                    "message": "MCP 配置引用了未设置的密钥或环境变量。",
+                    "missing": missing,
+                }
+            )
+    return issues
+
+
+def _create_mcp_configuration_status_tool(issues: List[Dict[str, Any]]) -> ToolSpec:
+    def _status() -> str:
+        missing = sorted(
+            {
+                str(item)
+                for issue in issues
+                for item in (issue.get("missing") or [])
+                if str(item).strip()
+            }
+        )
+        return json.dumps(
+            {
+                "ok": False,
+                "code": "mcp_configuration_unavailable",
+                "message": "本轮 Skill 声明的 MCP 工具未能加载，请先在资源中心配置对应密钥后重试。",
+                "missing": missing,
+                "issues": issues,
+            },
+            ensure_ascii=False,
+        )
+
+    return ToolSpec.from_function(
+        name="mcp_configuration_status",
+        description=(
+            "查看本轮 Skill 声明但未可用的 MCP 配置问题。"
+            "当检索、抓取等 MCP 工具没有出现在可用工具中时，先调用它并把缺失项告知用户。"
+        ),
+        func=_status,
+        args_schema={"type": "object", "properties": {}},
+    )
+
+
+def _tool_mcp_server_name(tool: Any) -> str:
+    metadata = getattr(tool, "metadata", None)
+    if isinstance(metadata, dict):
+        return str(metadata.get("mcp_server_name") or "").strip()
+    return ""
+
+
 async def build_tools_for_group_chat(
     agent_profile: Dict[str, Any],
     workspace_id: str,
@@ -326,6 +412,11 @@ async def build_tools_for_group_chat(
         for name in configured_tool_names
         if str((configured_rows.get(name) or {}).get("type") or "mcp") == "mcp"
     ]
+    try:
+        secrets = load_api_secret_values()
+    except Exception:
+        secrets = {}
+    mcp_config_issues = _mcp_configuration_issues(tool_server_names, configured_rows, secrets)
 
     mgr = None
     all_tools = []
@@ -351,7 +442,8 @@ async def build_tools_for_group_chat(
         all_tools = mgr.get_tools()
 
     if tool_server_names:
-        tools = [t for t in all_tools if "_" in getattr(t, "name", "") and getattr(t, "name", "").split("_", 1)[0] in tool_server_names]
+        allowed_servers = set(tool_server_names)
+        tools = [t for t in all_tools if _tool_mcp_server_name(t) in allowed_servers]
     else:
         tools = []
     tools = _filter_redundant_workspace_mcp_tools(tools)
@@ -361,16 +453,15 @@ async def build_tools_for_group_chat(
     )
     extras: List = [t for t in builtin_workspace_tools if getattr(t, "name", "") not in tool_names]
     if http_api_rows:
-        try:
-            secrets = load_api_secret_values()
-        except Exception:
-            secrets = {}
         for row in http_api_rows:
             tool = create_http_api_tool(row, secrets=secrets)
             if getattr(tool, "name", "") not in tool_names:
                 extras.append(tool)
                 tool_names.add(getattr(tool, "name", ""))
-    extras.append(call_api)
+    if mcp_config_issues:
+        extras.append(_create_mcp_configuration_status_tool(mcp_config_issues))
+    else:
+        extras.append(call_api)
     tools = tools + extras
     tool_names = {getattr(t, "name", "") for t in tools}
     # 为 Agent 的每个技能注入 run_skill_script，名称带目录名避免覆盖，方便图标生成等用脚本而非 MCP 文件工具

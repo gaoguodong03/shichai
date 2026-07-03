@@ -16,6 +16,9 @@ def build_mcp_server_index(
         name_key = normalized_name_key(row.get("name"))
         if name_key and name_key not in by_name:
             by_name[name_key] = row
+        id_key = normalized_name_key(row.get("id"))
+        if id_key and id_key not in by_name:
+            by_name[id_key] = row
     return by_name
 
 

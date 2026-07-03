@@ -1021,12 +1021,25 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
             )
         return _json_result(**result_payload)
 
+    available_scripts = _list_available_scripts(script_root)
+    manifest = _load_manifest(script_root)
+    if available_scripts:
+        script_descriptions = []
+        for script_name in available_scripts:
+            meta = _script_meta_for(manifest, script_name)
+            desc = str(meta.get("description") or "").strip()
+            script_descriptions.append(f"{script_name}: {desc}" if desc else script_name)
+        script_inventory = "当前可用脚本：" + "；".join(script_descriptions) + "。"
+    else:
+        script_inventory = "当前没有可用脚本；可先用 __list__ 确认可执行脚本。"
+
     return ToolSpec.from_function(
         name="run_skill_script",
         description=(
             "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
             "cli_args_json 填 JSON 数组字符串，如 [\"--query\",\"问题\"]。"
             "不要使用 input_json/stdin；可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
+            f"{script_inventory}"
         ),
         coroutine=run_skill_script,
         args_schema={

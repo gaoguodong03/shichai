@@ -42,6 +42,23 @@ def _tool_name_looks_like_bound_mcp(name: str) -> bool:
     return True
 
 
+def _tool_mcp_identity(tool: ToolSpec | object) -> tuple[str, str]:
+    metadata = getattr(tool, "metadata", None)
+    if not isinstance(metadata, dict):
+        return "", ""
+    return (
+        str(metadata.get("mcp_server_name") or "").strip(),
+        str(metadata.get("mcp_tool_name") or "").strip(),
+    )
+
+
+def _find_tool_by_name(tool_name: str, tools: Sequence[ToolSpec]) -> ToolSpec | None:
+    for tool in tools or []:
+        if getattr(tool, "name", None) == tool_name:
+            return tool
+    return None
+
+
 def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
@@ -122,7 +139,13 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             + "\n".join(f"- `{n}`" for n in script_names)
             + "\n\n"
         )
-    mcp_names = sorted({getattr(t, "name", "") for t in tools if _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))})
+    mcp_names = sorted(
+        {
+            getattr(t, "name", "")
+            for t in tools
+            if _tool_mcp_identity(t)[0] or _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))
+        }
+    )
     if mcp_names:
         parts.append(
             "## 本技能绑定的 MCP 工具\n\n"
@@ -152,12 +175,8 @@ def _get_tool_call_arguments(tool_call: dict) -> dict:
 
 def _get_mcp_input_schema(tool_name: str, tools: Sequence[ToolSpec]) -> dict | None:
     """从 tools 列表中按 tool_name 取出 MCP 工具的 inputSchema，供 __arg1 等通用参数映射。"""
-    if not tools:
-        return None
-    for t in tools:
-        if getattr(t, "name", None) == tool_name:
-            return getattr(t, "_mcp_input_schema", None)
-    return None
+    tool = _find_tool_by_name(tool_name, tools)
+    return getattr(tool, "_mcp_input_schema", None) if tool is not None else None
 
 
 _LLM_AGENT_TIMEOUT = int(os.getenv("LLM_AGENT_TIMEOUT", "180"))
@@ -253,13 +272,21 @@ def create_skill_execution_agent(
     if tools:
         logger.debug("已添加工具指令到系统提示词")
     # 若包含 Exa 工具，注入 Exa MCP 使用说明（仅调用 exa 时生效）
-    if any(t.name == "exa_web_search_exa" for t in tools):
+    exa_search_tool_name = next(
+        (
+            t.name
+            for t in tools
+            if _tool_mcp_identity(t)[1] == "web_search_exa"
+        ),
+        "",
+    )
+    if exa_search_tool_name:
         system_prompt += """
 ## Exa 搜索工具使用说明
-调用 exa_web_search_exa 时**必须**使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{"query": "北京 烟花 燃放", "numResults": 10}。
+调用 {tool_name} 时**必须**使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{{"query": "北京 烟花 燃放", "numResults": 10}}。
 可选参数：numResults（数量）、livecrawl（'fallback'|'preferred'|'always'|'never'）、type（'auto'|'fast'）。type 不要用 'news' 等无效值。
 
-"""
+""".format(tool_name=exa_search_tool_name)
     system_prompt += """
 当你需要使用工具时，**必须**使用模型的结构化工具调用（tool_calls / function calling）来调用工具；
 
@@ -425,6 +452,13 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         args = dict(arguments) if arguments else {}
         if tool_name.startswith("run_skill_script_"):
             return args
+        tool = _find_tool_by_name(tool_name, tools_list)
+        if tool is not None:
+            server_name, original_tool_name = _tool_mcp_identity(tool)
+            if server_name and original_tool_name:
+                input_schema = getattr(tool, "_mcp_input_schema", None)
+                from app.mcp.manager import normalize_mcp_kwargs_for_call
+                return normalize_mcp_kwargs_for_call(server_name, original_tool_name, args, input_schema=input_schema)
         idx = tool_name.find("_")
         if idx >= 0:
             server_name = tool_name[:idx]

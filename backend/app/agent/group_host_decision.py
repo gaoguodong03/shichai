@@ -42,10 +42,6 @@ def _agent_name_map(agent_profiles: List[Dict[str, Any]]) -> Dict[str, str]:
         name = str((profile or {}).get("name") or "").strip()
         if name:
             out[name.casefold()] = name
-        for key in ("id", "agent_id"):
-            value = str((profile or {}).get(key) or "").strip()
-            if value and name:
-                out[value.casefold()] = name
     return out
 
 

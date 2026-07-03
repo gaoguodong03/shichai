@@ -216,6 +216,183 @@ def test_manifest_required_fields_validate_cli_args_json_positionals():
     )
 
 
+def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, tmp_path):
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+    from app.tools.run_skill_script import create_run_skill_script_tool
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-script-desc", username="script@example.com")
+    try:
+        skill_dir = tmp_path / "users" / "user-script-desc" / "resources" / "skills" / "webv10"
+        scripts_dir = skill_dir / "scripts"
+        scripts_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: Web\n---\nbody\n", encoding="utf-8")
+        (scripts_dir / "crawl_and_store.py").write_text("print('ok')\n", encoding="utf-8")
+        (scripts_dir / "manifest.json").write_text(
+            '{"crawl_and_store.py":{"description":"抓取公开网页"}}',
+            encoding="utf-8",
+        )
+
+        tool = create_run_skill_script_tool("webv10", "workspace-a", "workspace_all")
+    finally:
+        reset_current_user_identity(token)
+
+    assert "crawl_and_store.py" in tool.description
+    assert "抓取公开网页" in tool.description
+
+
+@pytest.mark.asyncio
+async def test_build_tools_blocks_call_api_when_declared_mcp_is_unavailable(monkeypatch):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    class DummyManager:
+        server_configs = [{"name": "Exa 搜索"}]
+
+        async def ensure_servers_loaded(self, server_names):
+            self.server_names = list(server_names)
+
+        def get_tools(self):
+            return []
+
+    monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: ["Exa 搜索"])
+    monkeypatch.setattr(
+        tools_for_skill,
+        "load_mcp_config",
+        lambda: [
+            {
+                "name": "Exa 搜索",
+                "type": "mcp",
+                "transport": {
+                    "type": "http",
+                    "base_url": "https://mcp.exa.ai/mcp",
+                    "headers": {"Authorization": "${vault:exa}"},
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(tools_for_skill, "load_api_secret_values", lambda: {})
+    monkeypatch.setattr(tools_for_skill, "ensure_user_mcp_config_loaded", lambda _username: DummyManager())
+    monkeypatch.setattr(tools_for_skill, "skill_has_skill_md", lambda _sid: False)
+
+    token = set_current_user_identity(user_id="user-mcp-missing", username="mcp-missing@example.com")
+    try:
+        tools = await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "webv10"}]},
+            "workspace-mcp-missing",
+            resolved_skill="webv10",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    names = {getattr(tool, "name", "") for tool in tools}
+    assert "call_api" not in names
+    assert "mcp_configuration_status" in names
+    diagnostic_tool = next(tool for tool in tools if getattr(tool, "name", "") == "mcp_configuration_status")
+    diagnostic = await diagnostic_tool.acall()
+    assert "vault:exa" in diagnostic
+    assert "Exa 搜索" in diagnostic
+
+
+@pytest.mark.asyncio
+async def test_build_tools_keeps_safe_named_mcp_tools_for_declared_server(monkeypatch):
+    from app.agent import tools_for_skill
+    from app.agent.tool_spec import ToolSpec
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    class DummyManager:
+        server_configs = [{"name": "Exa 搜索"}]
+
+        async def ensure_servers_loaded(self, server_names):
+            self.server_names = list(server_names)
+
+        def get_tools(self):
+            tool = ToolSpec(name="Exa_web_search_exa_a1b2c3d4", description="search")
+            tool.metadata.update({"mcp_server_name": "Exa 搜索", "mcp_tool_name": "web_search_exa"})
+            return [tool]
+
+    monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: ["Exa 搜索"])
+    monkeypatch.setattr(
+        tools_for_skill,
+        "load_mcp_config",
+        lambda: [
+            {
+                "name": "Exa 搜索",
+                "type": "mcp",
+                "transport": {
+                    "type": "http",
+                    "base_url": "https://mcp.exa.ai/mcp",
+                    "headers": {"Authorization": "${vault:exa}"},
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(tools_for_skill, "load_api_secret_values", lambda: {"exa": "set"})
+
+    async def fake_ensure_user_mcp_config_loaded(_username):
+        return DummyManager()
+
+    monkeypatch.setattr(tools_for_skill, "ensure_user_mcp_config_loaded", fake_ensure_user_mcp_config_loaded)
+    monkeypatch.setattr(tools_for_skill, "skill_has_skill_md", lambda _sid: False)
+
+    token = set_current_user_identity(user_id="user-mcp-ready", username="mcp-ready@example.com")
+    try:
+        tools = await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "webv10"}]},
+            "workspace-mcp-ready",
+            resolved_skill="webv10",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    names = {getattr(tool, "name", "") for tool in tools}
+    assert "Exa_web_search_exa_a1b2c3d4" in names
+
+
+@pytest.mark.asyncio
+async def test_skill_runtime_normalizes_safe_mcp_tool_using_original_metadata(monkeypatch):
+    from langchain_core.messages import AIMessage
+
+    from app.agent.skill_agent_runtime import _call_tool_impl
+    from app.agent.tool_spec import ToolSpec
+    import app.mcp.manager as mcp_manager
+
+    seen = []
+
+    def fake_normalize(server_name, original_tool_name, args, input_schema=None):
+        seen.append((server_name, original_tool_name, dict(args), input_schema))
+        return {"query": args["__arg1"]}
+
+    async def fake_tool(**kwargs):
+        return f"ok:{kwargs['query']}"
+
+    monkeypatch.setattr(mcp_manager, "normalize_mcp_kwargs_for_call", fake_normalize)
+    tool = ToolSpec(name="Exa_web_search_exa_a1b2c3d4", coroutine=fake_tool)
+    tool.metadata.update({"mcp_server_name": "Exa 搜索", "mcp_tool_name": "web_search_exa"})
+    tool._mcp_input_schema = {"type": "object", "properties": {"query": {"type": "string"}}}
+    state = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "id": "tc-safe-mcp",
+                        "name": "Exa_web_search_exa_a1b2c3d4",
+                        "args": {"__arg1": "智能软件工程"},
+                    }
+                ],
+            )
+        ],
+        "tools": [tool],
+    }
+
+    out = await _call_tool_impl(state, [tool])
+
+    assert out.get("messages")
+    assert seen[0][0] == "Exa 搜索"
+    assert seen[0][1] == "web_search_exa"
+
+
 def test_parse_cli_args_json_recovers_concatenated_json_strings():
     from app.tools import run_skill_script as rss
 
@@ -586,6 +763,28 @@ async def test_mcp_tool_reconnects_once_for_empty_runtime_error(monkeypatch):
     assert reconnects == ["mcp-exa"]
     assert calls[0][3] == "stale-session"
     assert calls[1][3] == "fresh-session"
+
+
+def test_mcp_tool_spec_name_is_model_safe_for_non_ascii_server_name():
+    from types import SimpleNamespace
+    import re
+
+    import app.mcp.manager as mcp_manager
+
+    mgr = mcp_manager.MCPToolManager()
+    mcp_tool = SimpleNamespace(
+        name="linkup-search",
+        description="search",
+        inputSchema={"type": "object", "properties": {"q": {"type": "string"}}},
+    )
+
+    tool = mgr._create_tool_spec(mcp_tool, session=object(), server_name="Linkup抓取网页")
+
+    assert re.fullmatch(r"^[a-zA-Z0-9_-]+$", tool.name)
+    assert tool.name.startswith("mcp_")
+    assert "Linkup抓取网页" not in tool.name
+    assert tool.metadata["mcp_server_name"] == "Linkup抓取网页"
+    assert tool.metadata["mcp_tool_name"] == "linkup-search"
 
 
 @pytest.mark.asyncio

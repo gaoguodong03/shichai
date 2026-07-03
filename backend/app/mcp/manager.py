@@ -11,6 +11,7 @@ import re
 import json
 import logging
 import asyncio
+import hashlib
 import threading
 import time
 from typing import List, Dict, Any, Optional
@@ -45,6 +46,27 @@ _mcp_user_lock = threading.Lock()
 _mcp_by_user: Dict[str, "MCPToolManager"] = {}
 _mcp_call_locks_guard = threading.Lock()
 _mcp_call_locks: Dict[int, asyncio.Lock] = {}
+_MODEL_TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _model_tool_slug(raw: Any) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(raw or "")).strip("_-")
+
+
+def _safe_mcp_model_tool_name(server_name: Optional[str], tool_name: str) -> str:
+    """Return a model-safe function name while preserving original names in metadata."""
+    raw_server = str(server_name or "").strip()
+    raw_tool = str(tool_name or "").strip()
+    server_slug = _model_tool_slug(raw_server)
+    tool_slug = _model_tool_slug(raw_tool)
+    readable = "_".join(part for part in (server_slug, tool_slug) if part) or "tool"
+    suffix = hashlib.sha1(f"{raw_server}\0{raw_tool}".encode("utf-8")).hexdigest()[:8]
+    max_readable = max(1, 64 - len("mcp__") - len(suffix))
+    readable = readable[:max_readable].strip("_-") or "tool"
+    alias = f"mcp_{readable}_{suffix}"
+    if not _MODEL_TOOL_NAME_RE.fullmatch(alias):
+        return f"mcp_tool_{suffix}"
+    return alias
 
 
 def _get_mcp_call_lock(session: ClientSession) -> asyncio.Lock:
@@ -657,8 +679,7 @@ class MCPToolManager:
             for mcp_tool in tools_result.tools:
                 # 新建项目内 ToolSpec（传入 server_name 用于生成唯一名称）
                 tool_spec = self._create_tool_spec(mcp_tool, session, server_name)
-                tool_name = f"{server_name}_{mcp_tool.name}" if server_name else mcp_tool.name
-                self.tools[tool_name] = tool_spec
+                self.tools[tool_spec.name] = tool_spec
         except Exception as e:
             logger.error(f"Failed to load tools from server {server_name}: {e}", exc_info=True)
 
@@ -676,7 +697,11 @@ class MCPToolManager:
                 pass
         # 清理该 server 的工具，避免 stale session 继续被调用
         stale_prefix = f"{server_name}_"
-        for name in [n for n in list(self.tools.keys()) if n.startswith(stale_prefix)]:
+        for name in [
+            n
+            for n, tool in list(self.tools.items())
+            if n.startswith(stale_prefix) or getattr(tool, "metadata", {}).get("mcp_server_name") == server_name
+        ]:
             self.tools.pop(name, None)
         return await self.connect_server(server_name, cfg)
     
@@ -684,7 +709,7 @@ class MCPToolManager:
         """将 MCP 工具转换为项目内 ToolSpec。"""
         # 保存原始工具名和 session 引用
         original_tool_name = mcp_tool.name
-        tool_name = f"{server_name}_{mcp_tool.name}" if server_name else mcp_tool.name
+        tool_name = _safe_mcp_model_tool_name(server_name, mcp_tool.name)
         # 将 inputSchema 转为 dict 并保存，供 normalize_mcp_kwargs_for_call 做 __arg1 等通用映射
         _input_schema = getattr(mcp_tool, "inputSchema", None)
         if hasattr(_input_schema, "model_dump"):
@@ -772,6 +797,12 @@ class MCPToolManager:
             description=description,
             func=tool_func,
             args_schema=_input_schema,
+        )
+        tool_spec.metadata.update(
+            {
+                "mcp_server_name": server_name or "",
+                "mcp_tool_name": original_tool_name,
+            }
         )
         # 供 chat 层展示时复用同一套归一化逻辑（含 __arg1 -> 首参 映射）
         tool_spec._mcp_input_schema = _input_schema

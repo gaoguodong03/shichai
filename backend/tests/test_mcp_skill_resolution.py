@@ -15,6 +15,13 @@ def test_resolve_skill_mcp_declarations_by_display_name():
     assert missing == []
 
 
+def test_resolve_skill_mcp_declarations_by_resource_id():
+    servers = [{"id": "mcp-fb19dbb1", "name": "Exa 搜索"}]
+    resolved, missing = resolve_skill_mcp_declarations(["mcp-fb19dbb1"], servers)
+    assert resolved == ["Exa 搜索"]
+    assert missing == []
+
+
 def test_resolve_skill_mcp_declarations_by_unique_short_name():
     servers = [{"name": "Exa 搜索"}]
     resolved, missing = resolve_skill_mcp_declarations(["exa"], servers)

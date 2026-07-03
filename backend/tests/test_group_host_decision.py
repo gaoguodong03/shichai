@@ -48,6 +48,20 @@ def test_strict_host_scheduler_accepts_valid_scene_decision():
     assert out["decision_source"] == "host_scheduler_state"
 
 
+def test_strict_host_scheduler_rejects_agent_id_next_speaker():
+    text = '```json\n{"current_phase":"阶段1","next_speaker":"agent-teacher","speaker_task":"给出主题","reason":"开始"}\n```'
+
+    out = hd.parse_strict_host_scheduler_output(
+        text,
+        agent_profiles=[{"name": "教师", "agent_id": "agent-teacher", "id": "agent-teacher"}],
+        orchestration_profile="scene",
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["announcement"] == hd.HOST_PROTOCOL_ERROR_MESSAGE
+    assert out["interrupt_reason"] == InterruptReason.PROTOCOL_ERROR.value
+
+
 def test_forced_at_mention_matches_agent_name():
     agents = [{"name": "教师", "role": "出题"}]
 

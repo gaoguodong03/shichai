@@ -100,6 +100,31 @@ def test_get_mcp_servers_reads_mcp_and_http_api_from_skill_md(tmp_path: Path, mo
         assert get_mcp_servers_for_skill("my-skill") == ["Exa", "Weather"]
 
 
+def test_get_mcp_servers_resolves_legacy_reference_label_ids(tmp_path: Path, monkeypatch):
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "webv10"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: Web\n"
+        "allowed-tools:\n"
+        "  mcp:\n"
+        "    - mcp-fb19dbb1\n"
+        "reference-labels:\n"
+        "  mcp:\n"
+        "    - id: mcp-fb19dbb1\n"
+        "      name: Exa 搜索\n"
+        "---\nbody\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("app.api.settings_skill_store._get_skills_dir", lambda: skills_root)
+    monkeypatch.setattr("app.api.settings_skill_store.get_builtin_skills_dir", lambda: tmp_path / "none")
+
+    with patch("app.api.settings_skill_store.load_mcp_config", return_value=[{"name": "Exa 搜索", "type": "mcp"}]):
+        assert get_mcp_servers_for_skill("webv10") == ["Exa 搜索"]
+
+
 def test_mcp_rows_for_bundle_refs_reads_allowed_tool_names():
     from app.core.settings_bundle_import import mcp_refs_from_skill_frontmatter, mcp_rows_for_bundle_refs
 
