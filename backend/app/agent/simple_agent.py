@@ -884,7 +884,7 @@ class SimpleAgent:
             tool_call_id_map = _normalize_ai_tool_call_ids(response)
 
             messages.append(response)
-            logger.info("SimpleAgent: step=%s LLM done in %.2fs", step + 1, time.perf_counter() - t0)
+            logger.debug("SimpleAgent: step=%s LLM done in %.2fs", step + 1, time.perf_counter() - t0)
 
             # 1) 结构化 tool_calls
             tool_calls = getattr(response, "tool_calls", None) or []

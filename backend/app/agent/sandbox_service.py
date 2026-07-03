@@ -259,7 +259,7 @@ class SandboxService(SandboxRequirementsMixin, SandboxPrewarmMixin, SandboxWorks
                 new_image_ref = str(policy.image_ref or "").strip()
                 stored_net = (handle.metadata or {}).get("policy_allow_network")
                 network_policy_matches = stored_net is None or bool(stored_net) == bool(policy.allow_network)
-                logger.info(
+                logger.debug(
                     "st49_sandbox_cache_check code=user_handle_cache_check user_id=%s session_id=%s cache_key=%s sandbox_id=%s current_hash=%s installed_hash=%s verified_hash=%s verifier=%s old_image=%s new_image=%s old_mount_fp=%s new_mount_fp=%s old_allow_network=%s new_allow_network=%s",
                     user_id,
                     req.session_id,

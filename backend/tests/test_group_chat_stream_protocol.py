@@ -104,9 +104,10 @@ async def test_group_session_event_publisher_notifies_subscriber():
     assert event["message_count"] == 3
 
 
-def test_expert_prompt_log_includes_full_prompt(caplog):
+def test_expert_prompt_log_uses_summary_by_default(caplog, monkeypatch):
     from app.agent import group_chat_runtime
 
+    monkeypatch.delenv("PROMPT_LOG_MODE", raising=False)
     prompt = "【群聊讨论目标】\n写周报\n\n【本轮用户输入】\n请总结风险"
 
     with caplog.at_level(logging.INFO, logger="app.agent.group_chat_runtime"):
@@ -126,6 +127,29 @@ def test_expert_prompt_log_includes_full_prompt(caplog):
     assert "agent_name=写作专家" in messages
     assert "skill=weekly-report" in messages
     assert "prompt_len=" in messages
+    assert "mode=summary" in messages
+    assert prompt not in messages
+
+
+def test_expert_prompt_log_includes_full_prompt_when_enabled(caplog, monkeypatch):
+    from app.agent import group_chat_runtime
+
+    monkeypatch.setenv("PROMPT_LOG_MODE", "full")
+    prompt = "【群聊讨论目标】\n写周报\n\n【本轮用户输入】\n请总结风险"
+
+    with caplog.at_level(logging.INFO, logger="app.agent.group_chat_runtime"):
+        group_chat_runtime._log_expert_prompt(
+            session_id="group-test",
+            run_id="run-test",
+            agent_name="写作专家",
+            skill="weekly-report",
+            user_content=prompt,
+        )
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[Prompt]" in messages
+    assert "group_chat_expert_prompt code=expert_prompt" in messages
+    assert "mode=full" in messages
     assert prompt in messages
 
 

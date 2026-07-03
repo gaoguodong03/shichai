@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import re
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from app.api.files import get_workspace_root_path
+
+logger = logging.getLogger(__name__)
 
 _FILE_REF_RE = re.compile(r"【文件引用：([^】]+)】")
 
@@ -54,18 +57,23 @@ def resolve_file_refs_in_text(
 
     injected: List[Tuple[str, str]] = []
     total_chars = 0
+    fail_count = 0
+    truncated_count = 0
     for p in unique_paths:
         if total_chars >= max_total_chars:
+            truncated_count += 1
             break
         try:
             full = _safe_workspace_file_path(workspace_id, p)
             if not full.exists() or full.is_dir():
                 injected.append((p, "[文件不存在或是目录]"))
+                fail_count += 1
                 continue
             try:
                 content = full.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 injected.append((p, "[非 UTF-8 文本，无法直接注入]"))
+                fail_count += 1
                 continue
             # 仅注入前 5 行，避免把整文件塞进对话上下文。
             all_lines = (content or "").splitlines()
@@ -73,19 +81,34 @@ def resolve_file_refs_in_text(
             content = "\n".join(first_five_lines)
             if len(all_lines) > 5:
                 content += "\n...[仅展示前 5 行]"
+                truncated_count += 1
+            original_len = len(content)
             content = content[:max_chars_per_file]
+            if len(content) < original_len:
+                truncated_count += 1
             if total_chars + len(content) > max_total_chars:
                 content = content[: max(0, max_total_chars - total_chars)]
+                truncated_count += 1
             total_chars += len(content)
             injected.append((p, content or "(空文件)"))
         except Exception as e:  # noqa: BLE001
             injected.append((p, f"[读取失败: {e}]"))
+            fail_count += 1
 
     if not injected:
         return raw
 
+    logger.info(
+        "file_ref_resolved workspace_id=%s ref_count=%s unique_count=%s injected_count=%s fail_count=%s total_chars=%s truncated_count=%s",
+        workspace_id,
+        len(refs),
+        len(unique_paths),
+        len(injected),
+        fail_count,
+        total_chars,
+        truncated_count,
+    )
     parts = ["【文件内容已解析】"]
     for path, content in injected:
         parts.append(f"[文件: {path}]\n{content}")
     return f"{raw}\n\n" + "\n\n".join(parts)
-

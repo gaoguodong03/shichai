@@ -511,6 +511,7 @@ class MCPToolManager:
         try:
             transport = _transport_from_server_config(config)
             transport_type = transport.get("type", "stdio")
+            failure_log_context = _mcp_connection_log_context(server_name, config, transport=transport)
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
             secrets: Dict[str, str] = {}
@@ -608,6 +609,13 @@ class MCPToolManager:
                     token = auth[len("Bearer"):].strip()
                     if token:
                         headers["Authorization"] = f"Bearer {token}"
+                failure_log_context = _mcp_connection_log_context(
+                    server_name,
+                    config,
+                    transport=transport,
+                    url=url,
+                    headers=headers,
+                )
                 http_client = None
                 if headers:
                     # 不要在这里硬编码 60s；默认不设置 timeout（由底层/调用侧控制），也可用 MCP_HTTP_TIMEOUT_SEC 覆盖。
@@ -662,12 +670,12 @@ class MCPToolManager:
                 logger.warning(
                     "MCP Server 连接出现协议不兼容，进入冷却 %ss（可用 MCP_CONNECT_RETRY_COOLDOWN_SEC 调整） context=%s",
                     cooldown_sec,
-                    _mcp_connection_log_context(server_name, config),
+                    failure_log_context,
                 )
             logger.error(
                 "Failed to connect MCP server: %s context=%s",
                 error_detail,
-                _mcp_connection_log_context(server_name, config),
+                failure_log_context,
                 exc_info=True,
             )
             return False
@@ -740,6 +748,7 @@ class MCPToolManager:
                     )
                 logger.debug("MCP call_tool: %s %s", original_tool_name, list(call_kwargs.keys()))
                 active_session = self.sessions.get(server_name or "", session)
+                call_started = time.perf_counter()
                 ok, result, err = await execute_mcp_call(
                     server_name=server_name or "",
                     tool_name=original_tool_name,
@@ -769,7 +778,16 @@ class MCPToolManager:
                                     session=retry_session,
                                     timeout_sec=None,
                                 )
+                elapsed_ms = int((time.perf_counter() - call_started) * 1000)
                 if not ok:
+                    logger.warning(
+                        "mcp_tool_call_done server=%s tool=%s ok=false elapsed_ms=%s arg_keys=%s err=%s",
+                        server_name or "",
+                        original_tool_name,
+                        elapsed_ms,
+                        sorted(call_kwargs.keys()),
+                        str(err or "")[:500],
+                    )
                     if _looks_like_closed_resource_error(err):
                         return (
                             "Error: MCP session closed by remote server "
@@ -779,8 +797,18 @@ class MCPToolManager:
                     return f"Error: {err or 'MCP tool call failed'}"
                 if result.content:
                     block = result.content[0]
-                    return block.text if hasattr(block, "text") else str(block)
-                return str(result)
+                    text = block.text if hasattr(block, "text") else str(block)
+                else:
+                    text = str(result)
+                logger.info(
+                    "mcp_tool_call_done server=%s tool=%s ok=true elapsed_ms=%s arg_keys=%s result_len=%s",
+                    server_name or "",
+                    original_tool_name,
+                    elapsed_ms,
+                    sorted(call_kwargs.keys()),
+                    len(str(text or "")),
+                )
+                return text
             except Exception as e:
                 logger.error("MCP 工具执行错误: %s", e, exc_info=True)
                 return f"Error: {e}"

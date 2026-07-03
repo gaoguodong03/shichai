@@ -26,13 +26,14 @@ def _llm_test_keys(monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "test-moonshot-key")
 
 
-def test_traced_llm_client_logs_prompt_for_all_call_modes(caplog):
+def test_traced_llm_client_logs_prompt_summary_by_default(caplog, monkeypatch):
     import asyncio
     import logging
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
     from app.agent.llm_client import _instrument_llm_client
+    monkeypatch.delenv("PROMPT_LOG_MODE", raising=False)
 
     class RawClient:
         async def ainvoke(self, inp, *args, **kwargs):
@@ -75,11 +76,48 @@ def test_traced_llm_client_logs_prompt_for_all_call_modes(caplog):
     assert "method=astream" in caplog.text
     assert "method=stream" in caplog.text
     assert "model=test-model" in caplog.text
+    assert "message_count=" in caplog.text
+    assert "prompt_chars=" in caplog.text
+    assert "系统提示词全文" not in caplog.text
+    assert "用户提示词全文" not in caplog.text
+    assert "直接字符串提示词全文" not in caplog.text
+    assert "流式提示词全文" not in caplog.text
+    assert "同步流式提示词全文" not in caplog.text
+
+
+def test_traced_llm_client_logs_full_prompt_when_enabled(caplog, monkeypatch):
+    import asyncio
+    import logging
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from app.agent.llm_client import _instrument_llm_client
+    monkeypatch.setenv("PROMPT_LOG_MODE", "full")
+
+    class RawClient:
+        async def ainvoke(self, inp, *args, **kwargs):
+            return "async-ok"
+
+    client = _instrument_llm_client(
+        RawClient(),
+        provider_base_url="https://example.test/v1",
+        model_name="test-model",
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.agent.llm_client"):
+        assert asyncio.run(
+            client.ainvoke(
+                [
+                    SystemMessage(content="系统提示词全文"),
+                    HumanMessage(content="用户提示词全文"),
+                ]
+            )
+        ) == "async-ok"
+
+    assert "[Prompt]" in caplog.text
+    assert "mode=full" in caplog.text
     assert "系统提示词全文" in caplog.text
     assert "用户提示词全文" in caplog.text
-    assert "直接字符串提示词全文" in caplog.text
-    assert "流式提示词全文" in caplog.text
-    assert "同步流式提示词全文" in caplog.text
 
 
 def test_builtin_llm_provider_presets_use_compatible_base_urls():

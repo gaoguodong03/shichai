@@ -20,7 +20,11 @@ from app.agent.group_host_decision import (
     heuristic_recommend_agents as _heuristic_recommend_agents,
     parse_strict_host_scheduler_output as _parse_strict_host_scheduler_output,
 )
-from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
+from app.agent.llm_client import (
+    build_llm_credential_notice,
+    is_llm_credential_error_message,
+    should_log_full_prompts,
+)
 from app.agent.group_chat_host_messages import HOST_ZERO_EXPERT_RECOMMENDATION
 from app.agent.skill_agent_runtime import create_skill_execution_agent
 from app.api.settings_app import load_app_settings, normalize_host_profile
@@ -47,14 +51,24 @@ def _log_llm_roundtrip(
         t = str(s or "")
         return t if len(t) <= max_chars else (t[:max_chars] + f"\n... [truncated {len(t) - max_chars} chars]")
 
+    if should_log_full_prompts():
+        logger.info(
+            "[Prompt][LLM_ROUNDTRIP][%s] mode=full system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][%s] user_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] model_output:\n%s",
+            tag,
+            _clip(system_content),
+            tag,
+            _clip(user_content),
+            tag,
+            _clip(model_output),
+        )
+        return
     logger.info(
-        "[Prompt][LLM_ROUNDTRIP][%s] system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][%s] user_prompt:\n%s\n\n[LLM_ROUNDTRIP][%s] model_output:\n%s",
+        "[Prompt][LLM_ROUNDTRIP][%s] mode=summary session=%s system_chars=%s user_chars=%s output_chars=%s",
         tag,
-        _clip(system_content),
-        tag,
-        _clip(user_content),
-        tag,
-        _clip(model_output),
+        session_id,
+        len(str(system_content or "")),
+        len(str(user_content or "")),
+        len(str(model_output or "")),
     )
 
 

@@ -16,6 +16,7 @@ from app.agent.group_host_decision import (
     HOST_PROTOCOL_ERROR_MESSAGE,
     parse_strict_host_scheduler_output,
 )
+from app.agent.llm_client import should_log_full_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -128,17 +129,32 @@ async def leader_decide(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_content),
     ]
-    logger.info(
-        "[Prompt][LLM_ROUNDTRIP][leader_decide] system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][leader_decide] user_prompt:\n%s",
-        system_prompt,
-        user_content,
-    )
+    if should_log_full_prompts():
+        logger.info(
+            "[Prompt][LLM_ROUNDTRIP][leader_decide] mode=full system_prompt:\n%s\n\n[Prompt][LLM_ROUNDTRIP][leader_decide] user_prompt:\n%s",
+            system_prompt,
+            user_content,
+        )
+    else:
+        logger.info(
+            "[Prompt][LLM_ROUNDTRIP][leader_decide] mode=summary session=%s system_chars=%s user_chars=%s",
+            group_session_id,
+            len(system_prompt),
+            len(user_content),
+        )
 
     try:
         client = llm.get_client()
         response = await asyncio.wait_for(client.ainvoke(messages), timeout=30.0)
         content = (response.content or "").strip()
-        logger.info("[LLM_ROUNDTRIP][leader_decide] model_output:\n%s", content)
+        if should_log_full_prompts():
+            logger.info("[LLM_ROUNDTRIP][leader_decide] mode=full model_output:\n%s", content)
+        else:
+            logger.info(
+                "[LLM_ROUNDTRIP][leader_decide] mode=summary session=%s output_chars=%s",
+                group_session_id,
+                len(content),
+            )
 
         decision = parse_strict_host_scheduler_output(
             content,

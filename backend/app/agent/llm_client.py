@@ -247,6 +247,19 @@ def _clean_client_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def prompt_log_mode() -> str:
+    mode = (os.getenv("PROMPT_LOG_MODE") or "summary").strip().lower()
+    if mode in {"0", "false", "off", "none", "disabled"}:
+        return "off"
+    if mode in {"full", "body", "raw", "debug"}:
+        return "full"
+    return "summary"
+
+
+def should_log_full_prompts() -> bool:
+    return prompt_log_mode() == "full"
+
+
 def _set_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
     if value is not None:
         target[key] = value
@@ -470,13 +483,65 @@ class _TracedLLMClient:
         yield from self._raw_client.stream(inp, *args, **kwargs)
 
     def _log_prompt(self, method: str, inp: Any) -> None:
+        mode = prompt_log_mode()
+        if mode == "off":
+            return
+        if mode == "full":
+            logger.info(
+                "[Prompt] mode=full method=%s model=%s base_url=%s\n%s",
+                method,
+                self._model_name,
+                self._provider_base_url,
+                _serialize_prompt_payload(inp),
+            )
+            return
+        stats = _prompt_payload_stats(inp)
         logger.info(
-            "[Prompt] method=%s model=%s base_url=%s\n%s",
+            "[Prompt] mode=summary method=%s model=%s base_url=%s message_count=%s prompt_chars=%s tool_call_count=%s",
             method,
             self._model_name,
             self._provider_base_url,
-            _serialize_prompt_payload(inp),
+            stats["message_count"],
+            stats["prompt_chars"],
+            stats["tool_call_count"],
         )
+
+
+def _prompt_payload_stats(value: Any) -> Dict[str, int]:
+    payload = _prompt_to_jsonable(value)
+
+    def _content_chars(item: Any) -> int:
+        if isinstance(item, dict):
+            total = 0
+            if "content" in item:
+                total += len(str(item.get("content") or ""))
+            for key, val in item.items():
+                if key == "content":
+                    continue
+                total += _content_chars(val)
+            return total
+        if isinstance(item, list):
+            return sum(_content_chars(x) for x in item)
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            return len(str(item or ""))
+        return len(str(item))
+
+    def _tool_call_count(item: Any) -> int:
+        if isinstance(item, dict):
+            count = 0
+            tool_calls = item.get("tool_calls")
+            if isinstance(tool_calls, list):
+                count += len(tool_calls)
+            return count + sum(_tool_call_count(v) for k, v in item.items() if k != "tool_calls")
+        if isinstance(item, list):
+            return sum(_tool_call_count(x) for x in item)
+        return 0
+
+    return {
+        "message_count": len(payload) if isinstance(payload, list) else (0 if payload is None else 1),
+        "prompt_chars": _content_chars(payload),
+        "tool_call_count": _tool_call_count(payload),
+    }
 
 
 def _serialize_prompt_payload(value: Any) -> str:

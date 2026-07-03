@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import shutil
 import tempfile
@@ -41,6 +42,28 @@ def test_file_ref_resolver_injects_content(temp_user_data_root):
     assert "【文件内容已解析】" in out
     assert "[文件: memory/facts.md]" in out
     assert "hello from memory" in out
+
+
+def test_file_ref_resolver_logs_summary_without_content(temp_user_data_root, caplog):
+    from app.api.files import get_workspace_root_path
+    from app.agent.file_ref_resolver import resolve_file_refs_in_text
+
+    ws = get_workspace_root_path("sess-file-ref-log")
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / "notes.md").write_text("sensitive file body", encoding="utf-8")
+
+    text = "请参考【文件引用：notes｜notes.md】。"
+    with caplog.at_level(logging.INFO, logger="app.agent.file_ref_resolver"):
+        out = resolve_file_refs_in_text(text, "sess-file-ref-log")
+
+    assert "sensitive file body" in out
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "file_ref_resolved" in messages
+    assert "workspace_id=sess-file-ref-log" in messages
+    assert "ref_count=1" in messages
+    assert "injected_count=1" in messages
+    assert "total_chars=" in messages
+    assert "sensitive file body" not in messages
 
 
 def test_looks_like_url_or_remote_path():
@@ -90,7 +113,7 @@ def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkey
         reset_current_user_identity(token)
 
     assert args["path"] == (
-        "backend/data/users/user-audio/sessions/workspaces/group-audio/"
+        "backend/data/users/user-audio/sessions/group-audio/workspace/"
         "学生降转及研究方向调整.mp3"
     )
 
@@ -939,19 +962,31 @@ async def test_mcp_streamable_http_protocol_error_logs_connection_context(monkey
     mgr = mcp_manager.MCPToolManager()
     config = {
         "name": "Remote Search",
-        "transport": {
-            "type": "streamable_http",
-            "url": "https://user:secret@example.com/mcp?token=secret-token",
-            "headers": {"Authorization": "Bearer secret-token"},
-        },
+        "server_config": (
+            '{\n'
+            '  "mcpServers": {\n'
+            '    "Remote Search": {\n'
+            '      "type": "streamable_http",\n'
+            '      "url": "https://user:secret@example.com/mcp?token=secret-token",\n'
+            '      "headers": {"Authorization": "Bearer secret-token"}\n'
+            "    }\n"
+            "  }\n"
+            "}"
+        ),
     }
 
     with caplog.at_level(logging.WARNING, logger="app.mcp.manager"):
         ok = await mgr.connect_server("mcp-f0e12d4e", config)
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
+    cooldown_messages = [
+        record.getMessage() for record in caplog.records if "连接出现协议不兼容" in record.getMessage()
+    ]
     assert ok is False
     assert "连接出现协议不兼容" in messages
+    assert cooldown_messages
+    assert "transport=streamable_http" in cooldown_messages[0]
+    assert "transport=stdio" not in cooldown_messages[0]
     assert "server_name=mcp-f0e12d4e" in messages
     assert "name=Remote Search" in messages
     assert "url=https://example.com/mcp" in messages

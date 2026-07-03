@@ -533,8 +533,19 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=True), tool_call_id=tool_call_id))
                         tool_raw_outputs.append(str(result))
                     else:
+                        logger.debug(
+                            "skill_tool_execute_start tool=%s arg_keys=%s",
+                            tool_name,
+                            sorted(arguments.keys()) if isinstance(arguments, dict) else [],
+                        )
                         result = await _execute_tool_safely(tool, arguments)
                         result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
+                        logger.info(
+                            "skill_tool_execute_done tool=%s elapsed_ms=%s result_len=%s",
+                            tool_name,
+                            int((time.perf_counter() - t_tool) * 1000),
+                            len(str(result)),
+                        )
                         if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                             tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
                             logger.debug(
@@ -546,6 +557,12 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt), tool_call_id=tool_call_id))
                         tool_raw_outputs.append(str(result))
                 except Exception as e:
+                    logger.warning(
+                        "skill_tool_execute_failed tool=%s elapsed_ms=%s err=%s",
+                        tool_name,
+                        int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
+                        str(e)[:500],
+                    )
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
                     tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
             else:
@@ -600,6 +617,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                 "available_tools": [t.name for t in state["tools"]][:30],
             })
             try:
+                t_tool = time.perf_counter()
                 tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
                 cache_key = _cache_key_for_tool(tool_name, arguments)
                 cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
@@ -618,8 +636,19 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         "matched": True,
                     })
                 else:
+                    logger.debug(
+                        "skill_tool_execute_start tool=%s arg_keys=%s",
+                        tool_name,
+                        sorted(arguments.keys()) if isinstance(arguments, dict) else [],
+                    )
                     result = await _execute_tool_safely(tool, arguments)
                     result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
+                    logger.info(
+                        "skill_tool_execute_done tool=%s elapsed_ms=%s result_len=%s",
+                        tool_name,
+                        int((time.perf_counter() - t_tool) * 1000),
+                        len(str(result)),
+                    )
                     if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
                         tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
                         logger.debug(
@@ -639,6 +668,12 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     "tool_raw_outputs": tool_raw_outputs,
                 }
             except Exception as e:
+                logger.warning(
+                    "skill_tool_execute_failed tool=%s elapsed_ms=%s err=%s",
+                    tool_name,
+                    int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
+                    str(e)[:500],
+                )
                 tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
                 return {
                     "messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")],

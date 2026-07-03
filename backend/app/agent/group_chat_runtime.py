@@ -112,7 +112,11 @@ from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
     _build_host_recruit_message,
 )
-from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
+from app.agent.llm_client import (
+    build_llm_credential_notice,
+    is_llm_credential_error_message,
+    should_log_full_prompts,
+)
 from app.agent.group_chat_title_meta import (
     _infer_required_user_fields_for_skill,
     _record_user_message_and_refresh_title,
@@ -130,14 +134,24 @@ def _log_expert_prompt(
     user_content: str,
 ) -> None:
     prompt = str(user_content or "")
+    if should_log_full_prompts():
+        logger.info(
+            "[Prompt] mode=full group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_name=%s skill=%s prompt_len=%s\n%s",
+            session_id,
+            run_id,
+            agent_name,
+            skill,
+            len(prompt),
+            prompt,
+        )
+        return
     logger.info(
-        "[Prompt] group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_name=%s skill=%s prompt_len=%s\n%s",
+        "[Prompt] mode=summary group_chat_expert_prompt code=expert_prompt session=%s run_id=%s agent_name=%s skill=%s prompt_len=%s",
         session_id,
         run_id,
         agent_name,
         skill,
         len(prompt),
-        prompt,
     )
 
 
@@ -549,6 +563,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 return "user", emitted
 
             next_speaker = None
+            route_source = "unset"
             expert_route_debug_for_turn: Dict[str, Any] = {}
             scheduler_next_prompt: Optional[str] = None
 
@@ -621,6 +636,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 clear_skill_session_lock(meta_item)
                 _save_group_meta(meta)
                 next_speaker = forced_at_mention_agent_name
+                route_source = "forced_at_mention"
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
                 orch_ctx.owner_agent_name = forced_at_mention_agent_name
             elif explicit_requested_agent_names and any(aid in agent_names for aid in explicit_requested_agent_names):
@@ -631,6 +647,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     clear_skill_session_lock(meta_item)
                     _save_group_meta(meta)
                     next_speaker = requested_in_room[0]
+                    route_source = "explicit_requested"
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
                     orch_ctx.owner_agent_name = next_speaker
             elif explicit_requested_agent_names:
@@ -649,10 +666,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     entry_route.direct_agent_name,
                 )
                 next_speaker = entry_route.direct_agent_name
+                route_source = "skip_host_dispatch"
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
                 orch_ctx.owner_agent_name = entry_route.direct_agent_name
             else:
                 logger.debug("group_chat_route_branch=host_scheduler session=%s", group_session_id)
+                route_source = "host_scheduler"
                 abort_events = _build_credential_abort_events(host_agent if host_agent else None)
                 if abort_events:
                     for event in abort_events:
@@ -751,6 +770,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     scheduler_next_prompt = np_auto.strip()
                 if suggested_add:
                     next_speaker = "user"
+                    route_source = "host_scheduler_recruit"
                     orch_ctx.phase = OrchestrationPhase.RECRUITING
                     host_msg = _build_host_recruit_message(
                         skill=scene_runtime.host_bubble_skill(),
@@ -791,6 +811,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     orch_ctx.phase = OrchestrationPhase.RECRUITING
 
             if not next_speaker:
+                route_source = "fallback_no_next_speaker"
                 fallback_host = _build_host_fallback_message(
                     skill=scene_runtime.host_bubble_skill(),
                     leader_agent_name=leader_agent_name,
@@ -799,6 +820,19 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     fallback_event = _record_host_message(fallback_host)
                     _save_group_meta(meta)
                     yield fallback_event
+
+            logger.info(
+                "group_chat_route_decided session=%s run_id=%s route_source=%s next_speaker=%s phase=%s skip_host_dispatch=%s had_skill_lock=%s pending_owner=%s pending_skill=%s",
+                group_session_id,
+                run_id,
+                route_source,
+                next_speaker or "",
+                getattr(orch_ctx.phase, "value", str(orch_ctx.phase)),
+                bool(getattr(entry_route, "skip_host_dispatch", False)),
+                had_skill_lock,
+                pending_owner_agent_name,
+                pending_skill,
+            )
 
             while orch_ctx.phase == OrchestrationPhase.EXECUTING and next_speaker and next_speaker in agent_names:
                 if agent_turns >= 32:
@@ -1111,7 +1145,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 skill = resolved_skill if agent_profile else "default"
                 current_skill_for_pending = skill
                 logger.info(
-                    "group_chat_agent_stream_done code=agent_stream_done session=%s run_id=%s agent_name=%s skill=%s content_len=%s tool_call_count=%s raw_result_count=%s sandbox_trace=%s",
+                    "group_chat_agent_stream_done code=agent_stream_done session=%s run_id=%s agent_name=%s skill=%s content_len=%s tool_call_count=%s raw_result_count=%s skill_session_over=%s phase=%s interrupt_reason=%s resume_target=%s sandbox_trace=%s",
                     group_session_id,
                     run_id,
                     next_speaker,
@@ -1119,6 +1153,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     len(full_content or ""),
                     len(tool_calls_trace or []),
                     len(accumulated_raw_tool_results or []),
+                    skill_session_state.over,
+                    getattr(orch_ctx.phase, "value", str(orch_ctx.phase)),
+                    getattr(orch_ctx.interrupt_reason, "value", str(orch_ctx.interrupt_reason)),
+                    resume_target_agent_name,
                     sandbox_entry_trace,
                 )
                 assistant_msg = {
