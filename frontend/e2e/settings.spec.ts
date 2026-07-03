@@ -37,12 +37,12 @@ test.describe('验收 5/6：设置中心', () => {
     const state = createE2eState()
     state.sessions[0] = {
       ...state.sessions[0],
-      leader_agent_id: 'agent-scene-host',
+      leader_agent_name: '四九',
       messages: [
         {
           message_id: 'host-global-name',
           role: 'host',
-          agent_id: 'agent-scene-host',
+          agent_name: '四九',
           content: '请问答专家继续。',
         } as never,
       ],
@@ -61,11 +61,11 @@ test.describe('验收 5/6：设置中心', () => {
             title: '已有验收会话',
             updated_at: '2026-05-23T08:00:00Z',
             messages: state.sessions[0].messages,
-            agent_ids: state.sessions[0].agent_ids,
-            leader_agent_id: 'agent-scene-host',
+            agent_names: state.sessions[0].agent_names,
+            leader_agent_name: '四九',
             agent_map: {
-              'agent-scene-host': { name: '四九', role: '群聊主持人' },
-              'agent-qa': { name: '问答专家', role: '回答用户问题' },
+              '四九': { name: '四九', role: '群聊主持人' },
+              '问答专家': { name: '问答专家', role: '回答用户问题' },
             },
             orchestration_profile: 'recruitment',
           },

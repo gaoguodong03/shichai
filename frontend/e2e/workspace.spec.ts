@@ -39,7 +39,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.route('**/api/sessions/session-existing/chat/stream', async (route) => {
       const session = state.sessions.find((s) => s.id === 'session-existing')
       if (session) {
-        session.messages.push({ message_id: 'assistant-file', role: 'assistant', agent_id: 'agent-qa', content: '我已经更新工作区文件。' } as never)
+        session.messages.push({ message_id: 'assistant-file', role: 'assistant', agent_name: '问答专家', content: '我已经更新工作区文件。' } as never)
       }
       state.fileContent['session-existing:brief.md'] = '# 验收说明\n\n专家已更新文件内容。\n'
       state.files['session-existing:'] = [
@@ -51,7 +51,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
-          `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', role: 'assistant', agent_id: 'agent-qa', content: '我已经更新工作区文件。' })}\n\n`,
+          `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', role: 'assistant', agent_name: '问答专家', content: '我已经更新工作区文件。' })}\n\n`,
           `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
         ].join(''),
       })
@@ -175,11 +175,11 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
       id: 'session-long-history',
       title: '长历史会话',
       updated_at: '2026-05-23T09:00:00Z',
-      agent_ids: ['agent-qa'],
+      agent_names: ['问答专家'],
       messages: Array.from({ length: 36 }, (_, idx) => ({
         message_id: `long-${idx + 1}`,
         role: idx % 2 === 0 ? 'user' : 'assistant',
-        agent_id: idx % 2 === 0 ? undefined : 'agent-qa',
+        agent_name: idx % 2 === 0 ? undefined : '问答专家',
         content: `历史消息 ${idx + 1}\n\n这是一段用于撑开消息列表高度的内容，确保会话切换后必须滚动才能看到结尾。`,
       })),
     }
@@ -209,7 +209,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
       {
         message_id: 'assistant-sandbox-tools',
         role: 'assistant',
-        agent_id: 'agent-qa',
+        agent_name: '问答专家',
         content: '沙箱调用结果如下。',
         tool_raw_results: [
           JSON.stringify({ _sandbox_trace: {}, result: 'one' }),
@@ -243,12 +243,12 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
       {
         message_id: 'assistant-scheduler-state',
         role: 'assistant',
-        agent_id: 'agent-qa',
+        agent_name: '问答专家',
         content: '下面由写作专家继续。',
         meta: {
           scheduler_state: {
             current_phase: 'draft',
-            next_speaker: 'agent-writer',
+            next_speaker: '写作专家',
             speaker_task: '整理正文',
           },
         },
@@ -272,7 +272,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
   test('专家运行时先显示占位气泡并随状态更新', async ({ page }) => {
     const state = createE2eState()
-    state.sessions[0].agent_ids = ['agent-qa', 'agent-writer']
+    state.sessions[0].agent_names = ['问答专家', '写作专家']
     await loginByStorage(page)
     await mockApi(page, state)
 
@@ -282,8 +282,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
           body: [
-            `event: route\ndata: ${JSON.stringify({ agent_id: 'agent-writer', skill_id: 'skill-write' })}\n\n`,
-            `event: content\ndata: ${JSON.stringify({ agent_id: 'agent-writer', text: '', meta: { phase: 'file_writing' } })}\n\n`,
+            `event: route\ndata: ${JSON.stringify({ agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
+            `event: content\ndata: ${JSON.stringify({ agent_name: '写作专家', text: '', meta: { phase: 'file_writing' } })}\n\n`,
           ].join(''),
         })
         resolve()
@@ -307,8 +307,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
                 {
                   message_id: 'assistant-writer-final',
                   role: 'assistant',
-                  agent_id: 'agent-writer',
-                  skill_id: 'skill-write',
+                  agent_name: '写作专家',
+                  skill: 'skill-write',
                   content: '文章草稿已经写入工作区。',
                 },
               ],
@@ -398,7 +398,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
     await expect(page.getByRole('heading', { name: '文件' })).toBeVisible()
     const fileList = page.getByRole('complementary').filter({ hasText: '当前目录：/' })
-    await fileList.getByRole('button', { name: '[FILE] brief.md brief.md' }).click()
+    await fileList.getByRole('button', { name: 'brief.md brief.md' }).click()
 
     const detailHeader = page.locator('main header').filter({ hasText: 'brief.md' })
     await expect(detailHeader.getByRole('button', { name: '编辑内容' })).toBeVisible()
@@ -427,8 +427,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           {
             id: 'scenario-local-history',
             name: '历史本地场景',
-            agent_ids: ['agent-qa'],
-            leader_agent_id: 'agent-qa',
+            agent_names: ['问答专家'],
+            leader_agent_name: '问答专家',
           },
         ]),
       )
@@ -520,13 +520,13 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
 
   test('自动切换专家提示使用专家名称而不是 agent id', async ({ page }) => {
     const state = createE2eState()
-    state.sessions[0].agent_ids = ['agent-qa', 'agent-writer']
+    state.sessions[0].agent_names = ['问答专家', '写作专家']
     state.sessions[0].messages = [
       {
         message_id: 'assistant-history',
         role: 'assistant',
-        agent_id: 'agent-qa',
-        skill_id: 'skill-qa',
+        agent_name: '问答专家',
+        skill: 'skill-qa',
         content: '历史回复：这里可以继续追问。',
       } as never,
     ]
@@ -544,9 +544,10 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
             title: '已有验收会话',
             updated_at: '2026-05-23T08:00:00Z',
             messages: state.sessions[0].messages,
-            agent_ids: state.sessions[0].agent_ids,
+            agent_names: state.sessions[0].agent_names,
             agent_map: {
-              'agent-qa': { name: '问答专家', role: '回答用户问题' },
+              '问答专家': { name: '问答专家', role: '回答用户问题' },
+              '写作专家': { name: '写作专家', role: '整理文档与结论' },
             },
             orchestration_profile: 'scene',
           },
@@ -558,7 +559,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
-          `event: route\ndata: ${JSON.stringify({ agent_id: 'agent-writer', skill_id: 'skill-write' })}\n\n`,
+          `event: route\ndata: ${JSON.stringify({ agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
           `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
         ].join(''),
       })
@@ -584,7 +585,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           `event: end\ndata: ${JSON.stringify({
             waiting_for_user: true,
             turns_limit_reached: true,
-            suggested_next_speaker: 'agent-qa',
+            suggested_next_speaker: '问答专家',
             interrupted: false,
           })}\n\n`,
         ].join(''),
@@ -604,13 +605,13 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     state.hostProfile.display_name = '全局主持'
     state.sessions[0] = {
       ...state.sessions[0],
-      leader_agent_id: 'agent-scene-host',
-      host_config: { display_name: '场景主持', skill_ids: [] },
+      leader_agent_name: '场景主持',
+      host_config: { leader_agent_name: '场景主持', skill_name: '', skill_directory: '' },
       messages: [
         {
           message_id: 'host-scene-name',
           role: 'host',
-          agent_id: 'agent-scene-host',
+          agent_name: '场景主持',
           content: '请问答专家继续。',
         } as never,
       ],
@@ -634,7 +635,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         id: 'session-other',
         title: '另一个会话',
         updated_at: '2026-05-23T07:00:00Z',
-        agent_ids: [],
+        agent_names: [],
         messages: [],
       },
     ]
@@ -650,13 +651,13 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         })
         const session = state.sessions.find((s) => s.id === 'session-existing')
         if (session) {
-          session.messages.push({ message_id: 'assistant-late', role: 'assistant', agent_id: 'agent-qa', content: '后台完成的回复' })
+          session.messages.push({ message_id: 'assistant-late', role: 'assistant', agent_name: '问答专家', content: '后台完成的回复' })
         }
         await route.fulfill({
           status: 200,
           headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
           body: [
-            `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', role: 'assistant', agent_id: 'agent-qa', content: '后台完成的回复' })}\n\n`,
+            `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', role: 'assistant', agent_name: '问答专家', content: '后台完成的回复' })}\n\n`,
             `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
           ].join(''),
         })

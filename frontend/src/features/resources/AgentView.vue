@@ -5,215 +5,130 @@
     </div>
 
     <template v-else>
-      <div class="max-w-5xl w-full mx-auto">
+      <div class="max-w-3xl w-full mx-auto">
         <div class="mb-4">
           <h2 class="text-2xl font-semibold text-primary mb-1">
             {{ selectedAgentId === '__new__' ? '新建专家' : '配置专家' }}
           </h2>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.1fr)] gap-6 items-start">
-          <form novalidate @submit.prevent="saveAgent" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-primary mb-1">名称</label>
-                <input
-                  v-model="form.name"
-                  type="text"
-                  required
-                  class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                  placeholder="请输入专家名称"
-                />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
-                <select
-                  v-model="form.llm_name"
-                  class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                >
-                  <option value="">使用应用默认</option>
-                  <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
-                    {{ meta.label || name }}
-                  </option>
-                </select>
-              </div>
-            </div>
-
+        <form novalidate @submit.prevent="saveAgent" class="space-y-6 bg-card backdrop-blur rounded-xl border border-border-light shadow-sm px-5 py-6 text-left">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-primary mb-1">描述</label>
-              <textarea
-                v-model="form.description"
-                rows="2"
-                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                placeholder="请输入专家描述"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-primary mb-1">系统提示词（可选）</label>
-              <textarea
-                v-model="form.system_prompt"
-                rows="3"
-                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                placeholder="请输入系统提示词（可选）"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
-
-              <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+              <label class="block text-sm font-medium text-primary mb-1">名称</label>
               <input
-                v-if="skills.length"
-                v-model.trim="skillSearch"
+                v-model="form.name"
                 type="text"
-                class="w-full mb-2 bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                placeholder="搜索技能（名称/描述）"
+                required
+                class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+                placeholder="请输入专家名称"
               />
-              <div
-                v-if="skills.length"
-                class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-primary mb-1">大模型（可选）</label>
+              <select
+                v-model="form.llm_name"
+                class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
               >
-                <button
-                  v-for="s in filteredSkills"
+                <option value="">使用应用默认</option>
+                <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
+                  {{ meta.label || name }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">描述</label>
+            <textarea
+              v-model="form.description"
+              rows="2"
+              class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+              placeholder="请输入专家描述"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-primary mb-1">系统提示词（可选）</label>
+            <textarea
+              v-model="form.system_prompt"
+              rows="3"
+              class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+              placeholder="请输入系统提示词（可选）"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-primary mb-2">技能与基础能力</label>
+
+            <div class="text-xs font-medium text-muted mb-1.5">技能</div>
+            <input
+              v-if="skills.length"
+              v-model.trim="skillSearch"
+              type="text"
+              class="w-full mb-2 bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
+              placeholder="搜索技能（名称/描述）"
+            />
+            <div
+              v-if="skills.length"
+              class="flex flex-wrap items-start justify-start content-start gap-2 rounded-lg bg-page border border-border-light px-3 py-3"
+            >
+              <button
+                v-for="s in filteredSkills"
+                :key="s.directory_name"
+                type="button"
+                class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
+                :class="selectedSkillDirectories.includes(s.directory_name)
+                  ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
+                  : 'bg-card text-muted border-border-light hover:bg-list-hover'"
+                @click="toggleSkill(s)"
+              >
+                {{ s.name }}
+              </button>
+            </div>
+            <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
+              没有匹配的 Skill
+            </p>
+            <div v-if="missingSkillBadges.length" class="mt-3">
+              <div class="text-xs font-medium text-red-600 mb-1.5">缺失技能</div>
+              <div class="flex flex-wrap gap-2">
+                <span
+                  v-for="s in missingSkillBadges"
                   :key="s.directory_name"
-                  type="button"
-                  class="px-3 py-1.5 rounded-full text-xs font-medium transition-colors border"
-                  :class="selectedSkillDirectories.includes(s.directory_name)
-                    ? 'bg-accent-subtle text-accent-subtle-text border-accent/40 shadow-sm'
-                    : 'bg-card text-muted border-border-light hover:bg-list-hover'"
-                  @click="toggleSkill(s)"
+                  class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
+                  :title="`缺失技能路径：${s.directory_name}`"
                 >
                   {{ s.name }}
-                </button>
-              </div>
-              <p v-if="skills.length && !filteredSkills.length" class="text-xs text-muted">
-                没有匹配的 Skill
-              </p>
-              <div v-if="missingSkillBadges.length" class="mt-3">
-                <div class="text-xs font-medium text-red-600 mb-1.5">缺失技能</div>
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    v-for="s in missingSkillBadges"
-                    :key="s.directory_name"
-                    class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium border border-red-300 bg-red-50 text-red-700"
-                    :title="`缺失技能路径：${s.directory_name}`"
-                  >
-                    {{ s.name }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
-              <button
-                type="submit"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover shadow-sm transition-colors"
-              >
-                保存
-              </button>
-              <button
-                v-if="selectedAgentId && selectedAgentId !== '__new__'"
-                type="button"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
-                title="导出 ZIP 专家包（含技能等）"
-                @click="exportAgentBundle"
-              >
-                导出
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
-                @click="deleteAgent"
-              >
-                删除
-              </button>
-            </div>
-          </form>
-
-          <div class="flex justify-center lg:justify-end">
-            <div class="relative">
-              <div class="absolute -top-10 left-1/2 -translate-x-1/2 flex flex-col items-center">
-                <div class="h-8 w-1 bg-border rounded-full" />
-                <div class="w-9 h-3 bg-card rounded-b-xl flex items-center justify-center border border-border-light">
-                  <div class="w-7 h-[3px] bg-border rounded-full" />
-                </div>
-              </div>
-
-              <div class="relative w-[400px] aspect-[5/6] rounded-3xl bg-gradient-to-b from-page to-card border border-border-light shadow-xl pt-5 pb-5 px-5 flex flex-col gap-4">
-                <div class="rounded-xl bg-black text-white text-xs font-medium px-3 py-1 inline-flex items-center justify-between">
-                  <span class="uppercase tracking-[0.16em]">
-                    Expert
-                  </span>
-                  <span class="ml-2 text-[10px] tracking-[0.16em] text-muted">
-                    CARD
-                  </span>
-                </div>
-
-                <div class="flex gap-4 mt-3">
-                  <div class="shrink-0">
-                    <div
-                      class="w-32 h-32 rounded-3xl border border-border-light bg-page flex items-center justify-center overflow-hidden cursor-pointer"
-                    >
-                      <div
-                        class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-300 to-pink-300 text-white text-3xl font-semibold"
-                      >
-                        <span>
-                          {{ (form.name && form.name.trim()) ? form.name.trim().charAt(0) : '专' }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="flex-1 flex flex-col justify-center">
-                    <p class="text-lg font-semibold text-primary mb-2 break-words">
-                      {{ form.name || '未命名专家' }}
-                    </p>
-                    <p class="text-sm text-muted leading-snug whitespace-pre-line break-words">
-                      {{ form.description || '尚未填写描述' }}
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <p class="text-sm text-muted mb-1.5">核心技能</p>
-                  <div class="flex flex-wrap gap-2">
-                    <template v-if="displaySkillBadges.length">
-                      <span
-                        v-for="s in displaySkillBadges"
-                        :key="s.directory_name"
-                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
-                        :class="s.missing
-                          ? 'border-red-300 bg-red-50 text-red-700'
-                          : 'border-accent/40 bg-nav-selected-bg text-nav-selected-text'"
-                        :title="s.missing ? `缺失技能路径：${s.directory_name}` : '已选择技能'"
-                      >
-                        {{ s.name }}
-                      </span>
-                    </template>
-                    <span
-                      v-else
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-list-hover text-xs font-medium text-muted"
-                    >
-                      暂无技能，请在左侧选择
-                    </span>
-                  </div>
-                </div>
-
-                <div class="mt-auto pt-4 border-t border-dashed border-border-light flex items-center justify-between">
-                  <div class="flex flex-col">
-                    <span class="text-xs tracking-[0.18em] text-muted">
-                      书童四九
-                    </span>
-                  </div>
-                  <span class="px-2.5 py-1 rounded-full bg-black text-white text-xs font-medium">
-                    Role Card
-                  </span>
-                </div>
+                </span>
               </div>
             </div>
           </div>
-        </div>
+
+          <div class="flex justify-start items-center gap-2 pt-3 flex-shrink-0 flex-wrap">
+            <button
+              type="submit"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-accent text-text-inverse hover:bg-accent-hover shadow-sm transition-colors"
+            >
+              保存
+            </button>
+            <button
+              v-if="selectedAgentId && selectedAgentId !== '__new__'"
+              type="button"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-list-hover text-primary border border-border-light hover:bg-nav-hover-bg"
+              title="导出 ZIP 专家包（含技能等）"
+              @click="exportAgentBundle"
+            >
+              导出
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg bg-danger-subtle text-danger hover:opacity-90"
+              @click="deleteAgent"
+            >
+              删除
+            </button>
+          </div>
+        </form>
       </div>
     </template>
 
@@ -359,16 +274,6 @@ const selectedSkillDirectories = computed(() => form.value.skills.map((s) => s.d
 function skillMissing(ref: SkillRef): boolean {
   return Boolean(ref.directory_name && !(skills.value || []).some((s) => s.directory_name === ref.directory_name || s.name === ref.name))
 }
-
-const displaySkillBadges = computed(() => {
-  if (!form.value.skills.length) return []
-  const picked = []
-  for (const skill of normalizeSkillRefs(form.value.skills)) {
-    picked.push({ ...skill, missing: skillMissing(skill) })
-    if (picked.length >= 15) break
-  }
-  return picked
-})
 
 const missingSkillBadges = computed(() =>
   normalizeSkillRefs(form.value.skills)

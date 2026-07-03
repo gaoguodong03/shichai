@@ -3,7 +3,7 @@ import { expect, type Page, type Route } from '@playwright/test'
 type Message = {
   message_id: string
   role: string
-  agent_id?: string
+  agent_name?: string
   content: string
 }
 
@@ -11,27 +11,27 @@ type Session = {
   id: string
   title: string
   updated_at: string
-  agent_ids: string[]
   agent_names?: string[]
   messages: Message[]
   system_prompt?: string
-  leader_agent_id?: string
+  leader_agent_name?: string
   host_config?: Record<string, unknown>
 }
 
+type SkillRef = {
+  name: string
+  directory_name: string
+}
+
 type Agent = {
-  agent_id: string
   name: string
   role: string
   system_prompt?: string
-  skill_ids: string[]
-  mcp_server_ids: string[]
-  file_capabilities: Record<string, boolean>
+  skills: SkillRef[]
   is_leader?: boolean
 }
 
 type Skill = {
-  id: string
   directory_name?: string
   name: string
   description: string
@@ -42,8 +42,8 @@ type Skill = {
 }
 
 type McpServer = {
-  id: string
   name: string
+  type?: 'mcp' | 'http_api'
   transport: Record<string, unknown>
   metadata?: Record<string, unknown>
 }
@@ -54,8 +54,7 @@ type ScenarioPreset = {
   description: string
   system_prompt?: string
   agent_names?: string[]
-  agent_ids: string[]
-  leader_agent_id: string
+  leader_agent_name: string
   updated_at: string
   host_config?: Record<string, unknown>
 }
@@ -92,12 +91,12 @@ export function createE2eState(): E2eState {
         id: 'session-existing',
         title: '已有验收会话',
         updated_at: now,
-        agent_ids: ['agent-qa'],
+        agent_names: ['问答专家'],
         messages: [
           {
             message_id: 'assistant-history',
             role: 'assistant',
-            agent_id: 'agent-qa',
+            agent_name: '问答专家',
             content: '历史回复：这里可以继续追问。',
           },
         ],
@@ -105,34 +104,26 @@ export function createE2eState(): E2eState {
     ],
     agents: [
       {
-        agent_id: 'agent-qa',
         name: '问答专家',
         role: '回答用户问题',
         system_prompt: '你负责回答验收问题。',
-        skill_ids: ['skill-qa'],
-        mcp_server_ids: [],
-        file_capabilities: { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true },
+        skills: [{ name: '问答技能', directory_name: 'skill-qa' }],
       },
       {
-        agent_id: 'agent-writer',
         name: '写作专家',
         role: '整理文档与结论',
         system_prompt: '你负责整理结构化文档。',
-        skill_ids: ['skill-write'],
-        mcp_server_ids: ['mcp-files'],
-        file_capabilities: { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true },
+        skills: [{ name: '写作技能', directory_name: 'skill-write' }],
       },
     ],
     skills: [
       {
-        id: 'skill-qa',
         directory_name: 'skill-qa',
         name: '问答技能',
         description: '用于前端点击验收',
         allowed_tools: { mcp: ['mcp-files'], python: 'requests==2.31.0\npandas==2.2.2\n' },
       },
       {
-        id: 'skill-write',
         directory_name: 'skill-write',
         name: '写作技能',
         description: '把讨论整理为说明文档',
@@ -141,8 +132,8 @@ export function createE2eState(): E2eState {
     ],
     mcpServers: [
       {
-        id: 'mcp-files',
         name: '文件系统工具',
+        type: 'mcp',
         transport: { type: 'stdio', command: 'python', args: ['-m', 'mock_mcp'] },
         metadata: { description: '读写工作区文件' },
       },
@@ -154,8 +145,7 @@ export function createE2eState(): E2eState {
         description: '用于 UI 自动化验收',
         system_prompt: '场景级项目规则',
         agent_names: ['问答专家', '写作专家'],
-        agent_ids: ['agent-qa', 'agent-writer'],
-        leader_agent_id: 'agent-qa',
+        leader_agent_name: '问答专家',
         updated_at: now,
         host_config: { leader_agent_name: '四九', skill_name: '问答技能', skill_directory: 'skill-qa' },
       },
@@ -200,9 +190,7 @@ export function createE2eState(): E2eState {
       display_name: '四九',
       llm_provider_id: 'qwen',
       system_prompt: '你是群聊主持人，只负责调度专家。',
-      skill_ids: ['skill-qa'],
-      mcp_server_ids: [],
-      file_capabilities: { read: true, edit: true, write: true, rename: true, mkdir: true, list_dir: true },
+      skill_names: ['问答技能'],
     },
     sandboxSettings: {
       image_variant: 'standard',
@@ -247,12 +235,11 @@ function sessionResponse(session: Session, state: E2eState) {
     title: session.title,
     updated_at: session.updated_at,
     messages: session.messages,
-    agent_ids: session.agent_ids,
     agent_names: session.agent_names || [],
-    agent_map: Object.fromEntries(state.agents.map((a) => [a.agent_id, { name: a.name, role: a.role }])),
+    agent_map: Object.fromEntries(state.agents.map((a) => [a.name, { name: a.name, role: a.role }])),
     orchestration_profile: session.host_config ? 'scene' : 'recruitment',
   }
-  if (session.leader_agent_id) response.leader_agent_id = session.leader_agent_id
+  if (session.leader_agent_name) response.leader_agent_name = session.leader_agent_name
   if (session.system_prompt) response.system_prompt = session.system_prompt
   if (session.host_config) response.host_config = session.host_config
   return response
@@ -267,16 +254,24 @@ function directoryEntries(state: E2eState, workspaceId: string, search: URLSearc
   return state.files[fileKey(workspaceId, path)] || []
 }
 
-function upsertAgent(state: E2eState, id: string, body: Record<string, unknown>): Agent {
-  const existing = state.agents.find((a) => a.agent_id === id)
+function normalizeSkillRefs(raw: unknown, fallback: SkillRef[] = []): SkillRef[] {
+  if (!Array.isArray(raw)) return fallback
+  return raw
+    .map((item) => ({
+      name: String((item as Record<string, unknown>)?.name || '').trim(),
+      directory_name: String((item as Record<string, unknown>)?.directory_name || '').trim(),
+    }))
+    .filter((item) => item.name && item.directory_name)
+}
+
+function upsertAgent(state: E2eState, agentName: string, body: Record<string, unknown>): Agent {
+  const name = String(body.name || agentName || '新专家').trim()
+  const existing = state.agents.find((a) => a.name === agentName || a.name === name)
   const next: Agent = {
-    agent_id: id,
-    name: String(body.name || existing?.name || '新专家'),
+    name,
     role: String(body.role || existing?.role || body.description || '新建专家'),
     system_prompt: String(body.system_prompt || existing?.system_prompt || ''),
-    skill_ids: Array.isArray(body.skill_ids) ? body.skill_ids.map(String) : existing?.skill_ids || [],
-    mcp_server_ids: Array.isArray(body.mcp_server_ids) ? body.mcp_server_ids.map(String) : existing?.mcp_server_ids || [],
-    file_capabilities: (body.file_capabilities as Record<string, boolean>) || existing?.file_capabilities || {},
+    skills: normalizeSkillRefs(body.skills, existing?.skills || []),
   }
   if (existing) Object.assign(existing, next)
   else state.agents.unshift(next)
@@ -307,16 +302,15 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { sessions: state.sessions })
     }
     if (path === '/sessions' && method === 'POST') {
-      const body = readBody<{ title?: string; agent_ids?: unknown[]; agent_names?: unknown[]; leader_agent_id?: string; system_prompt?: string; host_config?: Record<string, unknown> }>(route)
+      const body = readBody<{ title?: string; agent_names?: unknown[]; leader_agent_name?: string; system_prompt?: string; host_config?: Record<string, unknown> }>(route)
       const next: Session = {
         id: `session-new-${state.sessions.length + 1}`,
         title: String(body.title || '新对话'),
         updated_at: now,
-        agent_ids: Array.isArray(body.agent_ids) ? body.agent_ids.map(String) : [],
         agent_names: Array.isArray(body.agent_names) ? body.agent_names.map(String) : [],
         messages: [],
         system_prompt: String(body.system_prompt || ''),
-        leader_agent_id: body.leader_agent_id,
+        leader_agent_name: body.leader_agent_name,
         host_config: body.host_config,
       }
       state.sessions = [next, ...state.sessions.filter((s) => s.id !== next.id)]
@@ -335,15 +329,15 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       if (!session) return notFound(route)
       const body = readBody<Record<string, unknown>>(route)
       if (typeof body.title === 'string') session.title = body.title
-      if (Array.isArray(body.agent_ids)) session.agent_ids = body.agent_ids.map(String)
-      if (Array.isArray(body.add_agent_ids)) {
-        session.agent_ids = Array.from(new Set([...session.agent_ids, ...body.add_agent_ids.map(String)]))
+      if (Array.isArray(body.agent_names)) session.agent_names = body.agent_names.map(String)
+      if (Array.isArray(body.add_agent_names)) {
+        session.agent_names = Array.from(new Set([...(session.agent_names || []), ...body.add_agent_names.map(String)]))
       }
-      if (Array.isArray(body.remove_agent_ids)) {
-        const remove = new Set(body.remove_agent_ids.map(String))
-        session.agent_ids = session.agent_ids.filter((id) => !remove.has(id))
+      if (Array.isArray(body.remove_agent_names)) {
+        const remove = new Set(body.remove_agent_names.map(String))
+        session.agent_names = (session.agent_names || []).filter((name) => !remove.has(name))
       }
-      if (typeof body.leader_agent_id === 'string') session.leader_agent_id = body.leader_agent_id
+      if (typeof body.leader_agent_name === 'string') session.leader_agent_name = body.leader_agent_name
       if (body.host_config && typeof body.host_config === 'object') {
         session.host_config = body.host_config as Record<string, unknown>
       }
@@ -363,13 +357,13 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const session = state.sessions.find((s) => s.id === id)
       const answer = '自动化测试回复：需求已收到。'
       if (session) {
-        session.agent_ids = session.agent_ids.length ? session.agent_ids : ['agent-qa']
+        session.agent_names = session.agent_names?.length ? session.agent_names : ['问答专家']
         session.messages.push({ message_id: `user-${session.messages.length + 1}`, role: 'user', content: body.message || '' })
-        session.messages.push({ message_id: `assistant-${session.messages.length + 1}`, role: 'assistant', agent_id: 'agent-qa', content: answer })
+        session.messages.push({ message_id: `assistant-${session.messages.length + 1}`, role: 'assistant', agent_name: '问答专家', content: answer })
       }
       return eventStream(route, [
-        ['route', { agent_id: 'agent-qa' }],
-        ['message', { message_id: 'assistant-stream', role: 'assistant', agent_id: 'agent-qa', content: answer }],
+        ['route', { agent_name: '问答专家' }],
+        ['message', { message_id: 'assistant-stream', role: 'assistant', agent_name: '问答专家', content: answer }],
         ['end', { waiting_for_user: true, interrupted: false }],
       ])
     }
@@ -413,9 +407,8 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { instances: state.agents, agents: state.agents })
     }
     if (path === '/agents' && method === 'POST') {
-      const id = `agent-${state.agents.length + 1}`
-      const agent = upsertAgent(state, id, readBody(route))
-      return ok(route, { agent_id: agent.agent_id })
+      const agent = upsertAgent(state, '', readBody(route))
+      return ok(route, agent)
     }
     const agentMatch = path.match(/^\/agents\/([^/]+)$/)
     if (agentMatch && method === 'PUT') {
@@ -423,8 +416,45 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, agent)
     }
     if (agentMatch && method === 'DELETE') {
-      state.agents = state.agents.filter((a) => a.agent_id !== decodeURIComponent(agentMatch[1]))
+      state.agents = state.agents.filter((a) => a.name !== decodeURIComponent(agentMatch[1]))
       return ok(route)
+    }
+    if (path === '/agents/import-bundle' && method === 'POST') {
+      const bodyText = route.request().postData() || ''
+      const isDryRun = !(bodyText.includes('name="dry_run"') && bodyText.includes('false'))
+      if (isDryRun) {
+        return ok(route, {
+          bundle_preview: {
+            name: '导入专家',
+            skills: ['skill-imported'],
+            skill_names: { 'skill-imported': '导入技能' },
+            mcps: [{ name: '导入工具' }],
+            name_conflict_existing_names: [],
+            would_overwrite_skills: [],
+            would_skip_skills: [],
+            would_remap_skills: {},
+            would_remap_tools: {},
+            would_overwrite_tools: [],
+            missing_references: { experts: [], skills: [], tools: [] },
+          },
+        })
+      }
+      state.agents.unshift({
+        name: '导入专家',
+        role: '导入专家',
+        system_prompt: '',
+        skills: [{ name: '导入技能', directory_name: 'skill-imported' }],
+      })
+      return ok(route, {
+        summary: {
+          imported_agent_name: '导入专家',
+          kept_agent_names: [],
+          skills_imported: ['skill-imported'],
+          skills_kept: [],
+          mcp_added: 1,
+          mcp_skipped: 0,
+        },
+      })
     }
     if (path === '/settings/session-presets' && method === 'GET') {
       return ok(route, { presets: state.scenarios })
@@ -444,19 +474,21 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path === '/settings/session-presets/import-bundle' && method === 'POST') {
       return ok(route, {
         bundle_preview: {
-          preset_id: 'scenario-public',
           preset_name: '导入资源包场景',
-          agents: [{ id: 'agent-qa', name: '问答专家' }],
-          skills: [{ id: 'skill-qa', name: '问答技能' }],
-          mcp_servers: [{ id: 'mcp-files', name: '文件系统工具' }],
+          experts: [{ name: '问答专家' }],
+          skills: ['skill-qa'],
+          skill_names: { 'skill-qa': '问答技能' },
+          mcps: [{ name: '文件系统工具' }],
         },
         summary: {
-          preset_imported_ids: ['scenario-public'],
+          preset_imported_names: ['导入资源包场景'],
+          kept_existing_names: [],
+          agent_imported_names: ['问答专家'],
+          kept_agent_names: [],
           skills_imported: ['skill-qa'],
-          skills_skipped: [],
-          skipped_by_name: [],
-          overwritten_existing_ids: [],
+          skills_kept: [],
           mcp_added: 1,
+          mcp_skipped: 0,
         },
       })
     }
@@ -464,11 +496,10 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { skills: state.skills })
     }
     if (path === '/settings/skills' && method === 'POST') {
-      const id = `skill-${state.skills.length + 1}`
+      const directoryName = `skill-${state.skills.length + 1}`
       const body = readBody<Record<string, unknown>>(route)
       const skill = {
-        id,
-        directory_name: id,
+        directory_name: directoryName,
         name: String(body.name || '新技能'),
         description: String(body.description || ''),
         allowed_tools: (body.allowed_tools as Skill['allowed_tools']) || { mcp: [], python: '' },
@@ -478,7 +509,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     const skillContentMatch = path.match(/^\/settings\/skills\/([^/]+)\/content$/)
     if (skillContentMatch && method === 'GET') {
-      const skill = state.skills.find((s) => s.id === decodeURIComponent(skillContentMatch[1]))
+      const skill = state.skills.find((s) => s.directory_name === decodeURIComponent(skillContentMatch[1]))
       if (!skill) return notFound(route)
       return ok(route, {
         raw: `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n# ${skill.name}\n\n执行用户可见的验收任务。`,
@@ -502,8 +533,8 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     const skillMatch = path.match(/^\/settings\/skills\/([^/]+)$/)
     if (skillMatch && method === 'PUT') {
-      const id = decodeURIComponent(skillMatch[1])
-      const skill = state.skills.find((s) => s.id === id)
+      const directoryName = decodeURIComponent(skillMatch[1])
+      const skill = state.skills.find((s) => s.directory_name === directoryName)
       if (!skill) return notFound(route)
       const body = readBody<Record<string, unknown>>(route)
       skill.name = String(body.name || skill.name)
@@ -512,8 +543,8 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, skill)
     }
     if (skillMatch && method === 'DELETE') {
-      const id = decodeURIComponent(skillMatch[1])
-      state.skills = state.skills.filter((s) => s.id !== id)
+      const directoryName = decodeURIComponent(skillMatch[1])
+      state.skills = state.skills.filter((s) => s.directory_name !== directoryName)
       return ok(route)
     }
     if (path === '/settings/mcp' && method === 'GET') {
@@ -522,8 +553,8 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     if (path === '/settings/mcp' && method === 'POST') {
       const body = readBody<Record<string, unknown>>(route)
       const server: McpServer = {
-        id: `mcp-${state.mcpServers.length + 1}`,
         name: String(body.name || '新工具'),
+        type: 'mcp',
         transport: (body.transport as Record<string, unknown>) || { type: 'stdio', command: '' },
         metadata: (body.metadata as Record<string, unknown>) || {},
       }
@@ -532,14 +563,14 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     }
     const mcpMatch = path.match(/^\/settings\/mcp\/([^/]+)$/)
     if (mcpMatch && method === 'PUT') {
-      const server = state.mcpServers.find((s) => s.id === decodeURIComponent(mcpMatch[1]))
+      const server = state.mcpServers.find((s) => s.name === decodeURIComponent(mcpMatch[1]))
       if (!server) return notFound(route)
       Object.assign(server, readBody(route))
       return ok(route, server)
     }
     if (mcpMatch && method === 'DELETE') {
-      const id = decodeURIComponent(mcpMatch[1])
-      state.mcpServers = state.mcpServers.filter((s) => s.id !== id)
+      const name = decodeURIComponent(mcpMatch[1])
+      state.mcpServers = state.mcpServers.filter((s) => s.name !== name)
       return ok(route)
     }
     if (path === '/settings/app' && method === 'GET') {

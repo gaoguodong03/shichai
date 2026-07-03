@@ -27,11 +27,11 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.getByText('问答验收场景')).toBeVisible()
   })
 
-  test('旧版默认主持人 Skill 快照不显示为缺失技能', async ({ page }) => {
+  test('name-based 主持人 Skill 快照不显示为缺失技能', async ({ page }) => {
     const state = createE2eState()
     state.scenarios[0].host_config = {
-      skill_ids: ['group-host'],
-      skill_refs: [{ id: 'group-host', name: '网文协同写作主持人' }],
+      skill_name: '问答技能',
+      skill_directory: 'skill-qa',
     }
 
     await loginByStorage(page)
@@ -39,7 +39,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await page.goto('/resources/scenario')
 
     await expect(page.getByText('缺失技能')).toHaveCount(0)
-    await expect(page.getByText('网文协同写作主持人')).toHaveCount(0)
+    await expect(page.getByText('问答技能')).toBeVisible()
   })
 
   test('刷新直达场景页会加载专家和技能依赖', async ({ page }) => {
@@ -121,11 +121,10 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
       if (importCallCount >= 2) {
         state.scenarios = [
           {
-            id: 'scenario-imported',
             name: '导入后场景',
             description: '导入后不能被空列表覆盖',
-            agent_ids: ['agent-qa'],
-            leader_agent_id: 'agent-qa',
+            agent_names: ['问答专家'],
+            leader_agent_name: '问答专家',
             updated_at: '2026-05-29T06:43:22Z',
           },
         ]
@@ -137,22 +136,20 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
           status: 'ok',
           data: {
             bundle_preview: {
-              preset_id: 'scenario-imported',
               preset_name: '导入后场景',
-              experts: [{ agent_id: 'agent-qa', name: '问答专家' }],
+              experts: [{ name: '问答专家' }],
               skills: [],
               mcps: [],
             },
             summary: {
-              preset_imported_ids: ['scenario-imported'],
-              kept_existing_ids: [],
-              agent_imported_ids: ['agent-qa'],
-              kept_agent_ids: [],
+              preset_imported_names: ['导入后场景'],
+              kept_existing_names: [],
+              agent_imported_names: ['问答专家'],
+              kept_agent_names: [],
               skills_imported: [],
               skills_kept: [],
               skills_skipped: [],
               skipped_by_name: [],
-              overwritten_existing_ids: [],
               mcp_added: 0,
               mcp_skipped: 0,
             },
@@ -162,7 +159,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     })
     await page.route('**/api/settings/session-presets', async (route) => {
       if (route.request().method() === 'PUT') {
-        const body = route.request().postDataJSON() as { presets?: Array<{ id?: string }> }
+        const body = route.request().postDataJSON() as { presets?: Array<{ name?: string }> }
         if (Array.isArray(body.presets) && body.presets.length === 0) {
           emptyPresetPutCount += 1
         }
@@ -187,7 +184,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await page.waitForTimeout(300)
 
     expect(emptyPresetPutCount).toBe(0)
-    expect(state.scenarios.map((item) => item.id)).toEqual(['scenario-imported'])
+    expect(state.scenarios.map((item) => item.name)).toEqual(['导入后场景'])
   })
 
   test('导入场景包预览展示冲突和依赖信息', async ({ page }) => {
@@ -202,18 +199,17 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
           status: 'ok',
           data: {
             bundle_preview: {
-              preset_id: 'scene-imported',
               preset_name: '冲突场景',
-              experts: [{ agent_id: 'agent-new', name: '导入专家' }],
+              experts: [{ name: '导入专家' }],
               skills: ['skill-new'],
-              mcps: [{ id: 'mcp-new', name: '导入工具' }],
-              name_conflict_existing_ids: ['scene-local'],
-              would_overwrite_experts: { 'agent-new': ['agent-local'] },
-              would_remap_skill_ids: { 'skill-local': 'skill-new' },
-              would_remap_mcp_server_ids: { 'mcp-local': 'mcp-new' },
+              mcps: [{ name: '导入工具' }],
+              name_conflict_existing_names: ['本地场景'],
+              would_overwrite_experts: { '导入专家': ['本地专家'] },
+              would_remap_skills: { 'skill-local': 'skill-new' },
+              would_remap_tools: { '本地工具': '导入工具' },
               missing_references: {
                 experts: [],
-                skills: [{ id: 'skill-missing', display_name: '技能 缺失技能', required_by: ['专家 导入专家'], type_label: '技能' }],
+                skills: [{ name: '缺失技能', display_name: '技能 缺失技能', required_by: ['专家 导入专家'], type_label: '技能' }],
                 tools: [],
               },
             },
@@ -263,12 +259,23 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
     await expect(page.locator('form').getByText('访问方式', { exact: true })).toHaveCount(0)
   })
 
+  test('专家详情页不展示右侧专家预览卡', async ({ page }) => {
+    await bootLoggedInApp(page, '/resources/agent')
+
+    await expect(page.getByRole('heading', { name: '配置专家' })).toBeVisible()
+    await expect(page.getByPlaceholder('请输入专家名称')).toBeVisible()
+    await expect(page.getByText('Expert', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('CARD', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Role Card', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('书童四九', { exact: true })).toHaveCount(0)
+  })
+
   test('专家导入成功后展示统一新增保留摘要', async ({ page }) => {
     const state = createE2eState()
     let importCallCount = 0
     await loginByStorage(page)
     await mockApi(page, state)
-    await page.route('**/api/dha/instances/import-bundle', async (route) => {
+    await page.route('**/api/agents/import-bundle', async (route) => {
       importCallCount += 1
       await route.fulfill({
         status: 200,
@@ -278,16 +285,16 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
           data: importCallCount === 1
             ? {
                 bundle_preview: {
-                  agent_id: 'agent-imported',
                   name: '导入专家',
                   skills: ['skill-imported'],
-                  mcps: [{ id: 'mcp-imported', name: '导入工具' }],
+                  skill_names: { 'skill-imported': '导入技能' },
+                  mcps: [{ name: '导入工具' }],
                 },
               }
             : {
                 summary: {
-                  imported_agent_id: 'agent-imported',
-                  kept_agent_ids: [],
+                  imported_agent_name: '导入专家',
+                  kept_agent_names: [],
                   skills_imported: ['skill-imported'],
                   skills_kept: [],
                   mcp_added: 1,
