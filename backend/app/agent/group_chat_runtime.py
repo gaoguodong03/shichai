@@ -76,7 +76,6 @@ from app.agent.group_chat_tool_trace import (
     append_workspace_image_preview_markdown as _append_workspace_image_preview_markdown,
     extract_sandbox_entry_trace as _extract_sandbox_entry_trace,
     extract_tool_calls_from_accumulated as _extract_tool_calls_from_accumulated,
-    guard_unverified_delivery_claims as _guard_unverified_delivery_claims,
 )
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
@@ -113,7 +112,6 @@ from app.agent.group_chat_host_messages import (
     _build_host_recommendation_message,
     _build_host_recruit_message,
 )
-from app.api.files import get_workspace_root_path as _get_workspace_root_path
 from app.agent.llm_client import build_llm_credential_notice, is_llm_credential_error_message
 from app.agent.group_chat_title_meta import (
     _infer_required_user_fields_for_skill,
@@ -1108,20 +1106,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 skill_session_completed = skill_session_state.over is True
                 full_content = skill_session_state.display_content
                 skill_session_signals = skill_session_state.signals
-                delivery_guard_applied = False
-                try:
-                    workspace_root_for_guard = _get_workspace_root_path(group_session_id)
-                except Exception:
-                    workspace_root_for_guard = None
-                guarded_content = _guard_unverified_delivery_claims(
-                    full_content,
-                    tool_calls=tool_calls_trace,
-                    tool_raw_results=accumulated_raw_tool_results,
-                    workspace_root=workspace_root_for_guard,
-                )
-                if guarded_content != full_content:
-                    delivery_guard_applied = True
-                    full_content = guarded_content
                 skill_introspection_meta_answer = _has_bound_skill_introspection_direct_final(tool_attempt_debug)
                 sandbox_entry_trace = _extract_sandbox_entry_trace(accumulated_raw_tool_results)
                 skill = resolved_skill if agent_profile else "default"
@@ -1178,9 +1162,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             if skill_session_signals
                             else False,
                         },
-                    },
-                    "delivery_guard": {
-                        "applied": delivery_guard_applied,
                     },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }

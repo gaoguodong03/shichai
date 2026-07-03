@@ -78,3 +78,10 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "append_audit_event",
     ):
         assert text not in combined
+
+
+def test_group_chat_runtime_does_not_replace_unverified_delivery_claims():
+    runtime_text = _read("app/agent/group_chat_runtime.py")
+
+    assert "guard_unverified_delivery_claims" not in runtime_text
+    assert "本轮没有确认文件生成成功" not in runtime_text
