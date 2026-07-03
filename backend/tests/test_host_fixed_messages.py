@@ -11,8 +11,8 @@ from app.agent.group_chat_host_messages import (
 def test_host_next_speaker_ignores_custom_announcement():
     msg = _build_host_next_speaker_message(
         skill="group-host-webnovel",
-        next_speaker="agent-writer",
-        agent_map={"agent-writer": {"name": "文字创作专家"}},
+        next_speaker="文字创作专家",
+        agent_map={"文字创作专家": {"name": "文字创作专家"}},
         announcement="好的，我理解了你的需求。",
         current_phase="阶段2：撰写",
         speaker_task="请撰写正文。",
@@ -26,18 +26,18 @@ def test_host_recommendation_uses_fixed_copy():
     msg = _build_host_recommendation_message(
         skill="group-host-webnovel",
         content="好的，我来为你协调这次的文章写作任务。",
-        picked=["agent-writer", "agent-search"],
+        picked=["文字创作专家", "信息检索专家"],
     )
 
     assert msg["content"] == HOST_ZERO_EXPERT_RECOMMENDATION
-    assert msg["suggested_add_agent_names"] == ["agent-writer", "agent-search"]
+    assert msg["suggested_add_agent_names"] == ["文字创作专家", "信息检索专家"]
 
 
 def test_host_next_speaker_end_phase_uses_fixed_copy():
     msg = _build_host_next_speaker_message(
         skill="group-host-webnovel",
-        next_speaker="agent-writer",
-        agent_map={"agent-writer": {"name": "文字创作专家"}},
+        next_speaker="文字创作专家",
+        agent_map={"文字创作专家": {"name": "文字创作专家"}},
         current_phase="end",
         speaker_task="",
     )

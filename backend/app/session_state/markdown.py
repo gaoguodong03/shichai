@@ -37,9 +37,6 @@ def record_from_message(message: Mapping[str, Any]) -> Dict[str, Any]:
         "context": context,
         "cite": cite,
     }
-    agent_id = str(message.get("agent_id") or "").strip()
-    if agent_id:
-        record["agent_id"] = agent_id
     agent_name = str(message.get("agent_name") or "").strip()
     if agent_name:
         record["agent_name"] = agent_name
@@ -83,7 +80,7 @@ def parse_session_chat_markdown(text: str) -> List[Dict[str, Any]]:
             "context": context,
             "cite": cite,
         }
-        for key in ("agent_id", "agent_name", "message_id", "timestamp"):
+        for key in ("agent_name", "message_id", "timestamp"):
             value = str(raw.get(key) or "").strip()
             if value:
                 msg[key] = value

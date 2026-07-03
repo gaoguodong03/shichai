@@ -51,7 +51,7 @@
 ```json
 {
   "current_phase": "阶段xxxx",
-  "next_speaker": "agent-37b30426",
+  "next_speaker": "资料整理专家",
   "speaker_task": "请根据用户目标整理资料范围，完成后交回主持人判断下一阶段。"
 }
 ```
@@ -61,18 +61,18 @@
 | 字段 | 含义 |
 | --- | --- |
 | `current_phase` | 当前场景阶段。场景型主持人应持续更新，避免重复安排同一阶段。 |
-| `next_speaker` | 下一步目标。写场内专家的 agent id，也可以写 `"user"`、`"invite"` 或 `"end"`。 |
+| `next_speaker` | 下一步目标。写场内专家名称，也可以写 `"user"`、`"invite"` 或 `"end"`。 |
 | `speaker_task` | 交给下一位专家的自包含任务说明。平台会把它作为后台任务文本注入专家回合。 |
 
 `next_speaker` 的填写建议：
 
-- 写场内专家的 agent id，例如 `"agent-37b30426"`。
+- 写场内专家名称，例如 `"资料整理专家"`。
 - 写 `"user"` 表示等待用户补充、确认或继续输入。
 - 写 `"invite"` 表示需要先邀请或补充专家。
 - 写 `"end"` 表示本轮会话或场景已经结束。
-- 只填写场内专家的 agent id、`"user"`、`"invite"` 或 `"end"`。
+- 只填写场内专家名称、`"user"`、`"invite"` 或 `"end"`。
 
-主持人 Skill 正文中的 `场景角色`、`标准流程`、`调度规则` 应使用专家角色名，不写 agent id。agent id 只出现在输出 JSON 的 `next_speaker` 字段和示例中，避免把运行时标识混入可读流程说明。
+主持人 Skill 正文中的 `场景角色`、`标准流程`、`调度规则` 和输出 JSON 都应使用专家名称，不写 agent id，避免把运行时标识混入可读流程说明。
 
 `speaker_task` 的约束：
 
@@ -138,10 +138,10 @@ allowed-tools:
 
 - 只输出调度状态；专家正文、工具结果、方案成品或最终交付物由对应专家完成。
 - `current_phase` 是标准阶段字段，写成 `阶段xxxx` 或当前场景定义的阶段名。
-- `next_speaker` 写当前场景内专家的 agent id、`user`、`invite` 或 `end`。
+- `next_speaker` 写当前场景内专家名称、`user`、`invite` 或 `end`。
 - `speaker_task` 是唯一任务交接字段，要写成下一位专家可直接执行的任务单。
 - 如果用户目标还不清楚，先交还用户补充信息。
-- 场景角色表、标准流程表和调度规则正文使用专家角色名，不写 agent id；agent id 只用于输出 JSON 的 `next_speaker` 字段。
+- 场景角色表、标准流程表、调度规则正文和输出 JSON 使用专家名称，不写 agent id。
 
 ## 场景角色
 
@@ -175,7 +175,7 @@ allowed-tools:
 
 {
   "current_phase": "阶段xxxx",
-  "next_speaker": "agent-37b30426",
+  "next_speaker": "<专家角色A>",
   "speaker_task": "请根据用户目标和已有上下文完成<本阶段任务>，完成后交回主持人判断是否进入下一阶段或收束。"
 }
 
@@ -199,7 +199,7 @@ allowed-tools:
 
 - 场景角色、流程阶段和交接对象应与当前场景一致。
 - 主持人模板只描述调度判断；专家内部写法、工具参数、文件生成细节写进专家 Skill。
-- `next_speaker` 使用场内专家的 agent id、`user`、`invite` 或 `end`。
+- `next_speaker` 使用场内专家名称、`user`、`invite` 或 `end`。
 - 输出 JSON 固定包含 `current_phase`、`next_speaker`、`speaker_task`。
 - 下一位专家由主持人选择，专家只完成 `speaker_task`。
 ```
