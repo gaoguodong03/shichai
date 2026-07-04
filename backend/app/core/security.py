@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import base64
-import asyncio
 import hashlib
 import hmac
 import json
@@ -30,7 +29,6 @@ from app.core.user_context import (
 )
 
 logger = logging.getLogger(__name__)
-_REQUEST_PREWARM_USERS: set[str] = set()
 
 
 @dataclass
@@ -61,62 +59,8 @@ def _allow_anonymous_api() -> bool:
     return os.getenv("ALLOW_ANONYMOUS_API", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _truthy_env(name: str, default: str = "0") -> bool:
-    return (os.getenv(name) or default).strip().lower() in ("1", "true", "yes", "on", "enabled")
-
-
 def _prewarm_on_user_request_enabled() -> bool:
-    raw = os.getenv("SANDBOX_PREWARM_ON_USER_REQUEST")
-    if raw is not None:
-        return _truthy_env("SANDBOX_PREWARM_ON_USER_REQUEST", "0")
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        return False
     return False
-
-
-def _request_prewarm_timeout_ms() -> int:
-    raw = (os.getenv("SANDBOX_REQUEST_PREWARM_TIMEOUT_MS") or os.getenv("SANDBOX_LOGIN_PREWARM_TIMEOUT_MS") or "600000")
-    try:
-        return max(120_000, int(raw or "600000"))
-    except ValueError:
-        logger.warning("sandbox_env_invalid_int name=SANDBOX_REQUEST_PREWARM_TIMEOUT_MS value=%s", raw)
-        return 600_000
-
-
-def _schedule_user_request_prewarm(username: str) -> None:
-    name = (username or "").strip()
-    if not name or not _prewarm_on_user_request_enabled():
-        return
-    if name in _REQUEST_PREWARM_USERS:
-        return
-    _REQUEST_PREWARM_USERS.add(name)
-
-    async def _runner() -> None:
-        started = time.perf_counter()
-        try:
-            from app.agent.sandbox_workspace_access import get_shared_sandbox_service
-
-            timeout_ms = _request_prewarm_timeout_ms()
-            logger.info("sandbox_user_request_prewarm_start user=%s timeout_ms=%s", name, timeout_ms)
-            result = await get_shared_sandbox_service().prewarm_user_sandbox(
-                name,
-                reason="request",
-                timeout_ms=timeout_ms,
-            )
-            logger.info(
-                "sandbox_user_request_prewarm_done user=%s sandbox_id=%s requirements_hash=%s installed_hash=%s verified_hash=%s elapsed_ms=%s",
-                name,
-                result.get("sandbox_id", ""),
-                result.get("requirements_hash", ""),
-                result.get("installed_requirements_hash", ""),
-                result.get("verified_requirements_hash", ""),
-                int((time.perf_counter() - started) * 1000),
-            )
-        except Exception as e:  # noqa: BLE001
-            _REQUEST_PREWARM_USERS.discard(name)
-            logger.warning("sandbox_user_request_prewarm_failed user=%s err=%s", name, e)
-
-    asyncio.create_task(_runner())
 
 
 def _default_access_token_expire_minutes() -> int:
@@ -209,7 +153,6 @@ async def user_context_dependency(
         ctx = get_current_user_context(default_fallback=True)
         if ctx is None:
             raise HTTPException(status_code=401, detail="未能解析当前用户上下文")
-        _schedule_user_request_prewarm(user_id)
         yield CurrentUser(user_id=user_id, username=username, ctx=ctx)
     finally:
         reset_current_user_identity(token_ctx)

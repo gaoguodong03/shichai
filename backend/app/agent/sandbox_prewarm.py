@@ -41,7 +41,7 @@ class SandboxPrewarmMixin:
         if not uid:
             raise ValueError("user_id is required")
         user_ctx = get_user_context_for(uid)
-        workspaces_root = user_ctx.sessions_dir.resolve()
+        workspaces_root = (user_ctx.base_dir / "settings" / "sandbox" / "prewarm-workspace").resolve()
         workspaces_root.mkdir(parents=True, exist_ok=True)
         policy = workspace_with_skills_policy(
             workspaces_root,

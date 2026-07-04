@@ -45,7 +45,8 @@ def test_pack_1panel_backup_allows_missing_env_file(tmp_path: Path) -> None:
         "ST49_IMAGE=crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/"
         "free4inno-yuanfang2025/dha:26.06.06"
     ) in env_text
-    assert "SANDBOX_PREWARM_ALL_USERS=0" in env_text
+    assert "SANDBOX_PREWARM_ALL_USERS" not in env_text
+    assert "SANDBOX_PREWARM_ON_USER_REQUEST" not in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
     assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
     assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text

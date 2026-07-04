@@ -6,28 +6,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.core.runtime_env import is_truthy_env
 from app.mcp.manager import cleanup_all_mcp_runtimes
 
 
 def _startup_prewarm_all_users_enabled() -> bool:
-    return is_truthy_env("SANDBOX_PREWARM_ALL_USERS", "0")
-
-
-def _startup_prewarm_timeout_ms() -> int:
-    raw = (
-        os.getenv("SANDBOX_PREWARM_ALL_USERS_TIMEOUT_MS")
-        or os.getenv("SANDBOX_LOGIN_PREWARM_TIMEOUT_MS")
-        or "600000"
-    )
-    try:
-        return max(120_000, int(raw or "600000"))
-    except ValueError:
-        logging.getLogger("app.main").warning(
-            "sandbox_env_invalid_int name=SANDBOX_PREWARM_ALL_USERS_TIMEOUT_MS value=%s",
-            raw,
-        )
-        return 600_000
+    return False
 
 
 def _startup_orphan_cleanup_timeout_sec() -> int:
@@ -54,7 +37,6 @@ async def lifespan(app: FastAPI):
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)
     log = logging.getLogger("app.main")
-    prewarm_task: asyncio.Task | None = None
     try:
         from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
@@ -81,23 +63,7 @@ async def lifespan(app: FastAPI):
             log.warning("sandbox_orphan_cleanup_startup_timeout")
         except Exception as e:  # noqa: BLE001
             log.warning("sandbox_orphan_cleanup_startup_failed err=%s", e)
-        prewarm_enabled = _startup_prewarm_all_users_enabled()
-        if prewarm_enabled:
-            async def prewarm_all_users() -> None:
-                timeout_ms = _startup_prewarm_timeout_ms()
-                log.info("sandbox_prewarm_all_users_start timeout_ms=%s", timeout_ms)
-                result = await sandbox_service.prewarm_all_known_users(reason="startup", timeout_ms=timeout_ms)
-                log.info(
-                    "sandbox_prewarm_all_users_done users_total=%s ok=%s failed=%s timeout_ms=%s",
-                    result.get("users_total", 0),
-                    result.get("ok", 0),
-                    result.get("failed", 0),
-                    timeout_ms,
-                )
-
-            prewarm_task = asyncio.create_task(prewarm_all_users())
-        else:
-            log.info("sandbox_prewarm_all_users_disabled")
+        log.info("sandbox_prewarm_all_users_removed")
     except Exception as e:
         log.exception("sandbox_backend_startup_failed: %s", e)
         raise
@@ -105,6 +71,4 @@ async def lifespan(app: FastAPI):
 
     await ensure_mcp_and_skills_initialized()
     yield
-    if prewarm_task is not None and not prewarm_task.done():
-        prewarm_task.cancel()
     await cleanup_all_mcp_runtimes()

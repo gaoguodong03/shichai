@@ -440,11 +440,10 @@ async def test_build_policy_creates_missing_workspace_mount_root(monkeypatch, tm
 
     policy = await svc._build_policy(req)
 
-    workspaces_root = user_root / "sessions"
-    assert workspaces_root.is_dir()
-    assert (workspaces_root / ".st49-mount-ready").is_file()
-    assert policy.workspace_host_path == str(workspaces_root.resolve())
-    assert any(m.source == str(workspaces_root.resolve()) for m in policy.volume_mounts or [])
+    assert workspace_root.is_dir()
+    assert (workspace_root / ".st49-mount-ready").is_file()
+    assert policy.workspace_host_path == str(workspace_root.resolve())
+    assert any(m.source == str(workspace_root.resolve()) for m in policy.volume_mounts or [])
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
@@ -565,6 +564,8 @@ async def test_prewarm_user_sandbox_mounts_all_skills(monkeypatch, tmp_path):
     targets = {m.target for m in (policy.volume_mounts or [])}
     assert SANDBOX_WORKSPACE_ROOT in targets
     assert SANDBOX_SKILLS_ROOT in targets
+    workspace_mount = next(m for m in policy.volume_mounts if m.target == SANDBOX_WORKSPACE_ROOT)
+    assert Path(workspace_mount.source) == user_root / "settings" / "sandbox" / "prewarm-workspace"
     assert policy.image_ref.endswith("-standard")
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
@@ -912,7 +913,7 @@ async def test_fresh_prewarm_skips_repeated_real_requirements_verify(monkeypatch
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 
 
-async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_path):
+async def test_session_script_policy_uses_session_workspace_after_prewarm(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     monkeypatch.setenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", "run_skill_script")
     user_root = tmp_path / "alice"
@@ -945,8 +946,15 @@ async def test_prewarm_policy_reused_by_session_script_policy(monkeypatch, tmp_p
     )
     await svc.execute(req)
 
-    assert len(adapter.created) == 1
-    assert adapter.created[0][0] == "alice"
+    assert len(adapter.created) == 2
+    prewarm_sid, prewarm_policy = adapter.created[0]
+    session_sid, session_policy = adapter.created[1]
+    assert prewarm_sid == "alice"
+    assert session_sid == "alice:sess-1"
+    prewarm_workspace = next(m for m in prewarm_policy.volume_mounts if m.target == SANDBOX_WORKSPACE_ROOT)
+    session_workspace = next(m for m in session_policy.volume_mounts if m.target == SANDBOX_WORKSPACE_ROOT)
+    assert Path(prewarm_workspace.source) == user_root / "settings" / "sandbox" / "prewarm-workspace"
+    assert Path(session_workspace.source) == workspace_root
     assert adapter.disposed == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
@@ -999,7 +1007,8 @@ async def test_workspace_fs_does_not_replace_user_skill_sandbox(monkeypatch, tmp
     )
     await svc.execute(req)
 
-    assert len(adapter.created) == 1
+    assert len(adapter.created) == 2
+    assert adapter.created[1][0] == "alice:sess-1"
     assert adapter.disposed == []
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
     monkeypatch.delenv("SANDBOX_NETWORK_TOOL_ALLOWLIST", raising=False)
@@ -1031,7 +1040,7 @@ async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreach
         user_id="alice",
         session_id="sess-1",
         workspace_path=workspace_root,
-        argv=["mv", "/workspace/sess-1/notes/a.txt", "/workspace/sess-1/archive/a.txt"],
+        argv=["mv", "/workspace/notes/a.txt", "/workspace/archive/a.txt"],
     )
     items = await svc.list_workspace_files_flat(
         user_id="alice",
@@ -1041,7 +1050,7 @@ async def test_workspace_fs_host_operations_skip_opensandbox_create_when_unreach
 
     assert result["exit_code"] == 0
     assert (workspace_root / "archive" / "a.txt").read_text(encoding="utf-8") == "host write"
-    assert any(str(item.get("path") or "") == "/workspace/sess-1/archive/a.txt" for item in items)
+    assert any(str(item.get("path") or "") == "/workspace/archive/a.txt" for item in items)
     assert adapter.create_calls == 0
     monkeypatch.delenv("SHUTONG_USER_DATA_ROOT", raising=False)
 

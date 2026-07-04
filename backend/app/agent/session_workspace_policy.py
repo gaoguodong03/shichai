@@ -11,24 +11,23 @@ def sandbox_sessions_root() -> str:
 
 
 def sandbox_session_dir(session_id: str) -> str:
-    sid = (session_id or "").strip().strip("/")
-    if not sid:
-        sid = "session"
-    return f"{_SANDBOX_SESSIONS_ROOT}/{sid}"
+    return _SANDBOX_SESSIONS_ROOT
 
 
 def host_sessions_root_from_workspace(workspace_path: Path) -> Path:
-    """Infer host sessions directory from a session workspace path."""
+    """Return the host directory that should be mounted as /workspace."""
     wp = workspace_path.resolve()
     if wp.name == "workspace":
-        return wp.parent.parent
+        return wp
     if wp.parent.name == "workspaces":
-        return wp.parent.parent
+        return wp
     return wp.parent
 
 
 def host_session_dir(host_workspace_or_sessions_root: Path, session_id: str) -> Path:
     root = host_workspace_or_sessions_root.resolve()
+    if root.name == "workspace":
+        return root
     if root.name == "workspaces":
         return (root / session_id).resolve()
     session_root = (root / session_id).resolve()

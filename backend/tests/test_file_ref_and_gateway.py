@@ -571,6 +571,8 @@ def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
     )
     shell = " ".join(cmd)
     assert "/skills/demo-skill/scripts/tools/check.py" in shell
+    assert "cd /workspace" in shell
+    assert "cd /workspace/sess-1" not in shell
     assert env == {}
     assert cwd == "/workspace"
 
@@ -589,6 +591,8 @@ def test_build_sandbox_exec_request_for_shell_script_uses_bash():
 
     shell = " ".join(cmd)
     assert "/skills/demo-skill/scripts/tools/check.sh" in shell
+    assert "cd /workspace" in shell
+    assert "cd /workspace/sess-1" not in shell
     assert 'exec bash "$SCRIPT_PATH"' in shell
     assert "--name" in shell
     assert "'张 三'" in shell

@@ -26,8 +26,11 @@ def request_handle_cache_key(
     session_id: str,
     session_isolation: bool,
 ) -> str:
-    if (tool_name or "").strip() == "__sandbox_workspace_fs__":
+    name = (tool_name or "").strip()
+    if name == "__sandbox_workspace_fs__":
         return handle_cache_key(f"{user_id}:workspace", session_id)
+    if name == "run_skill_script" or name.startswith("run_skill_script_"):
+        return handle_cache_key(user_id, session_id)
     return handle_cache_key(user_id, session_id if session_isolation else "")
 
 

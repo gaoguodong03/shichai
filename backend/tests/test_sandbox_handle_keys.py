@@ -26,6 +26,12 @@ def test_request_handle_cache_key_respects_session_isolation():
         user_id="alice",
         session_id="sess-1",
         session_isolation=False,
+    ) == "alice:sess-1"
+    assert keys.request_handle_cache_key(
+        tool_name="generic_tool",
+        user_id="alice",
+        session_id="sess-1",
+        session_isolation=False,
     ) == "alice"
 
 

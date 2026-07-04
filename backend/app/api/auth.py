@@ -4,9 +4,6 @@
 密码以 hash 形式存储并对多用户隔离生效。
 """
 
-import asyncio
-import logging
-import os
 import re
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -17,10 +14,8 @@ from app.core.security import create_access_token, CurrentUser, user_context_dep
 from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
 from app.core.user_context import ensure_empty_session_presets, ensure_user_resource_layout, write_user_profile
-from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 
 router = APIRouter(tags=["auth"])
-logger = logging.getLogger(__name__)
 PHONE_REGEX = re.compile(r"^1[3-9]\d{9}$")
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -49,38 +44,6 @@ class ChangePasswordBody(BaseModel):
     new_password: str
 
 
-async def _prewarm_user_sandbox_after_login(username: str) -> None:
-    try:
-        svc = get_shared_sandbox_service()
-        try:
-            timeout_ms = int(os.getenv("SANDBOX_LOGIN_PREWARM_TIMEOUT_MS", "600000") or "600000")
-        except Exception:
-            timeout_ms = 600_000
-        effective_timeout_ms = max(120_000, timeout_ms)
-        logger.info(
-            "sandbox_login_prewarm_start user=%s timeout_ms=%s",
-            username,
-            effective_timeout_ms,
-        )
-        result = await svc.prewarm_user_sandbox(
-            username,
-            reason="login",
-            timeout_ms=effective_timeout_ms,
-        )
-        logger.info(
-            "sandbox_login_prewarm_done user=%s sandbox_id=%s requirements_hash=%s installed_hash=%s verified_hash=%s verifier=%s",
-            username,
-            result.get("sandbox_id", ""),
-            result.get("requirements_hash", ""),
-            result.get("installed_requirements_hash", ""),
-            result.get("verified_requirements_hash", ""),
-            result.get("requirements_verifier_version", ""),
-        )
-    except Exception as e:  # noqa: BLE001
-        # 预热失败不影响登录，只记录日志供排查。
-        logger.warning("sandbox_prewarm_after_login_failed user=%s err=%s", username, e)
-
-
 @router.post("/auth/login")
 async def login(body: LoginBody):
     """校验用户名密码，成功返回 access_token + 用户信息，失败返回 401"""
@@ -97,9 +60,6 @@ async def login(body: LoginBody):
     user_id = user_record.user_id if user_record is not None else ""
     if user_id:
         ensure_user_resource_layout(user_id=user_id, username=name)
-
-    # 登录后异步预热用户级沙箱，避免首次工具调用冷启动。
-    asyncio.create_task(_prewarm_user_sandbox_after_login(user_id or name))
 
     token = create_access_token(name)
     return {
