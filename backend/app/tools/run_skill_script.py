@@ -114,7 +114,7 @@ def _current_user_requirements_b64(user_id: str = "") -> str:
         user_ctx = get_user_context_for(uid) if uid else get_current_user_context(default_fallback=False)
         if user_ctx is None:
             return ""
-        path = (user_ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+        path = (user_ctx.settings_dir / "sandbox" / "requirements.txt").resolve()
         if not path.exists():
             return ""
         content = path.read_text(encoding="utf-8").strip()

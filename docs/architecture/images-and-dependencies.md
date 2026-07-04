@@ -11,7 +11,7 @@
 | 主应用镜像 `ST49_IMAGE` | `docker-compose.1panel.yml` 的 `st49.image`，模板为根目录 `Dockerfile` | 运行 FastAPI 后端、托管前端静态产物、连接 MCP、调用 OpenSandbox | 不负责隔离执行用户 Skill 脚本 |
 | OpenSandbox 控制面 | `OPENSANDBOX_SERVER_IMAGE`、`OPENSANDBOX_EXECD_IMAGE`、`OPENSANDBOX_EGRESS_IMAGE` | 提供沙箱生命周期 API、新建执行容器、转发执行命令 | 不应替换成业务沙箱镜像 |
 | 技能沙箱镜像 | `SANDBOX_STANDARD_IMAGE`、`SANDBOX_PLAYWRIGHT_IMAGE` | 执行用户 Skill 脚本，挂载用户工作区和技能目录 | 不运行 FastAPI，不托管前端 |
-| 用户沙箱依赖 | `backend/data/users/<user>/config/sandbox/requirements.txt` | 为单个用户额外安装 Python 包 | 不应写进主应用 `requirements.txt`，除非后端代码也依赖它 |
+| 用户沙箱依赖 | `backend/data/users/<user>/settings/sandbox/requirements.txt` | 为单个用户额外安装 Python 包 | 不应写进主应用 `requirements.txt`，除非后端代码也依赖它 |
 
 ## 依赖应该放哪里
 
@@ -21,13 +21,13 @@
 | 前端构建依赖 | `frontend/package.json` + `frontend/package-lock.json` | 只影响 Vue 构建 |
 | 所有 Skill 都常用的系统命令 | `docker/skill-sandbox/Dockerfile` | 进入标准沙箱镜像，减少首次执行安装成本 |
 | 只有网页自动化 Skill 需要的浏览器/爬虫能力 | `docker/skill-sandbox/Dockerfile.playwright` + `docker/skill-sandbox/requirements.playwright.txt` | 避免普通沙箱过大 |
-| 单个用户或导入 Skill 的 Python 包 | 用户 `config/sandbox/requirements.txt` | 用户隔离，导入 Skill 时自动 merge 并预热 |
+| 单个用户或导入 Skill 的 Python 包 | 用户 `settings/sandbox/requirements.txt` | 用户隔离，导入 Skill 时自动 merge 并预热 |
 | OpenSandbox 控制面版本 | `docker-compose.1panel.yml` 的 OpenSandbox 镜像 tag | 需要与 upstream API/execd 匹配 |
 
 ## 运行时配置流向
 
 1. `st49` 启动时由 `backend/app/core/runtime_env.py` 加载 `.env` 并填充默认值。
-2. 用户在设置页选择沙箱版本，后端写入用户级 `config/sandbox/settings.json`。
+2. 用户在设置页选择沙箱版本，后端写入用户级 `settings/sandbox/settings.json`。
 3. `SandboxService` 读取用户沙箱设置，选择 `standard` 或 `playwright` 对应镜像。
 4. 若用户 `requirements.txt` 非空，`SandboxService` 在该用户沙箱内执行 pip 安装和校验。
 5. Skill 脚本通过统一工具网关进入该用户沙箱执行。
@@ -53,7 +53,7 @@
 ### 2. Skill 脚本缺命令
 
 - 若是所有用户都需要的系统命令，改 `docker/skill-sandbox/Dockerfile` 或 `Dockerfile.playwright` 后发布新沙箱镜像。
-- 若只是某个 Python 包，写入用户 `config/sandbox/requirements.txt`，不要改主应用镜像。
+- 若只是某个 Python 包，写入用户 `settings/sandbox/requirements.txt`，不要改主应用镜像。
 
 ### 3. Playwright/浏览器失败
 
@@ -97,5 +97,5 @@
 
 浏览器类 Skill 需要同时确认两点：
 
-- 用户沙箱设置文件位于 `data/users/<用户名>/config/sandbox/sandbox/settings.json`，执行层会从同一路径读取 `image_variant` 并写入 `SANDBOX_IMAGE_VARIANT`。
+- 用户沙箱设置文件位于 `data/users/<user_id>/settings/sandbox/settings.json`，执行层会从同一路径读取 `image_variant` 并写入 `SANDBOX_IMAGE_VARIANT`。
 - 用户 requirements 中包含 `playwright` 或 `patchright` 且 `SANDBOX_IMAGE_VARIANT=playwright` 时，预热安装会自动补 Chromium 浏览器缓存；普通版沙箱不会因为全局 requirements 意外下载浏览器。

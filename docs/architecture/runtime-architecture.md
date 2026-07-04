@@ -208,13 +208,13 @@ stateDiagram-v2
 
 群聊「记忆」不是单独的数据库表，而是落在**该会话对应工作区**下的一块 Markdown 文件树，由 [`group_memory_store.py`](../../backend/app/agent/group_memory_store.py) 读写。会话 id 与前端里的会话一致时，工作区根路径为：
 
-`data/users/{user_id}/sessions/workspaces/{会话id}/`
+`data/users/{user_id}/sessions/{会话id}/workspace/`
 
 其下 **`memory/`** 约定如下（不存在会在写入时自动新建）：
 
 ```mermaid
 flowchart TB
-  subgraph ws [会话工作区 workspaces/会话id]
+  subgraph ws [会话工作区 sessions/会话id/workspace]
     mem[memory]
     mem --> factsFile["facts.md"]
     mem --> indexFile["index.md"]
@@ -237,7 +237,7 @@ flowchart TB
 **产品里说的「专家」**，在后端就是一条 **Agent 实例配置**：有稳定 **`agent_id`**、展示名 **`name`**、可选 **`role`** 与 **`system_prompt`**，并声明本轮推理要用的 **Skill**、**MCP**、以及（可选）**专用模型**。
 
 - **存哪里**：每个用户一份 JSON，路径为  
-  `data/users/{user_id}/config/dha_instances.json`
+  `data/users/{user_id}/resources/agents/{agent_id}/agent.json`
   内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**，专家资源包导入导出沿用 `/api/dha/instances/*`。
 
 - **主要字段（理解用）**
@@ -259,7 +259,7 @@ flowchart TB
 
 ### 6.3 大模型（LLM）怎么配、怎么落到某位专家
 
-- **全局配置在哪**：应用设置（如 `app_settings.json`）里通常有 **`default_llm`**（默认 provider  id，代码里常见回退为 `qwen`）和 **`llm_providers`**：一个**字典**，键是 provider id（字符串），值里一般有 `base_url`、`model`，以及 **`api_key`** 或 **`api_key_env`**（从环境变量读密钥）。
+- **全局配置在哪**：应用设置 `settings/app.json` 里保存 **`default_llm`**（默认 provider id，代码里常见回退为 `qwen`）；每个模型 provider 作为资源保存到 `resources/models/{model_provider_id}/model.json`，字段一般有 `base_url`、`model`，以及密钥引用或环境变量名。
 
 - **新建客户端**：[`llm_client.py`](../../backend/app/agent/llm_client.py) 中 `get_llm_from_config(provider_id, llm_providers)` 根据 id 取出配置，密钥优先用设置里明文，否则读环境变量；最终构造 **`QwenLLM`**（内部用 LangChain `ChatOpenAI`，**兼容 OpenAI API** 的 HTTP 形态），并开启 **流式** 等参数。
 
@@ -294,7 +294,7 @@ flowchart TB
 **组装顺序（理解即可）**
 
 1. **MCP 工具**  
-   - 配置来自当前用户的 **`mcp_servers.json`**；启动时只预加载有配置用户的 MCP 配置，不主动连接 Server。运行时由 [`mcp/manager.py`](../../backend/app/mcp/manager.py) 按用户维护 **`MCPToolManager`**（对话需要工具、测试连接或查看工具列表时再连接，进程退出时清理）。
+   - 配置来自当前用户的 **`resources/tools/{tool_id}/tool.json`**；启动时只预加载有配置用户的 MCP 配置，不主动连接 Server。运行时由 [`mcp/manager.py`](../../backend/app/mcp/manager.py) 按用户维护 **`MCPToolManager`**（对话需要工具、测试连接或查看工具列表时再连接，进程退出时清理）。
    - 专家若配置了 **`mcp_server_ids`**，则只加载这些 server 上的工具；若为空，则根据各 Skill 的 **`allowed-tools.mcp`** 合并 server id；必要时对历史 id 做兼容。  
    - 工具名一般为 **`{server_id}_{工具名}`** 形式，便于区分来源。
 

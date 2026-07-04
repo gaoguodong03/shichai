@@ -72,7 +72,7 @@ class SandboxRequirementsMixin:
                 str(e)[:500],
             )
             return ""
-        path = (ctx.config_dir / "sandbox" / "requirements.txt").resolve()
+        path = (ctx.settings_dir / "sandbox" / "requirements.txt").resolve()
         try:
             if not path.exists():
                 logger.info(

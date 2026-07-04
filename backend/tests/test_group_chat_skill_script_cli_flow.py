@@ -74,25 +74,25 @@ def _frontend_flow_env(tmp_path, monkeypatch):
     monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
 
     user_root = tmp_path / user
-    config_dir = user_root / "config"
+    settings_dir = user_root / "settings"
+    agent_dir = user_root / "resources" / "agents" / "沙箱依赖验证专家"
     skill_dir = user_root / "resources" / "skills" / "sandbox-dependency-verify"
     scripts_dir = skill_dir / "scripts"
-    config_dir.mkdir(parents=True, exist_ok=True)
+    settings_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "sandbox").mkdir(parents=True, exist_ok=True)
-    (config_dir / "sandbox" / "requirements.txt").write_text("pendulum==3.0.0\n", encoding="utf-8")
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (settings_dir / "sandbox").mkdir(parents=True, exist_ok=True)
+    (settings_dir / "sandbox" / "requirements.txt").write_text("pendulum==3.0.0\n", encoding="utf-8")
 
-    (config_dir / "agents.json").write_text(
+    (agent_dir / "agent.json").write_text(
         json.dumps(
-            [
-                {
-                    "name": "沙箱依赖验证专家",
-                    "description": "验证沙箱 Python 包依赖是否可用",
-                    "system_prompt": "收到运行脚本请求时，使用 run_skill_script 调用指定脚本。",
-                    "skills": [{"name": "沙箱依赖验证", "directory_name": "sandbox-dependency-verify"}],
-                    "llm_name": "fake",
-                }
-            ],
+            {
+                "name": "沙箱依赖验证专家",
+                "description": "验证沙箱 Python 包依赖是否可用",
+                "system_prompt": "收到运行脚本请求时，使用 run_skill_script 调用指定脚本。",
+                "skills": [{"name": "沙箱依赖验证", "directory_name": "sandbox-dependency-verify"}],
+                "llm_name": "fake",
+            },
             ensure_ascii=False,
         ),
         encoding="utf-8",

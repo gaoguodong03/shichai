@@ -10,7 +10,7 @@
 |------|------|------|
 | 浏览器 | Vue 3 + Vite + Pinia + Vue Router + Tailwind | 单页应用：登录、主壳、工作区、资源中心、设置；解析 SSE 流式对话 |
 | API 服务 | FastAPI（`uvicorn`） | `/api/*`：认证、会话、群聊流、文件、Agent/专家配置、MCP/Skills/LLM 设置 |
-| 数据 | 用户目录下的 JSON / Markdown / 文件 | 多租户隔离：每用户独立会话、配置、技能、工作区 |
+| 数据 | 用户目录下的 JSON / Markdown / 文件 | 多租户隔离：每用户独立资源、设置、会话、工作区 |
 | 外部 | 兼容 OpenAI 的 LLM HTTP、MCP 子进程、技能脚本子进程 | 推理与工具执行均在服务端 |
 
 ---
@@ -21,7 +21,7 @@
 
 1. 入口：`python -m app.main` → 加载 `app/main.py`。
 2. **环境**：从 `backend/.env` 及当前工作目录再 `load_dotenv` 一次。
-3. **生命周期**（`lifespan`）：启动时调用 `ensure_mcp_and_skills_initialized()`，只预热已存在且确有资源的用户目录（有用户 Skill 或 `mcp_servers.json`），加载用户 Skills 与 MCP 配置；不在启动期主动连接 MCP Server。关闭时 `cleanup_all_mcp_runtimes()`，避免 asyncio cancel scope 跨任务问题。
+3. **生命周期**（`lifespan`）：启动时调用 `ensure_mcp_and_skills_initialized()`，只预热已存在且确有资源的用户目录（有用户 Skill 或 `resources/tools`），加载用户 Skills 与 MCP 配置；不在启动期主动连接 MCP Server。关闭时 `cleanup_all_mcp_runtimes()`，避免 asyncio cancel scope 跨任务问题。
 4. **中间件**：CORS，来源由 `CORS_ORIGINS` 控制（默认含 `http://localhost:5173`）。
 5. **路由挂载**（均带 `/api` 前缀）：`settings`、`files`、`auth`、`dha`（Agent）、`group_chat`、`sessions`。
 6. **生产静态站**：若设置 `STATIC_DIR` 且目录存在，则挂载前端构建产物并做 SPA 回退；否则根路径返回 JSON 提示。
@@ -46,7 +46,7 @@
 
 1. 用户通过 `/api/auth/login`（或 register）取得 JWT；前端存 `dha_token` 并设置登录标记。
 2. 后续 `/api` 请求依赖 **Bearer**；后端 `user_context_dependency` 解析出当前用户名。
-3. 所有会话、专家配置、MCP、Skills、工作区路径均在 **`data/users/{user_id}/...`**（根目录由 `SHUTONG_USER_DATA_ROOT` 等配置，见 `backend/README.md`）。
+3. 所有会话、专家配置、MCP、模型、Skills、工作区路径均在 **`data/users/{user_id}/...`**（根目录由 `SHUTONG_USER_DATA_ROOT` 等配置，见 `backend/README.md`）。
 4. 调试可选 `ALLOW_ANONYMOUS_API=1`（**禁止用于生产**）。
 
 ---
@@ -133,7 +133,7 @@
 以下对应 `group_chat_stream` 中选中某位专家后的路径，源码以 `backend/app/api/group_chat.py`、`backend/app/agent/tools_for_skill.py`、`backend/app/agent/skill_agent_runtime.py`、`backend/app/agent/simple_agent.py` 为准。
 
 1. **按 `agent_id` 读配置**
-   专家列表来自当前用户的 `data/users/{user_id}/config/dha_instances.json`（`load_agent_instances()`），流内用 `agent_id` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skill_ids`、`mcp_server_ids`、`llm_provider_id`、`file_capabilities`、`url_capability` 等）。若该 `agent_id` 不存在，编排会中断，不继续组工具。
+   专家列表来自当前用户的 `data/users/{user_id}/resources/agents/*/agent.json`（`load_agent_instances()`），流内用 `agent_id` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skill_ids`、`mcp_server_ids`、`llm_provider_id`、`file_capabilities`、`url_capability` 等）。若该 `agent_id` 不存在，编排会中断，不继续组工具。
 
 2. **组装 LLM**
    `_get_llm_for_agent`：若专家配置了非空 **`llm_provider_id`** 则用该 provider；否则使用应用设置中的 **`default_llm`**（如缺省 `qwen`），再结合 `llm_providers` 与密钥构造可调用客户端（`get_llm_from_config`）。
@@ -160,7 +160,7 @@
 
 ### 5.4 MCP 与 Skills 在何时参与
 
-- **MCP**：配置在用户 `mcp_servers.json`；`MCPToolManager`（`app/mcp/manager.py`）按用户维护连接，进程退出时清理；本机 stdio 入口脚本在 `app/mcp/stdio/`（配置里写相对 backend 的路径，如 `app/mcp/stdio/file_reader_mcp.py`）；工具名通常带 server 前缀。
+- **MCP**：配置在用户 `resources/tools/{tool_id}/tool.json`；`MCPToolManager`（`app/mcp/manager.py`）按用户维护连接，进程退出时清理；本机 stdio 入口脚本在 `app/mcp/stdio/`（配置里写相对 backend 的路径，如 `app/mcp/stdio/file_reader_mcp.py`）；工具名通常带 server 前缀。
 - **Skills**：`resources/skills/{skill_id}/SKILL.md` 由 `SkillsLoader` 解析缓存；多 Skill 时可本地关键词相关度选型（见 `backend/README.md`）；脚本通过 `run_skill_script_*` 在用户会话工作区内执行。
 
 应用启动**不会**预连所有 MCP；首次需要时在请求路径内连接（与 `lifespan` 中的设计一致）。
@@ -169,8 +169,9 @@
 
 ## 6. 设置与资源中心（概念位置）
 
-- **应用设置、LLM Provider、默认模型**：经 `/api/settings` 系列路由，落盘如 `app_settings.json`。
-- **专家、场景（session_presets）、技能、MCP、文件**：前端资源中心各子页对应后端 settings / files / dha 等接口；「场景」复用 `session_presets`，不单独建表。
+- **应用设置和默认模型**：经 `/api/settings` 系列路由，落盘到 `settings/app.json`。
+- **LLM Provider**：作为资源中心模型资源，落盘到 `resources/models/{model_id}/model.json`。
+- **专家、场景、技能、MCP、文件**：前端资源中心各子页对应后端 settings / files / dha 等接口；场景落在 `resources/scenarios`，专家落在 `resources/agents`，MCP 落在 `resources/tools`。
 
 ---
 

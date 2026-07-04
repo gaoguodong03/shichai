@@ -9,12 +9,12 @@ from app.mcp.stdio import audio_asr
 
 def test_resolve_data_audio_path_requires_backend_data_prefix(tmp_path: Path):
     data_root = tmp_path / "data"
-    audio_file = data_root / "users" / "u1" / "sessions" / "workspaces" / "s1" / "meeting.wav"
+    audio_file = data_root / "users" / "u1" / "sessions" / "s1" / "workspace" / "meeting.wav"
     audio_file.parent.mkdir(parents=True)
     audio_file.write_bytes(b"wav")
 
     resolved = audio_asr.resolve_data_audio_path(
-        "backend/data/users/u1/sessions/workspaces/s1/meeting.wav",
+        "backend/data/users/u1/sessions/s1/workspace/meeting.wav",
         data_root=data_root,
     )
 
@@ -22,7 +22,7 @@ def test_resolve_data_audio_path_requires_backend_data_prefix(tmp_path: Path):
 
     with pytest.raises(ValueError, match="backend/data"):
         audio_asr.resolve_data_audio_path(
-            "users/u1/sessions/workspaces/s1/meeting.wav",
+            "users/u1/sessions/s1/workspace/meeting.wav",
             data_root=data_root,
         )
 

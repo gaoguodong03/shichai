@@ -18,7 +18,9 @@ from app.core.llm_bundle import (
 )
 from app.core.scenario_bundle import extract_scenario_bundle_dir
 from app.core.host_config import normalize_host_config_dict
+from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
+from app.core.user_context import get_current_user_context
 from app.core.user_settings_paths import app_settings_path
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -119,12 +121,59 @@ def _refresh_builtin_llm_provider_presets(providers: Any) -> Dict[str, Dict[str,
     return out
 
 
+def _load_llm_provider_resources() -> Dict[str, Dict[str, Any]]:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return {}
+    root = user_ctx.models_dir.resolve()
+    if not root.is_dir():
+        return {}
+    providers: Dict[str, Dict[str, Any]] = {}
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        body = child / "model.json"
+        if not body.is_file():
+            continue
+        try:
+            raw = json.loads(body.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or child.name).strip()
+        if not name:
+            continue
+        meta = dict(raw)
+        meta.pop("name", None)
+        providers[name] = meta
+    return providers
+
+
+def _save_llm_provider_resources(providers: Dict[str, Dict[str, Any]]) -> None:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return
+    rows = []
+    for name, meta in providers.items():
+        if not isinstance(meta, dict):
+            continue
+        row = dict(meta)
+        row["name"] = str(name)
+        rows.append(row)
+    mirror_rows_to_resource_dir(
+        rows,
+        user_ctx.models_dir.resolve(),
+        "name",
+        body_filename="model.json",
+    )
+
+
 def load_app_settings() -> Dict[str, Any]:
     """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
     path = app_settings_path()
     data = {
         "default_llm": "qwen3-max",
-        "llm_providers": dict(_DEFAULT_LLM_PROVIDERS),
         "system_prompt": "",
         "host_profile": dict(_DEFAULT_HOST_PROFILE),
     }
@@ -140,23 +189,23 @@ def load_app_settings() -> Dict[str, Any]:
                     if "system_prompt" in loaded:
                         loaded = dict(loaded)
                         loaded["system_prompt"] = str(loaded.get("system_prompt") or "")
+                    loaded.pop("llm_providers", None)
                 data.update(loaded)
                 data.pop("router_tfidf", None)
-                providers = _refresh_builtin_llm_provider_presets(data.get("llm_providers") or {})
-                deleted = {
-                    str(x).strip()
-                    for x in (data.get("_deleted_llm_providers") or [])
-                    if str(x).strip()
-                }
-                for k, v in _DEFAULT_LLM_PROVIDERS.items():
-                    if k not in providers and k not in deleted:
-                        providers[k] = v
-                for k in deleted:
-                    providers.pop(k, None)
-                data["llm_providers"] = providers
-                return data
         except Exception:
             pass
+    providers = _refresh_builtin_llm_provider_presets(_load_llm_provider_resources())
+    deleted = {
+        str(x).strip()
+        for x in (data.get("_deleted_llm_providers") or [])
+        if str(x).strip()
+    }
+    for k, v in _DEFAULT_LLM_PROVIDERS.items():
+        if k not in providers and k not in deleted:
+            providers[k] = v
+    for k in deleted:
+        providers.pop(k, None)
+    data["llm_providers"] = providers
     return data
 
 
@@ -261,10 +310,12 @@ def save_app_settings(data: Dict[str, Any]):
             patch["_deleted_llm_providers"] = deleted_defaults
         else:
             current.pop("_deleted_llm_providers", None)
-        patch["llm_providers"] = merged
+        _save_llm_provider_resources(merged)
+        patch.pop("llm_providers", None)
 
     current.update(patch)
     current.pop("router_tfidf", None)
+    current.pop("llm_providers", None)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=2)
 

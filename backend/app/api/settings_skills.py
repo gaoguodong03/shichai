@@ -79,7 +79,7 @@ router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_depende
 
 
 async def _invalidate_mcp_runtime_after_config_change():
-    """磁盘上的 mcp_servers.json 变更后丢弃内存中的连接，下次再懒加载。"""
+    """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
     un = get_current_username()
     if un:
         await dispose_mcp_runtime_for_user(un)

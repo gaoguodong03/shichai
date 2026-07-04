@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.core.atomic_json import atomic_write_json
-from app.core.user_context import UserContext
-
 from .paths import SessionLayoutPaths, UserObjectStorePaths, ensure_session_layout
 
 
@@ -20,8 +18,8 @@ def _canonical_json(data: Any) -> bytes:
     return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def user_object_store(user_ctx: UserContext) -> UserObjectStorePaths:
-    return UserObjectStorePaths.from_user_ctx(user_ctx)
+def user_object_store(layout: SessionLayoutPaths) -> UserObjectStorePaths:
+    return UserObjectStorePaths.from_session_layout(layout)
 
 
 def write_blob(store: UserObjectStorePaths, data: bytes) -> str:

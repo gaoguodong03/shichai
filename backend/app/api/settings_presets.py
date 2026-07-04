@@ -43,17 +43,12 @@ from app.core.settings_bundle_import import (
 )
 from app.core.name_based_resources import normalize_scenario_row
 from app.core.user_context import get_current_user_context, get_current_username
-from app.core.user_settings_paths import session_presets_path, skills_dir_path
+from app.core.user_settings_paths import skills_dir_path
 from app.mcp.manager import dispose_mcp_runtime_for_user
 from app.skills.loader import get_builtin_skills_dir, get_skills_loader_for_user, invalidate_skills_cache_for_user
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 logger = logging.getLogger(__name__)
-
-
-def _get_session_presets_path() -> Path:
-    """根据当前用户返回 session_presets.json 路径。"""
-    return session_presets_path()
 
 
 def _request_log_meta(request: Optional[Request]) -> Dict[str, str]:
@@ -94,23 +89,6 @@ def _normalize_session_preset_row_for_api(item: Dict[str, Any]) -> Optional[Dict
         return None
 
 
-def _load_session_preset_rows_from_file(path: Path) -> List[Dict[str, Any]]:
-    """解析磁盘 session_presets.json 为与 GET session-presets 一致的行列表。"""
-    presets: List[Dict[str, Any]] = []
-    if not path.exists():
-        return presets
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(raw, list):
-            for item in raw:
-                row_out = _normalize_session_preset_row_for_api(item)
-                if row_out is not None:
-                    presets.append(row_out)
-    except Exception:
-        return []
-    return presets
-
-
 def _load_session_preset_rows_from_resource_files() -> List[Dict[str, Any]]:
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
@@ -138,35 +116,23 @@ def _load_session_preset_rows_from_resource_files() -> List[Dict[str, Any]]:
 def _merge_session_presets_with_resource_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     resource_rows = _load_session_preset_rows_from_resource_files()
     if not resource_rows:
-        return rows
-    by_name: Dict[str, Dict[str, Any]] = {str(row.get("name") or ""): dict(row) for row in rows if row.get("name")}
-    order = [str(row.get("name") or "") for row in rows if row.get("name")]
-    changed = False
+        return []
+    by_name: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
     for row in resource_rows:
         resource_name = str(row.get("name") or "").strip()
         if not resource_name:
             continue
-        if resource_name not in by_name:
-            order.append(resource_name)
-            changed = True
-        elif by_name[resource_name] != row:
-            changed = True
+        order.append(resource_name)
         by_name[resource_name] = row
     merged = [by_name[resource_name] for resource_name in order if resource_name in by_name]
-    if changed:
-        path = _get_session_presets_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-        _mirror_session_presets_to_resources(merged)
     return merged
 
 
 @router.get("/settings/session-presets")
 async def get_session_presets():
     """读取会话快捷预设（用于前端快捷按钮）。"""
-    path = _get_session_presets_path()
-    presets = _load_session_preset_rows_from_file(path)
-    presets = _merge_session_presets_with_resource_rows(presets)
+    presets = _merge_session_presets_with_resource_rows([])
     return {"status": "ok", "data": {"presets": presets}}
 
 
@@ -345,7 +311,7 @@ def _prepare_import_scene_by_name_identity(
     )
     remapped_preset = _remap_scene_agents(remapped_preset, agent_name_map)
 
-    existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+    existing_presets = _load_session_preset_rows_from_resource_files()
     existing_scene_names = {
         _normalized_name_key(row.get("name")): str(row.get("name") or "").strip()
         for row in existing_presets
@@ -375,13 +341,11 @@ def _prepare_import_scene_by_name_identity(
 def _merge_session_presets_into_file(
     normalized_rows: List[Dict[str, Any]], name_conflict: str
 ) -> Tuple[List[Dict[str, Any]], List[str], List[str], List[str]]:
-    """将已规范化的场景行合并写入 session_presets.json。
+    """将已规范化的场景行合并写入 resources/scenarios。
 
     返回 (合并后列表, 本次写入的 preset name 列表, 因兼容 skip 模式跳过的名称, 被同名覆盖的旧 name 列表)。
     """
-    path = _get_session_presets_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing_rows = _load_session_preset_rows_from_file(path)
+    existing_rows = _load_session_preset_rows_from_resource_files()
     by_name: Dict[str, Dict[str, Any]] = {str(r["name"]): dict(r) for r in existing_rows if r.get("name")}
     original_names = [str(r["name"]) for r in existing_rows if r.get("name")]
     name_to_existing_names: Dict[str, List[str]] = {}
@@ -431,7 +395,6 @@ def _merge_session_presets_into_file(
     for name, row in by_name.items():
         if name not in used:
             merged.append(row)
-    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
     _mirror_session_presets_to_resources(merged)
     return merged, imported_names, skipped_by_name, overwritten_existing_names
 
@@ -450,9 +413,7 @@ def _mirror_session_presets_to_resources(rows: List[Dict[str, Any]]) -> None:
 @router.put("/settings/session-presets")
 async def update_session_presets(body: SessionPresetsBody, request: Request = None):
     """保存会话快捷预设（用于前端快捷按钮）。"""
-    path = _get_session_presets_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    before_rows = _load_session_preset_rows_from_file(path)
+    before_rows = _load_session_preset_rows_from_resource_files()
     before_names = _preset_names(before_rows)
     resource_names_before = _scenario_resource_names()
     normalized: List[Dict[str, Any]] = []
@@ -463,7 +424,6 @@ async def update_session_presets(body: SessionPresetsBody, request: Request = No
             continue
         seen.add(row["name"])
         normalized.append(row)
-    path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
     _mirror_session_presets_to_resources(normalized)
     incoming_names = [str(item.name or "").strip() for item in body.presets if str(item.name or "").strip()]
     after_names = _preset_names(normalized)
@@ -492,7 +452,7 @@ def _get_skills_dir() -> Path:
 
 
 async def _invalidate_mcp_runtime_after_config_change():
-    """磁盘上的 mcp_servers.json 变更后丢弃内存中的连接，下次再懒加载。"""
+    """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
     un = get_current_username()
     if un:
         await dispose_mcp_runtime_for_user(un)
@@ -518,8 +478,7 @@ def _session_preset_bundle_zip_for_preset(preset_name: str) -> Tuple[bytes, Dict
     key = str(preset_name or "").strip()
     if not key:
         raise HTTPException(status_code=400, detail="preset_name required")
-    path = _get_session_presets_path()
-    rows = _load_session_preset_rows_from_file(path)
+    rows = _load_session_preset_rows_from_resource_files()
     match = next((r for r in rows if str(r.get("name") or "").strip() == key), None)
     if match is None:
         raise HTTPException(status_code=404, detail="Session preset not found")
@@ -615,7 +574,7 @@ async def import_session_preset_bundle(
             skill_directories_in_zip,
         )
 
-        existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        existing_presets = _load_session_preset_rows_from_resource_files()
         preset_name_conflicts = [
             str(r.get("name") or "")
             for r in existing_presets
@@ -679,11 +638,11 @@ async def import_session_preset_bundle(
                 },
             }
 
-        before_import_names = _preset_names(_load_session_preset_rows_from_file(_get_session_presets_path()))
+        before_import_names = _preset_names(_load_session_preset_rows_from_resource_files())
         before_import_resource_names = _scenario_resource_names()
         helper_result = await _import_scene_from_bundle_bytes(raw, dry_run=False)
         summary = dict(helper_result.get("summary") or {})
-        merged_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        merged_presets = _load_session_preset_rows_from_resource_files()
         imported_names = list(summary.get("preset_imported_names") or [])
         skipped_by_name = list(summary.get("skipped_by_name") or [])
         overwritten_existing_names = list(summary.get("overwritten_existing_names") or [])
@@ -759,7 +718,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             skill_directories_in_zip,
         )
         tool_name_map, _mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
-        existing_presets = _load_session_preset_rows_from_file(_get_session_presets_path())
+        existing_presets = _load_session_preset_rows_from_resource_files()
         preset_name_conflicts = [
             str(r.get("name") or "")
             for r in existing_presets
@@ -856,7 +815,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
             imported_names: List[str] = []
             skipped_by_name: List[str] = []
             overwritten_existing_names: List[str] = []
-            _mirror_session_presets_to_resources(_load_session_preset_rows_from_file(_get_session_presets_path()))
+            _mirror_session_presets_to_resources(_load_session_preset_rows_from_resource_files())
         else:
             _merged_presets, imported_names, skipped_by_name, overwritten_existing_names = _merge_session_presets_into_file(
                 [norm], "overwrite"

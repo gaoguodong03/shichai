@@ -10,7 +10,7 @@
 3. /Users/ggd/project/shichai/docs/architecture/user-resource-store/storage-standard.md
 
 目标：
-按“方案 A：继续 JSON 文件为主”实现新的用户资源存储标准。身份目录主键改为 user_id，不在主路径兼容旧邮箱目录。资源中心所有一等资源统一放到 backend/data/users/<user_id>/resources/ 下，包括 scenarios、agents、skills、tools、models。sessions/ 只放真实会话历史和运行状态。vault/ 只放密钥。沙箱可以物理挂载当前用户全部 Skill，但逻辑上只注册和暴露本轮场景/专家允许的 Skill 和工具。
+按“方案 A：继续 JSON 文件为主”实现新的用户资源存储标准。身份目录主键改为 user_id，不在主路径兼容旧邮箱目录。资源中心所有一等资源统一放到 backend/data/users/<user_id>/resources/ 下，包括 scenarios、agents、skills、tools、models。settings/ 存应用设置、密钥库和沙箱依赖。sessions/ 只放真实会话历史、工作区和会话检查点。沙箱可以物理挂载当前用户全部 Skill，但逻辑上只注册和暴露本轮场景/专家允许的 Skill 和工具。
 
 关键标准：
 - resources/scenarios/<scenario_id>/scenario.json
@@ -18,8 +18,10 @@
 - resources/skills/<skill_id>/SKILL.md + scripts/ + assets/ + templates/ + other/
 - resources/tools/<tool_id>/tool.json
 - resources/models/<model_provider_id>/model.json
-- sessions/<session_id>/meta.json + messages.jsonl + events.jsonl + runtime_state.json + workspace/
-- vault/secrets.enc.json
+- settings/app.json
+- settings/secrets.enc.json
+- settings/sandbox/requirements.txt
+- sessions/<session_id>/meta.json + history.json + chat.md + workspace/ + checkpoints/
 
 请先做代码阅读和实现计划，不要直接大改。重点查：
 - backend/app/core/user_context.py

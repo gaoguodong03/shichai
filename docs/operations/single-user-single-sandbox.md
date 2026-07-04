@@ -36,7 +36,7 @@
 - Docker/OpenSandbox 会复用同一镜像 tag 的本地镜像层；已下载的模板镜像不会按用户重复下载。若需要提前下载模板但不新建用户沙箱，可在宿主机先执行 `docker pull <SANDBOX_STANDARD_IMAGE>`。
 - 如需独立维护 Skill 沙箱镜像，可使用 `docker/skill-sandbox/Dockerfile` 构建并通过 `SANDBOX_STANDARD_IMAGE` 覆盖。
 - 修改镜像内容后需要重建并推送镜像，再重启后端/OpenSandbox 相关服务。
-- 每用户额外 Python 包通过 `data/users/<user_id>/config/sandbox/requirements.txt` 管理；内容 hash 变化时会在该用户沙箱内重新安装。
+- 每用户额外 Python 包通过 `data/users/<user_id>/settings/sandbox/requirements.txt` 管理；内容 hash 变化时会在该用户沙箱内重新安装。
 
 ## 审计口径
 

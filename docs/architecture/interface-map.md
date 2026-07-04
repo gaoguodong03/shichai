@@ -76,10 +76,9 @@ flowchart TB
 
   subgraph Data["用户隔离数据 backend/data/users/{user_id}"]
     UserProfile["profile.json"]
-    Config["config/<br/>app_settings.json<br/>mcp_servers.json<br/>session_presets.json<br/>dha_instances.json<br/>sandbox/requirements.txt"]
     Resources["resources/<br/>scenarios / agents / skills / tools / models"]
-    Sessions["sessions/<br/>group_sessions_meta.json<br/>group_history_{session_id}.json<br/>workspaces/{session_id}/..."]
-    Vault["vault/secrets.enc.json"]
+    Settings["settings/<br/>app.json<br/>secrets.enc.json<br/>sandbox/requirements.txt"]
+    Sessions["sessions/<br/>index.json<br/>{session_id}/history.json<br/>{session_id}/workspace<br/>{session_id}/checkpoints"]
   end
 
   subgraph External["外部依赖"]
@@ -387,21 +386,21 @@ flowchart TB
 | 健康检查 | `GET /health` | `backend/app/main.py` | 无 | 无 |
 | 登录注册 | `POST /api/auth/login`、`POST /api/auth/register` | `backend/app/api/auth.py` | `core/auth_db.py`、`core/user_context.py` | 账号库、`users/{user_id}/profile.json` |
 | 修改账号密码 | `PUT/POST /api/auth/account`、`PUT/POST /api/auth/password` | `backend/app/api/auth.py` | `core/auth_db.py` | 账号库 |
-| 会话列表和 CRUD | `GET/POST/PUT/DELETE /api/sessions*` | `backend/app/api/sessions.py` | `agent/group_session_service.py`、`api/group_chat_state.py` | `sessions/group_sessions_meta.json`、`sessions/group_history_{id}.json` |
+| 会话列表和 CRUD | `GET/POST/PUT/DELETE /api/sessions*` | `backend/app/api/sessions.py` | `agent/group_session_service.py`、`api/group_chat_state.py` | `sessions/index.json`、`sessions/{id}/history.json` |
 | 主对话流 | `POST /api/sessions/{id}/chat/stream` | `backend/app/api/sessions.py` | `agent/group_chat_runtime.py` | 会话 history/meta/workspace |
 | 非流式兜底 | `POST /api/sessions/{id}/chat` | `backend/app/api/sessions.py` | 内部聚合同一条 SSE 流 | 无新增独立状态 |
 | 停止运行 | `POST /api/sessions/{id}/chat/stop` | `backend/app/api/sessions.py` | `group_session_service.stop_group_session_run()`、`group_chat_state.cancel_group_session_run()` | `runtime_state` |
 | 会话事件推送 | `GET /api/sessions/{id}/events/stream` | `backend/app/api/sessions.py` | `group_session_service.group_session_events_stream()` | 内存订阅队列 |
 | 会话归档 | `GET /api/sessions/{id}/archive`、`POST /api/sessions/{id}/export` | `api/group_chat.py`、`api/sessions.py` | `group_chat_state`、`group_session_service` | 工作区 Markdown |
-| 工作区文件 | `/api/workspaces/{id}/files*` | `backend/app/api/files.py` | 路径归一化和文件系统 | `sessions/workspaces/{id}/...` |
-| 专家 | `/api/agents*` | `backend/app/api/agents.py` | `core/resource_store.py`、`core/settings_references.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
+| 工作区文件 | `/api/workspaces/{id}/files*` | `backend/app/api/files.py` | 路径归一化和文件系统 | `sessions/{id}/workspace/...` |
+| 专家 | `/api/agents*` | `backend/app/api/agents.py` | `core/resource_store.py`、`core/settings_references.py` | `resources/agents/{agent_name}/agent.json` |
 | 专家包 | `/api/dha/instances/*bundle` | `backend/app/api/agents.py` | `core/expert_bundle.py`、`core/settings_bundle_import.py` | ZIP 流、资源目录 |
-| 场景 | `/api/settings/session-presets*` | `backend/app/api/settings_presets.py` | `core/scenario_bundle.py`、`core/settings_bundle_import.py` | `config/session_presets.json`、`resources/scenarios/{id}/scenario.json` |
+| 场景 | `/api/settings/session-presets*` | `backend/app/api/settings_presets.py` | `core/scenario_bundle.py`、`core/settings_bundle_import.py` | `resources/scenarios/{scenario_name}/scenario.json` |
 | Skill | `/api/settings/skills*` | `backend/app/api/settings_skills.py` | `settings_skill_parts.py`、`settings_skill_store.py`、`skills/loader.py` | `resources/skills/{skill_id}/...` |
-| MCP | `/api/settings/mcp*` | `backend/app/api/settings_mcp.py` | `mcp/manager.py`、`core/settings_bundle_import.py` | `config/mcp_servers.json` |
-| 模型和主持人 | `/api/settings/app`、`/api/settings/host-profile*` | `backend/app/api/settings_app.py` | `agent/llm_client.py` 运行时读取 | `config/app_settings.json` |
-| 密钥 | `/api/settings/api-secrets*` | `backend/app/api/settings_secrets.py` | `core/user_settings_paths.py` | `vault/secrets.enc.json` |
-| 沙箱设置 | `/api/settings/sandbox*` | `backend/app/api/sandbox_settings.py` | `agent/sandbox_image_policy.py`、`core/sandbox_requirements.py` | `config/sandbox/requirements.txt`、沙箱配置 |
+| MCP | `/api/settings/mcp*` | `backend/app/api/settings_mcp.py` | `mcp/manager.py`、`core/settings_bundle_import.py` | `resources/tools/{tool_name}/tool.json` |
+| 模型和主持人 | `/api/settings/app`、`/api/settings/host-profile*` | `backend/app/api/settings_app.py` | `agent/llm_client.py` 运行时读取 | `settings/app.json`、`resources/models/{model_name}/model.json` |
+| 密钥 | `/api/settings/api-secrets*` | `backend/app/api/settings_secrets.py` | `core/user_settings_paths.py` | `settings/secrets.enc.json` |
+| 沙箱设置 | `/api/settings/sandbox*` | `backend/app/api/sandbox_settings.py` | `agent/sandbox_image_policy.py`、`core/sandbox_requirements.py` | `settings/sandbox/requirements.txt`、沙箱配置 |
 
 ### 3.1 后端接口逐项说明
 
@@ -424,41 +423,41 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/sessions` | 获取当前用户的会话列表；用于左侧会话列表和运行态标记。 | `backend/app/api/sessions.py` | `sessions/group_sessions_meta.json` |
-| `POST` | `/api/sessions` | 新建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/group_sessions_meta.json`、`sessions/group_history_{id}.json` |
+| `GET` | `/api/sessions` | 获取当前用户的会话列表；用于左侧会话列表和运行态标记。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/meta.json` |
+| `POST` | `/api/sessions` | 新建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/meta.json`、`sessions/{id}/history.json` |
 | `GET` | `/api/sessions/{session_id}` | 获取会话详情；返回标题、成员、消息历史、专家展示信息、运行态。 | `backend/app/api/sessions.py` | 会话 meta、history、Agent 配置 |
 | `GET` | `/api/sessions/{session_id}/events/stream` | 会话后台事件流；页面刷新、切换会话或后台任务继续运行时，用它同步 `runtime_state` 和消息更新。 | `backend/app/api/sessions.py` | 内存订阅队列、会话 `runtime_state` |
 | `PUT` | `/api/sessions/{session_id}` | 更新会话；改标题、主持人配置、编排模式、替换或增删专家成员。 | `backend/app/api/sessions.py` | 会话 meta |
 | `DELETE` | `/api/sessions/{session_id}` | 删除会话；清理该会话 meta、history 和工作区目录。 | `backend/app/api/sessions.py` | 会话 meta、history、workspace |
 | `POST` | `/api/sessions/{session_id}/chat/stop` | 停止当前会话正在运行的一轮回复；前端点击停止时调用。 | `backend/app/api/sessions.py` | `ACTIVE_GROUP_RUNS`、会话 `runtime_state` |
-| `DELETE` | `/api/sessions/{session_id}/messages/{message_id}` | 删除会话中的单条消息；用于清理错误消息，避免污染后续上下文。 | `backend/app/api/sessions.py` | `sessions/group_history_{id}.json` |
+| `DELETE` | `/api/sessions/{session_id}/messages/{message_id}` | 删除会话中的单条消息；用于清理错误消息，避免污染后续上下文。 | `backend/app/api/sessions.py` | `sessions/{id}/history.json` |
 | `POST` | `/api/sessions/{session_id}/chat/stream` | 主对话入口；接收用户消息或继续指令，进入主持人调度、专家执行、工具调用，并以 SSE 返回 `route/content/message/end`。 | `backend/app/api/sessions.py` | `agent/group_chat_runtime.py`、会话 history/meta/workspace |
 | `POST` | `/api/sessions/{session_id}/chat` | 非流式兜底入口；内部复用同一条流式逻辑并聚合最终事件，当前端 SSE 中断时用于补偿本轮回复。 | `backend/app/api/sessions.py` | 同 `/chat/stream` |
-| `POST` | `/api/sessions/{session_id}/export` | 将会话历史导出为 Markdown 文件并写入当前会话工作区。 | `backend/app/api/sessions.py` | `sessions/workspaces/{session_id}/...` |
+| `POST` | `/api/sessions/{session_id}/export` | 将会话历史导出为 Markdown 文件并写入当前会话工作区。 | `backend/app/api/sessions.py` | `sessions/{session_id}/workspace/...` |
 | `GET` | `/api/sessions/{group_session_id}/archive` | 生成会话归档视图数据；返回按消息组织的归档片段和专家展示信息。 | `backend/app/api/group_chat.py` | 会话 history、Agent 配置 |
 
 #### 工作区文件
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/workspaces/sessions-with-files` | 列出有工作区文件的会话；资源中心“文件”分区使用。空工作区会被顺手清理。 | `backend/app/api/files.py` | `sessions/workspaces/{session_id}/...` |
-| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 在某个会话工作区内新建目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `GET` | `/api/workspaces/{workspace_id}/files` | 列出工作区指定目录下的文件和子目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `GET` | `/api/workspaces/{workspace_id}/files/download` | 下载工作区内指定文件；图片和附件下载也走这个入口。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `GET` | `/api/workspaces/{workspace_id}/files/content` | 读取工作区内 UTF-8 文本文件内容，用于预览、编辑或插入提示词。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存或覆盖工作区内文本文件内容。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `DELETE` | `/api/workspaces/{workspace_id}/files/content` | 删除工作区内指定文件或目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `POST` | `/api/workspaces/{workspace_id}/files` | 在工作区内新建新文本文件。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `POST` | `/api/workspaces/{workspace_id}/files/upload` | 上传本地文件到指定工作区目录；附件引用和文件面板上传使用。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
-| `PUT` | `/api/workspaces/{workspace_id}/files/rename` | 重命名或移动工作区内文件、目录。 | `backend/app/api/files.py` | `sessions/workspaces/{workspace_id}/...` |
+| `GET` | `/api/workspaces/sessions-with-files` | 列出有工作区文件的会话；资源中心“文件”分区使用。空工作区会被顺手清理。 | `backend/app/api/files.py` | `sessions/{session_id}/workspace/...` |
+| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 在某个会话工作区内新建目录。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `GET` | `/api/workspaces/{workspace_id}/files` | 列出工作区指定目录下的文件和子目录。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `GET` | `/api/workspaces/{workspace_id}/files/download` | 下载工作区内指定文件；图片和附件下载也走这个入口。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `GET` | `/api/workspaces/{workspace_id}/files/content` | 读取工作区内 UTF-8 文本文件内容，用于预览、编辑或插入提示词。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存或覆盖工作区内文本文件内容。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `DELETE` | `/api/workspaces/{workspace_id}/files/content` | 删除工作区内指定文件或目录。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `POST` | `/api/workspaces/{workspace_id}/files` | 在工作区内新建新文本文件。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `POST` | `/api/workspaces/{workspace_id}/files/upload` | 上传本地文件到指定工作区目录；附件引用和文件面板上传使用。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
+| `PUT` | `/api/workspaces/{workspace_id}/files/rename` | 重命名或移动工作区内文件、目录。 | `backend/app/api/files.py` | `sessions/{workspace_id}/workspace/...` |
 
 #### 专家 Agent 与专家资源包
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/agents` | 获取当前用户专家列表；资源中心专家分区、会话成员展示和主持人调度都依赖它。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/` |
-| `POST` | `/api/agents` | 新建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
-| `PUT` | `/api/agents/{agent_id}` | 更新专家配置；改人设、绑定 Skill/MCP、模型、头像和能力开关。 | `backend/app/api/agents.py` | `config/dha_instances.json`、`resources/agents/{agent_id}/agent.json` |
+| `GET` | `/api/agents` | 获取当前用户专家列表；资源中心专家分区、会话成员展示和主持人调度都依赖它。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
+| `POST` | `/api/agents` | 新建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
+| `PUT` | `/api/agents/{agent_id}` | 更新专家配置；改人设、绑定 Skill/MCP、模型、头像和能力开关。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
 | `DELETE` | `/api/agents/{agent_id}` | 删除专家；同时标记场景预设中缺失的专家引用，避免导入导出引用静默丢失。 | `backend/app/api/agents.py` | 专家配置、场景引用快照 |
 | `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 ZIP；包含专家配置、关联 Skill 和可选 MCP 配置。 | `backend/app/api/agents.py` | ZIP 文件流、专家/Skill/MCP 配置 |
 | `POST` | `/api/dha/instances/import-bundle` | 导入专家资源包；支持 dry-run 预览缺失依赖、冲突和即将导入的 Skill/MCP。 | `backend/app/api/agents.py` | 专家配置、Skill 目录、MCP 配置、沙箱 requirements |
@@ -467,8 +466,8 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/settings/session-presets` | 获取场景/会话预设列表；会从资源目录恢复缺失的聚合配置。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/` |
-| `PUT` | `/api/settings/session-presets` | 保存场景列表；用于新建、编辑、删除场景后整体写回。 | `backend/app/api/settings_presets.py` | `config/session_presets.json`、`resources/scenarios/{id}/scenario.json` |
+| `GET` | `/api/settings/session-presets` | 获取场景/会话预设列表。 | `backend/app/api/settings_presets.py` | `resources/scenarios/{id}/scenario.json` |
+| `PUT` | `/api/settings/session-presets` | 保存场景列表；用于新建、编辑、删除场景后整体写回。 | `backend/app/api/settings_presets.py` | `resources/scenarios/{id}/scenario.json` |
 | `GET` | `/api/settings/session-presets/{preset_id}/export-bundle` | 导出场景资源包 ZIP；包含场景、专家、Skill 和可选 MCP。 | `backend/app/api/settings_presets.py` | ZIP 文件流、场景/专家/Skill/MCP 配置 |
 | `POST` | `/api/settings/session-presets/import-bundle` | 导入场景资源包；可 dry-run 预览缺失引用、同名覆盖和 Skill/MCP 本地 id 重映射。 | `backend/app/api/settings_presets.py` | 场景、专家、Skill、MCP、沙箱 requirements |
 
@@ -496,10 +495,10 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/settings/mcp` | 获取当前用户 MCP Server 配置列表；只读配置，不主动连接 Server。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json` |
+| `GET` | `/api/settings/mcp` | 获取当前用户 MCP Server 配置列表；只读配置，不主动连接 Server。 | `backend/app/api/settings_mcp.py` | `resources/tools/{id}/tool.json` |
 | `GET` | `/api/settings/mcp/{server_id}/export-zip` | 导出单个 MCP Server 配置为 ZIP。 | `backend/app/api/settings_mcp.py` | ZIP 文件流、MCP 配置 |
-| `POST` | `/api/settings/mcp/import-zip` | 导入 MCP 配置 ZIP；支持 dry-run 预览。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json`、`resources/tools/` |
-| `POST` | `/api/settings/mcp` | 新建 MCP Server 配置；支持 stdio、HTTP/Streamable HTTP 传输信息。 | `backend/app/api/settings_mcp.py` | `config/mcp_servers.json`、`resources/tools/{id}/tool.json` |
+| `POST` | `/api/settings/mcp/import-zip` | 导入 MCP 配置 ZIP；支持 dry-run 预览。 | `backend/app/api/settings_mcp.py` | `resources/tools/{id}/tool.json` |
+| `POST` | `/api/settings/mcp` | 新建 MCP Server 配置；支持 stdio、HTTP/Streamable HTTP 传输信息。 | `backend/app/api/settings_mcp.py` | `resources/tools/{id}/tool.json` |
 | `PUT` | `/api/settings/mcp/{server_id}` | 更新 MCP Server 名称、传输配置或 metadata；会丢弃内存连接，下次懒加载。 | `backend/app/api/settings_mcp.py` | MCP 配置、MCP 运行时缓存 |
 | `DELETE` | `/api/settings/mcp/{server_id}` | 删除 MCP Server；同时为仍引用它的 Skill 保存缺失引用标签。 | `backend/app/api/settings_mcp.py` | MCP 配置、Skill frontmatter 引用标签 |
 | `POST` | `/api/settings/mcp/{server_id}/test` | 测试 MCP Server 连接；连接后调用 `list_tools`，返回连接状态、耗时和工具数。 | `backend/app/api/settings_mcp.py` | `mcp/manager.py` 内存连接 |
@@ -511,26 +510,26 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/settings/host-profile` | 获取账号级默认主持人配置，包括显示名、系统提示词、Skill、MCP、模型和能力开关。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
-| `PUT` | `/api/settings/host-profile` | 更新账号级默认主持人配置；新会话或无场景主持人时会读取它。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
+| `GET` | `/api/settings/host-profile` | 获取账号级默认主持人配置，包括显示名、系统提示词、Skill、MCP、模型和能力开关。 | `backend/app/api/settings_app.py` | `settings/app.json` |
+| `PUT` | `/api/settings/host-profile` | 更新账号级默认主持人配置；新会话或无场景主持人时会读取它。 | `backend/app/api/settings_app.py` | `settings/app.json` |
 | `GET` | `/api/settings/host-profile/defaults` | 获取内置默认主持人配置；不读用户配置文件。 | `backend/app/api/settings_app.py` | 不读写业务数据 |
-| `POST` | `/api/settings/host-profile/reset` | 将主持人配置恢复为内置默认值。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
-| `GET` | `/api/settings/app` | 获取应用设置；包含默认 LLM 和供应商配置，返回前会隐藏 `api_key` 明文。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
-| `PUT` | `/api/settings/app` | 更新应用设置；主要用于默认模型、供应商 base_url/model/key 引用等配置。 | `backend/app/api/settings_app.py` | `config/app_settings.json` |
-| `GET` | `/api/settings/api-secrets` | 列出密钥库条目；只返回 `id`、标签和是否已设置，不返回明文 key。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
-| `POST` | `/api/settings/api-secrets` | 新增密钥；用于 LLM Provider 或 MCP 配置通过 `api_key_ref` 引用。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
-| `PUT` | `/api/settings/api-secrets/{secret_id}` | 更新密钥标签或 key；传空 key 可清除已保存明文。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
-| `DELETE` | `/api/settings/api-secrets/{secret_id}` | 删除指定密钥条目。 | `backend/app/api/settings_secrets.py` | `vault/secrets.enc.json` |
+| `POST` | `/api/settings/host-profile/reset` | 将主持人配置恢复为内置默认值。 | `backend/app/api/settings_app.py` | `settings/app.json` |
+| `GET` | `/api/settings/app` | 获取应用设置；包含默认 LLM 和供应商配置，返回前会隐藏 `api_key` 明文。 | `backend/app/api/settings_app.py` | `settings/app.json`、`resources/models/{id}/model.json` |
+| `PUT` | `/api/settings/app` | 更新应用设置；主要用于默认模型、供应商 base_url/model/key 引用等配置。 | `backend/app/api/settings_app.py` | `settings/app.json`、`resources/models/{id}/model.json` |
+| `GET` | `/api/settings/api-secrets` | 列出密钥库条目；只返回 `id`、标签和是否已设置，不返回明文 key。 | `backend/app/api/settings_secrets.py` | `settings/secrets.enc.json` |
+| `POST` | `/api/settings/api-secrets` | 新增密钥；用于 LLM Provider 或 MCP 配置通过 `api_key_ref` 引用。 | `backend/app/api/settings_secrets.py` | `settings/secrets.enc.json` |
+| `PUT` | `/api/settings/api-secrets/{secret_id}` | 更新密钥标签或 key；传空 key 可清除已保存明文。 | `backend/app/api/settings_secrets.py` | `settings/secrets.enc.json` |
+| `DELETE` | `/api/settings/api-secrets/{secret_id}` | 删除指定密钥条目。 | `backend/app/api/settings_secrets.py` | `settings/secrets.enc.json` |
 
 #### 沙箱镜像与 Python 依赖
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/settings/sandbox` | 获取当前用户沙箱镜像档位、镜像地址和可选项。 | `backend/app/api/sandbox_settings.py` | `config/sandbox` |
-| `PUT` | `/api/settings/sandbox` | 保存沙箱镜像档位，并预热当前用户沙箱验证镜像可用。 | `backend/app/api/sandbox_settings.py` | `config/sandbox`、OpenSandbox |
-| `GET` | `/api/settings/sandbox/requirements` | 读取当前用户 Python requirements 文本。 | `backend/app/api/sandbox_settings.py` | `config/sandbox/requirements.txt` |
-| `PUT` | `/api/settings/sandbox/requirements` | 覆盖保存当前用户 Python requirements，并预热沙箱安装验证。 | `backend/app/api/sandbox_settings.py` | `config/sandbox/requirements.txt`、OpenSandbox |
-| `POST` | `/api/settings/sandbox/requirements/merge` | 合并一组 requirements 行；Skill 导入或前端依赖合并使用，成功后预热验证。 | `backend/app/api/sandbox_settings.py` | `config/sandbox/requirements.txt`、OpenSandbox |
+| `GET` | `/api/settings/sandbox` | 获取当前用户沙箱镜像档位、镜像地址和可选项。 | `backend/app/api/sandbox_settings.py` | `settings/sandbox` |
+| `PUT` | `/api/settings/sandbox` | 保存沙箱镜像档位，并预热当前用户沙箱验证镜像可用。 | `backend/app/api/sandbox_settings.py` | `settings/sandbox`、OpenSandbox |
+| `GET` | `/api/settings/sandbox/requirements` | 读取当前用户 Python requirements 文本。 | `backend/app/api/sandbox_settings.py` | `settings/sandbox/requirements.txt` |
+| `PUT` | `/api/settings/sandbox/requirements` | 覆盖保存当前用户 Python requirements，并预热沙箱安装验证。 | `backend/app/api/sandbox_settings.py` | `settings/sandbox/requirements.txt`、OpenSandbox |
+| `POST` | `/api/settings/sandbox/requirements/merge` | 合并一组 requirements 行；Skill 导入或前端依赖合并使用，成功后预热验证。 | `backend/app/api/sandbox_settings.py` | `settings/sandbox/requirements.txt`、OpenSandbox |
 
 ## 4. 会话流式链路图
 
@@ -619,7 +618,7 @@ flowchart LR
   subgraph State["后端状态来源"]
     Active["ACTIVE_GROUP_RUNS<br/>进程内当前运行任务"]
     Stored["meta.runtime_state<br/>落盘恢复态"]
-    History["group_history_{id}.json"]
+    History["sessions/{id}/history.json"]
   end
 
   Send --> Route --> Content --> Message --> End
@@ -635,12 +634,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  AgentProfile["Agent 配置<br/>config/dha_instances.json<br/>resources/agents/{agent_id}/agent.json"]
+  AgentProfile["Agent 配置<br/>resources/agents/{agent_id}/agent.json"]
   SessionMeta["会话 meta<br/>agent_ids / leader_agent_id / host_config / orchestration_profile"]
   SkillTree["Skill 目录<br/>resources/skills/{skill_id}/SKILL.md<br/>scripts/manifest.json<br/>scripts/*"]
-  McpConfig["MCP 配置<br/>config/mcp_servers.json"]
-  AppSettings["应用设置<br/>config/app_settings.json<br/>default_llm / llm_providers / host_profile"]
-  SandboxReq["用户沙箱依赖<br/>config/sandbox/requirements.txt"]
+  McpConfig["MCP 配置<br/>resources/tools/{tool_id}/tool.json"]
+  AppSettings["应用设置<br/>settings/app.json<br/>default_llm / host_profile"]
+  ModelConfig["模型配置<br/>resources/models/{model_id}/model.json"]
+  SandboxReq["用户沙箱依赖<br/>settings/sandbox/requirements.txt"]
 
   ExpertRuntime["expert_runtime.py<br/>resolve_expert_skill"]
   ToolsBuilder["tools_for_skill.py<br/>build_tools_for_group_chat"]
@@ -662,6 +662,7 @@ flowchart TB
   SessionMeta --> ExpertRuntime
   SkillTree --> ExpertRuntime
   AppSettings --> ExpertRuntime
+  ModelConfig --> LLM
   ExpertRuntime --> ToolsBuilder
   ExpertRuntime --> SkillAgent
   ExpertRuntime --> LLM
@@ -699,7 +700,7 @@ flowchart TB
 | 参数入口 | `cli_args_json` 必须是 JSON 字符串数组；`input_json` 已禁用 |
 | 当前工作目录 | 沙箱内当前会话工作区，路径由 `sandbox_session_dir(workspace_id)` 决定 |
 | 环境变量 | `SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_REQUIREMENTS_B64` 等 |
-| 依赖来源 | 当前用户 `config/sandbox/requirements.txt` 编码后透传，沙箱按 hash 校验和安装 |
+| 依赖来源 | 当前用户 `settings/sandbox/requirements.txt` 编码后透传，沙箱按 hash 校验和安装 |
 | 失败码常见来源 | `script_not_found`、`invalid_cli_args_json`、`manifest_validation_failed`、`gateway_timeout`、`gateway_tool_unavailable`、`script_exit_nonzero` |
 
 ## 6. 数据目录接口图
@@ -710,8 +711,7 @@ flowchart TB
   Root --> Profile["profile.json<br/>用户资源根 profile"]
   Root --> Resources["resources"]
   Root --> Sessions["sessions"]
-  Root --> Config["config"]
-  Root --> Vault["vault"]
+  Root --> Settings["settings"]
 
   Resources --> Scenarios["scenarios/{scenario_id}/scenario.json"]
   Resources --> Agents["agents/{agent_id}/agent.json"]
@@ -719,18 +719,21 @@ flowchart TB
   Resources --> Tools["tools/"]
   Resources --> Models["models/"]
 
-  Sessions --> Meta["group_sessions_meta.json"]
-  Sessions --> History["group_history_{session_id}.json"]
-  Sessions --> Workspaces["workspaces/{session_id}/..."]
+  Sessions --> Index["index.json"]
+  Sessions --> Meta["{session_id}/meta.json"]
+  Sessions --> History["{session_id}/history.json"]
+  Sessions --> Workspaces["{session_id}/workspace/..."]
+  Sessions --> Checkpoints["{session_id}/checkpoints/..."]
+  Checkpoints --> Objects["objects/blobs<br/>objects/trees"]
   Workspaces --> Memory["memory/facts.md<br/>memory/llm_roundtrips.jsonl"]
 
-  Config --> App["app_settings.json"]
-  Config --> MCP["mcp_servers.json"]
-  Config --> Presets["session_presets.json"]
-  Config --> DHA["dha_instances.json"]
-  Config --> Sandbox["sandbox/requirements.txt"]
-
-  Vault --> SecretVault["secrets.enc.json"]
+  Settings --> App["app.json"]
+  Settings --> SecretVault["secrets.enc.json"]
+  Settings --> Sandbox["sandbox/requirements.txt"]
+  Resources --> MCP["tools/{tool_name}/tool.json"]
+  Resources --> Models["models/{model_name}/model.json"]
+  Resources --> Scenarios["scenarios/{scenario_name}/scenario.json"]
+  Resources --> Agents["agents/{agent_name}/agent.json"]
 ```
 
 路径归属规则：
@@ -739,18 +742,17 @@ flowchart TB
 |------|----------|----------|
 | 用户身份和路径根 | `profile.json` | `core/user_context.py` |
 | 登录凭据 | 账号库，不在会话数据里 | `core/auth_db.py`、`api/auth.py` |
-| 会话列表和运行态 | `sessions/group_sessions_meta.json` | `api/group_chat_state.py`、`agent/group_session_service.py` |
-| 会话消息 | `sessions/group_history_{session_id}.json` | `api/group_chat_state.py` |
-| 工作区文件 | `sessions/workspaces/{session_id}/...` | `api/files.py`、内置工作区工具、沙箱挂载 |
-| 场景聚合配置 | `config/session_presets.json` | `api/settings_presets.py` |
-| 场景资源目录 | `resources/scenarios/{id}/scenario.json` | `core/resource_store.py` 镜像、导入导出 |
-| 专家聚合配置 | `config/dha_instances.json` | `api/agents.py` |
-| 专家资源目录 | `resources/agents/{agent_id}/agent.json` | `core/resource_store.py` 镜像、导入导出 |
+| 会话列表和运行态 | `sessions/index.json` | `api/group_chat_state.py`、`agent/group_session_service.py` |
+| 会话消息 | `sessions/{session_id}/history.json` | `api/group_chat_state.py` |
+| 工作区文件 | `sessions/{session_id}/workspace/...` | `api/files.py`、内置工作区工具、沙箱挂载 |
+| 场景资源目录 | `resources/scenarios/{scenario_name}/scenario.json` | `api/settings_presets.py`、导入导出 |
+| 专家资源目录 | `resources/agents/{agent_name}/agent.json` | `api/agents.py`、导入导出 |
 | Skill | `resources/skills/{skill_id}/...` | `api/settings_skills.py`、`skills/loader.py` |
-| MCP | `config/mcp_servers.json` | `api/settings_mcp.py`、`mcp/manager.py` |
-| LLM、全局规则和主持人设置 | `config/app_settings.json` | `api/settings_app.py`、`agent/llm_client.py` |
-| 密钥引用和密钥库 | `vault/secrets.enc.json` | `api/settings_secrets.py` |
-| 沙箱依赖 | `config/sandbox/requirements.txt` | `api/sandbox_settings.py`、`tools/run_skill_script.py` |
+| MCP | `resources/tools/{tool_name}/tool.json` | `api/settings_mcp.py`、`mcp/manager.py` |
+| LLM Provider | `resources/models/{model_name}/model.json` | `api/settings_app.py`、`agent/llm_client.py` |
+| 全局规则和主持人设置 | `settings/app.json` | `api/settings_app.py` |
+| 密钥引用和密钥库 | `settings/secrets.enc.json` | `api/settings_secrets.py` |
+| 沙箱依赖 | `settings/sandbox/requirements.txt` | `api/sandbox_settings.py`、`tools/run_skill_script.py` |
 
 ## 7. 新增功能接入图
 

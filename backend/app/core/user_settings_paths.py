@@ -14,15 +14,7 @@ def require_user_context():
 
 
 def app_settings_path() -> Path:
-    return (require_user_context().config_dir / "app_settings.json").resolve()
-
-
-def mcp_config_path() -> Path:
-    return (require_user_context().config_dir / "mcp_servers.json").resolve()
-
-
-def session_presets_path() -> Path:
-    return (require_user_context().config_dir / "session_presets.json").resolve()
+    return (require_user_context().settings_dir / "app.json").resolve()
 
 
 def scenarios_resources_dir() -> Path:
@@ -42,11 +34,11 @@ def models_resources_dir() -> Path:
 
 
 def vault_secrets_path() -> Path:
-    return (require_user_context().vault_dir / "secrets.enc.json").resolve()
+    return (require_user_context().settings_dir / "secrets.enc.json").resolve()
 
 
 def sandbox_requirements_path() -> Path:
-    return (require_user_context().config_dir / "sandbox" / "requirements.txt").resolve()
+    return (require_user_context().settings_dir / "sandbox" / "requirements.txt").resolve()
 
 
 def skills_dir_path() -> Path:

@@ -16,13 +16,11 @@ def _reset_init_state(monkeypatch):
 
 async def test_startup_init_loads_only_users_with_resources(monkeypatch, tmp_path):
     root = tmp_path / "users"
-    (root / "alice" / "skills" / "demo").mkdir(parents=True)
-    (root / "alice" / "skills" / "demo" / "SKILL.md").write_text("---\nname: Demo\n---\nbody\n", encoding="utf-8")
-    (root / "alice" / "config").mkdir(parents=True)
-    (root / "alice" / "config" / "mcp_servers.json").write_text("[]\n", encoding="utf-8")
+    (root / "alice" / "resources" / "skills" / "demo").mkdir(parents=True)
+    (root / "alice" / "resources" / "skills" / "demo" / "SKILL.md").write_text("---\nname: Demo\n---\nbody\n", encoding="utf-8")
     (root / "bob").mkdir(parents=True)
-    (root / "carol" / "config").mkdir(parents=True)
-    (root / "carol" / "config" / "mcp_servers.json").write_text("[]\n", encoding="utf-8")
+    (root / "carol" / "resources" / "tools" / "Search").mkdir(parents=True)
+    (root / "carol" / "resources" / "tools" / "Search" / "tool.json").write_text('{"name": "Search", "type": "mcp"}\n', encoding="utf-8")
     (root / ".hidden").mkdir(parents=True)
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(root))
 
@@ -31,8 +29,8 @@ async def test_startup_init_loads_only_users_with_resources(monkeypatch, tmp_pat
 
     def fake_user_context(username: str):
         return SimpleNamespace(
-            skills_dir=root / username / "skills",
-            config_dir=root / username / "config",
+            skills_dir=root / username / "resources" / "skills",
+            tools_dir=root / username / "resources" / "tools",
         )
 
     def fake_skills_loader(username: str, skills_dir):
@@ -51,9 +49,9 @@ async def test_startup_init_loads_only_users_with_resources(monkeypatch, tmp_pat
     await core_init.ensure_mcp_and_skills_initialized()
 
     assert skills_seen == [
-        ("alice", str(root / "alice" / "skills")),
+        ("alice", str(root / "alice" / "resources" / "skills")),
     ]
-    assert mcp_seen == ["alice", "carol"]
+    assert mcp_seen == ["carol"]
 
 
 async def test_startup_init_handles_empty_user_root(monkeypatch, tmp_path):

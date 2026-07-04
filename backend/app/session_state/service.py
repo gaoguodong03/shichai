@@ -56,8 +56,8 @@ def _session_layout(session_id: str) -> SessionLayoutPaths:
     return ensure_session_layout(_current_user_ctx(), session_id)
 
 
-def _object_store() -> Any:
-    return user_object_store(_current_user_ctx())
+def _object_store(session_id: str) -> Any:
+    return user_object_store(_session_layout(session_id))
 
 
 def _workspace_root(session_id: str) -> Path:
@@ -193,7 +193,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
         return {"skipped": True, "reason": reason}
 
     layout = _session_layout(session_id)
-    store = _object_store()
+    store = _object_store(session_id)
     meta_snapshot = _session_meta_snapshot(session_id)
     workspace_root = _workspace_root(session_id)
     history = load_group_history(session_id)
@@ -288,7 +288,7 @@ def _enrich_checkpoint(store, commit: Dict[str, Any]) -> Dict[str, Any]:
 
 def list_session_checkpoints(session_id: str) -> List[Dict[str, Any]]:
     layout = ensure_session_layout(_current_user_ctx(), session_id)
-    store = _object_store()
+    store = _object_store(session_id)
     chain = load_chain(layout)
     checkpoints: List[Dict[str, Any]] = []
     for commit_id in chain:
@@ -300,11 +300,11 @@ def list_session_checkpoints(session_id: str) -> List[Dict[str, Any]]:
 
 
 def _copy_session_state(source_session_id: str, target_session_id: str, snapshot: Dict[str, Any]) -> Dict[str, Any]:
-    store = _object_store()
+    source_store = _object_store(source_session_id)
     layout = _session_layout(target_session_id)
     workspace_root = _workspace_root(target_session_id)
-    _restore_tree(store, workspace_root, str(snapshot["workspace_tree"]))
-    markdown = read_blob(store, str(snapshot["chat_blob"])).decode("utf-8", errors="ignore")
+    _restore_tree(source_store, workspace_root, str(snapshot["workspace_tree"]))
+    markdown = read_blob(source_store, str(snapshot["chat_blob"])).decode("utf-8", errors="ignore")
     layout.chat_md.write_text(markdown, encoding="utf-8")
     with suppress_auto_checkpoint():
         messages = _restore_history(target_session_id, markdown)
@@ -317,16 +317,21 @@ def _copy_session_state(source_session_id: str, target_session_id: str, snapshot
         cloned_meta["created_at"] = _now()
         meta[target_session_id] = cloned_meta
         save_group_meta(meta)
+    target_store = _object_store(target_session_id)
+    target_tree_hash = _store_workspace_tree(target_store, workspace_root)
+    target_chat_hash = write_blob(target_store, markdown.encode("utf-8"))
+    target_meta_snapshot = copy.deepcopy(snapshot["session_meta"])
+    target_state_hash = _canonical_state_hash(target_meta_snapshot, target_tree_hash, target_chat_hash)
     commit_id = f"commit-{uuid.uuid4().hex[:16]}"
     commit_obj = {
         "id": commit_id,
         "parent": str(snapshot.get("commit_id") or "") or None,
         "created_at": _now(),
         "reason": f"clone:{source_session_id}",
-        "state_hash": snapshot["state_hash"],
-        "workspace_tree": snapshot["workspace_tree"],
-        "chat_blob": snapshot["chat_blob"],
-        "session_meta": copy.deepcopy(snapshot["session_meta"]),
+        "state_hash": target_state_hash,
+        "workspace_tree": target_tree_hash,
+        "chat_blob": target_chat_hash,
+        "session_meta": target_meta_snapshot,
     }
     write_commit(layout, commit_id, commit_obj)
     save_chain(layout, [commit_id])
@@ -407,7 +412,7 @@ def _synthesize_snapshot_at_message_count(
         raise HTTPException(status_code=404, detail="Message checkpoint not found")
 
     truncated = history[:message_count]
-    store = _object_store()
+    store = _object_store(session_id)
     markdown = _build_session_chat_markdown(truncated)
     chat_hash = write_blob(store, markdown.encode("utf-8"))
     tree_hash = ""
@@ -447,7 +452,7 @@ def _synthesize_snapshot_at_message_count(
 
 def _apply_snapshot_to_session(session_id: str, snapshot: Dict[str, Any]) -> None:
     layout = _session_layout(session_id)
-    store = _object_store()
+    store = _object_store(session_id)
     workspace_root = _workspace_root(session_id)
     tree_hash = str(snapshot.get("workspace_tree") or "").strip()
     chat_blob = str(snapshot.get("chat_blob") or "").strip()
@@ -505,7 +510,6 @@ def clone_session_from_checkpoint(
 
 async def rollback_session_to_checkpoint(session_id: str, checkpoint_id: str) -> Dict[str, Any]:
     layout = _session_layout(session_id)
-    store = _object_store()
     chain = load_chain(layout)
     if checkpoint_id not in chain:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
@@ -551,7 +555,7 @@ async def rollback_session_to_message(
 
     resolved_checkpoint_id = str(snapshot.get("id") or snapshot.get("commit_id") or "").strip()
     layout = _session_layout(session_id)
-    store = _object_store()
+    store = _object_store(session_id)
     chain = load_chain(layout)
 
     if resolved_checkpoint_id and resolved_checkpoint_id in chain and not snapshot.get("synthesized"):

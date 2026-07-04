@@ -5,7 +5,7 @@ from app.agent import sandbox_policy_builder as builder
 def test_build_mounts_for_request_uses_user_resources_skills(monkeypatch, tmp_path):
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    workspace = user_root / "sessions" / "workspaces" / "sess-1"
+    workspace = user_root / "sessions" / "sess-1" / "workspace"
     workspace.mkdir(parents=True)
     (user_root / "resources" / "skills").mkdir(parents=True)
 
@@ -14,7 +14,7 @@ def test_build_mounts_for_request_uses_user_resources_skills(monkeypatch, tmp_pa
         workspace_path=workspace,
     )
 
-    assert sessions_root == user_root / "sessions" / "workspaces"
+    assert sessions_root == user_root / "sessions"
     assert skills_root == user_root / "resources" / "skills"
     assert (sessions_root / ".st49-mount-ready").is_file()
     assert {m.target for m in mounts} == {"/workspace", "/skills"}

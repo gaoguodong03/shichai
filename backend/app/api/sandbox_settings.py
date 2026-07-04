@@ -50,12 +50,12 @@ def _require_user_ctx():
     return user_ctx
 
 
-def _sandbox_config_dir() -> Path:
-    return (_require_user_ctx().config_dir / "sandbox").resolve()
+def _sandbox_settings_dir() -> Path:
+    return (_require_user_ctx().settings_dir / "sandbox").resolve()
 
 
 def _sandbox_requirements_path() -> Path:
-    return (_sandbox_config_dir() / "requirements.txt").resolve()
+    return (_sandbox_settings_dir() / "requirements.txt").resolve()
 
 
 def _settings_validate_timeout_ms() -> int:
@@ -85,7 +85,7 @@ async def _prewarm_current_user(reason: str, timeout_ms: int) -> Dict[str, Any] 
 
 @router.get("/settings/sandbox")
 async def get_sandbox_settings():
-    variant = read_sandbox_variant(_sandbox_config_dir())
+    variant = read_sandbox_variant(_sandbox_settings_dir())
     return {
         "status": "ok",
         "data": {
@@ -100,7 +100,7 @@ async def get_sandbox_settings():
 async def save_sandbox_settings(body: SandboxSettingsBody):
     variant = normalize_sandbox_variant(body.image_variant)
     try:
-        saved_variant = write_sandbox_variant(_sandbox_config_dir(), variant)
+        saved_variant = write_sandbox_variant(_sandbox_settings_dir(), variant)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存沙箱设置失败: {e}")
 

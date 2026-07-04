@@ -1,8 +1,8 @@
 """
 MCP Server 管理器：规范、轻量的调用方式。
 
-- stdio 类 MCP 的 Python 入口脚本位于同包下 `stdio/`（如 `stdio_json_filter.py`、`file_reader_mcp.py`），在 mcp_servers.json 的 args 中写相对 backend 的路径，例如 `app/mcp/stdio/file_reader_mcp.py`。
-- 多用户：每个用户名对应独立的 MCPToolManager 实例与连接，配置来自 data/users/{user}/config/mcp_servers.json。
+- stdio 类 MCP 的 Python 入口脚本位于同包下 `stdio/`（如 `stdio_json_filter.py`、`file_reader_mcp.py`），工具资源的 transport.args 中写相对 backend 的路径，例如 `app/mcp/stdio/file_reader_mcp.py`。
+- 多用户：每个用户名对应独立的 MCPToolManager 实例与连接，配置来自 data/users/{user}/resources/tools/{tool}/tool.json。
 - 生命周期：进程退出时在 lifespan 内 cleanup_all_mcp_runtimes；单用户配置变更时可 dispose 该用户实例。
 - 调用方式：Tool.func 为异步函数，直接 session.call_tool；由 graph/agent 侧 await。
 """
@@ -379,13 +379,30 @@ def _build_stdio_child_env(
     return env
 
 
-def _user_mcp_config_path(username: str) -> str:
+def _load_user_mcp_resource_configs(username: str) -> List[Dict[str, Any]]:
     from app.core.user_context import get_user_context_for
+    from app.core.name_based_resources import normalize_tool_row
 
     uname = (username or "").strip()
     if not uname:
-        raise ValueError("username required for MCP config path")
-    return str((get_user_context_for(uname).config_dir / "mcp_servers.json").resolve())
+        raise ValueError("username required for MCP resources")
+    root = get_user_context_for(uname).tools_dir.resolve()
+    rows: List[Dict[str, Any]] = []
+    if not root.is_dir():
+        return rows
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        body = child / "tool.json"
+        if not body.is_file():
+            continue
+        try:
+            parsed = json.loads(body.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                rows.append(normalize_tool_row(parsed))
+        except Exception:
+            logger.warning("load mcp tool resource failed: %s", body, exc_info=True)
+    return rows
 
 
 def get_mcp_manager_for_user(username: str) -> "MCPToolManager":
@@ -402,30 +419,28 @@ def get_mcp_manager_for_user(username: str) -> "MCPToolManager":
 
 
 async def ensure_user_mcp_bootstrapped(username: str) -> "MCPToolManager":
-    """加载该用户 mcp_servers.json，并对非 lazy 的 Server 建立连接（幂等）。"""
+    """加载该用户 resources/tools，并对非 lazy 的 Server 建立连接（幂等）。"""
     mgr = get_mcp_manager_for_user(username)
     if getattr(mgr, "_mcp_boot_done", False):
         return mgr
     async with mgr._bootstrap_lock:
         if getattr(mgr, "_mcp_boot_done", False):
             return mgr
-        path = _user_mcp_config_path(username)
-        await mgr.initialize_all(config_path=path)
+        await mgr.initialize_all()
         setattr(mgr, "_mcp_boot_done", True)
         setattr(mgr, "_mcp_config_loaded", True)
         return mgr
 
 
 async def ensure_user_mcp_config_loaded(username: str) -> "MCPToolManager":
-    """仅加载该用户 mcp_servers.json，不主动连接任何 MCP Server（幂等）。"""
+    """仅加载该用户 resources/tools，不主动连接任何 MCP Server（幂等）。"""
     mgr = get_mcp_manager_for_user(username)
     if getattr(mgr, "_mcp_boot_done", False) or getattr(mgr, "_mcp_config_loaded", False):
         return mgr
     async with mgr._bootstrap_lock:
         if getattr(mgr, "_mcp_boot_done", False) or getattr(mgr, "_mcp_config_loaded", False):
             return mgr
-        path = _user_mcp_config_path(username)
-        await mgr.load_config(config_path=path)
+        await mgr.load_config()
         setattr(mgr, "_mcp_config_loaded", True)
         return mgr
 
@@ -477,24 +492,29 @@ class MCPToolManager:
     
     async def load_config(self, config_path: str = None):
         """加载 MCP Server 配置"""
-        import json
-        config_path = config_path or os.getenv("MCP_CONFIG_PATH", "./config/mcp_servers.json")
-        logger.info(f"加载 MCP 配置: {config_path}")
-        
-        if os.path.exists(config_path):
+        if config_path:
+            logger.info(f"加载 MCP 配置: {config_path}")
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.server_configs = json.load(f)
-            self.server_configs = [
-                c for c in self.server_configs
-                if isinstance(c, dict) and str(c.get("type") or "mcp") == "mcp" and _server_key(c)
-            ]
-            logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
-            for config in self.server_configs:
-                logger.info(f"  - {config.get('name')}")
+        elif self._username:
+            logger.info("从 resources/tools 加载 MCP 配置: %s", self._username)
+            self.server_configs = _load_user_mcp_resource_configs(self._username)
         else:
-            logger.warning(f"MCP 配置文件不存在: {config_path}")
-            # 默认配置示例
-            self.server_configs = []
+            config_path = os.getenv("MCP_CONFIG_PATH", "")
+            if config_path and os.path.exists(config_path):
+                logger.info(f"加载 MCP 配置: {config_path}")
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    self.server_configs = json.load(f)
+            else:
+                logger.warning("MCP 配置不存在：缺少用户上下文且未设置 MCP_CONFIG_PATH")
+                self.server_configs = []
+        self.server_configs = [
+            c for c in self.server_configs
+            if isinstance(c, dict) and str(c.get("type") or "mcp") == "mcp" and _server_key(c)
+        ]
+        logger.info(f"成功加载 {len(self.server_configs)} 个 MCP Server 配置")
+        for config in self.server_configs:
+            logger.info(f"  - {config.get('name')}")
     
     async def connect_server(self, server_name: str, config: Dict[str, Any]) -> bool:
         """连接 MCP Server"""

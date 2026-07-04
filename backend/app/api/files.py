@@ -1,5 +1,4 @@
 """Agent 产出文件 API - 文件系统模块用"""
-import os
 import shutil
 import logging
 from pathlib import Path
@@ -10,19 +9,13 @@ from pydantic import BaseModel
 
 from app.core.security import CurrentUser, user_context_dependency
 from app.session_state.paths import (
-    LEGACY_HISTORY_PREFIX,
     ensure_session_layout,
-    legacy_history_path,
-    migrate_session_layout,
-    resolve_history_path,
     resolve_workspace_path,
 )
 
 router = APIRouter(tags=["files"])
 logger = logging.getLogger(__name__)
 
-# 工作区根目录与 UserContext.agent_outputs_dir 一致：data/users/{user_id}/sessions
-WORKSPACES_SUBDIR = os.getenv("WORKSPACES_SUBDIR", "workspaces")
 UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
 NO_STORE_HEADERS = {"Cache-Control": "no-store"}
 
@@ -55,7 +48,6 @@ def get_agent_outputs_root() -> Path:
 
 def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
-    返回指定 workspace 的根目录路径（不保证已新建），位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id} 下。
     返回指定会话的工作区根目录（不保证已创建），位于
     data/users/{user_id}/sessions/{session_id}/workspace/ 下。
     """
@@ -66,7 +58,7 @@ def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) 
         from app.core.security import get_current_user as _get_user
 
         user = _get_user()
-    migrate_session_layout(user.ctx, wid)
+    ensure_session_layout(user.ctx, wid)
     workspace_root = resolve_workspace_path(user.ctx, wid).resolve()
     sessions_dir = user.ctx.sessions_dir.resolve()
     if workspace_root != sessions_dir and sessions_dir not in workspace_root.parents:
@@ -87,7 +79,7 @@ def get_workspace_root(workspace_id: str, user: CurrentUser | None = None) -> Pa
 def _resolve_workspace_path(workspace_id: str, relative_path: str, user: CurrentUser) -> Path:
     """
     将 workspace 内的相对路径解析为绝对路径，并确保落在该 workspace 根目录内。
-    workspace 根目录位于 AGENT_OUTPUTS_DIR/workspaces/{workspace_id}。
+    workspace 根目录位于 sessions/{workspace_id}/workspace。
     """
     ws_root = get_workspace_root(workspace_id, user=user)
     # 去掉前导斜杠、归一化，禁止 ..

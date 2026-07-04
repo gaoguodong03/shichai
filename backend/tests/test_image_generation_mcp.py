@@ -125,8 +125,8 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
         / "users"
         / "user-runtime"
         / "sessions"
-        / "workspaces"
         / "group-runtime"
+        / "workspace"
         / result["artifacts"]["file_path"]
     )
     assert result["execution_status"] == "succeeded"

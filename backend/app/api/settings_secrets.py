@@ -64,7 +64,7 @@ def load_api_secret_values_for_user(username: str) -> Dict[str, str]:
     un = (username or "").strip()
     if not un:
         return {}
-    path = (get_user_context_for(un).vault_dir / "secrets.enc.json").resolve()
+    path = (get_user_context_for(un).settings_dir / "secrets.enc.json").resolve()
     return _load_api_secret_values_from_path(path)
 
 
@@ -73,7 +73,7 @@ def load_api_secret_values() -> Dict[str, str]:
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
         return {}
-    path = (user_ctx.vault_dir / "secrets.enc.json").resolve()
+    path = (user_ctx.settings_dir / "secrets.enc.json").resolve()
     return _load_api_secret_values_from_path(path)
 
 

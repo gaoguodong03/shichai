@@ -1,25 +1,33 @@
-"""用户设置中 Skill/MCP 引用关系的更新服务。"""
+"""用户资源中 Skill/MCP 引用关系的更新服务。"""
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any, Dict, List
 
 from app.core.user_context import get_current_user_context
 
 
-def _read_json_list(path: Path) -> List[Dict[str, Any]] | None:
-    if not path.is_file():
-        return None
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return raw if isinstance(raw, list) else None
+def _load_agent_rows() -> List[Dict[str, Any]]:
+    from app.api.agents import load_agent_instances
+
+    return load_agent_instances()
 
 
-def _write_json_list(path: Path, rows: List[Dict[str, Any]]) -> None:
-    path.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+def _save_agent_rows(rows: List[Dict[str, Any]]) -> None:
+    from app.api.agents import save_agent_instances
+
+    save_agent_instances(rows)
+
+
+def _load_scenario_rows() -> List[Dict[str, Any]]:
+    from app.api.settings_presets import _load_session_preset_rows_from_resource_files
+
+    return _load_session_preset_rows_from_resource_files()
+
+
+def _save_scenario_rows(rows: List[Dict[str, Any]]) -> None:
+    from app.api.settings_presets import _mirror_session_presets_to_resources
+
+    _mirror_session_presets_to_resources(rows)
 
 
 def replace_skill_path_in_user_configs(old_path: str, new_path: str) -> None:
@@ -29,10 +37,7 @@ def replace_skill_path_in_user_configs(old_path: str, new_path: str) -> None:
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
         return
-    path = (user_ctx.config_dir / "agents.json").resolve()
-    raw = _read_json_list(path)
-    if raw is None:
-        return
+    raw = _load_agent_rows()
     changed = False
     for inst in raw:
         if not isinstance(inst, dict):
@@ -54,14 +59,8 @@ def replace_skill_path_in_user_configs(old_path: str, new_path: str) -> None:
             inst["skills"] = updated
             changed = True
     if changed:
-        try:
-            _write_json_list(path, raw)
-        except Exception:
-            pass
-    preset_path = (user_ctx.config_dir / "session_presets.json").resolve()
-    presets = _read_json_list(preset_path)
-    if presets is None:
-        return
+        _save_agent_rows(raw)
+    presets = _load_scenario_rows()
     changed = False
     for preset in presets:
         if not isinstance(preset, dict) or not isinstance(preset.get("host_config"), dict):
@@ -71,10 +70,7 @@ def replace_skill_path_in_user_configs(old_path: str, new_path: str) -> None:
             hc["skill_directory"] = new_path
             changed = True
     if changed:
-        try:
-            _write_json_list(preset_path, presets)
-        except Exception:
-            pass
+        _save_scenario_rows(presets)
 
 
 def remove_skill_path_from_user_configs(skill_path: str, skill_name: str = "") -> None:
@@ -85,14 +81,11 @@ def remove_skill_path_from_user_configs(skill_path: str, skill_name: str = "") -
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
         return
-    paths = [
-        (user_ctx.config_dir / "agents.json").resolve(),
-        (user_ctx.config_dir / "session_presets.json").resolve(),
+    resource_sets = [
+        (_load_agent_rows(), _save_agent_rows),
+        (_load_scenario_rows(), _save_scenario_rows),
     ]
-    for path in paths:
-        raw = _read_json_list(path)
-        if raw is None:
-            continue
+    for raw, save_rows in resource_sets:
         changed = False
         for row in raw:
             if not isinstance(row, dict):
@@ -122,7 +115,4 @@ def remove_skill_path_from_user_configs(skill_path: str, skill_name: str = "") -
                     target["skills"] = updated
                     changed = True
         if changed:
-            try:
-                _write_json_list(path, raw)
-            except Exception:
-                pass
+            save_rows(raw)

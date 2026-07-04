@@ -448,7 +448,7 @@ def test_requirements_b64_uses_explicit_user_without_context(monkeypatch, tmp_pa
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path))
     user_root = tmp_path / "alice"
-    req_path = user_root / "config" / "sandbox" / "requirements.txt"
+    req_path = user_root / "settings" / "sandbox" / "requirements.txt"
     req_path.parent.mkdir(parents=True, exist_ok=True)
     req_path.write_text("pendulum==3.0.0\n", encoding="utf-8")
 
@@ -638,7 +638,7 @@ def test_filesystem_wrapper_blocks_cross_session_path(monkeypatch, tmp_path):
 
         # 合法路径会被归一化到当前 session 前缀
         ok = _normalize_path_for_session("notes/a.md", "sess-a")
-        assert "/workspaces/sess-a/" in ok
+        assert "/sessions/sess-a/workspace/" in ok
         # 越界路径应被拒绝
         import pytest
 

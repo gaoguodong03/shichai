@@ -1,4 +1,4 @@
-"""为 filesystem MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 workspaces/{session_id}/ 下。"""
+"""为 filesystem MCP 工具按会话做 path 校验与重写，使 path 限定在当前会话工作区 {session_id}/workspace/ 下。"""
 import os
 import json
 import asyncio
@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path
 from app.agent.path_whitelist_guard import ensure_within_root, normalize_rel_path
-from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root
+from app.api.files import get_agent_outputs_root
 
 
 def _agent_outputs_rel_prefix() -> str:
@@ -30,7 +30,7 @@ def _path_arg_keys() -> List[str]:
 
 
 def _normalize_path_for_session(path: str, session_id: str) -> str:
-    """确保 path 落在 workspaces/{session_id}/ 下，并返回 MCP 可解析的路径（相对 backend）。
+    """确保 path 落在 {session_id}/workspace/ 下，并返回 MCP 可解析的路径（相对 backend）。
 
     兼容一些旧模板 / LLM 误用的调用方式，例如把
         '{"__arg1": "错误文字.md"}'
@@ -55,9 +55,9 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
     rel_prefix = _agent_outputs_rel_prefix()
     path = path.lstrip("/")
     if not path:
-        return f"{rel_prefix}/{WORKSPACES_SUBDIR}/{session_id}"
-    # 已是 workspaces/{session_id}/ 形式
-    prefix_ws = f"{WORKSPACES_SUBDIR}/{session_id}"
+        return f"{rel_prefix}/{session_id}/workspace"
+    # 已是 {session_id}/workspace 形式
+    prefix_ws = f"{session_id}/workspace"
     if path.startswith(prefix_ws + "/") or path == prefix_ws:
         pass
     else:
@@ -66,7 +66,7 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
     # 使用 canonical path 防止 ../../ 与符号链接越界
     root = get_agent_outputs_root().resolve()
     target = (root / path).resolve()
-    session_root = (root / WORKSPACES_SUBDIR / session_id).resolve()
+    session_root = (root / session_id / "workspace").resolve()
     ensure_within_root(target, session_root)
     path = str(target.relative_to(root)).replace("\\", "/")
     # 供 MCP 解析：相对 backend 的路径
@@ -76,7 +76,7 @@ def _normalize_path_for_session(path: str, session_id: str) -> str:
 
 
 def _ensure_path_in_session(args: Dict[str, Any], session_id: str) -> Dict[str, Any]:
-    """若 args 中含 path 类参数，则限制在 workspaces/{session_id}/ 并重写为 MCP 可解析路径。"""
+    """若 args 中含 path 类参数，则限制在 {session_id}/workspace/ 并重写为 MCP 可解析路径。"""
     out = dict(args)
     for key in _path_arg_keys():
         if key not in out:

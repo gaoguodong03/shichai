@@ -15,7 +15,6 @@ from pydantic import BaseModel
 from app.api.agents import enrich_agent_instances, load_agent_instances
 from app.api.files import get_workspace_root_path
 from app.api.group_chat_state import (
-    GROUP_HISTORY_PREFIX,
     GROUP_SESSION_EVENT_SUBSCRIBERS as _GROUP_SESSION_EVENT_SUBSCRIBERS,
     GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK as _GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK,
     build_session_payload as _build_session_payload,
@@ -273,9 +272,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 "updated_at": now,
             }
             _save_group_meta(meta)
-            path = _ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
-            if not path.exists():
-                _save_group_history(group_session_id, [])
+            _save_group_history(group_session_id, [])
         else:
             raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
@@ -423,20 +420,11 @@ async def delete_group_session(group_session_id: str):
     del meta[group_session_id]
     _save_group_meta(meta, preserve_unmentioned=False)
     _cleanup_orphan_group_histories(meta)
-    # 删除会话目录（history / chat.md / workspace / state）
+    # 删除会话目录（history / chat.md / workspace / checkpoints）
     user_ctx = current_user.ctx
-    from app.session_state.paths import SessionLayoutPaths, legacy_history_path
+    from app.session_state.paths import SessionLayoutPaths
 
     layout = SessionLayoutPaths.from_user_ctx(user_ctx, group_session_id)
-    legacy_history = legacy_history_path(user_ctx, group_session_id)
-    if legacy_history.exists():
-        legacy_history.unlink()
-    legacy_ws = user_ctx.sessions_dir / "workspaces" / group_session_id
-    if legacy_ws.exists():
-        try:
-            shutil.rmtree(legacy_ws)
-        except Exception:
-            logger.warning("删除群聊 %s 的 legacy workspace 失败。", group_session_id, exc_info=True)
     if layout.session_root.exists():
         try:
             shutil.rmtree(layout.session_root)

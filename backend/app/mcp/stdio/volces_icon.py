@@ -2,13 +2,13 @@
 """图片生成 MCP Server
 
 调用火山引擎（Volces）图像生成 API，根据文字描述生成图片。
-API Key 通过环境变量 VOLCES_IMAGE_API_KEY 传入，或在 mcp_servers.json 的 transport.env 中配置。
+API Key 通过环境变量 VOLCES_IMAGE_API_KEY 传入，或在工具资源的 transport.env 中配置。
 
 使用方法：
     python volces_icon.py
 
 配置到 Agent：
-    在 backend/config/mcp_servers.json 中添加 stdio 配置，并在 transport.env 中设置 VOLCES_IMAGE_API_KEY。
+    在资源中心工具配置中添加 stdio 配置，并在 transport.env 中设置 VOLCES_IMAGE_API_KEY。
 """
 import os
 import logging
@@ -43,7 +43,7 @@ def _get_api_key() -> str:
             hypothesis_id="api-key-missing",
         )
         raise ValueError(
-            "未配置 VOLCES_IMAGE_API_KEY。请在 backend/config/mcp_servers.json 的该 server 的 transport.env 中设置，或设置系统环境变量。"
+            "未配置 VOLCES_IMAGE_API_KEY。请在资源中心工具配置的 transport.env 中设置，或设置系统环境变量。"
         )
     masked = f"{'Bearer ' if key.startswith('Bearer ') else ''}***{len(key)}"
     _agent_log(

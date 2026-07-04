@@ -66,6 +66,7 @@ def test_skill_zip_import_keeps_same_name_local_skill(monkeypatch, tmp_path: Pat
 
 def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path: Path):
     from app.api import settings_skills as api
+    from app.api.settings_mcp import save_mcp_config
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -73,7 +74,7 @@ def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path
     token = set_current_username("u1")
     ctx = get_current_user_context(default_fallback=False)
     assert ctx is not None
-    ctx.config_dir.joinpath("mcp_servers.json").write_text(json.dumps([_mcp_row("Existing")]), encoding="utf-8")
+    save_mcp_config([_mcp_row("Existing")])
 
     source_skills = tmp_path / "source_skills"
     skill_dir = source_skills / "skill-a"
@@ -108,7 +109,9 @@ def test_skill_bundle_dry_run_reports_missing_tool_by_name(monkeypatch, tmp_path
 
 
 def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Path):
+    from app.api.agents import save_agent_instances
     from app.api import settings_presets as api
+    from app.api.settings_mcp import save_mcp_config
     from app.core.scenario_bundle import build_scenario_bundle_zip_bytes
     from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
@@ -119,14 +122,12 @@ def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Pa
     local_skill = ctx.skills_dir / "skill-local"
     local_skill.mkdir(parents=True)
     local_skill.joinpath("SKILL.md").write_text("---\nname: Skill A\ndescription: old\n---\nold\n", encoding="utf-8")
-    ctx.config_dir.joinpath("agents.json").write_text(
-        json.dumps([{"name": "Expert A", "description": "old role", "skills": [_skill_ref("Skill A", "skill-local")]}], ensure_ascii=False),
-        encoding="utf-8",
+    save_agent_instances(
+        [{"name": "Expert A", "description": "old role", "skills": [_skill_ref("Skill A", "skill-local")]}]
     )
-    ctx.config_dir.joinpath("mcp_servers.json").write_text(json.dumps([_mcp_row("Tool A")], ensure_ascii=False), encoding="utf-8")
-    ctx.config_dir.joinpath("session_presets.json").write_text(
-        json.dumps([{"name": "Scene A", "agent_names": ["Expert A"], "host_config": {"leader_agent_name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-local"}}], ensure_ascii=False),
-        encoding="utf-8",
+    save_mcp_config([_mcp_row("Tool A")])
+    api._mirror_session_presets_to_resources(
+        [{"name": "Scene A", "agent_names": ["Expert A"], "host_config": {"leader_agent_name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-local"}}]
     )
 
     source_skills = tmp_path / "source_skills"

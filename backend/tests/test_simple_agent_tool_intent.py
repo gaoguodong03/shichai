@@ -37,7 +37,7 @@ def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_bloc
         "description: 当用户需要[TODO: 任务类型]时使用，输入为[TODO: 文件/参数/链接]，产出[TODO: 结果形式]。\n"
         "allowed-tools:\n"
         "  mcp: []\n"
-        "  python: []\n"
+        "  python: ''\n"
         "---\n\n"
         "# Toutiao Summary\n"
     )
@@ -1482,7 +1482,7 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
                 "id": "tc-asr",
                 "name": "audio-asr_transcribe_audio_file",
                 "args": {
-                    "path": "backend/data/users/u/sessions/workspaces/g/a.mp3",
+                    "path": "backend/data/users/u/sessions/g/workspace/a.mp3",
                     "chunk_seconds": 120,
                 },
             }
@@ -1506,7 +1506,7 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
             "tool_calls": [
                 {
                     "tool": "audio-asr_transcribe_audio_file",
-                    "arguments": {"path": "backend/data/users/u/sessions/workspaces/g/a.mp3"},
+                    "arguments": {"path": "backend/data/users/u/sessions/g/workspace/a.mp3"},
                 }
             ],
             "tool_raw_outputs": [raw],

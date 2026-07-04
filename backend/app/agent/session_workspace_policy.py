@@ -20,7 +20,7 @@ def sandbox_session_dir(session_id: str) -> str:
 def host_sessions_root_from_workspace(workspace_path: Path) -> Path:
     """Infer host sessions directory from a session workspace path."""
     wp = workspace_path.resolve()
-    if wp.name == "workspace" and wp.parent.name.startswith("group-"):
+    if wp.name == "workspace":
         return wp.parent.parent
     if wp.parent.name == "workspaces":
         return wp.parent.parent

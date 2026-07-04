@@ -63,33 +63,19 @@ QWEN_MODEL=gpt-4o
 
 ### 2.2 配置结构建议
 
-**方案 A：扩展 `app_settings.json`**
+**当前实现：`settings/app.json` + `resources/models`**
 
 ```json
 {
   "default_llm": "jeniya",
-  "llm_providers": {
-    "qwen": {
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen-turbo",
-      "api_key_env": "QWEN_API_KEY"
-    },
-    "jeniya": {
-      "base_url": "https://你的API地址/v1",
-      "model": "gpt-4o",
-      "api_key_env": "JENIYA_API_KEY"
-    }
-  },
   "system_prompt": ""
 }
 ```
 
+- `settings/app.json` 保存 `default_llm`、系统提示词、主持人配置等账号级设置。
+- `resources/models/<model_provider_id>/model.json` 保存每个 provider 的 `base_url`、`model`、密钥引用或环境变量名。
 - `api_key_env`：从环境变量读取 API Key，不落库
 - 新增提供者时只改配置，不改代码
-
-**方案 B：独立 `llm_providers.json`**
-
-与 MCP 配置类似，单独维护 LLM 提供者列表，便于扩展。
 
 ### 2.3 代码改动点
 
@@ -120,7 +106,7 @@ QWEN_MODEL=gpt-4o
 | 项目 | 状态 | 说明 |
 |------|------|------|
 | .env 快速切换 | ✅ 已可用 | 修改 QWEN_* 即可 |
-| 方案 A 配置化 | ✅ 已实现 | `app_settings.json` 含 `default_llm`、`llm_providers` |
+| 配置化模型选择 | ✅ 已实现 | `settings/app.json` 含 `default_llm`；provider 落在 `resources/models` |
 | `get_llm_from_config` | ✅ | `llm_client.py`，按 provider_id 从配置新建 LLM |
 | `chat.py` 读取配置 | ✅ | 每次请求从 `load_app_settings()` 取 `default_llm` |
 | 设置 UI | ✅ | AppSettingsView 支持 LLM 下拉选择（qwen、jeniya 等） |

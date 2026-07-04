@@ -21,7 +21,15 @@ def _skills_dir_has_skill_files(skills_dir: Path) -> bool:
 
 
 def _user_has_startup_resources(user_dir: Path) -> bool:
-    return _skills_dir_has_skill_files(user_dir / "skills") or (user_dir / "config" / "mcp_servers.json").is_file()
+    resources = user_dir / "resources"
+    tools_dir = resources / "tools"
+    has_tools = False
+    if tools_dir.is_dir():
+        try:
+            has_tools = any((child / "tool.json").is_file() for child in tools_dir.iterdir() if child.is_dir())
+        except OSError:
+            has_tools = False
+    return _skills_dir_has_skill_files(resources / "skills") or has_tools
 
 
 def _known_usernames() -> list[str]:
@@ -48,7 +56,7 @@ async def _load_user_mcp_and_skills(username: str) -> tuple[int, int, int]:
 
     mcp_server_count = 0
     mcp_tool_count = 0
-    if (ctx.config_dir / "mcp_servers.json").is_file():
+    if ctx.tools_dir.is_dir():
         mcp_manager = await ensure_user_mcp_config_loaded(username)
         mcp_server_count = len(getattr(mcp_manager, "server_configs", []) or [])
         # 启动期只读配置，不连接 MCP Server；这里仅统计已经存在的工具缓存。

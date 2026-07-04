@@ -104,7 +104,7 @@ def test_register_initializes_user_id_directory_layout(env_and_client):
     assert (user_root / "resources" / "tools").is_dir()
     assert (user_root / "resources" / "models").is_dir()
     assert (user_root / "sessions").is_dir()
-    assert (user_root / "vault").is_dir()
+    assert (user_root / "settings").is_dir()
     assert not (db_path.parent / "users" / username).exists()
 
     profile = json.loads((user_root / "profile.json").read_text(encoding="utf-8"))

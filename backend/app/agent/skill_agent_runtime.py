@@ -128,7 +128,7 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             "调用 `audio-asr_transcribe_audio_file` 时，如果用户消息包含【文件引用：…】或工作区文件名，"
             "path 使用用户本条消息中的工作区相对路径即可（例如 `meeting.mp3`）。运行时会在工具执行前把它转换成 "
             "`backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、"
-            "`sessions/workspaces/<session_id>/` 等内部路径。\n\n"
+            "`sessions/<session_id>/workspace/` 等内部路径。\n\n"
         )
     if script_names:
         parts.append(

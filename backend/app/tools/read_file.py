@@ -9,7 +9,7 @@ from app.agent.workspace_visibility import (
     internal_diagnostic_path_error,
     is_internal_diagnostic_workspace_path,
 )
-from app.api.files import WORKSPACES_SUBDIR, get_agent_outputs_root, get_workspace_root_path
+from app.api.files import get_workspace_root_path
 from app.core.security import get_current_user
 
 
@@ -43,8 +43,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
             "请使用诸如 github-weekly-snapshot.md 或 memory/facts.md。"
         )
     cleaned = strip_llm_junk_from_read_path(raw) or raw
-    root = get_agent_outputs_root().resolve()
-    normalized = cleaned.lstrip("/")
+    normalized = cleaned.strip().lstrip("/").replace("\\", "/")
     if ".." in normalized:
         return "", "错误：路径不能包含 ..。"
     pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
@@ -56,14 +55,17 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     if not session_id:
         return "", "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
 
-    prefix = f"{WORKSPACES_SUBDIR}/{session_id}"
-    if not normalized.startswith(prefix + "/") and normalized != prefix:
-        normalized = f"{prefix}/{normalized}" if normalized else prefix
-    full = (root / normalized).resolve()
     ws_root = get_workspace_root_path(session_id).resolve()
-    if not str(full).startswith(str(ws_root)):
+    current_prefix = f"sessions/{session_id}/workspace"
+    if normalized == current_prefix:
+        normalized = ""
+    elif normalized.startswith(current_prefix + "/"):
+        normalized = normalized[len(current_prefix) + 1 :]
+    full = (ws_root / normalized).resolve()
+    try:
+        rel = str(full.relative_to(ws_root)).replace("\\", "/")
+    except ValueError:
         return "", "错误：仅允许读取当前会话工作区内的文件，请使用工作区相对路径（例如 notes/report.md）。"
-    rel = str(full.relative_to(ws_root)).replace("\\", "/")
     return rel, None
 
 

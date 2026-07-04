@@ -99,12 +99,12 @@ def sandbox_image_for_user(user_id: str) -> tuple[str, str]:
     if uid:
         try:
             user_ctx = get_user_context_for(uid)
-            config_dir: Path = user_ctx.config_dir / "sandbox"
-            settings_path = sandbox_settings_path(config_dir)
+            sandbox_dir: Path = user_ctx.settings_dir / "sandbox"
+            settings_path = sandbox_settings_path(sandbox_dir)
             settings_path_text = str(settings_path)
             settings_exists = settings_path.is_file()
-            variant = read_sandbox_variant(config_dir)
-            req_implies_playwright = requirements_imply_playwright(config_dir / "requirements.txt")
+            variant = read_sandbox_variant(sandbox_dir)
+            req_implies_playwright = requirements_imply_playwright(sandbox_dir / "requirements.txt")
             if not settings_exists and req_implies_playwright:
                 variant = SANDBOX_VARIANT_PLAYWRIGHT
         except Exception as exc:

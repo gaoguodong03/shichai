@@ -19,14 +19,6 @@ from app.core.resource_store import mirror_rows_to_resource_dir
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
-def _get_agent_instances_path() -> Path:
-    """根据当前用户返回 Agent 配置文件路径，实现多用户隔离。"""
-    user_ctx = get_current_user_context(default_fallback=False)
-    if user_ctx is None:
-        raise RuntimeError("缺少用户上下文，无法解析 Agent 配置路径。")
-    return (user_ctx.config_dir / "agents.json").resolve()
-
-
 class AgentCreate(BaseModel):
     """新建 Agent 实例请求"""
     name: str
@@ -58,23 +50,28 @@ async def enrich_agent_instances(instances: List[Dict[str, Any]], workspace_id: 
     return out
 
 
-def _ensure_config_dir() -> Path:
-    path = _get_agent_instances_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def load_agent_instances() -> List[Dict[str, Any]]:
-    """加载 Agent 实例配置"""
-    path = _ensure_config_dir()
-    if path.exists():
+    """从 resources/agents 加载 Agent 实例。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return []
+    root = user_ctx.agents_dir.resolve()
+    if not root.is_dir():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        body = child / "agent.json"
+        if not body.is_file():
+            continue
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data if isinstance(data, list) else []
+            raw = json.loads(body.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                rows.append(normalize_agent_row(raw))
         except Exception:
-            pass
-    return []
+            continue
+    return rows
 
 
 def save_agent_instances(instances: List[Dict[str, Any]]) -> None:
@@ -87,9 +84,6 @@ def save_agent_instances(instances: List[Dict[str, Any]]) -> None:
             normalized.append(normalize_agent_row(row))
         except ValueError:
             continue
-    path = _ensure_config_dir()
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(normalized, f, ensure_ascii=False, indent=2)
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is not None:
         mirror_rows_to_resource_dir(normalized, user_ctx.agents_dir.resolve(), "name", body_filename="agent.json")

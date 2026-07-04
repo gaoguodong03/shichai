@@ -123,7 +123,7 @@ shichai/
 
 - **后端**：`.env`、`requirements.txt`、`pyproject.toml`；会话/群聊等数据多在 `backend/data/` 下以 JSON 等形式存储。
 - **前端**：`package.json`、`vite.config.ts`、`tsconfig.json`、`.env.example`。
-- **用户运行数据**：`backend/data/users/{user_id}/resources/`、`sessions/`、`config/`。其中 Skill 位于 `resources/skills/{skill_id}/`。
+- **用户运行数据**：`backend/data/users/{user_id}/resources/`、`settings/`、`sessions/`。其中 Skill 位于 `resources/skills/{skill_id}/`。
 - **沙箱镜像**：`docker/skill-sandbox/`。
 - **脚本入口**：`scripts/test-layer1.sh`、`scripts/test-ui-flow.sh`、`scripts/test-full-flow.sh`。
 

@@ -19,7 +19,6 @@ from app.core.security import user_context_dependency
 from app.core.name_based_resources import normalize_tool_row
 from app.core.scenario_bundle import sanitize_mcp_servers_for_bundle
 from app.core.user_context import get_current_user_context, get_current_username
-from app.core.user_settings_paths import mcp_config_path
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -34,7 +33,7 @@ async def _mcp_runtime_for_request():
 
 
 async def _invalidate_mcp_runtime_after_config_change():
-    """磁盘上的 mcp_servers.json 变更后丢弃内存中的连接，下次再懒加载。"""
+    """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
     un = get_current_username()
     if un:
         await dispose_mcp_runtime_for_user(un)
@@ -71,27 +70,30 @@ class MCPServerUpdate(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 def load_mcp_config() -> List[Dict[str, Any]]:
-    """加载 MCP 配置"""
-    config_path = mcp_config_path()
-    if config_path.exists():
-        with open(config_path, 'r', encoding='utf-8') as f:
-            rows = json.load(f)
-        if isinstance(rows, list):
-            out = []
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                try:
-                    out.append(normalize_tool_row(row))
-                except Exception:
-                    continue
-            return out
-    return []
+    """从 resources/tools 读取 MCP 工具资源。"""
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return []
+    root = user_ctx.tools_dir.resolve()
+    if not root.is_dir():
+        return []
+    out: List[Dict[str, Any]] = []
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir() or child.name.startswith("."):
+            continue
+        body = child / "tool.json"
+        if not body.is_file():
+            continue
+        try:
+            row = json.loads(body.read_text(encoding="utf-8"))
+            if isinstance(row, dict):
+                out.append(normalize_tool_row(row))
+        except Exception:
+            continue
+    return out
 
 def save_mcp_config(servers: List[Dict[str, Any]]):
-    """保存 MCP 配置"""
-    config_path = mcp_config_path()
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    """保存 MCP 工具资源。"""
     servers = [normalize_tool_row(row) for row in servers or [] if isinstance(row, dict)]
     seen: set[str] = set()
     unique_servers: List[Dict[str, Any]] = []
@@ -102,17 +104,10 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
         seen.add(key)
         unique_servers.append(row)
     servers = unique_servers
-    with open(config_path, 'w', encoding='utf-8') as f:
-        json.dump(servers, f, ensure_ascii=False, indent=2)
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is not None:
-        resource_rows = []
-        for row in servers or []:
-            if not isinstance(row, dict):
-                continue
-            resource_rows.append(dict(row))
         mirror_rows_to_resource_dir(
-            resource_rows,
+            [dict(row) for row in servers or [] if isinstance(row, dict)],
             user_ctx.tools_dir.resolve(),
             "name",
             body_filename="tool.json",

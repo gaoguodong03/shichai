@@ -395,6 +395,28 @@ def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data
     assert "secret" in out
 
 
+def test_read_file_reads_current_layout_workspace_relative_path(temp_user_data_root, monkeypatch):
+    """read_file 应按当前 sessions/{id}/workspace 布局读取工作区相对路径。"""
+    from app.api.files import get_workspace_root
+    from app.tools import read_file as read_file_module
+    from app.tools.read_file import create_read_file_tool
+
+    class _FakeSandboxService:
+        async def read_workspace_text(self, *, workspace_path, rel_path, **_kwargs):
+            return (workspace_path / rel_path).read_text(encoding="utf-8")
+
+    ws = get_workspace_root("sess-current-layout")
+    target = ws / "web-crawler" / "候选清单-2026070415122700.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("候选清单正文", encoding="utf-8")
+    monkeypatch.setattr(read_file_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
+
+    tool = create_read_file_tool("sess-current-layout")
+    out = asyncio.run(tool.ainvoke({"path": "web-crawler/候选清单-2026070415122700.md"}))
+
+    assert out == "候选清单正文"
+
+
 def test_read_file_missing_path_does_not_search_for_candidates(temp_user_data_root, monkeypatch):
     """read_file 只按调用方给出的工作区相对路径读取；缺失时不再遍历工作区猜路径。"""
     from app.api.files import get_workspace_root

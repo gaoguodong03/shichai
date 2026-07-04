@@ -10,7 +10,7 @@ def test_user_context_uses_user_id_not_email(monkeypatch, tmp_path):
     assert ctx.base_dir == (tmp_path / "users" / "user-abc123").resolve()
     assert ctx.resources_dir == ctx.base_dir / "resources"
     assert ctx.sessions_dir == ctx.base_dir / "sessions"
-    assert ctx.vault_dir == ctx.base_dir / "vault"
+    assert ctx.settings_dir == ctx.base_dir / "settings"
     assert not (tmp_path / "users" / "alice@example.com").exists()
 
 
@@ -41,6 +41,8 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         skills_dir_path,
         tools_resources_dir,
         vault_secrets_path,
+        app_settings_path,
+        sandbox_requirements_path,
     )
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
@@ -52,7 +54,9 @@ def test_resource_path_helpers_point_to_resources(monkeypatch, tmp_path):
         assert skills_dir_path() == root / "resources" / "skills"
         assert tools_resources_dir() == root / "resources" / "tools"
         assert models_resources_dir() == root / "resources" / "models"
-        assert vault_secrets_path() == root / "vault" / "secrets.enc.json"
+        assert app_settings_path() == root / "settings" / "app.json"
+        assert vault_secrets_path() == root / "settings" / "secrets.enc.json"
+        assert sandbox_requirements_path() == root / "settings" / "sandbox" / "requirements.txt"
     finally:
         reset_current_user_identity(token)
 
@@ -64,9 +68,9 @@ def test_api_secret_values_use_current_user_vault(monkeypatch, tmp_path):
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    user_vault = tmp_path / "users" / "user-secret-owner" / "vault"
-    user_vault.mkdir(parents=True)
-    (user_vault / "secrets.enc.json").write_text(
+    user_settings = tmp_path / "users" / "user-secret-owner" / "settings"
+    user_settings.mkdir(parents=True)
+    (user_settings / "secrets.enc.json").write_text(
         json.dumps({"items": {"jeniya": {"label": "Jeniya", "api_key": "from-user-vault"}}}),
         encoding="utf-8",
     )
@@ -116,7 +120,7 @@ def test_create_api_secret_writes_current_user_vault_only(monkeypatch, tmp_path)
         )
 
         user_root = tmp_path / "users" / "user-secret-owner"
-        vault_path = user_root / "vault" / "secrets.enc.json"
+        vault_path = user_root / "settings" / "secrets.enc.json"
         config_path = user_root / "config" / "api_secrets.json"
         assert vault_path.is_file()
         assert not config_path.exists()
@@ -218,10 +222,6 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
             ),
             encoding="utf-8",
         )
-        preset_path = user_root / "config" / "session_presets.json"
-        preset_path.parent.mkdir(parents=True)
-        preset_path.write_text("[]", encoding="utf-8")
-
         result = asyncio.run(get_session_presets())
 
         assert result["data"]["presets"] == [
@@ -233,7 +233,8 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
                 "system_prompt": "",
             }
         ]
-        assert json.loads(preset_path.read_text(encoding="utf-8"))[0]["name"] == "线上导入场景"
+        assert not (user_root / "settings" / "presets.json").exists()
+        assert not (user_root / "config" / "session_presets.json").exists()
     finally:
         reset_current_user_identity(token)
 
@@ -250,17 +251,15 @@ def test_get_session_presets_does_not_log_noisy_ids(monkeypatch, tmp_path, caplo
     token = set_current_user_identity(user_id="user-resource-quiet", username="quiet@example.com")
     try:
         user_root = tmp_path / "users" / "user-resource-quiet"
-        preset_path = user_root / "config" / "session_presets.json"
-        preset_path.parent.mkdir(parents=True)
-        preset_path.write_text(
+        scenario_file = user_root / "resources" / "scenarios" / "安静场景" / "scenario.json"
+        scenario_file.parent.mkdir(parents=True)
+        scenario_file.write_text(
             json.dumps(
-                [
-                    {
-                        "name": "安静场景",
-                        "agent_names": ["安静专家"],
-                        "host_config": {"leader_agent_name": "主持人"},
-                    }
-                ],
+                {
+                    "name": "安静场景",
+                    "agent_names": ["安静专家"],
+                    "host_config": {"leader_agent_name": "主持人"},
+                },
                 ensure_ascii=False,
             ),
             encoding="utf-8",
@@ -305,5 +304,77 @@ def test_save_mcp_config_mirrors_tools_resource_files(monkeypatch, tmp_path):
 
         save_mcp_config([])
         assert not tool_file.exists()
+        assert not (user_root / "settings" / "mcp.json").exists()
+        assert not (user_root / "config" / "mcp_servers.json").exists()
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_load_mcp_config_reads_tools_resource_files(monkeypatch, tmp_path):
+    import json
+
+    from app.api.settings_mcp import load_mcp_config
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-resource-load", username="load@example.com")
+    try:
+        user_root = tmp_path / "users" / "user-resource-load"
+        tool_file = user_root / "resources" / "tools" / "资源目录工具" / "tool.json"
+        tool_file.parent.mkdir(parents=True)
+        tool_file.write_text(
+            json.dumps(
+                {
+                    "name": "资源目录工具",
+                    "type": "mcp",
+                    "transport": {"type": "stdio", "command": "python", "args": ["server.py"]},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        rows = load_mcp_config()
+
+        assert [row["name"] for row in rows] == ["资源目录工具"]
+        assert not (user_root / "settings" / "mcp.json").exists()
+        assert not (user_root / "config" / "mcp_servers.json").exists()
+    finally:
+        reset_current_user_identity(token)
+
+
+def test_save_app_settings_stores_llm_providers_as_model_resources(monkeypatch, tmp_path):
+    import json
+
+    from app.api.settings_app import load_app_settings, save_app_settings
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-model-save", username="models@example.com")
+    try:
+        save_app_settings(
+            {
+                "default_llm": "自定义模型",
+                "llm_providers": {
+                    "自定义模型": {
+                        "base_url": "https://example.test/v1",
+                        "model": "custom-chat",
+                        "api_key_ref": "custom-key",
+                    }
+                },
+            }
+        )
+
+        user_root = tmp_path / "users" / "user-model-save"
+        app_path = user_root / "settings" / "app.json"
+        model_file = user_root / "resources" / "models" / "自定义模型" / "model.json"
+        assert app_path.is_file()
+        assert model_file.is_file()
+        assert "llm_providers" not in json.loads(app_path.read_text(encoding="utf-8"))
+        model_data = json.loads(model_file.read_text(encoding="utf-8"))
+        assert model_data["name"] == "自定义模型"
+        assert model_data["base_url"] == "https://example.test/v1"
+        assert model_data["api_key_ref"] == "custom-key"
+        assert load_app_settings()["llm_providers"]["自定义模型"]["model"] == "custom-chat"
     finally:
         reset_current_user_identity(token)

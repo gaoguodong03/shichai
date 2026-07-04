@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from dataclasses import replace
 from typing import Any, Dict, List
 
@@ -42,8 +41,7 @@ class SandboxPrewarmMixin:
         if not uid:
             raise ValueError("user_id is required")
         user_ctx = get_user_context_for(uid)
-        workspaces_subdir = (os.getenv("WORKSPACES_SUBDIR") or "workspaces").strip() or "workspaces"
-        workspaces_root = (user_ctx.agent_outputs_dir / workspaces_subdir).resolve()
+        workspaces_root = user_ctx.sessions_dir.resolve()
         workspaces_root.mkdir(parents=True, exist_ok=True)
         policy = workspace_with_skills_policy(
             workspaces_root,

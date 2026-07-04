@@ -11,63 +11,69 @@
 - 身份层只负责登录账号、密码哈希和 `user_id`。
 - `resources/` 存用户可管理、可导入导出、可迁移的资源。
 - `sessions/` 存真实会话历史、运行状态和工作区产物。
-- `vault/` 存不可导出的密钥。
+- `settings/` 存账号级应用设置、密钥库和沙箱依赖。
 - 沙箱只拿执行视图，不直接获得完整用户身份、密钥或账号密码。
 
-## 推荐目录
+## 当前数据结构
 
 ```text
-backend/data/users/<user_id>/
+data/users/{user_id}/
   profile.json
 
   resources/
     scenarios/
-      index.json
-      <scenario_id>/
+      {scenario_id}/
         scenario.json
-        assets/
-        other/
 
     agents/
-      index.json
-      <agent_id>/
+      {agent_id}/
         agent.json
-        assets/
-        other/
 
     skills/
-      index.json
-      <skill_id>/
+      {skill_id}/
         SKILL.md
         scripts/
         assets/
+        references/
         templates/
         other/
 
     tools/
-      index.json
-      <tool_id>/
+      {tool_id}/
         tool.json
 
     models/
-      index.json
-      <model_provider_id>/
+      {model_provider_id}/
         model.json
 
-  vault/
+  settings/
+    app.json
     secrets.enc.json
+    sandbox/
+      requirements.txt
+      settings.json
 
   sessions/
     index.json
-    <session_id>/
+
+    {session_id}/
       meta.json
-      messages.jsonl
-      events.jsonl
-      runtime_state.json
+      history.json
+      chat.md
+
       workspace/
 
-  manifests/
-    resources.json
+      checkpoints/
+        HEAD.json
+        chain.json
+        commits/
+          {commit_id}.json
+
+        objects/
+          blobs/
+            {sha256}
+          trees/
+            {sha256}.json
 ```
 
 ## 术语
@@ -86,7 +92,7 @@ backend/data/users/<user_id>/
 3. `resources/` 内的每类资源都目录化，避免巨型 JSON 成为唯一真相。
 4. `index.json` 只服务列表页和排序，真实内容以资源目录中的主体文件为准。
 5. 资源之间只保存引用，不复制完整内容。
-6. 密钥只保存在 `vault/`，资源文件只能保存 `secret_ref`。
+6. 密钥只保存在 `settings/secrets.enc.json`，资源文件只能保存 `secret_ref`。
 7. 沙箱可以物理挂载当前用户全部 Skill，但逻辑上只暴露本轮允许的 Skill 和工具。
 8. 所有资源写入必须原子化，并保留可恢复版本或备份。
 

@@ -1,6 +1,6 @@
 """用户上下文与多租户路径管理。
 
-单进程多用户：每个用户独占 `data/users/{user_id}/`（资源、会话、工作区、密钥）。
+单进程多用户：每个用户独占 `data/users/{user_id}/`（资源、设置、会话）。
 测试可通过环境变量 `SHUTONG_USER_DATA_ROOT` 指向临时目录，避免污染仓库数据。
 
 请求内通过 ContextVar 保存当前用户身份；读写磁盘时统一从 UserContext 取路径。
@@ -37,9 +37,8 @@ class UserContext:
 
     base_dir:      SHUTONG_USER_DATA_ROOT/{user_id}
     resources_dir: 用户可管理、可导入导出的资源中心目录
+    settings_dir:  用户偏好、密钥与 sandbox 设置
     sessions_dir:  会话历史、运行状态与 workspace
-    vault_dir:     密钥存储目录
-    config_dir:    过渡期配置目录，后续资源迁移阶段逐步收敛
     """
 
     user_id: str
@@ -51,10 +50,9 @@ class UserContext:
     agents_dir: Path
     tools_dir: Path
     models_dir: Path
-    vault_dir: Path
+    settings_dir: Path
     sessions_dir: Path
     agent_outputs_dir: Path
-    config_dir: Path
     skills_dir: Path
 
 
@@ -111,6 +109,7 @@ def build_user_context(*, user_id: str, username: str = "") -> UserContext:
     name = (username or "").strip() or uid
     data_root = (users_data_root() / uid).resolve()
     resources_dir = data_root / "resources"
+    settings_dir = data_root / "settings"
     return UserContext(
         user_id=uid,
         username=name,
@@ -122,10 +121,9 @@ def build_user_context(*, user_id: str, username: str = "") -> UserContext:
         skills_dir=resources_dir / "skills",
         tools_dir=resources_dir / "tools",
         models_dir=resources_dir / "models",
-        vault_dir=data_root / "vault",
+        settings_dir=settings_dir,
         sessions_dir=data_root / "sessions",
         agent_outputs_dir=data_root / "sessions",
-        config_dir=data_root / "config",
     )
 
 
@@ -143,7 +141,7 @@ def _build_user_context(user_id: str, username: str = "") -> UserContext:
     try:
         ensure_user_resource_layout(user_id=uid, username=name)
         ctx.sessions_dir.mkdir(parents=True, exist_ok=True)
-        ctx.config_dir.mkdir(parents=True, exist_ok=True)
+        ctx.settings_dir.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
 
@@ -197,8 +195,7 @@ def ensure_user_resource_layout(*, user_id: str, username: str = "") -> UserCont
         ctx.tools_dir,
         ctx.models_dir,
         ctx.sessions_dir,
-        ctx.vault_dir,
-        ctx.config_dir,
+        ctx.settings_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)
     if not ctx.profile_path.exists():
@@ -219,16 +216,5 @@ def write_user_profile(*, user_id: str, username: str) -> UserContext:
 
 
 def ensure_empty_session_presets(username: str) -> None:
-    """新账号不预置会话快捷场景；已有本地数据时不覆盖。"""
-    name = (username or "").strip()
-    if not name:
-        return
-    ctx = get_user_context_for(name)
-    path = (ctx.config_dir / "session_presets.json").resolve()
-    try:
-        if path.exists():
-            return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("[]", encoding="utf-8")
-    except Exception:
-        pass
+    """场景以 resources/scenarios 为唯一来源；新账号不再生成 presets 聚合文件。"""
+    return

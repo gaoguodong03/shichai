@@ -55,12 +55,12 @@ def normalize_sandbox_variant(value: Any) -> str:
     return SANDBOX_VARIANT_STANDARD
 
 
-def sandbox_settings_path(config_dir: Path) -> Path:
-    return (config_dir / "sandbox" / "settings.json").resolve()
+def sandbox_settings_path(sandbox_dir: Path) -> Path:
+    return (sandbox_dir / "sandbox" / "settings.json").resolve()
 
 
-def read_sandbox_variant(config_dir: Path) -> str:
-    path = sandbox_settings_path(config_dir)
+def read_sandbox_variant(sandbox_dir: Path) -> str:
+    path = sandbox_settings_path(sandbox_dir)
     try:
         raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except Exception:
@@ -70,9 +70,9 @@ def read_sandbox_variant(config_dir: Path) -> str:
     return normalize_sandbox_variant(raw.get("image_variant"))
 
 
-def write_sandbox_variant(config_dir: Path, variant: str) -> str:
+def write_sandbox_variant(sandbox_dir: Path, variant: str) -> str:
     normalized = normalize_sandbox_variant(variant)
-    path = sandbox_settings_path(config_dir)
+    path = sandbox_settings_path(sandbox_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps({"image_variant": normalized}, ensure_ascii=False, indent=2) + "\n",

@@ -17,14 +17,17 @@ from app.core.user_context import get_current_user_context
 
 logger = logging.getLogger(__name__)
 
-GROUP_META_FILE = "group_sessions_meta.json"
-GROUP_HISTORY_PREFIX = "group_history_"
+GROUP_META_FILE = "index.json"
 GROUP_SESSIONS_ROOT: Optional[Path] = None
 
 ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
+
+
+def _session_meta_path(root: Path, session_id: str) -> Path:
+    return root / session_id / "meta.json"
 
 
 def ensure_sessions_dir() -> Path:
@@ -257,22 +260,39 @@ def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[st
 
 
 def load_group_meta() -> Dict[str, Dict[str, Any]]:
-    path = ensure_sessions_dir() / GROUP_META_FILE
-    if path.exists():
+    root = ensure_sessions_dir()
+    index_path = root / GROUP_META_FILE
+    out: Dict[str, Dict[str, Any]] = {}
+    if index_path.exists():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                out = {str(k): v for k, v in data.items() if isinstance(v, dict)}
         except Exception:
             pass
-    return {}
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        meta_path = child / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            item = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(item, dict):
+            out[child.name] = item
+    return out
 
 
 def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bool = True) -> None:
-    path = ensure_sessions_dir() / GROUP_META_FILE
-    data = meta
-    if preserve_unmentioned and path.exists():
+    root = ensure_sessions_dir()
+    index_path = root / GROUP_META_FILE
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {str(k): v for k, v in (meta or {}).items() if isinstance(v, dict)}
+    if preserve_unmentioned:
         try:
-            current = json.loads(path.read_text(encoding="utf-8"))
+            current = load_group_meta()
             if isinstance(current, dict):
                 data = dict(current)
                 for session_id, incoming_item in (meta or {}).items():
@@ -284,18 +304,28 @@ def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bo
                             continue
                     data[session_id] = incoming_item
         except Exception:
-            data = meta
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            data = {str(k): v for k, v in (meta or {}).items() if isinstance(v, dict)}
+    index_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    for session_id, item in data.items():
+        meta_path = _session_meta_path(root, session_id)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not preserve_unmentioned:
+        keep_ids = set(data)
+        for child in root.iterdir():
+            if child.is_dir() and child.name not in keep_ids:
+                with suppress(OSError):
+                    (child / "meta.json").unlink()
 
 
 def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
-    from app.session_state.paths import migrate_session_layout, resolve_history_path
+    from app.session_state.paths import ensure_session_layout, resolve_history_path
 
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
-        path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+        path = ensure_sessions_dir() / group_session_id / "history.json"
     else:
-        migrate_session_layout(user_ctx, group_session_id)
+        ensure_session_layout(user_ctx, group_session_id)
         path = resolve_history_path(user_ctx, group_session_id)
     if path.exists():
         try:
@@ -311,7 +341,7 @@ def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) ->
 
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is None:
-        path = ensure_sessions_dir() / f"{GROUP_HISTORY_PREFIX}{group_session_id}.json"
+        path = ensure_sessions_dir() / group_session_id / "history.json"
     else:
         layout = ensure_session_layout(user_ctx, group_session_id)
         path = layout.history
@@ -332,26 +362,13 @@ def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) ->
 
 def cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
     """Remove orphan session history files and empty session directories."""
-    from app.session_state.paths import LEGACY_WORKSPACES_DIR
-
     root = ensure_sessions_dir()
     valid_ids = set((meta or {}).keys())
     deleted = 0
-    for p in root.glob(f"{GROUP_HISTORY_PREFIX}*.json"):
-        sid = p.stem.replace(GROUP_HISTORY_PREFIX, "")
-        if sid in valid_ids:
-            continue
-        try:
-            p.unlink()
-            deleted += 1
-        except OSError:
-            logger.warning("清理孤儿会话历史失败: %s", p, exc_info=True)
     user_ctx = get_current_user_context(default_fallback=False)
     if user_ctx is not None:
         for child in root.iterdir():
             if not child.is_dir() or child.name in valid_ids:
-                continue
-            if child.name in (LEGACY_WORKSPACES_DIR,):
                 continue
             try:
                 shutil.rmtree(child)

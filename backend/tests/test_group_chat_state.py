@@ -11,7 +11,19 @@ def test_group_meta_history_round_trip(tmp_path, monkeypatch):
     state.save_group_history("s1", [{"role": "user", "content": "你好"}])
 
     assert state.load_group_meta()["s1"]["title"] == "会话"
+    assert (tmp_path / "s1" / "meta.json").exists()
     assert state.load_group_history("s1")[0]["content"] == "你好"
+
+
+def test_group_meta_prefers_session_scoped_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_group_meta({"s1": {"title": "索引标题", "updated_at": "t1"}})
+    (tmp_path / "s1" / "meta.json").write_text(
+        '{"title": "会话目录标题", "updated_at": "t2"}',
+        encoding="utf-8",
+    )
+
+    assert state.load_group_meta()["s1"]["title"] == "会话目录标题"
 
 
 def test_stale_group_meta_save_preserves_sessions_created_later(tmp_path, monkeypatch):

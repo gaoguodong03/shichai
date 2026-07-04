@@ -295,12 +295,14 @@ sessions/
 
 这样旧会话不会被后续资源改名或删除破坏展示。
 
-## 5. 密钥层
+## 5. 设置与密钥层
 
-密钥文件：
+账号级设置文件：
 
 ```text
-vault/secrets.enc.json
+settings/app.json
+settings/secrets.enc.json
+settings/sandbox/requirements.txt
 ```
 
 规则：
@@ -328,7 +330,7 @@ vault/secrets.enc.json
 - `/skills` 必须只读或 copy-on-write。
 - 本轮工具注册器只注册场景和专家允许的 Skill。
 - 模型上下文只暴露本轮允许的专家、Skill 和工具。
-- `vault/`、账号密码、完整用户配置不得挂载进沙箱。
+- `settings/secrets.enc.json`、账号密码、完整用户配置不得挂载进沙箱。
 - 工具调用输出写入当前 session 的 `workspace/`。
 
 ## 7. 导入导出
@@ -386,19 +388,21 @@ rename
 - 导入失败不能留下半写入状态。
 - 删除资源前需要更新引用快照，便于缺失提示显示原名称。
 
-## 9. 迁移范围
+## 9. 旧数据处理
 
-不在主代码路径兼容旧邮箱目录。一次性迁移脚本负责：
+主代码路径不保留旧邮箱目录、旧 `config/`、旧 `vault/`、旧用户级对象库或 legacy session 目录的读取兼容。当前实现按新结构直接初始化和写入；已有旧数据按本轮重构决策直接清理，不在运行时自动迁移。
 
-- 生成新 `user_id`。
-- 新建 `backend/data/users/<user_id>/`。
-- 拆分旧 `config/session_presets.json` 到 `resources/scenarios/`。
-- 拆分旧 `config/dha_instances.json` 到 `resources/agents/`。
-- 移动旧 `skills/` 到 `resources/skills/`。
-- 拆分旧 MCP 配置到 `resources/tools/`。
-- 拆分旧模型配置到 `resources/models/`。
-- 新写入密钥保存到 `vault/secrets.enc.json`。
-- 输出迁移报告。
+新写入的数据只进入：
+
+- `resources/scenarios/`
+- `resources/agents/`
+- `resources/skills/`
+- `resources/tools/`
+- `resources/models/`
+- `settings/app.json`
+- `settings/secrets.enc.json`
+- `settings/sandbox/requirements.txt`
+- `sessions/{session_id}/...`
 
 ## 10. 开发验收标准
 

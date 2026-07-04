@@ -63,12 +63,18 @@ def test_clone_reuses_blob_objects(client: TestClient):
     dst_file = user_ctx.sessions_dir / cloned_session_id / "workspace" / "shared.txt"
     assert src_file.exists() and dst_file.exists()
 
-    store_root = user_ctx.base_dir / "blob"
-    blob_names = {p.name for p in store_root.iterdir() if p.is_file()}
-    assert len(blob_names) >= 1
-    # clone 复用同一 tree/chat blob 引用，对象库不应为相同内容重复写入
-    matching = [name for name in blob_names if (store_root / name).read_bytes() == b"dedup-me"]
-    assert len(matching) == 1
+    src_store_root = user_ctx.sessions_dir / session_id / "checkpoints" / "objects" / "blobs"
+    dst_store_root = user_ctx.sessions_dir / cloned_session_id / "checkpoints" / "objects" / "blobs"
+    assert src_store_root.is_dir()
+    assert dst_store_root.is_dir()
+    assert not (user_ctx.base_dir / "blob").exists()
+    assert not (user_ctx.base_dir / "trees").exists()
+
+    # session 自包含：clone/fork 复制所需对象到目标 session，不跨 session 引用用户级对象库。
+    src_matching = [p.name for p in src_store_root.iterdir() if p.is_file() and p.read_bytes() == b"dedup-me"]
+    dst_matching = [p.name for p in dst_store_root.iterdir() if p.is_file() and p.read_bytes() == b"dedup-me"]
+    assert len(src_matching) == 1
+    assert dst_matching == src_matching
 
 
 def test_session_layout_is_per_session_directory(client: TestClient):
@@ -86,6 +92,7 @@ def test_session_layout_is_per_session_directory(client: TestClient):
     user_ctx = build_user_context(user_id="free4inno", username="free4inno")
     session_root = user_ctx.sessions_dir / session_id
     assert (session_root / "workspace" / "note.txt").exists()
+    assert (session_root / "checkpoints").is_dir()
     assert not (user_ctx.sessions_dir / "workspaces" / session_id).exists()
 
 

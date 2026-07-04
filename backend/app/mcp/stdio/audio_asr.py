@@ -250,7 +250,7 @@ def transcribe_audio_file(
     """转写 backend/data 下的音频文件。
 
     Args:
-        path: 必填，形如 backend/data/users/<user_id>/sessions/workspaces/<session_id>/audio.wav。
+        path: 必填，形如 backend/data/users/<user_id>/sessions/<session_id>/workspace/audio.wav。
         language: 可选语言提示，如 zh 或 en。
         prompt: 可选转写提示词。
         chunk_seconds: 可选分片秒数，默认 120；大文件会按该长度分片后逐段转写。

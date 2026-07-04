@@ -12,8 +12,9 @@
 - **SimpleAgent**：当前实际执行器，识别工具意图并驱动工具调用。
 - **工具网关**：`UnifiedToolGateway` + `SandboxAdapter`，统一承载 script 与 MCP 调用。
 - **会话存储**：
-  - 会话消息：`backend/data/users/<user>/sessions/group_history_<session>.json`
-  - 会话元信息：`group_sessions_meta.json`
+  - 会话索引：`backend/data/users/<user_id>/sessions/index.json`
+  - 会话元信息：`backend/data/users/<user_id>/sessions/<session_id>/meta.json`
+  - 会话消息：`backend/data/users/<user_id>/sessions/<session_id>/history.json`
   - 专家记忆：工作区 `memory/facts.md`
   - 工作区产物索引：工作区 `memory/index.md`
 
@@ -260,7 +261,7 @@ flowchart TD
 5. **看前端 SSE 三段**  
    - `content` 有无、`message` 有无、`end` 是否过早触发状态切换。
 6. **核对落库消息**  
-   - 检查 `group_history_*.json` 中该条 assistant 的 `content/tool_raw_results/tool_debug` 是否完整。
+   - 检查 `sessions/<session_id>/history.json` 中该条 assistant 的 `content/tool_raw_results/tool_debug` 是否完整。
 
 ---
 
