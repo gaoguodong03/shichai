@@ -150,7 +150,7 @@ sequenceDiagram
   API->>Store: 写入历史、状态和工作区产物
 ```
 
-这条链路是平台运行的主链路。普通会话、场景会话和多专家协作都从 `/api/sessions/{session_id}/chat/stream` 进入；非流式 `/api/sessions/{session_id}/chat` 只作为兼容入口，应复用同一条路由和编排结果。
+这条链路是平台运行的主链路。普通会话、场景会话和多专家协作都从 `/api/sessions/{session_id}/chat/stream` 进入；非流式 `/api/sessions/{session_id}/chat` 只作为 SSE 中断后的容错入口，应复用同一条路由和编排结果。
 
 设计约束：
 

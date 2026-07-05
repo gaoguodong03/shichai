@@ -18,16 +18,15 @@
 | CC-02 | 主持人 Skill 旧目录 id 按 `skill_refs.name` 兜底解析 | 主持人 Skill 只按 `skills[].directory_name` 读取；目录名失效时不按名称搜索替代 Skill | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_host_takeover.py -q'` |
 | CC-03 | `allowed-tools.python` 字符串写法 | 只接受数组；字符串不再拆行转数组 | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_skill_mcp_and_script_requirements.py -q'` |
 | CC-04 | 从旧 `tool_debug.skill_session_state` 派生 `skill_result` | 只保留显式 `skill_result`；旧 `tool_debug` 不再生成新结构 | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_group_chat_state.py -q'` |
+| CC-05 | MCP 配置旧运行字段 `enabled` / `status` / `tool_count` | API 创建、更新、ZIP 导入遇到旧运行字段直接返回协议错误；运行时若读到旧字段会记录 warning 后按当前配置处理 | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_frontend_business_flows.py::test_mcp_settings_rejects_legacy_runtime_fields tests/test_file_ref_and_gateway.py::test_mcp_manager_warns_and_ignores_legacy_enabled_false_when_loading_server -q'` |
+| CC-06 | MCP / Skill 旧引用名、展示名、历史 server id 解析 | Skill MCP 依赖只按当前 server name 精确解析；不再按历史 id、短名包含匹配或 `reference-labels.id` 兜底 | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_mcp_skill_resolution.py tests/test_skill_mcp_and_script_requirements.py::test_get_mcp_servers_rejects_legacy_reference_label_ids -q'` |
+| CC-07 | 账号文本文件 `auth_users.txt` seed 到 SQLite | 登录 / 注册 / 存在性检查不再读取文本账号文件；配置模板和 1Panel 环境不再暴露 `AUTH_USERS_FILE` | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_auth_sqlite.py tests/test_pack_1panel_backup.py -q'` |
 | CC-10 | host / scheduler 旧字段 `next_prompt` 迁移到 `speaker_task` | `OrchestrationDecision` 不再输出 `next_prompt`，也不再迁移到 `speaker_task`；scheduler 归一化遇到旧字段返回协议错误；运行时只从 `speaker_task` 生成专家任务 | `rtk conda run --no-capture-output -n st49 bash -lc 'cd backend && python -m pytest tests/test_orchestration_contracts.py tests/test_scene_scheduler.py -q'` |
 
 ## 待继续删除或确认的旧兼容点
 
 | ID | 旧兼容点 | 当前判断 | 下一步 |
 | --- | --- | --- | --- |
-| CC-05 | MCP 配置旧运行字段清洗，如 `enabled` | 倾向删除：导入旧字段时应拒绝或忽略并提示，不应静默清洗成新结构 | 检查 `settings_mcp.py`、`test_frontend_business_flows.py`、`test_file_ref_and_gateway.py` 后改严格行为 |
-| CC-06 | MCP / Skill 旧引用名、展示名、历史 server id 解析 | 倾向删除：Skill 依赖应使用当前 server name / directory_name | 检查 `mcp_skill_resolution.py`、`tools_for_skill.py`、`test_skill_mcp_and_script_requirements.py` |
-| CC-07 | 账号文本文件 seed 到 SQLite | 倾向删除：如果不再支持旧部署账号文件，应删除登录/注册时的 seed 逻辑 | 检查 `auth_db.py` 和 `test_auth_sqlite.py`，确认是否需要一次性迁移脚本 |
-| CC-08 | 非流式 `/api/sessions/{id}/chat` 作为前端 SSE 补偿 | 需要确认：这是旧接口兼容还是当前产品容错入口 | 若决定只保留 SSE，则删除前端补偿和后端非流式入口；若保留，移出兼容清理表 |
 | CC-09 | `session.json` / `history.json` / `runtime.json` 之外的会话旧结构 | 当前主路径已忽略 `meta.json`；继续扫描是否还有旧结构读取 | 保持 `test_group_chat_state.py` 的“忽略旧 meta.json”测试，发现新旧并存先反馈 |
 
 ## 不属于旧兼容的容错项
@@ -37,6 +36,7 @@
 | SPA fallback | 部署前端路由刷新能力，不是旧数据兼容；是否保留应按部署方式决定。 |
 | HTML plaintext fallback | 外部网页格式容错，不是旧协议；是否保留应按 `call_api` 输出质量决定。 |
 | LLM/tool 失败后的确定性错误摘要 | 错误恢复能力，不是旧字段兼容；可以保留，但不应掩盖协议错误。 |
+| 非流式 `/api/sessions/{id}/chat` | 当前前端在 SSE 中断时用于补偿本轮回复，是产品容错入口；保留并要求复用 `/chat/stream` 的同一条编排逻辑。 |
 
 ## 删除检查清单
 
