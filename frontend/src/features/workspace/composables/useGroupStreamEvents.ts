@@ -86,6 +86,7 @@ export function useGroupStreamEvents(args: {
     if (key === 'file_written' || key === 'workspace_written') return '文件已写入，正在继续...'
     if (key === 'tool_running' || key === 'tool_pending') return '正在运行中...'
     if (key === 'agent_waiting') return '正在等待任务完成...'
+    if (key === 'presentation_rewriting' || key === 'display_rewriting') return '正在整理表达...'
     if (key === 'generating' || key === 'llm_generating' || key === 'assistant_generating') return '正在生成回复...'
     return STREAMING_STATUS_DEFAULT
   }
@@ -224,6 +225,10 @@ export function useGroupStreamEvents(args: {
     }
     if (phase === 'agent_waiting') {
       patchGroupStreamState(id, { phase: '仍在等待技能任务完成…' })
+      return true
+    }
+    if (phase === 'presentation_rewriting' || phase === 'display_rewriting') {
+      patchGroupStreamState(id, { phase: '正在整理表达…' })
       return true
     }
     return false

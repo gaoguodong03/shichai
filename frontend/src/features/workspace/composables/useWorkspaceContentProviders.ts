@@ -290,11 +290,8 @@ export function useWorkspaceContentProviders(args: {
     loadWorkspace: loadGroupWorkspace,
   })
   let composerActions: ReturnType<typeof useGroupComposerActions> | null = null
-  async function confirmGroupNext(
-    nextSpeaker: string,
-    extra?: { ignoreAutoAgentName?: string; ignoreAutoSkill?: string },
-  ) {
-    await composerActions?.confirmGroupNext(nextSpeaker, extra)
+  async function confirmGroupNext(nextSpeaker: string) {
+    await composerActions?.confirmGroupNext(nextSpeaker)
   }
   async function sendGroupMessage() {
     await composerActions?.sendGroupMessage()

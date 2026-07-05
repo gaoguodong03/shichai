@@ -4,10 +4,6 @@ export interface ChatStreamRequestPayload {
   message?: string
   session_id: string
   client_message_id?: string
-  action?: string
-  host_takeover_requested?: boolean
-  ignore_auto_agent_name?: string
-  ignore_auto_skill?: string
 }
 
 interface StreamChatEventHandlers {
@@ -83,10 +79,6 @@ export async function streamSessionChat(
   const body = {
     message: payload.message ?? '',
     client_message_id: payload.client_message_id,
-    action: payload.action,
-    host_takeover_requested: payload.host_takeover_requested,
-    ignore_auto_agent_name: payload.ignore_auto_agent_name,
-    ignore_auto_skill: payload.ignore_auto_skill,
   }
   const response = await fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
     method: 'POST',
@@ -140,10 +132,6 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
     body: JSON.stringify({
       message: payload.message ?? '',
       client_message_id: payload.client_message_id,
-      action: payload.action,
-      host_takeover_requested: payload.host_takeover_requested,
-      ignore_auto_agent_name: payload.ignore_auto_agent_name,
-      ignore_auto_skill: payload.ignore_auto_skill,
     }),
   })
 }

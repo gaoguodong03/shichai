@@ -7,7 +7,6 @@ import type { GroupMessage } from './useGroupMessageList'
 import {
   buildGroupDraftMessage,
   createClientMessageId,
-  detectHostTakeoverIntent,
 } from './groupMessageDraft'
 
 type LastSentDraft = {
@@ -74,10 +73,7 @@ export function useGroupComposerActions(args: {
     return buildGroupDraftMessage(args.groupDiscussionGoal.value || '', args.groupNextPrompt.value || '')
   }
 
-  async function confirmGroupNext(
-    _nextSpeaker: string,
-    extra?: { ignoreAutoAgentName?: string; ignoreAutoSkill?: string },
-  ) {
+  async function confirmGroupNext(_nextSpeaker: string) {
     const detail = args.groupDetail.value
     const id = detail?.id
     if (!detail || !id || args.groupStreaming.value) return
@@ -85,15 +81,7 @@ export function useGroupComposerActions(args: {
     args.groupWaitingForUser.value = false
     args.groupSuggestedNextSpeaker.value = null
     const { runToken, abort } = args.beginGroupStream(id, '正在确认…')
-    const body: {
-      action?: string
-      message?: string
-      host_takeover_requested?: boolean
-      ignore_auto_agent_name?: string
-      ignore_auto_skill?: string
-    } = { action: 'continue' }
-    if (extra?.ignoreAutoAgentName) body.ignore_auto_agent_name = extra.ignoreAutoAgentName
-    if (extra?.ignoreAutoSkill) body.ignore_auto_skill = extra.ignoreAutoSkill
+    const body: { message?: string } = {}
     const base = builtMessage()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
@@ -104,13 +92,6 @@ export function useGroupComposerActions(args: {
     try {
       const msg = hasFiles ? args.buildMessageWithFileReferences(base) : base
       if (msg) body.message = msg
-      if (msg) {
-        body.host_takeover_requested = detectHostTakeoverIntent(
-          msg,
-          args.effectiveHostDisplayName.value,
-          args.defaultHostDisplayName,
-        )
-      }
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
@@ -129,12 +110,6 @@ export function useGroupComposerActions(args: {
   async function sendGroupMessage() {
     const detail = args.groupDetail.value
     if (!detail) return
-    const rawInput = String(args.groupDiscussionGoal.value || '')
-    const hostTakeoverRequested = detectHostTakeoverIntent(
-      rawInput,
-      args.effectiveHostDisplayName.value,
-      args.defaultHostDisplayName,
-    )
     const base = builtMessage()
     const hasFiles = args.attachedFiles.value.length > 0
     if (!detail || args.groupStreaming.value || (!base && !hasFiles)) return
@@ -155,7 +130,6 @@ export function useGroupComposerActions(args: {
       const body: Record<string, unknown> = {
         message: msg,
         client_message_id: createClientMessageId(),
-        host_takeover_requested: hostTakeoverRequested,
       }
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
       if (shouldEmitMessageSent) {
