@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
@@ -22,6 +22,7 @@ from app.core.user_context import get_current_user_context, get_current_username
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
+LEGACY_MCP_RUNTIME_FIELDS = {"enabled", "status", "tool_count"}
 
 
 async def _mcp_runtime_for_request():
@@ -51,6 +52,8 @@ class MCPTransport(BaseModel):
 
 class MCPServerCreate(BaseModel):
     """新建 MCP Server 请求"""
+    model_config = ConfigDict(extra="allow")
+
     name: str
     type: str = "mcp"
     description: str = ""
@@ -61,6 +64,8 @@ class MCPServerCreate(BaseModel):
 
 class MCPServerUpdate(BaseModel):
     """更新 MCP Server 请求"""
+    model_config = ConfigDict(extra="allow")
+
     name: Optional[str] = None
     type: Optional[str] = None
     description: Optional[str] = None
@@ -114,12 +119,17 @@ def save_mcp_config(servers: List[Dict[str, Any]]):
         )
 
 
-def _strip_legacy_runtime_fields(server: Dict[str, Any]) -> Dict[str, Any]:
-    copied = dict(server)
-    copied.pop("enabled", None)
-    copied.pop("status", None)
-    copied.pop("tool_count", None)
-    return copied
+def _legacy_runtime_fields_in_payload(server: Dict[str, Any]) -> List[str]:
+    return sorted(LEGACY_MCP_RUNTIME_FIELDS.intersection(server or {}))
+
+
+def _reject_legacy_runtime_fields(server: Dict[str, Any]) -> None:
+    fields = _legacy_runtime_fields_in_payload(server)
+    if fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"MCP 配置包含旧运行字段: {', '.join(fields)}；请只提交当前资源配置字段。",
+        )
 
 
 def _build_single_mcp_bundle_zip_bytes(server: Dict[str, Any]) -> bytes:
@@ -192,6 +202,8 @@ async def export_mcp_server_zip(tool_name: str):
 async def import_mcp_server_zip(file: UploadFile = File(...), dry_run: bool = Form(False)):
     raw = await file.read()
     rows = _read_mcp_bundle_rows(raw)
+    for row in rows:
+        _reject_legacy_runtime_fields(row)
     rows = [normalize_tool_row(row) for row in rows]
     preview = [{"name": str(x.get("name") or ""), "type": str(x.get("type") or "")} for x in rows]
     if dry_run:
@@ -228,6 +240,9 @@ async def create_mcp_server(server: MCPServerCreate):
         raise HTTPException(status_code=409, detail="同名工具已存在")
 
     raw_server = server.model_dump(exclude_none=True)
+    if getattr(server, "model_extra", None):
+        raw_server.update(dict(server.model_extra or {}))
+    _reject_legacy_runtime_fields(raw_server)
     if server.transport is not None:
         raw_server["transport"] = server.transport.model_dump(exclude_none=True)
     new_server = normalize_tool_row(raw_server)
@@ -257,6 +272,9 @@ async def update_mcp_server(tool_name: str, server_update: MCPServerUpdate):
     
     server = dict(servers[server_index])
     update_data = server_update.model_dump(exclude_none=True)
+    if getattr(server_update, "model_extra", None):
+        update_data.update(dict(server_update.model_extra or {}))
+    _reject_legacy_runtime_fields(update_data)
     if server_update.transport is not None:
         update_data["transport"] = server_update.transport.model_dump(exclude_none=True)
     server.update(update_data)

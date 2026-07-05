@@ -843,7 +843,7 @@ async def test_mcp_tool_normalization_error_reports_server_and_tool(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monkeypatch):
+async def test_mcp_manager_warns_and_ignores_legacy_enabled_false_when_loading_server(monkeypatch, caplog):
     import app.mcp.manager as mcp_manager
 
     mgr = mcp_manager.MCPToolManager()
@@ -863,9 +863,11 @@ async def test_mcp_manager_ignores_legacy_enabled_false_when_loading_server(monk
 
     monkeypatch.setattr(mgr, "connect_server", _fake_connect_server)
 
+    caplog.set_level("WARNING")
     await mgr.ensure_servers_loaded(["Legacy Off"])
 
     assert connected == [("Legacy Off", mgr.server_configs[0])]
+    assert "旧运行字段" in caplog.text
 
 
 def test_mcp_streamable_http_log_context_redacts_sensitive_endpoint_details():

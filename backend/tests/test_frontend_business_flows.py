@@ -102,7 +102,6 @@ def test_mcp_zip_export_and_import_preserves_stdio_env(frontend_flow_client: Tes
         "/api/settings/mcp",
         json={
             "name": "音频转写 MCP",
-            "enabled": True,
             "transport": {
                 "type": "stdio",
                 "command": "python",
@@ -210,7 +209,7 @@ def test_skill_and_expert_export_bundle_tools_without_plaintext_secrets(frontend
     assert "sk-live-secret" not in exported_expert.content.decode("latin-1")
 
 
-def test_mcp_settings_omits_legacy_enable_and_runtime_state(frontend_flow_client: TestClient):
+def test_mcp_settings_rejects_legacy_runtime_fields(frontend_flow_client: TestClient):
     client = frontend_flow_client
     headers = _headers("frontend-mcp-legacy@example.test")
 
@@ -223,19 +222,48 @@ def test_mcp_settings_omits_legacy_enable_and_runtime_state(frontend_flow_client
         },
         headers=headers,
     )
-    assert created.status_code == 200
-    server_id = created.json()["data"]["name"]
-    assert "enabled" not in created.json()["data"]
+    assert created.status_code == 400
+    assert "旧运行字段" in created.json()["detail"]
 
-    listed = client.get("/api/settings/mcp", headers=headers)
-    assert listed.status_code == 200
-    row = next(x for x in listed.json()["data"]["servers"] if x["name"] == server_id)
-    assert "enabled" not in row
-    assert "status" not in row
-    assert "tool_count" not in row
+    valid = client.post(
+        "/api/settings/mcp",
+        json={
+            "name": "当前工具",
+            "transport": {"type": "stdio", "command": "python", "args": ["-m", "noop"]},
+        },
+        headers=headers,
+    )
+    assert valid.status_code == 200
+    updated = client.put(
+        "/api/settings/mcp/当前工具",
+        json={"status": "connected"},
+        headers=headers,
+    )
+    assert updated.status_code == 400
+    assert "旧运行字段" in updated.json()["detail"]
 
-    assert client.post(f"/api/settings/mcp/{server_id}/enable", headers=headers).status_code == 404
-    assert client.post(f"/api/settings/mcp/{server_id}/disable", headers=headers).status_code == 404
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "mcp_servers.json",
+            json.dumps(
+                [
+                    {
+                        "name": "旧包工具",
+                        "enabled": True,
+                        "server_config": json.dumps({"mcpServers": {"旧包工具": {"type": "stdio", "command": "python"}}}),
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+        )
+    imported = client.post(
+        "/api/settings/mcp/import-zip",
+        files={"file": ("legacy-mcp.zip", buf.getvalue(), "application/zip")},
+        headers=headers,
+    )
+    assert imported.status_code == 400
+    assert "旧运行字段" in imported.json()["detail"]
 
 
 def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClient):
@@ -590,7 +618,6 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         "/api/settings/mcp",
         json={
             "name": "前端流程 MCP",
-            "enabled": False,
             "transport": {"type": "stdio", "command": "python", "args": ["-m", "noop"]},
             "metadata": {"purpose": "test"},
         },

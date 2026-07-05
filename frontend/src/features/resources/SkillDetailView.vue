@@ -394,7 +394,7 @@ const form = ref({
   body: '',
   allowed_tools: { mcp: [] as string[], http_api: [] as string[], python: [] as string[] },
 })
-const mcpServers = ref<{ name: string; enabled: boolean; type: 'mcp' | 'http_api' }[]>([])
+const mcpServers = ref<{ name: string; type: 'mcp' | 'http_api' }[]>([])
 const activeTab = ref<'main' | PartType>('main')
 const editMode = ref(false)
 const draftBaseline = ref('')
@@ -431,10 +431,10 @@ const httpApiTools = computed(() => mcpServers.value.filter((s) => s.type === 'h
 const mcpServerNames = computed(() => new Set(mcpToolServers.value.map((s) => s.name)))
 const httpApiToolNames = computed(() => new Set(httpApiTools.value.map((s) => s.name)))
 const addableMcpServers = computed(() =>
-  mcpToolServers.value.filter((s) => s.enabled !== false && !form.value.allowed_tools.mcp.includes(s.name))
+  mcpToolServers.value.filter((s) => !form.value.allowed_tools.mcp.includes(s.name))
 )
 const addableHttpApiTools = computed(() =>
-  httpApiTools.value.filter((s) => s.enabled !== false && !form.value.allowed_tools.http_api.includes(s.name))
+  httpApiTools.value.filter((s) => !form.value.allowed_tools.http_api.includes(s.name))
 )
 const missingMcpDependencies = computed(() =>
   form.value.allowed_tools.mcp.filter((id) => !mcpServerNames.value.has(id))
@@ -765,9 +765,8 @@ async function loadMcpServers() {
     const r = await apiRequest('/settings/mcp')
     const j = await r.json()
     if (j.status === 'ok' && j.data?.servers) {
-      mcpServers.value = j.data.servers.map((s: { name?: string; enabled?: boolean; type?: string }) => ({
+      mcpServers.value = j.data.servers.map((s: { name?: string; type?: string }) => ({
         name: String(s.name || '').trim(),
-        enabled: s.enabled ?? true,
         type: s.type === 'http_api' ? 'http_api' : 'mcp',
       })).filter((s: { name: string }) => !!s.name)
     }

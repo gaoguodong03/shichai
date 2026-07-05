@@ -908,6 +908,13 @@ class MCPToolManager:
             if not cfg:
                 logger.warning("ensure_servers_loaded: 未找到 MCP server 配置: %s", sid)
                 continue
+            legacy_fields = sorted({"enabled", "status", "tool_count"}.intersection(cfg))
+            if legacy_fields:
+                logger.warning(
+                    "ensure_servers_loaded: MCP server %s 配置包含旧运行字段，已忽略: %s",
+                    sid,
+                    ",".join(legacy_fields),
+                )
             await self.connect_server(sid, cfg)
     
     async def cleanup(self):

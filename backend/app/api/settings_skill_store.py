@@ -115,25 +115,6 @@ def validate_skill_tool_names(
     return resolved
 
 
-def _reference_label_name_map(fm: Dict[str, Any]) -> Dict[str, str]:
-    refs = fm.get("reference-labels")
-    if not isinstance(refs, dict):
-        return {}
-    out: Dict[str, str] = {}
-    for section_name in ("mcp", "http_api", "http-api"):
-        section = refs.get(section_name)
-        if not isinstance(section, list):
-            continue
-        for item in section:
-            if not isinstance(item, dict):
-                continue
-            ref_id = str(item.get("id") or "").strip()
-            name = str(item.get("name") or "").strip()
-            if ref_id and name and ref_id not in out:
-                out[ref_id] = name
-    return out
-
-
 def get_mcp_servers_for_skill(directory_name: str) -> List[str]:
     d = skill_dir_for_directory_name(directory_name)
     if not d:
@@ -143,7 +124,6 @@ def get_mcp_servers_for_skill(directory_name: str) -> List[str]:
     ids = list(allowed.get("mcp") or []) + list(allowed.get("http_api") or [])
     if not ids:
         return []
-    label_names = _reference_label_name_map(fm)
-    declared = [label_names.get(str(item).strip(), str(item).strip()) for item in ids]
+    declared = [str(item).strip() for item in ids]
     resolved, _missing = resolve_skill_mcp_declarations(declared, load_mcp_config())
     return resolved

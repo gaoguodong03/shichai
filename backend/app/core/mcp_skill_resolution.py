@@ -1,7 +1,7 @@
 """Resolve skill MCP declarations to local server names."""
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
 
 def normalized_name_key(raw: Any) -> str:
@@ -16,20 +16,7 @@ def build_mcp_server_index(
         name_key = normalized_name_key(row.get("name"))
         if name_key and name_key not in by_name:
             by_name[name_key] = row
-        id_key = normalized_name_key(row.get("id"))
-        if id_key and id_key not in by_name:
-            by_name[id_key] = row
     return by_name
-
-
-def _unique_name_contains_match(candidate: str, by_name: Mapping[str, Mapping[str, Any]]) -> Optional[Mapping[str, Any]]:
-    key = normalized_name_key(candidate)
-    if not key:
-        return None
-    matches = [row for name_key, row in by_name.items() if key in name_key]
-    if len(matches) == 1:
-        return matches[0]
-    return None
 
 
 def resolve_skill_mcp_declaration(
@@ -42,9 +29,6 @@ def resolve_skill_mcp_declaration(
         return None
     key = normalized_name_key(decl)
     row = by_name.get(key)
-    if row is not None:
-        return str(row.get("name") or "").strip() or decl
-    row = _unique_name_contains_match(decl, by_name)
     if row is not None:
         return str(row.get("name") or "").strip() or decl
     return None
