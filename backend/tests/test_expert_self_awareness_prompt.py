@@ -70,15 +70,31 @@ def test_create_skill_execution_agent_omits_legacy_prompt_scaffolding():
 
     agent = create_skill_execution_agent(
         llm=object(),
-        tools=[ToolSpec(name="read_file", description="读文件")],
+        tools=[ToolSpec(name="read_workspace_file", description="读文件")],
         skill_full_content=skill_content,
         extra_system_prompt="额外系统提示",
     )
     prompt = agent.system_prompt
 
     assert "你是一个有用的 AI 助手，正在按以下技能说明执行用户请求。" not in prompt
-    assert '不要输出任何形如 `{"action":"tool_call", ...}` 的 JSON 作为正文（那是历史兼容格式，已移除）。' not in prompt
+    assert '{"action":"tool_call"' not in prompt
     assert "额外系统提示" in prompt
     assert skill_content in prompt
-    assert "当你需要使用工具时，**必须**使用模型的结构化工具调用" in prompt
-    assert "- read_file: 读文件" in prompt
+    assert "当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数" in prompt
+    assert "- read_workspace_file: 读文件" in prompt
+
+
+def test_create_skill_execution_agent_injects_current_workspace_file_timestamp(monkeypatch):
+    import app.agent.skill_agent_runtime as runtime
+
+    monkeypatch.setattr(runtime, "_current_workspace_file_timestamp", lambda: "2026070422145700")
+
+    agent = create_skill_execution_agent(
+        llm=object(),
+        tools=[ToolSpec(name="write_workspace_file", description="写文件")],
+        skill_full_content="按技能正文执行。",
+    )
+    prompt = agent.system_prompt
+
+    assert "当前文件时间戳：`2026070422145700`" in prompt
+    assert "新建工作区文件时直接把这个时间戳写入文件名" in prompt

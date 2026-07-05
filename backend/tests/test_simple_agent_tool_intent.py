@@ -4,7 +4,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent_finalization import _deterministic_tool_fallback_message
-from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step, _parse_dsml_tool_calls
+from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step
 from app.agent.tool_spec import ToolSpec
 
 
@@ -25,6 +25,48 @@ class _FakeClient:
 class _FakeLLM:
     def __init__(self, responses):
         self._client = _FakeClient(responses)
+
+    def get_client(self):
+        return self._client
+
+
+class _BindingSensitiveState:
+    def __init__(self, *, search_call: AIMessage, write_call: AIMessage, final_message: AIMessage):
+        self.search_call = search_call
+        self.write_call = write_call
+        self.final_message = final_message
+        self.bound_calls = 0
+        self.unbound_calls = 0
+
+
+class _BindingSensitiveClient:
+    def __init__(self, state: _BindingSensitiveState, *, bound: bool = False):
+        self._state = state
+        self._bound = bound
+
+    def bind_tools(self, tools, *args, **kwargs):
+        return _BindingSensitiveClient(self._state, bound=True)
+
+    async def ainvoke(self, messages):
+        if not self._bound:
+            self._state.unbound_calls += 1
+            return AIMessage(
+                content=(
+                    'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
+                    'content="# Web 信息检索候选清单")'
+                )
+            )
+        self._state.bound_calls += 1
+        if self._state.bound_calls == 1:
+            return self._state.search_call
+        if self._state.bound_calls == 2:
+            return self._state.write_call
+        return self._state.final_message
+
+
+class _BindingSensitiveLLM:
+    def __init__(self, state: _BindingSensitiveState):
+        self._client = _BindingSensitiveClient(state)
 
     def get_client(self):
         return self._client
@@ -121,7 +163,7 @@ async def test_simple_agent_calls_tool_runner_for_content_tool_json():
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_coerces_dsml_tool_calls_before_displaying_text():
+async def test_simple_agent_ignores_dsml_text_tool_calls():
     response = AIMessage(
         content=(
             '<｜｜DSML｜｜tool_calls>\n'
@@ -136,26 +178,7 @@ async def test_simple_agent_coerces_dsml_tool_calls_before_displaying_text():
 
     async def _tool_runner(state, tools):
         called["n"] += 1
-        last = state["messages"][-1]
-        assert str(last.content) == ""
-        assert last.tool_calls == [
-            {
-                "name": "image-generation_generate_image",
-                "args": {"description": "河南胡辣汤封面", "pic_size": "1792x1024"},
-                "id": "dsml-tool-0",
-            }
-        ]
-        return {
-            "messages": [ToolMessage(content="image ok", tool_call_id="dsml-tool-0")],
-            "tool_attempt_debug": [{"matched": True}],
-            "tool_calls": [
-                {
-                    "tool": "image-generation_generate_image",
-                    "arguments": {"description": "河南胡辣汤封面", "pic_size": "1792x1024"},
-                }
-            ],
-            "tool_raw_outputs": ["image ok"],
-        }
+        return {"messages": [], "tool_calls": [], "tool_raw_outputs": []}
 
     agent = SimpleAgent(
         llm=_FakeLLM([response]),
@@ -167,16 +190,20 @@ async def test_simple_agent_coerces_dsml_tool_calls_before_displaying_text():
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="生成图片")]})
 
-    assert called["n"] == 1
+    assert called["n"] == 0
     assert "<｜｜DSML｜｜tool_calls>" not in str(out["messages"][-1].content)
     assert any(
-        item.get("source") == "dsml_text_tool_calls"
+        item.get("source") == "text_tool_call_protocol_retry"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+    assert any(
+        item.get("source") == "text_tool_call_protocol_failed"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_coerces_plain_write_workspace_file_call_before_displaying_text():
+async def test_simple_agent_ignores_plain_write_workspace_file_text_call():
     response = AIMessage(
         content=(
             'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
@@ -187,37 +214,7 @@ async def test_simple_agent_coerces_plain_write_workspace_file_call_before_displ
 
     async def _tool_runner(state, tools):
         called["n"] += 1
-        last = state["messages"][-1]
-        assert str(last.content) == ""
-        assert last.tool_calls == [
-            {
-                "name": "write_workspace_file",
-                "args": {
-                    "path": "web-crawler/候选清单-2026062816200000.md",
-                    "content": "# Web 信息检索候选清单\n\n| 编号 | 标题 | URL | 摘要 | 来源工具 |",
-                },
-                "id": "text-tool-0",
-            }
-        ]
-        return {
-            "messages": [
-                ToolMessage(
-                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
-                    tool_call_id="text-tool-0",
-                )
-            ],
-            "tool_attempt_debug": [{"matched": True}],
-            "tool_calls": [
-                {
-                    "tool": "write_workspace_file",
-                    "arguments": {
-                        "path": "web-crawler/候选清单-2026062816200000.md",
-                        "content": "# Web 信息检索候选清单\n\n| 编号 | 标题 | URL | 摘要 | 来源工具 |",
-                    },
-                }
-            ],
-            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
-        }
+        return {"messages": [], "tool_calls": [], "tool_raw_outputs": []}
 
     agent = SimpleAgent(
         llm=_FakeLLM([response]),
@@ -229,16 +226,216 @@ async def test_simple_agent_coerces_plain_write_workspace_file_call_before_displ
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料")]})
 
-    assert called["n"] == 1
+    assert called["n"] == 0
     assert "write_workspace_file(" not in str(out["messages"][-1].content)
     assert any(
-        item.get("source") == "plain_text_tool_calls"
+        item.get("source") == "text_tool_call_protocol_retry"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+    assert any(
+        item.get("source") == "text_tool_call_protocol_failed"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_stream_coerces_plain_write_workspace_file_call_without_visible_text():
+async def test_simple_agent_retries_text_tool_call_protocol_once_then_executes_structured_call():
+    text_protocol = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
+            'content="# Web 信息检索候选清单")'
+        )
+    )
+    structured_write = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-2026062816200000.md",
+                    "content": "# Web 信息检索候选清单",
+                },
+            }
+        ],
+    )
+    final = AIMessage(content="已保存：web-crawler/候选清单-2026062816200000.md")
+    called = {"n": 0}
+
+    async def _tool_runner(state, tools):
+        called["n"] += 1
+        last = state["messages"][-1]
+        assert last.tool_calls[0]["name"] == "write_workspace_file"
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
+                    tool_call_id="tc-write",
+                )
+            ],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": last.tool_calls[0]["args"]}],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([text_protocol, structured_write, final]),
+        tools=[ToolSpec(name="write_workspace_file", description="write workspace file")],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=3,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料并保存")]})
+
+    assert called["n"] == 1
+    assert "write_workspace_file(" not in str(out["messages"][-1].content)
+    assert any(
+        item.get("source") == "text_tool_call_protocol_retry"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_retries_post_tool_text_protocol_before_falling_back_to_summary():
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "智能软件工程伦理"}}],
+    )
+    text_protocol = AIMessage(
+        content=(
+            'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
+            'content="# Web 信息检索候选清单")'
+        )
+    )
+    structured_write = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-2026062816200000.md",
+                    "content": "# Web 信息检索候选清单",
+                },
+            }
+        ],
+    )
+    final = AIMessage(content="已保存：web-crawler/候选清单-2026062816200000.md")
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        last = state["messages"][-1]
+        tool_name = last.tool_calls[0]["name"]
+        calls.append(tool_name)
+        if tool_name == "mcp_web_search":
+            return {
+                "messages": [ToolMessage(content="检索摘要", tool_call_id="tc-search")],
+                "tool_calls": [{"tool": "mcp_web_search", "arguments": {"query": "智能软件工程伦理"}}],
+                "tool_raw_outputs": ["检索摘要"],
+            }
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
+                    tool_call_id="tc-write",
+                )
+            ],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": last.tool_calls[0]["args"]}],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([search_call, text_protocol, structured_write, final]),
+        tools=[
+            ToolSpec(name="mcp_web_search", description="search"),
+            ToolSpec(name="write_workspace_file", description="write workspace file"),
+        ],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料并保存")]})
+
+    assert calls == ["mcp_web_search", "write_workspace_file"]
+    final_text = str(out["messages"][-1].content)
+    assert "已保存：web-crawler/候选清单-2026062816200000.md" in final_text
+    assert "工具已执行完成。以下是本轮工具返回摘要" not in final_text
+    assert any(
+        item.get("source") == "text_tool_call_protocol_retry"
+        for item in (out.get("tool_attempt_debug") or [])
+    )
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_uses_bound_tools_when_synthesizing_after_search_result():
+    search_call = AIMessage(
+        content="",
+        tool_calls=[{"id": "tc-search", "name": "mcp_web_search", "args": {"query": "智能软件工程伦理"}}],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-2026062816200000.md",
+                    "content": "# Web 信息检索候选清单",
+                },
+            }
+        ],
+    )
+    final = AIMessage(content="已保存：web-crawler/候选清单-2026062816200000.md")
+    state = _BindingSensitiveState(
+        search_call=search_call,
+        write_call=write_call,
+        final_message=final,
+    )
+    calls: list[str] = []
+
+    async def _tool_runner(tool_state, tools):
+        last = tool_state["messages"][-1]
+        tool_name = last.tool_calls[0]["name"]
+        calls.append(tool_name)
+        if tool_name == "mcp_web_search":
+            return {
+                "messages": [ToolMessage(content="检索摘要", tool_call_id="tc-search")],
+                "tool_calls": [{"tool": "mcp_web_search", "arguments": {"query": "智能软件工程伦理"}}],
+                "tool_raw_outputs": ["检索摘要"],
+            }
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
+                    tool_call_id="tc-write",
+                )
+            ],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": last.tool_calls[0]["args"]}],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_BindingSensitiveLLM(state),
+        tools=[
+            ToolSpec(name="mcp_web_search", description="search"),
+            ToolSpec(name="write_workspace_file", description="write workspace file"),
+        ],
+        system_prompt="x",
+        tool_runner=_tool_runner,
+        max_steps=4,
+    )
+
+    out = await agent.ainvoke({"messages": [HumanMessage(content="搜索资料并保存")]})
+
+    assert calls == ["mcp_web_search", "write_workspace_file"]
+    assert state.unbound_calls == 0
+    assert state.bound_calls >= 3
+    assert "已保存：web-crawler/候选清单-2026062816200000.md" in str(out["messages"][-1].content)
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_stream_ignores_plain_write_workspace_file_text_call_without_visible_protocol():
     response = AIMessage(
         content=(
             'write_workspace_file(path="web-crawler/候选清单-2026062816200000.md", '
@@ -248,18 +445,8 @@ async def test_simple_agent_stream_coerces_plain_write_workspace_file_call_witho
     calls: list[str] = []
 
     async def _tool_runner(state, tools):
-        tool_call = state["messages"][-1].tool_calls[0]
-        calls.append(tool_call["name"])
-        return {
-            "messages": [
-                ToolMessage(
-                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md",
-                    tool_call_id="text-tool-0",
-                )
-            ],
-            "tool_calls": [{"tool": "write_workspace_file", "arguments": tool_call["args"]}],
-            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816200000.md"],
-        }
+        calls.append("called")
+        return {"messages": [], "tool_calls": [], "tool_raw_outputs": []}
 
     agent = SimpleAgent(
         llm=_FakeLLM([response]),
@@ -279,18 +466,26 @@ async def test_simple_agent_stream_coerces_plain_write_workspace_file_call_witho
         if ev.get("type") == "final_step":
             final_debug = ev.get("tool_attempt_debug") or []
 
-    assert calls == ["write_workspace_file"]
+    assert calls == []
     assert all("write_workspace_file(" not in text for text in visible_texts)
-    assert any(item.get("source") == "plain_text_tool_calls" for item in final_debug)
+    assert any(item.get("source") == "text_tool_call_protocol_retry" for item in final_debug)
+    assert any(item.get("source") == "text_tool_call_protocol_failed" for item in final_debug)
 
 
 @pytest.mark.asyncio
 async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
     write_call = AIMessage(
-        content=(
-            'write_workspace_file(path="web-crawler/候选清单-20250401133000.md", '
-            'content="# 候选清单")'
-        )
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-20250401133000.md",
+                    "content": "# 候选清单",
+                },
+            }
+        ],
     )
     stale_final = AIMessage(content="候选清单已保存：`web-crawler/候选清单-20250401133000.md`")
 
@@ -299,7 +494,7 @@ async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
             "messages": [
                 ToolMessage(
                     content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md",
-                    tool_call_id="text-tool-0",
+                    tool_call_id="tc-write",
                 )
             ],
             "tool_calls": [
@@ -332,16 +527,30 @@ async def test_simple_agent_final_reply_uses_actual_written_workspace_path():
 @pytest.mark.asyncio
 async def test_simple_agent_ignores_second_write_workspace_file_call_after_successful_write():
     first_write = AIMessage(
-        content=(
-            'write_workspace_file(path="web-crawler/候选清单-20250401133000.md", '
-            'content="# 候选清单")'
-        )
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-20250401133000.md",
+                    "content": "# 候选清单",
+                },
+            }
+        ],
     )
     duplicate_write = AIMessage(
-        content=(
-            'write_workspace_file(path="web-crawler/候选清单-20250401133100.md", '
-            'content="# 候选清单")'
-        )
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-duplicate-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-20250401133000.md",
+                    "content": "# 候选清单",
+                },
+            }
+        ],
     )
     call_count = 0
 
@@ -352,7 +561,7 @@ async def test_simple_agent_ignores_second_write_workspace_file_call_after_succe
             "messages": [
                 ToolMessage(
                     content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026062816284700.md",
-                    tool_call_id="text-tool-0",
+                    tool_call_id=state["messages"][-1].tool_calls[0]["id"],
                 )
             ],
             "tool_calls": [
@@ -376,27 +585,9 @@ async def test_simple_agent_ignores_second_write_workspace_file_call_after_succe
 
     assert call_count == 1
     assert any(
-        item.get("source") == "post_tool_synthesis_repeated_write_ignored"
+        item.get("source") == "post_tool_synthesis_repeated_tool_calls_ignored"
         for item in (out.get("tool_attempt_debug") or [])
     )
-
-
-def test_parse_dsml_tool_calls_supports_multiple_invokes():
-    calls = _parse_dsml_tool_calls(
-        '<｜｜DSML｜｜tool_calls>\n'
-        '<｜｜DSML｜｜invoke name="read_file">\n'
-        '<｜｜DSML｜｜parameter name="path" string="true">./output/pages/text.md</｜｜DSML｜｜parameter>\n'
-        '</｜｜DSML｜｜invoke>\n'
-        '<｜｜DSML｜｜invoke name="read_file">\n'
-        '<｜｜DSML｜｜parameter name="path" string="true">./memory/facts.md</｜｜DSML｜｜parameter>\n'
-        '</｜｜DSML｜｜invoke>\n'
-        '</｜｜DSML｜｜tool_calls>'
-    )
-
-    assert calls == [
-        {"name": "read_file", "args": {"path": "./output/pages/text.md"}, "id": "dsml-tool-0"},
-        {"name": "read_file", "args": {"path": "./memory/facts.md"}, "id": "dsml-tool-1"},
-    ]
 
 
 @pytest.mark.asyncio
@@ -895,7 +1086,7 @@ def test_skill_initialized_result_code_without_next_action_does_not_continue_wor
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
+async def test_simple_agent_executes_structured_tool_call_from_post_tool_synthesis():
     init_call = AIMessage(
         content="",
         tool_calls=[
@@ -911,21 +1102,23 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
         tool_calls=[
             {
                 "id": "tc-read",
-                "name": "read_file",
+                "name": "read_workspace_file",
                 "args": {"path": "skills/toutiao-news-summary/SKILL.md"},
             }
         ],
     )
-    write_call_as_dsml = AIMessage(
-        content=(
-            "我已读取草稿，继续写入正式内容。\n\n"
-            '<｜｜DSML｜｜tool_calls>\n'
-            '<｜｜DSML｜｜invoke name="write_workspace_file">\n'
-            '<｜｜DSML｜｜parameter name="path" string="true">skills/toutiao-news-summary/SKILL.md</｜｜DSML｜｜parameter>\n'
-            '<｜｜DSML｜｜parameter name="content" string="true"># Toutiao News Summary\n\n正式内容</｜｜DSML｜｜parameter>\n'
-            '</｜｜DSML｜｜invoke>\n'
-            '</｜｜DSML｜｜tool_calls>'
-        )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "skills/toutiao-news-summary/SKILL.md",
+                    "content": "# Toutiao News Summary\n\n正式内容",
+                },
+            }
+        ],
     )
     final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     init_stdout = json.dumps(
@@ -964,14 +1157,14 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
                 "tool_calls": [{"tool": tool_name, "arguments": {"script_path": "init_skill.py"}}],
                 "tool_raw_outputs": [init_raw],
             }
-        if tool_name == "read_file":
+        if tool_name == "read_workspace_file":
             return {
                 "messages": [ToolMessage(content="# Draft Skill", tool_call_id="tc-read")],
-                "tool_calls": [{"tool": "read_file", "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"}}],
+                "tool_calls": [{"tool": "read_workspace_file", "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"}}],
                 "tool_raw_outputs": ["# Draft Skill"],
             }
         return {
-            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id="dsml-tool-0")],
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id=tool_call["id"])],
             "tool_calls": [
                 {
                     "tool": "write_workspace_file",
@@ -985,10 +1178,10 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([init_call, read_call, write_call_as_dsml, final_summary]),
+        llm=_FakeLLM([init_call, read_call, write_call, final_summary]),
         tools=[
             ToolSpec.from_function(name="run_skill_script_skill-builder", description="run skill script", func=lambda: None),
-            ToolSpec.from_function(name="read_file", description="read workspace file", func=lambda: None),
+            ToolSpec.from_function(name="read_workspace_file", description="read workspace file", func=lambda: None),
             ToolSpec.from_function(name="write_workspace_file", description="write workspace file", func=lambda: None),
         ],
         system_prompt="新建 Skill。",
@@ -999,18 +1192,18 @@ async def test_simple_agent_executes_dsml_tool_call_from_post_tool_synthesis():
 
     out = await agent.ainvoke({"messages": [HumanMessage(content="新建 toutiao-news-summary skill")]})
 
-    assert calls == ["run_skill_script_skill-builder", "read_file", "write_workspace_file"]
+    assert calls == ["run_skill_script_skill-builder", "read_workspace_file", "write_workspace_file"]
     final_text = str(out["messages"][-1].content)
     assert final_text == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert "工具已执行完成" not in final_text
     assert any(
-        item.get("source") == "post_tool_synthesis_dsml_tool_calls"
+        item.get("source") == "post_tool_synthesis_tool_calls"
         for item in (out.get("tool_attempt_debug") or [])
     )
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthesis():
+async def test_simple_agent_stream_executes_structured_tool_call_from_post_tool_synthesis():
     init_call = AIMessage(
         content="",
         tool_calls=[
@@ -1026,20 +1219,23 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
         tool_calls=[
             {
                 "id": "tc-read",
-                "name": "read_file",
+                "name": "read_workspace_file",
                 "args": {"path": "skills/toutiao-news-summary/SKILL.md"},
             }
         ],
     )
-    write_call_as_dsml = AIMessage(
-        content=(
-            '<｜｜DSML｜｜tool_calls>\n'
-            '<｜｜DSML｜｜invoke name="write_workspace_file">\n'
-            '<｜｜DSML｜｜parameter name="path" string="true">skills/toutiao-news-summary/SKILL.md</｜｜DSML｜｜parameter>\n'
-            '<｜｜DSML｜｜parameter name="content" string="true"># Toutiao News Summary</｜｜DSML｜｜parameter>\n'
-            '</｜｜DSML｜｜invoke>\n'
-            '</｜｜DSML｜｜tool_calls>'
-        )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "skills/toutiao-news-summary/SKILL.md",
+                    "content": "# Toutiao News Summary",
+                },
+            }
+        ],
     )
     final_summary = AIMessage(content="已新建并完善 skills/toutiao-news-summary/SKILL.md")
     init_raw = json.dumps(
@@ -1073,23 +1269,23 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
                 "tool_calls": [{"tool": tool_name, "arguments": {"script_path": "init_skill.py"}}],
                 "tool_raw_outputs": [init_raw],
             }
-        if tool_name == "read_file":
+        if tool_name == "read_workspace_file":
             return {
                 "messages": [ToolMessage(content="# Draft Skill", tool_call_id="tc-read")],
-                "tool_calls": [{"tool": "read_file", "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"}}],
+                "tool_calls": [{"tool": "read_workspace_file", "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"}}],
                 "tool_raw_outputs": ["# Draft Skill"],
             }
         return {
-            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id="dsml-tool-0")],
-            "tool_calls": [{"tool": "write_workspace_file", "arguments": {"path": "skills/toutiao-news-summary/SKILL.md"}}],
+            "messages": [ToolMessage(content="已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md", tool_call_id=tool_call["id"])],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": tool_call["args"]}],
             "tool_raw_outputs": ["已写入当前 Chat 工作区文件：skills/toutiao-news-summary/SKILL.md"],
         }
 
     agent = SimpleAgent(
-        llm=_FakeLLM([init_call, read_call, write_call_as_dsml, final_summary]),
+        llm=_FakeLLM([init_call, read_call, write_call, final_summary]),
         tools=[
             ToolSpec.from_function(name="run_skill_script_skill-builder", description="run skill script", func=lambda: None),
-            ToolSpec.from_function(name="read_file", description="read workspace file", func=lambda: None),
+            ToolSpec.from_function(name="read_workspace_file", description="read workspace file", func=lambda: None),
             ToolSpec.from_function(name="write_workspace_file", description="write workspace file", func=lambda: None),
         ],
         system_prompt="新建 Skill。",
@@ -1108,10 +1304,94 @@ async def test_simple_agent_stream_executes_dsml_tool_call_from_post_tool_synthe
         if ev.get("type") == "final_step":
             final_debug = ev.get("tool_attempt_debug") or []
 
-    assert calls == ["run_skill_script_skill-builder", "read_file", "write_workspace_file"]
+    assert calls == ["run_skill_script_skill-builder", "read_workspace_file", "write_workspace_file"]
     assert agent_texts[-1] == "已新建并完善 skills/toutiao-news-summary/SKILL.md"
     assert all("工具已执行完成" not in text for text in agent_texts)
-    assert any(item.get("source") == "post_tool_synthesis_dsml_tool_calls" for item in final_debug)
+    assert any(item.get("source") == "post_tool_synthesis_tool_calls" for item in final_debug)
+
+
+@pytest.mark.asyncio
+async def test_simple_agent_stream_ignores_duplicate_structured_write_after_successful_write():
+    search_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-search",
+                "name": "mcp_Exa_web_search",
+                "args": {"query": "智能软件工程及伦理"},
+            }
+        ],
+    )
+    write_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-20250228143200.md",
+                    "content": "# Web 信息检索候选清单",
+                },
+            }
+        ],
+    )
+    duplicate_structured_write = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "id": "tc-dup-write",
+                "name": "write_workspace_file",
+                "args": {
+                    "path": "web-crawler/候选清单-20250228143200.md",
+                    "content": "# Web 信息检索候选清单",
+                    "overwrite": True,
+                },
+            }
+        ],
+    )
+    final_summary = AIMessage(content="候选清单已保存：`web-crawler/候选清单-2026070420444600.md`")
+    calls: list[str] = []
+
+    async def _tool_runner(state, tools):
+        tool_call = state["messages"][-1].tool_calls[0]
+        tool_name = tool_call["name"]
+        calls.append(tool_name)
+        if tool_name == "mcp_Exa_web_search":
+            return {
+                "messages": [ToolMessage(content="Title: A\nURL: https://example.com/a", tool_call_id="tc-search")],
+                "tool_calls": [{"tool": tool_name, "arguments": {"query": "智能软件工程及伦理"}}],
+                "tool_raw_outputs": ["Title: A\nURL: https://example.com/a"],
+            }
+        return {
+            "messages": [
+                ToolMessage(
+                    content="已写入当前 Chat 工作区文件：web-crawler/候选清单-2026070420444600.md",
+                    tool_call_id=tool_call["id"],
+                )
+            ],
+            "tool_calls": [{"tool": "write_workspace_file", "arguments": tool_call["args"]}],
+            "tool_raw_outputs": ["已写入当前 Chat 工作区文件：web-crawler/候选清单-2026070420444600.md"],
+        }
+
+    agent = SimpleAgent(
+        llm=_FakeLLM([search_call, write_call, duplicate_structured_write, final_summary]),
+        tools=[
+            ToolSpec.from_function(name="mcp_Exa_web_search", description="search", func=lambda: None),
+            ToolSpec.from_function(name="write_workspace_file", description="write workspace file", func=lambda: None),
+        ],
+        system_prompt="搜索资料。",
+        tool_runner=_tool_runner,
+        max_steps=5,
+        synthesize_after_tools=True,
+    )
+
+    final_debug: list[dict] = []
+    async for ev in agent.astream({"messages": [HumanMessage(content="搜索智能软件工程及伦理")]}, stream_mode=["updates"]):
+        if ev.get("type") == "final_step":
+            final_debug = ev.get("tool_attempt_debug") or []
+
+    assert calls == ["mcp_Exa_web_search", "write_workspace_file"]
+    assert any(item.get("source") == "structured_duplicate_workspace_write_ignored" for item in final_debug)
 
 
 @pytest.mark.asyncio
@@ -1197,7 +1477,7 @@ async def test_simple_agent_stream_continues_after_script_manifest_probe_to_writ
 async def test_simple_agent_answers_bound_skill_question_without_running_tools():
     bad_tool_call = AIMessage(
         content="",
-        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "transcribe_audio.py"}}],
+        tool_calls=[{"id": "tc-read", "name": "read_workspace_file", "args": {"path": "transcribe_audio.py"}}],
     )
     called = {"n": 0}
 
@@ -1205,13 +1485,13 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
         called["n"] += 1
         return {
             "messages": [ToolMessage(content="错误：文件不存在：transcribe_audio.py", tool_call_id="tc-read")],
-            "tool_calls": [{"tool": "read_file", "arguments": {"path": "transcribe_audio.py"}}],
+            "tool_calls": [{"tool": "read_workspace_file", "arguments": {"path": "transcribe_audio.py"}}],
             "tool_raw_outputs": ["错误：文件不存在：transcribe_audio.py"],
         }
 
     agent = SimpleAgent(
         llm=_FakeLLM([bad_tool_call]),
-        tools=[ToolSpec(name="read_file", description="读文件")],
+        tools=[ToolSpec(name="read_workspace_file", description="读文件")],
         system_prompt=(
             "你是一个有用的 AI 助手。\n\n"
             "## 你当前绑定的 Skill\n"
@@ -1220,7 +1500,7 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
             "- **音频转写 MCP**（标识：`audio-asr-mcp`）\n"
             "  当用户希望使用本地 audio-asr MCP 转写 backend/data 下的音频文件时使用。\n\n"
             "你可以使用以下工具：\n"
-            "- read_file: 读取工作区内相对路径对应的文件内容。\n\n"
+            "- read_workspace_file: 读取工作区内相对路径对应的文件内容。\n\n"
             "当你需要使用工具时，必须使用模型的结构化工具调用。"
         ),
         tool_runner=_tool_runner,
@@ -1235,7 +1515,7 @@ async def test_simple_agent_answers_bound_skill_question_without_running_tools()
     assert "audio-asr-mcp" in final_text
     assert "transcribe_audio.py" not in final_text
     assert "你可以使用以下工具" not in final_text
-    assert "read_file" not in final_text
+    assert "read_workspace_file" not in final_text
     assert "结构化工具调用" not in final_text
     assert any(
         item.get("source") == "bound_skill_introspection_direct_final"
@@ -1380,12 +1660,12 @@ async def test_simple_agent_uses_current_user_section_for_bound_skill_introspect
 async def test_simple_agent_synthesizes_immediately_after_configured_read_file_path():
     read_call = AIMessage(
         content="",
-        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+        tool_calls=[{"id": "tc-read", "name": "read_workspace_file", "args": {"path": "speaker_task.txt"}}],
     )
     final_answer = AIMessage(content="按任务文件直接完成发言")
     repeated_read_call = AIMessage(
         content="",
-        tool_calls=[{"id": "tc-repeat", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+        tool_calls=[{"id": "tc-repeat", "name": "read_workspace_file", "args": {"path": "speaker_task.txt"}}],
     )
     tool_round = {"n": 0}
 
@@ -1393,7 +1673,7 @@ async def test_simple_agent_synthesizes_immediately_after_configured_read_file_p
         tool_round["n"] += 1
         return {
             "messages": [ToolMessage(content="本轮任务：直接给出教师选题。", tool_call_id="tc-read")],
-            "tool_calls": [{"tool": "read_file", "arguments": {"path": "speaker_task.txt"}}],
+            "tool_calls": [{"tool": "read_workspace_file", "arguments": {"path": "speaker_task.txt"}}],
             "tool_raw_outputs": ["本轮任务：直接给出教师选题。"],
         }
 
@@ -1412,7 +1692,7 @@ async def test_simple_agent_synthesizes_immediately_after_configured_read_file_p
     assert str(out["messages"][-1].content) == "按任务文件直接完成发言"
     assert all("tc-repeat" not in str(getattr(msg, "tool_calls", "")) for msg in out["messages"])
     assert any(
-        item.get("source") == "synthesize_after_read_file"
+        item.get("source") == "synthesize_after_read_workspace_file"
         and item.get("path") == "speaker_task.txt"
         for item in (out.get("tool_attempt_debug") or [])
     )
@@ -1593,7 +1873,7 @@ async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
         tool_calls=[
             {
                 "id": "tc-read",
-                "name": "read_file",
+                "name": "read_workspace_file",
                 "args": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
             }
         ],
@@ -1610,7 +1890,7 @@ async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
             ],
             "tool_calls": [
                 {
-                    "tool": "read_file",
+                    "tool": "read_workspace_file",
                     "arguments": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
                 }
             ],
@@ -1791,7 +2071,7 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
         tool_calls=[
             {
                 "id": "tc-read",
-                "name": "read_file",
+                "name": "read_workspace_file",
                 "args": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
             }
         ],
@@ -1819,7 +2099,7 @@ async def test_simple_agent_reports_tool_error_without_more_llm_calls():
             ],
             "tool_calls": [
                 {
-                    "tool": "read_file",
+                    "tool": "read_workspace_file",
                     "arguments": {"path": "scripts/saved_data/result_20260523_123036/analysis_report.txt"},
                 }
             ],
@@ -1856,7 +2136,7 @@ async def test_simple_agent_recovers_from_invented_group_read_file_missing_path(
         tool_calls=[
             {
                 "id": "tc-read",
-                "name": "read_file",
+                "name": "read_workspace_file",
                 "args": {"path": "材料包_AI在学生竞赛中的应用.md"},
             }
         ],
@@ -1875,7 +2155,7 @@ async def test_simple_agent_recovers_from_invented_group_read_file_missing_path(
             ],
             "tool_calls": [
                 {
-                    "tool": "read_file",
+                    "tool": "read_workspace_file",
                     "arguments": {"path": "材料包_AI在学生竞赛中的应用.md"},
                 }
             ],
@@ -1884,7 +2164,7 @@ async def test_simple_agent_recovers_from_invented_group_read_file_missing_path(
 
     agent = SimpleAgent(
         llm=_FakeLLM([read_call, final_answer]),
-        tools=[ToolSpec(name="read_file", description="读文件")],
+        tools=[ToolSpec(name="read_workspace_file", description="读文件")],
         system_prompt="x",
         tool_runner=_tool_runner,
         max_steps=4,
@@ -1904,7 +2184,7 @@ async def test_simple_agent_recovers_from_invented_group_read_file_missing_path(
     assert final_text == "我会直接基于最近讨论中的材料包继续发言。"
     assert "当前步骤失败" not in final_text
     assert any(
-        item.get("source") == "recoverable_context_read_file_missing"
+        item.get("source") == "recoverable_context_read_workspace_file_missing"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

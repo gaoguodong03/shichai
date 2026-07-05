@@ -162,19 +162,19 @@ def test_skill_extra_instructions_prevent_workspace_scheduler_files():
 
     instructions = runtime._skill_execution_extra_instructions(
         [
-            ToolSpec(name="read_file"),
+            ToolSpec(name="read_workspace_file"),
             ToolSpec(name="write_workspace_file"),
         ]
     )
 
     assert "调度任务由平台通过本轮提示词传入" in instructions
     assert "不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`" in instructions
-    assert "不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`" in instructions
+    assert "先基于最近讨论承接，不要自行构造文件名" in instructions
     assert "上一位专家的可见发言在最近讨论中" in instructions
     assert "不限于用户显式要求保存或读取" in instructions
     assert "只有在工具返回写入成功后，才能对用户说文件已保存至工作区" in instructions
-    assert "YYYYMMDDHHMMSS00" in instructions
-    assert "文件名-YYYYMMDDHHMMSS00.扩展名" in instructions
+    assert "当前文件时间戳" in instructions
+    assert "文件名-当前文件时间戳.扩展名" in instructions
     assert "网页采集、资料检索、素材整理" in instructions
     assert "每一条独立素材" in instructions
     assert "分开调用 `write_workspace_file`" in instructions

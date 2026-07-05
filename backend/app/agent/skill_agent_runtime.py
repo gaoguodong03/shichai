@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, List
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from app.agent.llm_client import bind_tools_compat
@@ -19,6 +20,10 @@ from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
 
+
+def _current_workspace_file_timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
+
 def _tool_name_looks_like_bound_mcp(name: str) -> bool:
     """区分「本技能声明的 MCP 工具（server_tool）」与工作区 / 脚本 / 包装类工具。"""
     n = (name or "").strip()
@@ -30,7 +35,7 @@ def _tool_name_looks_like_bound_mcp(name: str) -> bool:
     if head in ("filesystem",):
         return False
     if n in {
-        "read_file",
+        "read_workspace_file",
         "write_workspace_file",
         "edit_workspace_file",
         "rename_workspace_file",
@@ -70,8 +75,8 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             "需要多步工具调用时，连续完成所有必要步骤；任务完成后再回复。\n\n"
         )
     file_lines: List[str] = []
-    if "read_file" in names:
-        file_lines.append("- read_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
+    if "read_workspace_file" in names:
+        file_lines.append("- read_workspace_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
     if "write_workspace_file" in names:
         file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。")
     if "edit_workspace_file" in names:
@@ -85,14 +90,20 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     if file_lines:
         parts.append("## 文件操作（当前会话工作区）\n\n你拥有以下与「当前会话工作区」相关的工具：\n")
         parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
+        if "write_workspace_file" in names:
+            timestamp = _current_workspace_file_timestamp()
+            parts.append(
+                f"- 当前文件时间戳：`{timestamp}`。新建工作区文件时直接把这个时间戳写入文件名；"
+                "不要使用 `<时间戳>` 占位符，不要自行换算、复用历史时间或等待工具替换。\n"
+            )
         parts.append(
             "- 这些文件工具是任务过程能力，不限于用户显式要求保存或读取；只要当前任务需要检查已有文件、"
             "新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。\n"
         )
-        if "read_file" in names:
+        if "read_workspace_file" in names:
             parts.append(
                 "- 当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，"
-                "你**必须优先调用 `read_file`**，而不是只用自然语言解释路径是否正确；"
+                "你**必须优先使用可用文件读取工具**，而不是只用自然语言解释路径是否正确；"
                 "path 必须用**用户本条消息里写的路径**，不要用会话里较早提到的旧文件路径。\n"
             )
         if "write_workspace_file" in names or "edit_workspace_file" in names:
@@ -112,7 +123,7 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
             "`agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。\n\n"
             "- 如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或【文件引用】，"
-            "上一位专家的可见发言在最近讨论中；不要根据任务产物名称自行构造 Markdown 文件名再调用 `read_file`。\n\n"
+            "上一位专家的可见发言在最近讨论中；先基于最近讨论承接，不要自行构造文件名。\n\n"
             "若工具返回「文件不存在」，请先列出工作区目录或让用户确认真实路径；不要凭空猜测文件内容。\n\n"
         )
     if "call_api" in names:
@@ -188,8 +199,8 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 _WORKSPACE_TASK_FILE_RULE = (
     "- 调度任务由平台通过本轮提示词传入，不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
     "- 除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用"
-    "`文件名-YYYYMMDDHHMMSS00.扩展名` 格式，例如 `report-<时间戳>.md`；"
-    "不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"
+    "`文件名-当前文件时间戳.扩展名` 格式，例如 `report-2026070422145700.md`；"
+    "直接使用本轮提示中的“当前文件时间戳”，不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"
     "- 只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出"
     "「报告已保存至工作区」或类似结论。\n"
 )
@@ -288,7 +299,7 @@ def create_skill_execution_agent(
 
 """.format(tool_name=exa_search_tool_name)
     system_prompt += """
-当你需要使用工具时，**必须**使用模型的结构化工具调用（tool_calls / function calling）来调用工具；
+当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数；
 
 当你不需要使用工具时，直接回复用户的问题。
 
@@ -400,7 +411,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
         prefix = "已复用同一轮内相同参数的脚本执行结果。" if cached else "脚本已执行完成。"
         return (
             f"\n\n{prefix}请直接基于上方工具结果中的 stdout/stderr/returncode 生成最终答复。"
-            "stdout/stderr 是返回字段，不是工作区文件；不要调用 read_file 读取 stdout、stderr 或 scripts/<脚本名>，"
+            "stdout/stderr 是返回字段，不是工作区文件；脚本结果已经在上方，不需要再读取 stdout、stderr 或 scripts/<脚本名>，"
             "也不要再次调用同一个脚本和相同参数。"
         )
 
@@ -572,9 +583,9 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     "matched": False,
                     "available_tools": [t.name for t in state["tools"]][:30],
                 })
-                if tool_name == "read_file":
+                if tool_name == "read_workspace_file":
                     tool_results.append(ToolMessage(
-                        content="当前专家未启用 read_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。",
+                        content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。",
                         tool_call_id=tool_call_id,
                     ))
                 else:
@@ -687,9 +698,9 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             "matched": False,
             "available_tools": [t.name for t in state["tools"]][:30],
         })
-        if tool_name == "read_file":
+        if tool_name == "read_workspace_file":
             return {
-                "messages": [HumanMessage(content="当前专家未启用 read_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。")],
+                "messages": [HumanMessage(content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。")],
                 "tool_attempt_debug": tool_attempt_debug,
                 "tool_calls": tool_calls_trace,
                 "tool_raw_outputs": tool_raw_outputs,

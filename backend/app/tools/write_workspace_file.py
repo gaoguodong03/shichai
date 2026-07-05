@@ -1,7 +1,6 @@
 """写入当前会话工作区文件工具 — 经 OpenSandbox 挂载写入 /workspace。"""
 import json
 import re
-from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -10,10 +9,9 @@ from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 
-_FINAL_FILENAME_TIMESTAMP_RE = re.compile(r"(?<=-)(?:19|20)\d{12}(?:\d{2})?(?=\.[^/.]+$)")
 _DSML_TOOL_CALL_RE = re.compile(r"<｜｜DSML｜｜(?:tool_calls|invoke|parameter)\b")
 _PLAIN_TOOL_CALL_RE = re.compile(
-    r"^\s*(?:write_workspace_file|edit_workspace_file|rename_workspace_file|list_workspace_directory|read_file)\s*\(",
+    r"^\s*(?:write_workspace_file|edit_workspace_file|rename_workspace_file|list_workspace_directory|read_workspace_file|read_file)\s*\(",
     re.S,
 )
 
@@ -23,9 +21,8 @@ class WriteWorkspaceFileInput(BaseModel):
 
     path: str = Field(
         description=(
-            "工作区内相对路径。项目生成的新文件名统一使用 文件名-YYYYMMDDHHMMSS00.扩展名，"
-            "例如 notes/report-<时间戳>.md；工具会把 <时间戳> 或文件名末尾已有时间戳替换为服务器当前时间。"
-            "只有用户明确指定已有路径或固定文件名时才按用户原文使用。"
+            "工作区内相对路径。项目生成的新文件名统一使用 文件名-当前文件时间戳.扩展名，"
+            "例如 notes/report-2026070422145700.md；工具按传入 path 原样写入，不替换或校验时间戳。"
         )
     )
     content: str = Field(
@@ -36,7 +33,7 @@ class WriteWorkspaceFileInput(BaseModel):
         default=False,
         description=(
             "是否允许覆盖同名文件。默认 false；需要修改已有文件时优先使用 edit_workspace_file，"
-            "或新建符合 文件名-YYYYMMDDHHMMSS00.扩展名 的新文件。"
+            "或新建符合 文件名-当前文件时间戳.扩展名 的新文件。"
         ),
     )
 
@@ -97,16 +94,6 @@ def _looks_like_model_tool_call_payload(content: str) -> bool:
     return False
 
 
-def _current_workspace_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
-
-
-def _normalize_generated_timestamp(path: str) -> str:
-    timestamp = _current_workspace_timestamp()
-    normalized = path.replace("-<时间戳>.", f"-{timestamp}.")
-    return _FINAL_FILENAME_TIMESTAMP_RE.sub(timestamp, normalized)
-
-
 def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
     """
     新建写入当前会话 workspace 文件的工具。
@@ -119,17 +106,17 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         allow_overwrite = _normalize_bool(overwrite) or _normalize_bool(kwargs.get("overwrite"))
         path_value = path_value.strip()
         if not path_value:
-            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report-<时间戳>.md）。"
+            return "错误：write_workspace_file 需要提供 path（workspace 内相对路径，例如 notes/report-2026070422145700.md）。"
         if not content_value:
             return (
                 "错误：content 为空。未传 content 时系统会用本条回复的正文作为要保存的内容；若本条回复无正文，请在本条中写出要保存的内容后重试，或调用时显式传入 content。"
             )
         if _looks_like_model_tool_call_payload(content_value):
             return (
-                "错误：content 包含模型工具调用协议，已拒绝写入工作区。"
-                "请使用结构化工具调用执行对应工具；如果要保存文件，请只把最终正文传给 content。"
+                "错误：content 不是可保存的最终正文，已拒绝写入工作区。"
+                "请把要保存的完整正文传给 content。"
             )
-        normalized = _normalize_generated_timestamp(path_value.strip("/").replace("\\", "/"))
+        normalized = path_value.strip("/").replace("\\", "/")
         if ".." in normalized:
             return "错误：路径不能包含 ..。"
         ws_root = get_workspace_root(workspace_id)
@@ -139,7 +126,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         if target.exists() and not allow_overwrite:
             return (
                 f"错误：文件已存在：{normalized}。为避免覆盖已有正文或工作区产物，"
-                "write_workspace_file 默认不覆盖同名文件。请改用符合 文件名-YYYYMMDDHHMMSS00.扩展名 的新文件名，"
+                "write_workspace_file 默认不覆盖同名文件。请改用符合 文件名-当前文件时间戳.扩展名 的新文件名，"
                 "或在确需覆盖时显式传入 overwrite=true。"
             )
         svc = get_shared_sandbox_service()
@@ -160,10 +147,9 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
         name="write_workspace_file",
         description=(
             "将文本内容写入当前 Chat 对应的工作区（workspace）中的文件（经 OpenSandbox /workspace）。\n"
-            "- path: 工作区内相对路径。项目生成的新文件名统一使用 文件名-YYYYMMDDHHMMSS00.扩展名，"
-            "例如 'notes/report-<时间戳>.md'；工具会把 <时间戳> 或文件名末尾已有时间戳替换为服务器当前时间。"
-            "用户明确指定已有路径或固定文件名时按用户原文使用。\n"
-            "- content: 要保存的完整文本内容，不能传入 DSML、JSON tool_call 或函数调用样式的模型工具调用协议。"
+            "- path: 工作区内相对路径。项目生成的新文件名统一使用 文件名-当前文件时间戳.扩展名，"
+            "例如 'notes/report-2026070422145700.md'；工具按传入 path 原样写入，不替换或校验时间戳。\n"
+            "- content: 要保存的完整文本内容。"
         ),
         coroutine=_write_to_workspace_file,
         args_schema=WriteWorkspaceFileInput,

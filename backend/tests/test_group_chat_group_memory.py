@@ -384,7 +384,7 @@ def test_guard_delivery_claims_summary_omits_successful_read_file_content():
 
     out = gc.guard_unverified_delivery_claims(
         content,
-        tool_calls=[{"tool": "read_file", "arguments": {"path": "蒙太奇是什么-完整草稿-2026062817270900.md"}}],
+        tool_calls=[{"tool": "read_workspace_file", "arguments": {"path": "蒙太奇是什么-完整草稿-2026062817270900.md"}}],
         tool_raw_results=raw_results,
     )
 

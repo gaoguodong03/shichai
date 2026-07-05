@@ -84,7 +84,7 @@
 
 主持人决策运行时不会给主持人绑定以下工作区文件工具：
 
-- `read_file`
+- `read_workspace_file`
 - `write_workspace_file`
 - `edit_workspace_file`
 - `list_workspace_directory`

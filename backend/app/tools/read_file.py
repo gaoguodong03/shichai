@@ -39,7 +39,7 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
         return "", "错误：未提供文件路径。"
     if looks_like_url_or_remote_path(raw):
         return "", (
-            "错误：read_file 只能读取当前工作区内的相对路径文件，不能使用网页链接。"
+            "错误：read_workspace_file 只能读取当前工作区内的相对路径文件。"
             "请使用诸如 github-weekly-snapshot.md 或 memory/facts.md。"
         )
     cleaned = strip_llm_junk_from_read_path(raw) or raw
@@ -50,10 +50,10 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     if normalized.strip("/") in pseudo_names:
         return "", (
             f"错误：{normalized} 是工具返回字段，不是工作区文件。"
-            "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_file。"
+            "请直接根据上一条工具结果中的 stdout/stderr/returncode 生成最终答复，不要调用 read_workspace_file。"
         )
     if not session_id:
-        return "", "错误：read_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
+        return "", "错误：read_workspace_file 需要会话上下文（session_id），请使用群聊工作区工具链。"
 
     ws_root = get_workspace_root_path(session_id).resolve()
     current_prefix = f"sessions/{session_id}/workspace"
@@ -98,7 +98,7 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
         return text
 
     return ToolSpec.from_function(
-        name="read_file",
+        name="read_workspace_file",
         description=(
             "读取用户引用的文件内容。path 为工作区内相对路径（如 report.md 或 notes/report.txt）；"
             "文件经 OpenSandbox 在挂载的 /workspace 下读取，而非宿主进程直读。"

@@ -256,6 +256,79 @@ def test_keeps_explicit_continue_skill_lock_from_history():
     assert meta_item["skill_session_skill"] == "seminar-teacher"
 
 
+def test_keeps_skill_lock_from_new_history_skill_result():
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_name": "研讨教师",
+        "skill_session_skill": "seminar-teacher",
+    }
+    messages = [
+        {
+            "role": "assistant",
+            "agent_name": "研讨教师",
+            "skill": "seminar-teacher",
+            "content": "旧消息已完成。",
+            "tool_debug": {
+                "skill_session_state": {
+                    "skill_session": "release",
+                }
+            },
+        },
+        {
+            "message_id": "msg-keep",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "研讨教师",
+                "skill": "seminar-teacher",
+            },
+            "content": "请先补充一个例子。",
+            "skill_result": {
+                "execution_status": "blocked",
+                "next_action": {
+                    "agent_turn": "respond",
+                    "skill_session": "keep",
+                },
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is False
+    assert meta_item["skill_session_owner_name"] == "研讨教师"
+    assert meta_item["skill_session_skill"] == "seminar-teacher"
+
+
+def test_clears_skill_lock_from_new_history_skill_result_release():
+    from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
+
+    meta_item = {
+        "skill_session_owner_name": "研讨教师",
+        "skill_session_skill": "seminar-teacher",
+    }
+    messages = [
+        {
+            "message_id": "msg-release",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "研讨教师",
+                "skill": "seminar-teacher",
+            },
+            "content": "处理完成。",
+            "skill_result": {
+                "execution_status": "succeeded",
+                "next_action": {
+                    "agent_turn": "respond",
+                    "skill_session": "release",
+                },
+            },
+        }
+    ]
+
+    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
+    assert "skill_session_owner_name" not in meta_item
+    assert "skill_session_skill" not in meta_item
+
+
 def test_clears_bound_skill_introspection_lock_from_history():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
@@ -616,12 +689,12 @@ async def test_ainvoke_shortens_long_tool_call_ids_before_followup_llm_call():
 async def test_astream_synthesizes_after_configured_task_file_read_without_repeating_tool():
     first = AIMessage(
         content="",
-        tool_calls=[{"id": "tc-read", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+        tool_calls=[{"id": "tc-read", "name": "read_workspace_file", "args": {"path": "speaker_task.txt"}}],
     )
     final = AIMessage(content="根据任务文件完成本轮发言")
     repeated = AIMessage(
         content="",
-        tool_calls=[{"id": "tc-repeat", "name": "read_file", "args": {"path": "speaker_task.txt"}}],
+        tool_calls=[{"id": "tc-repeat", "name": "read_workspace_file", "args": {"path": "speaker_task.txt"}}],
     )
     calls = {"n": 0}
 
@@ -630,7 +703,7 @@ async def test_astream_synthesizes_after_configured_task_file_read_without_repea
         return {
             "messages": [ToolMessage(content="任务：教师给出选题。", tool_call_id="tc-read")],
             "tool_attempt_debug": [{"matched": True}],
-            "tool_calls": [{"tool": "read_file", "arguments": {"path": "speaker_task.txt"}}],
+            "tool_calls": [{"tool": "read_workspace_file", "arguments": {"path": "speaker_task.txt"}}],
             "tool_raw_outputs": ["任务：教师给出选题。"],
         }
 
@@ -654,7 +727,7 @@ async def test_astream_synthesizes_after_configured_task_file_read_without_repea
     ]
     assert agent_texts[-1] == "根据任务文件完成本轮发言"
     final_debug = next(ev["tool_attempt_debug"] for ev in events if ev.get("type") == "final_step")
-    assert any(item.get("source") == "synthesize_after_read_file" for item in final_debug)
+    assert any(item.get("source") == "synthesize_after_read_workspace_file" for item in final_debug)
 
 
 @pytest.mark.asyncio

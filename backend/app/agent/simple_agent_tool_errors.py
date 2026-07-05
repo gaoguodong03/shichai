@@ -11,7 +11,7 @@ from app.agent.simple_agent_finalization import (
     _json_loads_maybe,
 )
 from app.agent.simple_agent_introspection import _WRAPPED_USER_CONTEXT_MARKERS, _section_text
-from app.agent.simple_agent_messages import _coerce_text_tool_calls_to_structured, _last_user_text
+from app.agent.simple_agent_messages import _last_user_text, _looks_like_text_tool_call_protocol
 from app.agent.simple_agent_tool_ids import _tool_call_args
 
 
@@ -102,7 +102,7 @@ def _is_recoverable_coordination_tool_error(
     if not isinstance(calls, list) or not calls:
         return False
     call = calls[min(idx, len(calls) - 1)]
-    if _tool_call_display_name(call) != "read_file":
+    if _tool_call_display_name(call) != "read_workspace_file":
         return False
     path = _normalize_workspace_path_for_compare(_tool_call_display_path(call))
     if path in _RECOVERABLE_COORDINATION_READ_PATHS:
@@ -162,7 +162,7 @@ def _tool_error_direct_final_message(
             if tool_attempt_debug is not None:
                 tool_attempt_debug.append(
                     {
-                        "source": "recoverable_context_read_file_missing",
+                        "source": "recoverable_context_read_workspace_file_missing",
                         "matched": True,
                         "label": label,
                     }
@@ -177,11 +177,15 @@ def _final_response_or_tool_fallback(
     raw_outputs: list[str],
     tool_attempt_debug: list[dict[str, Any]],
 ) -> BaseMessage:
-    _, debug = _coerce_text_tool_calls_to_structured(response)
-    if debug is None:
+    if not _looks_like_text_tool_call_protocol(response):
         return _align_final_response_with_written_workspace_paths(response, raw_outputs)
-    debug = {**debug, "source": "dsml_text_tool_calls_final_fallback"}
-    tool_attempt_debug.append(debug)
+    tool_attempt_debug.append(
+        {
+            "source": "text_tool_call_protocol_final_fallback",
+            "matched": True,
+            "content_preview": str(getattr(response, "content", "") or "").strip()[:240],
+        }
+    )
     return _align_final_response_with_written_workspace_paths(
         _deterministic_tool_fallback_message(raw_outputs),
         raw_outputs,

@@ -317,9 +317,9 @@ def _markdown_code_block(text: str, info: str = "text") -> str:
 def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
     parts = [
         "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
-        "不要再次调用任何工具；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
-        "如果工具返回里包含“已写入当前 Chat 工作区文件”，最终答复必须使用工具返回的实际路径，不要沿用自己先前构造的路径。",
-        "如果 read_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，不要把内部读文件失败作为最终答复，直接基于已有上下文完成发言。",
+        "当前阶段进入结果收束；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
+        "如果工具返回里包含“已写入当前 Chat 工作区文件”，最终答复必须使用工具返回的实际路径。",
+        "如果 read_workspace_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，直接基于已有上下文完成发言。",
     ]
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     if summary:

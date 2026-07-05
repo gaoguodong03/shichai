@@ -4,9 +4,9 @@
 
 ## 总体规则
 
-- 工具必须通过模型结构化工具调用（`tool_calls` / function calling）调用，不要把 JSON 工具调用写进正文。
+- 工具由平台提供的结构化工具调用接口执行；正文用于呈现结论、路径和下一步说明。
 - 所有工作区路径都使用“当前会话工作区相对路径”，例如 `notes/report.md`，不要带 `/workspace`、`agent-outputs/`、`workspaces/<session_id>/` 等内部前缀。
-- 不确定文件名时，先调用 `list_workspace_directory`；`read_file` 只读取调用方提供的精确相对路径，不负责遍历工作区猜候选路径。
+- 不确定文件名时，先使用 `list_workspace_directory`；`read_workspace_file` 只读取调用方提供的精确相对路径，不负责遍历工作区猜候选路径。
 - 文件读写、脚本执行都经 OpenSandbox 挂载的 `/workspace` 与 `/skills` 完成；模型不需要也不应该感知宿主机绝对路径。
 - 工具返回值是给模型继续推理用的内部结果；最终回复应总结用户关心的结论，不要原样倾倒长 JSON/stdout，除非用户明确要求。
 
@@ -14,7 +14,7 @@
 
 这些工具由 `build_tools_for_group_chat()` 按专家 `file_capabilities` 注入。
 
-### `read_file`
+### `read_workspace_file`
 
 读取当前会话工作区文本文件。
 
@@ -34,7 +34,7 @@
 
 推荐：
 
-- 用户说“查看/读取/打开某文件”时，优先调用 `read_file`。
+- 用户说“查看/读取/打开某文件”时，优先使用 `read_workspace_file`。
 - 如果用户只给文件名且不确定位置，先调用 `list_workspace_directory`。
 
 ### `write_workspace_file`
@@ -45,7 +45,7 @@
 
 ```json
 {
-  "path": "notes/result-<时间戳>.md",
+  "path": "notes/result-2026070422145700.md",
   "content": "完整文件内容"
 }
 ```
@@ -54,7 +54,7 @@
 
 - `content` 不能为空。
 - `path` 是工作区相对路径；必要的父目录由沙箱侧处理。
-- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-YYYYMMDDHHMMSS00.扩展名`。
+- 除非用户明确指定已有路径或固定文件名，所有新建工作区文件名统一使用 `文件名-当前文件时间戳.扩展名`，当前文件时间戳由运行提示提供。
 - 用户要求“保存/写入/生成文件”时，应调用此工具，而不是只在自然语言里说“已保存”。
 
 ### `edit_workspace_file`
@@ -74,7 +74,7 @@
 约束与返回：
 
 - 适合小范围精确编辑。
-- 如果 `old_text` 不存在，会返回错误；此时应先 `read_file` 获取真实内容，再重试。
+- 如果 `old_text` 不存在，会返回错误；此时应先使用 `read_workspace_file` 获取真实内容，再重试。
 
 ### `rename_workspace_file`
 

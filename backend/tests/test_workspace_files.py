@@ -188,8 +188,8 @@ def test_write_workspace_file_tool(temp_user_data_root, monkeypatch):
     assert (ws / "written.md").read_text(encoding="utf-8") == "written content"
 
 
-def test_write_workspace_file_tool_replaces_generated_timestamp(temp_user_data_root, monkeypatch):
-    """模型给出旧/未来时间戳时，工具边界改用服务器当前时间。"""
+def test_write_workspace_file_tool_keeps_model_timestamp_path(temp_user_data_root, monkeypatch):
+    """write_workspace_file 不再改写模型传入的时间戳路径。"""
     from app.api.files import get_workspace_root
     from app.tools import write_workspace_file as write_tool_module
     from app.tools.write_workspace_file import create_write_workspace_file_tool
@@ -209,7 +209,6 @@ def test_write_workspace_file_tool_replaces_generated_timestamp(temp_user_data_r
             target.write_text(content, encoding="utf-8")
 
     monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    monkeypatch.setattr(write_tool_module, "_current_workspace_timestamp", lambda: "2026062609304500")
 
     tool = create_write_workspace_file_tool("sess-timestamp")
     out = asyncio.run(
@@ -221,14 +220,13 @@ def test_write_workspace_file_tool_replaces_generated_timestamp(temp_user_data_r
         )
     )
 
-    assert "web-crawler/候选清单-2026062609304500.md" in out
+    assert "web-crawler/候选清单-2026082509304500.md" in out
     ws = get_workspace_root("sess-timestamp")
-    assert not (ws / "web-crawler/候选清单-2026082509304500.md").exists()
-    assert (ws / "web-crawler/候选清单-2026062609304500.md").read_text(encoding="utf-8") == "candidate list"
+    assert (ws / "web-crawler/候选清单-2026082509304500.md").read_text(encoding="utf-8") == "candidate list"
 
 
-def test_write_workspace_file_tool_replaces_timestamp_placeholder(temp_user_data_root, monkeypatch):
-    """模型误把占位符传给工具时，工具边界替换成服务器当前时间。"""
+def test_write_workspace_file_tool_keeps_timestamp_placeholder_path(temp_user_data_root, monkeypatch):
+    """write_workspace_file 原样使用 path，不再把 <时间戳> 当作工具层占位符。"""
     from app.api.files import get_workspace_root
     from app.tools import write_workspace_file as write_tool_module
     from app.tools.write_workspace_file import create_write_workspace_file_tool
@@ -248,7 +246,6 @@ def test_write_workspace_file_tool_replaces_timestamp_placeholder(temp_user_data
             target.write_text(content, encoding="utf-8")
 
     monkeypatch.setattr(write_tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
-    monkeypatch.setattr(write_tool_module, "_current_workspace_timestamp", lambda: "2026062609304500")
 
     tool = create_write_workspace_file_tool("sess-placeholder")
     out = asyncio.run(
@@ -260,9 +257,9 @@ def test_write_workspace_file_tool_replaces_timestamp_placeholder(temp_user_data
         )
     )
 
-    assert "image/配图方案-2026062609304500.md" in out
+    assert "image/配图方案-<时间戳>.md" in out
     ws = get_workspace_root("sess-placeholder")
-    assert (ws / "image/配图方案-2026062609304500.md").read_text(encoding="utf-8") == "image plan"
+    assert (ws / "image/配图方案-<时间戳>.md").read_text(encoding="utf-8") == "image plan"
 
 
 def test_write_workspace_file_tool_advertises_project_filename_contract():
@@ -271,9 +268,9 @@ def test_write_workspace_file_tool_advertises_project_filename_contract():
     tool = create_write_workspace_file_tool("sess-contract")
     path_description = WriteWorkspaceFileInput.model_fields["path"].description or ""
 
-    assert "YYYYMMDDHHMMSS00" in path_description
-    assert "文件名-YYYYMMDDHHMMSS00.扩展名" in path_description
-    assert "YYYYMMDDHHMMSS00" in tool.description
+    assert "文件名-当前文件时间戳.扩展名" in path_description
+    assert "不替换或校验时间戳" in path_description
+    assert "不替换或校验时间戳" in tool.description
 
 
 def test_write_workspace_file_refuses_implicit_overwrite(temp_user_data_root, monkeypatch):
@@ -375,7 +372,7 @@ def test_write_workspace_file_rejects_dsml_tool_call_payload(temp_user_data_root
 
     out = asyncio.run(tool.ainvoke({"path": "leaked.md", "content": payload}))
 
-    assert "错误：content 包含模型工具调用协议" in out
+    assert "错误：content 不是可保存的最终正文" in out
     ws = get_workspace_root("sess-dsml-payload")
     assert not (ws / "leaked.md").exists()
 
@@ -393,6 +390,14 @@ def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data
     out = asyncio.run(tool.ainvoke({"path": "memory/llm_roundtrips.jsonl"}))
 
     assert "secret" in out
+
+
+def test_workspace_read_tool_is_named_read_workspace_file():
+    from app.tools.read_file import create_read_file_tool
+
+    tool = create_read_file_tool("sess-r")
+
+    assert tool.name == "read_workspace_file"
 
 
 def test_read_file_reads_current_layout_workspace_relative_path(temp_user_data_root, monkeypatch):

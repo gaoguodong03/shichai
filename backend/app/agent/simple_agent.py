@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage, BaseMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
 from app.agent.simple_agent_mcp_tools import (
     _forced_mcp_file_ref_tool_call,
@@ -29,12 +29,11 @@ from app.agent.simple_agent_finalization import (
 )
 from app.agent.simple_agent_messages import (
     _ai_response_hit_output_limit,
-    _coerce_text_tool_calls_to_structured,
     _continuation_instruction,
     _extract_text_content,
     _has_visible_ai_text,
+    _looks_like_text_tool_call_protocol,
     _max_output_continuations,
-    _parse_dsml_tool_calls,
 )
 from app.agent.simple_agent_tool_errors import (
     _final_response_or_tool_fallback,
@@ -72,6 +71,60 @@ _WORKSPACE_MUTATING_TOOL_NAMES = {
     "edit_workspace_file",
     "rename_workspace_file",
 }
+_TEXT_TOOL_PROTOCOL_RETRY_LIMIT = 1
+_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION = (
+    "上一步没有产生可执行的工具调用，平台未执行任何文件操作。"
+    "请重新选择可用文件工具并填写参数完成任务。"
+)
+_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT = (
+    "本轮工具调用格式不符合要求，平台未执行文件操作；"
+    "如果需要保存或修改文件，请重新发起任务。"
+)
+
+
+def _text_tool_protocol_failure_message() -> AIMessage:
+    return AIMessage(content=_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT)
+
+
+def _last_message_is_text_tool_protocol_retry(messages: list[BaseMessage]) -> bool:
+    if not messages:
+        return False
+    last = messages[-1]
+    return isinstance(last, HumanMessage) and _extract_text_content(last) == _TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION
+
+
+def _append_text_tool_protocol_retry_or_failure(
+    *,
+    response: BaseMessage,
+    messages: list[BaseMessage],
+    tool_attempt_debug: list[dict[str, Any]],
+    retry_count: int,
+) -> tuple[int, BaseMessage, bool]:
+    content_preview = _extract_text_content(response).strip()[:240]
+    if retry_count < _TEXT_TOOL_PROTOCOL_RETRY_LIMIT:
+        next_retry_count = retry_count + 1
+        retry_message = HumanMessage(content=_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION)
+        messages.append(retry_message)
+        tool_attempt_debug.append(
+            {
+                "source": "text_tool_call_protocol_retry",
+                "matched": True,
+                "retry_count": next_retry_count,
+                "content_preview": content_preview,
+            }
+        )
+        return next_retry_count, retry_message, True
+    failure_message = _text_tool_protocol_failure_message()
+    messages.append(failure_message)
+    tool_attempt_debug.append(
+        {
+            "source": "text_tool_call_protocol_failed",
+            "matched": True,
+            "retry_count": retry_count,
+            "content_preview": content_preview,
+        }
+    )
+    return retry_count, failure_message, False
 
 
 def _normalized_skill_script_path(value: Any) -> str:
@@ -164,6 +217,50 @@ def _has_workspace_mutating_tool_call(tool_calls: list[Any]) -> bool:
     return False
 
 
+def _workspace_write_call_key(tool_call: Any) -> str:
+    if not isinstance(tool_call, dict):
+        return ""
+    tool_name = str(tool_call.get("name") or tool_call.get("tool") or "").strip()
+    if tool_name != "write_workspace_file":
+        return ""
+    args = _tool_call_args(tool_call)
+    path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
+    content = str(args.get("content") or args.get("__arg2") or "")
+    if not path or not content:
+        return ""
+    return f"{tool_name}\0{path}\0{content}"
+
+
+def _remember_successful_workspace_writes(tool_out: dict[str, Any], seen_keys: set[str]) -> None:
+    raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out, dict) else None
+    if not isinstance(raw_outputs, list) or not _has_successful_workspace_write_output(raw_outputs):
+        return
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list):
+        return
+    for call in calls:
+        key = _workspace_write_call_key(call)
+        if key:
+            seen_keys.add(key)
+
+
+def _all_workspace_write_calls_already_succeeded(tool_calls: list[Any], seen_keys: set[str]) -> bool:
+    if not seen_keys or not tool_calls:
+        return False
+    saw_write = False
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            return False
+        tool_name = str(call.get("name") or call.get("tool") or "").strip()
+        if tool_name != "write_workspace_file":
+            return False
+        key = _workspace_write_call_key(call)
+        if not key or key not in seen_keys:
+            return False
+        saw_write = True
+    return saw_write
+
+
 def _is_run_skill_script_metadata_probe(tool_out: dict[str, Any]) -> bool:
     calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
     if isinstance(calls, list) and calls:
@@ -204,6 +301,23 @@ def _is_run_skill_script_workflow_step(tool_out: dict[str, Any]) -> bool:
             return False
         return saw_workflow_step and _run_skill_workflow_outputs_are_successful(tool_out)
     return _run_skill_raw_outputs_have_code(tool_out, _RUN_SKILL_SCRIPT_WORKFLOW_STEP_CODES)
+
+
+def _post_tool_synthesis_should_use_bound_client(tool_out: dict[str, Any]) -> bool:
+    calls = tool_out.get("tool_calls") if isinstance(tool_out, dict) else None
+    if not isinstance(calls, list) or not calls:
+        return False
+    saw_call = False
+    for call in calls:
+        if not isinstance(call, dict):
+            return False
+        tool_name = str(call.get("tool") or call.get("name") or "").strip()
+        if not tool_name:
+            return False
+        saw_call = True
+        if not tool_name.startswith("run_skill_script"):
+            return True
+    return not saw_call
 
 
 @dataclass
@@ -266,7 +380,7 @@ class SimpleAgent:
             if not isinstance(call, dict):
                 continue
             tool_name = str(call.get("tool") or call.get("name") or "").strip()
-            if tool_name != "read_file":
+            if tool_name != "read_workspace_file":
                 continue
             args = _tool_call_args(call)
             path = _normalize_workspace_path_for_compare(args.get("path") or args.get("__arg1"))
@@ -274,10 +388,10 @@ class SimpleAgent:
                 continue
             if not any(path == target or path.endswith(f"/{target}") for target in targets):
                 continue
-            logger.info("SimpleAgent: synthesize_after_read_file tool=%s path=%s", tool_name, path)
+            logger.info("SimpleAgent: synthesize_after_read_workspace_file tool=%s path=%s", tool_name, path)
             tool_attempt_debug.append(
                 {
-                    "source": "synthesize_after_read_file",
+                    "source": "synthesize_after_read_workspace_file",
                     "matched": True,
                     "tool": tool_name,
                     "path": path,
@@ -345,9 +459,9 @@ class SimpleAgent:
         step: int,
         tool_calls_trace: list[dict[str, Any]] | None = None,
         previous_tool_signature: str = "",
+        successful_workspace_write_keys: set[str] | None = None,
     ) -> tuple[BaseMessage | None, dict[str, Any] | None]:
-        coerced, debug = _coerce_text_tool_calls_to_structured(synthesis_response)
-        tool_calls = getattr(coerced, "tool_calls", None) or []
+        tool_calls = getattr(synthesis_response, "tool_calls", None) or []
         if not tool_calls:
             return None, None
         synthesis_signature = " | ".join(
@@ -373,19 +487,16 @@ class SimpleAgent:
                 }
             )
             return None, None
-        if debug is None:
-            debug = {
-                "source": "post_tool_synthesis_tool_calls",
-                "matched": True,
-                "count": len(tool_calls),
-                "content_preview": _extract_text_content(synthesis_response)[:240],
-            }
-        else:
-            debug = {**debug, "source": "post_tool_synthesis_dsml_tool_calls"}
+        debug = {
+            "source": "post_tool_synthesis_tool_calls",
+            "matched": True,
+            "count": len(tool_calls),
+            "content_preview": _extract_text_content(synthesis_response)[:240],
+        }
         tool_attempt_debug.append(debug)
-        messages.append(coerced)
+        messages.append(synthesis_response)
         tool_out = await self._execute_tool_response(
-            coerced,
+            synthesis_response,
             messages=messages,
             tools=tools,
             tool_result_cache=tool_result_cache,
@@ -394,12 +505,14 @@ class SimpleAgent:
             initial_state=initial_state,
             tool_calls_trace=tool_calls_trace,
         )
+        if successful_workspace_write_keys is not None:
+            _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
         logger.info(
             "SimpleAgent: executed synthesized tool calls step=%s count=%s",
             step,
             len(tool_calls),
         )
-        return coerced, tool_out
+        return synthesis_response, tool_out
 
     async def _call_model(self, client: Any, messages: list[BaseMessage], *, step: int | None = None) -> AIMessage:
         chars = sum(len(_extract_text_content(msg)) for msg in messages)
@@ -458,15 +571,13 @@ class SimpleAgent:
         tool_attempt_debug: list[dict[str, Any]] = []
         tool_result_cache: dict[str, dict[str, Any]] = {}
         all_tool_raw_outputs: list[str] = []
+        successful_workspace_write_keys: set[str] = set()
         last_tool_signature = ""
         repeated_tool_rounds = 0
         output_continuations = 0
+        text_tool_protocol_retries = 0
         for step in range(self.max_steps):
             response = await self._call_model(client, messages, step=step + 1)
-            if not (getattr(response, "tool_calls", None) or []):
-                response, coerced_debug = _coerce_text_tool_calls_to_structured(response)
-                if coerced_debug is not None:
-                    tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
                 forced = _forced_mcp_file_ref_tool_call(messages, tools)
                 if forced is not None:
@@ -476,6 +587,17 @@ class SimpleAgent:
                     )
                     tool_attempt_debug.append(forced.debug)
                     response = forced.message
+            if not (getattr(response, "tool_calls", None) or []) and _looks_like_text_tool_call_protocol(response):
+                text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                    response=response,
+                    messages=messages,
+                    tool_attempt_debug=tool_attempt_debug,
+                    retry_count=text_tool_protocol_retries,
+                )
+                if should_retry:
+                    continue
+                yield {"type": "agent_step", "step": step + 1, "message": protocol_message}
+                break
             tool_call_id_map = _normalize_ai_tool_call_ids(response)
             messages.append(response)
             yield {"type": "agent_step", "step": step + 1, "message": response}
@@ -523,6 +645,29 @@ class SimpleAgent:
                         "tool_attempt_debug": tool_attempt_debug,
                     }
                     break
+                if _all_workspace_write_calls_already_succeeded(tool_calls, successful_workspace_write_keys):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "structured_duplicate_workspace_write_ignored",
+                            "matched": True,
+                            "signature_preview": current_signature[:240],
+                        }
+                    )
+                    duplicate_msgs = _missing_tool_response_messages(
+                        tool_calls,
+                        [],
+                        "重复的工作区写入已忽略",
+                    )
+                    messages.extend(duplicate_msgs)
+                    yield {
+                        "type": "tool_step",
+                        "step": step + 1,
+                        "tool_messages": duplicate_msgs,
+                        "tool_calls": [],
+                        "tool_raw_outputs": [],
+                        "tool_attempt_debug": tool_attempt_debug,
+                    }
+                    continue
                 tool_attempt_debug.append(
                     {
                         "source": "structured_tool_calls",
@@ -544,6 +689,7 @@ class SimpleAgent:
                 tool_calls_trace = tool_out.get("tool_calls") if isinstance(tool_out.get("tool_calls"), list) else []
                 tool_raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out.get("tool_raw_outputs"), list) else []
                 all_tool_raw_outputs.extend([str(x) for x in tool_raw_outputs if str(x or "")])
+                _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
                 if isinstance(out_msgs, list) and out_msgs:
                     _normalize_tool_message_ids(out_msgs, tool_call_id_map)
                 if isinstance(out_msgs, list) and out_msgs:
@@ -660,6 +806,27 @@ class SimpleAgent:
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                                break
+                        else:
+                            yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                            break
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         all_tool_raw_outputs,
@@ -679,7 +846,28 @@ class SimpleAgent:
                     break
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
-                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = await self._call_model(client, messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(client, messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                                break
+                        else:
+                            yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                            break
                     synthesized_tool_message, synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
                         final_message,
                         messages=messages,
@@ -690,6 +878,7 @@ class SimpleAgent:
                         initial_state=initial_state,
                         step=step + 2,
                         previous_tool_signature=current_signature,
+                        successful_workspace_write_keys=successful_workspace_write_keys,
                     )
                     if synthesized_tool_message is not None and synthesized_tool_out is not None:
                         yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
@@ -714,7 +903,29 @@ class SimpleAgent:
                     break
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(all_tool_raw_outputs))
-                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesis_client = client if _post_tool_synthesis_should_use_bound_client(tool_out) else self.llm.get_client()
+                    final_message = await self._call_model(synthesis_client, messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(synthesis_client, messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                                break
+                        else:
+                            yield {"type": "agent_step", "step": step + 2, "message": protocol_message}
+                            break
                     synthesized_tool_message, synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
                         final_message,
                         messages=messages,
@@ -725,6 +936,7 @@ class SimpleAgent:
                         initial_state=initial_state,
                         step=step + 2,
                         previous_tool_signature=current_signature,
+                        successful_workspace_write_keys=successful_workspace_write_keys,
                     )
                     if synthesized_tool_message is not None and synthesized_tool_out is not None:
                         yield {"type": "agent_step", "step": step + 2, "message": synthesized_tool_message}
@@ -757,6 +969,17 @@ class SimpleAgent:
                 continue
             content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():
+                if _looks_like_text_tool_call_protocol(response):
+                    text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                        response=response,
+                        messages=messages,
+                        tool_attempt_debug=tool_attempt_debug,
+                        retry_count=text_tool_protocol_retries,
+                    )
+                    if should_retry:
+                        continue
+                    yield {"type": "agent_step", "step": step + 1, "message": protocol_message}
+                    break
                 fallback_after_failure = _fallback_after_llm_failure_message(all_tool_raw_outputs, response)
                 if fallback_after_failure is not None:
                     messages.append(fallback_after_failure)
@@ -797,6 +1020,19 @@ class SimpleAgent:
                 }
 
             break
+
+        if _last_message_is_text_tool_protocol_retry(messages):
+            failure_message = _text_tool_protocol_failure_message()
+            messages.append(failure_message)
+            tool_attempt_debug.append(
+                {
+                    "source": "text_tool_call_protocol_failed",
+                    "matched": True,
+                    "retry_count": text_tool_protocol_retries,
+                    "content_preview": "",
+                }
+            )
+            yield {"type": "agent_step", "step": self.max_steps + 1, "message": failure_message}
 
         # Ensure we always have a user-visible final answer after tool execution.
         # Some models may stop after tool calls without producing a natural language response.
@@ -861,17 +1097,15 @@ class SimpleAgent:
         tool_attempt_debug: list[dict[str, Any]] = []
         tool_calls_trace: list[dict[str, Any]] = []
         tool_raw_outputs: list[str] = []
+        successful_workspace_write_keys: set[str] = set()
         tool_result_cache: dict[str, dict[str, Any]] = {}
         last_tool_signature = ""
         repeated_tool_rounds = 0
         output_continuations = 0
+        text_tool_protocol_retries = 0
         for step in range(self.max_steps):
             t0 = time.perf_counter()
             response = await self._call_model(client, messages, step=step + 1)
-            if not (getattr(response, "tool_calls", None) or []):
-                response, coerced_debug = _coerce_text_tool_calls_to_structured(response)
-                if coerced_debug is not None:
-                    tool_attempt_debug.append(coerced_debug)
             if not (getattr(response, "tool_calls", None) or []):
                 forced = _forced_mcp_file_ref_tool_call(messages, tools)
                 if forced is not None:
@@ -881,6 +1115,16 @@ class SimpleAgent:
                     )
                     tool_attempt_debug.append(forced.debug)
                     response = forced.message
+            if not (getattr(response, "tool_calls", None) or []) and _looks_like_text_tool_call_protocol(response):
+                text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                    response=response,
+                    messages=messages,
+                    tool_attempt_debug=tool_attempt_debug,
+                    retry_count=text_tool_protocol_retries,
+                )
+                if should_retry:
+                    continue
+                break
             tool_call_id_map = _normalize_ai_tool_call_ids(response)
 
             messages.append(response)
@@ -922,6 +1166,22 @@ class SimpleAgent:
                     )
                     messages.extend(guard_msgs)
                     break
+                if _all_workspace_write_calls_already_succeeded(tool_calls, successful_workspace_write_keys):
+                    tool_attempt_debug.append(
+                        {
+                            "source": "structured_duplicate_workspace_write_ignored",
+                            "matched": True,
+                            "signature_preview": current_signature[:240],
+                        }
+                    )
+                    messages.extend(
+                        _missing_tool_response_messages(
+                            tool_calls,
+                            [],
+                            "重复的工作区写入已忽略",
+                        )
+                    )
+                    continue
                 tool_attempt_debug.append(
                     {
                         "source": "structured_tool_calls",
@@ -946,6 +1206,7 @@ class SimpleAgent:
                 tro = tool_out.get("tool_raw_outputs")
                 if isinstance(tro, list):
                     tool_raw_outputs.extend([str(x) for x in tro])
+                _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
                 if isinstance(out_msgs, list) and out_msgs:
                     _normalize_tool_message_ids(out_msgs, tool_call_id_map)
                 if isinstance(out_msgs, list) and out_msgs:
@@ -1046,6 +1307,25 @@ class SimpleAgent:
                 if _should_force_final_after_tool_success(self.system_prompt, tool_out):
                     messages.append(_final_synthesis_instruction(self.system_prompt, tool_out))
                     final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, _protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                break
+                        else:
+                            break
                     final_message = _final_response_or_tool_fallback(
                         final_message,
                         tool_raw_outputs,
@@ -1064,7 +1344,26 @@ class SimpleAgent:
                     break
                 if self._read_file_should_synthesize_after_result(tool_out, tool_attempt_debug):
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
-                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    final_message = await self._call_model(client, messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(client, messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, _protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                break
+                        else:
+                            break
                     synthesized_tool_message, _synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
                         final_message,
                         messages=messages,
@@ -1076,6 +1375,7 @@ class SimpleAgent:
                         step=step + 2,
                         tool_calls_trace=tool_calls_trace,
                         previous_tool_signature=current_signature,
+                        successful_workspace_write_keys=successful_workspace_write_keys,
                     )
                     if synthesized_tool_message is not None:
                         continue
@@ -1090,7 +1390,27 @@ class SimpleAgent:
                     break
                 if self.synthesize_after_tools and tools:
                     messages.append(_post_tool_synthesis_instruction(tool_raw_outputs))
-                    final_message = await self._call_model(self.llm.get_client(), messages, step=step + 2)
+                    synthesis_client = client if _post_tool_synthesis_should_use_bound_client(tool_out) else self.llm.get_client()
+                    final_message = await self._call_model(synthesis_client, messages, step=step + 2)
+                    if _looks_like_text_tool_call_protocol(final_message):
+                        text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                            response=final_message,
+                            messages=messages,
+                            tool_attempt_debug=tool_attempt_debug,
+                            retry_count=text_tool_protocol_retries,
+                        )
+                        if should_retry:
+                            final_message = await self._call_model(synthesis_client, messages, step=step + 2)
+                            if _looks_like_text_tool_call_protocol(final_message):
+                                text_tool_protocol_retries, _protocol_message, _should_retry = _append_text_tool_protocol_retry_or_failure(
+                                    response=final_message,
+                                    messages=messages,
+                                    tool_attempt_debug=tool_attempt_debug,
+                                    retry_count=text_tool_protocol_retries,
+                                )
+                                break
+                        else:
+                            break
                     synthesized_tool_message, _synthesized_tool_out = await self._coerce_and_execute_synthesis_tool_calls(
                         final_message,
                         messages=messages,
@@ -1102,6 +1422,7 @@ class SimpleAgent:
                         step=step + 2,
                         tool_calls_trace=tool_calls_trace,
                         previous_tool_signature=current_signature,
+                        successful_workspace_write_keys=successful_workspace_write_keys,
                     )
                     if synthesized_tool_message is not None:
                         continue
@@ -1127,6 +1448,16 @@ class SimpleAgent:
             # no tool calls → finish
             content = response.content if isinstance(response.content, str) else str(response.content or "")
             if content.strip():
+                if _looks_like_text_tool_call_protocol(response):
+                    text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
+                        response=response,
+                        messages=messages,
+                        tool_attempt_debug=tool_attempt_debug,
+                        retry_count=text_tool_protocol_retries,
+                    )
+                    if should_retry:
+                        continue
+                    break
                 fallback_after_failure = _fallback_after_llm_failure_message(tool_raw_outputs, response)
                 if fallback_after_failure is not None:
                     messages.append(fallback_after_failure)
@@ -1157,6 +1488,18 @@ class SimpleAgent:
                     messages.append(_continuation_instruction())
                     continue
             break
+
+        if _last_message_is_text_tool_protocol_retry(messages):
+            failure_message = _text_tool_protocol_failure_message()
+            messages.append(failure_message)
+            tool_attempt_debug.append(
+                {
+                    "source": "text_tool_call_protocol_failed",
+                    "matched": True,
+                    "retry_count": text_tool_protocol_retries,
+                    "content_preview": "",
+                }
+            )
 
         if self.synthesize_after_tools and tools and not _has_visible_ai_text(messages):
             synthesis_client = self.llm.get_client()

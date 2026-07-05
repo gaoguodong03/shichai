@@ -54,7 +54,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
 
     async def fake_tool_builder(agent_profile, workspace_id, resolved_skill):
         calls["tool_builder"] = (agent_profile["name"], workspace_id, resolved_skill)
-        return [SimpleNamespace(name="read_file", description="读文件")]
+        return [SimpleNamespace(name="read_workspace_file", description="读文件")]
 
     def fake_agent_factory(
         llm,

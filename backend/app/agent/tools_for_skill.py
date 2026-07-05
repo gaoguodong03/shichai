@@ -286,7 +286,7 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
 
 
 _FILE_CAP_TO_TOOL = (
-    ("read", "read_file"),
+    ("read", "read_workspace_file"),
     ("write", "write_workspace_file"),
     ("edit", "edit_workspace_file"),
     ("rename", "rename_workspace_file"),

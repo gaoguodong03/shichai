@@ -44,7 +44,7 @@ def _paths_from_file_ref_tags(text: str) -> list[str]:
 
 def _tool_is_workspace_plain_read_file(tool_name: str) -> bool:
     n = (tool_name or "").strip()
-    return n == "read_file"
+    return n == "read_workspace_file"
 
 
 def _normalize_read_file_path_argument(arguments: dict) -> None:
@@ -53,7 +53,7 @@ def _normalize_read_file_path_argument(arguments: dict) -> None:
         return
     fixed = strip_llm_junk_from_read_path(raw_arg)
     if fixed and fixed != raw_arg:
-        logger.info("read_file: 清理模型 path 中的说明性文字: %s -> %s", raw_arg, fixed)
+        logger.info("read_workspace_file: 清理模型 path 中的说明性文字: %s -> %s", raw_arg, fixed)
         arguments["path"] = fixed
         arguments.pop("__arg1", None)
 
