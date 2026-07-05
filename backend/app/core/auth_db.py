@@ -4,7 +4,6 @@ SQLite 用户库（仅用于登录凭证）。
 设计目标：
 1. 轻量：不引入 SQLAlchemy，使用标准库 sqlite3。
 2. 安全：密码以 PBKDF2-HMAC(SHA256)+salt 的形式存储。
-3. 兼容：若数据库为空，自动从 config/auth_users.txt 进行一次性种子迁移。
 """
 
 from __future__ import annotations
@@ -38,13 +37,6 @@ def get_auth_db_path() -> Path:
     # 按用户偏好放在 backend/config
     default_path = _backend_root() / "config" / "auth_users.sqlite"
     return Path(os.getenv("AUTH_DB_PATH", str(default_path))).resolve()
-
-
-def get_auth_users_txt_path() -> Path:
-    default_txt = _backend_root() / "config" / "auth_users.txt"
-    env_path = os.getenv("AUTH_USERS_FILE", str(default_txt))
-    p = Path(env_path)
-    return p if p.is_absolute() else p.resolve()
 
 
 def _get_sqlite_conn(db_path: Path) -> sqlite3.Connection:
@@ -150,46 +142,6 @@ def _ensure_user_id_column(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id)")
 
 
-def _load_users_from_txt() -> dict[str, str]:
-    path = get_auth_users_txt_path()
-    if not path.exists():
-        return {}
-
-    result: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if ":" in line:
-            user, _, pwd = line.partition(":")
-            result[user.strip()] = pwd.strip()
-    return result
-
-
-def seed_from_auth_users_txt_if_needed() -> None:
-    """
-    从 auth_users.txt 导入尚未进入 SQLite 的旧账号并写入密码 hash。
-    已存在于 SQLite 的账号保持原密码，不被旧文件覆盖。
-    """
-    init_auth_db()
-    users = _load_users_from_txt()
-    if not users:
-        return
-
-    now = datetime.now(timezone.utc).isoformat()
-    with _get_sqlite_conn(get_auth_db_path()) as conn:
-        existing = {
-            str(row["username"] or "")
-            for row in conn.execute("SELECT username FROM users").fetchall()
-        }
-        for username, password in users.items():
-            if username in existing:
-                continue
-            create_user(username=username, password=password, created_at=now, conn=conn)
-            existing.add(username)
-        conn.commit()
-
-
 def _pbkdf2_hmac_sha256(password: str, salt: bytes, iterations: int = 200_000) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
 
@@ -207,7 +159,7 @@ def hash_password(password: str, *, salt: Optional[bytes] = None) -> tuple[str, 
 
 
 def create_user(*, username: str, password: str, created_at: str = "", conn: Optional[sqlite3.Connection] = None) -> None:
-    # 仅负责新建/插入；种子迁移由外层入口（verify/user_exists/seed）触发一次。
+    # 仅负责新建/插入；旧文本账号文件不进入主认证路径。
     init_auth_db()
     if not username or not username.strip():
         raise ValueError("username is required")
@@ -263,7 +215,6 @@ def get_user_by_username(username: str) -> Optional[AuthUserRecord]:
 
 
 def verify_user(*, username: str, password: str) -> bool:
-    seed_from_auth_users_txt_if_needed()
     db_path = get_auth_db_path()
     if not db_path.exists():
         return False
@@ -286,7 +237,6 @@ def verify_user(*, username: str, password: str) -> bool:
 
 
 def user_exists(username: str) -> bool:
-    seed_from_auth_users_txt_if_needed()
     db_path = get_auth_db_path()
     if not db_path.exists():
         return False

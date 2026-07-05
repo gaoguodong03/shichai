@@ -167,7 +167,7 @@ def test_register_preserves_existing_local_session_presets(env_and_client):
     assert json.loads(preset_path.read_text(encoding="utf-8")) == existing_presets
 
 
-def test_register_seeds_legacy_auth_users_before_existence_check(monkeypatch, tmp_path):
+def test_register_ignores_legacy_auth_users_txt(monkeypatch, tmp_path):
     username = "legacy-seed@example.com"
     password = "legacy-pass-123"
     db_path = tmp_path / "auth_users.sqlite"
@@ -188,13 +188,14 @@ def test_register_seeds_legacy_auth_users_before_existence_check(monkeypatch, tm
 
     r = client.post("/api/auth/register", json={"username": username, "password": "new-pass-123"})
 
-    assert r.status_code == 400
-    assert r.json()["detail"] == "用户名已存在"
-    data = _auth_login(client, username=username, password=password)
+    assert r.status_code == 200
+    data = _auth_login(client, username=username, password="new-pass-123")
     assert data["username"] == username
+    legacy_login = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert legacy_login.status_code == 401
 
 
-def test_login_seeds_missing_legacy_auth_user_when_sqlite_not_empty(monkeypatch, tmp_path):
+def test_login_does_not_seed_missing_legacy_auth_user_when_sqlite_not_empty(monkeypatch, tmp_path):
     existing_username = "existing-sqlite@example.com"
     legacy_username = "legacy-partial@example.com"
     legacy_password = "legacy-partial-pass"
@@ -216,18 +217,16 @@ def test_login_seeds_missing_legacy_auth_user_when_sqlite_not_empty(monkeypatch,
 
     client = TestClient(app)
 
-    data = _auth_login(client, username=legacy_username, password=legacy_password)
+    r = client.post("/api/auth/login", json={"username": legacy_username, "password": legacy_password})
 
-    assert data["username"] == legacy_username
+    assert r.status_code == 401
     conn = sqlite3.connect(str(db_path))
     row = conn.execute(
         "SELECT username, password_hash FROM users WHERE username = ?",
         (legacy_username,),
     ).fetchone()
     conn.close()
-    assert row is not None
-    assert row[0] == legacy_username
-    assert row[1] != legacy_password
+    assert row is None
 
 
 def test_multiuser_isolation_by_token_headers(env_and_client):

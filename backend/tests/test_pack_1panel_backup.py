@@ -48,7 +48,6 @@ def test_pack_1panel_backup_allows_missing_env_file(tmp_path: Path) -> None:
     assert "SANDBOX_PREWARM_ALL_USERS" not in env_text
     assert "SANDBOX_PREWARM_ON_USER_REQUEST" not in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
-    assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
     assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text
     assert "ACCESS_TOKEN_EXPIRE_MINUTES=43200" in env_text
 
@@ -120,7 +119,6 @@ def test_pack_1panel_backup_omits_local_secrets_paths_and_runtime_outputs(tmp_pa
             [
                 "AUTH_SECRET=keep-this-secret",
                 "AUTH_DB_PATH=/Users/ggd/project/shichai/backend/config/auth_users.sqlite",
-                "AUTH_USERS_FILE=/Users/ggd/project/shichai/backend/config/auth_users.txt",
                 "SHUTONG_USER_DATA_ROOT=/Users/ggd/project/shichai/backend/data/users",
                 "ACCESS_TOKEN_EXPIRE_MINUTES=7",
                 "QWEN_API_KEY=keep-this-key",
@@ -168,7 +166,6 @@ def test_pack_1panel_backup_omits_local_secrets_paths_and_runtime_outputs(tmp_pa
     assert "dha:26.05.13" not in env_text
     assert "/Users/ggd/project/shichai" not in env_text
     assert "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite" in env_text
-    assert "AUTH_USERS_FILE=/app/backend/data/auth_users.txt" in env_text
     assert "SHUTONG_USER_DATA_ROOT=/app/backend/data/users" in env_text
     assert "ACCESS_TOKEN_EXPIRE_MINUTES=43200" in env_text
     assert all("agent-outputs" not in name for name in names)

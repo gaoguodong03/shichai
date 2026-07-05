@@ -33,7 +33,7 @@ python -m app.main
 
 API 文档：`http://localhost:8000/docs`
 
-本地运行时文件不进入 Git：`backend/.env`、`backend/config/auth_users.txt`、`backend/config/users.json`、`backend/config/auth_users.sqlite`、`backend/data/users/`。模板文件保留为 `.example`。
+本地运行时文件不进入 Git：`backend/.env`、`backend/config/users.json`、`backend/config/auth_users.sqlite`、`backend/data/users/`。模板文件保留为 `.example`。
 
 ## 项目结构（节选）
 

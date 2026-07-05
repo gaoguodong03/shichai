@@ -205,7 +205,6 @@ fi
   echo "SANDBOX_SESSION_ISOLATION=$SANDBOX_SESSION_ISOLATION"
   echo "QWEN_AUDIO_CHUNK_SECONDS=${QWEN_AUDIO_CHUNK_SECONDS:-120}"
   echo "AUTH_DB_PATH=/app/backend/data/auth_users.sqlite"
-  echo "AUTH_USERS_FILE=/app/backend/data/auth_users.txt"
   echo "SHUTONG_USER_DATA_ROOT=/app/backend/data/users"
   echo "ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-43200}"
 } >> "$FILES_DIR/.env"
