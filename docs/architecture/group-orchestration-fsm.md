@@ -10,7 +10,7 @@
 
 | 层级 | 状态载体 | 谁决定 | 作用 |
 | --- | --- | --- | --- |
-| **L0 入口路由** | `meta.skill_session_owner_id` / `scheduler_state.next_speaker` | 平台规则 | 本轮消息是否绕过主持人、是否已结束 |
+| **L0 入口路由** | `meta.skill_session_owner_name` / `scheduler_state.next_speaker` | 平台规则 | 本轮消息是否绕过主持人、是否已结束 |
 | **L1 主持人 FSM** | `scheduler_state.next_speaker`（主持人 JSON） | 主持人 LLM / 平台固定话术 | 宏观编排：派专家、等用户、组队、收束 |
 | **L2 专家回合 FSM** | 脚本 stdout / 隐藏状态块 `next_action` | 专家 Skill / 脚本 | 单专家回合内继续行动，以及是否保留 Skill 锁 |
 
@@ -40,7 +40,7 @@ flowchart TD
     P4 -->|否| HOST[主持人调度 L1]
 
     HOST --> H1{next_speaker}
-    H1 -->|agent-xxx| HOST_DELEGATE[固定: 下面由 X 发言] --> EXPERT
+    H1 -->|专家名称| HOST_DELEGATE[固定: 下面由 X 发言] --> EXPERT
     H1 -->|user| HOST_SILENT[静默，等用户] --> WAIT_USER([AWAITING_USER])
     H1 -->|invite| HOST_INVITE --> WAIT_USER
     H1 -->|end| HOST_END --> COMPLETED([COMPLETED])
@@ -65,7 +65,7 @@ flowchart TD
 
 1. `@专家` 开头 → 强制该专家，清理常规调度。
 2. 用户显式点名场内专家 → 直达该专家，**清理旧 skill 锁**。
-3. `skill_session_owner_id` 有效且专家仍在场内，且用户未要求主持人接管 → **`skip_host_dispatch`**，直达锁定专家。
+3. `skill_session_owner_name` 有效且专家仍在场内，且用户未要求主持人接管 → **`skip_host_dispatch`**，直达锁定专家。
 4. `scheduler_state.next_speaker == end`（或 `current_phase == end`）→ 吸收态，固定结束话术，不再调主持人 / 专家。
 5. 否则 → 进入 L1 主持人调度。
 
@@ -79,9 +79,9 @@ flowchart TD
 
 | `next_speaker` | 平台阶段 | 用户可见主持话术 | 后续 |
 | --- | --- | --- | --- |
-| `agent-xxx` | `EXECUTING` | `下面由 {名} 发言。` | 进入 L2 专家回合；`speaker_task` 交给专家 |
+| 专家名称 | `EXECUTING` | `下面由 {名} 发言。` | 进入 L2 专家回合；`speaker_task` 交给专家 |
 | `user` | `AWAITING_USER` | **无气泡（静默）** | 用户补充后**重新走 L1** |
-| `invite` | `RECRUITING` / `AWAITING_USER` | 固定「我推荐以下专家加入讨论：…」 | 解析 `suggested_add_agent_ids`，等用户确认邀请 |
+| `invite` | `RECRUITING` / `AWAITING_USER` | 固定「我推荐以下专家加入讨论：…」 | 解析 `suggested_add_agent_names`，等用户确认邀请 |
 | `end` | `COMPLETED` | `任务结束，请打开新对话。` | **吸收态**：后续任意输入仍结束 |
 
 **不应出现：** 主持人复述用户需求、代答、自由发挥 announcement（如「好的，我理解了…」）。
@@ -115,7 +115,7 @@ flowchart TD
 
 | 值 | 平台动作 | 典型场景 |
 | --- | --- | --- |
-| `keep` | 写入 `skill_session_owner_id` + `skill_session_skill_id`；下条用户消息 **L0 bypass 主持人** | 需用户补充/确认/上传；多轮工作流未完成 |
+| `keep` | 写入 `skill_session_owner_name` + `skill_session_skill`；下条用户消息 **L0 bypass 主持人** | 需用户补充/确认/上传；多轮工作流未完成 |
 | `release` | 清除 skill 锁；下条用户消息交回 **L1 主持人** | 本 Skill 流程完成；后续应由主持人重选专家 |
 
 缺省：`release`。

@@ -68,7 +68,7 @@ flowchart TB
     ToolSpec["agent/tool_spec.py<br/>ToolSpec<br/>OpenAI tool schema"]
     ToolGateway["agent/tool_gateway.py<br/>UnifiedToolGateway<br/>timeout / retry / idempotency / user semaphore"]
     BuiltinTools["tools/read_file.py<br/>tools/write_workspace_file.py<br/>tools/call_api.py<br/>工作区与 HTTP 内置工具"]
-    RunSkillScript["tools/run_skill_script.py<br/>run_skill_script_<skill_id><br/>CLI-only / scripts/manifest.json"]
+    RunSkillScript["tools/run_skill_script.py<br/>run_skill_script_<directory_name><br/>CLI-only / scripts/manifest.json"]
     McpManager["mcp/manager.py<br/>MCPToolManager<br/>stdio / streamable_http<br/>schema / connect / call"]
     SandboxService["agent/sandbox_service.py<br/>SandboxService<br/>OpenSandbox lifecycle / requirements / mounts"]
     SandboxAdapter["agent/sandbox_adapter.py<br/>OpenSandboxAdapter<br/>create / execute / read / write / list"]
@@ -396,7 +396,7 @@ flowchart TB
 | 专家 | `/api/agents*` | `backend/app/api/agents.py` | `core/resource_store.py`、`core/settings_references.py` | `resources/agents/{agent_name}/agent.json` |
 | 专家包 | `/api/dha/instances/*bundle` | `backend/app/api/agents.py` | `core/expert_bundle.py`、`core/settings_bundle_import.py` | ZIP 流、资源目录 |
 | 场景 | `/api/settings/session-presets*` | `backend/app/api/settings_presets.py` | `core/scenario_bundle.py`、`core/settings_bundle_import.py` | `resources/scenarios/{scenario_name}/scenario.json` |
-| Skill | `/api/settings/skills*` | `backend/app/api/settings_skills.py` | `settings_skill_parts.py`、`settings_skill_store.py`、`skills/loader.py` | `resources/skills/{skill_id}/...` |
+| Skill | `/api/settings/skills*` | `backend/app/api/settings_skills.py` | `settings_skill_parts.py`、`settings_skill_store.py`、`skills/loader.py` | `resources/skills/{directory_name}/...` |
 | MCP | `/api/settings/mcp*` | `backend/app/api/settings_mcp.py` | `mcp/manager.py`、`core/settings_bundle_import.py` | `resources/tools/{tool_name}/tool.json` |
 | 模型和主持人 | `/api/settings/app`、`/api/settings/host-profile*` | `backend/app/api/settings_app.py` | `agent/llm_client.py` 运行时读取 | `settings/app.json`、`resources/models/{model_name}/model.json` |
 | 密钥 | `/api/settings/api-secrets*` | `backend/app/api/settings_secrets.py` | `core/user_settings_paths.py` | `settings/secrets.enc.json` |
@@ -423,15 +423,15 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/sessions` | 获取当前用户的会话列表；用于左侧会话列表和运行态标记。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/meta.json` |
-| `POST` | `/api/sessions` | 新建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/meta.json`、`sessions/{id}/history.json` |
-| `GET` | `/api/sessions/{session_id}` | 获取会话详情；返回标题、成员、消息历史、专家展示信息、运行态。 | `backend/app/api/sessions.py` | 会话 meta、history、Agent 配置 |
+| `GET` | `/api/sessions` | 获取当前用户的会话列表；用于左侧会话列表和运行态标记。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/session.json` |
+| `POST` | `/api/sessions` | 新建新会话；可以为空白主持人会话，也可以带场景专家和主持人配置。 | `backend/app/api/sessions.py` | `sessions/index.json`、`sessions/{id}/session.json`、`sessions/{id}/history.json` |
+| `GET` | `/api/sessions/{session_id}` | 获取会话详情；返回标题、成员、消息历史、专家展示信息、运行态。 | `backend/app/api/sessions.py` | 会话定义、history、Agent 配置 |
 | `GET` | `/api/sessions/{session_id}/events/stream` | 会话后台事件流；页面刷新、切换会话或后台任务继续运行时，用它同步 `runtime_state` 和消息更新。 | `backend/app/api/sessions.py` | 内存订阅队列、会话 `runtime_state` |
-| `PUT` | `/api/sessions/{session_id}` | 更新会话；改标题、主持人配置、编排模式、替换或增删专家成员。 | `backend/app/api/sessions.py` | 会话 meta |
-| `DELETE` | `/api/sessions/{session_id}` | 删除会话；清理该会话 meta、history 和工作区目录。 | `backend/app/api/sessions.py` | 会话 meta、history、workspace |
+| `PUT` | `/api/sessions/{session_id}` | 更新会话；改标题、主持人配置、编排模式、替换或增删专家成员。 | `backend/app/api/sessions.py` | 会话定义 |
+| `DELETE` | `/api/sessions/{session_id}` | 删除会话；清理该会话定义、history 和工作区目录。 | `backend/app/api/sessions.py` | 会话定义、history、workspace |
 | `POST` | `/api/sessions/{session_id}/chat/stop` | 停止当前会话正在运行的一轮回复；前端点击停止时调用。 | `backend/app/api/sessions.py` | `ACTIVE_GROUP_RUNS`、会话 `runtime_state` |
 | `DELETE` | `/api/sessions/{session_id}/messages/{message_id}` | 删除会话中的单条消息；用于清理错误消息，避免污染后续上下文。 | `backend/app/api/sessions.py` | `sessions/{id}/history.json` |
-| `POST` | `/api/sessions/{session_id}/chat/stream` | 主对话入口；接收用户消息或继续指令，进入主持人调度、专家执行、工具调用，并以 SSE 返回 `route/content/message/end`。 | `backend/app/api/sessions.py` | `agent/group_chat_runtime.py`、会话 history/meta/workspace |
+| `POST` | `/api/sessions/{session_id}/chat/stream` | 主对话入口；接收用户消息或继续指令，进入主持人调度、专家执行、工具调用，并以 SSE 返回 `route/content/message/end`。 | `backend/app/api/sessions.py` | `agent/group_chat_runtime.py`、会话定义/history/workspace |
 | `POST` | `/api/sessions/{session_id}/chat` | 非流式兜底入口；内部复用同一条流式逻辑并聚合最终事件，当前端 SSE 中断时用于补偿本轮回复。 | `backend/app/api/sessions.py` | 同 `/chat/stream` |
 | `POST` | `/api/sessions/{session_id}/export` | 将会话历史导出为 Markdown 文件并写入当前会话工作区。 | `backend/app/api/sessions.py` | `sessions/{session_id}/workspace/...` |
 | `GET` | `/api/sessions/{group_session_id}/archive` | 生成会话归档视图数据；返回按消息组织的归档片段和专家展示信息。 | `backend/app/api/group_chat.py` | 会话 history、Agent 配置 |
@@ -455,11 +455,11 @@ flowchart TB
 
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
-| `GET` | `/api/agents` | 获取当前用户专家列表；资源中心专家分区、会话成员展示和主持人调度都依赖它。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
-| `POST` | `/api/agents` | 新建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
-| `PUT` | `/api/agents/{agent_id}` | 更新专家配置；改人设、绑定 Skill/MCP、模型、头像和能力开关。 | `backend/app/api/agents.py` | `resources/agents/{agent_id}/agent.json` |
-| `DELETE` | `/api/agents/{agent_id}` | 删除专家；同时标记场景预设中缺失的专家引用，避免导入导出引用静默丢失。 | `backend/app/api/agents.py` | 专家配置、场景引用快照 |
-| `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 ZIP；包含专家配置、关联 Skill 和可选 MCP 配置。 | `backend/app/api/agents.py` | ZIP 文件流、专家/Skill/MCP 配置 |
+| `GET` | `/api/agents` | 获取当前用户专家列表；资源中心专家分区、会话成员展示和主持人调度都依赖它。 | `backend/app/api/agents.py` | `resources/agents/{agent_name}/agent.json` |
+| `POST` | `/api/agents` | 新建专家；写入名称、角色、系统提示词、Skill、MCP、模型和文件能力配置。 | `backend/app/api/agents.py` | `resources/agents/{agent_name}/agent.json` |
+| `PUT` | `/api/agents/{agent_name}` | 更新专家配置；改人设、绑定 Skill/MCP、模型、头像和能力开关。 | `backend/app/api/agents.py` | `resources/agents/{agent_name}/agent.json` |
+| `DELETE` | `/api/agents/{agent_name}` | 删除专家；同时标记场景预设中缺失的专家引用，避免导入导出引用静默丢失。 | `backend/app/api/agents.py` | 专家配置、场景引用快照 |
+| `GET` | `/api/dha/instances/{agent_name}/export-bundle` | 导出专家资源包 ZIP；包含专家配置、关联 Skill 和可选 MCP 配置。 | `backend/app/api/agents.py` | ZIP 文件流、专家/Skill/MCP 配置 |
 | `POST` | `/api/dha/instances/import-bundle` | 导入专家资源包；支持 dry-run 预览缺失依赖、冲突和即将导入的 Skill/MCP。 | `backend/app/api/agents.py` | 专家配置、Skill 目录、MCP 配置、沙箱 requirements |
 
 #### 场景与会话预设
@@ -476,20 +476,20 @@ flowchart TB
 | 方法 | 路径 | 中文含义 | 入口文件 | 主要落点 |
 |------|------|----------|----------|----------|
 | `GET` | `/api/settings/skills` | 获取当前用户 Skill 列表；资源中心、专家配置和主持人配置都用它。 | `backend/app/api/settings_skills.py` | `resources/skills/` |
-| `POST` | `/api/settings/skills` | 新建空 Skill；生成纯 ASCII `skill_id` 目录和默认 `SKILL.md`。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md` |
+| `POST` | `/api/settings/skills` | 新建空 Skill；生成纯 ASCII 目录和默认 `SKILL.md`。 | `backend/app/api/settings_skills.py` | `resources/skills/{directory_name}/SKILL.md` |
 | `POST` | `/api/settings/skills/import-zip` | 导入 Skill ZIP；合并可选 MCP 配置、沙箱 requirements，并预热用户沙箱。 | `backend/app/api/settings_skills.py` | Skill 目录、MCP 配置、沙箱 requirements |
-| `GET` | `/api/settings/skills/{skill_id}/export-zip` | 导出单个 Skill 为 ZIP；包含 `SKILL.md`、辅助文件和可选 MCP 配置。 | `backend/app/api/settings_skills.py` | ZIP 文件流、Skill 目录 |
-| `PUT` | `/api/settings/skills/{skill_id}` | 更新 Skill 元信息、正文和允许工具；若名称变化会同步重命名目录并更新引用。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md`、引用配置 |
-| `DELETE` | `/api/settings/skills/{skill_id}` | 删除 Skill 目录，并从专家、场景、主持人配置中移除或标记相关引用。 | `backend/app/api/settings_skills.py` | Skill 目录、引用配置 |
-| `GET` | `/api/settings/skills/{skill_id}/content` | 读取 `SKILL.md` 原文、frontmatter、正文和允许工具配置。 | `backend/app/api/settings_skills.py` | `resources/skills/{skill_id}/SKILL.md` |
-| `GET` | `/api/settings/skills/{skill_id}/parts` | 列出 Skill 的辅助文件分区：`references`、`assets`、`scripts`、`other`。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件目录 |
-| `GET` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}` | 读取 Skill 辅助文件内容；用于编辑引用资料、资源文件或脚本。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
-| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}` | 在 Skill 的指定分区中新建文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
-| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}/mkdir` | 在 Skill 的指定分区中新建目录，并放置 `.gitkeep` 维持空目录。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助目录 |
-| `PUT` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}` | 更新 Skill 辅助文件内容；常用于编辑脚本、引用材料或 assets 文本文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
-| `DELETE` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path:path}` | 删除 Skill 辅助文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
+| `GET` | `/api/settings/skills/{directory_name}/export-zip` | 导出单个 Skill 为 ZIP；包含 `SKILL.md`、辅助文件和可选 MCP 配置。 | `backend/app/api/settings_skills.py` | ZIP 文件流、Skill 目录 |
+| `PUT` | `/api/settings/skills/{directory_name}` | 更新 Skill 元信息、正文和允许工具；若名称变化会同步重命名目录并更新引用。 | `backend/app/api/settings_skills.py` | `resources/skills/{directory_name}/SKILL.md`、引用配置 |
+| `DELETE` | `/api/settings/skills/{directory_name}` | 删除 Skill 目录，并从专家、场景、主持人配置中移除或标记相关引用。 | `backend/app/api/settings_skills.py` | Skill 目录、引用配置 |
+| `GET` | `/api/settings/skills/{directory_name}/content` | 读取 `SKILL.md` 原文、frontmatter、正文和允许工具配置。 | `backend/app/api/settings_skills.py` | `resources/skills/{directory_name}/SKILL.md` |
+| `GET` | `/api/settings/skills/{directory_name}/parts` | 列出 Skill 的辅助文件分区：`references`、`assets`、`scripts`、`other`。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件目录 |
+| `GET` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}` | 读取 Skill 辅助文件内容；用于编辑引用资料、资源文件或脚本。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
+| `POST` | `/api/settings/skills/{directory_name}/parts/{part_type}` | 在 Skill 的指定分区中新建文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
+| `POST` | `/api/settings/skills/{directory_name}/parts/{part_type}/mkdir` | 在 Skill 的指定分区中新建目录，并放置 `.gitkeep` 维持空目录。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助目录 |
+| `PUT` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}` | 更新 Skill 辅助文件内容；常用于编辑脚本、引用材料或 assets 文本文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
+| `DELETE` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path:path}` | 删除 Skill 辅助文件。 | `backend/app/api/settings_skill_parts.py` | Skill 辅助文件 |
 
-`part_type` 只允许 `references`、`assets`、`scripts`、`other`。`SKILL.md` 本体只能通过 `/content` 或 `PUT /settings/skills/{skill_id}` 相关流程读写，不能从 `other` 分区绕过。
+`part_type` 只允许 `references`、`assets`、`scripts`、`other`。`SKILL.md` 本体只能通过 `/content` 或 `PUT /settings/skills/{directory_name}` 相关流程读写，不能从 `other` 分区绕过。
 
 #### MCP 工具配置与调试
 
@@ -557,14 +557,14 @@ sequenceDiagram
   R->>Chat: streamSessionChat(payload)
   Chat->>API: fetch /api/sessions/{id}/chat/stream<br/>Authorization Bearer token
   API->>G: GroupChatRequest
-  G->>State: load_group_meta/load_group_history<br/>register_group_run/write runtime_state
+  G->>State: load_session_definitions/load_group_history<br/>register_group_run/write runtime_state
   G->>Data: 追加用户消息、更新标题和 updated_at
   G->>Host: resolve_group_entry_route / leader_decide / scene scheduler
-  Host-->>G: next_speaker / phase / suggested_add_agent_ids
+  Host-->>G: next_speaker / phase / suggested_add_agent_names
   G-->>Chat: SSE event: route
   G->>Expert: build_expert_turn_runtime(agent_profile, session_id)
   Expert->>Expert: resolve_expert_skill<br/>Skill 锁优先，多 Skill 由专家 LLM 选型
-  Expert->>Tools: build_tools_for_group_chat(agent_profile, workspace_id, skill_id)
+  Expert->>Tools: build_tools_for_group_chat(agent_profile, workspace_id, directory_name)
   Expert->>SA: create_skill_execution_agent(llm, tools, skill_content)
   SA->>LLM: ainvoke / tool-bound client
   LLM-->>SA: AIMessage content 或 tool_calls
@@ -577,7 +577,7 @@ sequenceDiagram
   SA->>LLM: 工具后综合回复
   LLM-->>SA: 最终 assistant message
   SA-->>G: final_step
-  G->>Data: save_group_history/save_group_meta<br/>finish_group_run
+  G->>Data: save_group_history/save_session_definitions<br/>finish_group_run
   G-->>Chat: SSE event: message
   G-->>Chat: SSE event: end
   Chat-->>R: onRoute/onContent/onMessage/onEnd
@@ -634,9 +634,9 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  AgentProfile["Agent 配置<br/>resources/agents/{agent_id}/agent.json"]
-  SessionMeta["会话 meta<br/>agent_ids / leader_agent_id / host_config / orchestration_profile"]
-  SkillTree["Skill 目录<br/>resources/skills/{skill_id}/SKILL.md<br/>scripts/manifest.json<br/>scripts/*"]
+  AgentProfile["Agent 配置<br/>resources/agents/{agent_name}/agent.json"]
+  SessionDefinition["会话定义<br/>agent_names / scenario_name / orchestration_profile"]
+  SkillTree["Skill 目录<br/>resources/skills/{directory_name}/SKILL.md<br/>scripts/manifest.json<br/>scripts/*"]
   McpConfig["MCP 配置<br/>resources/tools/{tool_id}/tool.json"]
   AppSettings["应用设置<br/>settings/app.json<br/>default_llm / host_profile"]
   ModelConfig["模型配置<br/>resources/models/{model_id}/model.json"]
@@ -650,7 +650,7 @@ flowchart TB
   ToolSpec["ToolSpec<br/>name / description / args_schema / callable"]
   BuiltinFile["内置工作区工具<br/>read_file / write_workspace_file / edit_workspace_file / rename / mkdir / list"]
   CallApi["call_api<br/>外部 HTTP，按 url_capability 注入"]
-  RunScript["run_skill_script_<skill_id><br/>仅执行该 Skill scripts/ 下脚本"]
+  RunScript["run_skill_script_<directory_name><br/>仅执行该 Skill scripts/ 下脚本"]
   McpTools["MCP tools<br/>{server_id}_{tool_name}"]
 
   MCPManager["MCPToolManager<br/>ensure_user_mcp_config_loaded<br/>ensure_servers_loaded"]
@@ -659,7 +659,7 @@ flowchart TB
   LLM["LLM client<br/>get_llm_from_config"]
 
   AgentProfile --> ExpertRuntime
-  SessionMeta --> ExpertRuntime
+  SessionDefinition --> ExpertRuntime
   SkillTree --> ExpertRuntime
   AppSettings --> ExpertRuntime
   ModelConfig --> LLM
@@ -689,13 +689,13 @@ flowchart TB
 | MCP 工具 | 当前生效 Skill 的 frontmatter 声明 MCP；若 Agent 配置了 `mcp_server_ids`，再取交集 | `{server_id}_{tool_name}` | `MCPToolManager` 连接 stdio 或 Streamable HTTP | `backend/app/mcp/manager.py`、`settings_mcp.py` |
 | 工作区读写 | Agent `file_capabilities` 允许对应能力 | `read_file`、`write_workspace_file`、`edit_workspace_file`、`rename_workspace_file`、`mkdir_workspace`、`list_workspace_directory` | 当前会话工作区相对路径；禁止越界 | `tools_for_skill.py`、`tools/read_file.py`、`tools/write_workspace_file.py`、`api/files.py` |
 | HTTP 工具 | Agent `url_capability` 为真 | `call_api` | 公开 HTTP/HTTPS；服务端 SSRF 防护 | `backend/app/tools/call_api.py` |
-| Skill 脚本 | Agent 绑定的 Skill 目录存在 `SKILL.md` | `run_skill_script_<skill_id>` | `scripts/` 目录内脚本；CLI-only；OpenSandbox 统一网关 | `backend/app/tools/run_skill_script.py`、`agent/tool_gateway.py`、`agent/sandbox_service.py` |
+| Skill 脚本 | Agent 绑定的 Skill 目录存在 `SKILL.md` | `run_skill_script_<directory_name>` | `scripts/` 目录内脚本；CLI-only；OpenSandbox 统一网关 | `backend/app/tools/run_skill_script.py`、`agent/tool_gateway.py`、`agent/sandbox_service.py` |
 
 脚本执行契约：
 
 | 项 | 契约 |
 |----|------|
-| 脚本位置 | `backend/data/users/{user_id}/resources/skills/{skill_id}/scripts/{script_path}` |
+| 脚本位置 | `backend/data/users/{user_id}/resources/skills/{directory_name}/scripts/{script_path}` |
 | 允许后缀 | `.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat` |
 | 参数入口 | `cli_args_json` 必须是 JSON 字符串数组；`input_json` 已禁用 |
 | 当前工作目录 | 沙箱内当前会话工作区，路径由 `sandbox_session_dir(workspace_id)` 决定 |
@@ -714,13 +714,13 @@ flowchart TB
   Root --> Settings["settings"]
 
   Resources --> Scenarios["scenarios/{scenario_id}/scenario.json"]
-  Resources --> Agents["agents/{agent_id}/agent.json"]
-  Resources --> Skills["skills/{skill_id}/SKILL.md<br/>skills/{skill_id}/scripts/*"]
+  Resources --> Agents["agents/{agent_name}/agent.json"]
+  Resources --> Skills["skills/{directory_name}/SKILL.md<br/>skills/{directory_name}/scripts/*"]
   Resources --> Tools["tools/"]
   Resources --> Models["models/"]
 
   Sessions --> Index["index.json"]
-  Sessions --> Meta["{session_id}/meta.json"]
+  Sessions --> SessionJson["{session_id}/session.json"]
   Sessions --> History["{session_id}/history.json"]
   Sessions --> Workspaces["{session_id}/workspace/..."]
   Sessions --> Checkpoints["{session_id}/checkpoints/..."]
@@ -747,7 +747,7 @@ flowchart TB
 | 工作区文件 | `sessions/{session_id}/workspace/...` | `api/files.py`、内置工作区工具、沙箱挂载 |
 | 场景资源目录 | `resources/scenarios/{scenario_name}/scenario.json` | `api/settings_presets.py`、导入导出 |
 | 专家资源目录 | `resources/agents/{agent_name}/agent.json` | `api/agents.py`、导入导出 |
-| Skill | `resources/skills/{skill_id}/...` | `api/settings_skills.py`、`skills/loader.py` |
+| Skill | `resources/skills/{directory_name}/...` | `api/settings_skills.py`、`skills/loader.py` |
 | MCP | `resources/tools/{tool_name}/tool.json` | `api/settings_mcp.py`、`mcp/manager.py` |
 | LLM Provider | `resources/models/{model_name}/model.json` | `api/settings_app.py`、`agent/llm_client.py` |
 | 全局规则和主持人设置 | `settings/app.json` | `api/settings_app.py` |
@@ -766,7 +766,7 @@ flowchart TD
   Classify -->|新资源类型| NewResource["新增/扩展 backend/app/api/settings_*.py<br/>定义用户数据目录<br/>前端 resources section<br/>导入导出和搜索"]
   Classify -->|新会话行为| NewSession["改 api/sessions.py 壳<br/>改 group_chat_runtime.py 或 group_session_service.py<br/>同步 SSE end/message 事件"]
   Classify -->|新专家字段| NewAgentField["改 api/agents.py Pydantic 模型<br/>改 AgentView.vue 表单<br/>改 expert_runtime/tools_for_skill 读取逻辑"]
-  Classify -->|新 Skill 脚本流程| NewSkill["写 Skill 目录<br/>scripts/manifest.json<br/>通过 run_skill_script_<skill_id> 调用<br/>必要时更新沙箱 requirements"]
+  Classify -->|新 Skill 脚本流程| NewSkill["写 Skill 目录<br/>scripts/manifest.json<br/>通过 run_skill_script_<directory_name> 调用<br/>必要时更新沙箱 requirements"]
   Classify -->|新外部工具| NewMCP["优先做 MCP Server<br/>更新 settings_mcp.py 配置 UI<br/>在 Skill frontmatter 声明 allowed MCP"]
   Classify -->|新内置工具| NewBuiltin["新增 backend/app/tools/*.py<br/>返回 ToolSpec<br/>在 tools_for_skill.py 按能力注入"]
   Classify -->|新沙箱能力| NewSandbox["改 sandbox_settings.py<br/>sandbox_service/policy/image/requirements<br/>验证 OpenSandbox 挂载和依赖"]
@@ -813,7 +813,7 @@ flowchart TD
 | MCP 工具没有出现 | `tools_for_skill.py` | `settings_skill_store.py`、`mcp/manager.py`、Skill frontmatter | Skill 未声明 MCP、Agent `mcp_server_ids` 与 Skill 声明取交集后为空 |
 | MCP 显示 `Invalid response format` | `mcp/manager.py` 连接日志 | `/api/settings/mcp/{id}/test` | Streamable HTTP endpoint/transport/auth 不匹配 |
 | 文件读写跑到错目录 | `tools_for_skill.py`、`api/files.py` | `sandbox_mount_policy.py`、`session_workspace_policy.py` | 传了内部路径、workspace_id 错、路径归一化失败 |
-| `run_skill_script` 提示脚本不存在 | `tools/run_skill_script.py` | 用户 Skill 目录 | `skill_id` 陈旧、脚本不在 `scripts/`、路径带 `scripts/scripts/` 或绝对路径 |
+| `run_skill_script` 提示脚本不存在 | `tools/run_skill_script.py` | 用户 Skill 目录 | Skill 目录名陈旧、脚本不在 `scripts/`、路径带 `scripts/scripts/` 或绝对路径 |
 | 脚本依赖没装 | `tools/run_skill_script.py` | `sandbox_service.py`、`sandbox_requirements.py` | 用户 requirements 未合并、hash 缓存、OpenSandbox 首次 pip 失败 |
 | 沙箱连接失败 | `sandbox_adapter.py` | `sandbox_lifecycle_errors.py`、环境变量 `OPENSANDBOX_DOMAIN` | domain/protocol/proxy 错、控制面不可达 |
 | LLM 401 或模型错误 | `llm_client.py` | `settings_app.py`、`settings_secrets.py`、`LLMSettingsView.vue` | provider base_url/key_ref/env 混用、base_url 填成 `/chat/completions` |

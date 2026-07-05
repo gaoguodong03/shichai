@@ -66,7 +66,7 @@ shichai/
 | 文件 | 职责 |
 |------|------|
 | `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
-| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, workspace_id)`，按 Agent 的 mcp_server_ids/skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每 skill 的 `run_skill_script_<skill_id>`。 |
+| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, workspace_id)`，按 Agent 的 mcp_server_ids/Skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每个 Skill 目录的 `run_skill_script_<directory_name>`。 |
 | `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |
 | `leader_scheduler.py` | 群聊主持人调度。 |
@@ -99,7 +99,7 @@ shichai/
 | 文件 | 职责 |
 |------|------|
 | `export_session.py` | `create_export_session_tool(session_id)` → `export_session_to_md`。 |
-| `run_skill_script.py` | `create_run_skill_script_tool(skill_id)` → `run_skill_script`。 |
+| `run_skill_script.py` | `create_run_skill_script_tool(directory_name)` → `run_skill_script`。 |
 | `call_api.py` | 全局 `call_api` 工具。 |
 | `filesystem_session_wrapper.py` | `wrap_filesystem_tools(tools, session_id)`，按会话限定工作区路径。 |
 | `read_file.py` | 遗留读文件工具（已由 MCP file-reader/filesystem 替代，若仍存在则仅兼容）。 |
@@ -123,7 +123,7 @@ shichai/
 
 - **后端**：`.env`、`requirements.txt`、`pyproject.toml`；会话/群聊等数据多在 `backend/data/` 下以 JSON 等形式存储。
 - **前端**：`package.json`、`vite.config.ts`、`tsconfig.json`、`.env.example`。
-- **用户运行数据**：`backend/data/users/{user_id}/resources/`、`settings/`、`sessions/`。其中 Skill 位于 `resources/skills/{skill_id}/`。
+- **用户运行数据**：`backend/data/users/{user_id}/resources/`、`settings/`、`sessions/`。其中 Skill 位于 `resources/skills/{directory_name}/`。
 - **沙箱镜像**：`docker/skill-sandbox/`。
 - **脚本入口**：`scripts/test-layer1.sh`、`scripts/test-ui-flow.sh`、`scripts/test-full-flow.sh`。
 
@@ -134,10 +134,11 @@ shichai/
 | `docs/requirements/` | 用户需求、验收标准、需求追踪 |
 | `docs/architecture/` | 架构、API、运行链路、项目结构 |
 | `docs/testing/` | 第一层回归、上线前测试、全流程业务测试 |
+| `docs/release/` | 发版、提测、部署和验收统一入口 |
 | `docs/user-manual/` | 用户说明、上线验收手册、截图和 PDF |
 | `docs/skills/` | Skill、脚本路径、沙箱工具接口规范 |
 | `docs/operations/` | 部署和运行约束 |
-| `docs/project/` | 项目工作清单 |
+| `docs/project/` | 项目工作清单、兼容台账、文档审计 |
 | `docs/presentations/` | 讲稿、PPT、演示素材 |
 | `docs/superpowers/` | 历史规格和实施计划 |
 
@@ -153,3 +154,5 @@ shichai/
 - [运行架构说明](runtime-architecture.md)：MCP / script / service / export / 只读文件等执行路径。
 - [镜像与依赖边界](images-and-dependencies.md)：主应用、OpenSandbox、技能沙箱与用户依赖的职责划分。
 - [需求说明与验收测试](../requirements/acceptance-and-tests.md)：产品需求、模块验收点与回归测试建议。
+- [发布入口](../release/README.md)：发版、提测、部署和验收的阅读顺序。
+- [兼容层与回退路径寿命台账](../project/compatibility-lifecycle.md)：旧协议、回退路径和删除条件。

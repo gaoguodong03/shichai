@@ -14,14 +14,14 @@
 
 关键标准：
 - resources/scenarios/<scenario_id>/scenario.json
-- resources/agents/<agent_id>/agent.json
-- resources/skills/<skill_id>/SKILL.md + scripts/ + assets/ + templates/ + other/
+- resources/agents/<agent_name>/agent.json
+- resources/skills/<directory_name>/SKILL.md + scripts/ + assets/ + templates/ + other/
 - resources/tools/<tool_id>/tool.json
 - resources/models/<model_provider_id>/model.json
 - settings/app.json
 - settings/secrets.enc.json
 - settings/sandbox/requirements.txt
-- sessions/<session_id>/meta.json + history.json + chat.md + workspace/ + checkpoints/
+- sessions/<session_id>/session.json + history.json + runtime.json + chat.md + workspace/ + checkpoints/
 
 请先做代码阅读和实现计划，不要直接大改。重点查：
 - backend/app/core/user_context.py

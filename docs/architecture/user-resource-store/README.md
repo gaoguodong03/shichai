@@ -26,11 +26,11 @@ data/users/{user_id}/
         scenario.json
 
     agents/
-      {agent_id}/
+      {agent_name}/
         agent.json
 
     skills/
-      {skill_id}/
+      {directory_name}/
         SKILL.md
         scripts/
         assets/
@@ -57,8 +57,9 @@ data/users/{user_id}/
     index.json
 
     {session_id}/
-      meta.json
+      session.json
       history.json
+      runtime.json
       chat.md
 
       workspace/

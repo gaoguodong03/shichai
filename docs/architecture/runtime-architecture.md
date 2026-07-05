@@ -125,7 +125,7 @@ stateDiagram-v2
 ### 4.2 读出会话与恢复状态
 
 3. **加载会话元数据与消息历史**  
-   - 元数据里会有：标题、本会话邀请了哪些 **专家（agent_id 列表）**、主持人 id、发言模式（自动/手动等）、更新时间等。  
+   - 元数据里会有：标题、本会话邀请了哪些 **专家名称（agent_names）**、主持人名称、发言模式（自动/手动等）、更新时间等。
    - 历史消息列表来自同一会话对应的 JSON，包含用户、主持人、各专家已发出的气泡内容。  
    - 若上一轮里专家「卡在」需要用户补充信息（Skill 常见），元数据里可能还有 **pending** 信息（例如恢复时仍由同一专家继续），后端会按规则决定是否**自动续跑**该专家。
 
@@ -137,13 +137,13 @@ stateDiagram-v2
 ### 4.4 特殊情况：会话里还没有专家
 
 5. **0 个专家时的分支**  
-   若当前会话没有邀请任何专家，逻辑会走「仅主持人」路径：由主持人模型根据讨论目标、历史等**回复用户**，并可能**推荐若干可加入的专家 id**（前端可展示为「建议邀请」）。这类情况下会推一条主持人的 `message`，再推 `end`，本轮通常**等待用户继续操作**（例如邀请专家或再输入），然后返回。
+   若当前会话没有邀请任何专家，逻辑会走「仅主持人」路径：由主持人模型根据讨论目标、历史等**回复用户**，并可能**推荐若干可加入的专家名称**（前端可展示为「建议邀请」）。这类情况下会推一条主持人的 `message`，再推 `end`，本轮通常**等待用户继续操作**（例如邀请专家或再输入），然后返回。
 
 ### 4.5 编排：下一轮谁说话
 
 6. **决定 `next_speaker`**  
-   在已有专家的前提下，后端会结合：会话 **`orchestration_profile`（招募档 / 场景档）**、**Skill 会话锁**（可跳过主持人、直接续同一专家）、发言模式、主持人/回退调度器、用户是否手动指定下一轮、pending 等，算出 **下一个开口的 agent_id**（也可能是 `user`）。  
-   场景档下不向模型提供「可邀请名单」，前端也不展示「建议邀请」条；招募档下主持人才可能产出 `suggested_add_agent_ids`。  
+   在已有专家的前提下，后端会结合：会话 **`orchestration_profile`（招募档 / 场景档）**、**Skill 会话锁**（可跳过主持人、直接续同一专家）、发言模式、主持人/回退调度器、用户是否手动指定下一轮、pending 等，算出 **下一个开口的专家名称**（也可能是 `user`）。
+   场景档下不向模型提供「可邀请名单」，前端也不展示「建议邀请」条；招募档下主持人才可能产出 `suggested_add_agent_names`。
    常见体验：先插入一条**主持人气泡**（「下面由某某发言」），**不单独结束流**，紧接着进入专家回合（同一条流里连续发生）。
 
 7. **防止无限循环**  
@@ -153,7 +153,7 @@ stateDiagram-v2
 
 8. **按专家配置取工具与 Skill**  
    - 根据该专家在资源中心里的配置，组装 **MCP 工具、Skill 相关工具**（如跑技能脚本）等。  
-   - 从该专家绑定的 **Skill** 中解析正文（多 Skill 时还会结合当前讨论内容做一次**选型**，得到实际用到的 `skill_id` 与正文）。  
+   - 从该专家绑定的 **Skill** 中解析正文（多 Skill 时还会结合当前讨论内容做一次**选型**，得到实际用到的 Skill 目录名与正文）。
    - 把专家自己的 **system_prompt、角色说明** 与 Skill 正文拼成**系统侧**提示，再挂上应用里配置的额外说明（若有）。
 
 9. **构造本轮用户侧输入**  
@@ -169,7 +169,7 @@ stateDiagram-v2
 
 12. **收尾与落盘**  
    - 把本轮专家最终可见正文拼好（若只有工具结果没有废话，也会有兜底文案）；可按规则把工具结果里的图片等转成 Markdown 预览。  
-   - 打上 **skill_id**、可选工具调试信息、若 Skill 要求用户补充字段则带上 **required_user_fields**。  
+   - 打上 **Skill 目录名**、可选工具调试信息、若 Skill 要求用户补充字段则带上 **required_user_fields**。
    - **追加到消息历史 JSON 并保存**；更新会话 `updated_at`。  
    - 向浏览器推一条 **`message` 事件**（完整一条专家气泡）。  
    - 若开启了群聊记忆相关能力，还可能在后台写日志/摘要（失败不影响主对话）。
@@ -234,26 +234,25 @@ flowchart TB
 
 ### 6.2 专家（Agent / DHA）是什么、存在哪
 
-**产品里说的「专家」**，在后端就是一条 **Agent 实例配置**：有稳定 **`agent_id`**、展示名 **`name`**、可选 **`role`** 与 **`system_prompt`**，并声明本轮推理要用的 **Skill**、**MCP**、以及（可选）**专用模型**。
+**产品里说的「专家」**，在后端就是一条 **Agent 实例配置**：以展示名 **`name`** 作为产品侧引用名称，可选 **`role`** 与 **`system_prompt`**，并声明本轮推理要用的 **Skill**、**MCP**、以及（可选）**专用模型**。
 
 - **存哪里**：每个用户一份 JSON，路径为  
-  `data/users/{user_id}/resources/agents/{agent_id}/agent.json`
+  `data/users/{user_id}/resources/agents/{agent_name}/agent.json`
   内容是一个**列表**，每一项就是一位专家。API 主入口为 **`/api/agents/*`**，专家资源包导入导出沿用 `/api/dha/instances/*`。
 
 - **主要字段（理解用）**
 
 | 字段 | 含义 |
 |------|------|
-| `agent_id` | 会话里引用专家时用，稳定主键。 |
 | `name` / `role` | 界面展示与拼进提示的「人设」说明。 |
 | `system_prompt` | 额外系统提示，会和 Skill 正文等拼接。 |
-| `skill_ids` | 绑定哪些 Skill（目录 id 列表）；多 Skill 时群聊里还可按上下文选型实际注入的一个。 |
+| `skills[].directory_name` | 绑定哪些 Skill 目录；多 Skill 时群聊里还可按上下文选型实际注入的一个。 |
 | `mcp_server_ids` | 绑定哪些 MCP 服务，工具会进该专家的 `build_tools_for_group_chat`。 |
-| `is_leader` | 是否作为「主持人/领队」参与调度（与会话元数据里的 `leader_agent_id` 等配合）。 |
-| `llm_provider_id` | **可选**；若为空，该专家使用应用**默认模型**（见下一小节）。 |
+| `is_leader` | 是否作为「主持人/领队」参与调度（与会话元数据里的 `leader_agent_name` 等配合）。 |
+| `llm_name` | **可选**；若为空，该专家使用应用**默认模型**（见下一小节）。 |
 | `avatar_url` | 可选头像。 |
 
-- **和会话的关系**：会话元数据里记录 **本会话邀请了哪些 `agent_id`**（`agent_ids`）。一轮流式对话里，编排层选中某位专家后，用 `agent_id` 在 `dha_instances` 里查出完整配置，再组工具、组 Skill、选 LLM。
+- **和会话的关系**：会话元数据里记录 **本会话邀请了哪些专家名称**（`agent_names`）。一轮流式对话里，编排层选中某位专家后，用专家名称在专家资源里查出完整配置，再组工具、组 Skill、选 LLM。
 
 - **和「模型」的边界**：**专家是配置实体**（人设 + Skill + MCP + 可选模型 id）；**模型**是具体 `base_url` + `model` + 密钥 的调用端。一位专家可以不指定模型，则全程跟应用默认走。
 
@@ -265,7 +264,7 @@ flowchart TB
 
 - **何时用哪套模型**：群聊里通过 **`_get_llm_for_agent(agent_profile, app_settings)`**（见 `group_chat.py`）统一决定：
 
-  - 若当前专家配置里 **`llm_provider_id` 非空**，用该 id 去 `llm_providers` 里找；
+  - 若当前专家配置里 **`llm_name` 非空**，用该名称去 `llm_providers` 里找；
   - **否则**用 **`default_llm`**。
 
   主持人、领队决策、标题生成等路径也会各自取「某位专家对应的 LLM」或「无专家时的默认 LLM」，因此**不同专家可以用不同模型**，未指定的都跟默认。
@@ -276,14 +275,14 @@ flowchart TB
 
 **技能**在本项目里主要是**用户资源目录下的一棵技能树**：每个技能一个子目录，**核心文件是 `SKILL.md`**（YAML frontmatter + Markdown 正文）。frontmatter 当前收敛为 **`name`**、**`description`**、**`allowed-tools` / `auto-tools`**：其中 MCP 字段声明该技能运行时允许加载的 MCP，Python 依赖会进入设置-沙箱依赖合并与预热流程。
 
-- **存哪里**：`data/users/{user_id}/resources/skills/{skill_id}/`
-  `skill_id` 一般与目录名一致；资源中心里新建/导入的技能会落在此路径。
+- **存哪里**：`data/users/{user_id}/resources/skills/{directory_name}/`
+  `directory_name` 是 Skill 的稳定目录名；资源中心里新建/导入的技能会落在此路径。
 
-- **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `skill_id → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_skill_id` 等），决定本轮实际注入哪份正文。
+- **加载与缓存**：[`loader.py`](../../backend/app/skills/loader.py) 中的 **`SkillsLoader`** 扫描用户 `skills_dir`，解析 `SKILL.md`，在内存中维护 `directory_name → Skill`；启动时只预加载已存在且包含用户 Skill 的目录，运行期仍按用户隔离并在文件变更后失效缓存，避免多租户下共用一个全局单例竞态。群聊里若一位专家绑了多个 Skill，还会结合上下文做**选型**（`pick_best_directory_name_for_message` 等），决定本轮实际注入哪份正文。
 
 - **管理接口**：设置相关路由在 **`/api/settings/skills`**（列表、新建、导入 zip、读写内容、删除等），见 `settings_skills.py`。变更后通常会**失效当前用户的技能缓存**，下次按磁盘重载。
 
-- **和「专家」的关系**：专家配置里的 **`skill_ids`** 列出可用技能 id；本轮推理时把选中技能的**正文 + 描述**拼进系统提示，并挂上专家的 `system_prompt` / `role`（见第 4 节专家回合）。
+- **和「专家」的关系**：专家配置里的 **`skills[].directory_name`** 列出可用技能目录；本轮推理时把选中技能的**正文 + 描述**拼进系统提示，并挂上专家的 `system_prompt` / `role`（见第 4 节专家回合）。
 
 - **脚本能力**：技能目录下可有 **`scripts/`**（`.py`、`.sh` 等），由 **`run_skill_script`** 工具在用户会话工作区内执行（见下一小节「工具模块」）。每个绑定到专家的技能若磁盘上存在有效 `SKILL.md`，会在工具列表里注册一个 **`run_skill_script_<…>`** 名称的工具，供模型调用。
 
@@ -306,12 +305,12 @@ flowchart TB
    - **`call_api`** 作为内置工具叠加上去，供需要主动请求 URL 的场景使用（与具体 MCP 并存）。
 
 4. **技能脚本**  
-   - 对专家 **`skill_ids`** 里每一项，若磁盘上存在对应 `SKILL.md`，则 **`create_run_skill_script_tool`** 注册一个 **`run_skill_script_<skill_id>`**（名称会做安全化与哈希后缀，满足部分模型对 function 名的字符集要求）。  
+   - 对专家 **`skills[].directory_name`** 里每一项，若磁盘上存在对应 `SKILL.md`，则 **`create_run_skill_script_tool`** 注册一个 **`run_skill_script_<directory_name>`**（名称会做安全化与哈希后缀，满足部分模型对 function 名的字符集要求）。
    - 实际执行逻辑在 [`run_skill_script.py`](../../backend/app/tools/run_skill_script.py)：在会话工作区与技能目录约束下起子进程/解释器，返回结构化 JSON 字符串给模型。
 
 **执行与治理**：部分 MCP 调用与脚本会经过 **`UnifiedToolGateway`**、**`SandboxPolicy`** 等（见 `tool_gateway`、`sandbox_adapter`），用于超时、策略与调试信息聚合；细节以源码为准。
 
-**小结**：**Skill** 解决「**说什么、遵循什么流程**」；**工具**解决「**能对外做什么**」——搜网页、读文件、跑脚本、调内部 API 等。二者在专家上通过配置 **`skill_ids` + `mcp_server_ids`** 与运行时 **`build_tools_for_group_chat`** 合在一起。
+**小结**：**Skill** 解决「**说什么、遵循什么流程**」；**工具**解决「**能对外做什么**」——搜网页、读文件、跑脚本、调内部 API 等。二者在专家上通过配置 **`skills[].directory_name` + `mcp_server_ids`** 与运行时 **`build_tools_for_group_chat`** 合在一起。
 
 ---
 

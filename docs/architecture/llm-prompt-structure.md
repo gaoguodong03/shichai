@@ -145,7 +145,7 @@ session_id: "default"
 
 ↓ 第一次调用：select_skill
   输入：用户消息 + 各 skill 的 name+description
-  输出：skill_id = "wechat-article-writer"
+  输出：directory_name = "wechat-article-writer"
 
 ↓ 获取 skill_full_content，create_skill_execution_agent
 

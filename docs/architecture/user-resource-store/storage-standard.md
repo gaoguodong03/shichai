@@ -50,13 +50,14 @@ resources/scenarios/<scenario_id>/scenario.json
   "name": "编写PPT",
   "description": "把用户想法转成PPT大纲、配图并组装PPTX",
   "system_prompt": "仅适用于该场景的项目规则",
-  "agent_ids": ["agent-ppt-guide", "agent-image"],
-  "leader_agent_id": "agent-scene-host",
+  "agent_names": ["PPT引导专家", "图片生成专家"],
+  "leader_agent_name": "四九",
   "discussion_goal_example": "帮我做一个面向学生的AI工具介绍PPT",
   "host_config": {
-    "skill_ids": ["group-host-ppt-writing"],
+    "skill_name": "PPT主持技能",
+    "skill_directory": "group-host-ppt-writing",
     "system_prompt": "",
-    "llm_provider_id": "",
+    "llm_name": "",
     "mcp_server_ids": [],
     "file_capabilities": {
       "read": true,
@@ -75,8 +76,8 @@ resources/scenarios/<scenario_id>/scenario.json
     "allowed_skill_scope": "scene_agents"
   },
   "refs": {
-    "agents": [{"id": "agent-ppt-guide", "name_snapshot": "PPT引导专家"}],
-    "skills": [{"id": "group-host-ppt-writing", "name_snapshot": "PPT主持技能"}],
+    "agents": [{"name": "PPT引导专家"}],
+    "skills": [{"name": "PPT主持技能", "directory_name": "group-host-ppt-writing"}],
     "tools": [],
     "models": []
   },
@@ -96,7 +97,7 @@ resources/scenarios/<scenario_id>/scenario.json
 路径：
 
 ```text
-resources/agents/<agent_id>/agent.json
+resources/agents/<agent_name>/agent.json
 ```
 
 职责：
@@ -108,13 +109,15 @@ resources/agents/<agent_id>/agent.json
 
 ```json
 {
-  "id": "agent-ppt-guide",
   "name": "PPT引导专家",
   "role": "将用户想法收敛为PPT大纲与逐页文稿",
   "system_prompt": "你是PPT引导专家...",
-  "skill_ids": ["ppt-outline-to-deck", "pptx-deck-assembler"],
+  "skills": [
+    {"name": "PPT大纲生成", "directory_name": "ppt-outline-to-deck"},
+    {"name": "PPTX 组装", "directory_name": "pptx-deck-assembler"}
+  ],
   "tool_ids": [],
-  "model_provider_id": "",
+  "llm_name": "",
   "runtime_params": {
     "temperature": null,
     "max_tokens": null
@@ -142,7 +145,7 @@ resources/agents/<agent_id>/agent.json
 路径：
 
 ```text
-resources/skills/<skill_id>/
+resources/skills/<directory_name>/
   SKILL.md
   scripts/
   assets/
@@ -262,20 +265,20 @@ resources/models/<model_provider_id>/model.json
 sessions/
   index.json
   <session_id>/
-    meta.json
-    messages.jsonl
-    events.jsonl
-    runtime_state.json
+    session.json
+    history.json
+    runtime.json
+    chat.md
     workspace/
 ```
 
 文件职责：
 
 - `index.json`：会话列表摘要。
-- `meta.json`：标题、场景、参与专家、新建时间、归档状态。
-- `messages.jsonl`：聊天消息，一行一条，适合追加写。
-- `events.jsonl`：SSE 事件、工具调用、错误、沙箱记录。
-- `runtime_state.json`：下一轮发言者、pending owner、host plan、运行时快照。
+- `session.json`：标题、场景、参与专家、新建时间、归档状态等会话定义。
+- `history.json`：聊天消息。
+- `runtime.json`：下一轮发言者、pending owner、host plan、运行时快照。
+- `chat.md`：面向 Agent / 检查点的会话 Markdown 快照。
 - `workspace/`：本次会话产生的文件。
 
 会话必须保存资源快照引用：

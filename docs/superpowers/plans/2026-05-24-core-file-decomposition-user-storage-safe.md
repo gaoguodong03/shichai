@@ -129,7 +129,7 @@ from app.api import group_chat_state as state
 
 def test_group_meta_history_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    meta = {"s1": {"title": "会话", "agent_ids": ["agent-a"], "created_at": "t", "updated_at": "t"}}
+    meta = {"s1": {"title": "会话", "agent_names": ["教师"], "created_at": "t", "updated_at": "t"}}
 
     state.save_group_meta(meta)
     state.save_group_history("s1", [{"role": "user", "content": "你好"}])
@@ -142,15 +142,15 @@ def test_build_archive_segments_ignores_host_messages():
     messages = [
         {"role": "user", "message_id": "u1", "content": "目标", "timestamp": "t1"},
         {"role": "host", "message_id": "h1", "content": "下面请 A"},
-        {"role": "assistant", "agent_id": "agent-a", "message_id": "a1", "content": "回答", "timestamp": "t2", "skill_id": "skill-a"},
+        {"role": "assistant", "agent_name": "教师", "message_id": "a1", "content": "回答", "timestamp": "t2", "skill": "写作技能"},
     ]
 
     segments = state.build_archive_segments(messages)
 
     assert len(segments) == 1
     assert segments[0]["user"]["content"] == "目标"
-    assert segments[0]["experts"][0]["agent_id"] == "agent-a"
-    assert segments[0]["experts"][0]["messages"][0]["skill_id"] == "skill-a"
+    assert segments[0]["experts"][0]["agent_name"] == "教师"
+    assert segments[0]["experts"][0]["messages"][0]["skill"] == "写作技能"
 
 
 def test_runtime_state_clears_done_task(monkeypatch):
@@ -277,9 +277,9 @@ from app.agent import group_context
 def test_messages_to_expert_context_filters_repeated_technical_errors():
     messages = [
         {"role": "user", "content": "请分析数据"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "Error code: 400 context length is only"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "有效业务结论"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "有效业务结论"},
+        {"role": "assistant", "agent_name": "教师", "content": "Error code: 400 context length is only"},
+        {"role": "assistant", "agent_name": "教师", "content": "有效业务结论"},
+        {"role": "assistant", "agent_name": "教师", "content": "有效业务结论"},
     ]
 
     text = group_context.messages_to_expert_context(messages)
@@ -407,9 +407,9 @@ def test_extract_host_scheduler_state_from_json_block():
 
 
 def test_forced_at_mention_matches_agent_name():
-    agents = [{"agent_id": "agent-teacher", "name": "教师", "role": "出题"}]
+    agents = [{"name": "教师", "role": "出题"}]
 
-    assert hd.extract_forced_at_mention_agent_id("@教师 请继续", agents) == "agent-teacher"
+    assert hd.extract_forced_at_mention_agent_name("@教师 请继续", agents) == "教师"
 
 
 def test_host_decision_from_scheduler_state_maps_user():

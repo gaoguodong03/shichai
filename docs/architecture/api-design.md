@@ -100,7 +100,7 @@ ALLOW_ANONYMOUS_API=0
 | `end` | 本轮结束，包含调度阶段和下一步状态 |
 | `error` | 可展示错误 |
 
-非流式 `/chat` 会内部消费同一条 SSE 流，并优先返回 `route.agent_id` 对应的专家消息。
+非流式 `/chat` 会内部消费同一条 SSE 流，并优先返回 `route.agent_name` 对应的专家消息。
 
 ### 专家与资源
 
@@ -108,9 +108,9 @@ ALLOW_ANONYMOUS_API=0
 |------|------|------|
 | `GET` | `/api/agents` | 专家列表 |
 | `POST` | `/api/agents` | 新建专家 |
-| `PUT` | `/api/agents/{agent_id}` | 更新专家 |
-| `DELETE` | `/api/agents/{agent_id}` | 删除专家 |
-| `GET` | `/api/dha/instances/{agent_id}/export-bundle` | 导出专家资源包 |
+| `PUT` | `/api/agents/{agent_name}` | 更新专家 |
+| `DELETE` | `/api/agents/{agent_name}` | 删除专家 |
+| `GET` | `/api/dha/instances/{agent_name}/export-bundle` | 导出专家资源包 |
 | `POST` | `/api/dha/instances/import-bundle` | 导入专家资源包 |
 
 `/api/agents/*` 是 Agent 配置主入口；`/api/dha/instances/*` 仅保留专家资源包导入导出接口。
@@ -132,16 +132,16 @@ ALLOW_ANONYMOUS_API=0
 |------|------|------|
 | `GET` | `/api/settings/skills` | Skill 列表 |
 | `POST` | `/api/settings/skills` | 新建 Skill |
-| `PUT` | `/api/settings/skills/{skill_id}` | 更新 Skill 元信息 |
-| `DELETE` | `/api/settings/skills/{skill_id}` | 删除 Skill |
-| `GET` | `/api/settings/skills/{skill_id}/content` | 读取 `SKILL.md` |
-| `GET` | `/api/settings/skills/{skill_id}/parts` | 读取 Skill 文件分区 |
-| `GET` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 读取 Skill 文件 |
-| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}` | 新建 Skill 文件 |
-| `POST` | `/api/settings/skills/{skill_id}/parts/{part_type}/mkdir` | 新建目录 |
-| `PUT` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 保存 Skill 文件 |
-| `DELETE` | `/api/settings/skills/{skill_id}/parts/{part_type}/{file_path}` | 删除 Skill 文件 |
-| `GET` | `/api/settings/skills/{skill_id}/export-zip` | 导出 Skill ZIP |
+| `PUT` | `/api/settings/skills/{directory_name}` | 更新 Skill 元信息 |
+| `DELETE` | `/api/settings/skills/{directory_name}` | 删除 Skill |
+| `GET` | `/api/settings/skills/{directory_name}/content` | 读取 `SKILL.md` |
+| `GET` | `/api/settings/skills/{directory_name}/parts` | 读取 Skill 文件分区 |
+| `GET` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path}` | 读取 Skill 文件 |
+| `POST` | `/api/settings/skills/{directory_name}/parts/{part_type}` | 新建 Skill 文件 |
+| `POST` | `/api/settings/skills/{directory_name}/parts/{part_type}/mkdir` | 新建目录 |
+| `PUT` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path}` | 保存 Skill 文件 |
+| `DELETE` | `/api/settings/skills/{directory_name}/parts/{part_type}/{file_path}` | 删除 Skill 文件 |
+| `GET` | `/api/settings/skills/{directory_name}/export-zip` | 导出 Skill ZIP |
 | `POST` | `/api/settings/skills/import-zip` | 导入 Skill ZIP |
 
 脚本路径、工作区路径和沙箱约束见 [Skill 脚本路径手册](../skills/skill-script-paths.md)。

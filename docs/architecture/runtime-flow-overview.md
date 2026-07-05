@@ -73,23 +73,23 @@
 
 实现集中在 `backend/app/api/group_chat.py` 的 `group_chat_stream`；内存里用 `OrchestrationContext`（`app/agent/orchestrator_state.py`）记录 **阶段** `phase`（如 `planning` / `executing` / `awaiting_user` / `recruiting` / `completed`）等，SSE 的 `end` 事件里也会带 `phase`、`interrupt_reason` 等。
 
-#### 5.2.1 双轨编排与 meta 字段
+#### 5.2.1 双轨编排与会话定义字段
 
-- **`orchestration_profile`**（会话 meta，取值 **`recruitment` | `scene`**）：
-  - **`recruitment`**：新建空会话或「招募房间」语义；主持人侧可向模型提供「可邀请专家列表」，并可能产出 `suggested_add_agent_ids`。
+- **`orchestration_profile`**（会话定义字段，取值 **`recruitment` | `scene`**）：
+  - **`recruitment`**：新建空会话或「招募房间」语义；主持人侧可向模型提供「可邀请专家列表」，并可能产出 `suggested_add_agent_names`。
   - **`scene`**：**场景协作**（如资源中心套用场景、写入 `host_config` 后）；不向调度模型注入可邀请名单（`available_to_add_for_prompt` 为空），`finalize_host_scheduler_decision(..., orchestration_profile="scene")` 会强制清空招募相关字段。
-  - **缺省迁移**：meta 无该字段时，由 `effective_orchestration_profile` 推断：无场内专家 → `recruitment`；有专家 → `scene`。
+  - **缺省推断**：会话定义无该字段时，由 `effective_orchestration_profile` 推断：无场内专家 → `recruitment`；有专家 → `scene`。
   - **升级**：虚拟主持人 + 已配置 `host_config.skill_ids` + 场内有人，且当前为「空/recruitment」时，在 `update_group_session` / `get_group_session` 中会升为 **`scene`**（避免「已套用场景却仍走招募链」）。
 
-- **Skill 会话锁**（跨请求）：`skill_session_owner_id` / `skill_session_skill_id` 由 `group_orchestration_fsm.persist_skill_session_lock` 写入；当用户继续与同一专家推进 Skill、且未显式要求主持人改派时，`resolve_group_entry_route` 可 **`skip_host_dispatch`**，本轮**不调用** `_host_decide_by_agent` / `leader_decide`，直接进入该专家回合（四九不参与本轮用户消息）。
+- **Skill 会话锁**（跨请求）：`skill_session_owner_name` / `skill_session_skill` 由 `group_orchestration_fsm.persist_skill_session_lock` 写入；当用户继续与同一专家推进 Skill、且未显式要求主持人改派时，`resolve_group_entry_route` 可 **`skip_host_dispatch`**，本轮**不调用** `_host_decide_by_agent` / `leader_decide`，直接进入该专家回合（四九不参与本轮用户消息）。
 
-- **待恢复（pending）**：若专家需用户补信息，meta 中 `pending_owner_agent_id` / `pending_skill_id` 等仍用于 `_host_decide_by_agent` 的提示注入；与 Skill 锁配合时，以入口路由判定为准。
+- **待恢复（pending）**：若专家需用户补信息，会话定义中的 `pending_owner_agent_name` / `pending_skill` 等仍用于 `_host_decide_by_agent` 的提示注入；与 Skill 锁配合时，以入口路由判定为准。
 
 #### 5.2.2 调度模型与后处理
 
 - **主持人**：虚拟场景主持人时，由 `_resolve_scene_host_profile` 合成「类 Agent」profile，优先走 **`_host_decide_by_agent`**（主持技能 + `host_config` + `app_settings.host_prompts.host_master_prompt`）。
 - **回退**：主持人失败则 **`leader_decide`**（`leader_scheduler.py`），其提示词按 `orchestration_profile` 区分是否含「可邀请新成员」段落。
-- **归一化**：`finalize_host_scheduler_decision` 合并招募抑制；若模型误发「可邀请」且被抑制，**固定** `next_speaker=user`（不猜测下一位专家，由下轮四九按流程图再调度）。`normalize_scheduler_decision` 仅做 id 清洗与非法 id 回落。`speak_mode`（manual/auto）**不再**分支后端逻辑，仅可写入 meta 供前端。
+- **归一化**：`finalize_host_scheduler_decision` 合并招募抑制；若模型误发「可邀请」且被抑制，**固定** `next_speaker=user`（不猜测下一位专家，由下轮四九按流程图再调度）。`normalize_scheduler_decision` 仅做 id 清洗与非法 id 回落。`speak_mode`（manual/auto）**不再**分支后端逻辑，仅可写入会话定义供前端。
 - **主持人多 Skill**：`_host_decide_by_agent` 固定使用 `skill_ids` **列表第一项**（可预测），不由关键词路由代选。
 
 #### 5.2.3 有专家时：`if/elif` 决策顺序（源码顺序）
@@ -117,9 +117,9 @@
 ### 5.3 一次 `chat/stream` 的逻辑链（简化）
 
 1. **鉴权** → 绑定用户目录。
-2. **加载会话**：元数据（标题、已邀请 `agent_ids`、主持人等）+ 历史消息 JSON；必要时处理 pending / 自动续跑同一专家。
+2. **加载会话**：元数据（标题、已邀请 `agent_names`、主持人等）+ 历史消息 JSON；必要时处理 pending / 自动续跑同一专家。
 3. **推 `start`**：流开始。
-4. **无专家**：可走「仅主持人」路径：主持人模型回复、可能推荐可邀请的专家 id，然后 `message` + `end`。
+4. **无专家**：可走「仅主持人」路径：主持人模型回复、可能推荐可邀请的专家名称，然后 `message` + `end`。
 5. **有专家**：按 **§5.2 编排策略** 决定 `next_speaker` 与阶段；有轮次上限防死循环。
 6. **专家回合**：见下节「5.3.1 专家回合（实现要点）」。
 7. **推事件**：`content` 为增量打字；工具前可有友好提示；最终合并为一条助手 **`message`**；落盘历史与会话 `updated_at`。
@@ -132,18 +132,18 @@
 
 以下对应 `group_chat_stream` 中选中某位专家后的路径，源码以 `backend/app/api/group_chat.py`、`backend/app/agent/tools_for_skill.py`、`backend/app/agent/skill_agent_runtime.py`、`backend/app/agent/simple_agent.py` 为准。
 
-1. **按 `agent_id` 读配置**
-   专家列表来自当前用户的 `data/users/{user_id}/resources/agents/*/agent.json`（`load_agent_instances()`），流内用 `agent_id` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skill_ids`、`mcp_server_ids`、`llm_provider_id`、`file_capabilities`、`url_capability` 等）。若该 `agent_id` 不存在，编排会中断，不继续组工具。
+1. **按专家名称读配置**
+   专家列表来自当前用户的 `data/users/{user_id}/resources/agents/*/agent.json`（`load_agent_instances()`），流内用 `name` 映射到完整一条专家对象（`name`、`role`、`system_prompt`、`skills[].directory_name`、`mcp_server_ids`、`llm_name`、`file_capabilities`、`url_capability` 等）。若该名称不存在，编排会中断，不继续组工具。
 
 2. **组装 LLM**
-   `_get_llm_for_agent`：若专家配置了非空 **`llm_provider_id`** 则用该 provider；否则使用应用设置中的 **`default_llm`**（如缺省 `qwen`），再结合 `llm_providers` 与密钥构造可调用客户端（`get_llm_from_config`）。
+   `_get_llm_for_agent`：若专家配置了非空 **`llm_name`** 则用该模型配置；否则使用应用设置中的 **`default_llm`**（如缺省 `qwen`），再结合 `llm_providers` 与密钥构造可调用客户端（`get_llm_from_config`）。
 
 3. **本轮 Skill 与工具列表**
    - **选型**：`resolve_expert_skill` 得到本轮 **`resolved_skill_id`** 与 Skill 正文——无 `skill_ids` 时回退 `default`；仅一个 Skill 时直接用；多个 Skill 时结合讨论目标、最近用户消息等与 `SkillsLoader` 的打分/路由策略选型。
    - **MCP**：`build_tools_for_group_chat(agent_profile, workspace_id=会话 id, resolved_skill_id=…)` 仅加载 **`get_mcp_servers_for_skill(resolved_skill_id)`** 允许的服务；若专家配置了 **`mcp_server_ids`**，再与上式**取交集**，做实例级收紧；按需 `ensure_servers_loaded` 后从 `MCPToolManager` 取工具（名通常带 server 前缀）。
    - **工作区**：内置读/写/编辑/删/改名等，按专家的 **`file_capabilities`** 过滤；工作区根与会话绑定。
    - **HTTP**：`call_api` 仅在 `url_capability` 为真时附加（默认常为真）。
-   - **脚本**：对 `skill_ids` 中磁盘上存在 `SKILL.md` 的每项注入 **`run_skill_script_<规范化 skill_id>`**，在会话工作区内执行技能脚本。
+   - **脚本**：对 `skills[].directory_name` 中磁盘上存在 `SKILL.md` 的每项注入 **`run_skill_script_<规范化目录名>`**，在会话工作区内执行技能脚本。
    - 最后经 **`wrap_filesystem_tools`** 等与文件系统相关的包装，与实现一致。
 
 4. **Skill 正文与专家人设**
@@ -161,7 +161,7 @@
 ### 5.4 MCP 与 Skills 在何时参与
 
 - **MCP**：配置在用户 `resources/tools/{tool_id}/tool.json`；`MCPToolManager`（`app/mcp/manager.py`）按用户维护连接，进程退出时清理；本机 stdio 入口脚本在 `app/mcp/stdio/`（配置里写相对 backend 的路径，如 `app/mcp/stdio/file_reader_mcp.py`）；工具名通常带 server 前缀。
-- **Skills**：`resources/skills/{skill_id}/SKILL.md` 由 `SkillsLoader` 解析缓存；多 Skill 时可本地关键词相关度选型（见 `backend/README.md`）；脚本通过 `run_skill_script_*` 在用户会话工作区内执行。
+- **Skills**：`resources/skills/{directory_name}/SKILL.md` 由 `SkillsLoader` 解析缓存；多 Skill 时可本地关键词相关度选型（见 `backend/README.md`）；脚本通过 `run_skill_script_*` 在用户会话工作区内执行。
 
 应用启动**不会**预连所有 MCP；首次需要时在请求路径内连接（与 `lifespan` 中的设计一致）。
 

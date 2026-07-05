@@ -12,7 +12,7 @@
 
 - 用户 `workspaces` 根目录挂载到沙箱内 `/workspace`（可读写）。
 - 当前用户的 `resources/skills` 根目录挂载到沙箱内 `/skills`（只读）。
-- 当前 skill 通过 `/skills/<skill_id>` 访问，其中脚本入口位于 `/skills/<skill_id>/scripts`。
+- 当前 Skill 通过 `/skills/<directory_name>` 访问，其中脚本入口位于 `/skills/<directory_name>/scripts`。
 
 ## 会话隔离
 
@@ -22,7 +22,7 @@
 
 ## 脚本执行规则
 
-- 运行入口固定为 `/skills/<skill_id>/scripts/<script_path>`；不再回退到历史 `/skill/scripts/<script_path>`。
+- 运行入口固定为 `/skills/<directory_name>/scripts/<script_path>`；不再回退到历史 `/skill/scripts/<script_path>`。
 - 脚本执行 `cwd` 固定为 `/workspace/<session_id>`。
 - 脚本输入输出文件统一在 `/workspace/<session_id>` 下。
 - 详细相对路径约定见 `docs/skills/skill-script-paths.md`。

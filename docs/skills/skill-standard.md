@@ -7,7 +7,7 @@
 一个标准 Skill 目录应满足：
 
 ```text
-<skill_id>/
+<directory_name>/
   SKILL.md
   scripts/              # 可选，脚本型 Skill 必须有
     manifest.json       # 可选但推荐
@@ -19,7 +19,7 @@
 约束：
 
 - `SKILL.md` 是唯一必需入口文件；目录存在但没有 `SKILL.md` 时，不应视为可用 Skill。
-- 脚本只能放在当前 Skill 的 `scripts/` 下，并通过 `run_skill_script_<skill_id>` 执行。
+- 脚本只能放在当前 Skill 的 `scripts/` 下，并通过 `run_skill_script_<directory_name>` 执行。
 - 工作区文件不应写入 Skill 目录；Skill 目录是能力定义区，工作产物应写入会话工作区。
 - `references/` 与 `assets/` 只放稳定资料，不放本轮会话临时文件。
 
@@ -139,12 +139,12 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 ### 4.1 调用契约
 
-脚本型 Skill 统一通过 `run_skill_script_<skill_id>` 调用，输入固定使用 `cli_args_json`。
+脚本型 Skill 统一通过 `run_skill_script_<directory_name>` 调用，输入固定使用 `cli_args_json`。
 
 推荐写法：
 
 ```text
-调用 run_skill_script_<skill_id>：
+调用 run_skill_script_<directory_name>：
 - script_path: crawl_and_store.py
 - cli_args_json: ["--url", "<url>", "--output", "<workspace-relative-path>"]
 ```
@@ -199,7 +199,7 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 在执行步骤里写明实际工具名、脚本名和 argv 数组：
 
 ```text
-调用 run_skill_script_<skill_id>：
+调用 run_skill_script_<directory_name>：
 - script_path: transcribe_audio.py
 - cli_args_json: ["--file", "<工作区相对路径>", "--language", "zh"]
 ```
@@ -379,8 +379,8 @@ if __name__ == "__main__":
 
 专家在群聊中使用某个 Skill 后，系统会记录 Skill 会话锁：
 
-- `skill_session_owner_id`：当前继续处理该 Skill 的专家；
-- `skill_session_skill_id`：当前继续使用的 Skill。
+- `skill_session_owner_name`：当前继续处理该 Skill 的专家名称；
+- `skill_session_skill`：当前继续使用的 Skill 目录名。
 
 会话锁存在且仍有效时，下一条用户消息默认直接交给该专家继续处理，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
 
@@ -388,7 +388,7 @@ if __name__ == "__main__":
 - 非脚本 Skill 的专家正文末尾追加隐藏状态块，且其中 `next_action.skill_session=release`；
 - 用户明确说“结束 skill / 退出技能 / 交给主持人 / 请下一位专家”等；
 - 用户 `@` 或点名其他专家；
-- 平台入口路由收到明确的 `host_takeover_requested` 或 `ignore_auto_agent_id` 字段；
+- 平台入口路由收到明确的 `host_takeover_requested` 或 `ignore_auto_agent_name` 字段；
 - 当前专家或 Skill 已不在会话有效范围内。
 
 ## 6. 结束点判断规范
@@ -624,7 +624,7 @@ allowed-tools:
 
 ## 脚本调用
 
-调用 run_skill_script_<skill_id>：
+调用 run_skill_script_<directory_name>：
 - script_path: <script-name>.py
 - cli_args_json: ["--input", "<工作区相对路径>", "--output", "outputs/<结果文件>"]
 

@@ -1,5 +1,22 @@
 # 文档审计记录
 
+## 2026-07-05 发布入口与兼容台账收敛
+
+目标：把发版、提测、部署和验收路径收敛到统一入口，并给兼容层/回退路径建立可维护的寿命台账。
+
+### 已完成
+
+- 新增发布入口：`docs/release/README.md`。
+- 新增兼容层与回退路径寿命台账：`docs/project/compatibility-lifecycle.md`。
+- 更新根 `README.md`，移除缺失的 `CHANGELOG.md` 与旧介绍讲稿链接，改为指向发布入口和兼容台账。
+- 更新 `docs/README.md`、`docs/project/documentation-inventory.md` 和 `docs/architecture/project-structure.md`，让新增入口进入文档中心、清单和项目结构说明。
+
+### 当前约定
+
+- 发布、提测、部署和验收先从 `docs/release/README.md` 进入。
+- 新增、删除或延长兼容层/回退路径，必须同步 `docs/project/compatibility-lifecycle.md`。
+- 兼容层删除前必须有扫描、测试和用户可见文档同步证据。
+
 ## 2026-06-05 文档规范化
 
 目标：清理 `docs/` 顶层散乱文档，建立长期可维护的文档信息架构，并把关键文档同步到当前实现。
@@ -21,7 +38,7 @@
 - 更新需求、验收、测试和架构层的 UR-01 到 UR-11 追踪关系。
 - 重写当前 API 设计文档，移除“公开 API、暂不认证、旧 `/api/chat`”等过时说明。
 - 修正文档相对链接和旧顶层路径引用。
-- 修复 `/api/sessions/{session_id}/chat` 非流式聚合返回最后一条主持人消息的问题，使其优先返回 `route.agent_id` 对应专家消息。
+- 修复 `/api/sessions/{session_id}/chat` 非流式聚合返回最后一条主持人消息的问题，使其优先返回 `route.agent_name` 对应专家消息。
 
 ### 验证
 

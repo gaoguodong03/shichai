@@ -8,12 +8,12 @@
 
 - **用户**：通过 `POST /api/sessions/{id}/chat/stream` 触发一轮会话。
 - **主持人（Host）**：负责决定下一位发言专家、是否建议增援专家、是否暂停等待用户。
-- **专家（Agent）**：绑定 `skill_ids`，执行具体任务，可调用工具（scripts / MCP / 文件系统等）。
+- **专家（Agent）**：绑定 `skills[].directory_name`，执行具体任务，可调用工具（scripts / MCP / 文件系统等）。
 - **SimpleAgent**：当前实际执行器，识别工具意图并驱动工具调用。
 - **工具网关**：`UnifiedToolGateway` + `SandboxAdapter`，统一承载 script 与 MCP 调用。
 - **会话存储**：
   - 会话索引：`backend/data/users/<user_id>/sessions/index.json`
-  - 会话元信息：`backend/data/users/<user_id>/sessions/<session_id>/meta.json`
+  - 会话定义：`backend/data/users/<user_id>/sessions/<session_id>/session.json`
   - 会话消息：`backend/data/users/<user_id>/sessions/<session_id>/history.json`
   - 专家记忆：工作区 `memory/facts.md`
   - 工作区产物索引：工作区 `memory/index.md`
@@ -37,10 +37,10 @@
 
 ### 2.1 入口与预处理
 
-入口在 `group_chat_stream()`（`backend/app/api/group_chat.py`）。
+入口在 `group_chat_stream()`（`backend/app/agent/group_chat_runtime.py`）。
 
 1. 读取群聊历史、会话元信息、专家列表。
-2. 解析请求参数（`message`、`host_takeover_requested`）。
+2. 解析请求参数（`message`、`client_message_id`）。
 3. 若开启 `FILE_REF_SERVER_RESOLVE_ENABLED`，对输入中的 `【文件引用：...】` 执行服务端展开（`resolve_file_refs_in_text()`）。
 
 ### 2.2 调度（主持人/回退）
@@ -58,7 +58,7 @@
 1. `build_tools_for_group_chat(...)` 构建本轮可用工具集：
    - 文件工具（filesystem / file-reader）
    - MCP 工具（含 server alias 兼容，例如 `fetch -> linkup`）
-   - 每个 skill 自动注入 `run_skill_script_<skill_id>`
+   - 每个 Skill 自动注入 `run_skill_script_<directory_name>`
 2. `SimpleAgent.astream(...)` 开始执行：
    - 输出 `agent_step`（文本增量）
    - 输出 `tool_step`（工具消息、原始返回）
@@ -131,9 +131,9 @@ flowchart TD
 
 ### 5.2 skill 脚本工具
 
-`tools_for_skill.py` 为每个 skill 注入：
+`tools_for_skill.py` 为每个 Skill 注入：
 
-- `run_skill_script_<skill_id>`
+- `run_skill_script_<directory_name>`
 
 执行落在 `run_skill_script.py`：
 
@@ -253,7 +253,7 @@ flowchart TD
 1. **先看 `tool_attempt_debug`**  
    - 若是 `no_tool_detected`，优先修模型输出/工具识别。
 2. **再看 `tool_calls` 与工具名**  
-   - 确认是否命中 `run_skill_script_<skill_id>` 或正确 MCP 工具名。
+   - 确认是否命中 `run_skill_script_<directory_name>` 或正确 MCP 工具名。
 3. **看 `tool_raw_outputs`**  
    - 有调用但失败时，这里会有异常文本/错误码。
 4. **看 `sandbox_entry_trace`**  

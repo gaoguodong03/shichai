@@ -123,11 +123,11 @@
 - `path` 为空表示工作区根目录。
 - 返回路径通常带 `./` 前缀；后续调用其他工具时去掉或保留相对含义均可，但不要补内部绝对前缀。
 
-## 技能脚本工具：`run_skill_script_<skill_id>`
+## 技能脚本工具：`run_skill_script_<directory_name>`
 
-每个已绑定且磁盘存在的技能会注入一个脚本工具，名称由技能 id 转换而来，例如：
+每个已绑定且磁盘存在的技能会注入一个脚本工具，名称由 Skill 目录名转换而来，例如：
 
-- skill id：`travel-expense-calculator`
+- directory name：`travel-expense-calculator`
 - 工具名：`run_skill_script_travel_expense_calculator`
 
 参数：
@@ -199,7 +199,7 @@ MCP 工具只在当前技能 `SKILL.md` frontmatter 声明的 `mcp_server_ids` �
 ## 推荐决策顺序
 
 1. 用户明确要求读/写/列工作区文件：使用内置工作区工具。
-2. 技能说明要求运行脚本，或任务适合确定性处理：使用 `run_skill_script_<skill_id>`。
+2. 技能说明要求运行脚本，或任务适合确定性处理：使用 `run_skill_script_<directory_name>`。
 3. 需要公网网页/API：使用 `call_api` 或技能绑定的检索类 MCP。
 4. 需要技能声明的专用外部能力：使用对应 MCP 工具。
 5. 工具报错后先根据错误修正参数；不要反复猜测路径、URL 或脚本名。

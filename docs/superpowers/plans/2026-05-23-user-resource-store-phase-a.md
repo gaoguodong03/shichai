@@ -605,7 +605,7 @@ return {
 
 ## 后续计划入口
 
-Phase A 合并后再新建 Phase B 计划，范围只覆盖 `resources/scenarios` 和 `resources/agents`。Phase B 的第一个红灯测试应验证 `/api/settings/session-presets` 仍返回旧字段结构，但磁盘主体文件已写入 `resources/scenarios/<scenario_id>/scenario.json`；第二个红灯测试应验证 `/api/dha` 仍返回 `agent_id`/`expert_id` 兼容字段，但磁盘主体文件已写入 `resources/agents/<agent_id>/agent.json`。
+Phase A 合并后再新建 Phase B 计划，范围只覆盖 `resources/scenarios` 和 `resources/agents`。Phase B 的第一个红灯测试应验证 `/api/settings/session-presets` 返回 name-based 字段结构，且磁盘主体文件已写入 `resources/scenarios/<scenario_name>/scenario.json`；第二个红灯测试应验证专家接口返回 `agent_name` 字段，且磁盘主体文件已写入 `resources/agents/<agent_name>/agent.json`。
 
 ## 自检
 

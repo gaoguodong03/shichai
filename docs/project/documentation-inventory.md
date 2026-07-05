@@ -27,6 +27,7 @@
 | `docs/testing/layer1-regression.md` | 当前有效 | 第一层回归范围和 UR 覆盖 |
 | `docs/testing/pre-release-testing.md` | 当前有效 | 上线前模块化测试和按 UR 验收 |
 | `docs/testing/full-flow-business-tests.md` | 当前有效 | 全流程业务测试汇总 |
+| `docs/release/README.md` | 当前有效 | 发版、提测、部署和验收的统一入口 |
 | `docs/user-manual/user-guide.md` | 当前有效 | 面向最终用户的操作说明 |
 | `docs/user-manual/README.md` | 当前有效 | 上线验收操作手册源文档 |
 | `docs/skills/skill-standard.md` | 当前有效 | Skill 编写、绑定和会话状态规范 |
@@ -36,10 +37,11 @@
 | `docs/operations/single-user-single-sandbox.md` | 当前有效 | 单用户单沙箱运行约束 |
 | `docs/project/worklist.md` | 当前有效 | 项目工作清单 |
 | `docs/project/implementation-task-breakdown.md` | 当前有效 | 按 UR 拆分的工程任务池、状态和验收点 |
+| `docs/project/compatibility-lifecycle.md` | 当前有效 | 兼容层与回退路径寿命台账 |
 | `docs/project/p0-completion-audit.md` | 当前有效 | UR-01 到 UR-08 的 P0 完成审计和验证入口 |
 | `docs/project/documentation-audit.md` | 当前有效 | 文档整理审计记录 |
 | `docs/project/documentation-inventory.md` | 当前有效 | 本清单 |
-| `docs/presentations/15-minute-technical-brief.md` | 当前有效 | 介绍讲稿 |
+| `docs/presentations/agent-development-and-effects.md` | 当前有效 | Agent 开发与效果介绍讲稿 |
 
 ## 历史或辅助文档
 
@@ -59,5 +61,6 @@
 - `docs/` 顶层不再保留业务散文档。
 - 当前规范文档中的相对 Markdown 链接全部可解析。
 - 当前规范文档不再承诺已下线的公开分享链接。
+- 根 README 和文档中心不引用缺失文档。
 - API、认证、会话、资源导入导出、Skill/MCP/沙箱路径与当前代码一致。
 - 第一层回归通过。

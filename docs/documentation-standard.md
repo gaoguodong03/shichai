@@ -14,7 +14,8 @@
 | 用户教程、验收手册、截图 | `docs/user-manual/` | `user-guide.md`、`README.md` |
 | Skill、MCP、沙箱工具契约 | `docs/skills/` | `skill-standard.md`、`sandbox-tool-interface.md` |
 | 部署和运维约束 | `docs/operations/` | `single-user-single-sandbox.md` |
-| 项目管理、任务拆分和汇报材料 | `docs/project/`、`docs/presentations/` | `implementation-task-breakdown.md`、`worklist.md`、`15-minute-technical-brief.md` |
+| 发布、提测、部署和验收入口 | `docs/release/` | `README.md` |
+| 项目管理、任务拆分、兼容台账和汇报材料 | `docs/project/`、`docs/presentations/` | `implementation-task-breakdown.md`、`worklist.md`、`compatibility-lifecycle.md` |
 | Superpowers 规格和计划 | `docs/superpowers/specs/`、`docs/superpowers/plans/` | `YYYY-MM-DD-topic-design.md` |
 
 ## 命名规则
@@ -33,14 +34,15 @@
 | API 或模块边界变化 | `architecture/detailed-design.md`、`architecture/project-structure.md`、相关 `architecture/*.md` |
 | Skill/MCP/沙箱契约变化 | `skills/*.md`、必要时同步 `operations/*.md` |
 | 用户操作路径变化 | `user-manual/user-guide.md`、`user-manual/README.md` 和截图脚本 |
-| 部署方式变化 | `README.md`、`operations/*.md`、`testing/pre-release-testing.md` |
+| 兼容层或回退路径变化 | `project/compatibility-lifecycle.md`、相关架构/测试文档 |
+| 部署方式变化 | `README.md`、`release/README.md`、`operations/*.md`、`testing/pre-release-testing.md` |
 
 ## 文档质量检查
 
 提交前至少执行：
 
 ```bash
-git diff --check -- docs
+rtk git diff --check -- docs
 ```
 
 涉及代码或测试入口变化时，还需执行对应测试命令；上线前最低门槛见 `docs/testing/pre-release-testing.md`。
