@@ -5,6 +5,7 @@ of scattering session meta interpretation across group_chat.py.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -15,6 +16,25 @@ from app.agent.group_orchestration_fsm import (
 )
 from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
+from app.core.user_context import get_current_user_context
+
+
+def load_session_scenario_row(meta_item: Mapping[str, Any]) -> Dict[str, Any]:
+    """Load the scenario resource referenced by a session, if any."""
+    scenario_name = str((meta_item or {}).get("scenario_name") or "").strip()
+    if not scenario_name:
+        return {}
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        return {}
+    path = user_ctx.scenarios_dir.resolve() / scenario_name / "scenario.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def build_context_system_prompt(*, app_settings: Mapping[str, Any], meta_item: Mapping[str, Any]) -> str:
@@ -68,7 +88,8 @@ def resolve_scene_host_profile(
         out["name"] = name
         return out
 
-    hc = (meta_item or {}).get("host_config")
+    scenario = load_session_scenario_row(meta_item)
+    hc = scenario.get("host_config") if isinstance(scenario.get("host_config"), dict) else (meta_item or {}).get("host_config")
     if isinstance(hc, dict):
         merged = dict(base_profile)
         merged.update(hc)
@@ -76,11 +97,11 @@ def resolve_scene_host_profile(
         display_name = str(normalized.get("leader_agent_name") or "").strip() or default_display_name
         return _virtual(normalized, name=display_name)
 
-    if leader == VIRTUAL_SCENE_HOST_ID:
-        return _virtual(base_profile, name=default_display_name)
-
-    if leader and leader in agent_map:
+    if leader and leader != VIRTUAL_SCENE_HOST_ID and leader in agent_map:
         return dict(agent_map[leader])
+
+    if leader == VIRTUAL_SCENE_HOST_ID or orchestration_profile in {"recruitment", ORCHESTRATION_SCENE}:
+        return _virtual(base_profile, name=default_display_name)
 
     return None
 

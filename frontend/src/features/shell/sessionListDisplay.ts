@@ -1,3 +1,5 @@
+import { parseAppTimestamp } from '../../utils/timeFormat.ts'
+
 export function displaySessionTitle(s: { title: string; agent_names?: string[] }): string {
   const raw = (s.title || '').trim()
   if (!raw || raw === '新对话') {
@@ -12,10 +14,7 @@ export function displaySessionTitle(s: { title: string; agent_names?: string[] }
 
 export function formatSessionDate(iso: string) {
   if (!iso) return ''
-  try {
-    const d = new Date(iso)
-    return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return iso
-  }
+  const date = parseAppTimestamp(iso)
+  if (!date) return iso
+  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }

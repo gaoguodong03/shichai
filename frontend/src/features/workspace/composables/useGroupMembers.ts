@@ -100,11 +100,11 @@ export function useGroupMembers(args: {
       .filter((d) => d.agent_name && !inGroup.has(d.agent_name))
   })
 
-  const leaderAgentName = computed(() => (groupDetail.value?.leader_agent_name || '').trim())
-  const leaderDisplayName = computed(() => leaderAgentName.value || 'host')
+  const leaderAgentName = computed(() => VIRTUAL_SCENE_HOST_ID)
+  const leaderDisplayName = computed(() => leaderAgentName.value)
   const orderedMemberIds = computed(() => {
     const ids = [...(groupDetail.value?.agent_names || [])]
-    const leader = leaderDisplayName.value
+    const leader = leaderAgentName.value
     const rest = ids.filter((id) => id !== leader)
     return [leader, ...rest]
   })
@@ -164,9 +164,7 @@ export function useGroupMembers(args: {
 
   async function removeMember(agentName: string) {
     const id = groupDetail.value?.id
-    const leader = (groupDetail.value?.leader_agent_name || '').trim()
-    if (agentName === 'host') return
-    if (leader && agentName === leader) return
+    if (agentName === 'host' || agentName === VIRTUAL_SCENE_HOST_ID) return
     if (!id) return
     const ok = await appConfirm({
       title: '移出成员',

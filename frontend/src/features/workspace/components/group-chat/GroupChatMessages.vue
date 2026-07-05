@@ -142,7 +142,6 @@
                               <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
                             </div>
                           </div>
-                          <span v-if="(msg as MsgExt).timestamp" class="group-chat-bubble-time">{{ formatGroupMsgTime((msg as MsgExt).timestamp) }}</span>
                         </div>
                         <div class="group-chat-bubble-body">
                           <template v-if="isMemberJoinedMessage(msg)">
@@ -283,7 +282,6 @@ const {
   formatToolPopover,
   getSchedulerStateRaw,
   formatSchedulerStatePopover,
-  formatGroupMsgTime,
   formatGroupMsgFullTime,
   renderMarkdown,
   agentBodyContent,

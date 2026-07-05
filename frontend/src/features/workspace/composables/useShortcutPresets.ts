@@ -221,18 +221,9 @@ export function useShortcutPresets(args: {
     const body: Record<string, unknown> = {
       title,
       agent_names: targetExperts,
+      scenario_name: title,
+      orchestration_profile: 'scene',
       system_prompt: p.system_prompt || '',
-    }
-    if (p.host_config) {
-      body.host_config = p.host_config
-      body.leader_agent_name = p.host_config.leader_agent_name || '四九'
-    } else {
-      const lid = (p.leader_agent_name || p.agent_names[0] || '').trim()
-      if (lid && availableAgentNames.has(lid)) {
-        body.leader_agent_name = lid
-      } else if (targetExperts[0]) {
-        body.leader_agent_name = targetExperts[0]
-      }
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {

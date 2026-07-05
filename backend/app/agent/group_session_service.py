@@ -5,7 +5,7 @@ import json
 import logging
 import shutil
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -21,6 +21,7 @@ from app.api.group_chat_state import (
     cancel_group_session_run as _cancel_group_session_run,
     cleanup_orphan_group_histories as _cleanup_orphan_group_histories,
     ensure_sessions_dir as _ensure_sessions_dir,
+    format_storage_timestamp,
     load_group_history as _load_group_history,
     load_group_meta as _load_group_meta,
     runtime_state_for_session as _runtime_state_for_session,
@@ -28,10 +29,10 @@ from app.api.group_chat_state import (
     save_group_meta as _save_group_meta,
 )
 from app.api.settings_app import load_app_settings, normalize_host_profile
-from app.core.host_config import normalize_host_config_dict
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import get_current_user
 from app.agent.group_orchestration_fsm import default_orchestration_profile_for_new_session
+from app.agent.scene_runtime import load_session_scenario_row
 from app.session_state.markdown import format_session_chat_markdown
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
@@ -48,6 +49,7 @@ class GroupSessionUpdate(BaseModel):
     system_prompt: Optional[str] = None
     leader_agent_name: Optional[str] = None
     host_config: Optional[Dict[str, Any]] = None
+    scenario_name: Optional[str] = None
     orchestration_profile: Optional[str] = None  # recruitment | scene
     agent_names: Optional[List[str]] = None
     add_agent_names: Optional[List[str]] = None
@@ -91,47 +93,37 @@ def create_session_internal(
     leader_agent_name: Optional[str] = None,
     host_config: Optional[Dict[str, Any]] = None,
     system_prompt: Optional[str] = None,
+    scenario_name: Optional[str] = None,
+    orchestration_profile: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """新建一条会话（默认虚拟场景主持人 + host_config）。"""
+    """新建一条会话；主持人配置运行时从账号设置或场景资源解析。"""
     instances = load_agent_instances()
     names = _dedupe_names(agent_names)
     valid_names = set(_agent_name_map(instances))
     _validate_agent_names(names, valid_names)
-    leader_resolved = ""
-    meta_host_config: Optional[Dict[str, Any]] = None
-    raw_leader = str(leader_agent_name or "").strip()
-    if host_config is not None:
-        meta_host_config = normalize_host_config_dict(host_config)
-        leader_resolved = VIRTUAL_SCENE_HOST_ID
-    elif raw_leader:
-        if raw_leader == VIRTUAL_SCENE_HOST_ID:
-            leader_resolved = VIRTUAL_SCENE_HOST_ID
-        else:
-            leader_resolved = raw_leader
-            if leader_resolved and leader_resolved not in valid_names:
-                raise HTTPException(status_code=400, detail=f"主持人 {leader_resolved} 不存在")
-    else:
-        leader_resolved = VIRTUAL_SCENE_HOST_ID
     gsid = f"group-{uuid.uuid4().hex[:12]}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = format_storage_timestamp()
     meta = _load_group_meta()
     raw_title = (title or "").strip()
     placeholder_titles = {"新对话", "新群聊", ""}
     title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("多Agent协作 ·")
+    scenario = str(scenario_name or "").strip()
+    profile = str(orchestration_profile or "").strip().lower()
+    if profile not in ("recruitment", "scene"):
+        profile = "scene" if scenario else default_orchestration_profile_for_new_session(agent_names=names)
     row: Dict[str, Any] = {
         "title": title or "新对话",
         "title_auto_generated": title_auto_generated,
         "agent_names": names,
-        "leader_agent_name": leader_resolved,
         "created_at": now,
         "updated_at": now,
+        "orchestration_profile": profile,
     }
-    if meta_host_config is not None:
-        row["host_config"] = meta_host_config
+    if scenario:
+        row["scenario_name"] = scenario
     scene_system_prompt = str(system_prompt or "").strip()
     if scene_system_prompt:
         row["system_prompt"] = scene_system_prompt
-    row["orchestration_profile"] = default_orchestration_profile_for_new_session(agent_names=names)
     meta[gsid] = row
     _save_group_meta(meta)
     _save_group_history(gsid, [])
@@ -184,9 +176,6 @@ async def get_group_session(group_session_id: str):
     m["agent_names"] = list(agent_names_in_group)
     agent_names_in_messages = {msg.get("agent_name") for msg in messages if msg.get("agent_name")}
     relevant_names = agent_names_in_group | agent_names_in_messages
-    leader_name = str(m.get("leader_agent_name") or "").strip()
-    if leader_name:
-        relevant_names = relevant_names | {leader_name}
     agent_map = {
         k: {
             "name": v.get("name") or "",
@@ -197,14 +186,14 @@ async def get_group_session(group_session_id: str):
     }
     app_settings_gs = load_app_settings()
     hp_gs = normalize_host_profile(app_settings_gs.get("host_profile") or {})
-    hc_gs = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
+    scenario_gs = load_session_scenario_row(m)
+    hc_gs = scenario_gs.get("host_config") if isinstance(scenario_gs.get("host_config"), dict) else {}
     hc_dn = str(hc_gs.get("leader_agent_name") or "").strip()
     host_dn = hc_dn or str(hp_gs.get("leader_agent_name") or "四九").strip() or "四九"
-    if VIRTUAL_SCENE_HOST_ID in relevant_names or str(m.get("leader_agent_name") or "").strip() == VIRTUAL_SCENE_HOST_ID:
-        agent_map[VIRTUAL_SCENE_HOST_ID] = {
-            "name": host_dn,
-            "description": "群聊场景主持人",
-        }
+    agent_map[VIRTUAL_SCENE_HOST_ID] = {
+        "name": host_dn,
+        "description": "群聊场景主持人",
+    }
     return {
         "status": "ok",
         "data": {
@@ -230,7 +219,7 @@ async def group_session_events_stream(group_session_id: str):
             snapshot = {
                 "type": "snapshot",
                 "session_id": group_session_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": format_storage_timestamp(),
                 "runtime_state": _runtime_state_for_session(group_session_id, meta.get(group_session_id) or {}),
             }
             yield f"event: session_update\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
@@ -261,12 +250,11 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     meta = _load_group_meta()
     if group_session_id not in meta:
         if body.add_agent_names:
-            now = datetime.now(timezone.utc).isoformat()
+            now = format_storage_timestamp()
             meta[group_session_id] = {
                 "title": "新群聊",
                 "title_auto_generated": True,
                 "agent_names": [],
-                "leader_agent_name": VIRTUAL_SCENE_HOST_ID,
                 "orchestration_profile": "recruitment",
                 "created_at": now,
                 "updated_at": now,
@@ -290,28 +278,21 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             meta[group_session_id]["system_prompt"] = scene_system_prompt
         else:
             meta[group_session_id].pop("system_prompt", None)
-    if body.host_config is not None:
-        meta[group_session_id]["host_config"] = normalize_host_config_dict(body.host_config)
-        meta[group_session_id]["leader_agent_name"] = VIRTUAL_SCENE_HOST_ID
+    if body.scenario_name is not None:
+        scenario_name = str(body.scenario_name or "").strip()
+        if scenario_name:
+            meta[group_session_id]["scenario_name"] = scenario_name
+            meta[group_session_id]["orchestration_profile"] = "scene"
+        else:
+            meta[group_session_id].pop("scenario_name", None)
         _clear_scheduler_state_for_session(meta[group_session_id])
-        # 写入场景型 host_config 即视为「场景协作」，避免仍停留在 recruitment 导致误招募
+    if body.host_config is not None:
+        _clear_scheduler_state_for_session(meta[group_session_id])
+        # 兼容旧前端：会话不再保存 host_config，只把该操作视为切换到场景编排。
         meta[group_session_id]["orchestration_profile"] = "scene"
     elif body.leader_agent_name is not None:
-        instances = load_agent_instances()
-        valid_names = set(_agent_name_map(instances))
-        raw_l = str(body.leader_agent_name).strip()
-        if not raw_l:
-            meta[group_session_id]["leader_agent_name"] = ""
-            meta[group_session_id].pop("host_config", None)
-            _clear_scheduler_state_for_session(meta[group_session_id])
-        else:
-            lid = raw_l
-            if lid and lid not in valid_names and lid != VIRTUAL_SCENE_HOST_ID:
-                raise HTTPException(status_code=400, detail=f"主持人 {lid} 不存在")
-            meta[group_session_id]["leader_agent_name"] = lid
-            if lid != VIRTUAL_SCENE_HOST_ID:
-                meta[group_session_id].pop("host_config", None)
-            _clear_scheduler_state_for_session(meta[group_session_id])
+        # 旧协议字段已废弃；主持人由账号 host_profile 或 scenario_name 指向的场景资源解析。
+        _clear_scheduler_state_for_session(meta[group_session_id])
     if body.orchestration_profile is not None:
         op = str(body.orchestration_profile).strip().lower()
         if op not in ("recruitment", "scene"):
@@ -374,7 +355,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host",
                         "content": f"已邀请“{display_name}”加入会话",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": format_storage_timestamp(),
                         "event_type": "member_joined",
                         "joined_agent_names": [name],
                     }
@@ -386,7 +367,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
                         "role": "host",
                         "content": f"已将“{display_name}”移出会话",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": format_storage_timestamp(),
                         "event_type": "member_left",
                         "left_agent_names": [name],
                     }
@@ -394,7 +375,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             _save_group_history(group_session_id, messages)
     if _maybe_upgrade_meta_to_scene_profile(meta[group_session_id]):
         pass
-    meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    meta[group_session_id]["updated_at"] = format_storage_timestamp()
     _save_group_meta(meta)
     try:
         from app.session_state.service import capture_session_checkpoint

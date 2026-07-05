@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import uuid
 import asyncio
-from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple
 
 from fastapi import HTTPException
@@ -23,6 +22,7 @@ from app.api.group_chat_state import (
     cleanup_orphan_group_histories as _cleanup_orphan_group_histories,
     ensure_sessions_dir as _ensure_sessions_dir,
     finish_group_run as _finish_group_run,
+    format_storage_timestamp,
     load_group_history as _load_group_history,
     load_group_meta as _load_group_meta,
     publish_group_session_event as _publish_group_session_event,
@@ -64,8 +64,9 @@ from app.agent.file_ref_resolver import resolve_file_refs_in_text
 from app.core.init import ensure_mcp_and_skills_initialized
 from app.core.feature_flags import is_feature_enabled
 from app.core.security import get_current_user
+from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.scene_scheduler import finalize_host_scheduler_decision
-from app.agent.scene_runtime import SceneRuntime, build_context_system_prompt
+from app.agent.scene_runtime import SceneRuntime, build_context_system_prompt, load_session_scenario_row
 from app.agent.group_orchestration_fsm import (
     clear_skill_session_lock,
     resolve_group_entry_route,
@@ -196,7 +197,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     preferred_instances = [dict(d) for d in instances or [] if str((d or {}).get("name") or "").strip()]
     agent_names = _dedupe_names(list(m.get("agent_names", [])))
     m["agent_names"] = list(agent_names)
-    leader_agent_name = str(m.get("leader_agent_name") or "").strip()
+    leader_agent_name = str(m.get("leader_agent_name") or "").strip() or VIRTUAL_SCENE_HOST_ID
     agent_map = {str(d.get("name") or "").strip(): d for d in preferred_instances if str(d.get("name") or "").strip()}
     agent_names = [name for name in agent_names if name in agent_map]
     agent_profiles = [agent_map[name] for name in agent_names if name in agent_map]
@@ -214,7 +215,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     messages = _load_group_history(group_session_id)
     app_settings = load_app_settings()
     hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
-    hc_meta = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
+    scenario_meta = load_session_scenario_row(m)
+    hc_meta = scenario_meta.get("host_config") if isinstance(scenario_meta.get("host_config"), dict) else {}
+    if not hc_meta:
+        hc_meta = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
     hc_dn = str(hc_meta.get("leader_agent_name") or "").strip()
     host_display_name = hc_dn or str(hp_norm.get("leader_agent_name") or "四九").strip() or "四九"
     pending_owner_agent_name = (m.get("pending_owner_agent_name") or "").strip()
@@ -363,7 +367,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     meta_item.pop("pending_phase", None)
                     meta_item.pop("pending_required_user_fields", None)
                     meta_item.pop("pending_handoff_reason", None)
-                meta_item["updated_at"] = datetime.now(timezone.utc).isoformat()
+                meta_item["updated_at"] = format_storage_timestamp()
                 _save_group_meta(meta)
 
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
@@ -593,7 +597,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     picked=picked,
                 )
                 host_event = _record_host_message(host_msg)
-                meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                meta[group_session_id]["updated_at"] = format_storage_timestamp()
                 _save_group_meta(meta)
                 yield host_event
                 end_payload = build_end_payload(
@@ -1164,7 +1168,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     "role": "assistant",
                     "agent_name": next_speaker,
                     "content": full_content,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": format_storage_timestamp(),
                     "skill": skill,
                 }
                 if isinstance(skill_route_debug, dict):
@@ -1205,7 +1209,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 }
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
-                meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                meta[group_session_id]["updated_at"] = format_storage_timestamp()
                 _save_group_meta(meta)
                 # 专家回合自动落盘：失败不影响主对话链路
                 try:
@@ -1221,7 +1225,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
                 if skill_introspection_meta_answer:
                     clear_skill_session_lock(meta_item)
-                    meta[group_session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    meta[group_session_id]["updated_at"] = format_storage_timestamp()
                     _save_group_meta(meta)
                     orch_ctx.phase = OrchestrationPhase.AWAITING_USER
                     end_data = build_end_payload(

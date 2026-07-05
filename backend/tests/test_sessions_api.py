@@ -42,6 +42,8 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     session_id = created["id"]
     assert created["title"] == "回归测试会话"
     assert "speak_mode" not in created
+    assert re.fullmatch(r"\d{16}", created["created_at"])
+    assert re.fullmatch(r"\d{16}", created["updated_at"])
 
     list_resp = client.get("/api/sessions")
     assert list_resp.status_code == 200
@@ -68,12 +70,13 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
 
     create_resp = client.post(
         "/api/sessions",
-        json={"title": "名称协议会话", "agent_names": ["运行时专家"], "leader_agent_name": "运行时专家"},
+        json={"title": "名称协议会话", "agent_names": ["运行时专家"]},
     )
     assert create_resp.status_code == 200
     created = create_resp.json()["data"]
     assert created["agent_names"] == ["运行时专家"]
-    assert created["leader_agent_name"] == "运行时专家"
+    assert "leader_agent_name" not in created
+    assert "host_config" not in created
     assert "agent_ids" not in created
     assert "leader_agent_id" not in created
 
@@ -133,7 +136,6 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
         json={
             "title": "问答验收场景",
             "agent_names": ["场景专家"],
-            "leader_agent_name": "场景专家",
         },
     )
     assert update_resp.status_code == 200
@@ -194,14 +196,27 @@ def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
 
     agent_resp = client.post("/api/agents", json={"name": "场景主持名称专家"})
     assert agent_resp.status_code == 200
+    preset_resp = client.put(
+        "/api/settings/session-presets",
+        json={
+            "presets": [
+                {
+                    "name": "场景主持名称回归",
+                    "agent_names": ["场景主持名称专家"],
+                    "host_config": {"leader_agent_name": "场景主持"},
+                }
+            ]
+        },
+    )
+    assert preset_resp.status_code == 200
 
     create_resp = client.post(
         "/api/sessions",
         json={
             "title": "场景主持名称回归",
             "agent_names": ["场景主持名称专家"],
-            "leader_agent_name": "agent-scene-host",
-                "host_config": {"leader_agent_name": "场景主持"},
+            "scenario_name": "场景主持名称回归",
+            "orchestration_profile": "scene",
         },
     )
     assert create_resp.status_code == 200
@@ -211,7 +226,8 @@ def test_scene_session_detail_uses_scene_host_display_name(client: TestClient):
     assert detail_resp.status_code == 200
     detail = detail_resp.json()["data"]
     assert detail["agent_map"]["agent-scene-host"]["name"] == "场景主持"
-    assert detail["host_config"]["leader_agent_name"] == "场景主持"
+    assert detail["scenario_name"] == "场景主持名称回归"
+    assert "host_config" not in detail
 
 
 def test_scene_session_preserves_scene_system_prompt(client: TestClient):
@@ -224,7 +240,7 @@ def test_scene_session_preserves_scene_system_prompt(client: TestClient):
             "title": "场景规则会话",
             "agent_names": ["场景规则专家"],
             "system_prompt": "场景级项目规则",
-            "host_config": {"leader_agent_name": "场景主持"},
+            "orchestration_profile": "scene",
         },
     )
     assert create_resp.status_code == 200
@@ -292,7 +308,7 @@ def test_new_regular_session_uses_latest_default_host_profile(client: TestClient
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()["data"]
-    assert detail["leader_agent_name"] == "agent-scene-host"
+    assert "leader_agent_name" not in detail
     assert detail["agent_map"]["agent-scene-host"]["name"] == "上线默认主持"
     assert "host_config" not in detail or detail["host_config"] in ({}, None)
 

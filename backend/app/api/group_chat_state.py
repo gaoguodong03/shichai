@@ -26,8 +26,142 @@ GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] 
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
 
 
-def _session_meta_path(root: Path, session_id: str) -> Path:
+def _session_json_path(root: Path, session_id: str) -> Path:
+    return root / session_id / "session.json"
+
+
+def _legacy_session_meta_path(root: Path, session_id: str) -> Path:
     return root / session_id / "meta.json"
+
+
+def _runtime_json_path(root: Path, session_id: str) -> Path:
+    return root / session_id / "runtime.json"
+
+
+def _clean_session_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the session definition shape that belongs in session.json."""
+    out = dict(item or {})
+    for key in (
+        "runtime_state",
+        "leader_agent_name",
+        "host_config",
+        "pending_owner_agent_name",
+        "pending_skill",
+        "pending_phase",
+        "pending_required_user_fields",
+        "pending_handoff_reason",
+        "skill_session_owner_name",
+        "skill_session_skill",
+    ):
+        out.pop(key, None)
+    return out
+
+
+def _read_json_object(path: Path) -> Dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def format_storage_timestamp(value: datetime | None = None) -> str:
+    dt = value or datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"
+
+
+def _speaker_from_message(msg: Dict[str, Any]) -> Dict[str, Any]:
+    speaker = msg.get("speaker")
+    if isinstance(speaker, dict):
+        out = {str(k): v for k, v in speaker.items() if v not in (None, "")}
+        if out.get("type"):
+            return out
+    role = str(msg.get("role") or "").strip()
+    if role == "user":
+        return {"type": "user"}
+    if role == "host":
+        return {"type": "host"}
+    if role == "assistant":
+        out = {"type": "expert"}
+        agent_name = str(msg.get("agent_name") or "").strip()
+        skill = str(msg.get("skill") or "").strip()
+        if agent_name:
+            out["agent_name"] = agent_name
+        if skill:
+            out["skill"] = skill
+        return out
+    return {"type": role or "unknown"}
+
+
+def _skill_result_from_legacy_tool_debug(msg: Dict[str, Any]) -> Dict[str, Any] | None:
+    existing = msg.get("skill_result")
+    if isinstance(existing, dict):
+        return existing
+    tool_debug = msg.get("tool_debug")
+    if not isinstance(tool_debug, dict):
+        return None
+    state = tool_debug.get("skill_session_state")
+    if not isinstance(state, dict):
+        return None
+    skill_session = str(state.get("skill_session") or "").strip()
+    if not skill_session:
+        return None
+    out: Dict[str, Any] = {
+        "execution_status": "succeeded",
+        "next_action": {"skill_session": skill_session},
+    }
+    return out
+
+
+def _canonical_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
+    speaker = _speaker_from_message(msg)
+    out: Dict[str, Any] = {
+        "message_id": msg.get("message_id"),
+        "speaker": speaker,
+        "content": msg.get("content") or "",
+        "created_at": msg.get("created_at") or msg.get("timestamp") or "",
+    }
+    for key in (
+        "client_message_id",
+        "skill_route_debug",
+        "expert_route_debug",
+        "tool_raw_results",
+        "debug",
+    ):
+        if msg.get(key) is not None:
+            out[key] = msg.get(key)
+    skill_result = _skill_result_from_legacy_tool_debug(msg)
+    if skill_result is not None:
+        out["skill_result"] = skill_result
+    tool_debug = msg.get("tool_debug")
+    if isinstance(tool_debug, dict):
+        debug = out.get("debug") if isinstance(out.get("debug"), dict) else {}
+        out["debug"] = {**debug, "tool_debug": tool_debug}
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _runtime_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(msg)
+    speaker = _speaker_from_message(out)
+    out["speaker"] = speaker
+    if "timestamp" not in out and out.get("created_at") is not None:
+        out["timestamp"] = out.get("created_at")
+    speaker_type = str(speaker.get("type") or "").strip()
+    if "role" not in out:
+        if speaker_type == "expert":
+            out["role"] = "assistant"
+        elif speaker_type:
+            out["role"] = speaker_type
+    if "agent_name" not in out and speaker.get("agent_name") is not None:
+        out["agent_name"] = speaker.get("agent_name")
+    if "skill" not in out and speaker.get("skill") is not None:
+        out["skill"] = speaker.get("skill")
+    return out
 
 
 def ensure_sessions_dir() -> Path:
@@ -52,7 +186,7 @@ async def publish_group_session_event(
     event = {
         "type": event_type,
         "session_id": group_session_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": format_storage_timestamp(),
     }
     if payload:
         event.update(payload)
@@ -94,10 +228,14 @@ def write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, A
     item = meta.get(group_session_id)
     if item is None:
         return
+    root = ensure_sessions_dir()
+    runtime_path = _runtime_json_path(root, group_session_id)
     if state:
-        item["runtime_state"] = state
+        runtime_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
-        item.pop("runtime_state", None)
+        with suppress(OSError):
+            runtime_path.unlink()
     save_group_meta(meta)
     schedule_group_session_event(
         group_session_id,
@@ -125,19 +263,33 @@ def _runtime_state_stale_seconds() -> int:
         return 1800
 
 
+def _parse_runtime_timestamp(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) == 16 and text.isdigit():
+        try:
+            base = datetime.strptime(text[:14], "%Y%m%d%H%M%S")
+            centiseconds = int(text[14:16])
+            return base.replace(microsecond=centiseconds * 10000, tzinfo=timezone.utc)
+        except Exception:
+            return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _stored_runtime_state_is_stale(stored: Any) -> bool:
     if not isinstance(stored, dict) or stored.get("running") is not True:
         return False
-    started_raw = str(stored.get("started_at") or "").strip()
-    if not started_raw:
+    started = _parse_runtime_timestamp(str(stored.get("started_at") or ""))
+    if started is None:
         return True
-    try:
-        started = datetime.fromisoformat(started_raw.replace("Z", "+00:00"))
-    except Exception:
-        return True
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    age = (datetime.now(timezone.utc) - started.astimezone(timezone.utc)).total_seconds()
+    age = (datetime.now(timezone.utc) - started).total_seconds()
     return age >= _runtime_state_stale_seconds()
 
 
@@ -157,7 +309,10 @@ def runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) 
             write_group_runtime_state(group_session_id, None)
         else:
             return runtime_state_for_active_run(active)
-    stored = meta_item.get("runtime_state")
+    stored = None
+    with suppress(Exception):
+        stored = _read_json_object(_runtime_json_path(ensure_sessions_dir(), group_session_id))
+    stored = stored or meta_item.get("runtime_state")
     if _stored_runtime_state_is_stale(stored):
         logger.warning(
             "group_chat_runtime_state_stale_stored session=%s run_id=%s phase=%s started_at=%s",
@@ -174,7 +329,7 @@ def runtime_state_for_session(group_session_id: str, meta_item: Dict[str, Any]) 
 
 async def register_group_run(group_session_id: str, *, user_id: str, task: asyncio.Task[Any]) -> str:
     run_id = uuid.uuid4().hex
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = format_storage_timestamp()
     state = {
         "running": True,
         "run_id": run_id,
@@ -235,19 +390,18 @@ async def cancel_group_session_run(group_session_id: str, *, reason: str) -> boo
 def build_session_payload(session_id: str, meta_item: Dict[str, Any]) -> Dict[str, Any]:
     """Build the stable response shape used by the sessions API."""
     names = list(meta_item.get("agent_names", []))
-    leader_name = meta_item.get("leader_agent_name", "")
-    hc = meta_item.get("host_config")
     out = {
         "id": session_id,
         "title": meta_item.get("title", "新对话"),
+        "title_auto_generated": meta_item.get("title_auto_generated"),
         "agent_names": names,
-        "leader_agent_name": leader_name,
         "created_at": meta_item.get("created_at", ""),
         "updated_at": meta_item.get("updated_at", ""),
         "runtime_state": runtime_state_for_session(session_id, meta_item),
     }
-    if isinstance(hc, dict):
-        out["host_config"] = hc
+    scenario_name = str(meta_item.get("scenario_name") or "").strip()
+    if scenario_name:
+        out["scenario_name"] = scenario_name
     system_prompt = str(meta_item.get("system_prompt") or "").strip()
     if system_prompt:
         out["system_prompt"] = system_prompt
@@ -273,11 +427,13 @@ def load_group_meta() -> Dict[str, Dict[str, Any]]:
     for child in root.iterdir():
         if not child.is_dir():
             continue
+        session_path = child / "session.json"
         meta_path = child / "meta.json"
-        if not meta_path.exists():
+        read_path = session_path if session_path.exists() else meta_path
+        if not read_path.exists():
             continue
         try:
-            item = json.loads(meta_path.read_text(encoding="utf-8"))
+            item = json.loads(read_path.read_text(encoding="utf-8"))
         except Exception:
             continue
         if isinstance(item, dict):
@@ -289,7 +445,7 @@ def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bo
     root = ensure_sessions_dir()
     index_path = root / GROUP_META_FILE
     index_path.parent.mkdir(parents=True, exist_ok=True)
-    data = {str(k): v for k, v in (meta or {}).items() if isinstance(v, dict)}
+    data = {str(k): _clean_session_item(v) for k, v in (meta or {}).items() if isinstance(v, dict)}
     if preserve_unmentioned:
         try:
             current = load_group_meta()
@@ -302,19 +458,20 @@ def save_group_meta(meta: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bo
                         incoming_updated_at = str(incoming_item.get("updated_at") or "")
                         if current_updated_at and incoming_updated_at and current_updated_at > incoming_updated_at:
                             continue
-                    data[session_id] = incoming_item
+                    data[session_id] = _clean_session_item(incoming_item)
         except Exception:
-            data = {str(k): v for k, v in (meta or {}).items() if isinstance(v, dict)}
+            data = {str(k): _clean_session_item(v) for k, v in (meta or {}).items() if isinstance(v, dict)}
     index_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     for session_id, item in data.items():
-        meta_path = _session_meta_path(root, session_id)
-        meta_path.parent.mkdir(parents=True, exist_ok=True)
-        meta_path.write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+        session_path = _session_json_path(root, session_id)
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session_path.write_text(json.dumps(_clean_session_item(item), ensure_ascii=False, indent=2), encoding="utf-8")
     if not preserve_unmentioned:
         keep_ids = set(data)
         for child in root.iterdir():
             if child.is_dir() and child.name not in keep_ids:
                 with suppress(OSError):
+                    (child / "session.json").unlink()
                     (child / "meta.json").unlink()
 
 
@@ -330,7 +487,9 @@ def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
+            if not isinstance(data, list):
+                return []
+            return [_runtime_history_message(item) for item in data if isinstance(item, dict)]
         except Exception:
             pass
     return []
@@ -346,7 +505,8 @@ def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) ->
         layout = ensure_session_layout(user_ctx, group_session_id)
         path = layout.history
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(messages, ensure_ascii=False, indent=2), encoding="utf-8")
+    canonical_messages = [_canonical_history_message(item) for item in (messages or []) if isinstance(item, dict)]
+    path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
     schedule_group_session_event(
         group_session_id,
         "messages_updated",

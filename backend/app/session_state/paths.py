@@ -5,8 +5,9 @@ Canonical layout (multi-tenant isolated under data/users/{user_id}/):
     sessions/
       index.json
       {session_id}/
-        meta.json                 # session metadata snapshot
+        session.json              # session metadata snapshot
         history.json              # runtime chat history (JSON)
+        runtime.json              # live runtime mirror for UI recovery
         chat.md                   # exported chat for agents / checkpoints
         workspace/                # live working tree (like git checkout)
         checkpoints/
@@ -52,7 +53,9 @@ class SessionLayoutPaths:
 
     session_id: str
     session_root: Path
+    session_json: Path
     history: Path
+    runtime_json: Path
     chat_md: Path
     workspace: Path
     checkpoints_root: Path
@@ -68,7 +71,9 @@ class SessionLayoutPaths:
         return cls(
             session_id=sid,
             session_root=session_root,
+            session_json=session_root / "session.json",
             history=session_root / "history.json",
+            runtime_json=session_root / "runtime.json",
             chat_md=session_root / "chat.md",
             workspace=session_root / "workspace",
             checkpoints_root=checkpoints_root,

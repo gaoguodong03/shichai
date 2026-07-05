@@ -7,7 +7,6 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
@@ -18,6 +17,7 @@ from app.agent.group_context import (
 )
 from app.agent.llm_client import get_llm_from_config
 from app.api.group_chat_state import (
+    format_storage_timestamp,
     load_group_meta as _load_group_meta,
     save_group_history as _save_group_history,
     save_group_meta as _save_group_meta,
@@ -185,13 +185,13 @@ def _record_user_message_and_refresh_title(
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
             "role": "user",
             "content": user_message,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": format_storage_timestamp(),
         }
         if client_message_id:
             user_msg["client_message_id"] = client_message_id
         messages.append(user_msg)
         _save_group_history(group_session_id, messages)
-        meta_item["updated_at"] = datetime.now(timezone.utc).isoformat()
+        meta_item["updated_at"] = format_storage_timestamp()
 
     current_title = (meta_item.get("title") or "").strip()
     placeholder_titles = ("新对话", "新群聊", "")

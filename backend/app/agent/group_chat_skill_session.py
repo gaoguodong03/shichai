@@ -43,6 +43,37 @@ def _message_is_bound_skill_introspection_direct_final(msg: Dict[str, Any]) -> b
     return _has_bound_skill_introspection_direct_final(items)
 
 
+def _message_role(msg: Dict[str, Any]) -> str:
+    speaker = msg.get("speaker")
+    if isinstance(speaker, dict):
+        return str(speaker.get("type") or "").strip()
+    return str(msg.get("role") or "").strip()
+
+
+def _message_agent_name(msg: Dict[str, Any]) -> str:
+    speaker = msg.get("speaker")
+    if isinstance(speaker, dict):
+        return str(speaker.get("agent_name") or "").strip()
+    return str(msg.get("agent_name") or "").strip()
+
+
+def _message_skill(msg: Dict[str, Any]) -> str:
+    speaker = msg.get("speaker")
+    if isinstance(speaker, dict):
+        return str(speaker.get("skill") or "").strip()
+    return str(msg.get("skill") or "").strip()
+
+
+def _skill_session_from_message_result(msg: Dict[str, Any]) -> str:
+    result = msg.get("skill_result")
+    if not isinstance(result, dict):
+        return ""
+    action = result.get("next_action")
+    if not isinstance(action, dict):
+        return ""
+    return str(action.get("skill_session") or "").strip().lower()
+
+
 def _store_skill_session_lock_for_turn(
     meta_item: Dict[str, Any],
     *,
@@ -84,13 +115,19 @@ def _clear_completed_skill_session_lock_from_history(
     if not owner or not skill:
         return False
     for msg in reversed(messages or []):
-        if str(msg.get("role") or "") != "assistant":
+        if _message_role(msg) not in {"assistant", "expert"}:
             continue
-        if str(msg.get("agent_name") or "").strip().casefold() != owner:
+        if _message_agent_name(msg).casefold() != owner:
             continue
-        if str(msg.get("skill") or "").strip() != skill:
+        if _message_skill(msg) != skill:
             continue
         if _message_is_bound_skill_introspection_direct_final(msg):
+            clear_skill_session_lock(meta_item)
+            return True
+        parsed_from_result = _skill_session_from_message_result(msg)
+        if parsed_from_result in {"keep", "release"}:
+            if parsed_from_result == "keep":
+                return False
             clear_skill_session_lock(meta_item)
             return True
         debug = msg.get("tool_debug")

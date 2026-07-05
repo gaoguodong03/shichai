@@ -88,6 +88,8 @@ export function useWorkspaceContentProviders(args: {
   })
   const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
   const effectiveHostDisplayName = computed(() => {
+    const hostMapName = String(groupDetail.value?.agent_map?.['agent-scene-host']?.name || '').trim()
+    if (hostMapName) return hostMapName
     const hostConfigName = String(groupDetail.value?.host_config?.leader_agent_name || '').trim()
     if (hostConfigName) return hostConfigName
     return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
