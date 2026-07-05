@@ -21,7 +21,7 @@ def _is_task_end(*, next_speaker: str, current_phase: str | None = None) -> bool
     return str(current_phase or "").strip().lower() == "end"
 
 
-def _scheduler_state_meta(
+def _scheduler_state_snapshot(
     meta: Mapping[str, Any] | None = None,
     *,
     current_phase: str | None = None,
@@ -102,7 +102,7 @@ def _build_host_next_speaker_message(
     _ = announcement
     next_name = _agent_display_name(next_speaker, agent_map)
     content = f"{HOST_DELEGATE_PREFIX} {next_name} 发言。"
-    meta = _scheduler_state_meta(
+    meta = _scheduler_state_snapshot(
         current_phase=current_phase,
         next_speaker=next_speaker,
         speaker_task=speaker_task,
@@ -126,7 +126,7 @@ def _build_host_pause_message(
 ) -> dict[str, Any] | None:
     _ = announcement
     if _is_task_end(next_speaker=next_speaker, current_phase=current_phase):
-        meta = _scheduler_state_meta(
+        meta = _scheduler_state_snapshot(
             current_phase=current_phase or "end",
             next_speaker="end",
             speaker_task=speaker_task,
@@ -139,7 +139,7 @@ def _build_host_pause_message(
         )
     if str(next_speaker or "").strip().lower() == "user":
         content = str(speaker_task or reason or "").strip() or HOST_USER_PAUSE_MESSAGE
-        meta = _scheduler_state_meta(
+        meta = _scheduler_state_snapshot(
             current_phase=current_phase,
             next_speaker="user",
             speaker_task=speaker_task,

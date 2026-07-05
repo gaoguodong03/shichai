@@ -1,8 +1,6 @@
 """测试 LLM 配置化（get_llm_from_config）"""
 import json
 import os
-import sys
-import types
 import zipfile
 from io import BytesIO
 import pytest
@@ -30,7 +28,7 @@ def test_traced_llm_client_logs_prompt_summary_by_default(caplog, monkeypatch):
     import asyncio
     import logging
 
-    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.agent.messages import HumanMessage, SystemMessage
 
     from app.agent.llm_client import _instrument_llm_client
     monkeypatch.delenv("PROMPT_LOG_MODE", raising=False)
@@ -89,7 +87,7 @@ def test_traced_llm_client_logs_full_prompt_when_enabled(caplog, monkeypatch):
     import asyncio
     import logging
 
-    from langchain_core.messages import HumanMessage, SystemMessage
+    from app.agent.messages import HumanMessage, SystemMessage
 
     from app.agent.llm_client import _instrument_llm_client
     monkeypatch.setenv("PROMPT_LOG_MODE", "full")
@@ -121,7 +119,7 @@ def test_traced_llm_client_logs_full_prompt_when_enabled(caplog, monkeypatch):
 
 
 def test_builtin_llm_provider_presets_use_compatible_base_urls():
-    """后端运行时兜底与设置页默认 provider 地址必须同步且可被当前 ChatOpenAI 客户端调用。"""
+    """后端运行时兜底与设置页默认 provider 地址必须同步且可被 OpenAI 兼容客户端调用。"""
     from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults
     from app.api.settings_app import _DEFAULT_LLM_PROVIDERS as settings_defaults
 
@@ -404,76 +402,55 @@ def test_get_client_adds_qwen_chat_template_kwargs(monkeypatch):
     """Qwen 模型请求附加禁用 thinking 的专属参数。"""
     from app.agent.llm_client import QwenLLM
 
-    captured = {}
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max"),
+    )
 
-    class FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
-
-    QwenLLM(api_key="test-key", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max").get_client()
-
-    assert captured["model_kwargs"] == {"extra_body": {"enable_thinking": False}}
+    assert captured["extra_body"] == {"enable_thinking": False}
 
 
 def test_get_client_adds_qwen_chat_template_kwargs_for_non_dashscope(monkeypatch):
     """非 DashScope 的 Qwen 兼容服务使用 chat_template_kwargs。"""
     from app.agent.llm_client import QwenLLM
 
-    captured = {}
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="qwen3-max"),
+    )
 
-    class FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
-
-    QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="qwen3-max").get_client()
-
-    assert captured["model_kwargs"] == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+    assert captured["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
 
 
 def test_get_client_skips_qwen_chat_template_kwargs_for_other_models(monkeypatch):
     """非 Qwen 模型不传 DashScope/Qwen 专属参数。"""
     from app.agent.llm_client import QwenLLM
 
-    captured = {}
+    captured, _ = _capture_chat_kwargs(
+        monkeypatch,
+        QwenLLM(api_key="test-key", base_url="https://jeniya.top/v1", model="gpt-4o"),
+    )
 
-    class FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
-
-    QwenLLM(api_key="test-key", base_url="https://jeniya.top/v1", model="gpt-4o").get_client()
-
-    assert "model_kwargs" not in captured
+    assert "extra_body" not in captured
 
 
 def _capture_chat_kwargs(monkeypatch, llm):
-    captured = {}
-
-    class FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-            self.bound_calls = []
-
-        def bind_tools(self, tools, **kwargs):
-            self.bound_calls.append(kwargs)
-            return kwargs
-
-    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+    del monkeypatch
     client = llm.get_client()
+    raw = client._raw_client
+    captured = {
+        **raw._request_options,
+        "api_key": raw._client_options.get("api_key"),
+        "base_url": raw._client_options.get("base_url"),
+        "request_timeout": raw._client_options.get("timeout"),
+        "max_retries": raw._client_options.get("max_retries"),
+        "model": raw._model,
+    }
     return captured, client
 
 
 def test_get_client_common_whitelisted_params(monkeypatch):
-    """通用官网参数会被传给 ChatOpenAI，且不会开放任意 kwargs。"""
+    """通用官网参数会被传给 OpenAI 兼容请求，且不会开放任意 kwargs。"""
     from app.agent.llm_client import QwenLLM
 
     captured, _ = _capture_chat_kwargs(
@@ -585,20 +562,14 @@ def test_traced_client_preserves_wrapper_after_bind_tools(monkeypatch):
     """工具绑定后仍保留 trace/thinking 包装。"""
     from app.agent.llm_client import QwenLLM
 
-    class FakeChatOpenAI:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        def bind_tools(self, tools, **kwargs):
-            return self
-
-    fake_module = types.SimpleNamespace(ChatOpenAI=FakeChatOpenAI)
-    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
-
     client = QwenLLM(api_key="test-key", base_url="https://example.com/v1", model="gpt-4o").get_client()
     bound = client.bind_tools([object()])
 
     assert hasattr(bound, "_raw_client")
+
+
+def _bound_tool_choice(bound_client):
+    return bound_client._raw_client._tool_choice
 
 
 def test_get_client_qwen_thinking_params_and_tool_choice(monkeypatch):
@@ -615,8 +586,8 @@ def test_get_client_qwen_thinking_params_and_tool_choice(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"enable_thinking": True, "thinking_budget": 64}}
-    assert bind_tools_compat(client, [object()]) == {}
+    assert captured["extra_body"] == {"enable_thinking": True, "thinking_budget": 64}
+    assert _bound_tool_choice(bind_tools_compat(client, [object()])) is None
 
 
 def test_get_client_qwen_thinking_disabled_keeps_required_tools(monkeypatch):
@@ -633,8 +604,8 @@ def test_get_client_qwen_thinking_disabled_keeps_required_tools(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"enable_thinking": False}}
-    assert bind_tools_compat(client, [object()]) == {"tool_choice": "required"}
+    assert captured["extra_body"] == {"enable_thinking": False}
+    assert _bound_tool_choice(bind_tools_compat(client, [object()])) == "required"
 
 
 def test_get_client_gemini_params(monkeypatch):
@@ -651,7 +622,7 @@ def test_get_client_gemini_params(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"topK": 20, "thinkingConfig": {"thinkingLevel": "low"}}}
+    assert captured["extra_body"] == {"topK": 20, "thinkingConfig": {"thinkingLevel": "low"}}
 
 
 def test_get_client_claude_top_k(monkeypatch):
@@ -668,7 +639,7 @@ def test_get_client_claude_top_k(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"top_k": 30}}
+    assert captured["extra_body"] == {"top_k": 30}
 
 
 def test_get_client_glm_params(monkeypatch):
@@ -685,7 +656,7 @@ def test_get_client_glm_params(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "disabled"}, "do_sample": False}}
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}, "do_sample": False}
 
 
 def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatch):
@@ -702,8 +673,8 @@ def test_get_client_deepseek_thinking_enabled_disables_required_tools(monkeypatc
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "enabled"}}}
-    assert bind_tools_compat(client, [object()]) == {}
+    assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert _bound_tool_choice(bind_tools_compat(client, [object()])) is None
 
 
 def test_get_client_deepseek_defaults_to_thinking_disabled(monkeypatch):
@@ -720,4 +691,4 @@ def test_get_client_deepseek_defaults_to_thinking_disabled(monkeypatch):
         ),
     )
 
-    assert captured["model_kwargs"] == {"extra_body": {"thinking": {"type": "disabled"}}}
+    assert captured["extra_body"] == {"thinking": {"type": "disabled"}}

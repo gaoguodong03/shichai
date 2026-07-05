@@ -4,9 +4,8 @@
 fastapi==0.128.0
 uvicorn[standard]==0.40.0
 
-# LLM message/client compatibility
-langchain-core==0.1.53
-langchain-openai==0.1.7
+# LLM client compatibility
+openai>=1.24.0,<2.0.0
 
 # MCP SDK（stdio / streamable HTTP 连接远程 MCP）
 mcp==1.25.0
@@ -25,7 +24,7 @@ pydantic==2.12.5
 pydantic-settings==2.12.0
 python-dotenv==1.2.1
 pyyaml==6.0.3
-packaging>=23.2,<24.0
+packaging>=24.0
 
 # 文件读取 MCP：read_pdf、read_docx、read_xlsx
 pypdf>=4.0.0

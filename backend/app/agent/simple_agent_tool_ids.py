@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any
 
-from langchain_core.messages import BaseMessage, ToolMessage
+from app.agent.messages import BaseMessage, ToolMessage
 
 logger = logging.getLogger(__name__)
 

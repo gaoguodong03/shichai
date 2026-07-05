@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import HumanMessage, AIMessage  # type: ignore
+from app.agent.messages import HumanMessage, AIMessage  # type: ignore
 
 from app.agent.group_chat_expert_resolution import (
     _get_llm_for_agent,
@@ -77,43 +77,10 @@ def _request_skills_loader():
     return get_skills_loader_for_user(u.username, u.ctx.skills_dir)
 
 
-def _host_skill_ref_names(host_agent: Dict[str, Any]) -> List[str]:
-    names: List[str] = []
-    for ref in host_agent.get("skill_refs") or []:
-        if not isinstance(ref, dict):
-            continue
-        name = str(ref.get("name") or "").strip()
-        if name and name not in names:
-            names.append(name)
-    return names
-
-
-def _host_skill_name_matches(candidate: str, expected: str) -> bool:
-    c = str(candidate or "").strip()
-    e = str(expected or "").strip()
-    if not c or not e:
-        return False
-    return c == e or c.startswith(e) or e.startswith(c)
-
-
-def _load_host_skill_content(skills_loader: Any, skill: str, host_agent: Dict[str, Any]) -> str:
+def _load_host_skill_content(skills_loader: Any, skill: str) -> str:
     if not skill:
         return ""
-    content = str(skills_loader.get_skill_full_content(skill) or "").strip()
-    if content:
-        return content
-
-    ref_names = _host_skill_ref_names(host_agent)
-    if not ref_names:
-        return ""
-    for fallback_id, skill in getattr(skills_loader, "skills", {}).items():
-        skill_name = str(getattr(skill, "name", "") or "").strip()
-        if any(_host_skill_name_matches(skill_name, ref_name) for ref_name in ref_names):
-            fallback_content = str(skills_loader.get_skill_full_content(str(fallback_id)) or "").strip()
-            if fallback_content:
-                logger.info("resolved stale host skill id %s by skill_ref name to %s", skill, fallback_id)
-                return fallback_content
-    return ""
+    return str(skills_loader.get_skill_full_content(skill) or "").strip()
 
 
 _HOST_DEFAULT_DUTY = (
@@ -151,10 +118,10 @@ _HOST_SCHEDULER_STATE_INSTRUCTION = """
 """
 
 
-def _persist_host_scheduler_state_meta(meta_item: Optional[Dict[str, Any]], state: Dict[str, str]) -> None:
-    if not isinstance(meta_item, dict):
+def _persist_host_scheduler_state(session_item: Optional[Dict[str, Any]], state: Dict[str, str]) -> None:
+    if not isinstance(session_item, dict):
         return
-    previous = meta_item.get("scheduler_state")
+    previous = session_item.get("scheduler_state")
     previous_state = previous if isinstance(previous, dict) else {}
     clean = {
         "current_phase": str(
@@ -166,9 +133,9 @@ def _persist_host_scheduler_state_meta(meta_item: Optional[Dict[str, Any]], stat
         "speaker_task": str((state or {}).get("speaker_task") or "").strip(),
     }
     if any(clean.values()):
-        meta_item["scheduler_state"] = clean
+        session_item["scheduler_state"] = clean
     else:
-        meta_item.pop("scheduler_state", None)
+        session_item.pop("scheduler_state", None)
     logger.info(
         "group_chat_scheduler_host_state_saved_to_meta phase_len=%s speaker_len=%s task_len=%s",
         len(clean["current_phase"]),
@@ -195,7 +162,7 @@ async def _host_decide_by_agent(
     user_message: str = "",
     orphan_session_agent_names: Optional[List[str]] = None,
     orchestration_profile: str = "recruitment",
-    meta_item: Optional[Dict[str, Any]] = None,
+    session_item: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Run the host Agent skill and return a scheduler decision.
@@ -215,7 +182,7 @@ async def _host_decide_by_agent(
     resolved_skill = _pick_resolved_host_skill(skill_directories) if skill_directories else ""
     host_skill_content = ""
     if resolved_skill:
-        host_skill_content = _load_host_skill_content(_request_skills_loader(), resolved_skill, host_agent)
+        host_skill_content = _load_host_skill_content(_request_skills_loader(), resolved_skill)
     skill_sections = [
         f"你是 {name}，担任本群主持人。你的职责：{description}。",
         host_skill_content,
@@ -238,7 +205,7 @@ async def _host_decide_by_agent(
     orphan_block = ""
     if orphan_names:
         orphan_block = (
-            "【重要】会话 meta 里记录了以下协作专家名称，但在当前账号专家库中已不存在（可能已删除或从未同步），"
+            "【重要】会话定义里记录了以下协作专家名称，但在当前账号专家库中已不存在（可能已删除或从未同步），"
             "这些名称 **不能**作为 next_speaker："
             + ", ".join(orphan_names)
             + "。请提示用户到「资源中心 → 场景」重新选择协作专家。"
@@ -287,11 +254,11 @@ async def _host_decide_by_agent(
         user_content += f"【刚发言的专家】{last_speaker_agent_name}\n\n"
     else:
         user_content += "【当前为首轮】尚无上一位专家发言。\n\n"
-    scheduler_state_meta = meta_item.get("scheduler_state") if isinstance(meta_item, dict) else None
-    if scene_mode and isinstance(scheduler_state_meta, dict):
-        phase = str(scheduler_state_meta.get("current_phase") or "").strip()
-        speaker = str(scheduler_state_meta.get("next_speaker") or "").strip()
-        task = str(scheduler_state_meta.get("speaker_task") or "").strip()
+    scheduler_state_snapshot = session_item.get("scheduler_state") if isinstance(session_item, dict) else None
+    if scene_mode and isinstance(scheduler_state_snapshot, dict):
+        phase = str(scheduler_state_snapshot.get("current_phase") or "").strip()
+        speaker = str(scheduler_state_snapshot.get("next_speaker") or "").strip()
+        task = str(scheduler_state_snapshot.get("speaker_task") or "").strip()
         if any((phase, speaker, task)):
             user_content += (
                 "【后台调度状态】\n"
@@ -350,7 +317,7 @@ async def _host_decide_by_agent(
             "speaker_task": str(parsed.get("speaker_task") or "").strip(),
         }
         if any(scheduler_state.values()):
-            _persist_host_scheduler_state_meta(meta_item, scheduler_state)
+            _persist_host_scheduler_state(session_item, scheduler_state)
         logger.info(
             "group_chat_scheduler_host_state_decision session=%s next_speaker=%s",
             group_session_id,

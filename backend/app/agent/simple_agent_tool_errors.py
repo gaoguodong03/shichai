@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage
+from app.agent.messages import AIMessage, BaseMessage
 
 from app.agent.simple_agent_finalization import (
     _align_final_response_with_written_workspace_paths,

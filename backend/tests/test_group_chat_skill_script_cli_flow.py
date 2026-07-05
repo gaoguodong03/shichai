@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
+from app.agent.messages import AIMessage
 
 
 class _SeqClient:
@@ -158,6 +158,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     )
 
     monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: fake_llm)
+    monkeypatch.setattr(group_chat, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
     monkeypatch.setattr(run_skill_script, "_SCRIPT_GATEWAY", fake_gateway)
 
     client = TestClient(app)

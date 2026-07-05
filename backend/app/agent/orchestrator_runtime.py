@@ -11,6 +11,7 @@ from app.agent.orchestrator_state import (
 )
 
 
+HOST_PROTOCOL_ERROR_MESSAGE = "主持人输出格式错误，请重试或联系管理员。"
 _PHASE_MAP = {p.value: p for p in OrchestrationPhase}
 _INTERRUPT_MAP = {r.value: r for r in InterruptReason}
 _SOURCE_MAP = {s.value: s for s in DecisionSource}
@@ -43,6 +44,21 @@ def normalize_scheduler_decision(
     - Invalid next_speaker falls back to user with conflict interrupt.
     """
     data = dict(raw or {})
+    if "next_prompt" in data:
+        return OrchestrationDecision(
+            task_done=True,
+            next_speaker="user",
+            reason="legacy next_prompt is not allowed",
+            announcement=HOST_PROTOCOL_ERROR_MESSAGE,
+            current_phase="",
+            speaker_task=HOST_PROTOCOL_ERROR_MESSAGE,
+            phase=OrchestrationPhase.AWAITING_USER,
+            owner_agent_name=None,
+            interrupt_reason=InterruptReason.PROTOCOL_ERROR,
+            decision_source=DecisionSource.SYSTEM_GUARD,
+            handoff_reason="legacy_next_prompt",
+            required_user_fields=[],
+        ).to_dict()
     valid_name_map = {str(x or "").strip().casefold(): str(x or "").strip() for x in agent_names or [] if str(x or "").strip()}
     next_raw = str(data.get("next_speaker") or "user").strip()
     next_key = next_raw.casefold()
@@ -51,7 +67,7 @@ def normalize_scheduler_decision(
     announcement = str(data.get("announcement") or reason)
     task_done = bool(data.get("task_done", True))
     current_phase = str(data.get("current_phase") or "").strip()
-    speaker_task = str(data.get("speaker_task") or data.get("next_prompt") or "").strip()
+    speaker_task = str(data.get("speaker_task") or "").strip()
 
     suggested = _clean_names(
         data.get("suggested_add_agent_names") or [],
@@ -107,7 +123,6 @@ def normalize_scheduler_decision(
         next_speaker=next_speaker,
         reason=reason,
         announcement=announcement,
-        next_prompt=None,
         current_phase=current_phase,
         speaker_task=speaker_task,
         suggested_add_agent_names=suggested,

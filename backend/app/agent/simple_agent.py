@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from app.agent.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
 from app.agent.simple_agent_mcp_tools import (
     _forced_mcp_file_ref_tool_call,

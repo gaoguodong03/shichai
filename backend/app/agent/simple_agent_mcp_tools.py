@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.agent.structured_output_contracts import McpToolResultPayload
 from app.agent.tool_spec import ToolSpec

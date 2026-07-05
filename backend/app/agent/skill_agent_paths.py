@@ -4,7 +4,7 @@ import logging
 import re
 from typing import Sequence
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from app.agent.messages import BaseMessage, HumanMessage
 
 from app.agent.read_path_utils import (
     looks_like_url_or_remote_path,

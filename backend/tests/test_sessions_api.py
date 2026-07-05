@@ -95,6 +95,47 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
     assert "agent_ids" not in updated
 
 
+@pytest.mark.asyncio
+async def test_session_detail_uses_presentation_content_without_mutating_history(monkeypatch, tmp_path):
+    from app.api import group_chat_state as state
+    from app.agent import group_session_service
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr(group_session_service, "load_agent_instances", lambda: [])
+    monkeypatch.setattr(group_session_service, "load_app_settings", lambda: {})
+
+    async def _no_enrich(instances, workspace_id=None):
+        return instances
+
+    monkeypatch.setattr(group_session_service, "enrich_agent_instances", _no_enrich)
+    session_id = "s-presentation"
+
+    state.save_session_definitions(
+        {session_id: {"title": "展示内容会话", "agent_names": [], "created_at": "t1", "updated_at": "t1"}}
+    )
+    state.save_group_history(
+        session_id,
+        [
+            {
+                "message_id": "a1",
+                "role": "assistant",
+                "agent_name": "信息检索专家",
+                "content": "工具已执行完成。以下是本轮工具返回摘要：\nTitle: Raw",
+                "presentation_content": "## 检索结果\n\n- Raw",
+                "timestamp": "2026062908104900",
+            }
+        ],
+    )
+
+    detail = await group_session_service.get_group_session(session_id)
+    detail_msg = detail["data"]["messages"][0]
+    assert detail_msg["content"] == "## 检索结果\n\n- Raw"
+
+    stored_msg = state.load_group_history(session_id)[0]
+    assert stored_msg["content"].startswith("工具已执行完成")
+    assert stored_msg["presentation_content"] == "## 检索结果\n\n- Raw"
+
+
 def test_export_session_default_filename_uses_workspace_timestamp_contract(monkeypatch, tmp_path):
     from app.api import files as files_api
     from app.api import group_chat_state
@@ -151,7 +192,7 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
 
 
 def test_update_session_clears_stale_scheduler_state(client: TestClient):
-    from app.api.group_chat_state import load_group_meta, save_group_meta
+    from app.api.group_chat_state import load_session_definitions, save_session_definitions
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
     agent_resp = client.post("/api/agents", json={"name": "清理专家"})
@@ -163,13 +204,13 @@ def test_update_session_clears_stale_scheduler_state(client: TestClient):
 
     token = set_current_user_identity(user_id="free4inno", username="free4inno")
     try:
-        meta = load_group_meta()
-        meta[session_id]["scheduler_state"] = {
+        session_definitions = load_session_definitions()
+        session_definitions[session_id]["scheduler_state"] = {
             "current_phase": "阶段1：选题与需求确认",
             "next_speaker": "用户",
             "speaker_task": "建议您先邀请【网页爬取专家】和【文字创作专家】加入会话。",
         }
-        save_group_meta(meta)
+        save_session_definitions(session_definitions)
     finally:
         reset_current_user_identity(token)
 
@@ -181,7 +222,7 @@ def test_update_session_clears_stale_scheduler_state(client: TestClient):
 
     token = set_current_user_identity(user_id="free4inno", username="free4inno")
     try:
-        refreshed = load_group_meta()
+        refreshed = load_session_definitions()
         assert "scheduler_state" not in refreshed[session_id]
     finally:
         reset_current_user_identity(token)

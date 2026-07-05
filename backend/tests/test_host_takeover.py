@@ -169,7 +169,7 @@ def test_pick_resolved_host_skill_prefers_specialized_over_generic():
 async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path):
     gc = _get_host_runtime_module()
     calls = {}
-    meta_item = {}
+    session_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
@@ -214,7 +214,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path)
         group_session_id="group-1",
         app_settings={"host_profile": {"leader_agent_name": "五九"}},
         orchestration_profile="scene",
-        meta_item=meta_item,
+        session_item=session_item,
     )
 
     assert out is not None
@@ -227,13 +227,13 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch, tmp_path)
     assert "网文专用主持 Skill 正文：文字创作完成后应进入图片生成阶段。" in content
     assert calls["agent_factory"]["tools"] == []
     assert calls["agent_factory"]["kwargs"]["synthesize_after_tools"] is False
-    assert meta_item["scheduler_state"]["next_speaker"] == "写作专家"
+    assert session_item["scheduler_state"]["next_speaker"] == "写作专家"
 
 
 async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypatch, tmp_path):
     gc = _get_host_runtime_module()
     calls = {}
-    meta_item = {}
+    session_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
@@ -284,13 +284,13 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
         group_session_id="group-fast",
         app_settings={"host_profile": {"leader_agent_name": "四九"}},
         orchestration_profile="scene",
-        meta_item=meta_item,
+        session_item=session_item,
     )
 
     assert out is not None
     assert out["next_speaker"] == "伴学研讨——引导教学的教师"
     assert out["speaker_task"] == "请提出本轮研讨主题。"
-    assert out.get("next_prompt") is None
+    assert "next_prompt" not in out
     assert out["decision_source"] == "host_scheduler_state"
     assert calls["agent_factory"]["tools"] == []
     assert "平台会根据调度结果生成固定主持话术" in calls["agent_factory"]["skill_content"]
@@ -298,14 +298,14 @@ async def test_host_decide_uses_scheduler_state_without_workspace_files(monkeypa
     assert not (tmp_path / "current_phase.txt").exists()
     assert not (tmp_path / "next_speaker.txt").exists()
     assert not (tmp_path / "speaker_task.txt").exists()
-    assert meta_item["scheduler_state"] == {
+    assert session_item["scheduler_state"] == {
         "current_phase": "阶段1：选题",
         "next_speaker": "伴学研讨——引导教学的教师",
         "speaker_task": "请提出本轮研讨主题。",
     }
 
 
-async def test_host_decide_resolves_legacy_host_skill_ref_by_name(monkeypatch):
+async def test_host_decide_does_not_resolve_stale_host_skill_ref_by_name(monkeypatch):
     gc = _get_host_runtime_module()
     calls = {}
 
@@ -352,17 +352,18 @@ async def test_host_decide_resolves_legacy_host_skill_ref_by_name(monkeypatch):
         extra_system_prompt="",
         app_settings={"host_profile": {"leader_agent_name": "四九"}},
         orchestration_profile="scene",
-        meta_item={},
+        session_item={},
     )
 
     assert out["next_speaker"] == "图片生成专家"
-    assert "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。" in calls["skill_content"]
+    assert "网文协同写作主持人v1.0 正文：完整协同任务默认进入图片生成。" not in calls["skill_content"]
+    assert "群聊主持人" in calls["skill_content"]
 
 
 async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monkeypatch):
     gc = _get_host_runtime_module()
     calls = {}
-    meta_item = {
+    session_item = {
         "scheduler_state": {
             "current_phase": "阶段2：材料支撑",
             "next_speaker": "信息检索专家",
@@ -410,13 +411,13 @@ async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monke
         group_session_id="group-phase-preserve",
         app_settings={"host_profile": {"leader_agent_name": "四九"}},
         orchestration_profile="scene",
-        meta_item=meta_item,
+        session_item=session_item,
     )
 
     assert "【后台调度状态】" in calls["user_prompt"]
     assert "current_phase: 阶段2：材料支撑" in calls["user_prompt"]
     assert out["next_speaker"] == "伴学研讨——引导教学的教师"
-    assert meta_item["scheduler_state"] == {
+    assert session_item["scheduler_state"] == {
         "current_phase": "阶段2：材料支撑",
         "next_speaker": "伴学研讨——引导教学的教师",
         "speaker_task": "请教师收窄成可讨论的问题。",
@@ -427,7 +428,7 @@ async def test_host_decide_preserves_current_phase_when_scheduler_omits_it(monke
 async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypatch):
     from app.agent import group_chat_host_runtime as gc
 
-    meta_item = {
+    session_item = {
         "scheduler_state": {
             "current_phase": "阶段1：选题与需求确认",
             "next_speaker": "用户",
@@ -476,14 +477,14 @@ async def test_host_decide_ignores_scheduler_state_in_recruitment_mode(monkeypat
         group_session_id="group-recruitment",
         app_settings={"host_profile": {"leader_agent_name": "四九"}},
         orchestration_profile="recruitment",
-        meta_item=meta_item,
+        session_item=session_item,
     )
 
     assert "【后台调度状态】" not in calls["user_prompt"]
     assert "网页爬取专家" not in calls["user_prompt"]
     assert out["decision_source"] == "host_scheduler_state"
     assert out["next_speaker"] == "user"
-    assert meta_item["scheduler_state"] == {
+    assert session_item["scheduler_state"] == {
         "current_phase": "需求确认",
         "next_speaker": "user",
         "speaker_task": "请用户确认新建 Skill 的用途。",
@@ -530,7 +531,7 @@ async def test_host_decide_hides_invitable_list_when_room_has_participants(monke
         group_session_id="group-recruitment-with-member",
         app_settings={"host_profile": {"leader_agent_name": "四九"}},
         orchestration_profile="recruitment",
-        meta_item={},
+        session_item={},
     )
 
     assert out["next_speaker"] == "写作专家"
@@ -624,7 +625,7 @@ async def test_leader_decide_rejects_legacy_next_prompt():
 async def test_leader_decide_protocol_error_is_user_visible():
     from app.agent.leader_scheduler import leader_decide
     from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE
-    from langchain_core.messages import AIMessage
+    from app.agent.messages import AIMessage
 
     class FakeClient:
         async def ainvoke(self, _messages):

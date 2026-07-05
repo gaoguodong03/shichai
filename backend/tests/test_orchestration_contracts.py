@@ -1,5 +1,7 @@
 """Orchestration contract hardening and scheduler normalization tests."""
 
+import pytest
+
 from app.agent.orchestrator_runtime import normalize_scheduler_decision
 from app.agent.orchestrator_state import (
     InterruptReason,
@@ -19,14 +21,43 @@ def test_normalize_respects_next_speaker_without_binding_last_expert():
     assert out["next_speaker"] == "检索专家"
 
 
-def test_orchestration_decision_migrates_legacy_next_prompt_to_speaker_task():
-    payload = OrchestrationDecision(
-        next_speaker="写作专家",
-        next_prompt="请继续写大纲",
-    ).to_dict()
+def test_orchestration_decision_rejects_legacy_next_prompt_constructor_arg():
+    with pytest.raises(TypeError):
+        OrchestrationDecision(
+            next_speaker="写作专家",
+            next_prompt="请继续写大纲",
+        )
 
-    assert payload["speaker_task"] == "请继续写大纲"
-    assert payload["next_prompt"] is None
+
+def test_normalize_scheduler_decision_rejects_legacy_next_prompt():
+    out = normalize_scheduler_decision(
+        {
+            "current_phase": "阶段1",
+            "next_speaker": "写作专家",
+            "next_prompt": "请继续写大纲",
+        },
+        agent_names=["写作专家"],
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["speaker_task"] == "主持人输出格式错误，请重试或联系管理员。"
+    assert out["interrupt_reason"] == InterruptReason.PROTOCOL_ERROR.value
+    assert out["decision_source"] == "system_guard"
+
+
+def test_normalize_scheduler_decision_rejects_legacy_next_prompt_even_when_null():
+    out = normalize_scheduler_decision(
+        {
+            "current_phase": "阶段1",
+            "next_speaker": "写作专家",
+            "speaker_task": "请继续写大纲",
+            "next_prompt": None,
+        },
+        agent_names=["写作专家"],
+    )
+
+    assert out["next_speaker"] == "user"
+    assert out["interrupt_reason"] == InterruptReason.PROTOCOL_ERROR.value
 
 
 def test_normalize_scheduler_decision_filters_suggested_add_by_recruitable_ids():

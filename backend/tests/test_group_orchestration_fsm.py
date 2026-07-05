@@ -9,7 +9,12 @@ from app.agent.group_orchestration_fsm import (
     resolve_group_entry_route,
     user_requests_exit_skill_session,
 )
+from app.agent.group_chat_runtime import GroupChatRequest
 from app.agent import skill_session_contract
+
+
+def test_group_chat_request_contract_only_message_fields():
+    assert set(GroupChatRequest.model_fields) == {"message", "client_message_id"}
 
 
 def test_effective_profile_explicit():
@@ -45,35 +50,11 @@ def test_available_to_add_scene_empty():
 def test_resolve_skip_host_when_skill_lock():
     meta = {"skill_session_owner_name": "写作专家"}
     r = resolve_group_entry_route(
-        meta_item=meta,
+        session_item=meta,
         agent_names=["写作专家"],
-        host_takeover_requested=False,
-        ignore_auto_agent_name="",
     )
     assert r.skip_host_dispatch is True
     assert r.direct_agent_name == "写作专家"
-
-
-def test_resolve_no_skip_on_host_takeover():
-    meta = {"skill_session_owner_name": "写作专家"}
-    r = resolve_group_entry_route(
-        meta_item=meta,
-        agent_names=["写作专家"],
-        host_takeover_requested=True,
-        ignore_auto_agent_name="",
-    )
-    assert r.skip_host_dispatch is False
-
-
-def test_resolve_no_skip_on_ignore_auto_same_expert():
-    meta = {"skill_session_owner_name": "写作专家"}
-    r = resolve_group_entry_route(
-        meta_item=meta,
-        agent_names=["写作专家"],
-        host_takeover_requested=False,
-        ignore_auto_agent_name="写作专家",
-    )
-    assert r.skip_host_dispatch is False
 
 
 def test_locked_skill_for_expert_match():
@@ -86,9 +67,9 @@ def test_locked_skill_for_expert_wrong_owner():
     assert locked_skill_for_expert(meta, expert_agent_name="检索专家", expert_skills=["sk1"]) is None
 
 
-def test_skill_session_ended_by_marker():
-    assert skill_session_contract.skill_session_ended_by_expert_output("完成 [[SKILL_SESSION_END]]")
-    assert skill_session_contract.skill_session_ended_by_expert_output("【技能会话结束】")
+def test_skill_session_legacy_markers_are_plain_text():
+    assert not skill_session_contract.skill_session_ended_by_expert_output("完成 [[SKILL_SESSION_END]]")
+    assert not skill_session_contract.skill_session_ended_by_expert_output("【技能会话结束】")
     assert not skill_session_contract.skill_session_ended_by_expert_output("仍在处理中")
 
 
@@ -124,9 +105,9 @@ def test_strip_skill_session_state_blocks_alias_skill_session_over():
     assert stripped.strip() == "x"
 
 
-def test_strip_end_markers_for_display():
+def test_strip_end_markers_for_display_keeps_legacy_text():
     t = "好了 [[SKILL_SESSION_END]]"
-    assert "SESSION_END" not in skill_session_contract.strip_skill_session_end_markers_for_display(t)
+    assert skill_session_contract.strip_skill_session_end_markers_for_display(t) == t
 
 
 def test_resolve_skill_session_state_reads_script_stdout_over():
@@ -300,7 +281,7 @@ def test_resolve_skill_session_state_script_false_beats_assistant_block_true():
     assert resolved.signals.script_stdout is False
 
 
-def test_resolve_skill_session_state_script_false_beats_legacy_marker():
+def test_resolve_skill_session_state_script_false_ignores_legacy_marker_text():
     raw_tool_outputs = [
         (
             '{"ok": true, "stdout": "{\\"execution_status\\":\\"blocked\\",'
@@ -313,15 +294,14 @@ def test_resolve_skill_session_state_script_false_beats_legacy_marker():
     assert resolved.over is False
     assert resolved.source == "script_stdout"
     assert resolved.signals is not None
-    assert resolved.signals.legacy_end_marker is True
-    assert "SKILL_SESSION_END" not in resolved.display_content
+    assert "SKILL_SESSION_END" in resolved.display_content
 
 
-def test_resolve_skill_session_state_legacy_marker_releases_without_explicit_signal():
+def test_resolve_skill_session_state_legacy_marker_does_not_release_without_explicit_signal():
     resolved = skill_session_contract.resolve_skill_session_state("完成 [[SKILL_SESSION_END]]")
-    assert resolved.over is True
-    assert resolved.source == "legacy_end_marker"
-    assert "SKILL_SESSION_END" not in resolved.display_content
+    assert resolved.over is None
+    assert resolved.source == "none"
+    assert "SKILL_SESSION_END" in resolved.display_content
 
 
 def test_resolve_skill_session_state_explicit_script_false_keeps_lock():

@@ -16,9 +16,9 @@ from fastapi import HTTPException
 
 from app.api.group_chat_state import (
     load_group_history,
-    load_group_meta,
+    load_session_definitions,
     save_group_history,
-    save_group_meta,
+    save_session_definitions,
 )
 from app.core.security import get_current_user
 from app.core.user_context import UserContext
@@ -66,9 +66,9 @@ def _workspace_root(session_id: str) -> Path:
     return layout.workspace
 
 
-def _session_meta_snapshot(session_id: str) -> Dict[str, Any]:
-    meta = load_group_meta()
-    item = meta.get(session_id)
+def _session_definition_snapshot(session_id: str) -> Dict[str, Any]:
+    session_definitions = load_session_definitions()
+    item = session_definitions.get(session_id)
     if not isinstance(item, dict):
         raise HTTPException(status_code=404, detail="Group session not found")
     snapshot = copy.deepcopy(item)
@@ -90,9 +90,9 @@ def _session_meta_snapshot(session_id: str) -> Dict[str, Any]:
     return snapshot
 
 
-def _canonical_state_hash(meta_snapshot: Dict[str, Any], tree_hash: str, chat_hash: str) -> str:
+def _canonical_state_hash(session_definition: Dict[str, Any], tree_hash: str, chat_hash: str) -> str:
     payload = {
-        "meta": meta_snapshot,
+        "session_definition": session_definition,
         "tree": tree_hash,
         "chat": chat_hash,
     }
@@ -200,14 +200,14 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
 
     layout = _session_layout(session_id)
     store = _object_store(session_id)
-    meta_snapshot = _session_meta_snapshot(session_id)
+    session_definition = _session_definition_snapshot(session_id)
     workspace_root = _workspace_root(session_id)
     history = load_group_history(session_id)
     markdown = _build_session_chat_markdown(history)
     message_count = len(history)
     chat_hash = write_blob(store, markdown.encode("utf-8"))
     tree_hash = _store_workspace_tree(store, workspace_root)
-    state_hash = _canonical_state_hash(meta_snapshot, tree_hash, chat_hash)
+    state_hash = _canonical_state_hash(session_definition, tree_hash, chat_hash)
     layout.chat_md.write_text(markdown, encoding="utf-8")
 
     chain = load_chain(layout)
@@ -228,7 +228,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
                     "workspace_tree": tree_hash,
                     "chat_blob": chat_hash,
                     "state_hash": state_hash,
-                    "session_meta": meta_snapshot,
+                    "session_definition": session_definition,
                     "reason": reason,
                     "existing": True,
                 }
@@ -247,7 +247,7 @@ def capture_session_checkpoint(session_id: str, *, reason: str = "manual") -> Di
         "state_hash": state_hash,
         "workspace_tree": tree_hash,
         "chat_blob": chat_hash,
-        "session_meta": meta_snapshot,
+        "session_definition": session_definition,
         "message_count": message_count,
     }
     if last_message_id:
@@ -314,20 +314,20 @@ def _copy_session_state(source_session_id: str, target_session_id: str, snapshot
     layout.chat_md.write_text(markdown, encoding="utf-8")
     with suppress_auto_checkpoint():
         messages = _restore_history(target_session_id, markdown)
-        meta = load_group_meta()
-        cloned_meta = copy.deepcopy(snapshot["session_meta"])
-        base_title = str(cloned_meta.get("title") or "新对话").strip() or "新对话"
+        session_definitions = load_session_definitions()
+        cloned_session_definition = copy.deepcopy(snapshot["session_definition"])
+        base_title = str(cloned_session_definition.get("title") or "新对话").strip() or "新对话"
         if not base_title.endswith("· 分叉"):
-            cloned_meta["title"] = f"{base_title} · 分叉"
-        cloned_meta["updated_at"] = _now()
-        cloned_meta["created_at"] = _now()
-        meta[target_session_id] = cloned_meta
-        save_group_meta(meta)
+            cloned_session_definition["title"] = f"{base_title} · 分叉"
+        cloned_session_definition["updated_at"] = _now()
+        cloned_session_definition["created_at"] = _now()
+        session_definitions[target_session_id] = cloned_session_definition
+        save_session_definitions(session_definitions)
     target_store = _object_store(target_session_id)
     target_tree_hash = _store_workspace_tree(target_store, workspace_root)
     target_chat_hash = write_blob(target_store, markdown.encode("utf-8"))
-    target_meta_snapshot = copy.deepcopy(snapshot["session_meta"])
-    target_state_hash = _canonical_state_hash(target_meta_snapshot, target_tree_hash, target_chat_hash)
+    target_session_definition = copy.deepcopy(snapshot["session_definition"])
+    target_state_hash = _canonical_state_hash(target_session_definition, target_tree_hash, target_chat_hash)
     commit_id = f"commit-{uuid.uuid4().hex[:16]}"
     commit_obj = {
         "id": commit_id,
@@ -337,7 +337,7 @@ def _copy_session_state(source_session_id: str, target_session_id: str, snapshot
         "state_hash": target_state_hash,
         "workspace_tree": target_tree_hash,
         "chat_blob": target_chat_hash,
-        "session_meta": target_meta_snapshot,
+        "session_definition": target_session_definition,
     }
     write_commit(layout, commit_id, commit_obj)
     save_chain(layout, [commit_id])
@@ -422,31 +422,31 @@ def _synthesize_snapshot_at_message_count(
     markdown = _build_session_chat_markdown(truncated)
     chat_hash = write_blob(store, markdown.encode("utf-8"))
     tree_hash = ""
-    meta_snapshot = _session_meta_snapshot(session_id)
+    session_definition = _session_definition_snapshot(session_id)
     normalized_message_id = str(message_id or "").strip()
     for checkpoint in reversed(list_session_checkpoints(session_id)):
         if normalized_message_id and checkpoint.get("last_message_id") == normalized_message_id:
             tree_hash = str(checkpoint.get("workspace_tree") or "")
-            if isinstance(checkpoint.get("session_meta"), dict):
-                meta_snapshot = copy.deepcopy(checkpoint["session_meta"])
+            if isinstance(checkpoint.get("session_definition"), dict):
+                session_definition = copy.deepcopy(checkpoint["session_definition"])
             break
     if not tree_hash:
         for checkpoint in reversed(list_session_checkpoints(session_id)):
             count = int(checkpoint.get("message_count") or 0)
             if count <= message_count and checkpoint.get("workspace_tree"):
                 tree_hash = str(checkpoint["workspace_tree"])
-                if isinstance(checkpoint.get("session_meta"), dict):
-                    meta_snapshot = copy.deepcopy(checkpoint["session_meta"])
+                if isinstance(checkpoint.get("session_definition"), dict):
+                    session_definition = copy.deepcopy(checkpoint["session_definition"])
                 break
     if not tree_hash:
         workspace_root = _workspace_root(session_id)
         tree_hash = _store_workspace_tree(store, workspace_root)
-    state_hash = _canonical_state_hash(meta_snapshot, tree_hash, chat_hash)
+    state_hash = _canonical_state_hash(session_definition, tree_hash, chat_hash)
     snapshot: Dict[str, Any] = {
         "workspace_tree": tree_hash,
         "chat_blob": chat_hash,
         "state_hash": state_hash,
-        "session_meta": meta_snapshot,
+        "session_definition": session_definition,
         "message_count": message_count,
         "synthesized": True,
     }
@@ -462,7 +462,7 @@ def _apply_snapshot_to_session(session_id: str, snapshot: Dict[str, Any]) -> Non
     workspace_root = _workspace_root(session_id)
     tree_hash = str(snapshot.get("workspace_tree") or "").strip()
     chat_blob = str(snapshot.get("chat_blob") or "").strip()
-    meta_snapshot = snapshot.get("session_meta") if isinstance(snapshot.get("session_meta"), dict) else {}
+    session_definition = snapshot.get("session_definition") if isinstance(snapshot.get("session_definition"), dict) else {}
     if not tree_hash or not chat_blob:
         raise HTTPException(status_code=500, detail="Invalid checkpoint")
 
@@ -471,14 +471,14 @@ def _apply_snapshot_to_session(session_id: str, snapshot: Dict[str, Any]) -> Non
     layout.chat_md.write_text(markdown, encoding="utf-8")
     with suppress_auto_checkpoint():
         _restore_history(session_id, markdown)
-        meta = load_group_meta()
-        current = meta.get(session_id)
+        session_definitions = load_session_definitions()
+        current = session_definitions.get(session_id)
         if isinstance(current, dict):
-            restored = copy.deepcopy(meta_snapshot)
+            restored = copy.deepcopy(session_definition)
             restored["updated_at"] = _now()
             restored.setdefault("created_at", current.get("created_at") or restored.get("created_at") or _now())
-            meta[session_id] = restored
-            save_group_meta(meta)
+            session_definitions[session_id] = restored
+            save_session_definitions(session_definitions)
 
 
 def clone_session_from_checkpoint(
@@ -504,11 +504,11 @@ def clone_session_from_checkpoint(
             raise HTTPException(status_code=400, detail="Unable to snapshot source session")
     new_session_id = f"group-{uuid.uuid4().hex[:12]}"
     result = _copy_session_state(session_id, new_session_id, source_snapshot)
-    cloned_meta = load_group_meta().get(new_session_id) or {}
+    cloned_session_definition = load_session_definitions().get(new_session_id) or {}
     return {
         "source_session_id": session_id,
         "session_id": new_session_id,
-        "title": str(cloned_meta.get("title") or "").strip() or None,
+        "title": str(cloned_session_definition.get("title") or "").strip() or None,
         "checkpoint_id": result["commit_id"],
         "source_checkpoint_id": source_snapshot.get("id") or source_snapshot.get("commit_id"),
     }
@@ -609,7 +609,7 @@ async def rollback_session_to_message(
             "state_hash": snapshot.get("state_hash"),
             "workspace_tree": snapshot.get("workspace_tree"),
             "chat_blob": snapshot.get("chat_blob"),
-            "session_meta": copy.deepcopy(snapshot.get("session_meta") or {}),
+            "session_definition": copy.deepcopy(snapshot.get("session_definition") or {}),
             "message_count": target_count,
         }
         if snapshot.get("last_message_id"):

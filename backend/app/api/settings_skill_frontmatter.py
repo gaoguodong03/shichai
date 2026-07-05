@@ -74,17 +74,15 @@ def tool_names_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
 
 def python_requirements_from_allowed_tools(fm: Dict[str, Any]) -> List[str]:
     at = fm.get(ALLOWED_TOOLS_FM_KEY)
-    py: Any = ""
+    py: Any = []
     if isinstance(at, dict):
         py = at.get("python")
-    if isinstance(py, str):
-        raw = py.splitlines()
-    elif py is None:
+    if py is None:
         raw = []
     elif isinstance(py, list):
         raw = [str(x or "") for x in py]
     else:
-        raw = str(py).splitlines()
+        raw = []
     out: List[str] = []
     seen: set[str] = set()
     for line in raw:
@@ -97,7 +95,7 @@ def python_requirements_from_allowed_tools(fm: Dict[str, Any]) -> List[str]:
 
 
 def python_doc_from_allowed_tools(fm: Dict[str, Any]) -> str:
-    """Backward-compatible text view for old callers that expect requirements text."""
+    """Render current allowed-tools Python dependencies as requirements text."""
     return "\n".join(python_requirements_from_allowed_tools(fm))
 
 
@@ -129,12 +127,10 @@ def normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     py = raw.get("python", [])
     if isinstance(py, list):
         py_list = list(dict.fromkeys(str(x).strip() for x in py if str(x).strip()))
-    elif isinstance(py, str):
-        py_list = list(dict.fromkeys(x.strip() for x in py.splitlines() if x.strip()))
     elif py is None:
         py_list = []
     else:
-        py_list = [str(py).strip()] if str(py).strip() else []
+        py_list = []
     return {
         "mcp": mcp_list,
         "http_api": http_api_list,

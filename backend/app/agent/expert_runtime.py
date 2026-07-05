@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
-from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
+from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
 from app.agent.group_chat_expert_resolution import _last_user_message_text
@@ -122,24 +122,23 @@ async def resolve_expert_skill(
     agent_name: str,
     discussion_goal: str,
     messages: List[Dict[str, Any]],
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     app_settings: Dict[str, Any],
     round_user_text: str,
     skills_loader: Any,
     llm_resolver: LlmResolver,
-    ignored_auto_skill: Optional[str] = None,
     group_session_id: str = "",
 ) -> Tuple[str, str, Dict[str, Any]]:
     """Resolve the Skill for one expert turn; locked Skill sessions win."""
-    _ = app_settings, ignored_auto_skill
+    _ = app_settings
     skill_directories = _skill_directory_names(agent_profile)
 
-    owner = str(meta_item.get("skill_session_owner_name") or "").strip().casefold()
-    locked_raw = str(meta_item.get("skill_session_skill") or "").strip()
+    owner = str(session_item.get("skill_session_owner_name") or "").strip().casefold()
+    locked_raw = str(session_item.get("skill_session_skill") or "").strip()
     if owner == str(agent_name or "").strip().casefold() and locked_raw and locked_raw not in skill_directories:
-        clear_skill_session_lock(meta_item)
+        clear_skill_session_lock(session_item)
 
-    locked = locked_skill_for_expert(meta_item, expert_agent_name=agent_name, expert_skills=skill_directories)
+    locked = locked_skill_for_expert(session_item, expert_agent_name=agent_name, expert_skills=skill_directories)
     if locked:
         content = skills_loader.get_skill_full_content(locked)
         if content:
@@ -196,13 +195,12 @@ async def build_expert_turn_runtime(
     group_session_id: str,
     discussion_goal: str,
     messages: List[Dict[str, Any]],
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     app_settings: Dict[str, Any],
     round_user_text: str,
     extra_system_prompt: str,
     skills_loader: Any,
     llm_resolver: LlmResolver,
-    ignored_auto_skill: Optional[str] = None,
     tool_builder: ToolBuilder = build_tools_for_group_chat,
     agent_factory: AgentFactory = create_skill_execution_agent,
 ) -> ExpertTurnRuntime:
@@ -212,12 +210,11 @@ async def build_expert_turn_runtime(
         agent_name=agent_name,
         discussion_goal=discussion_goal,
         messages=messages,
-        meta_item=meta_item,
+        session_item=session_item,
         app_settings=app_settings,
         round_user_text=round_user_text,
         skills_loader=skills_loader,
         llm_resolver=llm_resolver,
-        ignored_auto_skill=ignored_auto_skill,
         group_session_id=group_session_id,
     )
     runtime = ExpertTurnRuntime(

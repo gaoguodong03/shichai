@@ -14,7 +14,7 @@ def test_pick_scene_host_skill_prefers_specialized_host_skill():
 def test_scene_runtime_resolves_virtual_host_and_hides_recruitment_list():
     runtime = SceneRuntime.from_group_session(
         session_id="g1",
-        meta_item={
+        session_item={
             "leader_agent_name": "四九场景主持",
             "agent_names": ["写作"],
             "host_config": {
@@ -42,7 +42,7 @@ def test_scene_runtime_keeps_recruitment_list_for_empty_room():
     available = [{"name": "外部专家"}]
     runtime = SceneRuntime.from_group_session(
         session_id="g1",
-        meta_item={},
+        session_item={},
         agent_names=[],
         agent_map={},
         app_host_profile={"leader_agent_name": "四九", "skill_name": "群聊主持", "skill_directory": "group-host"},
@@ -57,7 +57,7 @@ def test_scene_runtime_hides_recruitment_list_when_room_has_members():
     available = [{"name": "外部专家"}]
     runtime = SceneRuntime.from_group_session(
         session_id="g1",
-        meta_item={"orchestration_profile": "recruitment"},
+        session_item={"orchestration_profile": "recruitment"},
         agent_names=["写作"],
         agent_map={"写作": {"name": "写作"}},
         app_host_profile={"leader_agent_name": "四九", "skill_name": "群聊主持", "skill_directory": "group-host"},
@@ -71,7 +71,7 @@ def test_scene_runtime_hides_recruitment_list_when_room_has_members():
 def test_scene_runtime_preserves_empty_host_skills():
     runtime = SceneRuntime.from_group_session(
         session_id="g1",
-        meta_item={
+        session_item={
             "leader_agent_name": "四九",
             "agent_names": ["写作"],
             "host_config": {"leader_agent_name": "四九"},
@@ -91,7 +91,7 @@ def test_context_system_prompt_combines_global_and_scene_prompts():
     assert hasattr(scene_runtime, "build_context_system_prompt")
     prompt = scene_runtime.build_context_system_prompt(
         app_settings={"system_prompt": "全局项目规则"},
-        meta_item={"system_prompt": "场景级项目规则"},
+        session_item={"system_prompt": "场景级项目规则"},
     )
 
     assert prompt == "全局项目规则\n\n场景级项目规则"

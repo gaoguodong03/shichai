@@ -5,7 +5,7 @@ Canonical layout (multi-tenant isolated under data/users/{user_id}/):
     sessions/
       index.json
       {session_id}/
-        session.json              # session metadata snapshot
+        session.json              # session definition snapshot
         history.json              # runtime chat history (JSON)
         runtime.json              # live runtime mirror for UI recovery
         chat.md                   # exported chat for agents / checkpoints

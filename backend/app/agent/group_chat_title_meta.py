@@ -1,4 +1,4 @@
-"""Title, metadata, and lightweight skill-gate helpers for group chat."""
+"""Title and lightweight skill-gate helpers for group chat."""
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any, Dict, List
 
-from langchain_core.messages import HumanMessage, SystemMessage  # type: ignore
+from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 
 from app.agent.group_context import (
     normalize_discussion_goal as _normalize_discussion_goal,
@@ -18,18 +18,18 @@ from app.agent.group_context import (
 from app.agent.llm_client import get_llm_from_config
 from app.api.group_chat_state import (
     format_storage_timestamp,
-    load_group_meta as _load_group_meta,
+    load_session_definitions as _load_session_definitions,
     save_group_history as _save_group_history,
-    save_group_meta as _save_group_meta,
+    save_session_definitions as _save_session_definitions,
 )
 from app.api.settings_app import load_app_settings
 from app.api.settings_secrets import load_api_secret_values
 logger = logging.getLogger(__name__)
 
 
-def _maybe_upgrade_meta_to_scene_profile(meta_item: Dict[str, Any]) -> bool:
-    """No-op after the name-based session contract removed legacy meta upgrades."""
-    _ = meta_item
+def _ensure_scene_profile_contract(session_item: Dict[str, Any]) -> bool:
+    """No-op after the name-based session contract removed legacy upgrades."""
+    _ = session_item
     return False
 
 
@@ -119,14 +119,14 @@ def _schedule_group_title_refresh(
                     int((time.perf_counter() - started) * 1000),
                 )
                 return
-            latest_meta = _load_group_meta()
-            meta_item = latest_meta.get(session_id)
-            if not isinstance(meta_item, dict):
+            latest_session_definitions = _load_session_definitions()
+            session_item = latest_session_definitions.get(session_id)
+            if not isinstance(session_item, dict):
                 return
-            current_title = (meta_item.get("title") or "").strip()
+            current_title = (session_item.get("title") or "").strip()
             placeholder_titles = ("新对话", "新群聊", "")
             is_template_title = current_title.startswith("多Agent协作 ·")
-            title_auto_generated = meta_item.get("title_auto_generated")
+            title_auto_generated = session_item.get("title_auto_generated")
             if title_auto_generated is None:
                 title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
             if not (title_auto_generated or current_title in placeholder_titles or is_template_title):
@@ -136,9 +136,9 @@ def _schedule_group_title_refresh(
                     current_title,
                 )
                 return
-            meta_item["title"] = ai_title
-            meta_item["title_auto_generated"] = True
-            _save_group_meta(latest_meta)
+            session_item["title"] = ai_title
+            session_item["title_auto_generated"] = True
+            _save_session_definitions(latest_session_definitions)
             logger.debug(
                 "group_chat_title_background_done session=%s title=%r elapsed_ms=%s",
                 session_id,
@@ -163,7 +163,7 @@ def _title_refresh_every_user_message() -> bool:
 def _record_user_message_and_refresh_title(
     *,
     group_session_id: str,
-    meta: Dict[str, Dict[str, Any]],
+    session_definitions: Dict[str, Dict[str, Any]],
     messages: List[Dict[str, Any]],
     user_message: str,
     client_message_id: str,
@@ -171,7 +171,7 @@ def _record_user_message_and_refresh_title(
     """Append a user message once and schedule title refresh while title is automatic."""
     if not user_message:
         return
-    meta_item = meta[group_session_id]
+    session_item = session_definitions[group_session_id]
     duplicate_user_message = bool(
         client_message_id
         and any(
@@ -191,12 +191,12 @@ def _record_user_message_and_refresh_title(
             user_msg["client_message_id"] = client_message_id
         messages.append(user_msg)
         _save_group_history(group_session_id, messages)
-        meta_item["updated_at"] = format_storage_timestamp()
+        session_item["updated_at"] = format_storage_timestamp()
 
-    current_title = (meta_item.get("title") or "").strip()
+    current_title = (session_item.get("title") or "").strip()
     placeholder_titles = ("新对话", "新群聊", "")
     is_template_title = current_title.startswith("多Agent协作 ·")
-    title_auto_generated = meta_item.get("title_auto_generated")
+    title_auto_generated = session_item.get("title_auto_generated")
     if title_auto_generated is None:
         title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
     should_refresh_title = bool(
@@ -211,9 +211,9 @@ def _record_user_message_and_refresh_title(
     if should_refresh_title and first_user_message and (current_title in placeholder_titles or is_template_title):
         auto_title = _title_from_first_message(user_message, max_chars=10)
         if auto_title:
-            meta_item["title"] = auto_title
-            meta_item["title_auto_generated"] = True
-    _save_group_meta(meta)
+            session_item["title"] = auto_title
+            session_item["title_auto_generated"] = True
+    _save_session_definitions(session_definitions)
     if should_refresh_title:
         _schedule_group_title_refresh(
             group_session_id,

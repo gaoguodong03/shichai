@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent_finalization import _deterministic_tool_fallback_message
 from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step
@@ -870,7 +870,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                 func=lambda: None,
             ),
         ],
-        system_prompt="完成单次测试任务后输出 [[SKILL_SESSION_END]]。",
+        system_prompt="完成单次测试任务后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
         synthesize_after_tools=True,
@@ -962,7 +962,7 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
                 func=lambda: None,
             ),
         ],
-        system_prompt="完成单次测试任务后输出 [[SKILL_SESSION_END]]。",
+        system_prompt="完成单次测试任务后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
         synthesize_after_tools=True,
@@ -2052,7 +2052,7 @@ async def test_script_dependency_failure_fallback_when_final_llm_fails():
     agent = SimpleAgent(
         llm=_FakeLLM([script_call, llm_failure]),
         tools=[],
-        system_prompt="验证结束后输出 [[SKILL_SESSION_END]]。",
+        system_prompt="验证结束后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
     )
@@ -2239,7 +2239,7 @@ async def test_run_skill_script_dependency_missing_direct_final_without_second_l
     agent = SimpleAgent(
         llm=_FakeLLM([script_call, should_not_call]),
         tools=[],
-        system_prompt="验证结束后输出 [[SKILL_SESSION_END]]。",
+        system_prompt="验证结束后按当前 Skill 会话协议输出。",
         tool_runner=_tool_runner,
         max_steps=4,
     )

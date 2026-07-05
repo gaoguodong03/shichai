@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 import logging
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.group_chat_streaming import iter_with_keepalive
 from app.agent.simple_agent import SimpleAgent
@@ -71,13 +71,13 @@ async def test_runtime_state_clears_finished_active_run(monkeypatch):
         lambda session_id, state: writes.append((session_id, state)),
     )
     try:
-        meta_item = {"runtime_state": {"running": True, "phase": "tool_running"}}
-        state = group_chat_state.runtime_state_for_session("session-done", meta_item)
+        session_item = {"runtime_state": {"running": True, "phase": "tool_running"}}
+        state = group_chat_state.runtime_state_for_session("session-done", session_item)
     finally:
         group_chat_state.ACTIVE_GROUP_RUNS.pop("session-done", None)
 
     assert state == {"running": False}
-    assert "runtime_state" not in meta_item
+    assert "runtime_state" not in session_item
     assert writes == [("session-done", None)]
 
 
@@ -176,7 +176,7 @@ async def test_background_stream_keeps_source_running_after_client_close():
 def test_clears_completed_audio_skill_lock_from_history():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "转写专家",
         "skill_session_skill": "audio-transcription",
     }
@@ -197,15 +197,15 @@ def test_clears_completed_audio_skill_lock_from_history():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is True
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
 
 def test_clears_implicit_skill_lock_from_history():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "研讨教师",
         "skill_session_skill": "seminar-teacher",
     }
@@ -224,15 +224,15 @@ def test_clears_implicit_skill_lock_from_history():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is True
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
 
 def test_keeps_explicit_continue_skill_lock_from_history():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "研讨教师",
         "skill_session_skill": "seminar-teacher",
     }
@@ -251,15 +251,15 @@ def test_keeps_explicit_continue_skill_lock_from_history():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is False
-    assert meta_item["skill_session_owner_name"] == "研讨教师"
-    assert meta_item["skill_session_skill"] == "seminar-teacher"
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is False
+    assert session_item["skill_session_owner_name"] == "研讨教师"
+    assert session_item["skill_session_skill"] == "seminar-teacher"
 
 
 def test_keeps_skill_lock_from_new_history_skill_result():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "研讨教师",
         "skill_session_skill": "seminar-teacher",
     }
@@ -293,15 +293,15 @@ def test_keeps_skill_lock_from_new_history_skill_result():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is False
-    assert meta_item["skill_session_owner_name"] == "研讨教师"
-    assert meta_item["skill_session_skill"] == "seminar-teacher"
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is False
+    assert session_item["skill_session_owner_name"] == "研讨教师"
+    assert session_item["skill_session_skill"] == "seminar-teacher"
 
 
 def test_clears_skill_lock_from_new_history_skill_result_release():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "研讨教师",
         "skill_session_skill": "seminar-teacher",
     }
@@ -324,15 +324,15 @@ def test_clears_skill_lock_from_new_history_skill_result_release():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is True
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
 
 def test_clears_bound_skill_introspection_lock_from_history():
     from app.agent.group_chat_skill_session import _clear_completed_skill_session_lock_from_history
 
-    meta_item = {
+    session_item = {
         "skill_session_owner_name": "Skill 专家",
         "skill_session_skill": "skill-builder",
     }
@@ -357,51 +357,51 @@ def test_clears_bound_skill_introspection_lock_from_history():
         }
     ]
 
-    assert _clear_completed_skill_session_lock_from_history(meta_item, messages) is True
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert _clear_completed_skill_session_lock_from_history(session_item, messages) is True
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
 
 def test_store_skill_session_lock_only_for_explicit_continue_or_forced_wait():
     from app.agent.group_chat_skill_session import _store_skill_session_lock_for_turn
 
-    meta_item = {"skill_session_owner_name": "旧专家", "skill_session_skill": "old"}
+    session_item = {"skill_session_owner_name": "旧专家", "skill_session_skill": "old"}
     _store_skill_session_lock_for_turn(
-        meta_item,
+        session_item,
         owner_agent_name="研讨教师",
         skill="seminar-teacher",
         skill_session_over=None,
     )
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
     _store_skill_session_lock_for_turn(
-        meta_item,
+        session_item,
         owner_agent_name="研讨教师",
         skill="seminar-teacher",
         skill_session_over=False,
     )
-    assert meta_item["skill_session_owner_name"] == "研讨教师"
-    assert meta_item["skill_session_skill"] == "seminar-teacher"
+    assert session_item["skill_session_owner_name"] == "研讨教师"
+    assert session_item["skill_session_skill"] == "seminar-teacher"
 
     _store_skill_session_lock_for_turn(
-        meta_item,
+        session_item,
         owner_agent_name="研讨教师",
         skill="seminar-teacher",
         skill_session_over=True,
     )
-    assert "skill_session_owner_name" not in meta_item
-    assert "skill_session_skill" not in meta_item
+    assert "skill_session_owner_name" not in session_item
+    assert "skill_session_skill" not in session_item
 
     _store_skill_session_lock_for_turn(
-        meta_item,
+        session_item,
         owner_agent_name="研讨教师",
         skill="seminar-teacher",
         skill_session_over=None,
         force_keep=True,
     )
-    assert meta_item["skill_session_owner_name"] == "研讨教师"
-    assert meta_item["skill_session_skill"] == "seminar-teacher"
+    assert session_item["skill_session_owner_name"] == "研讨教师"
+    assert session_item["skill_session_skill"] == "seminar-teacher"
 
 
 def test_scene_expert_turn_hands_back_to_host_before_next_target():

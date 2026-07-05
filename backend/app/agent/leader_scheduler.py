@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from app.agent.messages import SystemMessage, HumanMessage
 
 from app.agent.orchestrator_state import (
     DecisionSource,
@@ -177,7 +177,6 @@ async def leader_decide(
             next_speaker="user",
             reason=f"解析失败: {e}",
             announcement=HOST_PROTOCOL_ERROR_MESSAGE,
-            next_prompt=None,
             phase=OrchestrationPhase.AWAITING_USER,
             owner_agent_name=None,
             interrupt_reason=InterruptReason.PROTOCOL_ERROR,

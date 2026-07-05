@@ -39,19 +39,19 @@ ORCHESTRATION_RECRUITMENT = "recruitment"
 ORCHESTRATION_SCENE = "scene"
 
 
-def effective_orchestration_profile(meta_item: Dict[str, Any], *, agent_names: List[str]) -> str:
+def effective_orchestration_profile(session_item: Dict[str, Any], *, agent_names: List[str]) -> str:
     """
     返回 recruitment | scene。
     显式字段优先；缺省：无成员视为招募房间，有成员视为场景。
     """
-    raw = str(meta_item.get("orchestration_profile") or "").strip().lower()
+    raw = str(session_item.get("orchestration_profile") or "").strip().lower()
     if raw in (ORCHESTRATION_RECRUITMENT, ORCHESTRATION_SCENE):
         return raw
     return ORCHESTRATION_RECRUITMENT if not agent_names else ORCHESTRATION_SCENE
 
 
 def default_orchestration_profile_for_new_session(*, agent_names: List[str]) -> str:
-    """新建会话时写入 meta 的默认值。"""
+    """新建会话时写入会话定义的默认值。"""
     return ORCHESTRATION_SCENE if agent_names else ORCHESTRATION_RECRUITMENT
 
 
@@ -80,37 +80,21 @@ class GroupEntryRoute:
 
 def resolve_group_entry_route(
     *,
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     agent_names: List[str],
-    host_takeover_requested: bool,
-    ignore_auto_agent_name: str,
     user_message: str = "",
 ) -> GroupEntryRoute:
     """
     是否跳过四九调度、直接由锁定专家处理本轮用户消息。
     （@ 点名由 group_chat 更前序分支处理，此处不再判断。）
 
-    规则：存在 skill_session_owner_name 且仍在本场 agent_names 内，且用户未要求主持人接管/
-    未使用 ignore 排除该专家时，跳过主持人。
+    规则：存在 skill_session_owner_name 且仍在本场 agent_names 内时，跳过主持人。
+    用户要求主持人接管、点名其他专家或结束当前 Skill 的情况在 group_chat_runtime 更前序清锁。
     """
-    lock = str(meta_item.get("skill_session_owner_name") or "").strip()
+    lock = str(session_item.get("skill_session_owner_name") or "").strip()
     agent_name_keys = {str(x or "").strip().casefold() for x in agent_names or [] if str(x or "").strip()}
     lock_key = lock.casefold()
     if not lock or lock_key not in agent_name_keys:
-        return GroupEntryRoute(
-            skip_host_dispatch=False,
-            direct_agent_name=None,
-            clear_skill_lock_before_host=True,
-        )
-
-    if host_takeover_requested:
-        return GroupEntryRoute(
-            skip_host_dispatch=False,
-            direct_agent_name=None,
-            clear_skill_lock_before_host=True,
-        )
-
-    if ignore_auto_agent_name and ignore_auto_agent_name.casefold() == lock_key:
         return GroupEntryRoute(
             skip_host_dispatch=False,
             direct_agent_name=None,
@@ -125,29 +109,29 @@ def resolve_group_entry_route(
 
 
 def persist_skill_session_lock(
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     *,
     owner_agent_name: str,
     skill: str,
 ) -> None:
-    meta_item["skill_session_owner_name"] = str(owner_agent_name or "").strip()
-    meta_item["skill_session_skill"] = str(skill or "").strip()
+    session_item["skill_session_owner_name"] = str(owner_agent_name or "").strip()
+    session_item["skill_session_skill"] = str(skill or "").strip()
 
 
-def clear_skill_session_lock(meta_item: Dict[str, Any]) -> None:
-    meta_item.pop("skill_session_owner_name", None)
-    meta_item.pop("skill_session_skill", None)
+def clear_skill_session_lock(session_item: Dict[str, Any]) -> None:
+    session_item.pop("skill_session_owner_name", None)
+    session_item.pop("skill_session_skill", None)
 
 
 def locked_skill_for_expert(
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     *,
     expert_agent_name: str,
     expert_skills: List[str],
 ) -> Optional[str]:
     """若本轮为 Skill 会话续跑（四九未调度），返回应继续使用的 Skill 目录名。"""
-    owner = str(meta_item.get("skill_session_owner_name") or "").strip().casefold()
-    skill = str(meta_item.get("skill_session_skill") or "").strip()
+    owner = str(session_item.get("skill_session_owner_name") or "").strip().casefold()
+    skill = str(session_item.get("skill_session_skill") or "").strip()
     expert = str(expert_agent_name or "").strip().casefold()
     skills = {str(x).strip() for x in expert_skills if str(x).strip()}
     if not owner or owner != expert or not skill:

@@ -265,6 +265,6 @@ def test_skill_frontmatter_keeps_allowed_tools_mcp_http_api_and_python_only():
         "allowed-tools": {
             "mcp": ["MiniMax"],
             "http_api": ["Exa"],
-            "python": ["pandas"],
+            "python": [],
         },
     }

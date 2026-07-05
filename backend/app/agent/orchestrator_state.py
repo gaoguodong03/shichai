@@ -73,7 +73,6 @@ class OrchestrationDecision:
     next_speaker: str = "user"
     reason: str = ""
     announcement: str = ""
-    next_prompt: Optional[str] = None
     current_phase: str = ""
     speaker_task: str = ""
     suggested_add_agent_names: List[str] = field(default_factory=list)
@@ -85,15 +84,13 @@ class OrchestrationDecision:
     required_user_fields: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        speaker_task = self.speaker_task or self.next_prompt or ""
         payload: Dict[str, Any] = {
             "task_done": bool(self.task_done),
             "next_speaker": (self.next_speaker or "user").strip().lower(),
             "reason": self.reason or "",
             "announcement": self.announcement or self.reason or "",
-            "next_prompt": None,
             "current_phase": self.current_phase or "",
-            "speaker_task": str(speaker_task),
+            "speaker_task": str(self.speaker_task or ""),
             "suggested_add_agent_names": list(self.suggested_add_agent_names or []),
             "phase": self.phase.value,
             "owner_agent_name": self.owner_agent_name,

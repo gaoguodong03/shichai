@@ -22,11 +22,12 @@ from app.api.group_chat_state import (
     cleanup_orphan_group_histories as _cleanup_orphan_group_histories,
     ensure_sessions_dir as _ensure_sessions_dir,
     format_storage_timestamp,
+    frontend_history_message as _frontend_history_message,
     load_group_history as _load_group_history,
-    load_group_meta as _load_group_meta,
+    load_session_definitions as _load_session_definitions,
     runtime_state_for_session as _runtime_state_for_session,
     save_group_history as _save_group_history,
-    save_group_meta as _save_group_meta,
+    save_session_definitions as _save_session_definitions,
 )
 from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
@@ -38,7 +39,7 @@ from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
 )
 from app.agent.group_chat_title_meta import (
-    _maybe_upgrade_meta_to_scene_profile,
+    _ensure_scene_profile_contract,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,9 +83,9 @@ def _validate_agent_names(names: List[str], valid_names: set[str]) -> None:
             raise HTTPException(status_code=400, detail=f"专家 {name} 不存在")
 
 
-def _clear_scheduler_state_for_session(meta_item: Dict[str, Any]) -> None:
+def _clear_scheduler_state_for_session(session_item: Dict[str, Any]) -> None:
     """Configuration changes invalidate host stage state from a previous scene/task."""
-    meta_item.pop("scheduler_state", None)
+    session_item.pop("scheduler_state", None)
 
 
 def create_session_internal(
@@ -103,7 +104,7 @@ def create_session_internal(
     _validate_agent_names(names, valid_names)
     gsid = f"group-{uuid.uuid4().hex[:12]}"
     now = format_storage_timestamp()
-    meta = _load_group_meta()
+    session_definitions = _load_session_definitions()
     raw_title = (title or "").strip()
     placeholder_titles = {"新对话", "新群聊", ""}
     title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("多Agent协作 ·")
@@ -124,8 +125,8 @@ def create_session_internal(
     scene_system_prompt = str(system_prompt or "").strip()
     if scene_system_prompt:
         row["system_prompt"] = scene_system_prompt
-    meta[gsid] = row
-    _save_group_meta(meta)
+    session_definitions[gsid] = row
+    _save_session_definitions(session_definitions)
     _save_group_history(gsid, [])
     # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
     try:
@@ -135,7 +136,7 @@ def create_session_internal(
     except Exception:
         logger.warning("session_state initial checkpoint failed: %s", gsid, exc_info=True)
     # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
-    return _build_session_payload(gsid, meta[gsid])
+    return _build_session_payload(gsid, session_definitions[gsid])
 
 def export_session_to_markdown(session_id: str, filename: Optional[str] = None) -> tuple:
     """将会话历史导出为 Markdown 到该会话工作区。历史来自 group_history。返回 (rel_path, download_url)。"""
@@ -157,12 +158,12 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
 
 async def get_group_session(group_session_id: str):
     """获取群聊详情与消息。"""
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
-    m = meta[group_session_id]
-    if _maybe_upgrade_meta_to_scene_profile(m):
-        _save_group_meta(meta)
+    session_item = session_definitions[group_session_id]
+    if _ensure_scene_profile_contract(session_item):
+        _save_session_definitions(session_definitions)
     messages = _load_group_history(group_session_id)
     instances = load_agent_instances()
     enriched_instances = await enrich_agent_instances(instances, workspace_id=group_session_id)
@@ -170,10 +171,10 @@ async def get_group_session(group_session_id: str):
     normalized_messages = []
     for msg in messages:
         row = dict(msg or {})
-        normalized_messages.append(row)
+        normalized_messages.append(_frontend_history_message(row))
     messages = normalized_messages
-    agent_names_in_group = set(_dedupe_names(list(m.get("agent_names", []))))
-    m["agent_names"] = list(agent_names_in_group)
+    agent_names_in_group = set(_dedupe_names(list(session_item.get("agent_names", []))))
+    session_item["agent_names"] = list(agent_names_in_group)
     agent_names_in_messages = {msg.get("agent_name") for msg in messages if msg.get("agent_name")}
     relevant_names = agent_names_in_group | agent_names_in_messages
     agent_map = {
@@ -186,7 +187,7 @@ async def get_group_session(group_session_id: str):
     }
     app_settings_gs = load_app_settings()
     hp_gs = normalize_host_profile(app_settings_gs.get("host_profile") or {})
-    scenario_gs = load_session_scenario_row(m)
+    scenario_gs = load_session_scenario_row(session_item)
     hc_gs = scenario_gs.get("host_config") if isinstance(scenario_gs.get("host_config"), dict) else {}
     hc_dn = str(hc_gs.get("leader_agent_name") or "").strip()
     host_dn = hc_dn or str(hp_gs.get("leader_agent_name") or "四九").strip() or "四九"
@@ -197,17 +198,17 @@ async def get_group_session(group_session_id: str):
     return {
         "status": "ok",
         "data": {
-            **_build_session_payload(group_session_id, m),
+            **_build_session_payload(group_session_id, session_item),
             "messages": messages,
             "agent_map": agent_map,
-            "runtime_state": _runtime_state_for_session(group_session_id, m),
+            "runtime_state": _runtime_state_for_session(group_session_id, session_item),
         },
     }
 
 async def group_session_events_stream(group_session_id: str):
     """会话事件推送流：用于页面恢复/多标签页时主动同步运行态与新消息。"""
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
 
     async def event_gen():
@@ -220,7 +221,7 @@ async def group_session_events_stream(group_session_id: str):
                 "type": "snapshot",
                 "session_id": group_session_id,
                 "timestamp": format_storage_timestamp(),
-                "runtime_state": _runtime_state_for_session(group_session_id, meta.get(group_session_id) or {}),
+                "runtime_state": _runtime_state_for_session(group_session_id, session_definitions.get(group_session_id) or {}),
             }
             yield f"event: session_update\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
             while True:
@@ -246,12 +247,12 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话不在 meta 中但请求为邀请，则自动新建该会话条目以避免 404。"""
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话定义不存在但请求为邀请，则自动新建该会话条目以避免 404。"""
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         if body.add_agent_names:
             now = format_storage_timestamp()
-            meta[group_session_id] = {
+            session_definitions[group_session_id] = {
                 "title": "新群聊",
                 "title_auto_generated": True,
                 "agent_names": [],
@@ -259,62 +260,62 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 "created_at": now,
                 "updated_at": now,
             }
-            _save_group_meta(meta)
+            _save_session_definitions(session_definitions)
             _save_group_history(group_session_id, [])
         else:
             raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
         next_title = body.title.strip()
-        meta[group_session_id]["title"] = next_title
+        session_definitions[group_session_id]["title"] = next_title
         # 兼容历史前端自动模板标题：仍视为“自动生成”，允许后续被主题标题覆盖
         if next_title.startswith("多Agent协作 ·") or next_title in {"新对话", "新群聊", ""}:
-            meta[group_session_id]["title_auto_generated"] = True
+            session_definitions[group_session_id]["title_auto_generated"] = True
         else:
             # 用户主动修改标题后，停止自动主题覆盖
-            meta[group_session_id]["title_auto_generated"] = False
+            session_definitions[group_session_id]["title_auto_generated"] = False
     if body.system_prompt is not None:
         scene_system_prompt = str(body.system_prompt or "").strip()
         if scene_system_prompt:
-            meta[group_session_id]["system_prompt"] = scene_system_prompt
+            session_definitions[group_session_id]["system_prompt"] = scene_system_prompt
         else:
-            meta[group_session_id].pop("system_prompt", None)
+            session_definitions[group_session_id].pop("system_prompt", None)
     if body.scenario_name is not None:
         scenario_name = str(body.scenario_name or "").strip()
         if scenario_name:
-            meta[group_session_id]["scenario_name"] = scenario_name
-            meta[group_session_id]["orchestration_profile"] = "scene"
+            session_definitions[group_session_id]["scenario_name"] = scenario_name
+            session_definitions[group_session_id]["orchestration_profile"] = "scene"
         else:
-            meta[group_session_id].pop("scenario_name", None)
-        _clear_scheduler_state_for_session(meta[group_session_id])
+            session_definitions[group_session_id].pop("scenario_name", None)
+        _clear_scheduler_state_for_session(session_definitions[group_session_id])
     if body.host_config is not None:
-        _clear_scheduler_state_for_session(meta[group_session_id])
+        _clear_scheduler_state_for_session(session_definitions[group_session_id])
         # 兼容旧前端：会话不再保存 host_config，只把该操作视为切换到场景编排。
-        meta[group_session_id]["orchestration_profile"] = "scene"
+        session_definitions[group_session_id]["orchestration_profile"] = "scene"
     elif body.leader_agent_name is not None:
         # 旧协议字段已废弃；主持人由账号 host_profile 或 scenario_name 指向的场景资源解析。
-        _clear_scheduler_state_for_session(meta[group_session_id])
+        _clear_scheduler_state_for_session(session_definitions[group_session_id])
     if body.orchestration_profile is not None:
         op = str(body.orchestration_profile).strip().lower()
         if op not in ("recruitment", "scene"):
             raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
-        meta[group_session_id]["orchestration_profile"] = op
-        _clear_scheduler_state_for_session(meta[group_session_id])
+        session_definitions[group_session_id]["orchestration_profile"] = op
+        _clear_scheduler_state_for_session(session_definitions[group_session_id])
     direct_names = body.agent_names
     if direct_names is not None:
         instances = load_agent_instances()
         valid_names = set(_agent_name_map(instances))
         deduped = _dedupe_names(list(direct_names or []))
         _validate_agent_names(deduped, valid_names)
-        meta[group_session_id]["agent_names"] = deduped
-        _clear_scheduler_state_for_session(meta[group_session_id])
-        if deduped and str(meta[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
-            meta[group_session_id]["orchestration_profile"] = "scene"
+        session_definitions[group_session_id]["agent_names"] = deduped
+        _clear_scheduler_state_for_session(session_definitions[group_session_id])
+        if deduped and str(session_definitions[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
+            session_definitions[group_session_id]["orchestration_profile"] = "scene"
     add_names = body.add_agent_names
     remove_names = body.remove_agent_names
     if add_names or remove_names:
         instances = load_agent_instances()
         valid_names = set(_agent_name_map(instances))
-        current = set(_dedupe_names(list(meta[group_session_id].get("agent_names", []))))
+        current = set(_dedupe_names(list(session_definitions[group_session_id].get("agent_names", []))))
         add_names_norm = _dedupe_names(list(add_names or []))
         remove_names_norm = _dedupe_names(list(remove_names or []))
         before_names = set(current)
@@ -328,9 +329,9 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         if remove_names_norm:
             for name in remove_names_norm:
                 current.discard(name)
-        meta[group_session_id]["agent_names"] = list(current)
+        session_definitions[group_session_id]["agent_names"] = list(current)
         if current != before_names:
-            _clear_scheduler_state_for_session(meta[group_session_id])
+            _clear_scheduler_state_for_session(session_definitions[group_session_id])
         # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
         unique_added = (
             list(
@@ -373,20 +374,20 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                     }
                 )
             _save_group_history(group_session_id, messages)
-    if _maybe_upgrade_meta_to_scene_profile(meta[group_session_id]):
+    if _ensure_scene_profile_contract(session_definitions[group_session_id]):
         pass
-    meta[group_session_id]["updated_at"] = format_storage_timestamp()
-    _save_group_meta(meta)
+    session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
+    _save_session_definitions(session_definitions)
     try:
         from app.session_state.service import capture_session_checkpoint
 
         capture_session_checkpoint(group_session_id, reason="session_updated")
     except Exception:
         logger.warning("session_state update checkpoint failed: %s", group_session_id, exc_info=True)
-    return {"status": "ok", "data": _build_session_payload(group_session_id, meta[group_session_id])}
+    return {"status": "ok", "data": _build_session_payload(group_session_id, session_definitions[group_session_id])}
 
 async def delete_group_session(group_session_id: str):
-    """删除群聊会话：同时删除 meta、群聊历史文件与该会话的工作区目录。"""
+    """删除群聊会话：同时删除会话定义、群聊历史文件与该会话的工作区目录。"""
     current_user = get_current_user()
     await _cancel_group_session_run(group_session_id, reason="session_deleted")
     try:
@@ -395,12 +396,12 @@ async def delete_group_session(group_session_id: str):
         await get_shared_sandbox_service().dispose_session(group_session_id, turn_id="session_deleted")
     except Exception:
         logger.warning("删除群聊 %s 时取消沙箱会话失败。", group_session_id, exc_info=True)
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
-    del meta[group_session_id]
-    _save_group_meta(meta, preserve_unmentioned=False)
-    _cleanup_orphan_group_histories(meta)
+    del session_definitions[group_session_id]
+    _save_session_definitions(session_definitions, preserve_unmentioned=False)
+    _cleanup_orphan_group_histories(session_definitions)
     # 删除会话目录（history / chat.md / workspace / checkpoints）
     user_ctx = current_user.ctx
     from app.session_state.paths import SessionLayoutPaths
@@ -415,8 +416,8 @@ async def delete_group_session(group_session_id: str):
 
 async def stop_group_session_run(group_session_id: str):
     """停止某个群聊会话当前正在运行的流式任务。"""
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
     cancelled = await _cancel_group_session_run(group_session_id, reason="user_stop")
     try:
@@ -429,8 +430,8 @@ async def stop_group_session_run(group_session_id: str):
 
 async def delete_group_message(group_session_id: str, message_id: str):
     """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 Agent 的上下文。"""
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
     messages = _load_group_history(group_session_id)
     before = len(messages)

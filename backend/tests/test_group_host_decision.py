@@ -45,6 +45,7 @@ def test_strict_host_scheduler_accepts_valid_scene_decision():
 
     assert out["next_speaker"] == "教师"
     assert out["speaker_task"] == "给出主题"
+    assert "next_prompt" not in out
     assert out["decision_source"] == "host_scheduler_state"
 
 

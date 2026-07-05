@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 
 from app.core.security import user_context_dependency
 
-from app.api.group_chat_state import build_session_payload, load_group_meta
+from app.api.group_chat_state import build_session_payload, load_session_definitions
 from app.agent.group_chat_runtime import GroupChatRequest, group_chat_stream
 from app.agent.group_session_service import (
     GroupSessionUpdate,
@@ -56,10 +56,10 @@ class SessionClone(BaseModel):
 @router.get("/sessions")
 async def list_sessions():
     """统一会话列表（群聊与会话共用存储）"""
-    meta = load_group_meta()
+    session_definitions = load_session_definitions()
     sessions = []
-    for gsid, gm in meta.items():
-        sessions.append(build_session_payload(gsid, gm))
+    for gsid, session_item in session_definitions.items():
+        sessions.append(build_session_payload(gsid, session_item))
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
     return {"status": "ok", "data": {"sessions": sessions}}
 
@@ -199,8 +199,8 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
 @router.post("/sessions/{session_id}/export")
 async def session_export(session_id: str):
     """将会话导出为 Markdown 到该会话工作区"""
-    meta = load_group_meta()
-    if session_id not in meta:
+    session_definitions = load_session_definitions()
+    if session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Session not found")
     try:
         rel_path, download_url = export_session_to_markdown(session_id)

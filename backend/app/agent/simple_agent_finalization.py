@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 

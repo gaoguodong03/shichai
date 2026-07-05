@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.messages import AIMessage, BaseMessage, HumanMessage
 
 
 def _extract_text_content(message: BaseMessage) -> str:

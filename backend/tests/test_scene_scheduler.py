@@ -8,7 +8,6 @@ def test_finalize_clears_recruit_on_first_turn_when_experts_in_room():
         "next_speaker": "user",
         "announcement": "需要补人",
         "suggested_add_agent_names": ["外"],
-        "next_prompt": None,
     }
     agent_profiles = [{"agent_name": "写作", "name": "写作", "role": "文字"}]
     available = [{"agent_name": "外", "name": "外", "role": "x"}]
@@ -115,7 +114,7 @@ def test_finalize_scene_profile_rejects_outside_next_speaker():
     raw = {
         "task_done": False,
         "next_speaker": "外",
-        "next_prompt": "请场外专家继续。",
+        "speaker_task": "请场外专家继续。",
         "suggested_add_agent_names": ["外"],
     }
     agent_profiles = [{"agent_name": "写作", "name": "写作", "role": "文字"}]
@@ -142,7 +141,7 @@ def test_finalize_scene_keeps_host_decision_without_banter_specific_material_adv
         "next_speaker": "伴学研讨——材料搜索与研究",
         "reason": "主持人已输出调度状态，平台已保存为后台状态（阶段2：材料包）",
         "announcement": "下面由 伴学研讨——材料搜索与研究 发言。",
-        "next_prompt": "请材料研究员继续整理材料包。",
+        "speaker_task": "请材料研究员继续整理材料包。",
     }
     agent_profiles = [
         {
@@ -171,8 +170,41 @@ def test_finalize_scene_keeps_host_decision_without_banter_specific_material_adv
     assert out.get("next_speaker") == "伴学研讨——材料搜索与研究"
     assert out.get("phase") == "executing"
     assert out.get("reason") == raw["reason"]
-    assert out.get("speaker_task") == raw["next_prompt"]
-    assert out.get("next_prompt") is None
+    assert out.get("speaker_task") == raw["speaker_task"]
+    assert "next_prompt" not in out
+
+
+def test_finalize_scheduler_rejects_legacy_next_prompt():
+    raw = {
+        "task_done": True,
+        "current_phase": "阶段2：材料包",
+        "next_speaker": "伴学研讨——材料搜索与研究",
+        "reason": "主持人使用旧字段交接任务",
+        "next_prompt": "请材料研究员继续整理材料包。",
+    }
+    agent_profiles = [
+        {
+            "agent_name": "伴学研讨——材料搜索与研究",
+            "name": "伴学研讨——材料搜索与研究",
+            "role": "在伴学研讨前搜索、研究材料",
+        },
+    ]
+
+    out = finalize_host_scheduler_decision(
+        raw,
+        agent_names=["伴学研讨——材料搜索与研究"],
+        agent_profiles=agent_profiles,
+        available_to_add=[],
+        last_speaker_agent_name=None,
+        user_message="继续",
+        explicit_requested_agent_names=[],
+        orchestration_profile="scene",
+    )
+
+    assert out.get("next_speaker") == "user"
+    assert out.get("speaker_task") == "主持人输出格式错误，请重试或联系管理员。"
+    assert out.get("interrupt_reason") == "protocol_error"
+    assert out.get("decision_source") == "system_guard"
 
 
 def test_finalize_scene_keeps_user_pause_without_banter_specific_material_advance():

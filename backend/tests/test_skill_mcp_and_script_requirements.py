@@ -26,12 +26,12 @@ def test_normalized_allowed_tools_reads_mcp_http_api_and_python_only():
     assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": ["requests>=2", "pandas"]}
 
 
-def test_normalized_allowed_tools_reads_legacy_python_string_as_list():
+def test_normalized_allowed_tools_rejects_python_string_shape():
     fm = {ALLOWED_TOOLS_FM_KEY: {"mcp": [], "http_api": [], "python": "requests>=2\n\npandas\n"}}
 
     out = normalized_allowed_tools_dict(fm)
 
-    assert out["python"] == ["requests>=2", "pandas"]
+    assert out["python"] == []
 
 
 def test_normalize_allowed_tools_payload_accepts_http_api_alias():
@@ -39,16 +39,16 @@ def test_normalize_allowed_tools_payload_accepts_http_api_alias():
     assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": ["requests>=2"]}
 
 
-def test_normalize_allowed_tools_payload_accepts_legacy_python_string():
+def test_normalize_allowed_tools_payload_rejects_python_string_shape():
     out = normalize_allowed_tools_payload({"mcp": ["Exa"], "http-api": ["Weather"], "python": "requests>=2\npandas"})
-    assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": ["requests>=2", "pandas"]}
+    assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": []}
 
 
 def test_sanitize_skill_frontmatter_keeps_only_contract_fields():
     fm = {
         "name": "Skill A",
         "description": "desc",
-        ALLOWED_TOOLS_FM_KEY: {"mcp": ["Exa"], "http-api": ["Weather"], "python": "pandas\nrequests"},
+        ALLOWED_TOOLS_FM_KEY: {"mcp": ["Exa"], "http-api": ["Weather"], "python": ["pandas", "requests"]},
         "extra": "nope",
     }
     sanitize_skill_frontmatter_for_write(fm)

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.core.security import CurrentUser, user_context_dependency
 from app.session_state.paths import (
+    SessionLayoutPaths,
     ensure_session_layout,
     resolve_workspace_path,
 )
@@ -46,20 +47,35 @@ def get_agent_outputs_root() -> Path:
     return _get_agent_outputs_root_for_user(get_current_user())
 
 
+def _normalize_workspace_id(workspace_id: str) -> str:
+    wid = (workspace_id or "").strip().replace("\\", "/")
+    if not wid or wid.startswith("/") or "/" in wid or ".." in wid:
+        raise HTTPException(status_code=400, detail="Invalid workspace_id")
+    return wid
+
+
 def get_workspace_root_path(workspace_id: str, user: CurrentUser | None = None) -> Path:
     """
     返回指定会话的工作区根目录（不保证已创建），位于
     data/users/{user_id}/sessions/{session_id}/workspace/ 下。
     """
-    wid = (workspace_id or "").strip().replace("\\", "/")
-    if not wid or wid.startswith("/") or "/" in wid or ".." in wid:
-        raise HTTPException(status_code=400, detail="Invalid workspace_id")
+    wid = _normalize_workspace_id(workspace_id)
     if user is None:
         from app.core.security import get_current_user as _get_user
 
         user = _get_user()
     ensure_session_layout(user.ctx, wid)
     workspace_root = resolve_workspace_path(user.ctx, wid).resolve()
+    sessions_dir = user.ctx.sessions_dir.resolve()
+    if workspace_root != sessions_dir and sessions_dir not in workspace_root.parents:
+        raise HTTPException(status_code=400, detail="Invalid workspace_id")
+    return workspace_root
+
+
+def _get_workspace_root_path_without_create(workspace_id: str, user: CurrentUser) -> Path:
+    """Return the canonical session workspace path without creating a new layout."""
+    wid = _normalize_workspace_id(workspace_id)
+    workspace_root = SessionLayoutPaths.from_user_ctx(user.ctx, wid).workspace.resolve()
     sessions_dir = user.ctx.sessions_dir.resolve()
     if workspace_root != sessions_dir and sessions_dir not in workspace_root.parents:
         raise HTTPException(status_code=400, detail="Invalid workspace_id")
@@ -99,10 +115,18 @@ def _count_files_recursively(root: Path) -> int:
     """统计目录下文件数量（递归）。"""
     if not root.exists() or not root.is_dir():
         return 0
-    count = 0
-    for _, _, files in os.walk(root):
-        count += len(files)
-    return count
+    return sum(1 for p in root.rglob("*") if p.is_file())
+
+
+def _workspace_session_ids_with_dirs(current_user: CurrentUser, session_definitions: dict[str, dict]) -> list[str]:
+    """Merge indexed sessions with real session dirs that still need migration."""
+    session_ids = set(session_definitions)
+    sessions_dir = current_user.ctx.sessions_dir
+    if sessions_dir.exists() and sessions_dir.is_dir():
+        for child in sessions_dir.iterdir():
+            if child.is_dir() and (child / "workspace").is_dir():
+                session_ids.add(child.name)
+    return sorted(session_ids)
 
 
 @router.get("/workspaces/sessions-with-files")
@@ -110,12 +134,13 @@ async def list_sessions_with_workspace_files(
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """返回有工作区文件的会话列表；空工作区会被自动清理。"""
-    from app.api.group_chat_state import load_group_meta
+    from app.api.group_chat_state import load_session_definitions
 
-    meta = load_group_meta()
+    session_definitions = load_session_definitions()
     sessions = []
-    for session_id, session_meta in meta.items():
-        ws_root = get_workspace_root_path(session_id, user=current_user)
+    for session_id in _workspace_session_ids_with_dirs(current_user, session_definitions):
+        session_item = session_definitions.get(session_id) or {}
+        ws_root = _get_workspace_root_path_without_create(session_id, user=current_user)
         file_count = _count_files_recursively(ws_root)
         # 约束：没有文件的会话不应有工作区。若目录存在但为空，顺手清理。
         if file_count == 0:
@@ -127,8 +152,8 @@ async def list_sessions_with_workspace_files(
             continue
         sessions.append({
             "id": session_id,
-            "title": session_meta.get("title", "新对话"),
-            "updated_at": session_meta.get("updated_at", ""),
+            "title": session_item.get("title") or session_id,
+            "updated_at": session_item.get("updated_at", ""),
             "file_count": file_count,
         })
     sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)

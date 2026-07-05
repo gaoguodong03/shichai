@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
+from app.agent.messages import AIMessage
 
 
 class _SeqClient:

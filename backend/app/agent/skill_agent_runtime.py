@@ -6,7 +6,7 @@ import os
 import time
 from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, List
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
+from app.agent.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from app.agent.llm_client import bind_tools_compat
 from app.agent.simple_agent import SimpleAgent
 from app.agent.skill_agent_paths import (

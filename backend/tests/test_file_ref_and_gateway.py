@@ -88,7 +88,7 @@ def test_normalize_read_file_path_argument_only_cleans_existing_argument():
 
 
 def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkeypatch, tmp_path):
-    from langchain_core.messages import HumanMessage
+    from app.agent.messages import HumanMessage
 
     from app.agent import skill_agent_paths
     from app.api.files import get_workspace_root_path
@@ -374,7 +374,7 @@ async def test_build_tools_keeps_safe_named_mcp_tools_for_declared_server(monkey
 
 @pytest.mark.asyncio
 async def test_skill_runtime_normalizes_safe_mcp_tool_using_original_metadata(monkeypatch):
-    from langchain_core.messages import AIMessage
+    from app.agent.messages import AIMessage
 
     from app.agent.skill_agent_runtime import _call_tool_impl
     from app.agent.tool_spec import ToolSpec

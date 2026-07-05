@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.messages import AIMessage, BaseMessage, HumanMessage
 
 _WRAPPED_USER_CONTEXT_MARKERS = (
     "【最近讨论】",

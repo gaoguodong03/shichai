@@ -1,5 +1,5 @@
 import pytest
-from langchain_core.messages import AIMessage
+from app.agent.messages import AIMessage
 
 from app.agent.skill_agent_runtime import _call_tool_impl
 from app.agent.skill_tool_naming import build_skill_script_tool_name

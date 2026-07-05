@@ -66,6 +66,48 @@ def test_workspace_create_and_list(client):
     assert by_name["hello.md"]["path"] == "hello.md"
 
 
+def test_sessions_with_workspace_files_lists_sessions_that_have_files(client):
+    """资源中心文件页应列出每个有 workspace 文件的会话。"""
+    create_resp = client.post("/api/sessions", json={"title": "带文件会话"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    file_resp = client.post(
+        f"/api/workspaces/{session_id}/files",
+        json={"filename": "brief.md", "content": "# Brief"},
+    )
+    assert file_resp.status_code == 200
+
+    list_resp = client.get("/api/workspaces/sessions-with-files")
+
+    assert list_resp.status_code == 200
+    sessions = list_resp.json()["data"]["sessions"]
+    row = next((item for item in sessions if item["id"] == session_id), None)
+    assert row is not None
+    assert row["title"] == "带文件会话"
+    assert row["file_count"] == 1
+
+
+def test_sessions_with_workspace_files_includes_unindexed_session_dirs(client):
+    """迁移前的 session 目录没有 session.json 时，文件页也应能发现 workspace 文件。"""
+    from app.core.security import get_current_user
+
+    session_id = "legacy-workspace-session"
+    user = get_current_user()
+    legacy_workspace = user.ctx.sessions_dir / session_id / "workspace"
+    legacy_workspace.mkdir(parents=True, exist_ok=True)
+    (legacy_workspace / "legacy.md").write_text("# Legacy", encoding="utf-8")
+
+    list_resp = client.get("/api/workspaces/sessions-with-files")
+
+    assert list_resp.status_code == 200
+    sessions = list_resp.json()["data"]["sessions"]
+    row = next((item for item in sessions if item["id"] == session_id), None)
+    assert row is not None
+    assert row["title"] == session_id
+    assert row["file_count"] == 1
+
+
 def test_workspace_download(client):
     """workspace 内文件可下载"""
     client.post(

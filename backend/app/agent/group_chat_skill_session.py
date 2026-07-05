@@ -75,7 +75,7 @@ def _skill_session_from_message_result(msg: Dict[str, Any]) -> str:
 
 
 def _store_skill_session_lock_for_turn(
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     *,
     owner_agent_name: str,
     skill: str,
@@ -84,11 +84,11 @@ def _store_skill_session_lock_for_turn(
 ) -> None:
     """Persist cross-request Skill routing only for explicit continuation states."""
     if skill_session_over is True:
-        clear_skill_session_lock(meta_item)
+        clear_skill_session_lock(session_item)
     elif skill_session_over is False or force_keep:
-        persist_skill_session_lock(meta_item, owner_agent_name=owner_agent_name, skill=skill)
+        persist_skill_session_lock(session_item, owner_agent_name=owner_agent_name, skill=skill)
     else:
-        clear_skill_session_lock(meta_item)
+        clear_skill_session_lock(session_item)
 
 
 def _should_handoff_to_host_after_expert(
@@ -106,12 +106,12 @@ def _should_handoff_to_host_after_expert(
 
 
 def _clear_completed_skill_session_lock_from_history(
-    meta_item: Dict[str, Any],
+    session_item: Dict[str, Any],
     messages: List[Dict[str, Any]],
 ) -> bool:
     """Clear stale locks unless the last matching expert turn explicitly asked to continue."""
-    owner = str(meta_item.get("skill_session_owner_name") or "").strip().casefold()
-    skill = str(meta_item.get("skill_session_skill") or "").strip()
+    owner = str(session_item.get("skill_session_owner_name") or "").strip().casefold()
+    skill = str(session_item.get("skill_session_skill") or "").strip()
     if not owner or not skill:
         return False
     for msg in reversed(messages or []):
@@ -122,13 +122,13 @@ def _clear_completed_skill_session_lock_from_history(
         if _message_skill(msg) != skill:
             continue
         if _message_is_bound_skill_introspection_direct_final(msg):
-            clear_skill_session_lock(meta_item)
+            clear_skill_session_lock(session_item)
             return True
         parsed_from_result = _skill_session_from_message_result(msg)
         if parsed_from_result in {"keep", "release"}:
             if parsed_from_result == "keep":
                 return False
-            clear_skill_session_lock(meta_item)
+            clear_skill_session_lock(session_item)
             return True
         debug = msg.get("tool_debug")
         state = debug.get("skill_session_state") if isinstance(debug, dict) else None
@@ -137,13 +137,13 @@ def _clear_completed_skill_session_lock_from_history(
             if parsed_session in {"keep", "release"}:
                 if parsed_session == "keep":
                     return False
-                clear_skill_session_lock(meta_item)
+                clear_skill_session_lock(session_item)
                 return True
             parsed = state.get("over")
             if isinstance(parsed, bool):
                 if parsed is False:
                     return False
-                clear_skill_session_lock(meta_item)
+                clear_skill_session_lock(session_item)
                 return True
         if msg.get("required_user_fields"):
             return False
@@ -156,6 +156,6 @@ def _clear_completed_skill_session_lock_from_history(
         )
         if resolved.over is False:
             return False
-        clear_skill_session_lock(meta_item)
+        clear_skill_session_lock(session_item)
         return True
     return False

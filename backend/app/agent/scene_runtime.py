@@ -1,7 +1,7 @@
 """Scene runtime entrypoint.
 
 This module keeps the "scene" concept as a callable-ish runtime context instead
-of scattering session meta interpretation across group_chat.py.
+of scattering session definition interpretation across group_chat.py.
 """
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.user_context import get_current_user_context
 
 
-def load_session_scenario_row(meta_item: Mapping[str, Any]) -> Dict[str, Any]:
+def load_session_scenario_row(session_item: Mapping[str, Any]) -> Dict[str, Any]:
     """Load the scenario resource referenced by a session, if any."""
-    scenario_name = str((meta_item or {}).get("scenario_name") or "").strip()
+    scenario_name = str((session_item or {}).get("scenario_name") or "").strip()
     if not scenario_name:
         return {}
     user_ctx = get_current_user_context(default_fallback=False)
@@ -37,11 +37,11 @@ def load_session_scenario_row(meta_item: Mapping[str, Any]) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def build_context_system_prompt(*, app_settings: Mapping[str, Any], meta_item: Mapping[str, Any]) -> str:
+def build_context_system_prompt(*, app_settings: Mapping[str, Any], session_item: Mapping[str, Any]) -> str:
     """Combine platform-wide and scene-level context rules for host/expert turns."""
     sections = [
         str((app_settings or {}).get("system_prompt") or "").strip(),
-        str((meta_item or {}).get("system_prompt") or "").strip(),
+        str((session_item or {}).get("system_prompt") or "").strip(),
     ]
     return "\n\n".join(section for section in sections if section)
 
@@ -58,7 +58,7 @@ def pick_scene_host_skill(skill_directories: List[str]) -> str:
 
 
 def resolve_scene_host_profile(
-    meta_item: Mapping[str, Any],
+    session_item: Mapping[str, Any],
     *,
     agent_map: Mapping[str, Dict[str, Any]],
     app_host_profile: Mapping[str, Any],
@@ -67,7 +67,7 @@ def resolve_scene_host_profile(
     """Resolve the virtual or legacy real host profile for a group session."""
     base_profile = normalize_host_config_dict(dict(app_host_profile or {}))
     default_display_name = str((app_host_profile or {}).get("leader_agent_name") or "四九").strip() or "四九"
-    leader = str((meta_item or {}).get("leader_agent_name") or "").strip()
+    leader = str((session_item or {}).get("leader_agent_name") or "").strip()
     role_label = "群聊场景主持人" if orchestration_profile == ORCHESTRATION_SCENE else "群聊主持人"
 
     def _virtual(profile: Dict[str, Any], *, name: str) -> Dict[str, Any]:
@@ -88,8 +88,8 @@ def resolve_scene_host_profile(
         out["name"] = name
         return out
 
-    scenario = load_session_scenario_row(meta_item)
-    hc = scenario.get("host_config") if isinstance(scenario.get("host_config"), dict) else (meta_item or {}).get("host_config")
+    scenario = load_session_scenario_row(session_item)
+    hc = scenario.get("host_config") if isinstance(scenario.get("host_config"), dict) else (session_item or {}).get("host_config")
     if isinstance(hc, dict):
         merged = dict(base_profile)
         merged.update(hc)
@@ -133,16 +133,16 @@ class SceneRuntime:
         cls,
         *,
         session_id: str,
-        meta_item: Mapping[str, Any],
+        session_item: Mapping[str, Any],
         agent_names: List[str],
         agent_map: Mapping[str, Dict[str, Any]],
         app_host_profile: Mapping[str, Any],
         available_to_add: List[Dict[str, Any]],
     ) -> "SceneRuntime":
         names = [str(x).strip() for x in (agent_names or []) if str(x).strip()]
-        profile = effective_orchestration_profile(dict(meta_item or {}), agent_names=names)
+        profile = effective_orchestration_profile(dict(session_item or {}), agent_names=names)
         host = resolve_scene_host_profile(
-            meta_item,
+            session_item,
             agent_map=agent_map,
             app_host_profile=app_host_profile,
             orchestration_profile=profile,

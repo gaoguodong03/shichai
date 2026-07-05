@@ -1,9 +1,8 @@
 """Project-local tool objects used by the agent runtime.
 
 The agent only needs three things from a tool: a name/description for prompts,
-a JSON schema for model tool binding, and a callable for execution.  Keeping
-that shape local avoids depending on LangChain's Tool classes while still using
-LangChain messages and chat clients where they are useful.
+a JSON schema for model tool binding, and a callable for execution. Keeping
+that shape local avoids depending on third-party agent framework tool classes.
 """
 from __future__ import annotations
 

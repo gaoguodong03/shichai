@@ -4,22 +4,22 @@ import json
 from app.api import group_chat_state as state
 
 
-def test_group_meta_history_round_trip(tmp_path, monkeypatch):
+def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    meta = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": "t", "updated_at": "t"}}
+    sessions = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": "t", "updated_at": "t"}}
 
-    state.save_group_meta(meta)
+    state.save_session_definitions(sessions)
     state.save_group_history("s1", [{"role": "user", "content": "你好"}])
 
-    assert state.load_group_meta()["s1"]["title"] == "会话"
+    assert state.load_session_definitions()["s1"]["title"] == "会话"
     assert (tmp_path / "s1" / "session.json").exists()
     assert not (tmp_path / "s1" / "meta.json").exists()
     assert state.load_group_history("s1")[0]["content"] == "你好"
 
 
-def test_group_meta_prefers_session_json_over_legacy_meta(tmp_path, monkeypatch):
+def test_session_definitions_read_session_json_only(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_group_meta({"s1": {"title": "索引标题", "updated_at": "t1"}})
+    state.save_session_definitions({"s1": {"title": "索引标题", "updated_at": "t1"}})
     (tmp_path / "s1" / "meta.json").write_text(
         '{"title": "旧会话目录标题", "updated_at": "t2"}',
         encoding="utf-8",
@@ -29,10 +29,10 @@ def test_group_meta_prefers_session_json_over_legacy_meta(tmp_path, monkeypatch)
         encoding="utf-8",
     )
 
-    assert state.load_group_meta()["s1"]["title"] == "新会话目录标题"
+    assert state.load_session_definitions()["s1"]["title"] == "新会话目录标题"
 
 
-def test_group_meta_reads_legacy_meta_when_session_json_missing(tmp_path, monkeypatch):
+def test_session_definitions_ignore_legacy_meta_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     (tmp_path / "s1").mkdir(parents=True)
     (tmp_path / "s1" / "meta.json").write_text(
@@ -40,12 +40,12 @@ def test_group_meta_reads_legacy_meta_when_session_json_missing(tmp_path, monkey
         encoding="utf-8",
     )
 
-    assert state.load_group_meta()["s1"]["title"] == "旧会话目录标题"
+    assert "s1" not in state.load_session_definitions()
 
 
 def test_runtime_state_writes_runtime_json_not_session_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_group_meta(
+    state.save_session_definitions(
         {
             "s1": {
                 "title": "会话",
@@ -66,7 +66,7 @@ def test_runtime_state_writes_runtime_json_not_session_json(tmp_path, monkeypatc
     )
 
     assert (tmp_path / "s1" / "runtime.json").exists()
-    loaded = state.load_group_meta()["s1"]
+    loaded = state.load_session_definitions()["s1"]
     assert "runtime_state" not in loaded
     assert state.runtime_state_for_session("s1", loaded)["run_id"] == "r1"
 
@@ -112,14 +112,45 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
     }
     assert raw[1]["speaker"] == {"type": "expert", "agent_name": "专家A", "skill": "skill-a"}
     assert raw[1]["created_at"] == "2026062908104900"
-    assert raw[1]["skill_result"] == {
-        "execution_status": "succeeded",
-        "next_action": {"skill_session": "release"},
-    }
+    assert "skill_result" not in raw[1]
     assert "role" not in raw[1]
     assert "agent_name" not in raw[1]
     assert "timestamp" not in raw[1]
     assert "required_user_fields" not in raw[1]
+
+
+def test_group_history_preserves_host_scheduler_meta(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    state.save_group_history(
+        "s1",
+        [
+            {
+                "message_id": "h1",
+                "role": "host",
+                "content": "请确认资料是否满足需求。",
+                "timestamp": "2026062908104800",
+                "meta": {
+                    "scheduler_state": {
+                        "current_phase": "阶段2：资料准备",
+                        "next_speaker": "user",
+                        "speaker_task": "请确认资料是否满足需求。",
+                    }
+                },
+            }
+        ],
+    )
+
+    raw = json.loads((tmp_path / "s1" / "history.json").read_text(encoding="utf-8"))
+    assert raw[0]["speaker"] == {"type": "host"}
+    assert raw[0]["meta"]["scheduler_state"] == {
+        "current_phase": "阶段2：资料准备",
+        "next_speaker": "user",
+        "speaker_task": "请确认资料是否满足需求。",
+    }
+
+    loaded = state.load_group_history("s1")
+    assert loaded[0]["meta"]["scheduler_state"]["next_speaker"] == "user"
 
 
 def test_group_history_loads_canonical_messages_with_runtime_compat(tmp_path, monkeypatch):
@@ -153,12 +184,42 @@ def test_group_history_loads_canonical_messages_with_runtime_compat(tmp_path, mo
     assert loaded[0]["timestamp"] == "2026062908104900"
 
 
-def test_stale_group_meta_save_preserves_sessions_created_later(tmp_path, monkeypatch):
+def test_group_history_preserves_frontend_presentation_content_without_replacing_raw_content(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_group_meta({"long": {"title": "长对话", "updated_at": "t1"}})
 
-    stale_snapshot = state.load_group_meta()
-    state.save_group_meta(
+    state.save_group_history(
+        "s1",
+        [
+            {
+                "message_id": "a1",
+                "role": "assistant",
+                "agent_name": "信息检索专家",
+                "content": "工具已执行完成。以下是本轮工具返回摘要：\nTitle: Raw",
+                "presentation_content": "## 检索结果\n\n- Raw",
+                "timestamp": "2026062908104900",
+            }
+        ],
+    )
+
+    raw = json.loads((tmp_path / "s1" / "history.json").read_text(encoding="utf-8"))
+    assert raw[0]["content"].startswith("工具已执行完成")
+    assert raw[0]["presentation_content"] == "## 检索结果\n\n- Raw"
+
+    loaded = state.load_group_history("s1")
+    assert loaded[0]["content"].startswith("工具已执行完成")
+    assert loaded[0]["presentation_content"] == "## 检索结果\n\n- Raw"
+
+    frontend = state.frontend_history_message(loaded[0])
+    assert frontend["content"] == "## 检索结果\n\n- Raw"
+    assert loaded[0]["content"].startswith("工具已执行完成")
+
+
+def test_stale_session_definition_save_preserves_sessions_created_later(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"long": {"title": "长对话", "updated_at": "t1"}})
+
+    stale_snapshot = state.load_session_definitions()
+    state.save_session_definitions(
         {
             "long": {"title": "长对话", "updated_at": "t1"},
             "new": {"title": "期间新建", "updated_at": "t2"},
@@ -166,24 +227,24 @@ def test_stale_group_meta_save_preserves_sessions_created_later(tmp_path, monkey
     )
 
     stale_snapshot["long"]["updated_at"] = "t3"
-    state.save_group_meta(stale_snapshot)
+    state.save_session_definitions(stale_snapshot)
 
-    saved = state.load_group_meta()
+    saved = state.load_session_definitions()
     assert saved["long"]["updated_at"] == "t3"
     assert saved["new"]["title"] == "期间新建"
 
 
-def test_stale_group_meta_save_does_not_revert_newer_session_updates(tmp_path, monkeypatch):
+def test_stale_session_definition_save_does_not_revert_newer_session_updates(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-    state.save_group_meta(
+    state.save_session_definitions(
         {
             "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
             "other": {"title": "旧标题", "updated_at": "2026-05-24T10:00:00+00:00"},
         }
     )
 
-    stale_snapshot = state.load_group_meta()
-    state.save_group_meta(
+    stale_snapshot = state.load_session_definitions()
+    state.save_session_definitions(
         {
             "long": {"title": "长对话", "updated_at": "2026-05-24T10:00:00+00:00"},
             "other": {"title": "新标题", "updated_at": "2026-05-24T10:01:00+00:00"},
@@ -191,9 +252,9 @@ def test_stale_group_meta_save_does_not_revert_newer_session_updates(tmp_path, m
     )
 
     stale_snapshot["long"]["updated_at"] = "2026-05-24T10:02:00+00:00"
-    state.save_group_meta(stale_snapshot)
+    state.save_session_definitions(stale_snapshot)
 
-    saved = state.load_group_meta()
+    saved = state.load_session_definitions()
     assert saved["long"]["updated_at"] == "2026-05-24T10:02:00+00:00"
     assert saved["other"]["title"] == "新标题"
 
@@ -224,12 +285,12 @@ def test_runtime_state_clears_done_task(tmp_path, monkeypatch):
         task = loop.create_task(done())
         loop.run_until_complete(task)
         state.ACTIVE_GROUP_RUNS["s1"] = {"run_id": "r1", "task": task, "phase": "running"}
-        meta_item = {"runtime_state": {"running": True}}
+        session_item = {"runtime_state": {"running": True}}
 
-        runtime = state.runtime_state_for_session("s1", meta_item)
+        runtime = state.runtime_state_for_session("s1", session_item)
 
         assert runtime == {"running": False}
-        assert "runtime_state" not in meta_item
+        assert "runtime_state" not in session_item
     finally:
         state.ACTIVE_GROUP_RUNS.clear()
         loop.close()
@@ -240,7 +301,7 @@ def test_runtime_state_clears_stale_stored_run_without_active_task(tmp_path, mon
     monkeypatch.setenv("GROUP_RUNTIME_STATE_STALE_SECONDS", "60")
     state.ACTIVE_GROUP_RUNS.clear()
 
-    meta_item = {
+    session_item = {
         "runtime_state": {
             "running": True,
             "run_id": "old-run",
@@ -249,7 +310,7 @@ def test_runtime_state_clears_stale_stored_run_without_active_task(tmp_path, mon
         }
     }
 
-    runtime = state.runtime_state_for_session("s1", meta_item)
+    runtime = state.runtime_state_for_session("s1", session_item)
 
     assert runtime == {"running": False}
-    assert "runtime_state" not in meta_item
+    assert "runtime_state" not in session_item

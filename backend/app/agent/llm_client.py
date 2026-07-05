@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
+from app.agent.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from app.agent.tool_spec import tools_to_openai_tools
 
 logger = logging.getLogger(__name__)
@@ -273,7 +274,7 @@ def normalize_openai_base_url(base_url: Optional[str]) -> Optional[str]:
     if not value:
         return None
 
-    # UI/API users sometimes paste the full Chat Completions endpoint.  LangChain
+    # UI/API users sometimes paste the full Chat Completions endpoint. The SDK
     # appends /chat/completions itself, so keep only the API base.
     suffix = "/chat/completions"
     if value.endswith(suffix):
@@ -289,6 +290,199 @@ def normalize_openai_base_url(base_url: Optional[str]) -> Optional[str]:
     if parsed.scheme == "http" and parsed.netloc.lower() == "jeniya.top":
         value = "https://" + value[len("http://") :]
     return value
+
+
+def _get_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _compact_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _message_to_openai(message: Any) -> dict[str, Any]:
+    content = getattr(message, "content", "")
+    if isinstance(message, SystemMessage) or getattr(message, "type", "") == "system":
+        return {"role": "system", "content": content}
+    if isinstance(message, HumanMessage) or getattr(message, "type", "") in {"human", "user"}:
+        return {"role": "user", "content": content}
+    if isinstance(message, ToolMessage) or getattr(message, "type", "") == "tool":
+        return {
+            "role": "tool",
+            "content": content,
+            "tool_call_id": str(getattr(message, "tool_call_id", "") or ""),
+        }
+    if isinstance(message, dict):
+        return dict(message)
+
+    row: dict[str, Any] = {"role": "assistant", "content": content}
+    tool_calls = getattr(message, "tool_calls", None) or []
+    if tool_calls:
+        row["tool_calls"] = [_tool_call_to_openai(call, idx) for idx, call in enumerate(tool_calls)]
+    return row
+
+
+def _tool_call_to_openai(tool_call: Any, idx: int) -> dict[str, Any]:
+    call_id = str(_get_value(tool_call, "id") or _get_value(tool_call, "tool_call_id") or f"tool-{idx}")
+    name = str(_get_value(tool_call, "name") or _get_value(tool_call, "tool") or "tool")
+    args = _get_value(tool_call, "args")
+    if args is None:
+        args = _get_value(tool_call, "arguments")
+    if isinstance(args, str):
+        arguments = args
+    else:
+        arguments = _compact_json(args or {})
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": arguments,
+        },
+    }
+
+
+def _messages_to_openai(messages: Any) -> Any:
+    if isinstance(messages, (str, int, float, bool)) or messages is None:
+        return messages
+    if isinstance(messages, (list, tuple)):
+        return [_message_to_openai(message) for message in messages]
+    return messages
+
+
+def _raw_tool_call_to_dict(tool_call: Any, idx: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    function = _get_value(tool_call, "function") or {}
+    call_id = str(_get_value(tool_call, "id") or f"tool-{idx}")
+    name = str(_get_value(function, "name") or "tool")
+    arguments_raw = _get_value(function, "arguments") or "{}"
+    try:
+        parsed_args = json.loads(arguments_raw) if isinstance(arguments_raw, str) else arguments_raw
+    except Exception:
+        parsed_args = {}
+    if not isinstance(parsed_args, dict):
+        parsed_args = {}
+    raw = {
+        "id": call_id,
+        "type": str(_get_value(tool_call, "type") or "function"),
+        "function": {
+            "name": name,
+            "arguments": arguments_raw,
+        },
+    }
+    return raw, {"id": call_id, "name": name, "args": parsed_args}
+
+
+def _openai_message_to_ai_message(message: Any, *, finish_reason: Any = None) -> AIMessage:
+    content = _get_value(message, "content") or ""
+    raw_tool_calls: list[dict[str, Any]] = []
+    tool_calls: list[dict[str, Any]] = []
+    for idx, raw_call in enumerate(_get_value(message, "tool_calls") or []):
+        raw, normalized = _raw_tool_call_to_dict(raw_call, idx)
+        raw_tool_calls.append(raw)
+        tool_calls.append(normalized)
+    additional_kwargs = {"tool_calls": raw_tool_calls} if raw_tool_calls else {}
+    response_metadata = {"finish_reason": finish_reason} if finish_reason else {}
+    return AIMessage(
+        content=content,
+        additional_kwargs=additional_kwargs,
+        response_metadata=response_metadata,
+        tool_calls=tool_calls,
+    )
+
+
+class OpenAIChatClient:
+    """Project-local chat adapter over the OpenAI-compatible SDK."""
+
+    def __init__(
+        self,
+        *,
+        async_client: Any,
+        model: str,
+        request_options: Optional[Dict[str, Any]] = None,
+        client_options: Optional[Dict[str, Any]] = None,
+        sync_client: Any = None,
+        tools: Optional[list[Any]] = None,
+        tool_choice: Any = None,
+        thinking_mode_enabled: bool = False,
+    ):
+        self._async_client = async_client
+        self._sync_client = sync_client
+        self._model = model
+        self._request_options = dict(request_options or {})
+        self._client_options = dict(client_options or {})
+        self._tools = list(tools or [])
+        self._tool_choice = tool_choice
+        self._thinking_mode_enabled = thinking_mode_enabled
+
+    def bind(self, **kwargs: Any) -> "OpenAIChatClient":
+        merged = {**self._request_options, **kwargs}
+        return self._clone(request_options=merged)
+
+    def bind_tools(self, tools: list[Any], **kwargs: Any) -> "OpenAIChatClient":
+        return self._clone(
+            tools=list(tools or []),
+            tool_choice=kwargs.get("tool_choice", self._tool_choice),
+        )
+
+    async def ainvoke(self, inp: Any, *args: Any, **kwargs: Any) -> AIMessage:
+        del args
+        response = await self._async_client.chat.completions.create(**self._create_kwargs(inp, kwargs))
+        return self._response_to_ai_message(response)
+
+    def invoke(self, inp: Any, *args: Any, **kwargs: Any) -> AIMessage:
+        del args
+        if self._sync_client is None:
+            raise RuntimeError("sync OpenAI client is not configured")
+        response = self._sync_client.chat.completions.create(**self._create_kwargs(inp, kwargs))
+        return self._response_to_ai_message(response)
+
+    async def astream(self, inp: Any, *args: Any, **kwargs: Any):
+        del args
+        yield await self.ainvoke(inp, **kwargs)
+
+    def stream(self, inp: Any, *args: Any, **kwargs: Any):
+        del args
+        yield self.invoke(inp, **kwargs)
+
+    def _clone(self, **overrides: Any) -> "OpenAIChatClient":
+        return OpenAIChatClient(
+            async_client=self._async_client,
+            sync_client=self._sync_client,
+            model=overrides.get("model", self._model),
+            request_options=overrides.get("request_options", self._request_options),
+            client_options=overrides.get("client_options", self._client_options),
+            tools=overrides.get("tools", self._tools),
+            tool_choice=overrides.get("tool_choice", self._tool_choice),
+            thinking_mode_enabled=overrides.get("thinking_mode_enabled", self._thinking_mode_enabled),
+        )
+
+    def _create_kwargs(self, inp: Any, runtime_kwargs: Dict[str, Any]) -> dict[str, Any]:
+        runtime_kwargs = dict(runtime_kwargs or {})
+        runtime_kwargs.pop("config", None)
+        payload = {
+            "model": self._model,
+            "messages": _messages_to_openai(inp),
+            **self._request_options,
+            **runtime_kwargs,
+        }
+        if self._tools:
+            payload["tools"] = self._tools
+        if self._tool_choice is not None:
+            payload["tool_choice"] = self._tool_choice
+        return _clean_client_kwargs(payload)
+
+    @staticmethod
+    def _response_to_ai_message(response: Any) -> AIMessage:
+        choices = _get_value(response, "choices") or []
+        if not choices:
+            return AIMessage(content="")
+        choice = choices[0]
+        return _openai_message_to_ai_message(
+            _get_value(choice, "message") or {},
+            finish_reason=_get_value(choice, "finish_reason"),
+        )
 
 
 class QwenLLM:
@@ -335,11 +529,11 @@ class QwenLLM:
             )
 
     def get_client(self):
-        """获取 LangChain ChatOpenAI 客户端"""
+        """获取项目本地 OpenAI SDK Chat 客户端适配器"""
         try:
-            from langchain_openai import ChatOpenAI
+            from openai import AsyncOpenAI, OpenAI
         except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"langchain_openai is required for LLM client: {e}") from e
+            raise RuntimeError(f"openai SDK is required for LLM client: {e}") from e
         # 可通过 QWEN_REQUEST_TIMEOUT 调整（秒）。默认 60s 适合前端交互；
         # 慢模型/慢网关可在 provider 配置里单独设置 request_timeout=180。
         request_timeout = _parse_int_env("QWEN_REQUEST_TIMEOUT", 60)
@@ -352,21 +546,21 @@ class QwenLLM:
         max_retries = _coerce_optional_int(self.provider_config.get("max_retries"))
         if max_retries is None:
             max_retries = _parse_int_env("QWEN_MAX_RETRIES", 0)
-        kwargs = {
-            "model": self.model,
-            "openai_api_key": self.api_key,
+        client_kwargs = {
+            "api_key": self.api_key,
             "base_url": self.base_url,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "streaming": _coerce_bool(self.provider_config.get("streaming"), True),
-            "request_timeout": request_timeout,
+            "timeout": request_timeout,
             "max_retries": max_retries,
         }
+        request_options = {
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
         # 只接收官方常见 Chat/Message API 明确支持的白名单字段；不要透传任意用户字段。
-        _set_if_present(kwargs, "top_p", _coerce_optional_float(self.provider_config.get("top_p")))
-        _set_if_present(kwargs, "presence_penalty", _coerce_optional_float(self.provider_config.get("presence_penalty")))
-        _set_if_present(kwargs, "frequency_penalty", _coerce_optional_float(self.provider_config.get("frequency_penalty")))
-        _set_if_present(kwargs, "seed", _coerce_optional_int(self.provider_config.get("seed")))
+        _set_if_present(request_options, "top_p", _coerce_optional_float(self.provider_config.get("top_p")))
+        _set_if_present(request_options, "presence_penalty", _coerce_optional_float(self.provider_config.get("presence_penalty")))
+        _set_if_present(request_options, "frequency_penalty", _coerce_optional_float(self.provider_config.get("frequency_penalty")))
+        _set_if_present(request_options, "seed", _coerce_optional_int(self.provider_config.get("seed")))
 
         fingerprint = _provider_fingerprint(self.provider_config, self.base_url, self.model)
         extra_body: Dict[str, Any] = {}
@@ -397,27 +591,24 @@ class QwenLLM:
             extra_body["top_k"] = top_k
 
         if extra_body:
-            kwargs.setdefault("model_kwargs", {})["extra_body"] = extra_body
+            request_options["extra_body"] = extra_body
         elif _is_qwen_model(self.model):
-            kwargs.setdefault("model_kwargs", {})["extra_body"] = _qwen_no_thinking_extra_body(self.base_url)
+            request_options["extra_body"] = _qwen_no_thinking_extra_body(self.base_url)
         thinking_mode_enabled = bool(
             extra_body.get("enable_thinking") is True
             or (isinstance(extra_body.get("thinking"), dict) and extra_body["thinking"].get("type") == "enabled")
             or extra_body.get("thinkingConfig")
         )
-        kwargs = _clean_client_kwargs(kwargs)
-        try:
-            client = ChatOpenAI(**kwargs)
-        except Exception as e:  # noqa: BLE001
-            # Older langchain-openai versions used openai_api_base instead of base_url.
-            if "base_url" not in str(e):
-                raise
-            kwargs["openai_api_base"] = kwargs.pop("base_url")
-            client = ChatOpenAI(**kwargs)
-        try:
-            object.__setattr__(client, "_thinking_mode_enabled", thinking_mode_enabled)
-        except Exception:
-            pass
+        client_kwargs = _clean_client_kwargs(client_kwargs)
+        request_options = _clean_client_kwargs(request_options)
+        client = OpenAIChatClient(
+            async_client=AsyncOpenAI(**client_kwargs),
+            sync_client=OpenAI(**client_kwargs),
+            model=self.model,
+            request_options=request_options,
+            client_options=client_kwargs,
+            thinking_mode_enabled=thinking_mode_enabled,
+        )
         return _instrument_llm_client(
             client,
             provider_base_url=self.base_url,

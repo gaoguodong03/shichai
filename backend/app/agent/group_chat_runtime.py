@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, AIMessage  # type: ignore
+from app.agent.messages import HumanMessage, AIMessage  # type: ignore
 
 from app.api.agents import load_agent_instances
 from app.api.settings_app import load_app_settings, normalize_host_profile
@@ -24,12 +24,12 @@ from app.api.group_chat_state import (
     finish_group_run as _finish_group_run,
     format_storage_timestamp,
     load_group_history as _load_group_history,
-    load_group_meta as _load_group_meta,
+    load_session_definitions as _load_session_definitions,
     publish_group_session_event as _publish_group_session_event,
     register_group_run as _register_group_run,
     runtime_state_for_session as _runtime_state_for_session,
     save_group_history as _save_group_history,
-    save_group_meta as _save_group_meta,
+    save_session_definitions as _save_session_definitions,
     update_group_run as _update_group_run,
 )
 from app.agent.group_context import (
@@ -77,6 +77,10 @@ from app.agent.group_chat_tool_trace import (
     append_workspace_image_preview_markdown as _append_workspace_image_preview_markdown,
     extract_sandbox_entry_trace as _extract_sandbox_entry_trace,
     extract_tool_calls_from_accumulated as _extract_tool_calls_from_accumulated,
+)
+from app.agent.group_chat_presentation_rewriter import (
+    PRESENTATION_REWRITE_PHASE,
+    rewrite_assistant_message_for_display,
 )
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
@@ -172,37 +176,31 @@ def _dedupe_names(values: List[Any]) -> List[str]:
 class GroupChatRequest(BaseModel):
     message: Optional[str] = None
     client_message_id: Optional[str] = None
-    action: Optional[str] = None  # "continue" 继续下一轮
-    host_takeover_requested: Optional[bool] = None  # 仅在用户明确提到主持人时才允许主持人调度
-    ignore_auto_agent_name: Optional[str] = None  # 点击“忽略自动切换”后，重做时排除该 Agent
-    ignore_auto_skill: Optional[str] = None  # 点击“忽略自动切换”后，重做时排除该技能
 
 
 async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     """群聊流式对话：用户消息或继续下一轮。"""
     logger.debug(
-        "group_chat_stream_enter session=%s action=%r has_message=%s",
+        "group_chat_stream_enter session=%s has_message=%s",
         group_session_id,
-        request.action,
         bool((request.message or "").strip()),
     )
     await ensure_mcp_and_skills_initialized()
 
-    meta = _load_group_meta()
-    if group_session_id not in meta:
+    session_definitions = _load_session_definitions()
+    if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
-    m = meta[group_session_id]
-    session_meta = m
+    session_item = session_definitions[group_session_id]
     instances = load_agent_instances()
     preferred_instances = [dict(d) for d in instances or [] if str((d or {}).get("name") or "").strip()]
-    agent_names = _dedupe_names(list(m.get("agent_names", [])))
-    m["agent_names"] = list(agent_names)
-    leader_agent_name = str(m.get("leader_agent_name") or "").strip() or VIRTUAL_SCENE_HOST_ID
+    agent_names = _dedupe_names(list(session_item.get("agent_names", [])))
+    session_item["agent_names"] = list(agent_names)
+    leader_agent_name = str(session_item.get("leader_agent_name") or "").strip() or VIRTUAL_SCENE_HOST_ID
     agent_map = {str(d.get("name") or "").strip(): d for d in preferred_instances if str(d.get("name") or "").strip()}
     agent_names = [name for name in agent_names if name in agent_map]
     agent_profiles = [agent_map[name] for name in agent_names if name in agent_map]
-    # 会话 meta 里有名称，但专家库中已不存在（删档/换库）→ 主持人侧参与者列表会空，易误判「要补人」
-    orphan_session_agent_names = [str(name) for name in m.get("agent_names", []) if str(name).strip() and str(name).strip() not in agent_map]
+    # 会话定义里有名称，但专家库中已不存在（删档/换库）→ 主持人侧参与者列表会空，易误判「要补人」
+    orphan_session_agent_names = [str(name) for name in session_item.get("agent_names", []) if str(name).strip() and str(name).strip() not in agent_map]
     # 当前不在群内的专家，主持人可在「完成不了工作」时建议邀请。
     available_to_add = [
         d
@@ -215,14 +213,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     messages = _load_group_history(group_session_id)
     app_settings = load_app_settings()
     hp_norm = normalize_host_profile(app_settings.get("host_profile") or {})
-    scenario_meta = load_session_scenario_row(m)
-    hc_meta = scenario_meta.get("host_config") if isinstance(scenario_meta.get("host_config"), dict) else {}
-    if not hc_meta:
-        hc_meta = m.get("host_config") if isinstance(m.get("host_config"), dict) else {}
-    hc_dn = str(hc_meta.get("leader_agent_name") or "").strip()
+    scenario_row = load_session_scenario_row(session_item)
+    host_config_row = scenario_row.get("host_config") if isinstance(scenario_row.get("host_config"), dict) else {}
+    if not host_config_row:
+        host_config_row = session_item.get("host_config") if isinstance(session_item.get("host_config"), dict) else {}
+    hc_dn = str(host_config_row.get("leader_agent_name") or "").strip()
     host_display_name = hc_dn or str(hp_norm.get("leader_agent_name") or "四九").strip() or "四九"
-    pending_owner_agent_name = (m.get("pending_owner_agent_name") or "").strip()
-    pending_skill = (m.get("pending_skill") or "").strip()
+    pending_owner_agent_name = (session_item.get("pending_owner_agent_name") or "").strip()
+    pending_skill = (session_item.get("pending_skill") or "").strip()
     user_message = (request.message or "").strip()
     had_file_ref_tag = "【文件引用：" in user_message
     file_refs_resolved_in_request = False
@@ -234,18 +232,16 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
     explicit_requested_agent_names = _extract_explicit_requested_agent_names(user_message, preferred_instances) if user_message else []
     forced_at_mention_agent_name = _extract_forced_at_mention_agent_name(user_message, preferred_instances) if user_message else None
-    ignored_auto_agent_name = (request.ignore_auto_agent_name or "").strip()
-    ignored_auto_skill = (request.ignore_auto_skill or "").strip()
-    host_takeover_requested = _user_requests_host_takeover(
+    host_takeover_by_text = _user_requests_host_takeover(
         user_message,
-        explicit_flag=request.host_takeover_requested,
+        explicit_flag=None,
         host_display_name=host_display_name,
     )
 
     if user_message:
         _record_user_message_and_refresh_title(
             group_session_id=group_session_id,
-            meta=meta,
+            session_definitions=session_definitions,
             messages=messages,
             user_message=user_message,
             client_message_id=(request.client_message_id or "").strip(),
@@ -263,11 +259,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     if not discussion_goal:
         discussion_goal = "待用户提出讨论主题"
 
-    extra_system_prompt = build_context_system_prompt(app_settings=app_settings, meta_item=m)
+    extra_system_prompt = build_context_system_prompt(app_settings=app_settings, session_item=session_item)
 
     scene_runtime = SceneRuntime.from_group_session(
         session_id=group_session_id,
-        meta_item=m,
+        session_item=session_item,
         agent_names=agent_names,
         agent_map=agent_map,
         app_host_profile=hp_norm,
@@ -279,14 +275,14 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     import json as json_module
 
     async def run_events():
-        nonlocal last_speaker_agent_name, agent_names, agent_profiles, available_to_add, host_takeover_requested
+        nonlocal last_speaker_agent_name, agent_names, agent_profiles, available_to_add, host_takeover_by_text
         current_task = asyncio.current_task()
         run_id = await _register_group_run(
             group_session_id,
             user_id=stream_user,
             task=current_task if current_task is not None else asyncio.create_task(asyncio.sleep(0)),
         )
-        meta_item: Dict[str, Any] = meta[group_session_id]
+        session_item: Dict[str, Any] = session_definitions[group_session_id]
         orch_profile = scene_runtime.orchestration_profile
         available_for_scheduler = scene_runtime.available_to_add_for_scheduler
         agent_turns = 0  # 本次流中 Agent 总发言轮次
@@ -325,7 +321,6 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     next_speaker=(decision.get("next_speaker") or "user"),
                     reason=(decision.get("reason") or ""),
                     announcement=(decision.get("announcement") or ""),
-                    next_prompt=decision.get("next_prompt"),
                     current_phase=(decision.get("current_phase") or ""),
                     speaker_task=(decision.get("speaker_task") or ""),
                     suggested_add_agent_names=(decision.get("suggested_add_agent_names") or []),
@@ -356,19 +351,19 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                 )
                 if should_keep_pending:
-                    meta_item["pending_owner_agent_name"] = resume
-                    meta_item["pending_skill"] = current_skill_for_pending or ""
-                    meta_item["pending_phase"] = str(end_payload.get("phase") or "")
-                    meta_item["pending_required_user_fields"] = required if isinstance(required, list) else []
-                    meta_item["pending_handoff_reason"] = str(end_payload.get("handoff_reason") or "")
+                    session_item["pending_owner_agent_name"] = resume
+                    session_item["pending_skill"] = current_skill_for_pending or ""
+                    session_item["pending_phase"] = str(end_payload.get("phase") or "")
+                    session_item["pending_required_user_fields"] = required if isinstance(required, list) else []
+                    session_item["pending_handoff_reason"] = str(end_payload.get("handoff_reason") or "")
                 else:
-                    meta_item.pop("pending_owner_agent_name", None)
-                    meta_item.pop("pending_skill", None)
-                    meta_item.pop("pending_phase", None)
-                    meta_item.pop("pending_required_user_fields", None)
-                    meta_item.pop("pending_handoff_reason", None)
-                meta_item["updated_at"] = format_storage_timestamp()
-                _save_group_meta(meta)
+                    session_item.pop("pending_owner_agent_name", None)
+                    session_item.pop("pending_skill", None)
+                    session_item.pop("pending_phase", None)
+                    session_item.pop("pending_required_user_fields", None)
+                    session_item.pop("pending_handoff_reason", None)
+                session_item["updated_at"] = format_storage_timestamp()
+                _save_session_definitions(session_definitions)
 
             yield f"event: start\ndata: {json_module.dumps({'type': 'start'})}\n\n"
 
@@ -456,12 +451,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         group_session_id=group_session_id,
                         messages=messages,
                         app_settings=app_settings,
-                        pending_owner_agent_name=str(meta_item.get("skill_session_owner_name") or "").strip(),
-                        pending_skill=str(meta_item.get("skill_session_skill") or "").strip(),
+                        pending_owner_agent_name=str(session_item.get("skill_session_owner_name") or "").strip(),
+                        pending_skill=str(session_item.get("skill_session_skill") or "").strip(),
                         user_message="",
                         orphan_session_agent_names=orphan_session_agent_names,
                         orchestration_profile=orch_profile,
-                        meta_item=meta_item,
+                        session_item=session_item,
                     )
                     logger.info(
                         "group_chat_post_expert_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",
@@ -506,11 +501,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_names") or [])
                 resolved_next = str(decision.get("next_speaker") or "user").strip() or "user"
-                np_auto = (
-                    decision.get("speaker_task") or decision.get("next_prompt")
-                    if isinstance(decision, dict)
-                    else None
-                )
+                np_auto = decision.get("speaker_task") if isinstance(decision, dict) else None
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
 
@@ -597,8 +588,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     picked=picked,
                 )
                 host_event = _record_host_message(host_msg)
-                meta[group_session_id]["updated_at"] = format_storage_timestamp()
-                _save_group_meta(meta)
+                session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
+                _save_session_definitions(session_definitions)
                 yield host_event
                 end_payload = build_end_payload(
                     waiting_for_user=True,
@@ -616,29 +607,27 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 yield f"event: end\ndata: {json_module.dumps(end_payload, ensure_ascii=False)}\n\n"
                 return
 
-            if _clear_completed_skill_session_lock_from_history(meta_item, messages):
-                _save_group_meta(meta)
+            if _clear_completed_skill_session_lock_from_history(session_item, messages):
+                _save_session_definitions(session_definitions)
 
-            had_skill_lock = bool(str(meta_item.get("skill_session_owner_name") or "").strip())
-            if user_requests_exit_skill_session(user_message) and had_skill_lock:
-                clear_skill_session_lock(meta_item)
-                _save_group_meta(meta)
+            had_skill_lock = bool(str(session_item.get("skill_session_owner_name") or "").strip())
+            if (user_requests_exit_skill_session(user_message) or host_takeover_by_text) and had_skill_lock:
+                clear_skill_session_lock(session_item)
+                _save_session_definitions(session_definitions)
 
             entry_route = resolve_group_entry_route(
-                meta_item=meta_item,
+                session_item=session_item,
                 agent_names=agent_names,
-                host_takeover_requested=host_takeover_requested,
-                ignore_auto_agent_name=ignored_auto_agent_name or "",
                 user_message=user_message,
             )
             if not entry_route.skip_host_dispatch:
-                clear_skill_session_lock(meta_item)
-                _save_group_meta(meta)
+                clear_skill_session_lock(session_item)
+                _save_session_definitions(session_definitions)
 
             if forced_at_mention_agent_name and forced_at_mention_agent_name in agent_names:
                 logger.debug("group_chat_route_branch=forced_at_mention session=%s next=%s", group_session_id, forced_at_mention_agent_name)
-                clear_skill_session_lock(meta_item)
-                _save_group_meta(meta)
+                clear_skill_session_lock(session_item)
+                _save_session_definitions(session_definitions)
                 next_speaker = forced_at_mention_agent_name
                 route_source = "forced_at_mention"
                 orch_ctx.phase = OrchestrationPhase.EXECUTING
@@ -648,8 +637,8 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 # 用户显式点名场内专家时优先直达，避免被上一轮 skill 锁误续跑到其他专家。
                 requested_in_room = [aid for aid in explicit_requested_agent_names if aid in agent_names]
                 if requested_in_room:
-                    clear_skill_session_lock(meta_item)
-                    _save_group_meta(meta)
+                    clear_skill_session_lock(session_item)
+                    _save_session_definitions(session_definitions)
                     next_speaker = requested_in_room[0]
                     route_source = "explicit_requested"
                     orch_ctx.phase = OrchestrationPhase.EXECUTING
@@ -713,7 +702,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         user_message=user_message,
                         orphan_session_agent_names=orphan_session_agent_names,
                         orchestration_profile=orch_profile,
-                        meta_item=meta_item,
+                        session_item=session_item,
                     )
                     logger.info(
                         "group_chat_scheduler_host_decide_done session=%s decision_none=%s next_speaker=%s reason=%s",
@@ -765,11 +754,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 announcement = decision.get("announcement") if isinstance(decision.get("announcement"), str) else None
                 suggested_add = list(decision.get("suggested_add_agent_names") or [])
                 next_speaker = decision.get("next_speaker", "user")
-                np_auto = (
-                    decision.get("speaker_task") or decision.get("next_prompt")
-                    if isinstance(decision, dict)
-                    else None
-                )
+                np_auto = decision.get("speaker_task") if isinstance(decision, dict) else None
                 if isinstance(np_auto, str) and np_auto.strip():
                     scheduler_next_prompt = np_auto.strip()
                 if suggested_add:
@@ -822,7 +807,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 )
                 if fallback_host:
                     fallback_event = _record_host_message(fallback_host)
-                    _save_group_meta(meta)
+                    _save_session_definitions(session_definitions)
                     yield fallback_event
 
             logger.info(
@@ -884,13 +869,12 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     group_session_id=group_session_id,
                     discussion_goal=discussion_goal,
                     messages=messages,
-                    meta_item=meta_item,
+                    session_item=session_item,
                     app_settings=app_settings,
                     round_user_text=user_message,
                     extra_system_prompt=extra_system_prompt,
                     skills_loader=_request_skills_loader(),
                     llm_resolver=lambda d: _get_llm_for_agent(d, app_settings),
-                    ignored_auto_skill=ignored_auto_skill,
                 )
                 resolved_skill = expert_runtime.skill
                 skill_content = expert_runtime.skill_content
@@ -934,7 +918,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         },
                     )
                     host_event = _record_host_message(host_msg)
-                    _save_group_meta(meta)
+                    _save_session_definitions(session_definitions)
                     yield host_event
                     end_data = build_end_payload(
                         waiting_for_user=True,
@@ -1030,6 +1014,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 _file_resolved_status = ""
                 should_emit_preparing_hint = had_file_ref_tag and file_refs_resolved_in_request
                 emitted_tool_pending_hint = False
+                emitted_agent_generating_hint = False
                 if should_emit_preparing_hint:
                     yield f"event: content\ndata: {json_module.dumps({'text': _file_resolving_status, 'agent_name': next_speaker, 'meta': {'phase': 'file_resolving'}}, ensure_ascii=False)}\n\n"
                     yield f"event: content\ndata: {json_module.dumps({'text': _file_resolved_status, 'agent_name': next_speaker, 'meta': {'phase': 'file_resolved'}}, ensure_ascii=False)}\n\n"
@@ -1060,7 +1045,9 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                 content_str = str(msg_obj.content) if isinstance(msg_obj.content, str) else str(msg_obj.content or "")
                                 if content_str.strip() and content_str not in accumulated:
                                     accumulated.append(content_str)
-                                    yield f"event: content\ndata: {json_module.dumps({'text': content_str, 'agent_name': next_speaker, 'meta': {}}, ensure_ascii=False)}\n\n"
+                                    if not emitted_agent_generating_hint:
+                                        emitted_agent_generating_hint = True
+                                        yield f"event: content\ndata: {json_module.dumps({'text': _agent_waiting_status, 'agent_name': next_speaker, 'meta': {'phase': 'assistant_generating'}}, ensure_ascii=False)}\n\n"
                                 if has_tool_calls:
                                     if not emitted_tool_pending_hint:
                                         emitted_tool_pending_hint = True
@@ -1200,17 +1187,24 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                             if skill_session_signals
                             else None,
                             "script_stdout": skill_session_signals.script_stdout if skill_session_signals else None,
-                            "legacy_end_marker": bool(skill_session_signals.legacy_end_marker)
-                            if skill_session_signals
-                            else False,
                         },
                     },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
+                yield f"event: content\ndata: {json_module.dumps({'text': '', 'agent_name': next_speaker, 'meta': {'phase': PRESENTATION_REWRITE_PHASE}}, ensure_ascii=False)}\n\n"
+                display_assistant_msg = await rewrite_assistant_message_for_display(
+                    assistant_msg=assistant_msg,
+                    llm=expert_runtime.llm,
+                    expert_system_prompt=str(agent_profile.get("system_prompt") or ""),
+                )
+                presentation_content = str(display_assistant_msg.get("content") or "").strip()
+                if presentation_content and presentation_content != str(assistant_msg.get("content") or "").strip():
+                    assistant_msg["presentation_content"] = presentation_content
+                    display_assistant_msg["presentation_content"] = presentation_content
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
-                meta[group_session_id]["updated_at"] = format_storage_timestamp()
-                _save_group_meta(meta)
+                session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
+                _save_session_definitions(session_definitions)
                 # 专家回合自动落盘：失败不影响主对话链路
                 try:
                     _persist_group_memory_turn(
@@ -1222,11 +1216,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                 except Exception:
                     logger.warning("group memory write failed", exc_info=True)
-                yield f"event: message\ndata: {json_module.dumps(assistant_msg, ensure_ascii=False)}\n\n"
+                yield f"event: message\ndata: {json_module.dumps(display_assistant_msg, ensure_ascii=False)}\n\n"
                 if skill_introspection_meta_answer:
-                    clear_skill_session_lock(meta_item)
-                    meta[group_session_id]["updated_at"] = format_storage_timestamp()
-                    _save_group_meta(meta)
+                    clear_skill_session_lock(session_item)
+                    session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
+                    _save_session_definitions(session_definitions)
                     orch_ctx.phase = OrchestrationPhase.AWAITING_USER
                     end_data = build_end_payload(
                         waiting_for_user=True,
@@ -1260,13 +1254,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                     _persist_pending_state(end_data)
                     _store_skill_session_lock_for_turn(
-                        meta_item,
+                        session_item,
                         owner_agent_name=next_speaker,
                         skill=skill,
                         skill_session_over=skill_session_state.over,
                         force_keep=True,
                     )
-                    _save_group_meta(meta)
+                    _save_session_definitions(session_definitions)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
                 hook_output = await post_turn_hooks.run(
@@ -1295,13 +1289,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                     _persist_pending_state(end_data)
                     _store_skill_session_lock_for_turn(
-                        meta_item,
+                        session_item,
                         owner_agent_name=resume_target_agent_name or next_speaker,
                         skill=skill,
                         skill_session_over=skill_session_state.over,
                         force_keep=True,
                     )
-                    _save_group_meta(meta)
+                    _save_session_definitions(session_definitions)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
                 soft_stop_reason = _evaluate_soft_stop(
@@ -1337,23 +1331,23 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     )
                     _persist_pending_state(end_data)
                     _store_skill_session_lock_for_turn(
-                        meta_item,
+                        session_item,
                         owner_agent_name=next_speaker,
                         skill=skill,
                         skill_session_over=skill_session_state.over,
                     )
-                    _save_group_meta(meta)
+                    _save_session_definitions(session_definitions)
                     yield f"event: end\ndata: {json_module.dumps(end_data, ensure_ascii=False)}\n\n"
                     return
 
                 last_speaker_agent_name = next_speaker
                 _store_skill_session_lock_for_turn(
-                    meta_item,
+                    session_item,
                     owner_agent_name=next_speaker,
                     skill=skill,
                     skill_session_over=skill_session_state.over,
                 )
-                _save_group_meta(meta)
+                _save_session_definitions(session_definitions)
                 if _should_handoff_to_host_after_expert(
                     orchestration_profile=orch_profile,
                     skill_session_over=skill_session_state.over,
@@ -1365,13 +1359,13 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         yield chunk
                     if handoff_next in agent_names:
                         if handoff_next != previous_speaker:
-                            clear_skill_session_lock(meta_item)
-                            _save_group_meta(meta)
+                            clear_skill_session_lock(session_item)
+                            _save_session_definitions(session_definitions)
                         next_speaker = handoff_next
                         continue
                     if handoff_next == "end":
-                        clear_skill_session_lock(meta_item)
-                        _save_group_meta(meta)
+                        clear_skill_session_lock(session_item)
+                        _save_session_definitions(session_definitions)
                     next_speaker = handoff_next or "user"
                     break
                 orch_ctx.phase = OrchestrationPhase.AWAITING_USER
@@ -1392,7 +1386,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
             if next_speaker == "end":
                 orch_ctx.phase = OrchestrationPhase.COMPLETED
-                clear_skill_session_lock(meta_item)
+                clear_skill_session_lock(session_item)
                 payload = build_end_payload(
                     waiting_for_user=False,
                     discussion_ended=True,
@@ -1405,7 +1399,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     handoff_reason=latest_handoff_reason,
                 )
                 _persist_pending_state(payload)
-                _save_group_meta(meta)
+                _save_session_definitions(session_definitions)
                 yield f"event: end\ndata: {json_module.dumps(payload)}\n\n"
             else:
                 if orch_ctx.phase == OrchestrationPhase.EXECUTING:

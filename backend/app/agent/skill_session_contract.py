@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 
 
-SKILL_SESSION_END_MARKERS = ("[[SKILL_SESSION_END]]", "【技能会话结束】")
 SKILL_SESSION_STATE_START = "[[SKILL_SESSION_STATE]]"
 SKILL_SESSION_STATE_END = "[[/SKILL_SESSION_STATE]]"
 
@@ -47,7 +46,6 @@ class SkillSessionSignals:
 
     assistant_state_block: Optional[bool]
     script_stdout: Optional[bool]
-    legacy_end_marker: bool
 
 
 def _json_loads_maybe(value: Any) -> Any:
@@ -87,9 +85,8 @@ def _skill_session_over_from_strict_payload(payload: Any) -> Optional[bool]:
 
 
 def skill_session_ended_by_expert_output(content: str) -> bool:
-    """Return true when legacy expert-output markers end the current Skill session."""
-    t = str(content or "")
-    return any(m in t for m in SKILL_SESSION_END_MARKERS)
+    """Legacy expert-output markers are no longer part of the session contract."""
+    return False
 
 
 def strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bool], str]:
@@ -114,11 +111,8 @@ def strip_skill_session_state_blocks_and_get_over(raw: str) -> Tuple[Optional[bo
 
 
 def strip_skill_session_end_markers_for_display(text: str) -> str:
-    """Remove legacy end markers from user-visible expert content."""
-    t = str(text or "")
-    for marker in SKILL_SESSION_END_MARKERS:
-        t = t.replace(marker, "")
-    return t.strip()
+    """Return content unchanged; only strict state blocks are treated as control data."""
+    return str(text or "").strip()
 
 
 def _iter_tool_payloads(
@@ -168,8 +162,6 @@ def _choose_skill_session_state(signals: SkillSessionSignals) -> tuple[Optional[
         return True, "assistant_state_block"
     if signals.script_stdout is True:
         return True, "script_stdout"
-    if signals.legacy_end_marker:
-        return True, "legacy_end_marker"
     return None, "none"
 
 
@@ -183,8 +175,7 @@ def resolve_skill_session_state(
     Precedence:
     1. Any explicit keep from expert state block or script stdout keeps the lock.
     2. Any explicit release from expert state block or script stdout releases it.
-    3. Legacy expert final-answer end markers release it.
-    4. No explicit state: ordinary one-turn expert speech; do not create a
+    3. No explicit state: ordinary one-turn expert speech; do not create a
        cross-request lock.
     """
     over_from_content, content_without_state = strip_skill_session_state_blocks_and_get_over(raw_content)
@@ -193,7 +184,6 @@ def resolve_skill_session_state(
     signals = SkillSessionSignals(
         assistant_state_block=over_from_content,
         script_stdout=over_from_script,
-        legacy_end_marker=skill_session_ended_by_expert_output(content_without_state),
     )
     over, source = _choose_skill_session_state(signals)
     return SkillSessionStateResolution(over, display_content, source, signals)
