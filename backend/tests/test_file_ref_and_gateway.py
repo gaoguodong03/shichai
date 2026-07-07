@@ -218,16 +218,25 @@ def test_normalize_skill_script_path_strips_scripts_prefix():
     assert rss._apply_script_path_normalization("__describe__:scripts/bar.py") == "__describe__:bar.py"
 
 
-def test_parse_cli_args_json_accepts_array():
+def test_parse_cli_args_accepts_array():
     from app.tools import run_skill_script as rss
 
-    argv, err = rss._parse_cli_args_json('["--query","河北张家口其他人员住宿标准"]')
+    argv, err = rss._parse_cli_args(["--query", "河北张家口其他人员住宿标准"])
 
     assert err is None
     assert argv == ["--query", "河北张家口其他人员住宿标准"]
 
 
-def test_manifest_required_fields_validate_cli_args_json_positionals():
+def test_parse_cli_args_rejects_legacy_json_string():
+    from app.tools import run_skill_script as rss
+
+    argv, err = rss._parse_cli_args('["--query","河北张家口其他人员住宿标准"]')
+
+    assert argv is None
+    assert err == "cli_args 必须是数组（每项为字符串，对应 argv 片段）"
+
+
+def test_manifest_required_fields_validate_cli_args_positionals():
     from app.tools import run_skill_script as rss
 
     meta = {"input_schema": {"type": "object", "required": ["skill_name"]}}
@@ -262,6 +271,10 @@ def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, 
 
     assert "crawl_and_store.py" in tool.description
     assert "抓取公开网页" in tool.description
+    props = tool.args_schema["properties"]
+    assert "cli_args" in props
+    assert props["cli_args"]["type"] == "array"
+    assert set(props) == {"script_path", "cli_args"}
 
 
 @pytest.mark.asyncio
@@ -416,33 +429,6 @@ async def test_skill_runtime_normalizes_safe_mcp_tool_using_original_metadata(mo
     assert seen[0][1] == "web_search_exa"
 
 
-def test_parse_cli_args_json_recovers_concatenated_json_strings():
-    from app.tools import run_skill_script as rss
-
-    argv, err = rss._parse_cli_args_json('"--query" "河北张家口其他人员住宿标准"')
-
-    assert err is None
-    assert argv == ["--query", "河北张家口其他人员住宿标准"]
-
-
-def test_parse_cli_args_json_recovers_concatenated_json_arrays():
-    from app.tools import run_skill_script as rss
-
-    argv, err = rss._parse_cli_args_json('["--query"]["河北张家口其他人员住宿标准"]')
-
-    assert err is None
-    assert argv == ["--query", "河北张家口其他人员住宿标准"]
-
-
-def test_parse_cli_args_json_recovers_embedded_json_array():
-    from app.tools import run_skill_script as rss
-
-    argv, err = rss._parse_cli_args_json('cli_args_json: ["--query","广西南宁的差旅标准是什么"]')
-
-    assert err is None
-    assert argv == ["--query", "广西南宁的差旅标准是什么"]
-
-
 def test_requirements_b64_uses_explicit_user_without_context(monkeypatch, tmp_path):
     from app.tools import run_skill_script as rss
 
@@ -458,15 +444,6 @@ def test_requirements_b64_uses_explicit_user_without_context(monkeypatch, tmp_pa
     import base64
 
     assert base64.b64decode(encoded).decode("utf-8") == "pendulum==3.0.0"
-
-
-def test_parse_cli_args_json_recovers_comma_separated_json_strings():
-    from app.tools import run_skill_script as rss
-
-    argv, err = rss._parse_cli_args_json('"--query", "广西南宁的差旅标准是什么"')
-
-    assert err is None
-    assert argv == ["--query", "广西南宁的差旅标准是什么"]
 
 
 async def test_tool_gateway_does_not_retry_sandbox_environment_errors():
@@ -522,7 +499,6 @@ def test_run_skill_script_subprocess_sets_pythonpath(monkeypatch, tmp_path):
         directory_name="probe-skill",
         workspace_id="sess-probe",
         write_mode="workspace_all",
-        input_json="",
         cli_argv=[],
         script_root=script_root,
         timeout_sec=10,
@@ -549,7 +525,6 @@ def test_run_skill_script_subprocess_executes_shell_script(monkeypatch, tmp_path
         directory_name="probe-skill",
         workspace_id="sess-probe",
         write_mode="workspace_all",
-        input_json="",
         cli_argv=["arg with space"],
         script_root=script_root,
         timeout_sec=10,
@@ -567,7 +542,6 @@ def test_build_sandbox_exec_request_uses_full_mount_skill_paths():
         script_path="tools/check.py",
         suffix=".py",
         cli_argv=["--x", "1"],
-        input_json="",
     )
     shell = " ".join(cmd)
     assert "/skills/demo-skill/scripts/tools/check.py" in shell
@@ -586,7 +560,6 @@ def test_build_sandbox_exec_request_for_shell_script_uses_bash():
         script_path="tools/check.sh",
         suffix=".sh",
         cli_argv=["--name", "张 三"],
-        input_json="",
     )
 
     shell = " ".join(cmd)

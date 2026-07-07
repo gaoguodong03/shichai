@@ -697,11 +697,11 @@ flowchart TB
 |----|------|
 | 脚本位置 | `backend/data/users/{user_id}/resources/skills/{directory_name}/scripts/{script_path}` |
 | 允许后缀 | `.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat` |
-| 参数入口 | `cli_args_json` 必须是 JSON 字符串数组；`input_json` 已禁用 |
+| 参数入口 | `cli_args` 必须是字符串数组 |
 | 当前工作目录 | 沙箱内当前会话工作区，路径由 `sandbox_session_dir(workspace_id)` 决定 |
 | 环境变量 | `SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_REQUIREMENTS_B64` 等 |
 | 依赖来源 | 当前用户 `settings/sandbox/requirements.txt` 编码后透传，沙箱按 hash 校验和安装 |
-| 失败码常见来源 | `script_not_found`、`invalid_cli_args_json`、`manifest_validation_failed`、`gateway_timeout`、`gateway_tool_unavailable`、`script_exit_nonzero` |
+| 失败码常见来源 | `script_not_found`、`invalid_cli_args`、`manifest_validation_failed`、`gateway_timeout`、`gateway_tool_unavailable`、`script_exit_nonzero` |
 
 ## 6. 数据目录接口图
 
@@ -793,7 +793,7 @@ flowchart TD
 | 新 SSE 事件 | 后端 `group_chat_runtime.py` 输出、前端 `api/chat.ts` 分发、`useGroupStreamEvents.ts` 消费 | 非流式 `/chat` 兜底也要聚合 |
 | 新 Agent 字段 | `AgentCreate/AgentUpdate`、`save_agent_instances()`、`AgentView.vue`、导入导出 | 资源包兼容、默认值、运行时读取 |
 | 新工具能力 | `ToolSpec`、`tools_for_skill.py`、执行实现、前端工具结果展示 | 权限能力开关、路径越界、错误直出 |
-| 新 Skill 脚本 | Skill 目录、`scripts/manifest.json`、requirements、脚本输出协议 | `cli_args_json` JSON 数组、沙箱依赖、工作区相对路径 |
+| 新 Skill 脚本 | Skill 目录、`scripts/manifest.json`、requirements、脚本输出协议 | `cli_args` 字符串数组、沙箱依赖、工作区相对路径 |
 | 新 MCP 能力 | MCP 配置、连接测试、工具 schema、Skill frontmatter | Streamable HTTP endpoint/auth、冷却和连接日志 |
 | 新沙箱镜像/策略 | `sandbox_settings.py`、`sandbox_image_policy.py`、`sandbox_service.py` | 已缓存 sandbox 是否需要重建、requirements hash |
 | 新 provider 参数 | `settings_app.py`、`LLMSettingsView.vue`、`llm_client.py` | API Key 引用、脱敏、thinking/tool_choice 策略 |

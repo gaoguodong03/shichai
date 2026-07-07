@@ -102,7 +102,7 @@ def _frontend_flow_env(tmp_path, monkeypatch):
 name: 沙箱依赖验证
 description: 运行 check_pkg_version.py 检查包版本。
 ---
-当用户要求运行脚本并传参时，调用 run_skill_script，传入 script_path 和 cli_args_json。
+当用户要求运行脚本并传参时，调用 run_skill_script，传入 script_path 和 cli_args。
 """,
         encoding="utf-8",
     )
@@ -148,7 +148,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
                         "name": "run_skill_script",
                         "args": {
                             "script_path": "check_pkg_version.py",
-                            "cli_args_json": '["--package","pendulum"]',
+                            "cli_args": ["--package", "pendulum"],
                         },
                     }
                 ],
@@ -177,7 +177,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     chat_resp = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
-            "message": "@沙箱依赖验证专家 运行脚本并传参：\n\nscript_path: check_pkg_version.py\ncli_args_json: [\"--package\",\"pendulum\"]"
+            "message": "@沙箱依赖验证专家 运行脚本并传参：\n\nscript_path: check_pkg_version.py\ncli_args: [\"--package\",\"pendulum\"]"
         },
         headers=headers,
     )

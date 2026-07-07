@@ -797,7 +797,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                 "name": "run_skill_script_skill-builder",
                 "args": {
                     "script_path": "init_skill.py",
-                    "cli_args_json": '["toutiao-summary"]',
+                    "cli_args": ["toutiao-summary"],
                 },
             }
         ],
@@ -839,7 +839,7 @@ async def test_simple_agent_continues_after_skill_builder_init_to_edit_skill():
                         "tool": tool_name,
                         "arguments": {
                             "script_path": "init_skill.py",
-                            "cli_args_json": '["toutiao-summary"]',
+                            "cli_args": ["toutiao-summary"],
                         },
                     }
                 ],
@@ -896,7 +896,7 @@ async def test_simple_agent_continues_after_skill_initialized_payload_without_to
                 "name": "run_skill_script_skill-builder",
                 "args": {
                     "script_path": "init_skill.py",
-                    "cli_args_json": '["toutiao-news-summary"]',
+                    "cli_args": ["toutiao-news-summary"],
                 },
             }
         ],
@@ -992,7 +992,7 @@ async def test_simple_agent_continues_after_next_action_agent_turn_continue():
                 "name": "run_skill_script_skill-builder",
                 "args": {
                     "script_path": "create_template.py",
-                    "cli_args_json": '["toutiao-news-summary"]',
+                    "cli_args": ["toutiao-news-summary"],
                 },
             }
         ],
@@ -1093,7 +1093,7 @@ async def test_simple_agent_executes_structured_tool_call_from_post_tool_synthes
             {
                 "id": "tc-init",
                 "name": "run_skill_script_skill-builder",
-                "args": {"script_path": "init_skill.py", "cli_args_json": '["toutiao-news-summary"]'},
+                "args": {"script_path": "init_skill.py", "cli_args": ["toutiao-news-summary"]},
             }
         ],
     )
@@ -1210,7 +1210,7 @@ async def test_simple_agent_stream_executes_structured_tool_call_from_post_tool_
             {
                 "id": "tc-init",
                 "name": "run_skill_script_skill-builder",
-                "args": {"script_path": "init_skill.py", "cli_args_json": '["toutiao-news-summary"]'},
+                "args": {"script_path": "init_skill.py", "cli_args": ["toutiao-news-summary"]},
             }
         ],
     )

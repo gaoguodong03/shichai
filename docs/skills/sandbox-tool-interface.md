@@ -135,15 +135,14 @@
 ```json
 {
   "script_path": "extract_travel_standards.py",
-  "cli_args_json": "[\"--input\", \"内蒙古差旅费标准.txt\", \"--output\", \"notes/result.md\"]"
+  "cli_args": ["--input", "内蒙古差旅费标准.txt", "--output", "notes/result.md"]
 }
 ```
 
 规则：
 
 - `script_path` 是相对该技能 `scripts/` 目录的路径；不要带宿主机绝对路径或 `scripts/` 前缀。
-- 统一使用 `cli_args_json` 传参，值必须是 JSON 数组字符串。
-- 不使用 `input_json` 或 stdin。
+- 统一使用 `cli_args` 传参，值必须是字符串数组。
 - 脚本运行时当前目录是会话工作区；脚本可读写工作区文件。
 - 脚本环境变量包括：`SKILL_ID`、`SKILL_WORKSPACE_ID`、`SKILL_WORKSPACE_ROOT`、`SKILL_SCRIPT_ROOT`、`SKILL_HOME`。
 - 脚本 stdout 应输出单个 JSON 对象，并使用标准字段 `execution_status`、`result_code`、`message`、`artifacts`、`next_action`。需要保留群聊 Skill 会话锁时输出 `next_action.skill_session: "keep"`；需要释放时输出 `next_action.skill_session: "release"`。

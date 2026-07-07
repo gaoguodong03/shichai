@@ -145,8 +145,8 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         parts.append(
             "## 技能脚本工具\n\n"
             "用结构化工具调用执行当前技能脚本：`script_path` 填 scripts/ 下相对路径，"
-            "`cli_args_json` 填 JSON 数组字符串（如 `[\"--query\",\"用户原话\"]`）。"
-            "不要用 `input_json`，不要传宿主机绝对路径。\n\n"
+            "`cli_args` 填字符串数组（如 `[\"--query\",\"用户原话\"]`）。"
+            "不要传宿主机绝对路径。\n\n"
             + "\n".join(f"- `{n}`" for n in script_names)
             + "\n\n"
         )

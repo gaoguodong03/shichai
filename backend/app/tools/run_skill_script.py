@@ -171,95 +171,27 @@ def _script_meta_for(manifest: dict[str, Any], script_path: str) -> dict[str, An
     return meta if isinstance(meta, dict) else {}
 
 
-def _parse_input_json(input_json: str) -> tuple[Any, str | None]:
-    """解析 input_json；为空返回空对象。"""
-    raw = (input_json or "").strip()
-    if not raw:
-        return {}, None
-    try:
-        return json.loads(raw), None
-    except Exception as e:
-        return None, f"input_json 不是合法 JSON: {e}"
-
-
-def _parse_cli_args_json(cli_args_json: str) -> tuple[list[str] | None, str | None]:
+def _parse_cli_args(cli_args: Any) -> tuple[list[str] | None, str | None]:
     """
-    解析追加到脚本后的 argv（JSON 字符串数组），由 subprocess 列表传入，不经 shell。
-    空字符串表示无额外参数。
+    解析追加到脚本后的 argv 数组，由 subprocess 列表传入，不经 shell。
+    None 表示无额外参数。
     """
-    raw = (cli_args_json or "").strip()
-    if not raw:
+    if cli_args is None:
         return [], None
-    try:
-        data = json.loads(raw)
-    except Exception as e:
-        recovered = _recover_concatenated_cli_args_json(raw) or _recover_embedded_cli_args_json(raw)
-        if recovered is None:
-            return None, f"cli_args_json 不是合法 JSON: {e}"
-        data = recovered
-    if not isinstance(data, list):
-        return None, "cli_args_json 必须是 JSON 数组（每项为字符串，对应 argv 片段）"
-    if len(data) > _CLI_ARGV_MAX_ITEMS:
-        return None, f"cli_args_json 数组长度不能超过 {_CLI_ARGV_MAX_ITEMS}"
+    if not isinstance(cli_args, list):
+        return None, "cli_args 必须是数组（每项为字符串，对应 argv 片段）"
+    if len(cli_args) > _CLI_ARGV_MAX_ITEMS:
+        return None, f"cli_args 数组长度不能超过 {_CLI_ARGV_MAX_ITEMS}"
     out: list[str] = []
-    for i, item in enumerate(data):
+    for i, item in enumerate(cli_args):
         if not isinstance(item, str):
-            return None, f"cli_args_json[{i}] 必须是字符串"
+            return None, f"cli_args[{i}] 必须是字符串"
         if "\x00" in item:
-            return None, f"cli_args_json[{i}] 含非法字符"
+            return None, f"cli_args[{i}] 含非法字符"
         if len(item) > _CLI_ARGV_MAX_STRLEN:
-            return None, f"cli_args_json[{i}] 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
+            return None, f"cli_args[{i}] 长度不能超过 {_CLI_ARGV_MAX_STRLEN}"
         out.append(item)
     return out, None
-
-
-def _recover_concatenated_cli_args_json(raw: str) -> list[Any] | None:
-    """容错 LLM 把多个 JSON 字符串/数组片段拼到 cli_args_json 的常见错误。"""
-    decoder = json.JSONDecoder()
-    pos = 0
-    parts: list[Any] = []
-    length = len(raw)
-    try:
-        while pos < length:
-            while pos < length and raw[pos].isspace():
-                pos += 1
-            if pos >= length:
-                break
-            value, end = decoder.raw_decode(raw, pos)
-            parts.append(value)
-            pos = end
-    except Exception:
-        return None
-    if len(parts) <= 1:
-        return None
-    out: list[Any] = []
-    for part in parts:
-        if isinstance(part, list):
-            out.extend(part)
-        elif isinstance(part, str):
-            out.append(part)
-        else:
-            return None
-    return out
-
-
-def _recover_embedded_cli_args_json(raw: str) -> list[Any] | None:
-    """容错从混入说明文字的 cli_args_json 中提取第一个 JSON 数组。"""
-    decoder = json.JSONDecoder()
-    for pos, ch in enumerate(raw):
-        if ch != "[":
-            continue
-        try:
-            value, _end = decoder.raw_decode(raw, pos)
-        except Exception:
-            continue
-        if isinstance(value, list):
-            return value
-    try:
-        value = json.loads(f"[{raw}]")
-    except Exception:
-        return None
-    return value if isinstance(value, list) else None
 
 
 def _normalize_cli_field_name(name: Any) -> str:
@@ -319,7 +251,7 @@ def _validate_against_manifest(
             return f"脚本 {script_path} 缺少必填字段: {missing}"
         return None
     if not isinstance(parsed_input, dict):
-        return f"脚本 {script_path} 要求 input_json 为对象，且包含字段: {required}"
+        return f"脚本 {script_path} 要求 cli_args 包含字段: {required}"
     missing = [k for k in required if k not in parsed_input]
     if missing:
         return f"脚本 {script_path} 缺少必填字段: {missing}"
@@ -505,12 +437,10 @@ def _build_sandbox_exec_request(
     script_path: str,
     suffix: str,
     cli_argv: list[str],
-    input_json: str,
 ) -> tuple[list[str], dict[str, str], str]:
     """
     返回 (command, env, cwd)：
     - command 统一走 sh -lc，先确保会话目录存在并 cd
-    - input_json 通过环境变量注入并管道到 stdin
     """
     sandbox_workspace_dir = sandbox_session_dir(workspace_id)
     skill_home = f"{SANDBOX_SKILLS_ROOT}/{directory_name}"
@@ -522,10 +452,7 @@ def _build_sandbox_exec_request(
     )
     quoted = " ".join(shlex.quote(str(x)) for x in base_argv)
     env: dict[str, str] = {}
-    if input_json:
-        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && printf "%s" {shlex.quote(input_json)} | {quoted}'
-    else:
-        shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && {quoted}'
+    shell_cmd = f'mkdir -p {shlex.quote(sandbox_workspace_dir)} && cd {shlex.quote(sandbox_workspace_dir)} && {quoted}'
     return ["sh", "-lc", shell_cmd], env, "/workspace"
 
 
@@ -563,7 +490,6 @@ def _execute_script_subprocess(
     directory_name: str,
     workspace_id: str,
     write_mode: str,
-    input_json: str,
     cli_argv: list[str],
     script_root: Path,
     timeout_sec: int,
@@ -587,7 +513,6 @@ def _execute_script_subprocess(
         proc = subprocess.run(
             cmd,
             cwd=cwd_path,
-            input=input_json if input_json else None,
             capture_output=True,
             text=True,
             timeout=timeout_sec,
@@ -664,8 +589,8 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
     if (skill_home / "SKILL.md").is_file():
         script_root.mkdir(parents=True, exist_ok=True)
 
-    async def run_skill_script(script_path: str, input_json: str = "", cli_args_json: str = "") -> str:
-        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。仅支持 cli_args_json（argv 数组 JSON）。支持 .py/.sh/.ps1/.cmd/.bat。"""
+    async def run_skill_script(script_path: str, cli_args: list[str] | None = None) -> str:
+        """执行当前技能 scripts 目录下的脚本。script_path 为相对该目录的文件名（如 kb_document_store_cli.py）；若误写成 scripts/xxx.py 会自动纠正。仅支持 cli_args（argv 数组）。支持 .py/.sh/.ps1/.cmd/.bat。"""
         if write_mode != "workspace_all":
             return _json_result(
                 ok=False,
@@ -678,42 +603,13 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 code="missing_workspace_id",
                 message="缺少 workspace_id，无法安全执行脚本。",
             )
-        if (input_json or "").strip():
-            return _json_result(
-                ok=False,
-                code="invalid_input_mode",
-                message=(
-                    "run_skill_script 已统一为 CLI-only：不再支持 input_json/stdin。"
-                    "请改用 cli_args_json（JSON 数组字符串）传参。"
-                ),
-            )
         workspace_root = _get_workspace_root(workspace_id)
         workspace_root.mkdir(parents=True, exist_ok=True)
         available_scripts = _list_available_scripts(script_root)
         manifest = _load_manifest(script_root)
 
-        # 兼容 LLM 把整个 JSON 对象字符串塞进 script_path 的情况，例如：
-        # script_path='{"script_path": "hello_agent.py", "input_json": ""}'
         raw_script_param = (script_path or "").strip()
-        try:
-            if raw_script_param.startswith("{") and raw_script_param.endswith("}"):
-                maybe_obj = json.loads(raw_script_param)
-                if isinstance(maybe_obj, dict) and "script_path" in maybe_obj:
-                    script_path = str(maybe_obj.get("script_path", "")).strip()
-                    if "input_json" in maybe_obj and not input_json:
-                        ij = maybe_obj["input_json"]
-                        input_json = ij if isinstance(ij, str) else json.dumps(ij, ensure_ascii=False)
-                    if "cli_args_json" in maybe_obj and not (cli_args_json or "").strip():
-                        caj = maybe_obj["cli_args_json"]
-                        cli_args_json = (
-                            caj if isinstance(caj, str) else json.dumps(caj, ensure_ascii=False)
-                        )
-                else:
-                    script_path = raw_script_param
-            else:
-                script_path = raw_script_param
-        except Exception:
-            script_path = raw_script_param
+        script_path = raw_script_param
 
         script_path = _apply_script_path_normalization(script_path)
 
@@ -774,12 +670,10 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 available_scripts=available_scripts,
             )
 
-        parsed_input, parse_error = _parse_input_json(input_json)
-        if parse_error:
-            return _json_result(ok=False, code="invalid_input_json", message=parse_error)
-        cli_argv, cli_err = _parse_cli_args_json(cli_args_json)
+        parsed_input: dict[str, Any] = {}
+        cli_argv, cli_err = _parse_cli_args(cli_args)
         if cli_err:
-            return _json_result(ok=False, code="invalid_cli_args_json", message=cli_err)
+            return _json_result(ok=False, code="invalid_cli_args", message=cli_err)
         script_meta = _script_meta_for(manifest, script_path)
         schema_error = _validate_against_manifest(script_path, script_meta, parsed_input, cli_argv)
         if schema_error:
@@ -803,7 +697,6 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 script_path=script_path,
                 suffix=full.suffix.lower(),
                 cli_argv=cli_argv or [],
-                input_json=input_json,
             )
         except RuntimeError as e:
             return _json_result(ok=False, code="runtime_missing", message=str(e))
@@ -1037,8 +930,8 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
         name="run_skill_script",
         description=(
             "执行当前技能 scripts/ 下脚本。script_path 填相对路径；"
-            "cli_args_json 填 JSON 数组字符串，如 [\"--query\",\"问题\"]。"
-            "不要使用 input_json/stdin；可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
+            "cli_args 填字符串数组，如 [\"--query\",\"问题\"]。"
+            "可用 __list__/__manifest__/__describe__:<script> 查看脚本。"
             f"{script_inventory}"
         ),
         coroutine=run_skill_script,
@@ -1049,15 +942,11 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                     "type": "string",
                     "description": "scripts/ 下的相对脚本路径，或 __list__/__manifest__/__describe__:<script>。",
                 },
-                "input_json": {
-                    "type": "string",
-                    "description": "已废弃；不要使用，统一改用 cli_args_json。",
-                    "default": "",
-                },
-                "cli_args_json": {
-                    "type": "string",
-                    "description": "命令行 argv 数组 JSON 字符串，如 [\"--query\", \"用户原话\"]。",
-                    "default": "",
+                "cli_args": {
+                    "type": "array",
+                    "description": "命令行 argv 数组，如 [\"--query\", \"用户原话\"]。",
+                    "items": {"type": "string"},
+                    "default": [],
                 },
             },
             "required": ["script_path"],

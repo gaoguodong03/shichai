@@ -306,7 +306,7 @@ http://<server-ip>:8100
 - `next_action.skill_session` 只允许 `keep` 或 `release`；
 - `next_action.skill_session=keep` 表示保留同一专家与同一 Skill，等待用户补充或继续处理；
 - `next_action.skill_session=release` 表示 Skill 本轮流程结束，释放会话锁并交回四九调度；
-- 脚本型 Skill 使用 `cli_args_json`，不再使用 `input_json` 或 stdin 读取。
+- 脚本型 Skill 使用 `cli_args` 字符串数组。
 
 建议执行：
 

@@ -139,14 +139,14 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 ### 4.1 调用契约
 
-脚本型 Skill 统一通过 `run_skill_script_<directory_name>` 调用，输入固定使用 `cli_args_json`。
+脚本型 Skill 统一通过 `run_skill_script_<directory_name>` 调用，输入固定使用 `cli_args`。
 
 推荐写法：
 
 ```text
 调用 run_skill_script_<directory_name>：
 - script_path: crawl_and_store.py
-- cli_args_json: ["--url", "<url>", "--output", "<workspace-relative-path>"]
+- cli_args: ["--url", "<url>", "--output", "<workspace-relative-path>"]
 ```
 
 约束：
@@ -201,13 +201,13 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 ```text
 调用 run_skill_script_<directory_name>：
 - script_path: transcribe_audio.py
-- cli_args_json: ["--file", "<工作区相对路径>", "--language", "zh"]
+- cli_args: ["--file", "<工作区相对路径>", "--language", "zh"]
 ```
 
 约定：
 
 - `script_path` 只写 `scripts/` 下的文件名，不写 `scripts/foo.py`、工作区路径或宿主机绝对路径。
-- `cli_args_json` 必须是 JSON 数组字符串，对应 Python `argparse` 的命令行参数。
+- `cli_args` 必须是字符串数组，对应 Python `argparse` 的命令行参数。
 - 所有用户文件路径都用工作区相对路径，例如 `uploads/audio.wav`、`outputs/result.json`。
 - 多参数脚本要在 `scripts/manifest.json` 里写 `input_schema.required`，让系统能提前发现缺参。
 
@@ -492,7 +492,7 @@ python scripts/validate_skill_cli_contract.py
 - 需要参数时通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=keep`，并继续锁定同一专家；
 - 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=release`，并回到四九调度；
 - 用户说“结束 skill / 交给主持人”时能退出锁定；
-- 脚本型 Skill 的 `script_path`、`cli_args_json`、stdout/stderr 与退出码符合约定；
+- 脚本型 Skill 的 `script_path`、`cli_args`、stdout/stderr 与退出码符合约定；
 - 工作产物写入会话工作区，而不是写入 Skill 目录。
 
 ## 9. 最小模板
@@ -626,7 +626,7 @@ allowed-tools:
 
 调用 run_skill_script_<directory_name>：
 - script_path: <script-name>.py
-- cli_args_json: ["--input", "<工作区相对路径>", "--output", "outputs/<结果文件>"]
+- cli_args: ["--input", "<工作区相对路径>", "--output", "outputs/<结果文件>"]
 
 ## scripts/manifest.json
 
@@ -696,7 +696,7 @@ allowed-tools:
 
 ## 关键规则
 
-- 脚本必须是非交互式，输入固定来自 `cli_args_json`。
+- 脚本必须是非交互式，输入固定来自 `cli_args`。
 - `script_path` 只写脚本文件名，例如 `analyze_table.py`。
 - stdout 只输出一个 JSON 对象。
 - 只有脚本 stdout 中的 `artifacts` 或实际文件检查确认产物存在后，才能向用户说明已生成文件。
