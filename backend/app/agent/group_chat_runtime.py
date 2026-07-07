@@ -78,19 +78,13 @@ from app.agent.group_chat_tool_trace import (
     extract_sandbox_entry_trace as _extract_sandbox_entry_trace,
     extract_tool_calls_from_accumulated as _extract_tool_calls_from_accumulated,
 )
-from app.agent.group_chat_presentation_rewriter import (
-    PRESENTATION_REWRITE_PHASE,
-    rewrite_assistant_message_for_display,
-)
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
     iter_with_keepalive as _iter_with_keepalive,
     stream_background_events as _stream_background_events,
 )
-from app.agent.group_chat_memory_prompt import (
-    _build_checked_next_prompt,
-    _persist_group_memory_turn,
-)
+from app.agent.group_chat_memory_prompt import _persist_group_memory_turn
+from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_soft_stop import _evaluate_soft_stop
 from app.agent.group_chat_expert_resolution import (
     _get_llm_for_agent,
@@ -128,6 +122,17 @@ from app.agent.group_chat_title_meta import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _prepare_display_assistant_message(
+    *,
+    assistant_msg: Dict[str, Any],
+    llm: Any,
+    expert_system_prompt: str,
+) -> Dict[str, Any]:
+    """Return the frontend display copy without an extra presentation LLM call."""
+    _ = llm, expert_system_prompt
+    return dict(assistant_msg)
 
 
 def _log_expert_prompt(
@@ -961,35 +966,17 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                 )
                 yield f"event: route\ndata: {json_module.dumps(route_event, ensure_ascii=False)}\n\n"
                 context = _messages_to_expert_context(messages)
-                if round_next_prompt:
-                    user_content = _build_checked_next_prompt(
-                        group_session_id,
-                        next_speaker,
-                        discussion_goal,
-                        context,
-                        app_settings,
-                        decision_next_prompt=round_next_prompt,
-                    )
-                    task_text_for_workspace = round_next_prompt
-                else:
-                    task_text_for_workspace = "请紧扣讨论目标发言，不要偏离主题。"
-                    user_content = (
-                        f"【群聊讨论目标】\n{discussion_goal}\n\n"
-                        f"【本轮用户输入】\n{user_message or '（无）'}\n\n"
-                        f"【最近讨论】\n{context}\n\n"
-                        "请紧扣讨论目标发言，不要偏离主题。"
-                    )
-                # 避免重复拼接历史：如果默认输入中已包含“最近讨论/历史对话”，则不再追加。
-                uc = (user_content or "").strip()
-                if (
-                    ("【历史对话（供参考）】" not in uc)
-                    and ("【最近几轮讨论内容" not in uc)
-                    and ("【最近讨论】" not in uc)
-                    and ("【关键事实】" not in uc)
-                    and ("【用户任务清单】" not in uc)
-                ):
-                    uc = uc + "\n\n【历史对话（供参考）】\n" + context
-                user_content = uc
+                prompt_bundle = build_expert_turn_prompt(
+                    session_id=group_session_id,
+                    target_agent_name=next_speaker,
+                    discussion_goal=discussion_goal,
+                    user_message=user_message,
+                    recent_context=context,
+                    app_settings=app_settings,
+                    speaker_task=round_next_prompt,
+                )
+                user_content = prompt_bundle.user_content
+                task_text_for_workspace = prompt_bundle.task_text
                 _log_expert_prompt(
                     session_id=group_session_id,
                     run_id=run_id,
@@ -1191,16 +1178,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     },
                     "note": "no_tool_call_detected" if not tool_calls_trace else "",
                 }
-                yield f"event: content\ndata: {json_module.dumps({'text': '', 'agent_name': next_speaker, 'meta': {'phase': PRESENTATION_REWRITE_PHASE}}, ensure_ascii=False)}\n\n"
-                display_assistant_msg = await rewrite_assistant_message_for_display(
+                display_assistant_msg = await _prepare_display_assistant_message(
                     assistant_msg=assistant_msg,
                     llm=expert_runtime.llm,
                     expert_system_prompt=str(agent_profile.get("system_prompt") or ""),
                 )
-                presentation_content = str(display_assistant_msg.get("content") or "").strip()
-                if presentation_content and presentation_content != str(assistant_msg.get("content") or "").strip():
-                    assistant_msg["presentation_content"] = presentation_content
-                    display_assistant_msg["presentation_content"] = presentation_content
                 messages.append(assistant_msg)
                 _save_group_history(group_session_id, messages)
                 session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()

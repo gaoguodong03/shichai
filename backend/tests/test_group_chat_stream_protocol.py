@@ -154,6 +154,37 @@ def test_expert_prompt_log_includes_full_prompt_when_enabled(caplog, monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_display_message_uses_raw_assistant_content_without_presentation_rewrite(monkeypatch):
+    from app.agent import group_chat_runtime
+
+    async def _fail_if_called(*args, **kwargs):
+        raise AssertionError("presentation rewriter should not be called")
+
+    monkeypatch.setattr(
+        group_chat_runtime,
+        "rewrite_assistant_message_for_display",
+        _fail_if_called,
+        raising=False,
+    )
+    assistant_msg = {
+        "role": "assistant",
+        "agent_name": "写作专家",
+        "content": "原始专家回复",
+    }
+
+    display_msg = await group_chat_runtime._prepare_display_assistant_message(
+        assistant_msg=assistant_msg,
+        llm=object(),
+        expert_system_prompt="不应使用",
+    )
+
+    assert display_msg is not assistant_msg
+    assert display_msg["content"] == "原始专家回复"
+    assert "presentation_content" not in display_msg
+    assert "presentation_content" not in assistant_msg
+
+
+@pytest.mark.asyncio
 async def test_background_stream_keeps_source_running_after_client_close():
     from app.agent.group_chat_streaming import stream_background_events
 
