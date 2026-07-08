@@ -96,7 +96,7 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
 
 
 @pytest.mark.asyncio
-async def test_session_detail_uses_presentation_content_without_mutating_history(monkeypatch, tmp_path):
+async def test_session_detail_uses_canonical_content(monkeypatch, tmp_path):
     from app.api import group_chat_state as state
     from app.agent import group_session_service
 
@@ -118,11 +118,9 @@ async def test_session_detail_uses_presentation_content_without_mutating_history
         [
             {
                 "message_id": "a1",
-                "role": "assistant",
-                "agent_name": "信息检索专家",
-                "content": "工具已执行完成。以下是本轮工具返回摘要：\nTitle: Raw",
-                "presentation_content": "## 检索结果\n\n- Raw",
-                "timestamp": "2026062908104900",
+                "speaker": {"type": "expert", "agent_name": "信息检索专家", "skill": "skill-web"},
+                "content": "## 检索结果\n\n- Raw",
+                "created_at": "2026062908104900",
             }
         ],
     )
@@ -130,10 +128,11 @@ async def test_session_detail_uses_presentation_content_without_mutating_history
     detail = await group_session_service.get_group_session(session_id)
     detail_msg = detail["data"]["messages"][0]
     assert detail_msg["content"] == "## 检索结果\n\n- Raw"
+    assert detail_msg["speaker"]["agent_name"] == "信息检索专家"
 
     stored_msg = state.load_group_history(session_id)[0]
-    assert stored_msg["content"].startswith("工具已执行完成")
-    assert stored_msg["presentation_content"] == "## 检索结果\n\n- Raw"
+    assert stored_msg["content"] == "## 检索结果\n\n- Raw"
+    assert "presentation_content" not in stored_msg
 
 
 def test_export_session_default_filename_uses_workspace_timestamp_contract(monkeypatch, tmp_path):
@@ -154,7 +153,14 @@ def test_export_session_default_filename_uses_workspace_timestamp_contract(monke
 
     _save_group_history(
         session_id,
-        [{"role": "user", "content": "请导出这段对话", "timestamp": "t1"}],
+        [
+            {
+                "message_id": "u1",
+                "speaker": {"type": "user"},
+                "content": "请导出这段对话",
+                "created_at": "2026062908104800",
+            }
+        ],
     )
 
     rel_path, download_url = export_session_to_markdown(session_id)

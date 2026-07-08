@@ -186,8 +186,8 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assistant_msg = data["message"]
 
     assert data["route"]["agent_name"] == "沙箱依赖验证专家"
-    assert assistant_msg["agent_name"] == "沙箱依赖验证专家"
-    assert assistant_msg["skill"] == "sandbox-dependency-verify"
+    assert assistant_msg["speaker"]["agent_name"] == "沙箱依赖验证专家"
+    assert assistant_msg["speaker"]["skill"] == "sandbox-dependency-verify"
     assert "版本检查通过" in assistant_msg["content"]
     assert fake_gateway.calls
 
@@ -199,6 +199,6 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assert call["context"].user_id == user
     assert call["payload"]["__sandbox_env"]["SKILL_REQUIREMENTS_B64"]
 
-    raw_results = assistant_msg.get("tool_raw_results") or []
-    assert raw_results
-    assert "package.version_checked" in raw_results[0]
+    tool_results = assistant_msg.get("tool_results") or []
+    assert tool_results
+    assert "package.version_checked" in tool_results[0]["output"]["text"]

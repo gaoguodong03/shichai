@@ -112,8 +112,8 @@ def _iter_artifact_paths(payload: Any) -> List[str]:
     return paths
 
 
-def _extract_paths_from_tool_raw_output(raw: str) -> List[str]:
-    text = str(raw or "")
+def _extract_paths_from_tool_output_value(value: Any) -> List[str]:
+    text = str(value or "")
     paths: List[str] = []
     try:
         decoded = json.loads(text)
@@ -135,21 +135,33 @@ def _extract_paths_from_tool_raw_output(raw: str) -> List[str]:
 
 def _extract_index_paths_from_message(msg: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
-    tool_debug = msg.get("tool_debug") if isinstance(msg, dict) else {}
-    tool_calls = tool_debug.get("tool_calls") if isinstance(tool_debug, dict) else []
-    for call in tool_calls if isinstance(tool_calls, list) else []:
-        if not isinstance(call, dict):
+    tool_results = msg.get("tool_results") if isinstance(msg, dict) else []
+    for result in tool_results if isinstance(tool_results, list) else []:
+        if not isinstance(result, dict):
             continue
-        args = call.get("arguments") or call.get("args") or {}
-        if not isinstance(args, dict):
-            continue
-        for key in ("path", "file_path", "output_path", "target_path", "dst_path", "new_path", "workspace_path"):
-            normalized = _normalize_workspace_index_path(args.get(key))
-            if normalized:
-                paths.append(normalized)
-
-    for raw in msg.get("tool_raw_results") or []:
-        paths.extend(_extract_paths_from_tool_raw_output(str(raw)))
+        call = result.get("tool_call")
+        if isinstance(call, dict):
+            args = call.get("arguments") or {}
+            if isinstance(args, dict):
+                for key in ("path", "file_path", "output_path", "target_path", "dst_path", "new_path", "workspace_path"):
+                    normalized = _normalize_workspace_index_path(args.get(key))
+                    if normalized:
+                        paths.append(normalized)
+        for artifact in result.get("artifacts") or []:
+            if not isinstance(artifact, dict):
+                continue
+            for key in ("path", "url"):
+                normalized = _normalize_workspace_index_path(artifact.get(key))
+                if normalized:
+                    paths.append(normalized)
+        output = result.get("output")
+        if isinstance(output, dict):
+            for key in ("text", "markdown", "stdout", "stderr", "json_data"):
+                paths.extend(_extract_paths_from_tool_output_value(output.get(key)))
+        error_log = result.get("error_log")
+        if isinstance(error_log, dict):
+            for key in ("message", "detail", "stdout", "stderr", "raw_output"):
+                paths.extend(_extract_paths_from_tool_output_value(error_log.get(key)))
 
     deduped: List[str] = []
     seen = set()
@@ -186,8 +198,8 @@ def _persist_group_memory_turn(
     mem = _get_group_memory_settings(app_settings)
     if not mem["enabled"]:
         return
-    role = str((msg or {}).get("role") or "").strip()
-    if role != "assistant":
+    speaker = (msg or {}).get("speaker")
+    if not isinstance(speaker, dict) or str(speaker.get("type") or "").strip() != "expert":
         return
     content = str((msg or {}).get("content") or "").strip()
     if content:
@@ -207,8 +219,8 @@ def _persist_group_memory_turn(
             session_id=session_id,
             entries_delta=[
                 {
-                    "agent_name": str((msg or {}).get("agent_name") or "unknown"),
-                    "skill": str((msg or {}).get("skill") or "default"),
+                    "agent_name": str(speaker.get("agent_name") or "unknown"),
+                    "skill": str(speaker.get("skill") or "default"),
                     "summary": _summarize_index_work(content),
                     "files": index_paths,
                 }

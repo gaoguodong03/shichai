@@ -178,7 +178,12 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
     route_agent_name = route_event.get("agent_name") if isinstance(route_event, dict) else None
     if route_agent_name:
         primary_message = next(
-            (msg for msg in reversed(message_events) if msg.get("agent_name") == route_agent_name),
+            (
+                msg
+                for msg in reversed(message_events)
+                if isinstance(msg.get("speaker"), dict)
+                and str((msg.get("speaker") or {}).get("agent_name") or "").strip() == route_agent_name
+            ),
             primary_message,
         )
 

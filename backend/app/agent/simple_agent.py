@@ -571,6 +571,7 @@ class SimpleAgent:
         tool_attempt_debug: list[dict[str, Any]] = []
         tool_result_cache: dict[str, dict[str, Any]] = {}
         all_tool_raw_outputs: list[str] = []
+        all_tool_results: list[dict[str, Any]] = []
         successful_workspace_write_keys: set[str] = set()
         last_tool_signature = ""
         repeated_tool_rounds = 0
@@ -641,6 +642,7 @@ class SimpleAgent:
                         "step": step + 1,
                         "tool_messages": guard_msgs,
                         "tool_calls": [],
+                        "tool_results": [],
                         "tool_raw_outputs": [],
                         "tool_attempt_debug": tool_attempt_debug,
                     }
@@ -664,6 +666,7 @@ class SimpleAgent:
                         "step": step + 1,
                         "tool_messages": duplicate_msgs,
                         "tool_calls": [],
+                        "tool_results": [],
                         "tool_raw_outputs": [],
                         "tool_attempt_debug": tool_attempt_debug,
                     }
@@ -688,7 +691,9 @@ class SimpleAgent:
                     tool_attempt_debug.extend([x for x in tad if x not in tool_attempt_debug])
                 tool_calls_trace = tool_out.get("tool_calls") if isinstance(tool_out.get("tool_calls"), list) else []
                 tool_raw_outputs = tool_out.get("tool_raw_outputs") if isinstance(tool_out.get("tool_raw_outputs"), list) else []
+                tool_results = tool_out.get("tool_results") if isinstance(tool_out.get("tool_results"), list) else []
                 all_tool_raw_outputs.extend([str(x) for x in tool_raw_outputs if str(x or "")])
+                all_tool_results.extend([x for x in tool_results if isinstance(x, dict)])
                 _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
                 if isinstance(out_msgs, list) and out_msgs:
                     _normalize_tool_message_ids(out_msgs, tool_call_id_map)
@@ -712,6 +717,7 @@ class SimpleAgent:
                     "step": step + 1,
                     "tool_messages": out_msgs if isinstance(out_msgs, list) else [],
                     "tool_calls": tool_calls_trace,
+                    "tool_results": tool_results,
                     "tool_raw_outputs": tool_raw_outputs,
                     "tool_attempt_debug": tool_attempt_debug,
                 }
@@ -887,6 +893,7 @@ class SimpleAgent:
                             "step": step + 2,
                             "tool_messages": synthesized_tool_out.get("messages") or [],
                             "tool_calls": synthesized_tool_out.get("tool_calls") or [],
+                            "tool_results": synthesized_tool_out.get("tool_results") or [],
                             "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
                             "tool_attempt_debug": tool_attempt_debug,
                         }
@@ -945,6 +952,7 @@ class SimpleAgent:
                             "step": step + 2,
                             "tool_messages": synthesized_tool_out.get("messages") or [],
                             "tool_calls": synthesized_tool_out.get("tool_calls") or [],
+                            "tool_results": synthesized_tool_out.get("tool_results") or [],
                             "tool_raw_outputs": synthesized_tool_out.get("tool_raw_outputs") or [],
                             "tool_attempt_debug": tool_attempt_debug,
                         }
@@ -1015,6 +1023,7 @@ class SimpleAgent:
                     "step": step + 1,
                     "tool_messages": [],
                     "tool_calls": [],
+                    "tool_results": [],
                     "tool_raw_outputs": [],
                     "tool_attempt_debug": tool_attempt_debug,
                 }
@@ -1087,6 +1096,7 @@ class SimpleAgent:
                     }
                 ],
                 "tool_calls": [],
+                "tool_results": [],
                 "tool_raw_outputs": [],
             }
 
@@ -1097,6 +1107,7 @@ class SimpleAgent:
         tool_attempt_debug: list[dict[str, Any]] = []
         tool_calls_trace: list[dict[str, Any]] = []
         tool_raw_outputs: list[str] = []
+        tool_results: list[dict[str, Any]] = []
         successful_workspace_write_keys: set[str] = set()
         tool_result_cache: dict[str, dict[str, Any]] = {}
         last_tool_signature = ""
@@ -1206,6 +1217,9 @@ class SimpleAgent:
                 tro = tool_out.get("tool_raw_outputs")
                 if isinstance(tro, list):
                     tool_raw_outputs.extend([str(x) for x in tro])
+                trs = tool_out.get("tool_results")
+                if isinstance(trs, list):
+                    tool_results.extend([x for x in trs if isinstance(x, dict)])
                 _remember_successful_workspace_writes(tool_out, successful_workspace_write_keys)
                 if isinstance(out_msgs, list) and out_msgs:
                     _normalize_tool_message_ids(out_msgs, tool_call_id_map)
@@ -1527,5 +1541,6 @@ class SimpleAgent:
             "messages": messages,
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
+            "tool_results": tool_results,
             "tool_raw_outputs": tool_raw_outputs,
         }

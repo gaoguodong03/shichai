@@ -92,11 +92,10 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     ws.mkdir(parents=True, exist_ok=True)
 
     host_msg = {
-        "role": "host",
-        "agent_name": "场景主持人",
+        "message_id": "host-1",
+        "speaker": {"type": "host", "agent_name": "场景主持人"},
         "content": "请用户补充或继续提问。",
-        "timestamp": "2026-05-13T12:30:50+00:00",
-        "skill": "group-host-general",
+        "created_at": "2026-05-13T12:30:50+00:00",
     }
 
     gc._persist_group_memory_turn(
@@ -113,11 +112,10 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assert not (ws / "memory" / "logs").exists()
 
     assistant_msg = {
-        "role": "assistant",
-        "agent_name": "数据专家",
+        "message_id": "expert-1",
+        "speaker": {"type": "expert", "agent_name": "数据专家", "skill": "weekly-report"},
         "content": "- 用户希望输出周报\n- 需要包含趋势图表",
-        "timestamp": "2026-05-13T12:31:50+00:00",
-        "skill": "weekly-report",
+        "created_at": "2026-05-13T12:31:50+00:00",
     }
     gc._persist_group_memory_turn(
         session_id="group-test",
@@ -141,20 +139,24 @@ def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path)
     ws.mkdir(parents=True, exist_ok=True)
 
     assistant_msg = {
-        "role": "assistant",
-        "agent_name": "写作专家",
+        "message_id": "expert-1",
+        "speaker": {"type": "expert", "agent_name": "写作专家", "skill": "weekly-report"},
         "content": "已完成周报初稿，并保存到工作区。",
-        "timestamp": "2026-05-13T12:31:50+00:00",
-        "skill": "weekly-report",
-        "tool_debug": {
-            "tool_calls": [
-                {
-                    "tool": "write_workspace_file",
+        "created_at": "2026-05-13T12:31:50+00:00",
+        "tool_results": [
+            {
+                "tool_call": {
+                    "id": "tool-1",
+                    "name": "write_workspace_file",
+                    "kind": "workspace",
                     "arguments": {"path": "reports/weekly.md"},
-                }
-            ],
-        },
-        "tool_raw_results": ["已写入当前 Chat 工作区文件：reports/weekly.md"],
+                },
+                "execution_status": "succeeded",
+                "result_code": "file.written",
+                "message": "已写入当前 Chat 工作区文件：reports/weekly.md",
+                "output": {"text": "已写入当前 Chat 工作区文件：reports/weekly.md"},
+            }
+        ],
     }
 
     gc._persist_group_memory_turn(
@@ -249,7 +251,7 @@ def test_guard_delivery_claims_replaces_unverified_generation_claim():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert "本轮没有确认文件生成成功" in out
@@ -264,7 +266,7 @@ def test_guard_delivery_claims_replaces_unverified_web_crawler_candidate_claim()
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert "本轮没有确认文件生成成功" in out
@@ -279,7 +281,7 @@ def test_guard_delivery_claims_replaces_unverified_root_workspace_file_claim():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert "本轮没有确认文件生成成功" in out
@@ -294,7 +296,7 @@ def test_guard_delivery_claims_replaces_unverified_saved_root_file_claim():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert "本轮没有确认文件生成成功" in out
@@ -309,7 +311,7 @@ def test_guard_delivery_claims_keeps_successful_workspace_write_claim():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
-        tool_raw_results=["已写入当前 Chat 工作区文件：reports/weekly.md"],
+        tool_output_texts=["已写入当前 Chat 工作区文件：reports/weekly.md"],
     )
 
     assert out == content
@@ -324,7 +326,7 @@ def test_guard_delivery_claims_keeps_successful_root_workspace_write_claim(tmp_p
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "report.md"}}],
-        tool_raw_results=raw_results,
+        tool_output_texts=raw_results,
         workspace_root=tmp_path,
     )
 
@@ -340,7 +342,7 @@ def test_guard_delivery_claims_keeps_successful_root_payload_file_claim(tmp_path
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "run_skill_script", "arguments": {"path": "report.docx"}}],
-        tool_raw_results=raw_results,
+        tool_output_texts=raw_results,
         workspace_root=tmp_path,
     )
 
@@ -355,7 +357,7 @@ def test_guard_delivery_claims_requires_existing_file_when_workspace_root_is_ava
     missing = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
-        tool_raw_results=raw_results,
+        tool_output_texts=raw_results,
         workspace_root=tmp_path,
     )
     assert "本轮没有确认文件生成成功" in missing
@@ -367,7 +369,7 @@ def test_guard_delivery_claims_requires_existing_file_when_workspace_root_is_ava
     existing = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "write_workspace_file", "arguments": {"path": "reports/weekly.md"}}],
-        tool_raw_results=raw_results,
+        tool_output_texts=raw_results,
         workspace_root=tmp_path,
     )
     assert existing == content
@@ -385,7 +387,7 @@ def test_guard_delivery_claims_summary_omits_successful_read_file_content():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "read_workspace_file", "arguments": {"path": "蒙太奇是什么-完整草稿-2026062817270900.md"}}],
-        tool_raw_results=raw_results,
+        tool_output_texts=raw_results,
     )
 
     assert "本轮没有确认文件生成成功" in out
@@ -403,7 +405,7 @@ def test_guard_delivery_claims_ignores_plain_non_file_generation_text():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert out == content
@@ -416,7 +418,7 @@ def test_guard_delivery_claims_ignores_plain_root_filename_reference():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[],
-        tool_raw_results=[],
+        tool_output_texts=[],
     )
 
     assert out == content
@@ -429,7 +431,7 @@ def test_guard_delivery_claims_ignores_writing_plan_after_workspace_read():
     out = gc.guard_unverified_delivery_claims(
         content,
         tool_calls=[{"tool": "list_workspace_directory", "arguments": {"path": "web-crawler/materials"}}],
-        tool_raw_results=["目录 web-crawler/materials 下的内容（含子目录）：\n方向确认卡"],
+        tool_output_texts=["目录 web-crawler/materials 下的内容（含子目录）：\n方向确认卡"],
     )
 
     assert out == content

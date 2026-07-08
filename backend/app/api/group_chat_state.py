@@ -12,7 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pydantic import ValidationError
+
 from app.agent.group_orchestration_fsm import effective_orchestration_profile
+from app.agent.message_contracts import ChatMessageRecord
 from app.core.user_context import get_current_user_context
 
 logger = logging.getLogger(__name__)
@@ -71,85 +74,19 @@ def format_storage_timestamp(value: datetime | None = None) -> str:
     return dt.strftime("%Y%m%d%H%M%S") + f"{dt.microsecond // 10000:02d}"
 
 
-def _speaker_from_message(msg: Dict[str, Any]) -> Dict[str, Any]:
-    speaker = msg.get("speaker")
-    if isinstance(speaker, dict):
-        out = {str(k): v for k, v in speaker.items() if v not in (None, "")}
-        if out.get("type"):
-            return out
-    role = str(msg.get("role") or "").strip()
-    if role == "user":
-        return {"type": "user"}
-    if role == "host":
-        return {"type": "host"}
-    if role == "assistant":
-        out = {"type": "expert"}
-        agent_name = str(msg.get("agent_name") or "").strip()
-        skill = str(msg.get("skill") or "").strip()
-        if agent_name:
-            out["agent_name"] = agent_name
-        if skill:
-            out["skill"] = skill
-        return out
-    return {"type": role or "unknown"}
-
-
 def _canonical_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
-    speaker = _speaker_from_message(msg)
-    out: Dict[str, Any] = {
-        "message_id": msg.get("message_id"),
-        "speaker": speaker,
-        "content": msg.get("content") or "",
-        "created_at": msg.get("created_at") or msg.get("timestamp") or "",
-    }
-    for key in (
-        "client_message_id",
-        "skill_route_debug",
-        "expert_route_debug",
-        "tool_raw_results",
-        "presentation_content",
-        "meta",
-        "debug",
-    ):
-        if msg.get(key) is not None:
-            out[key] = msg.get(key)
-    skill_result = msg.get("skill_result")
-    if isinstance(skill_result, dict):
-        out["skill_result"] = skill_result
-    tool_debug = msg.get("tool_debug")
-    if isinstance(tool_debug, dict):
-        debug = out.get("debug") if isinstance(out.get("debug"), dict) else {}
-        out["debug"] = {**debug, "tool_debug": tool_debug}
-    return {k: v for k, v in out.items() if v is not None}
-
-
-def _runtime_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(msg)
-    speaker = _speaker_from_message(out)
-    out["speaker"] = speaker
-    if "timestamp" not in out and out.get("created_at") is not None:
-        out["timestamp"] = out.get("created_at")
-    speaker_type = str(speaker.get("type") or "").strip()
-    if "role" not in out:
-        if speaker_type == "expert":
-            out["role"] = "assistant"
-        elif speaker_type:
-            out["role"] = speaker_type
-    if "agent_name" not in out and speaker.get("agent_name") is not None:
-        out["agent_name"] = speaker.get("agent_name")
-    if "skill" not in out and speaker.get("skill") is not None:
-        out["skill"] = speaker.get("skill")
-    return out
+    if not isinstance(msg, dict):
+        raise ValueError("history message must be an object")
+    try:
+        record = ChatMessageRecord.model_validate(msg)
+    except ValidationError as exc:
+        raise ValueError("history message violates ChatMessageRecord") from exc
+    return record.model_dump(exclude_none=True)
 
 
 def frontend_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
-    """Return a UI-facing copy, keeping stored/runtime content canonical."""
-    out = dict(msg or {})
-    role = str(out.get("role") or "").strip()
-    presentation_content = str(out.get("presentation_content") or "").strip()
-    if role == "assistant" and presentation_content:
-        out["content"] = presentation_content
-    return out
+    """Return a UI-facing canonical message copy."""
+    return _canonical_history_message(dict(msg or {}))
 
 
 def ensure_sessions_dir() -> Path:
@@ -474,9 +411,24 @@ def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
             data = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(data, list):
                 return []
-            return [_runtime_history_message(item) for item in data if isinstance(item, dict)]
-        except Exception:
-            pass
+            canonical_messages: List[Dict[str, Any]] = []
+            dropped_count = 0
+            for item in data:
+                try:
+                    canonical_messages.append(_canonical_history_message(item))
+                except ValueError:
+                    dropped_count += 1
+            if dropped_count:
+                logger.warning(
+                    "dropped legacy group history messages: session=%s count=%s",
+                    group_session_id,
+                    dropped_count,
+                )
+                with suppress(OSError):
+                    path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
+            return canonical_messages
+        except (OSError, json.JSONDecodeError, TypeError):
+            return []
     return []
 
 
@@ -490,7 +442,7 @@ def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) ->
         layout = ensure_session_layout(user_ctx, group_session_id)
         path = layout.history
     path.parent.mkdir(parents=True, exist_ok=True)
-    canonical_messages = [_canonical_history_message(item) for item in (messages or []) if isinstance(item, dict)]
+    canonical_messages = [_canonical_history_message(item) for item in (messages or [])]
     path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
     schedule_group_session_event(
         group_session_id,
@@ -562,21 +514,22 @@ def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
     for m in messages or []:
         if not isinstance(m, dict):
             continue
-        role = (m.get("role") or "").strip()
-        if role == "host":
+        speaker = m.get("speaker") if isinstance(m.get("speaker"), dict) else {}
+        speaker_type = str(speaker.get("type") or "").strip()
+        if speaker_type == "host":
             continue
-        if role == "user":
+        if speaker_type == "user":
             _flush()
             cur = _ensure_current()
             cur["user"] = {
                 "message_id": m.get("message_id"),
                 "content": m.get("content") or "",
-                "timestamp": m.get("timestamp"),
+                "created_at": m.get("created_at"),
             }
             continue
-        if role == "assistant":
+        if speaker_type == "expert":
             cur = _ensure_current()
-            agent_name = (m.get("agent_name") or "").strip()
+            agent_name = str(speaker.get("agent_name") or "").strip()
             if not agent_name:
                 continue
             experts = cur.get("experts")
@@ -588,10 +541,10 @@ def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
             item = {
                 "message_id": m.get("message_id"),
                 "content": m.get("content") or "",
-                "timestamp": m.get("timestamp"),
+                "created_at": m.get("created_at"),
             }
-            if m.get("skill") is not None:
-                item["skill"] = m.get("skill")
+            if speaker.get("skill") is not None:
+                item["skill"] = speaker.get("skill")
             experts[agent_name]["messages"].append(item)
 
     _flush()

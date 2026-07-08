@@ -12,6 +12,14 @@ function parseToolRawResult(raw: string): ToolRawMeta {
     if (parsed?.action === 'tool_call' && parsed?.tool) {
       return { toolName: String(parsed.tool), rawReturn: raw }
     }
+    const toolCall = (parsed as { tool_call?: { name?: unknown; provider?: unknown; provider_tool?: unknown } })?.tool_call
+    if (toolCall && typeof toolCall === 'object') {
+      const provider = String(toolCall.provider || '').trim()
+      const providerTool = String(toolCall.provider_tool || '').trim()
+      const name = String(toolCall.name || providerTool || 'tool').trim()
+      const label = provider && providerTool ? `${provider}: ${providerTool}` : name
+      return { toolName: label, rawReturn: raw }
+    }
     if (parsed?._sandbox_trace) {
       const sandboxToolName = String(parsed._sandbox_trace.tool_name || '').trim()
       return { toolName: sandboxToolName ? `sandbox: ${sandboxToolName}` : 'sandbox', rawReturn: raw }
@@ -41,9 +49,9 @@ export function formatToolPopover(raw: string): string {
   return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
-export function getSchedulerStateRaw(msg: { meta?: unknown }): string {
-  const meta = msg.meta && typeof msg.meta === 'object' ? msg.meta as { scheduler_state?: unknown } : null
-  const state = meta?.scheduler_state
+export function getSchedulerStateRaw(msg: { routing?: unknown }): string {
+  const routing = msg.routing && typeof msg.routing === 'object' ? msg.routing as { scheduler_state?: unknown } : null
+  const state = routing?.scheduler_state
   if (!state || typeof state !== 'object') return ''
   const data = state as {
     current_phase?: unknown
@@ -83,8 +91,21 @@ function extractToolCallBlocks(content: string): string[] {
   return out
 }
 
-export function getToolRawResults(msg: { content?: string; tool_raw_results?: string[] }): string[] {
-  const explicit = (msg.tool_raw_results || []).filter((x) => !!(x || '').trim())
+export function getToolRawResults(msg: { content?: string; tool_results?: unknown[] }): string[] {
+  const explicit = (msg.tool_results || [])
+    .map((item) => {
+      if (!item || typeof item !== 'object') return ''
+      const row = item as {
+        tool_call?: { name?: unknown; provider?: unknown; provider_tool?: unknown }
+        execution_status?: unknown
+        result_code?: unknown
+        message?: unknown
+        output?: unknown
+        error_log?: unknown
+      }
+      return JSON.stringify(row, null, 2)
+    })
+    .filter((x) => !!(x || '').trim())
   if (explicit.length) return explicit
   return extractToolCallBlocks(msg.content || '')
 }

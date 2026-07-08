@@ -27,6 +27,21 @@ type LastSentDraft = {
   files: { name: string; path: string }[]
 }
 
+function messageSpeakerType(message: GroupMessage | Record<string, unknown> | null | undefined): string {
+  const speaker = message?.speaker && typeof message.speaker === 'object' ? message.speaker as { type?: unknown } : null
+  return String(speaker?.type || '').trim()
+}
+
+function messageAgentName(message: GroupMessage | Record<string, unknown> | null | undefined): string {
+  const speaker = message?.speaker && typeof message.speaker === 'object' ? message.speaker as { agent_name?: unknown } : null
+  return String(speaker?.agent_name || '').trim()
+}
+
+function messageSkill(message: GroupMessage | Record<string, unknown> | null | undefined): string {
+  const speaker = message?.speaker && typeof message.speaker === 'object' ? message.speaker as { skill?: unknown } : null
+  return String(speaker?.skill || '').trim()
+}
+
 export function useGroupOrchestrationState(args: {
   selectedGroupSessionId: () => string | null
   groupDetail: Ref<GroupDetailLike | null>
@@ -129,6 +144,12 @@ export function useGroupOrchestrationState(args: {
     if (Array.isArray(agentNames) && agentNames.length) return agentNames
     const singleAgentName = payload.suggested_add_agent_name as string | undefined
     if (typeof singleAgentName === 'string' && singleAgentName.trim()) return [singleAgentName.trim()]
+    const routing = payload.routing as { expert_route_debug?: Record<string, unknown> } | undefined
+    const routeDebug = routing?.expert_route_debug
+    const routedAgentNames = routeDebug?.suggested_add_agent_names as string[] | undefined
+    if (Array.isArray(routedAgentNames) && routedAgentNames.length) return routedAgentNames
+    const routedSingleAgentName = routeDebug?.suggested_add_agent_name as string | undefined
+    if (typeof routedSingleAgentName === 'string' && routedSingleAgentName.trim()) return [routedSingleAgentName.trim()]
     return []
   }
 
@@ -141,9 +162,9 @@ export function useGroupOrchestrationState(args: {
 
   function isExpertAssistantMessagePayload(payload: Record<string, unknown> | null | undefined): boolean {
     if (!payload) return false
-    if (payload.role !== 'assistant') return false
-    const agentName = String(payload.agent_name || '').trim()
-    const skill = String(payload.skill || '').trim()
+    if (messageSpeakerType(payload) !== 'expert') return false
+    const agentName = messageAgentName(payload)
+    const skill = messageSkill(payload)
     return Boolean(agentName && skill)
   }
 
@@ -156,9 +177,9 @@ export function useGroupOrchestrationState(args: {
     const prevFromMessages = (() => {
       const list = groupDisplayMessages.value || []
       for (let index = list.length - 1; index >= 0; index--) {
-        const message = list[index] as GroupMessage & { agent_name?: string; skill?: string }
-        if (message?.role === 'assistant' && message.agent_name && (message as Record<string, unknown>).skill) {
-          return { expertName: String(message.agent_name || ''), skill: String((message as Record<string, unknown>).skill || '') }
+        const message = list[index] as GroupMessage
+        if (messageSpeakerType(message) === 'expert' && messageAgentName(message) && messageSkill(message)) {
+          return { expertName: messageAgentName(message), skill: messageSkill(message) }
         }
       }
       return null
@@ -305,14 +326,14 @@ export function useGroupOrchestrationState(args: {
     const list = groupDisplayMessages.value || []
     for (let index = list.length - 1; index >= 0; index--) {
       const message = list[index] as GroupMessage
-      if (message?.role === 'assistant' && message?._streaming) return message
+      if (messageSpeakerType(message) === 'expert' && message?._streaming) return message
     }
     return null
   })
 
   const currentActiveStreamingMessage = computed<GroupMessage | null>(() => currentGroupStreaming.value ? activeStreamingMessage.value : null)
   const activeStreamingAgentName = computed(() => (
-    currentActiveStreamingMessage.value?.agent_name
+    messageAgentName(currentActiveStreamingMessage.value || undefined)
     || currentGroupStreamState.value?.agentName
     || (lastRoute.value?.sessionId === selectedGroupSessionId() ? lastRoute.value?.expertName || '' : '')
   ))
@@ -329,13 +350,13 @@ export function useGroupOrchestrationState(args: {
     const ids = orderedMemberIds.value
 
     if (groupStreaming.value) {
-      if (active && (active === 'host' || ids.includes(active))) return active
+      if (active && (active === 'host' || ids.includes(String(active)))) return String(active)
       return 'host'
     }
     if (suggested != null && String(suggested).trim() !== '') {
       const s = String(suggested).trim().toLowerCase()
       if (s === 'host') return 'host'
-      if (ids.includes(suggested)) return suggested
+      if (ids.includes(String(suggested))) return String(suggested)
     }
     const resume = (groupResumeTargetAgentName.value || '').trim()
     if (ids.includes(resume)) return resume
@@ -420,9 +441,9 @@ export function useGroupOrchestrationState(args: {
     }
     if (direct.length) return normalize(direct)
 
-    const role = String(payload.role || '')
+    const role = messageSpeakerType(payload)
     const content = String(payload.content || '')
-    if (!content || (role !== 'host' && role !== 'assistant')) return []
+    if (!content || (role !== 'host' && role !== 'expert')) return []
     if (!/(建议邀请|邀请以下|推荐.*加入|补充.*专家|加入讨论)/.test(content)) return []
     return normalize(parseAgentNamesFromHostContent(content))
   }
@@ -430,7 +451,7 @@ export function useGroupOrchestrationState(args: {
   function handleLoadedMessages(messages: GroupMessage[]) {
     const agentNames = groupDetail.value?.agent_names ?? []
     if (agentNames.length !== 0 || !messages.length) return
-    const lastHost = [...messages].reverse().find((message) => message.role === 'host')
+    const lastHost = [...messages].reverse().find((message) => messageSpeakerType(message) === 'host')
     const lastMsg = lastHost as {
       suggested_add_agent_names?: string[]
       suggested_add_agent_name?: string

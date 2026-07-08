@@ -31,7 +31,7 @@ shichai/
 │   │   └── theme/
 │   ├── package.json、vite.config.ts、tsconfig.json
 │   └── .env.example
-├── docs/                     # 文档中心，按 requirements/architecture/testing 等分类
+├── docs/                     # 文档中心，按 requirements/contracts/design 等分类
 ├── docker/                   # Skill 沙箱镜像等 Docker 构建文件
 ├── scripts/                  # 一键回归、UI 测试等脚本
 └── README.md
@@ -132,15 +132,14 @@ shichai/
 | 目录 | 职责 |
 |------|------|
 | `docs/requirements/` | 用户需求、验收标准、需求追踪 |
-| `docs/architecture/` | 架构、API、运行链路、项目结构 |
+| `docs/contracts/` | 字段、接口和运行契约源头 |
+| `docs/design/` | 详细设计说明书和接口文档 |
+| `docs/architecture/` | 架构图、项目结构、资源包和运行边界说明 |
 | `docs/testing/` | 第一层回归、上线前测试、全流程业务测试 |
 | `docs/release/` | 发版、提测、部署和验收统一入口 |
 | `docs/user-manual/` | 用户说明、上线验收手册、截图和 PDF |
 | `docs/skills/` | Skill、脚本路径、沙箱工具接口规范 |
 | `docs/operations/` | 部署和运行约束 |
-| `docs/project/` | 项目工作清单、兼容台账、文档审计 |
-| `docs/presentations/` | 讲稿、PPT、演示素材 |
-| `docs/superpowers/` | 历史规格和实施计划 |
 
 ## 命名与组织原则
 
@@ -150,9 +149,10 @@ shichai/
 
 ## 相关文档
 
-- [运行流程概览](runtime-flow-overview.md)：进程启动、会话主流程、初始化、流式。
-- [运行架构说明](runtime-architecture.md)：MCP / script / service / export / 只读文件等执行路径。
+- [运行逻辑与接口契约](../contracts/runtime-interface-contract.md)：会话请求、SSE、主持人调度、运行态和工具结果字段。
+- [数据结构与字段逻辑](../contracts/data-structure-and-field-logic.md)：资源身份、用户目录、会话文件和落盘字段。
+- [详细设计说明书](../design/detailed-design-spec.md)：模块职责、处理流程、异常处理和测试映射。
+- [接口文档](../design/interface-document.md)：对外 API 说明。
 - [镜像与依赖边界](images-and-dependencies.md)：主应用、OpenSandbox、技能沙箱与用户依赖的职责划分。
 - [需求说明与验收测试](../requirements/acceptance-and-tests.md)：产品需求、模块验收点与回归测试建议。
 - [发布入口](../release/README.md)：发版、提测、部署和验收的阅读顺序。
-- [兼容层与回退路径寿命台账](../project/compatibility-lifecycle.md)：旧协议、回退路径和删除条件。

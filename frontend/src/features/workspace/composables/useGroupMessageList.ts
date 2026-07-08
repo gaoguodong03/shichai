@@ -12,10 +12,15 @@ import { formatGroupMsgFullTime, formatGroupMsgTime } from '../messageTimeFormat
 
 export type GroupMessage = {
   message_id?: string
-  role: string
-  agent_name?: string
+  speaker: {
+    type: 'user' | 'host' | 'expert' | 'system'
+    agent_name?: string
+    skill?: string
+  }
   content: string
+  created_at?: string
   _streaming?: boolean
+  _streamingStatus?: boolean
   [key: string]: unknown
 }
 
@@ -26,10 +31,8 @@ type GroupMessageDetail = {
 }
 
 type MsgExt = {
-  timestamp?: string
-  event_type?: string
-  agent_name?: string
-  role?: string
+  speaker?: { type?: string; agent_name?: string; skill?: string }
+  created_at?: string
   content?: string
 }
 
@@ -301,14 +304,14 @@ export function useGroupMessageList(args: {
 
   function messageActionContent(msg: MsgExt): string {
     const content = msg.content || ''
-    return msg.role === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
+    return messageSpeakerType(msg) === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
   }
 
   function messageCopyActionKey(msg: MsgExt): string {
     const messageId = typeof (msg as { message_id?: unknown }).message_id === 'string'
       ? (msg as { message_id?: string }).message_id
       : ''
-    return messageId || `${msg.role || 'message'}:${messageActionContent(msg)}`
+    return messageId || `${messageSpeakerType(msg) || 'message'}:${messageActionContent(msg)}`
   }
 
   function markMessageCopied(msg: MsgExt) {
@@ -325,9 +328,10 @@ export function useGroupMessageList(args: {
   }
 
   function defaultAgentFilename(msg: MsgExt): string {
-    const name = msg.role === 'user'
+    const agentName = messageAgentName(msg)
+    const name = messageSpeakerType(msg) === 'user'
       ? 'user'
-      : ((groupDetail.value?.agent_map || {})[msg.agent_name || '']?.name || 'agent')
+      : ((groupDetail.value?.agent_map || {})[agentName || '']?.name || 'agent')
     const ts = new Date().toISOString().slice(0, 19).replace('T', '').replace(/[-:]/g, '').slice(0, 12)
     return `agent-${name}-${ts}.md`
   }
@@ -379,7 +383,7 @@ export function useGroupMessageList(args: {
     if (copiedMessageTimer) window.clearTimeout(copiedMessageTimer)
   })
 
-  async function deleteGroupMessage(msg: { message_id?: string; role?: string }) {
+  async function deleteGroupMessage(msg: { message_id?: string }) {
     const id = groupDetail.value?.id
     const messageId = msg?.message_id
     if (!id || !messageId) return
@@ -468,8 +472,27 @@ export function useGroupMessageList(args: {
   }
 
   function isMemberJoinedMessage(msg: GroupMessage): boolean {
-    const eventType = (msg as MsgExt).event_type
-    return msg.role === 'host' && (eventType === 'member_joined' || eventType === 'member_left')
+    const traces = ((msg as { debug?: { tool_trace?: unknown[] } }).debug?.tool_trace || []) as unknown[]
+    const eventType = traces
+      .map((item) => item && typeof item === 'object' ? String((item as { event?: unknown }).event || '') : '')
+      .find((event) => event === 'member_joined' || event === 'member_left')
+    return messageSpeakerType(msg) === 'host' && !!eventType
+  }
+
+  function messageSpeakerType(msg: MsgExt): string {
+    return String(msg?.speaker?.type || '').trim()
+  }
+
+  function messageAgentName(msg: MsgExt): string {
+    return String(msg?.speaker?.agent_name || '').trim()
+  }
+
+  function messageSkill(msg: MsgExt): string {
+    return String(msg?.speaker?.skill || '').trim()
+  }
+
+  function messageCreatedAt(msg: MsgExt): string {
+    return String(msg?.created_at || '').trim()
   }
 
   watch(
@@ -515,6 +538,10 @@ export function useGroupMessageList(args: {
     scheduleHydrateAuthImages,
     renderMarkdown,
     renderSnippetMarkdown,
+    messageSpeakerType,
+    messageAgentName,
+    messageSkill,
+    messageCreatedAt,
     formatUserBubbleForDisplay,
     isShortSingleLine,
     extractUserFileReferenceNames,

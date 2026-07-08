@@ -118,9 +118,9 @@ def _extract_success_paths_from_payload(payload: dict[str, Any]) -> List[str]:
     return paths
 
 
-def _extract_success_paths_from_tool_results(tool_raw_results: List[str]) -> List[str]:
+def _extract_success_paths_from_tool_results(tool_output_texts: List[str]) -> List[str]:
     paths: List[str] = []
-    for raw in tool_raw_results or []:
+    for raw in tool_output_texts or []:
         text = str(raw or "")
         for match in _WORKSPACE_WRITE_SUCCESS_RE.finditer(text):
             normalized = _normalize_workspace_path(match.group(1))
@@ -184,7 +184,7 @@ def _extract_mentioned_paths(content: str) -> List[str]:
     return deduped
 
 
-def _raw_failure_summary(tool_raw_results: List[str]) -> str:
+def _tool_failure_summary(tool_output_texts: List[str]) -> str:
     failure_markers = (
         "错误",
         "失败",
@@ -205,7 +205,7 @@ def _raw_failure_summary(tool_raw_results: List[str]) -> str:
         return any(marker in lower or marker in value for marker in failure_markers)
 
     lines: List[str] = []
-    for raw in tool_raw_results or []:
+    for raw in tool_output_texts or []:
         text = str(raw or "").strip()
         if not text:
             continue
@@ -233,7 +233,7 @@ def guard_unverified_delivery_claims(
     content: str,
     *,
     tool_calls: List[Dict[str, Any]] | None = None,
-    tool_raw_results: List[str] | None = None,
+    tool_output_texts: List[str] | None = None,
     workspace_root: Path | None = None,
 ) -> str:
     """Replace unbacked "generated/saved" claims with a platform-verified status."""
@@ -242,13 +242,13 @@ def guard_unverified_delivery_claims(
         return content
 
     calls = tool_calls or []
-    raw_results = [str(item or "") for item in (tool_raw_results or [])]
+    output_texts = [str(item or "") for item in (tool_output_texts or [])]
     mentioned_paths = _extract_mentioned_paths(text)
     has_explicit_file_delivery = bool(_EXPLICIT_FILE_DELIVERY_RE.search(text) or mentioned_paths)
     if not has_explicit_file_delivery:
         return content
 
-    success_paths = _verified_existing_paths(_extract_success_paths_from_tool_results(raw_results), workspace_root)
+    success_paths = _verified_existing_paths(_extract_success_paths_from_tool_results(output_texts), workspace_root)
     if success_paths:
         return content
 
@@ -258,7 +258,7 @@ def guard_unverified_delivery_claims(
     ]
     if mentioned_paths:
         parts.append("原回复提到的路径或链接：\n" + "\n".join(f"- {path}" for path in mentioned_paths))
-    summary = _raw_failure_summary(raw_results)
+    summary = _tool_failure_summary(output_texts)
     if summary:
         parts.append("本轮工具返回摘要：\n" + summary)
     if calls:
@@ -268,12 +268,12 @@ def guard_unverified_delivery_claims(
     return "\n\n".join(parts).strip()
 
 
-def append_workspace_image_preview_markdown(content: str, tool_raw_results: List[str]) -> str:
+def append_workspace_image_preview_markdown(content: str, tool_output_texts: List[str]) -> str:
     """Append Markdown image previews for workspace image download URLs found in tool output."""
-    if not tool_raw_results:
+    if not tool_output_texts:
         return content
     urls: List[str] = []
-    for raw in tool_raw_results:
+    for raw in tool_output_texts:
         if not raw:
             continue
         for url in _WORKSPACE_DOWNLOAD_URL_RE.findall(raw):

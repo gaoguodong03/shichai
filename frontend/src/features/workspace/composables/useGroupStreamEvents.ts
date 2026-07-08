@@ -19,6 +19,16 @@ type StreamRoutePayload = {
 
 const STREAMING_STATUS_DEFAULT = '正在运行中...'
 
+function speakerType(data: Record<string, unknown> | GroupMessage | null | undefined): string {
+  const speaker = data?.speaker && typeof data.speaker === 'object' ? data.speaker as { type?: unknown } : null
+  return String(speaker?.type || '').trim()
+}
+
+function speakerAgentName(data: Record<string, unknown> | GroupMessage | null | undefined): string {
+  const speaker = data?.speaker && typeof data.speaker === 'object' ? data.speaker as { agent_name?: unknown } : null
+  return String(speaker?.agent_name || '').trim()
+}
+
 export function useGroupStreamEvents(args: {
   selectedGroupSessionId: () => string | null
   groupDisplayMessages: Ref<GroupMessage[]>
@@ -98,7 +108,7 @@ export function useGroupStreamEvents(args: {
     const list = [...groupDisplayMessages.value]
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
     const isSameStreaming =
-      last?.role === 'assistant' && last?.agent_name === id && (last as { _streaming?: boolean })._streaming
+      speakerType(last) === 'expert' && speakerAgentName(last) === id && (last as { _streaming?: boolean })._streaming
     if (isSameStreaming) {
       if ((last as { _streamingStatus?: boolean })._streamingStatus || !(last.content || '').trim()) {
         groupDisplayMessages.value = [
@@ -112,8 +122,7 @@ export function useGroupStreamEvents(args: {
     groupDisplayMessages.value = [
       ...cleared,
       {
-        role: 'assistant',
-        agent_name: id,
+        speaker: { type: 'expert', agent_name: id },
         content: statusContent,
         _streaming: true,
         _streamingStatus: true,
@@ -135,7 +144,7 @@ export function useGroupStreamEvents(args: {
       skill: String(data?.skill || '').trim(),
     })
     ensureStreamingStatusPlaceholder(agentName, STREAMING_STATUS_DEFAULT, {
-      skill: String(data?.skill || '').trim(),
+      speaker: { type: 'expert', agent_name: agentName, skill: String(data?.skill || '').trim() },
     })
   }
 
@@ -144,14 +153,14 @@ export function useGroupStreamEvents(args: {
     const list = [...groupDisplayMessages.value]
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
     const appendToExisting =
-      last?.role === 'assistant' && last?.agent_name === agentName && (last as { _streaming?: boolean })._streaming
+      speakerType(last) === 'expert' && speakerAgentName(last) === agentName && (last as { _streaming?: boolean })._streaming
     if (appendToExisting) {
       const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : (last.content || '') + text
       const next = [...list.slice(0, -1), { ...last, content, _streamingStatus: false } as GroupMessage]
       groupDisplayMessages.value = next
     } else {
       const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-      groupDisplayMessages.value = [...cleared, { role: 'assistant', agent_name: agentName, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
+      groupDisplayMessages.value = [...cleared, { speaker: { type: 'expert', agent_name: agentName }, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
       scrollLatestAssistantRowToLowerMiddle()
     }
     scrollLatestAssistantRowToLowerMiddle()
@@ -163,9 +172,9 @@ export function useGroupStreamEvents(args: {
     const list = groupDisplayMessages.value
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
     const replacedStreamingPlaceholder =
-      data.role === 'assistant' &&
-      last?.role === 'assistant' &&
-      last?.agent_name === data.agent_name &&
+      speakerType(data) === 'expert' &&
+      speakerType(last) === 'expert' &&
+      speakerAgentName(last) === speakerAgentName(data) &&
       (last as { _streaming?: boolean })._streaming
     if (replacedStreamingPlaceholder) {
       const { _streaming: _, ...rest } = data
@@ -237,15 +246,16 @@ export function useGroupStreamEvents(args: {
   function handleStreamMessageEvent(data: Record<string, unknown>, state: StreamEventState, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
     patchGroupStreamState(activeSessionId(sessionId), { phase: '正在生成回复…' })
-    if (data && (data.role === 'assistant' || data.role === 'user' || data.role === 'host')) {
-      if (data.role === 'assistant') {
+    const type = speakerType(data)
+    if (data && (type === 'expert' || type === 'user' || type === 'host')) {
+      if (type === 'expert') {
         replaceOrPushAssistantMessage(data)
         if (isExpertAssistantMessagePayload(data)) {
           state.sawExpertAssistantMessageThisRun = true
         }
       } else {
         groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
-        if (data.role === 'user' && (data as { message_id?: string }).message_id) {
+        if (type === 'user' && (data as { message_id?: string }).message_id) {
           nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
         }
       }

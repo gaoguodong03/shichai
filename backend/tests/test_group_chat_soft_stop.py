@@ -1,7 +1,7 @@
 from app.agent.group_chat_soft_stop import _evaluate_soft_stop
 
 
-def test_soft_stop_does_not_count_recovered_material_turn_raw_tool_errors():
+def test_soft_stop_does_not_count_recovered_material_turn_tool_errors():
     state = {
         "prev_content": "",
         "prev_speaker": "",
@@ -14,7 +14,13 @@ def test_soft_stop_does_not_count_recovered_material_turn_raw_tool_errors():
         state,
         current_speaker="agent-material",
         full_content="当前步骤失败：call_api\n\n错误：无法解析请求的域名（网络或 DNS 异常）。",
-        tool_raw_results=["错误：无法解析请求的域名（网络或 DNS 异常）。"],
+        tool_results=[
+            {
+                "execution_status": "failed",
+                "message": "错误：无法解析请求的域名（网络或 DNS 异常）。",
+                "error_log": {"message": "错误：无法解析请求的域名（网络或 DNS 异常）。"},
+            }
+        ],
     )
     assert first_reason is None
     assert state["tool_failure_streak"] == 1
@@ -31,9 +37,17 @@ def test_soft_stop_does_not_count_recovered_material_turn_raw_tool_errors():
             "## 覆盖摘要\n"
             "本材料包覆盖规则层面、实践层面和理念层面的核心冲突。"
         ),
-        tool_raw_results=[
-            "状态码: 404\n\nError 404 - Oops, the page you're looking for is no longer here",
-            "状态码: 404\n\nSorry - we haven't been able to serve the page you asked for.",
+        tool_results=[
+            {
+                "execution_status": "failed",
+                "message": "状态码: 404",
+                "error_log": {"message": "Error 404 - Oops, the page you're looking for is no longer here"},
+            },
+            {
+                "execution_status": "failed",
+                "message": "状态码: 404",
+                "error_log": {"message": "Sorry - we haven't been able to serve the page you asked for."},
+            },
         ],
     )
 

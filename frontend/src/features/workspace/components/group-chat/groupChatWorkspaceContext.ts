@@ -29,6 +29,10 @@ export interface GroupChatMessageContext {
   hostLogoUrl: ContextValue
   agentAvatarChar: ContextValue
   bubbleDisplayName: ContextValue
+  messageSpeakerType: ContextValue
+  messageAgentName: ContextValue
+  messageSkill: ContextValue
+  messageCreatedAt: ContextValue
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
   formatSkill: ContextValue

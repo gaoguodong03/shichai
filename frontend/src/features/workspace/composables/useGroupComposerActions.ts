@@ -58,7 +58,7 @@ export function useGroupComposerActions(args: {
     appendHostError: (content) => {
       args.groupDisplayMessages.value = [
         ...args.groupDisplayMessages.value,
-        { message_id: `msg-${Date.now()}`, role: 'host', content } as unknown as GroupMessage,
+        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, content } as GroupMessage,
       ]
     },
     updateAutoSwitchHint: args.updateAutoSwitchHint,
@@ -124,7 +124,7 @@ export function useGroupComposerActions(args: {
     const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
     try {
       const msg = args.buildMessageWithFileReferences(base)
-      const userMsg = { message_id: `msg-${Date.now()}`, role: 'user' as const, content: msg }
+      const userMsg: GroupMessage = { message_id: `msg-${Date.now()}`, speaker: { type: 'user' }, content: msg }
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
       args.scrollGroupToBottom()
       const body: Record<string, unknown> = {

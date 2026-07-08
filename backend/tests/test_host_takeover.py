@@ -92,7 +92,7 @@ def test_host_pause_message_end_uses_fixed_copy():
 
     assert msg is not None
     assert msg["content"] == HOST_END_MESSAGE
-    assert msg["meta"]["scheduler_state"]["next_speaker"] == "end"
+    assert msg["routing"]["scheduler_state"]["next_speaker"] == "end"
 
 
 def test_host_next_speaker_message_includes_scheduler_state_json():
@@ -108,7 +108,7 @@ def test_host_next_speaker_message_includes_scheduler_state_json():
 
     assert "下面由 文字创作专家 发言。" in msg["content"]
     assert "current_phase" not in msg["content"]
-    assert msg["meta"]["scheduler_state"] == {
+    assert msg["routing"]["scheduler_state"] == {
         "current_phase": "阶段2：撰写",
         "next_speaker": "文字创作专家",
         "speaker_task": "请根据确认后的目标受众撰写报告。",

@@ -175,7 +175,11 @@ async def get_group_session(group_session_id: str):
     messages = normalized_messages
     agent_names_in_group = set(_dedupe_names(list(session_item.get("agent_names", []))))
     session_item["agent_names"] = list(agent_names_in_group)
-    agent_names_in_messages = {msg.get("agent_name") for msg in messages if msg.get("agent_name")}
+    agent_names_in_messages = {
+        str((msg.get("speaker") or {}).get("agent_name") or "").strip()
+        for msg in messages
+        if isinstance(msg.get("speaker"), dict) and str((msg.get("speaker") or {}).get("agent_name") or "").strip()
+    }
     relevant_names = agent_names_in_group | agent_names_in_messages
     agent_map = {
         k: {
@@ -354,11 +358,17 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 messages.append(
                     {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host",
+                        "speaker": {"type": "host"},
                         "content": f"已邀请“{display_name}”加入会话",
-                        "timestamp": format_storage_timestamp(),
-                        "event_type": "member_joined",
-                        "joined_agent_names": [name],
+                        "created_at": format_storage_timestamp(),
+                        "debug": {
+                            "tool_trace": [
+                                {
+                                    "event": "member_joined",
+                                    "data": {"joined_agent_names": [name]},
+                                }
+                            ]
+                        },
                     }
                 )
             for name in unique_removed:
@@ -366,11 +376,17 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 messages.append(
                     {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "role": "host",
+                        "speaker": {"type": "host"},
                         "content": f"已将“{display_name}”移出会话",
-                        "timestamp": format_storage_timestamp(),
-                        "event_type": "member_left",
-                        "left_agent_names": [name],
+                        "created_at": format_storage_timestamp(),
+                        "debug": {
+                            "tool_trace": [
+                                {
+                                    "event": "member_left",
+                                    "data": {"left_agent_names": [name]},
+                                }
+                            ]
+                        },
                     }
                 )
             _save_group_history(group_session_id, messages)

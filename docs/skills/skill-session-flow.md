@@ -218,7 +218,7 @@
 
 当同一轮同时出现多个信号时，平台按“继续优先”处理：任一明确信号要求 `skill_session=keep` 时保留 Skill 会话锁；只有没有 `keep` 信号且存在 `release` 信号时才释放。
 
-与主持人调度、入口路由的合成视图见 [群聊编排有限状态机](../architecture/group-orchestration-fsm.md)。
+与主持人调度、入口路由的合成规则见 [运行逻辑与接口契约](../contracts/runtime-interface-contract.md)。
 
 ## 7. 专家回复规则
 

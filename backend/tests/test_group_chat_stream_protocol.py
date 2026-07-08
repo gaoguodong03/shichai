@@ -213,18 +213,34 @@ def test_clears_completed_audio_skill_lock_from_history():
     }
     messages = [
         {
-            "role": "assistant",
-            "agent_name": "转写专家",
-            "skill": "audio-transcription",
-            "content": "转写文本",
-            "tool_raw_results": [
-                '{"ok": true, "stdout": "{\\"ok\\": true, \\"code\\": \\"transcribed\\", \\"done\\": true, \\"final\\": true, \\"text\\": \\"转写文本\\"}"}'
-            ],
-            "tool_debug": {
-                "tool_calls": [
-                    {"tool": "run_skill_script_audio-transcription", "arguments": {"script_path": "transcribe_audio.py"}}
-                ]
+            "message_id": "msg-audio",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "转写专家",
+                "skill": "audio-transcription",
             },
+            "content": "转写文本",
+            "tool_results": [
+                {
+                    "tool_call": {
+                        "id": "tool-audio",
+                        "name": "run_skill_script_audio-transcription",
+                        "kind": "script",
+                        "arguments": {"script_path": "transcribe_audio.py"},
+                    },
+                    "execution_status": "succeeded",
+                    "result_code": "transcribed",
+                    "message": "转写完成",
+                    "output": {
+                        "json_data": {
+                            "execution_status": "succeeded",
+                            "result_code": "transcribed",
+                            "message": "转写文本",
+                            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+                        }
+                    },
+                }
+            ],
         }
     ]
 
@@ -242,15 +258,25 @@ def test_clears_implicit_skill_lock_from_history():
     }
     messages = [
         {
-            "role": "assistant",
-            "agent_name": "研讨教师",
-            "skill": "seminar-teacher",
+            "message_id": "msg-implicit",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "研讨教师",
+                "skill": "seminar-teacher",
+            },
             "content": "大家先围绕这个问题说说自己的判断。",
-            "tool_debug": {
-                "skill_session_state": {
-                    "over": None,
-                    "source": "none",
-                },
+            "debug": {
+                "tool_trace": [
+                    {
+                        "event": "tool_runtime",
+                        "data": {
+                            "skill_session_state": {
+                                "over": None,
+                                "source": "none",
+                            }
+                        },
+                    }
+                ]
             },
         }
     ]
@@ -269,15 +295,25 @@ def test_keeps_explicit_continue_skill_lock_from_history():
     }
     messages = [
         {
-            "role": "assistant",
-            "agent_name": "研讨教师",
-            "skill": "seminar-teacher",
+            "message_id": "msg-keep",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "研讨教师",
+                "skill": "seminar-teacher",
+            },
             "content": "请先补充一个例子。",
-            "tool_debug": {
-                "skill_session_state": {
-                    "over": False,
-                    "source": "assistant_state_block",
-                },
+            "debug": {
+                "tool_trace": [
+                    {
+                        "event": "tool_runtime",
+                        "data": {
+                            "skill_session_state": {
+                                "over": False,
+                                "source": "assistant_state_block",
+                            }
+                        },
+                    }
+                ]
             },
         }
     ]
@@ -296,17 +332,6 @@ def test_keeps_skill_lock_from_new_history_skill_result():
     }
     messages = [
         {
-            "role": "assistant",
-            "agent_name": "研讨教师",
-            "skill": "seminar-teacher",
-            "content": "旧消息已完成。",
-            "tool_debug": {
-                "skill_session_state": {
-                    "skill_session": "release",
-                }
-            },
-        },
-        {
             "message_id": "msg-keep",
             "speaker": {
                 "type": "expert",
@@ -315,7 +340,7 @@ def test_keeps_skill_lock_from_new_history_skill_result():
             },
             "content": "请先补充一个例子。",
             "skill_result": {
-                "execution_status": "blocked",
+                "execution_status": "needs_input",
                 "next_action": {
                     "agent_turn": "respond",
                     "skill_session": "keep",
@@ -369,21 +394,31 @@ def test_clears_bound_skill_introspection_lock_from_history():
     }
     messages = [
         {
-            "role": "assistant",
-            "agent_name": "Skill 专家",
-            "skill": "skill-builder",
+            "message_id": "msg-introspection",
+            "speaker": {
+                "type": "expert",
+                "agent_name": "Skill 专家",
+                "skill": "skill-builder",
+            },
             "content": "我当前绑定的 Skill 有：\n\n- **check-dev-env**（标识：`check-dev-env`）",
-            "tool_debug": {
-                "tool_attempt_debug": [
+            "debug": {
+                "tool_trace": [
                     {
-                        "source": "bound_skill_introspection_direct_final",
-                        "matched": True,
+                        "event": "tool_runtime",
+                        "data": {
+                            "tool_attempt_debug": [
+                                {
+                                    "source": "bound_skill_introspection_direct_final",
+                                    "matched": True,
+                                }
+                            ],
+                            "skill_session_state": {
+                                "over": None,
+                                "source": "none",
+                            },
+                        },
                     }
-                ],
-                "skill_session_state": {
-                    "over": None,
-                    "source": "none",
-                },
+                ]
             },
         }
     ]

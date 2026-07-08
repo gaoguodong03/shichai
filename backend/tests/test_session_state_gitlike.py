@@ -41,6 +41,24 @@ def _set_user():
     return set_current_user_identity(user_id="free4inno", username="free4inno")
 
 
+def _user_msg(message_id: str, content: str, created_at: str = "2026062400000000") -> dict:
+    return {
+        "message_id": message_id,
+        "speaker": {"type": "user"},
+        "content": content,
+        "created_at": created_at,
+    }
+
+
+def _expert_msg(message_id: str, content: str, created_at: str = "2026062400010000") -> dict:
+    return {
+        "message_id": message_id,
+        "speaker": {"type": "expert", "agent_name": "agent-demo"},
+        "content": content,
+        "created_at": created_at,
+    }
+
+
 def test_clone_reuses_blob_objects(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "blob复用"})
     assert create_resp.status_code == 200
@@ -111,14 +129,7 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     try:
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "先记录一条消息",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                }
-            ],
+            [_user_msg("msg-1", "先记录一条消息")],
         )
     finally:
         reset_current_user_identity(token)
@@ -157,32 +168,11 @@ def test_snapshots_expose_message_count_and_last_message_id(client: TestClient):
     try:
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一条",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                }
-            ],
+            [_user_msg("msg-1", "第一条")],
         )
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一条",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                },
-                {
-                    "message_id": "msg-2",
-                    "role": "assistant",
-                    "agent_id": "agent-demo",
-                    "content": "第二条",
-                    "timestamp": "2026-06-24T00:01:00Z",
-                },
-            ],
+            [_user_msg("msg-1", "第一条"), _expert_msg("msg-2", "第二条")],
         )
     finally:
         reset_current_user_identity(token)
@@ -216,32 +206,11 @@ def test_rollback_prefers_message_id_over_stale_checkpoint_id(client: TestClient
     try:
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一条",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                }
-            ],
+            [_user_msg("msg-1", "第一条")],
         )
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一条",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                },
-                {
-                    "message_id": "msg-2",
-                    "role": "assistant",
-                    "agent_id": "agent-demo",
-                    "content": "第二条",
-                    "timestamp": "2026-06-24T00:01:00Z",
-                },
-            ],
+            [_user_msg("msg-1", "第一条"), _expert_msg("msg-2", "第二条")],
         )
     finally:
         reset_current_user_identity(token)
@@ -276,14 +245,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     try:
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一版",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                }
-            ],
+            [_user_msg("msg-1", "第一版")],
         )
     finally:
         reset_current_user_identity(token)
@@ -300,21 +262,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     try:
         save_group_history(
             session_id,
-            [
-                {
-                    "message_id": "msg-1",
-                    "role": "user",
-                    "content": "第一版",
-                    "timestamp": "2026-06-24T00:00:00Z",
-                },
-                {
-                    "message_id": "msg-2",
-                    "role": "assistant",
-                    "agent_id": "agent-demo",
-                    "content": "第二版回复",
-                    "timestamp": "2026-06-24T00:01:00Z",
-                },
-            ],
+            [_user_msg("msg-1", "第一版"), _expert_msg("msg-2", "第二版回复")],
         )
     finally:
         reset_current_user_identity(token)

@@ -208,4 +208,4 @@ allowed-tools:
 
 - Skill 总规范：`docs/skills/skill-standard.md`
 - Skill 流程控制协议：`docs/skills/skill-session-flow.md`
-- 会话运行链路：`docs/architecture/runtime-flow-overview.md`
+- 会话运行链路：`docs/contracts/runtime-interface-contract.md`

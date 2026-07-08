@@ -418,8 +418,13 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     detail = client.get(f"/api/sessions/{session_id}", headers=headers)
     assert detail.status_code == 200
     messages = detail.json()["data"]["messages"]
-    assert any(m["role"] == "user" and "2+2" in m["content"] for m in messages)
-    assert any(m["role"] == "assistant" and m.get("agent_name") == "问答专家" and m["content"] == answer for m in messages)
+    assert any(m["speaker"]["type"] == "user" and "2+2" in m["content"] for m in messages)
+    assert any(
+        m["speaker"]["type"] == "expert"
+        and m["speaker"].get("agent_name") == "问答专家"
+        and m["content"] == answer
+        for m in messages
+    )
 
     exported = client.post(f"/api/sessions/{session_id}/export", headers=headers)
     assert exported.status_code == 200

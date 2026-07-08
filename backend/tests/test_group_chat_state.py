@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import pytest
+
 from app.api import group_chat_state as state
 
 
@@ -9,7 +11,17 @@ def test_session_definitions_history_round_trip(tmp_path, monkeypatch):
     sessions = {"s1": {"title": "会话", "agent_names": ["专家A"], "created_at": "t", "updated_at": "t"}}
 
     state.save_session_definitions(sessions)
-    state.save_group_history("s1", [{"role": "user", "content": "你好"}])
+    state.save_group_history(
+        "s1",
+        [
+            {
+                "message_id": "u1",
+                "speaker": {"type": "user"},
+                "content": "你好",
+                "created_at": "2026062908104800",
+            }
+        ],
+    )
 
     assert state.load_session_definitions()["s1"]["title"] == "会话"
     assert (tmp_path / "s1" / "session.json").exists()
@@ -79,25 +91,25 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
         [
             {
                 "message_id": "u1",
-                "role": "user",
+                "speaker": {"type": "user"},
                 "content": "你好",
-                "timestamp": "2026062908104800",
+                "created_at": "2026062908104800",
                 "client_message_id": "c1",
             },
             {
                 "message_id": "a1",
-                "role": "assistant",
-                "agent_name": "专家A",
+                "speaker": {"type": "expert", "agent_name": "专家A", "skill": "skill-a"},
                 "content": "回答",
-                "timestamp": "2026062908104900",
-                "skill": "skill-a",
-                "tool_debug": {
-                    "skill_session_state": {
-                        "skill_session": "release",
-                        "source": "assistant_state_block",
-                    }
+                "created_at": "2026062908104900",
+                "debug": {
+                    "tool_trace": [
+                        {
+                            "event": "skill_session_state",
+                            "message": "release",
+                            "data": {"skill_session": "release", "source": "assistant_state_block"},
+                        }
+                    ]
                 },
-                "required_user_fields": [{"key": "legacy"}],
             },
         ],
     )
@@ -109,6 +121,8 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
         "content": "你好",
         "created_at": "2026062908104800",
         "client_message_id": "c1",
+        "tool_results": [],
+        "required_user_fields": [],
     }
     assert raw[1]["speaker"] == {"type": "expert", "agent_name": "专家A", "skill": "skill-a"}
     assert raw[1]["created_at"] == "2026062908104900"
@@ -116,10 +130,10 @@ def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
     assert "role" not in raw[1]
     assert "agent_name" not in raw[1]
     assert "timestamp" not in raw[1]
-    assert "required_user_fields" not in raw[1]
+    assert raw[1]["debug"]["tool_trace"][0]["event"] == "skill_session_state"
 
 
-def test_group_history_preserves_host_scheduler_meta(tmp_path, monkeypatch):
+def test_group_history_preserves_host_scheduler_routing(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
 
     state.save_group_history(
@@ -127,10 +141,10 @@ def test_group_history_preserves_host_scheduler_meta(tmp_path, monkeypatch):
         [
             {
                 "message_id": "h1",
-                "role": "host",
+                "speaker": {"type": "host"},
                 "content": "请确认资料是否满足需求。",
-                "timestamp": "2026062908104800",
-                "meta": {
+                "created_at": "2026062908104800",
+                "routing": {
                     "scheduler_state": {
                         "current_phase": "阶段2：资料准备",
                         "next_speaker": "user",
@@ -143,17 +157,18 @@ def test_group_history_preserves_host_scheduler_meta(tmp_path, monkeypatch):
 
     raw = json.loads((tmp_path / "s1" / "history.json").read_text(encoding="utf-8"))
     assert raw[0]["speaker"] == {"type": "host"}
-    assert raw[0]["meta"]["scheduler_state"] == {
+    assert raw[0]["routing"]["scheduler_state"] == {
         "current_phase": "阶段2：资料准备",
         "next_speaker": "user",
         "speaker_task": "请确认资料是否满足需求。",
+        "reason": "",
     }
 
     loaded = state.load_group_history("s1")
-    assert loaded[0]["meta"]["scheduler_state"]["next_speaker"] == "user"
+    assert loaded[0]["routing"]["scheduler_state"]["next_speaker"] == "user"
 
 
-def test_group_history_loads_canonical_messages_with_runtime_compat(tmp_path, monkeypatch):
+def test_group_history_loads_canonical_messages_without_runtime_compat(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     (tmp_path / "s1").mkdir(parents=True)
     (tmp_path / "s1" / "history.json").write_text(
@@ -166,7 +181,8 @@ def test_group_history_loads_canonical_messages_with_runtime_compat(tmp_path, mo
                     "created_at": "2026062908104900",
                     "skill_result": {
                         "execution_status": "succeeded",
-                        "next_action": {"skill_session": "keep"},
+                        "result_code": "ok",
+                        "next_action": {"agent_turn": "respond", "skill_session": "keep"},
                     },
                 }
             ],
@@ -178,40 +194,97 @@ def test_group_history_loads_canonical_messages_with_runtime_compat(tmp_path, mo
     loaded = state.load_group_history("s1")
 
     assert loaded[0]["speaker"]["type"] == "expert"
-    assert loaded[0]["role"] == "assistant"
-    assert loaded[0]["agent_name"] == "专家A"
-    assert loaded[0]["skill"] == "skill-a"
-    assert loaded[0]["timestamp"] == "2026062908104900"
+    assert loaded[0]["speaker"]["agent_name"] == "专家A"
+    assert loaded[0]["speaker"]["skill"] == "skill-a"
+    assert loaded[0]["created_at"] == "2026062908104900"
+    assert "role" not in loaded[0]
+    assert "agent_name" not in loaded[0]
+    assert "skill" not in loaded[0]
+    assert "timestamp" not in loaded[0]
 
 
-def test_group_history_preserves_frontend_presentation_content_without_replacing_raw_content(tmp_path, monkeypatch):
+def test_group_history_load_drops_invalid_legacy_messages(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
-
-    state.save_group_history(
-        "s1",
-        [
-            {
-                "message_id": "a1",
-                "role": "assistant",
-                "agent_name": "信息检索专家",
-                "content": "工具已执行完成。以下是本轮工具返回摘要：\nTitle: Raw",
-                "presentation_content": "## 检索结果\n\n- Raw",
-                "timestamp": "2026062908104900",
+    (tmp_path / "s1").mkdir(parents=True)
+    valid_message = {
+        "message_id": "u1",
+        "speaker": {"type": "user"},
+        "content": "新消息",
+        "created_at": "2026062908104800",
+    }
+    legacy_message = {
+        "message_id": "h1",
+        "speaker": {"type": "host"},
+        "content": "旧主持消息",
+        "created_at": "2026062908104700",
+        "meta": {
+            "scheduler_state": {
+                "current_phase": "阶段2：资料准备",
+                "next_speaker": "user",
+                "speaker_task": "请确认资料是否满足写作需求。",
             }
-        ],
-    )
-
-    raw = json.loads((tmp_path / "s1" / "history.json").read_text(encoding="utf-8"))
-    assert raw[0]["content"].startswith("工具已执行完成")
-    assert raw[0]["presentation_content"] == "## 检索结果\n\n- Raw"
+        },
+    }
+    history_path = tmp_path / "s1" / "history.json"
+    history_path.write_text(json.dumps([legacy_message, valid_message], ensure_ascii=False), encoding="utf-8")
 
     loaded = state.load_group_history("s1")
-    assert loaded[0]["content"].startswith("工具已执行完成")
-    assert loaded[0]["presentation_content"] == "## 检索结果\n\n- Raw"
 
-    frontend = state.frontend_history_message(loaded[0])
-    assert frontend["content"] == "## 检索结果\n\n- Raw"
-    assert loaded[0]["content"].startswith("工具已执行完成")
+    assert loaded == [
+        {
+            **valid_message,
+            "tool_results": [],
+            "required_user_fields": [],
+        }
+    ]
+    assert json.loads(history_path.read_text(encoding="utf-8")) == loaded
+
+
+@pytest.mark.parametrize(
+    "old_key, value",
+    [
+        ("role", "assistant"),
+        ("timestamp", "2026062908104900"),
+        ("agent_name", "信息检索专家"),
+        ("skill", "skill-a"),
+        ("tool_raw_results", []),
+        ("tool_debug", {}),
+        ("presentation_content", "## 检索结果"),
+        ("meta", {}),
+        ("schema_version", "chat.message.v1"),
+        ("diagnostics", {}),
+        ("raw", {}),
+    ],
+)
+def test_group_history_rejects_old_top_level_fields_on_save(tmp_path, monkeypatch, old_key, value):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    message = {
+        "message_id": "a1",
+        "speaker": {"type": "expert", "agent_name": "信息检索专家"},
+        "content": "回答",
+        "created_at": "2026062908104900",
+        old_key: value,
+    }
+
+    with pytest.raises(ValueError):
+        state.save_group_history("s1", [message])
+
+
+def test_frontend_history_message_keeps_canonical_content(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    msg = {
+        "message_id": "a1",
+        "speaker": {"type": "expert", "agent_name": "信息检索专家"},
+        "content": "最终展示内容",
+        "created_at": "2026062908104900",
+    }
+
+    assert state.frontend_history_message(msg) == {
+        **msg,
+        "tool_results": [],
+        "required_user_fields": [],
+    }
 
 
 def test_stale_session_definition_save_preserves_sessions_created_later(tmp_path, monkeypatch):
@@ -261,9 +334,14 @@ def test_stale_session_definition_save_does_not_revert_newer_session_updates(tmp
 
 def test_build_archive_segments_ignores_host_messages():
     messages = [
-        {"role": "user", "message_id": "u1", "content": "目标", "timestamp": "t1"},
-        {"role": "host", "message_id": "h1", "content": "下面请 A"},
-        {"role": "assistant", "agent_name": "专家A", "message_id": "a1", "content": "回答", "timestamp": "t2", "skill": "skill-a"},
+        {"speaker": {"type": "user"}, "message_id": "u1", "content": "目标", "created_at": "t1"},
+        {"speaker": {"type": "host"}, "message_id": "h1", "content": "下面请 A", "created_at": "t1"},
+        {
+            "speaker": {"type": "expert", "agent_name": "专家A", "skill": "skill-a"},
+            "message_id": "a1",
+            "content": "回答",
+            "created_at": "t2",
+        },
     ]
 
     segments = state.build_archive_segments(messages)

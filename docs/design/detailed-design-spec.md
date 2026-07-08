@@ -6,7 +6,7 @@
 
 ## 1. 文档目的
 
-本文承接 [用户需求说明书](../requirements/user-requirements.md) 与 [架构设计文档](detailed-design.md)，进一步细化平台各子系统的模块职责、接口输入输出、数据文件、处理流程、异常处理和验收测试映射。
+本文承接 [用户需求说明书](../requirements/user-requirements.md)、[运行逻辑与接口契约](../contracts/runtime-interface-contract.md) 与 [数据结构与字段逻辑](../contracts/data-structure-and-field-logic.md)，进一步细化平台各子系统的模块职责、接口输入输出、数据文件、处理流程、异常处理和验收测试映射。
 
 本文面向开发、测试和项目验收人员。它不描述具体上层业务应用的内容设计，重点说明书童四九作为 AI Agent 应用搭建与运行平台，如何通过可配置资源、统一会话、工具执行和用户隔离支撑应用运行。
 

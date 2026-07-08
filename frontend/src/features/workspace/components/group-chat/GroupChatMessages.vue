@@ -6,27 +6,27 @@
                         'group-chat-msg-row',
                         isMemberJoinedMessage(msg)
                           ? 'group-chat-msg-row-system'
-                          : (msg.role === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other')
+                          : (messageSpeakerType(msg) === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other')
                       ]"
                       :data-message-id="msg.message_id || `idx-${i}`"
                     >
-                      <template v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)">
+                      <template v-if="messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg)">
                         <span
                           v-if="!isHostBubbleMessage(msg)"
                           class="group-chat-avatar"
                           :style="
-                            expertAvatarUrl(msg.agent_name)
+                            expertAvatarUrl(messageAgentName(msg))
                               ? { background: 'transparent', overflow: 'hidden' }
-                              : { backgroundColor: agentAvatarColor(agentIndex(msg.agent_name)) }
+                              : { backgroundColor: agentAvatarColor(agentIndex(messageAgentName(msg))) }
                           "
                         >
                           <img
-                            v-if="expertAvatarUrl(msg.agent_name)"
-                            :src="expertAvatarUrl(msg.agent_name)!"
+                            v-if="expertAvatarUrl(messageAgentName(msg))"
+                            :src="expertAvatarUrl(messageAgentName(msg))!"
                             alt=""
                             class="group-chat-avatar-photo"
                           />
-                          <template v-else>{{ agentAvatarChar(msg.agent_name) }}</template>
+                          <template v-else>{{ agentAvatarChar(messageAgentName(msg)) }}</template>
                         </span>
                         <div
                           v-else
@@ -41,12 +41,12 @@
                           :class="[
                             'group-chat-bubble',
                             isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
-                            msg.role === 'user' && 'group-chat-bubble-user',
-                            msg.role !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
+                            messageSpeakerType(msg) === 'user' && 'group-chat-bubble-user',
+                            messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
                             (msg as GroupMessage)._streamingStatus && 'group-chat-bubble-agent-running',
                           ]"
                         >
-                        <div v-if="msg.role !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
+                        <div v-if="messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
                           <span class="group-chat-bubble-name">{{ bubbleDisplayName(msg) }}</span>
                       <span
                         v-if="(msg as GroupMessage)._streaming"
@@ -55,7 +55,7 @@
                       >
                         正在输出{{ streamingPulse }}
                           </span>
-                          <span v-if="(msg as MsgExt).skill" class="group-chat-skill-tag">skill: {{ formatSkill((msg as MsgExt).skill) }}</span>
+                          <span v-if="messageSkill(msg)" class="group-chat-skill-tag">skill: {{ formatSkill(messageSkill(msg)) }}</span>
                           <div
                             v-if="getSchedulerStateRaw(msg)"
                             class="group-chat-tool-tag-wrap"
@@ -147,7 +147,7 @@
                           <template v-if="isMemberJoinedMessage(msg)">
                             <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
                           </template>
-                          <template v-else-if="msg.role !== 'user'">
+                          <template v-else-if="messageSpeakerType(msg) !== 'user'">
                             <div
                               v-if="(msg as GroupMessage)._streamingStatus"
                               class="group-chat-running-status"
@@ -163,12 +163,12 @@
                           <template v-else>
                             <p
                               class="group-chat-plain-text"
-                              :class="msg.role === 'user' && isShortSingleLine(formatUserBubbleForDisplay(msg.content || ''))"
+                              :class="messageSpeakerType(msg) === 'user' && isShortSingleLine(formatUserBubbleForDisplay(msg.content || ''))"
                             >
                               {{ formatUserBubbleForDisplay(msg.content || '') }}
                             </p>
                             <div
-                              v-if="msg.role === 'user' && extractUserFileReferenceNames(msg.content || '').length"
+                              v-if="messageSpeakerType(msg) === 'user' && extractUserFileReferenceNames(msg.content || '').length"
                               class="group-chat-user-file-ref-wrap"
                             >
                               <span
@@ -184,7 +184,7 @@
                         </div>
                         <div
                           v-if="showMessageActions(msg)"
-                          :class="['group-chat-bubble-actions', msg.role === 'user' && 'group-chat-bubble-actions-user']"
+                          :class="['group-chat-bubble-actions', messageSpeakerType(msg) === 'user' && 'group-chat-bubble-actions-user']"
                         >
                           <button
                             type="button"
@@ -242,11 +242,11 @@
                             </svg>
                           </button>
                           <span
-                            v-if="(msg as MsgExt).timestamp"
+                            v-if="messageCreatedAt(msg)"
                             class="group-chat-message-full-time group-chat-message-full-time-inline"
-                            :title="`发出时间：${formatGroupMsgFullTime((msg as MsgExt).timestamp)}`"
+                            :title="`发出时间：${formatGroupMsgFullTime(messageCreatedAt(msg))}`"
                           >
-                            {{ formatGroupMsgFullTime((msg as MsgExt).timestamp) }}
+                            {{ formatGroupMsgFullTime(messageCreatedAt(msg)) }}
                           </span>
                         </div>
                       </div>
@@ -259,7 +259,6 @@
 <script setup lang="ts">
 import { useGroupChatMessageContext } from './groupChatWorkspaceContext'
 
-type MsgExt = any
 type GroupMessage = any
 
 const {
@@ -273,6 +272,10 @@ const {
   hostLogoUrl,
   agentAvatarChar,
   bubbleDisplayName,
+  messageSpeakerType,
+  messageAgentName,
+  messageSkill,
+  messageCreatedAt,
   activeStreamingSpeakerName,
   streamingPulse,
   formatSkill,

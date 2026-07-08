@@ -1,10 +1,11 @@
 import type { Ref } from 'vue'
 import type { GroupStreamRuntime } from './useGroupStreamRuntime'
+import type { GroupMessage } from './useGroupMessageList'
 
 export type GroupDetail = {
   id: string
   title: string
-  messages: { message_id?: string; role: string; agent_name?: string; content: string }[]
+  messages: GroupMessage[]
   agent_map: Record<string, { name?: string; description?: string }>
   agent_names: string[]
   leader_agent_name?: string

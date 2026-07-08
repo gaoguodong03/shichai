@@ -408,7 +408,7 @@
 | `docs/testing/test-case-catalog.md` | 维护 `TC-URxx-nn` 测试用例与自动化入口 |
 | `docs/user-manual/user-guide.md` | 面向最终用户的操作步骤说明 |
 | `docs/user-manual/书童四九上线验收操作手册.pdf` | 面向上线验收人员的图文操作手册 |
-| `docs/architecture/runtime-architecture.md` | 解释一次会话从前端到后端再流式返回的运行链路 |
+| `docs/contracts/runtime-interface-contract.md` | 解释一次会话从前端到后端再流式返回的运行链路和字段契约 |
 | `docs/architecture/project-structure.md` | 说明项目目录、模块职责和扩展点 |
 | `README.md` | 提供项目定位、部署方式和常见运行问题 |
 

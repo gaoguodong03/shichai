@@ -1,6 +1,7 @@
 """Skill-session lock helpers for group-chat runtime."""
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional
 
 from app.agent.group_orchestration_fsm import (
@@ -12,18 +13,51 @@ from app.agent.skill_session_contract import resolve_skill_session_state
 
 
 def _tool_names_from_history_message(msg: Dict[str, Any]) -> List[str]:
-    debug = msg.get("tool_debug")
-    calls = debug.get("tool_calls") if isinstance(debug, dict) else None
-    if not isinstance(calls, list):
-        return []
     names: List[str] = []
-    for call in calls:
+    results = msg.get("tool_results")
+    for result in results if isinstance(results, list) else []:
+        if not isinstance(result, dict):
+            continue
+        call = result.get("tool_call")
         if not isinstance(call, dict):
             continue
-        name = str(call.get("tool") or call.get("name") or "").strip()
+        name = str(call.get("name") or "").strip()
         if name:
             names.append(name)
     return names
+
+
+def _tool_output_payloads_from_history_message(msg: Dict[str, Any]) -> List[str]:
+    payloads: List[str] = []
+    results = msg.get("tool_results")
+    for result in results if isinstance(results, list) else []:
+        if not isinstance(result, dict):
+            continue
+        output = result.get("output")
+        if isinstance(output, dict):
+            json_data = output.get("json_data")
+            if json_data is not None:
+                try:
+                    payloads.append(json.dumps(json_data, ensure_ascii=False))
+                except Exception:
+                    payloads.append(str(json_data))
+            for key in ("stdout", "text", "markdown", "stderr"):
+                value = str(output.get(key) or "").strip()
+                if value:
+                    payloads.append(value)
+        error_log = result.get("error_log")
+        if isinstance(error_log, dict):
+            for key in ("raw_output", "stdout", "stderr", "message", "detail"):
+                value = str(error_log.get(key) or "").strip()
+                if value:
+                    payloads.append(value)
+    return payloads
+
+
+def _tool_trace_items(msg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    debug = msg.get("debug")
+    trace = debug.get("tool_trace") if isinstance(debug, dict) else None
+    return [item for item in trace if isinstance(item, dict)] if isinstance(trace, list) else []
 
 
 def _has_bound_skill_introspection_direct_final(debug_items: Any) -> bool:
@@ -38,9 +72,12 @@ def _has_bound_skill_introspection_direct_final(debug_items: Any) -> bool:
 
 
 def _message_is_bound_skill_introspection_direct_final(msg: Dict[str, Any]) -> bool:
-    debug = msg.get("tool_debug")
-    items = debug.get("tool_attempt_debug") if isinstance(debug, dict) else None
-    return _has_bound_skill_introspection_direct_final(items)
+    for item in _tool_trace_items(msg):
+        data = item.get("data")
+        attempts = data.get("tool_attempt_debug") if isinstance(data, dict) else None
+        if _has_bound_skill_introspection_direct_final(attempts):
+            return True
+    return False
 
 
 def _message_role(msg: Dict[str, Any]) -> str:
@@ -130,28 +167,29 @@ def _clear_completed_skill_session_lock_from_history(
                 return False
             clear_skill_session_lock(session_item)
             return True
-        debug = msg.get("tool_debug")
-        state = debug.get("skill_session_state") if isinstance(debug, dict) else None
-        if isinstance(state, dict):
-            parsed_session = str(state.get("skill_session") or "").strip().lower()
-            if parsed_session in {"keep", "release"}:
-                if parsed_session == "keep":
-                    return False
-                clear_skill_session_lock(session_item)
-                return True
-            parsed = state.get("over")
-            if isinstance(parsed, bool):
-                if parsed is False:
-                    return False
-                clear_skill_session_lock(session_item)
-                return True
+        for item in _tool_trace_items(msg):
+            data = item.get("data")
+            state = data.get("skill_session_state") if isinstance(data, dict) else None
+            if isinstance(state, dict):
+                parsed_session = str(state.get("skill_session") or "").strip().lower()
+                if parsed_session in {"keep", "release"}:
+                    if parsed_session == "keep":
+                        return False
+                    clear_skill_session_lock(session_item)
+                    return True
+                parsed = state.get("over")
+                if isinstance(parsed, bool):
+                    if parsed is False:
+                        return False
+                    clear_skill_session_lock(session_item)
+                    return True
         if msg.get("required_user_fields"):
             return False
-        raw_results = msg.get("tool_raw_results")
         tool_names = _tool_names_from_history_message(msg)
+        tool_outputs = _tool_output_payloads_from_history_message(msg)
         resolved = resolve_skill_session_state(
             str(msg.get("content") or ""),
-            raw_results if isinstance(raw_results, list) else None,
+            tool_outputs or None,
             tool_names=tool_names or None,
         )
         if resolved.over is False:

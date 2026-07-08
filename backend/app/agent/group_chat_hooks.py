@@ -50,11 +50,15 @@ class _ToolFailureHeuristicHook:
     priority = HookPriority.POLICY_GUARD
 
     async def run(self, payload: Dict[str, Any]) -> HookResult:
-        raw = payload.get("tool_raw_results") or []
-        if not isinstance(raw, list):
-            raw = [str(raw)]
-        text = "\n".join([str(x or "") for x in raw])
-        if ("执行错误" in text) or ("error" in text.lower() and "tool" in text.lower()):
+        results = payload.get("tool_results") or []
+        if not isinstance(results, list):
+            results = []
+        has_failure = any(
+            isinstance(item, dict)
+            and str(item.get("execution_status") or "").strip().lower() == "failed"
+            for item in results
+        )
+        if has_failure:
             return HookResult(
                 allow=False,
                 interrupt_reason=InterruptReason.TOOL_UNAVAILABLE,

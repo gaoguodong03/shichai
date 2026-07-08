@@ -15,7 +15,7 @@ def _evaluate_soft_stop(
     state: Dict[str, Any],
     current_speaker: str,
     full_content: str,
-    tool_raw_results: List[str],
+    tool_results: List[Dict[str, Any]],
 ) -> Optional[str]:
     """Pause auto-run when repeated failures or low-increment content make continuation wasteful."""
     prev_content = str(state.get("prev_content") or "")
@@ -38,7 +38,7 @@ def _evaluate_soft_stop(
         state["low_increment_streak"] = 0
         state["repeat_conclusion_streak"] = 0
 
-    has_fail = _has_unresolved_tool_failure(tool_raw_results, full_content)
+    has_fail = _has_unresolved_tool_failure(tool_results, full_content)
     state["tool_failure_streak"] = int(state.get("tool_failure_streak", 0)) + 1 if has_fail else 0
     state["prev_content"] = full_content
     state["prev_speaker"] = current_speaker
@@ -75,8 +75,8 @@ def _has_substantive_recovered_content(content: str) -> bool:
     return len(_normalize_compare_text(content)) >= 80
 
 
-def _has_unresolved_tool_failure(tool_raw_results: List[str], full_content: str) -> bool:
-    if not _has_tool_failure(tool_raw_results, full_content):
+def _has_unresolved_tool_failure(tool_results: List[Dict[str, Any]], full_content: str) -> bool:
+    if not _has_tool_failure(tool_results, full_content):
         return False
     # Some tools may fail while the expert still completes the turn from available
     # context, for example a material packet assembled after web requests returned

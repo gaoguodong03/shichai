@@ -50,6 +50,7 @@ def _get_llm_for_agent(agent_profile: Optional[Dict[str, Any]], app_settings: Di
 def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:
     """Return the latest user message body."""
     for message in reversed(messages or []):
-        if isinstance(message, dict) and message.get("role") == "user":
+        speaker = message.get("speaker") if isinstance(message, dict) and isinstance(message.get("speaker"), dict) else {}
+        if isinstance(message, dict) and speaker.get("type") == "user":
             return str(message.get("content") or "").strip()
     return ""

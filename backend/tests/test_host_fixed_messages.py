@@ -6,6 +6,7 @@ from app.agent.group_chat_host_messages import (
     _build_host_pause_message,
     _build_host_recommendation_message,
 )
+from app.agent.message_contracts import ChatMessageRecord
 
 
 def test_host_next_speaker_ignores_custom_announcement():
@@ -20,6 +21,9 @@ def test_host_next_speaker_ignores_custom_announcement():
 
     assert msg["content"] == "下面由 文字创作专家 发言。"
     assert "理解了" not in msg["content"]
+    assert "next_agent_name" not in msg
+    assert msg["routing"]["expert_route_debug"]["next_agent_name"] == "文字创作专家"
+    ChatMessageRecord.model_validate(msg)
 
 
 def test_host_recommendation_uses_fixed_copy():
@@ -30,7 +34,9 @@ def test_host_recommendation_uses_fixed_copy():
     )
 
     assert msg["content"] == HOST_ZERO_EXPERT_RECOMMENDATION
-    assert msg["suggested_add_agent_names"] == ["文字创作专家", "信息检索专家"]
+    assert "suggested_add_agent_names" not in msg
+    assert msg["routing"]["expert_route_debug"]["suggested_add_agent_names"] == ["文字创作专家", "信息检索专家"]
+    ChatMessageRecord.model_validate(msg)
 
 
 def test_host_next_speaker_end_phase_uses_fixed_copy():

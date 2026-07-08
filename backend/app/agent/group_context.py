@@ -159,8 +159,18 @@ def looks_like_conclusion_text(text: str) -> bool:
     return any(k in s for k in keys)
 
 
-def has_tool_failure(tool_raw_results: List[str], full_content: str) -> bool:
-    blob = "\n".join([str(x or "") for x in (tool_raw_results or [])] + [str(full_content or "")]).lower()
+def has_tool_failure(tool_results: List[Any], full_content: str) -> bool:
+    parts = [str(full_content or "")]
+    for item in tool_results or []:
+        if isinstance(item, dict):
+            parts.append(str(item.get("execution_status") or ""))
+            parts.append(str(item.get("message") or ""))
+            error_log = item.get("error_log")
+            if isinstance(error_log, dict):
+                parts.extend(str(error_log.get(key) or "") for key in ("message", "detail", "stderr", "traceback", "raw_output"))
+        else:
+            parts.append(str(item or ""))
+    blob = "\n".join(parts).lower()
     fail_keys = (
         "执行错误", "error", "failed", "exception", "traceback", "timeout", "超时", "not found", "调用异常", "无法",
     )

@@ -86,6 +86,7 @@ from app.agent.group_chat_streaming import (
 from app.agent.group_chat_memory_prompt import _persist_group_memory_turn
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_soft_stop import _evaluate_soft_stop
+from app.agent.group_chat_tool_result_content import problem_tool_result_content
 from app.agent.group_chat_expert_resolution import (
     _get_llm_for_agent,
     _last_user_message_text,
@@ -255,8 +256,10 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
     # 上一发言人（用于主持人/领导人判断 task_done；排除主持人本人，只计参与讨论的 Agent）
     last_speaker_agent_name = None
     for msg in reversed(messages):
-        if msg.get("role") == "assistant" and msg.get("agent_name") and msg.get("agent_name") != leader_agent_name:
-            last_speaker_agent_name = msg.get("agent_name")
+        speaker = msg.get("speaker") if isinstance(msg.get("speaker"), dict) else {}
+        speaker_agent_name = str(speaker.get("agent_name") or "").strip()
+        if speaker.get("type") == "expert" and speaker_agent_name and speaker_agent_name != leader_agent_name:
+            last_speaker_agent_name = speaker_agent_name
             break
 
     # 讨论目标：优先使用最近一条用户消息，避免会话继续时沿用旧目标导致专家跑偏。
@@ -993,6 +996,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 accumulated = []
                 accumulated_raw_tool_results: List[str] = []
+                accumulated_tool_results: List[Dict[str, Any]] = []
                 accumulated_tool_calls_trace: List[Dict[str, Any]] = []
                 tool_attempt_debug: List[Dict[str, Any]] = []
                 _agent_waiting_status = ""
@@ -1084,6 +1088,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                                     len(accumulated_raw_tool_results),
                                     [len(str(x or "")) for x in accumulated_raw_tool_results[-5:]],
                                 )
+                            structured_results = stream_item.get("tool_results")
+                            if isinstance(structured_results, list):
+                                for result in structured_results:
+                                    if isinstance(result, dict) and result not in accumulated_tool_results:
+                                        accumulated_tool_results.append(result)
                             continue
                         if ev_type == "final_step":
                             tad = stream_item.get("tool_attempt_debug")
@@ -1098,8 +1107,11 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
 
                 # 多轮 agent_step（含工具前后多段 AIMessage）用空行拼接，避免「…sandbox…」后直接续写无换行
                 full_content = "\n\n".join(str(x) for x in accumulated if str(x).strip()) if accumulated else ""
-                if (not full_content.strip()) and accumulated_raw_tool_results:
-                    full_content = "工具已执行完成，但模型没有返回可展示的文字总结。请查看本轮工具结果，或继续追问让我基于结果整理。"
+                problem_tool_content = problem_tool_result_content(accumulated_tool_results)
+                if (not full_content.strip()) and problem_tool_content:
+                    full_content = problem_tool_content
+                if (not full_content.strip()) and accumulated_tool_results:
+                    full_content = "工具执行成功，但专家没有生成最终回复。请继续追问，让专家基于本轮工具结果整理。"
                 if not full_content.strip():
                     full_content = "模型没有返回可展示的文字内容，请稍后重试或换一个模型。"
                 full_content = _append_workspace_image_preview_markdown(full_content, accumulated_raw_tool_results)
@@ -1137,46 +1149,76 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     resume_target_agent_name,
                     sandbox_entry_trace,
                 )
+                has_failed_tool = any(
+                    isinstance(item, dict) and item.get("execution_status") == "failed"
+                    for item in accumulated_tool_results
+                )
+                has_needs_input_tool = any(
+                    isinstance(item, dict) and item.get("execution_status") == "needs_input"
+                    for item in accumulated_tool_results
+                )
+                inferred_required_fields = _infer_required_user_fields_for_skill(skill_content, full_content)
+                execution_status = (
+                    "needs_input"
+                    if inferred_required_fields or has_needs_input_tool
+                    else "failed"
+                    if has_failed_tool and full_content == problem_tool_content
+                    else "succeeded"
+                )
                 assistant_msg = {
                     "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                    "role": "assistant",
-                    "agent_name": next_speaker,
+                    "speaker": {"type": "expert", "agent_name": next_speaker, "skill": skill},
                     "content": full_content,
-                    "timestamp": format_storage_timestamp(),
-                    "skill": skill,
-                }
-                if isinstance(skill_route_debug, dict):
-                    assistant_msg["skill_route_debug"] = skill_route_debug
-                if isinstance(expert_route_debug_for_turn, dict) and expert_route_debug_for_turn:
-                    assistant_msg["expert_route_debug"] = expert_route_debug_for_turn
-                inferred_required_fields = _infer_required_user_fields_for_skill(skill_content, full_content)
-                if inferred_required_fields:
-                    assistant_msg["required_user_fields"] = inferred_required_fields
-                if accumulated_raw_tool_results:
-                    assistant_msg["tool_raw_results"] = accumulated_raw_tool_results
-                assistant_msg["tool_debug"] = {
-                    "tool_calls": tool_calls_trace,
-                    "tool_attempt_debug": tool_attempt_debug,
-                    "raw_result_count": len(accumulated_raw_tool_results or []),
-                    "has_tool_call": bool(tool_calls_trace),
-                    "has_raw_result": bool(accumulated_raw_tool_results),
-                    "skill_session_state": {
-                        "skill_session": (
-                            "release"
-                            if skill_session_state.over is True
-                            else "keep"
-                            if skill_session_state.over is False
-                            else None
-                        ),
-                        "source": skill_session_state.source,
-                        "signals": {
-                            "assistant_state_block": skill_session_signals.assistant_state_block
-                            if skill_session_signals
-                            else None,
-                            "script_stdout": skill_session_signals.script_stdout if skill_session_signals else None,
+                    "created_at": format_storage_timestamp(),
+                    "skill_result": {
+                        "execution_status": execution_status,
+                        "result_code": execution_status,
+                        "next_action": {
+                            "agent_turn": "ask_user" if execution_status == "needs_input" else "respond",
+                            "skill_session": "release" if skill_session_state.over is True else "keep",
                         },
                     },
-                    "note": "no_tool_call_detected" if not tool_calls_trace else "",
+                    "tool_results": accumulated_tool_results,
+                }
+                routing: Dict[str, Any] = {}
+                if isinstance(skill_route_debug, dict):
+                    routing["skill_route_debug"] = skill_route_debug
+                if isinstance(expert_route_debug_for_turn, dict) and expert_route_debug_for_turn:
+                    routing["expert_route_debug"] = expert_route_debug_for_turn
+                if routing:
+                    assistant_msg["routing"] = routing
+                if inferred_required_fields:
+                    assistant_msg["required_user_fields"] = inferred_required_fields
+                assistant_msg["debug"] = {
+                    "tool_trace": [
+                        {
+                            "event": "tool_runtime",
+                            "data": {
+                                "tool_calls": tool_calls_trace,
+                                "tool_attempt_debug": tool_attempt_debug,
+                                "raw_result_count": len(accumulated_raw_tool_results or []),
+                                "has_tool_call": bool(tool_calls_trace),
+                                "has_raw_result": bool(accumulated_raw_tool_results),
+                                "skill_session_state": {
+                                    "skill_session": (
+                                        "release"
+                                        if skill_session_state.over is True
+                                        else "keep"
+                                        if skill_session_state.over is False
+                                        else None
+                                    ),
+                                    "source": skill_session_state.source,
+                                    "signals": {
+                                        "assistant_state_block": skill_session_signals.assistant_state_block
+                                        if skill_session_signals
+                                        else None,
+                                        "script_stdout": skill_session_signals.script_stdout if skill_session_signals else None,
+                                    },
+                                },
+                                "note": "no_tool_call_detected" if not tool_calls_trace else "",
+                            },
+                        }
+                    ]
                 }
                 display_assistant_msg = await _prepare_display_assistant_message(
                     assistant_msg=assistant_msg,
@@ -1251,7 +1293,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                         "agent_name": next_speaker,
                         "skill": skill,
                         "full_content": full_content,
-                        "tool_raw_results": accumulated_raw_tool_results,
+                        "tool_results": accumulated_tool_results,
                         "required_user_fields": assistant_msg.get("required_user_fields") or [],
                     }
                 )
@@ -1284,7 +1326,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
                     state=soft_stop_state,
                     current_speaker=next_speaker,
                     full_content=full_content,
-                    tool_raw_results=accumulated_raw_tool_results,
+                    tool_results=accumulated_tool_results,
                 )
                 if soft_stop_reason:
                     logger.info(

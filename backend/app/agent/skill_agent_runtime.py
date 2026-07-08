@@ -16,6 +16,13 @@ from app.agent.skill_agent_paths import (
     _tool_is_workspace_plain_read_file,
 )
 from app.agent.skill_tool_naming import build_skill_script_tool_name
+from app.agent.skill_tool_result_records import (
+    _missing_tool_result_record,
+    _tool_mcp_identity,
+    _tool_name_looks_like_bound_mcp,
+    _tool_result_record_from_exception,
+    _tool_result_record_from_raw,
+)
 from app.agent.tool_spec import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -23,39 +30,6 @@ logger = logging.getLogger(__name__)
 
 def _current_workspace_file_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d%H%M%S") + "00"
-
-def _tool_name_looks_like_bound_mcp(name: str) -> bool:
-    """区分「本技能声明的 MCP 工具（server_tool）」与工作区 / 脚本 / 包装类工具。"""
-    n = (name or "").strip()
-    if "_" not in n:
-        return False
-    if n.startswith("run_skill_script_"):
-        return False
-    head, _ = n.split("_", 1)
-    if head in ("filesystem",):
-        return False
-    if n in {
-        "read_workspace_file",
-        "write_workspace_file",
-        "edit_workspace_file",
-        "rename_workspace_file",
-        "mkdir_workspace",
-        "list_workspace_directory",
-        "call_api",
-    }:
-        return False
-    return True
-
-
-def _tool_mcp_identity(tool: ToolSpec | object) -> tuple[str, str]:
-    metadata = getattr(tool, "metadata", None)
-    if not isinstance(metadata, dict):
-        return "", ""
-    return (
-        str(metadata.get("mcp_server_name") or "").strip(),
-        str(metadata.get("mcp_tool_name") or "").strip(),
-    )
-
 
 def _find_tool_by_name(tool_name: str, tools: Sequence[ToolSpec]) -> ToolSpec | None:
     for tool in tools or []:
@@ -377,6 +351,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
     tool_results = []
     tool_attempt_debug: list[dict] = []
     tool_calls_trace: list[dict] = []
+    tool_result_records: list[dict] = []
     tool_raw_outputs: list[str] = []
     max_tool_result_chars = 4000
     tool_result_cache = state.get("tool_result_cache") if isinstance(state, dict) else None
@@ -543,6 +518,15 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                         })
                         tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=True), tool_call_id=tool_call_id))
                         tool_raw_outputs.append(str(result))
+                        tool_result_records.append(
+                            _tool_result_record_from_raw(
+                                tool_name=tool_name,
+                                tool=tool,
+                                arguments=arguments,
+                                tool_call_id=tool_call_id,
+                                raw_result=result,
+                            )
+                        )
                     else:
                         logger.debug(
                             "skill_tool_execute_start tool=%s arg_keys=%s",
@@ -567,6 +551,15 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                             )
                         tool_results.append(ToolMessage(content=_tool_message_content(tool_name, result_for_prompt), tool_call_id=tool_call_id))
                         tool_raw_outputs.append(str(result))
+                        tool_result_records.append(
+                            _tool_result_record_from_raw(
+                                tool_name=tool_name,
+                                tool=tool,
+                                arguments=arguments,
+                                tool_call_id=tool_call_id,
+                                raw_result=result,
+                            )
+                        )
                 except Exception as e:
                     logger.warning(
                         "skill_tool_execute_failed tool=%s elapsed_ms=%s err=%s",
@@ -576,6 +569,15 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     )
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 执行错误: {str(e)}", tool_call_id=tool_call_id))
                     tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                    tool_result_records.append(
+                        _tool_result_record_from_exception(
+                            tool_name=tool_name,
+                            tool=tool,
+                            arguments=arguments,
+                            tool_call_id=tool_call_id,
+                            error=e,
+                        )
+                    )
             else:
                 tool_attempt_debug.append({
                     "requested_tool": requested_tool_name,
@@ -584,16 +586,31 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     "available_tools": [t.name for t in state["tools"]][:30],
                 })
                 if tool_name == "read_workspace_file":
+                    missing_result = _missing_tool_result_record(
+                        tool_name=tool_name,
+                        arguments=arguments if "arguments" in locals() else {},
+                        tool_call_id=tool_call_id,
+                        available_tools=[t.name for t in state["tools"]],
+                    )
+                    tool_result_records.append(missing_result)
                     tool_results.append(ToolMessage(
                         content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。",
                         tool_call_id=tool_call_id,
                     ))
                 else:
+                    missing_result = _missing_tool_result_record(
+                        tool_name=tool_name,
+                        arguments=arguments if "arguments" in locals() else {},
+                        tool_call_id=tool_call_id,
+                        available_tools=[t.name for t in state["tools"]],
+                    )
+                    tool_result_records.append(missing_result)
                     tool_results.append(ToolMessage(content=f"工具 {tool_name} 不存在。可用: {', '.join([t.name for t in state['tools']])}", tool_call_id=tool_call_id))
         return {
             "messages": tool_results,
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
+            "tool_results": tool_result_records,
             "tool_raw_outputs": tool_raw_outputs,
         }
 
@@ -669,6 +686,15 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                             len(str(result)),
                         )
                 tool_raw_outputs.append(str(result))
+                tool_result_records.append(
+                    _tool_result_record_from_raw(
+                        tool_name=tool_name,
+                        tool=tool,
+                        arguments=arguments,
+                        tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
+                        raw_result=result,
+                    )
+                )
                 # 注意：当模型没有返回结构化 tool_calls（而是通过 content JSON 回退解析）时，
                 # 不能向 OpenAI ChatCompletions 发送 role=tool 的消息（必须紧跟在带 tool_calls 的 assistant 之后）。
                 # 这里将工具输出作为普通 HumanMessage 反馈给模型，确保消息序列合法。
@@ -676,6 +702,7 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     "messages": [HumanMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=isinstance(cached_entry, dict)))],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
+                    "tool_results": tool_result_records,
                     "tool_raw_outputs": tool_raw_outputs,
                 }
             except Exception as e:
@@ -686,10 +713,20 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
                     str(e)[:500],
                 )
                 tool_raw_outputs.append(f"工具 {tool_name} 执行错误: {str(e)}")
+                tool_result_records.append(
+                    _tool_result_record_from_exception(
+                        tool_name=tool_name,
+                        tool=tool,
+                        arguments=arguments,
+                        tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
+                        error=e,
+                    )
+                )
                 return {
                     "messages": [HumanMessage(content=f"工具 {tool_name} 执行错误: {str(e)}")],
                     "tool_attempt_debug": tool_attempt_debug,
                     "tool_calls": tool_calls_trace,
+                    "tool_results": tool_result_records,
                     "tool_raw_outputs": tool_raw_outputs,
                 }
         tool_attempt_debug.append({
@@ -699,16 +736,34 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             "available_tools": [t.name for t in state["tools"]][:30],
         })
         if tool_name == "read_workspace_file":
+            tool_result_records.append(
+                _missing_tool_result_record(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
+                    available_tools=[t.name for t in state["tools"]],
+                )
+            )
             return {
                 "messages": [HumanMessage(content="当前专家未启用 read_workspace_file，无法读取工作区文件。请先启用文件读取能力，或让用户提供文件内容。")],
                 "tool_attempt_debug": tool_attempt_debug,
                 "tool_calls": tool_calls_trace,
+                "tool_results": tool_result_records,
                 "tool_raw_outputs": tool_raw_outputs,
             }
+        tool_result_records.append(
+            _missing_tool_result_record(
+                tool_name=tool_name,
+                arguments=arguments,
+                tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
+                available_tools=[t.name for t in state["tools"]],
+            )
+        )
         return {
             "messages": [HumanMessage(content=f"工具 {tool_name} 不存在")],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
+            "tool_results": tool_result_records,
             "tool_raw_outputs": tool_raw_outputs,
         }
     except Exception as e:
@@ -716,5 +771,6 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             "messages": [HumanMessage(content=f"工具调用解析错误: {str(e)}")],
             "tool_attempt_debug": tool_attempt_debug,
             "tool_calls": tool_calls_trace,
+            "tool_results": tool_result_records,
             "tool_raw_outputs": tool_raw_outputs,
         }

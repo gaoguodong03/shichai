@@ -46,18 +46,49 @@ def _host_message_base(
     leader_agent_name: str = "",
     meta: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    speaker: dict[str, Any] = {"type": "host"}
+    if leader_agent_name:
+        speaker["agent_name"] = leader_agent_name
     msg: dict[str, Any] = {
         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-        "role": "host",
+        "speaker": speaker,
         "content": content,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "skill": skill,
+        "created_at": datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + "00",
     }
-    if leader_agent_name:
-        msg["agent_name"] = leader_agent_name
-    if meta:
-        msg["meta"] = dict(meta)
+    meta_payload = dict(meta or {})
+    scheduler_state = meta_payload.pop("scheduler_state", None)
+    if isinstance(scheduler_state, Mapping):
+        current_phase = str(scheduler_state.get("current_phase") or "").strip()
+        next_speaker = str(scheduler_state.get("next_speaker") or "").strip()
+        if current_phase and next_speaker:
+            msg["routing"] = {
+                "scheduler_state": {
+                    "current_phase": current_phase,
+                    "next_speaker": next_speaker,
+                    "speaker_task": str(scheduler_state.get("speaker_task") or "").strip(),
+                }
+            }
+    if meta_payload:
+        msg["debug"] = {
+            "tool_trace": [
+                {
+                    "event": "host_notice",
+                    "tool_name": skill,
+                    "data": meta_payload,
+                }
+            ]
+        }
     return msg
+
+
+def _merge_host_route_debug(msg: dict[str, Any], values: Mapping[str, Any]) -> None:
+    cleaned = {str(k): v for k, v in values.items() if v not in (None, "", [])}
+    if not cleaned:
+        return
+    routing = msg.setdefault("routing", {})
+    route_debug = routing.setdefault("expert_route_debug", {})
+    if isinstance(route_debug, dict):
+        route_debug.update(cleaned)
 
 
 def _agent_display_name(agent_name: str, agent_map: Mapping[str, Mapping[str, Any]]) -> str:
@@ -108,9 +139,13 @@ def _build_host_next_speaker_message(
         speaker_task=speaker_task,
     )
     msg = _host_message_base(content=content, skill=skill, leader_agent_name=leader_agent_name, meta=meta)
-    msg["next_agent_name"] = next_name
-    if suggested_order:
-        msg["suggested_order"] = suggested_order
+    _merge_host_route_debug(
+        msg,
+        {
+            "next_agent_name": next_name,
+            "suggested_order": suggested_order,
+        },
+    )
     return msg
 
 
@@ -162,7 +197,7 @@ def _build_host_recommendation_message(
     _ = content
     msg = _host_message_base(content=HOST_ZERO_EXPERT_RECOMMENDATION, skill=skill)
     if picked:
-        msg["suggested_add_agent_names"] = list(picked)
+        _merge_host_route_debug(msg, {"suggested_add_agent_names": list(picked)})
     return msg
 
 

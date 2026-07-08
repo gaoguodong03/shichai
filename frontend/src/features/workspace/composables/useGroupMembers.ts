@@ -6,9 +6,11 @@ import { formatGroupSkillLabel } from '../groupSkillLabel'
 export const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
 
 type GroupMemberMessage = {
-  role: string
-  agent_name?: string
-  skill?: string
+  speaker?: {
+    type?: string
+    agent_name?: string
+    skill?: string
+  }
 }
 
 type GroupMemberDetail = {
@@ -68,14 +70,16 @@ export function useGroupMembers(args: {
   }
 
   function isHostBubbleMessage(msg: GroupMemberMessage): boolean {
-    if (msg.role === 'host') return true
-    if (msg.role !== 'assistant') return false
-    const mid = String(msg.agent_name || '').trim()
+    const speaker = msg.speaker || {}
+    const speakerType = String(speaker.type || '').trim()
+    if (speakerType === 'host') return true
+    if (speakerType !== 'expert') return false
+    const mid = String(speaker.agent_name || '').trim()
     if (!mid) return false
     if (mid === VIRTUAL_SCENE_HOST_ID) return true
     const lid = String(groupDetail.value?.leader_agent_name || '').trim()
     if (lid && mid === lid) {
-      const sid = msg.skill
+      const sid = speaker.skill
       const label = formatSkill(sid)
       if (label.includes('主持')) return true
       if (sid && String(sid).toLowerCase().includes('host')) return true
@@ -84,7 +88,7 @@ export function useGroupMembers(args: {
   }
 
   function bubbleDisplayName(msg: GroupMemberMessage): string {
-    const aid = String(msg.agent_name || '').trim()
+    const aid = String(msg.speaker?.agent_name || '').trim()
     if (isHostBubbleMessage(msg)) return effectiveHostDisplayName.value
     if (aid) {
       const name = (groupDetail.value?.agent_map || {})[aid]?.name

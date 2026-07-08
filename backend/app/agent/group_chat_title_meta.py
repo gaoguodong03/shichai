@@ -27,6 +27,11 @@ from app.api.settings_secrets import load_api_secret_values
 logger = logging.getLogger(__name__)
 
 
+def _message_speaker_type(message: Dict[str, Any]) -> str:
+    speaker = message.get("speaker") if isinstance(message.get("speaker"), dict) else {}
+    return str(speaker.get("type") or "").strip()
+
+
 def _ensure_scene_profile_contract(session_item: Dict[str, Any]) -> bool:
     """No-op after the name-based session contract removed legacy upgrades."""
     _ = session_item
@@ -47,7 +52,7 @@ async def _ai_title_from_recent_user_messages(
         for m in reversed(messages or []):
             if not isinstance(m, dict):
                 continue
-            if (m.get("role") or "").strip() != "user":
+            if _message_speaker_type(m) != "user":
                 continue
             content = (m.get("content") or "").strip()
             if not content:
@@ -175,17 +180,17 @@ def _record_user_message_and_refresh_title(
     duplicate_user_message = bool(
         client_message_id
         and any(
-            msg.get("role") == "user" and str(msg.get("client_message_id") or "").strip() == client_message_id
+            _message_speaker_type(msg) == "user" and str(msg.get("client_message_id") or "").strip() == client_message_id
             for msg in messages
         )
     )
-    first_user_message = not any(m.get("role") == "user" for m in messages)
+    first_user_message = not any(_message_speaker_type(m) == "user" for m in messages)
     if not duplicate_user_message:
         user_msg: Dict[str, Any] = {
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-            "role": "user",
+            "speaker": {"type": "user"},
             "content": user_message,
-            "timestamp": format_storage_timestamp(),
+            "created_at": format_storage_timestamp(),
         }
         if client_message_id:
             user_msg["client_message_id"] = client_message_id

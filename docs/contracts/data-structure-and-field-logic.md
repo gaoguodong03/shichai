@@ -573,7 +573,7 @@ flowchart TD
 3. 前端表单和类型：`frontend/src/features/resources/*`、`frontend/src/features/workspace/*`
 4. 运行时读取点：`backend/app/agent/group_chat_runtime.py`、`expert_runtime.py`、`tools_for_skill.py`
 5. 导入导出：`backend/app/core/scenario_bundle.py`、`settings_bundle_import.py`
-6. 测试和文档：`backend/tests/*`、`docs/architecture/*`
+6. 测试和文档：`backend/tests/*`、`docs/contracts/*`、`docs/design/*`、`docs/architecture/*`
 
 高风险字段：
 

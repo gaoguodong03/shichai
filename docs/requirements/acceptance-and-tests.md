@@ -4,7 +4,7 @@
 
 本文用于沉淀当前产品的核心需求、模块边界与可执行验收点。后续新增功能、重构或上线前回归测试，应优先对照本文更新测试清单。
 
-本文承接 `docs/requirements/user-requirements.md` 中的 UR 编号，将用户需求拆解到模块验收点、自动化测试和手工验收入口。若新增或调整用户需求，应先更新用户需求文档，再同步更新本文的追踪矩阵、`docs/architecture/detailed-design.md`、`docs/project/implementation-task-breakdown.md` 和 `docs/testing/test-case-catalog.md`。
+本文承接 `docs/requirements/user-requirements.md` 中的 UR 编号，将用户需求拆解到模块验收点、自动化测试和手工验收入口。若新增或调整用户需求，应先更新用户需求文档，再同步更新本文的追踪矩阵、`docs/design/detailed-design-spec.md` 和 `docs/testing/test-case-catalog.md`。
 
 ## 2. 产品定位
 

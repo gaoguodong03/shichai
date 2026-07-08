@@ -2,7 +2,7 @@
 
 ## 1. 文档目的
 
-本文沉淀可复用测试用例，承接 [用户需求文档](../requirements/user-requirements.md)、[验收测试矩阵](../requirements/acceptance-and-tests.md) 和 [工程任务拆分](../project/implementation-task-breakdown.md)。
+本文沉淀可复用测试用例，承接 [用户需求文档](../requirements/user-requirements.md)、[验收测试矩阵](../requirements/acceptance-and-tests.md) 和 [详细设计说明书](../design/detailed-design-spec.md)。
 
 测试用例编号格式为 `TC-URxx-nn`。自动化测试优先落到 `backend/tests/` 和 `frontend/e2e/`；无法稳定自动化的用例进入上线前手工验收。
 
@@ -63,7 +63,7 @@
 
 1. 若新增用户需求，先更新 `docs/requirements/user-requirements.md`。
 2. 若调整验收口径，更新 `docs/requirements/acceptance-and-tests.md`。
-3. 若新增模块任务，更新 `docs/project/implementation-task-breakdown.md`。
+3. 若新增模块或验收口径，更新 `docs/design/detailed-design-spec.md`。
 4. 若新增自动化测试文件，更新本文对应用例的“自动化入口”。
 5. 若只能手工验收，写入 `docs/testing/pre-release-testing.md` 的对应模块。
 

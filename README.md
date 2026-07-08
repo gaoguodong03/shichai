@@ -11,10 +11,9 @@
 - 文档中心：见 [docs/README.md](docs/README.md)
 - 发布入口：见 [docs/release/README.md](docs/release/README.md)
 - 用户使用说明：见 [docs/user-manual/user-guide.md](docs/user-manual/user-guide.md)
-- 程序如何启动、与专家对话时前后端如何协作（框架说明）：见 [docs/architecture/runtime-architecture.md](docs/architecture/runtime-architecture.md)
-- 项目工作条目式清单（便于汇报与自述，可自改）：见 [docs/project/worklist.md](docs/project/worklist.md)
+- 程序运行逻辑与接口契约：见 [docs/contracts/runtime-interface-contract.md](docs/contracts/runtime-interface-contract.md)
+- 数据结构与字段逻辑：见 [docs/contracts/data-structure-and-field-logic.md](docs/contracts/data-structure-and-field-logic.md)
 - 上线前模块化测试操作手册（可在其他机器复现）：见 [docs/testing/pre-release-testing.md](docs/testing/pre-release-testing.md)
-- 兼容层与回退路径寿命台账：见 [docs/project/compatibility-lifecycle.md](docs/project/compatibility-lifecycle.md)
 
 沙箱镜像版本映射（同一仓库 `crpi-hzqv5l81v3ftz5jl.cn-beijing.personal.cr.aliyuncs.com/free4inno-yuanfang2025/sandbox`）：
 

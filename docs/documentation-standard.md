@@ -9,14 +9,23 @@
 | 文档类型 | 放置目录 | 命名示例 |
 |----------|----------|----------|
 | 用户需求、验收追踪 | `docs/requirements/` | `user-requirements.md`、`acceptance-and-tests.md` |
-| 架构、详细设计、运行链路、接口 | `docs/architecture/` | `system-architecture.md`、`detailed-design.md`、`runtime-architecture.md` |
+| 字段、接口和运行契约源头 | `docs/contracts/` | `runtime-interface-contract.md`、`data-structure-and-field-logic.md` |
+| 正式设计交付物 | `docs/design/` | `detailed-design-spec.md`、`interface-document.md` |
+| 架构图、项目结构和资源边界 | `docs/architecture/` | `system-architecture.md`、`project-structure.md`、`scenario-bundle-export.md` |
 | 测试用例、回归、上线验收 | `docs/testing/` | `test-case-catalog.md`、`layer1-regression.md`、`pre-release-testing.md` |
 | 用户教程、验收手册、截图 | `docs/user-manual/` | `user-guide.md`、`README.md` |
-| Skill、MCP、沙箱工具契约 | `docs/skills/` | `skill-standard.md`、`sandbox-tool-interface.md` |
+| Skill、MCP、沙箱工具契约 | `docs/skills/` | `skill-standard.md`、`host-skill.md`、`sandbox-tool-interface.md` |
 | 部署和运维约束 | `docs/operations/` | `single-user-single-sandbox.md` |
 | 发布、提测、部署和验收入口 | `docs/release/` | `README.md` |
-| 项目管理、任务拆分、兼容台账和汇报材料 | `docs/project/`、`docs/presentations/` | `implementation-task-breakdown.md`、`worklist.md`、`compatibility-lifecycle.md` |
-| Superpowers 规格和计划 | `docs/superpowers/specs/`、`docs/superpowers/plans/` | `YYYY-MM-DD-topic-design.md` |
+
+## 层级含义
+
+- `contracts/` 是字段和运行契约的唯一源头。涉及请求字段、SSE、主持人调度、运行态、资源身份和落盘结构时，先改这里。
+- `design/` 是正式详细设计和接口说明交付物。它只能引用或派生 `contracts/` 的字段定义，不能单独新增字段口径。
+- `architecture/` 只放结构性说明、架构图、项目结构、资源包和用户资源存储边界，不维护运行字段表。
+- `skills/` 只放 Skill、主持人 Skill、脚本和沙箱工具规范。涉及运行态字段时必须对齐 `contracts/`。
+- `testing/` 只放测试策略、回归清单和验收用例，不承担需求或字段源头职责。
+- 旧项目管理目录和旧阶段计划目录不再作为正式文档目录使用；历史计划、旧审计和兼容台账不进入当前文档入口。
 
 ## 命名规则
 
@@ -29,12 +38,12 @@
 
 | 变更类型 | 必须同步 |
 |----------|----------|
-| 用户需求新增或删除 | `requirements/user-requirements.md`、`requirements/acceptance-and-tests.md`、`architecture/detailed-design.md`、`project/implementation-task-breakdown.md` |
+| 用户需求新增或删除 | `requirements/user-requirements.md`、`requirements/acceptance-and-tests.md`、`design/detailed-design-spec.md`、`testing/test-case-catalog.md` |
 | 验收标准变化 | `requirements/acceptance-and-tests.md`、`testing/test-case-catalog.md`、`testing/layer1-regression.md`、`testing/pre-release-testing.md` |
-| API 或模块边界变化 | `architecture/detailed-design.md`、`architecture/project-structure.md`、相关 `architecture/*.md` |
+| API 或模块边界变化 | `contracts/runtime-interface-contract.md`、`design/interface-document.md`、`design/detailed-design-spec.md`、必要时同步 `architecture/project-structure.md` |
+| 数据结构或字段变化 | `contracts/data-structure-and-field-logic.md`、必要时同步 `contracts/runtime-interface-contract.md` |
 | Skill/MCP/沙箱契约变化 | `skills/*.md`、必要时同步 `operations/*.md` |
 | 用户操作路径变化 | `user-manual/user-guide.md`、`user-manual/README.md` 和截图脚本 |
-| 兼容层或回退路径变化 | `project/compatibility-lifecycle.md`、相关架构/测试文档 |
 | 部署方式变化 | `README.md`、`release/README.md`、`operations/*.md`、`testing/pre-release-testing.md` |
 
 ## 文档质量检查
