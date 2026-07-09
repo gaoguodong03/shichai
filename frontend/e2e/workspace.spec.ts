@@ -56,7 +56,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
           `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '我已经更新工作区文件。' } })}\n\n`,
-          `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-file', phase: 'awaiting_user', waiting_for_user: true })}\n\n`,
         ].join(''),
       })
     })
@@ -279,7 +279,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
                   message: { content: '文章草稿已经写入工作区。' },
                 },
               ],
-              end: { waiting_for_user: true, interrupted: false },
+              end: { type: 'end', run_id: 'run-e2e-custom', phase: 'awaiting_user', waiting_for_user: true },
             },
           }),
         })
@@ -523,8 +523,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
-          `event: route\ndata: ${JSON.stringify({ agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
-          `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+          `event: route\ndata: ${JSON.stringify({ type: 'route', run_id: 'run-switch', agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
+          `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-switch', phase: 'awaiting_user', waiting_for_user: true })}\n\n`,
         ].join(''),
       })
     })
@@ -547,10 +547,12 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
           `event: end\ndata: ${JSON.stringify({
+            type: 'end',
+            run_id: 'run-limit',
+            phase: 'awaiting_user',
             waiting_for_user: true,
             turns_limit_reached: true,
             suggested_next_speaker: '问答专家',
-            interrupted: false,
           })}\n\n`,
         ].join(''),
       })
@@ -624,7 +626,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
             `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '后台完成的回复' } })}\n\n`,
-            `event: end\ndata: ${JSON.stringify({ waiting_for_user: true, interrupted: false })}\n\n`,
+            `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-late', phase: 'awaiting_user', waiting_for_user: true })}\n\n`,
         ].join(''),
       })
       })

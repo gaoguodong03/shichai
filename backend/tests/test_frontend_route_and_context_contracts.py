@@ -94,8 +94,30 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
         "resume_target_agent_name",
         "required_user_fields",
         "interrupt_reason",
+        "interrupted",
     ]:
         assert legacy not in combined
+
+
+def test_e2e_stream_mocks_use_current_sse_event_payloads():
+    files = [
+        "frontend/e2e/fixtures/mockApi.ts",
+        "frontend/e2e/workspace.spec.ts",
+        "frontend/e2e/resources-scenario-expert.spec.ts",
+        "frontend/e2e/settings.spec.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+
+    assert "['keepalive', { ok: true }]" not in combined
+    assert "event: route\\ndata: ${JSON.stringify({ agent_name:" not in combined
+    assert "event: end\\ndata: ${JSON.stringify({ waiting_for_user:" not in combined
+    for payload in re.findall(r"event: route\\ndata: \$\{JSON\.stringify\(([\s\S]*?)\)\}\\n\\n", combined):
+        assert "type: 'route'" in payload
+        assert "run_id:" in payload
+    for payload in re.findall(r"event: end\\ndata: \$\{JSON\.stringify\(([\s\S]*?)\)\}\\n\\n", combined):
+        assert "type: 'end'" in payload
+        assert "run_id:" in payload
+        assert "phase:" in payload
 
 
 def test_frontend_does_not_parse_file_references_from_message_content():

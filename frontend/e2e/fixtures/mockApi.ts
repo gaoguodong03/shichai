@@ -346,7 +346,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route)
     }
     if (path.match(/^\/sessions\/[^/]+\/events\/stream$/) && method === 'GET') {
-      return eventStream(route, [['keepalive', { ok: true }]])
+      return eventStream(route, [['keepalive', { server_time: now }]])
     }
     const chatStreamMatch = path.match(/^\/sessions\/([^/]+)\/chat\/stream$/)
     if (chatStreamMatch && method === 'POST') {
