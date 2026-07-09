@@ -43,6 +43,7 @@ test.describe('验收 5/6：设置中心', () => {
           message_id: 'host-global-name',
           speaker: { type: 'host', agent_name: '四九' },
           message: { content: '请问答专家继续。' },
+          created_at: '2026-05-23T08:00:00Z',
         },
       ],
     }

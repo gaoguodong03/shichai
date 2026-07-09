@@ -118,6 +118,10 @@ def test_e2e_stream_mocks_use_current_sse_event_payloads():
         assert "type: 'end'" in payload
         assert "run_id:" in payload
         assert "phase:" in payload
+    for payload in re.findall(r"event: message\\ndata: \$\{JSON\.stringify\(([\s\S]*?)\)\}\\n\\n", combined):
+        assert "created_at" in payload
+    assert "created_at?: string" not in read("frontend/e2e/fixtures/mockApi.ts")
+    assert "created_at: string" in read("frontend/e2e/fixtures/mockApi.ts")
 
 
 def test_frontend_chat_once_contract_does_not_read_interrupted_flag():

@@ -12,7 +12,7 @@ type Message = {
     attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
     target_agent_name?: string | null
   }
-  created_at?: string
+  created_at: string
   client_message_id?: string
   skill_result?: Record<string, unknown>
 }

@@ -43,6 +43,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           message_id: 'assistant-file',
           speaker: { type: 'expert', agent_name: '问答专家' },
           message: { content: '我已经更新工作区文件。' },
+          created_at: '2026-05-30T09:00:00Z',
         })
       }
       state.fileContent['session-existing:brief.md'] = '# 验收说明\n\n专家已更新文件内容。\n'
@@ -55,7 +56,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
-          `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '我已经更新工作区文件。' } })}\n\n`,
+          `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-file', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '我已经更新工作区文件。' }, created_at: '2026-05-30T09:00:00Z' })}\n\n`,
           `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-file', phase: 'awaiting_user', waiting_for_user: true })}\n\n`,
         ].join(''),
       })
@@ -186,6 +187,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         message_id: `long-${idx + 1}`,
         speaker: idx % 2 === 0 ? { type: 'user' } : { type: 'expert', agent_name: '问答专家' },
         message: { content: `历史消息 ${idx + 1}\n\n这是一段用于撑开消息列表高度的内容，确保会话切换后必须滚动才能看到结尾。` },
+        created_at: `2026-05-23T09:${String(idx).padStart(2, '0')}:00Z`,
       })),
     }
     state.sessions = [...state.sessions, longHistorySession]
@@ -215,6 +217,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         message_id: 'assistant-artifacts',
         speaker: { type: 'expert', agent_name: '问答专家' },
         message: { content: '产物已经写入工作区。' },
+        created_at: '2026-05-23T10:00:00Z',
         skill_result: {
           execution_status: 'succeeded',
           content: '产物已经写入工作区。',
@@ -277,6 +280,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
                   message_id: 'assistant-writer-final',
                   speaker: { type: 'expert', agent_name: '写作专家', skill: 'skill-write' },
                   message: { content: '文章草稿已经写入工作区。' },
+                  created_at: '2026-05-23T10:01:00Z',
                 },
               ],
               end: { type: 'end', run_id: 'run-e2e-custom', phase: 'awaiting_user', waiting_for_user: true },
@@ -493,6 +497,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
         message_id: 'assistant-history',
         speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
         message: { content: '历史回复：这里可以继续追问。' },
+        created_at: '2026-05-23T08:00:00Z',
       },
     ]
     await loginByStorage(page)
@@ -577,6 +582,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           message_id: 'host-scene-name',
           speaker: { type: 'host', agent_name: '场景主持' },
           message: { content: '请问答专家继续。' },
+          created_at: '2026-05-23T08:00:00Z',
         },
       ],
     }
@@ -619,13 +625,14 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
             message_id: 'assistant-late',
             speaker: { type: 'expert', agent_name: '问答专家' },
             message: { content: '后台完成的回复' },
+            created_at: '2026-05-23T09:30:00Z',
           })
         }
         await route.fulfill({
           status: 200,
         headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
         body: [
-            `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '后台完成的回复' } })}\n\n`,
+            `event: message\ndata: ${JSON.stringify({ message_id: 'assistant-late', speaker: { type: 'expert', agent_name: '问答专家' }, message: { content: '后台完成的回复' }, created_at: '2026-05-23T09:30:00Z' })}\n\n`,
             `event: end\ndata: ${JSON.stringify({ type: 'end', run_id: 'run-late', phase: 'awaiting_user', waiting_for_user: true })}\n\n`,
         ].join(''),
       })
