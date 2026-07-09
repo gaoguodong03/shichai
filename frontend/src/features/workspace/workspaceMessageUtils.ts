@@ -81,53 +81,6 @@ function collapseBlankLines(s: string): string {
     .trim()
 }
 
-function unescapeHtmlEntities(s: string) {
-  if (!s) return ''
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-}
-
-function wrapToolCallPreBlocks(html: string) {
-  if (!html) return html
-
-  const wrapOne = (rawInner: string) => {
-    const inner = rawInner.trim()
-    const text = unescapeHtmlEntities(inner)
-      .replace(/<code[^>]*>/gi, '')
-      .replace(/<\/code>/gi, '')
-      .replace(/<[^>]+>/g, '')
-      .trim()
-
-    if (!text.startsWith('{') || !text.includes('"tool"')) return null
-    try {
-      const parsed = JSON.parse(text) as { action?: string; tool?: string; arguments?: unknown }
-      if (parsed?.action !== 'tool_call' || !parsed?.tool) return null
-      const toolName = String(parsed.tool)
-      const pretty = JSON.stringify(parsed, null, 2)
-      return [
-        `<details class="group-chat-tool-call" data-tool="${escapeHtml(toolName)}">`,
-        `<summary class="group-chat-tool-call-summary">`,
-        `<span class="group-chat-tool-call-pill">${escapeHtml(toolName)}</span>`,
-        `<span class="group-chat-tool-call-hint">工具调用</span>`,
-        `</summary>`,
-        `<pre class="group-chat-tool-call-pre">${escapeHtml(pretty)}</pre>`,
-        `</details>`,
-      ].join('')
-    } catch {
-      return null
-    }
-  }
-
-  return html.replace(/<pre>([\s\S]*?)<\/pre>/gi, (matched, inner) => {
-    const wrapped = wrapOne(inner)
-    return wrapped ?? matched
-  })
-}
-
 export function sanitizeWorkspaceDownloadUrl(raw: string): string {
   let s = (raw || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim()
   if (!s.includes('files/download') || !s.includes('path=')) return s
@@ -173,7 +126,6 @@ export function renderMarkdownHtml(md: { render: (s: string) => string } | null,
     let html = md.render(text)
     html = html.replace(/<p>\s*<\/p>/gi, '')
     html = sanitizeDownloadUrlsInRenderedHtml(html)
-    html = wrapToolCallPreBlocks(html)
     html = rewriteDownloadImagesForAuth(html)
     return html
   } catch {

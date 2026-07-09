@@ -4,13 +4,11 @@
                     <div
                       :class="[
                         'group-chat-msg-row',
-                        isMemberJoinedMessage(msg)
-                          ? 'group-chat-msg-row-system'
-                          : (messageSpeakerType(msg) === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other')
+                        messageSpeakerType(msg) === 'user' ? 'group-chat-msg-row-user' : 'group-chat-msg-row-other'
                       ]"
                       :data-message-id="msg.message_id || `idx-${i}`"
                     >
-                      <template v-if="messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg)">
+                      <template v-if="messageSpeakerType(msg) !== 'user'">
                         <span
                           v-if="!isHostBubbleMessage(msg)"
                           class="group-chat-avatar"
@@ -40,13 +38,12 @@
                         <div
                           :class="[
                             'group-chat-bubble',
-                            isMemberJoinedMessage(msg) && 'group-chat-bubble-system',
                             messageSpeakerType(msg) === 'user' && 'group-chat-bubble-user',
-                            messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg) && 'group-chat-bubble-agent',
+                            messageSpeakerType(msg) !== 'user' && 'group-chat-bubble-agent',
                             (msg as GroupMessage)._streamingStatus && 'group-chat-bubble-agent-running',
                           ]"
                         >
-                        <div v-if="messageSpeakerType(msg) !== 'user' && !isMemberJoinedMessage(msg)" class="group-chat-bubble-meta">
+                        <div v-if="messageSpeakerType(msg) !== 'user'" class="group-chat-bubble-meta">
                           <span class="group-chat-bubble-name">{{ bubbleDisplayName(msg) }}</span>
                       <span
                         v-if="(msg as GroupMessage)._streaming"
@@ -119,10 +116,7 @@
                           </div>
                         </div>
                         <div class="group-chat-bubble-body">
-                          <template v-if="isMemberJoinedMessage(msg)">
-                            <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(messageContent(msg)) }}</p>
-                          </template>
-                          <template v-else-if="messageSpeakerType(msg) !== 'user'">
+                          <template v-if="messageSpeakerType(msg) !== 'user'">
                             <div
                               v-if="(msg as GroupMessage)._streamingStatus"
                               class="group-chat-running-status"
@@ -239,7 +233,6 @@ type GroupMessage = any
 const {
   groupMessagesRef,
   groupDisplayMessages,
-  isMemberJoinedMessage,
   isHostBubbleMessage,
   expertAvatarUrl,
   agentAvatarColor,
@@ -288,7 +281,7 @@ function getNonSandboxArtifactDisplayItems(msg: GroupMessage) {
 }
 
 function showMessageActions(msg: GroupMessage) {
-  return !isMemberJoinedMessage(msg) && Boolean(messageContent(msg).trim())
+  return Boolean(messageContent(msg).trim())
 }
 
 function sandboxGroupKey(msg: GroupMessage, index: number) {

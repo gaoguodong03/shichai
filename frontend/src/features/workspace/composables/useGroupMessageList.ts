@@ -13,7 +13,7 @@ import { formatGroupMsgFullTime, formatGroupMsgTime } from '../messageTimeFormat
 export type GroupMessage = {
   message_id?: string
   speaker: {
-    type: 'user' | 'host' | 'expert' | 'system'
+    type: 'user' | 'host' | 'expert'
     agent_name?: string
     skill?: string
   }
@@ -122,7 +122,6 @@ export function useGroupMessageList(args: {
     if ((msg as GroupMessage)._streaming) return false
     if (messageStateActionKey.value) return false
     if (sessionCheckpointsLoading.value) return false
-    if (isMemberJoinedMessage(msg)) return false
     return Boolean((msg.message_id || '').trim())
   }
 
@@ -413,14 +412,6 @@ export function useGroupMessageList(args: {
     })
   }
 
-  function isMemberJoinedMessage(msg: GroupMessage): boolean {
-    const traces = ((msg as { debug?: { tool_trace?: unknown[] } }).debug?.tool_trace || []) as unknown[]
-    const eventType = traces
-      .map((item) => item && typeof item === 'object' ? String((item as { event?: unknown }).event || '') : '')
-      .find((event) => event === 'member_joined' || event === 'member_left')
-    return messageSpeakerType(msg) === 'host' && !!eventType
-  }
-
   function messageSpeakerType(msg: MsgExt): string {
     return String(msg?.speaker?.type || '').trim()
   }
@@ -516,6 +507,5 @@ export function useGroupMessageList(args: {
     isNearGroupBottom,
     scrollLatestAssistantRowToLowerMiddle,
     scrollGroupAssistantMessageIntoView,
-    isMemberJoinedMessage,
   }
 }

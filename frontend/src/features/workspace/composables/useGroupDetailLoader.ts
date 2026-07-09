@@ -36,16 +36,10 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
 
 export function parseGroupResponse(id: string, body: unknown): GroupDetail | null {
   if (body == null) return null
-  if (Array.isArray(body)) {
-    return normalizeGroupDetail({ id, title: '群聊', messages: body, agent_names: [], agent_map: {} }, id)
-  }
   if (typeof body !== 'object') return null
   const o = body as Record<string, unknown>
   if (o.status === 'ok' && o.data != null && typeof o.data === 'object') {
     return normalizeGroupDetail(o.data as Record<string, unknown>, id)
-  }
-  if (o.id != null && (Array.isArray(o.messages) || o.messages === undefined)) {
-    return normalizeGroupDetail(o, id)
   }
   return null
 }
@@ -81,7 +75,7 @@ export function hydrateRuntimeStateFromServer(args: {
   const hasLocalAbort = Boolean(st?.streaming && st.abort)
   patchGroupStreamState(detail.id, {
     streaming: true,
-    phase: phase || 'routing',
+    phase,
     abort: hasLocalAbort ? st?.abort || null : null,
     runToken: Number(groupStreamStates.value[detail.id]?.runToken || 0),
     agentName,

@@ -409,21 +409,6 @@ export function useGroupOrchestrationState(args: {
     return []
   }
 
-  function handleLoadedMessages(messages: GroupMessage[]) {
-    const agentNames = groupDetail.value?.agent_names ?? []
-    if (agentNames.length !== 0 || !messages.length) return
-    const lastHost = [...messages].reverse().find((message) => messageSpeakerType(message) === 'host')
-    const lastMsg = lastHost as {
-      suggested_add_agent_names?: string[]
-    } | undefined
-    if (!lastMsg) return
-    const suggestedNames = extractSuggestedAddNames(lastMsg as Record<string, unknown>)
-    if (suggestedNames.length) {
-      groupSuggestedAddAgentNames.value = resolveSuggestedNamesFromPayload(lastMsg as Record<string, unknown>)
-      return
-    }
-  }
-
   function resetOrchestrationForSessionSwitch() {
     groupWaitingForUser.value = false
     groupTurnLimitReached.value = false
@@ -462,7 +447,6 @@ export function useGroupOrchestrationState(args: {
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,
     resolveSuggestedNamesFromPayload,
-    handleLoadedMessages,
     resetOrchestrationForSessionSwitch,
     clearAutoSwitchHint: () => { autoSwitchHint.value = null },
   }

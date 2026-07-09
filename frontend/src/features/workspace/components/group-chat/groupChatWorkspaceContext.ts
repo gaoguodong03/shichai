@@ -21,7 +21,6 @@ export interface GroupChatSessionContext {
 export interface GroupChatMessageContext {
   groupMessagesRef: ContextValue
   groupDisplayMessages: ContextValue
-  isMemberJoinedMessage: ContextValue
   isHostBubbleMessage: ContextValue
   expertAvatarUrl: ContextValue
   agentAvatarColor: ContextValue

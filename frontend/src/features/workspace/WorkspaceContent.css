@@ -974,50 +974,6 @@
   font-size: 0.8125em;
   line-height: 1.35;
 }
-.group-chat-markdown .group-chat-tool-call {
-  margin: 0.12em 0 !important;
-  border: 1px solid var(--color-border-light);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--color-card) 88%, var(--color-input-bg));
-  overflow: hidden;
-}
-.group-chat-markdown .group-chat-tool-call-summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  user-select: none;
-}
-.group-chat-markdown .group-chat-tool-call-summary::-webkit-details-marker {
-  display: none;
-}
-.group-chat-markdown .group-chat-tool-call-pill {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.12rem 0.45rem;
-  border-radius: 999px;
-  color: var(--color-accent-subtle-text);
-  background: var(--color-accent-subtle);
-  border: 1px solid var(--color-accent);
-}
-.group-chat-markdown .group-chat-tool-call-hint {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-.group-chat-markdown .group-chat-tool-call[open] .group-chat-tool-call-summary {
-  border-bottom: 1px solid var(--color-border-light);
-  background: var(--color-page);
-}
-.group-chat-markdown .group-chat-tool-call-pre {
-  margin: 0 !important;
-  padding: 0.5rem 0.75rem;
-  overflow-x: auto;
-  background: transparent;
-  font-size: 0.8125em;
-  line-height: 1.35;
-}
 .group-chat-markdown code {
   padding: 0.15em 0.35em;
   border-radius: 4px;

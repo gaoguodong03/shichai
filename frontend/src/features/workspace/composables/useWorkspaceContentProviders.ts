@@ -10,7 +10,7 @@ import { useGroupWorkspacePanel } from './useGroupWorkspacePanel'
 import { useGroupComposerActions } from './useGroupComposerActions'
 import { useGroupAtMentions } from './useGroupAtMentions'
 import { useGroupFileReferences } from './useGroupFileReferences'
-import { useGroupMessageList, type GroupMessage } from './useGroupMessageList'
+import { useGroupMessageList } from './useGroupMessageList'
 import { useGroupMembers } from './useGroupMembers'
 import { useGroupOrchestrationState } from './useGroupOrchestrationState'
 import { useGroupStreamEvents } from './useGroupStreamEvents'
@@ -266,7 +266,6 @@ export function useWorkspaceContentProviders(args: {
     scrollGroupToBottom,
     scrollLatestAssistantRowToLowerMiddle,
     scrollGroupAssistantMessageIntoView,
-    isMemberJoinedMessage,
   } = useGroupMessageList({
     groupDetail,
     showGroupWorkspace,
@@ -361,7 +360,6 @@ export function useWorkspaceContentProviders(args: {
     updateAutoSwitchHint,
     applyOrchestrationEndMeta,
     resolveSuggestedNamesFromPayload,
-    handleLoadedMessages,
     resetOrchestrationForSessionSwitch,
     clearAutoSwitchHint,
   } = useGroupOrchestrationState({
@@ -489,14 +487,6 @@ export function useWorkspaceContentProviders(args: {
       ),
   )
 
-  watch(
-    () => groupDetail.value?.messages,
-    (messages) => {
-      handleLoadedMessages(Array.isArray(messages) ? [...messages] as GroupMessage[] : [])
-    },
-    { immediate: true },
-  )
-
   // 切换会话时清空上一场输入和附件，避免串场。
   watch(
     () => props.selectedGroupSessionId,
@@ -588,7 +578,6 @@ export function useWorkspaceContentProviders(args: {
   provideGroupChatMessageContext({
     groupMessagesRef,
     groupDisplayMessages,
-    isMemberJoinedMessage,
     isHostBubbleMessage,
     expertAvatarUrl,
     agentAvatarColor,

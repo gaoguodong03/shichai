@@ -172,6 +172,66 @@ def test_frontend_does_not_parse_file_references_from_message_content():
         assert forbidden not in combined
 
 
+def test_frontend_message_rendering_does_not_read_legacy_debug_tool_trace():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupMessageList.ts",
+        "frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue",
+        "frontend/src/features/workspace/components/group-chat/groupChatWorkspaceContext.ts",
+        "frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for forbidden in [
+        "debug",
+        "tool_trace",
+        "member_joined",
+        "member_left",
+        "isMemberJoinedMessage",
+    ]:
+        assert forbidden not in combined
+
+
+def test_frontend_group_detail_loader_only_accepts_status_ok_data_envelope():
+    src = read("frontend/src/features/workspace/composables/useGroupDetailLoader.ts")
+    assert "if (Array.isArray(body))" not in src
+    assert "o.id != null" not in src
+    assert "o.status === 'ok' && o.data != null && typeof o.data === 'object'" in src
+
+
+def test_frontend_restored_runtime_phase_comes_only_from_backend_runtime():
+    src = read("frontend/src/features/workspace/composables/useGroupDetailLoader.ts")
+    assert "phase: phase || 'routing'" not in src
+    assert "const phase = String(rt.phase || '').trim()" in src
+
+
+def test_frontend_markdown_renderer_does_not_parse_tool_calls_from_message_content():
+    src = "\n".join([
+        read("frontend/src/features/workspace/workspaceMessageUtils.ts"),
+        read("frontend/src/features/workspace/WorkspaceContent.css"),
+    ])
+    for forbidden in [
+        "tool_call",
+        "wrapToolCallPreBlocks",
+        "data-tool=",
+        "group-chat-tool-call",
+    ]:
+        assert forbidden not in src
+
+
+def test_frontend_does_not_restore_invites_from_history_messages():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+        "frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for forbidden in [
+        "handleLoadedMessages",
+        "lastHost",
+        "suggested_add_agent_names?: string[]",
+        "extractSuggestedAddNames(lastMsg",
+    ]:
+        assert forbidden not in combined
+
+
 def test_frontend_does_not_send_legacy_next_prompt_channel():
     files = [
         "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",
