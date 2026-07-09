@@ -527,7 +527,7 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 - 专家可以说明“建议交回四九重新安排”，但不要自行指定下一位专家。
 - 专家回复使用自然语言、脚本 `content`、隐藏状态块或脚本 stdout JSON；主持人调度字段只出现在主持人 Skill 中。
-- 主持人 Skill 不代写专家正文；流程型主持人 Skill 只输出 `current_phase`、`next_speaker`、`speaker_task`，由平台负责展示主持消息并把 `speaker_task` 交给下一位专家。
+- 主持人 Skill 不代写专家正文；流程型主持人 Skill 只输出 `current_phase`、`next_speaker`、`next_action`，由平台负责展示主持消息并把 `next_action` 交给下一位专家。
 - Skill 会话未结束时，专家应继续沿同一 Skill 推进，不把用户消息重新交给四九。
 
 主持人 Skill 的专门写法、运行链路和禁区见 [主持人 Skill 规范](host-skill.md)。
