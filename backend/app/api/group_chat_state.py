@@ -101,7 +101,17 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         "created_at",
         "updated_at",
     }
-    return {key: value for key, value in dict(item or {}).items() if key in allowed}
+    out = {key: value for key, value in dict(item or {}).items() if key in allowed}
+    host = out.get("host")
+    if isinstance(host, dict):
+        out["host"] = {
+            key: host.get(key)
+            for key in ("name", "llm_name", "system_prompt", "skill_directory")
+            if key in host
+        }
+    elif "host" in out:
+        out["host"] = {}
+    return out
 
 
 def _read_json_object(path: Path) -> Dict[str, Any] | None:
