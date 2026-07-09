@@ -121,6 +121,45 @@ async def test_session_events_stream_emits_snapshot_event_name_and_runtime_paylo
 
 
 @pytest.mark.asyncio
+async def test_session_events_stream_message_payload_matches_history_contract(monkeypatch, tmp_path):
+    from app.agent import group_session_service
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    session_id = "s-events-message-contract"
+    state.save_session_definitions(
+        {
+            session_id: {
+                "title": "消息事件协议",
+                "agent_names": [],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+    message = {
+        "message_id": "msg-events-1",
+        "speaker": {"type": "expert", "agent_name": "问答专家"},
+        "message": {"content": "后台完成的回复"},
+        "created_at": "2026070900010000",
+    }
+
+    response = await group_session_service.group_session_events_stream(session_id)
+    body_iter = response.body_iterator
+    try:
+        await anext(body_iter)
+        await state.publish_group_session_event(session_id, "message", message)
+        event_type, payload = _parse_sse_block(await anext(body_iter))
+    finally:
+        close = getattr(body_iter, "aclose", None)
+        if close:
+            await close()
+
+    assert event_type == "message"
+    assert payload == message
+
+
+@pytest.mark.asyncio
 async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
