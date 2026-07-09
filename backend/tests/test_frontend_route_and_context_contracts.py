@@ -152,6 +152,33 @@ def test_frontend_sends_structured_target_agent_without_at_text_control():
     assert "insertText = " not in at_mentions
 
 
+def test_frontend_stores_backend_phase_values_in_stream_state():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupComposerActions.ts",
+        "frontend/src/features/workspace/composables/useGroupChatStreamRunner.ts",
+        "frontend/src/features/workspace/composables/useGroupDetailLoader.ts",
+        "frontend/src/features/workspace/composables/useGroupStreamRuntime.ts",
+        "frontend/src/features/workspace/composables/useGroupStreamEvents.ts",
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for forbidden in [
+        "phase: '正在",
+        "phase: '文件引用",
+        "phase: '技能任务",
+        "phase: '等待你",
+        "phase: '已暂停",
+        "phase: '已停止",
+        "beginGroupStream(id, '正在",
+        "beginGroupStream(detail.id, '正在",
+        "setStreamingPhase('连接",
+        "setStreamingPhase(errText",
+        "phase: STREAMING_STATUS_DEFAULT",
+        "phase === 'tool_running' ?",
+    ]:
+        assert forbidden not in combined
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

@@ -81,7 +81,7 @@ export function hydrateRuntimeStateFromServer(args: {
   const hasLocalAbort = Boolean(st?.streaming && st.abort)
   patchGroupStreamState(detail.id, {
     streaming: true,
-    phase: phase === 'tool_running' ? '技能任务运行中，完成后会继续回复…' : '仍在等待技能任务完成…',
+    phase: phase || 'routing',
     abort: hasLocalAbort ? st?.abort || null : null,
     runToken: Number(groupStreamStates.value[detail.id]?.runToken || 0),
     agentName,

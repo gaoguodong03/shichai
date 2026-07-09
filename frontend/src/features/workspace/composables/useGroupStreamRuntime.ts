@@ -17,6 +17,30 @@ function emptyRuntime(): GroupStreamRuntime {
   return { streaming: false, phase: '', abort: null, runToken: 0 }
 }
 
+function streamPhaseText(phase: string): string {
+  const key = String(phase || '').trim()
+  if (!key) return ''
+  const labels: Record<string, string> = {
+    routing: '正在分配专家…',
+    planning: '正在规划…',
+    executing: '正在执行…',
+    file_resolving: '正在处理文件…',
+    file_resolved: '文件已处理，正在继续…',
+    skill_selecting: '正在选择技能…',
+    agent_routed: '已确定执行专家…',
+    tool_running: '技能任务运行中，完成后会继续回复…',
+    assistant_generating: '正在生成回复…',
+    finalizing: '正在收尾…',
+    awaiting_user: '等待你的确认…',
+    recruiting: '等待你确认邀请…',
+    reviewing: '正在审查…',
+    completed: '已完成',
+    stopped: '已停止',
+    failed: '运行失败',
+  }
+  return labels[key] || key
+}
+
 export function useGroupStreamRuntime(args: {
   selectedGroupSessionId: () => string | null
   loadGroupDetail: (options?: { silent?: boolean }) => Promise<unknown>
@@ -33,7 +57,7 @@ export function useGroupStreamRuntime(args: {
   const groupStreamingPhase = computed(() => currentGroupStreamState.value?.phase || '')
   const currentGroupStreaming = computed(() => Boolean(currentGroupStreamState.value?.streaming))
   const otherSessionStreaming = computed(() => false)
-  const currentGroupStreamingPhase = computed(() => currentGroupStreaming.value ? groupStreamingPhase.value : '')
+  const currentGroupStreamingPhase = computed(() => currentGroupStreaming.value ? streamPhaseText(groupStreamingPhase.value) : '')
 
   let restoredRuntimePollTimer: ReturnType<typeof setTimeout> | null = null
   let restoredRuntimePollSessionId = ''
@@ -82,7 +106,7 @@ export function useGroupStreamRuntime(args: {
     }
     patchGroupStreamState(sessionId, {
       streaming: false,
-      phase: '已停止',
+      phase: 'stopped',
       abort: null,
       runToken: Number(state.runToken || 0) + 1,
       agentName: '',

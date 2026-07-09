@@ -6,7 +6,7 @@ type StreamRoute = { agent_name?: string; skill?: string }
 
 export function createGroupChatStreamRunner(deps: {
   isSelectedSession: (sessionId: string) => boolean
-  setStreamingPhase: (text: string, sessionId: string) => void
+  setStreamingPhase: (phase: string, sessionId: string) => void
   appendHostError: (content: string) => void
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
@@ -69,7 +69,7 @@ export function createGroupChatStreamRunner(deps: {
     if (signal?.aborted) return false
 
     if (!gotEnd || streamFailed || streamServerErrored) {
-      deps.setStreamingPhase('连接波动，正在补偿本轮回复…', sessionId)
+      deps.setStreamingPhase('tool_running', sessionId)
       try {
         const fallback = await chatOnceRequest({ ...payload, session_id: sessionId })
         if (fallback.status !== 'ok') {
@@ -107,13 +107,13 @@ export function createGroupChatStreamRunner(deps: {
         if (!data.end && (data.error || data.interrupted)) {
           const errText = String(data.error?.error || data.error?.detail || '').trim()
           failureHint = errText || failureHint
-          deps.setStreamingPhase(errText ? `本轮执行失败：${errText}` : '本轮执行失败，请重试一次', sessionId)
+          deps.setStreamingPhase('failed', sessionId)
         }
       } catch (fallbackError) {
         console.error('非流式补偿失败', fallbackError)
         const errText = fallbackError instanceof Error ? (fallbackError.message || '').trim() : ''
         failureHint = failureHint || errText
-        deps.setStreamingPhase(errText ? `补偿失败：${errText}` : '补偿失败，请重试一次', sessionId)
+        deps.setStreamingPhase('failed', sessionId)
       }
     }
     if (!shouldEmitMessageSent && !gotEnd && isSelectedStreamSession()) {

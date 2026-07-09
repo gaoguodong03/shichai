@@ -155,7 +155,7 @@ export function useGroupStreamEvents(args: {
     if (!agentName) return
     const id = activeSessionId(sessionId)
     patchGroupStreamState(id, {
-      phase: STREAMING_STATUS_DEFAULT,
+      phase: 'agent_routed',
       agentName,
       skill: String(data?.skill || '').trim(),
     })
@@ -237,32 +237,8 @@ export function useGroupStreamEvents(args: {
     const id = activeSessionId(sessionId)
     const agentName = String(data?.agent_name || '').trim()
     if (agentName) ensureStreamingStatusPlaceholder(agentName, streamingStatusTextForPhase(phase))
-    if (phase === 'file_resolving') {
-      patchGroupStreamState(id, { phase: '正在处理文件引用…' })
-      return true
-    }
-    if (phase === 'file_resolved') {
-      patchGroupStreamState(id, { phase: '文件引用已处理' })
-      return true
-    }
-    if (phase === 'tool_running') {
-      patchGroupStreamState(id, { phase: '技能任务运行中，完成后会继续回复…' })
-      return true
-    }
-    if (phase === 'planning') {
-      patchGroupStreamState(id, { phase: '正在规划…' })
-      return true
-    }
-    if (phase === 'executing') {
-      patchGroupStreamState(id, { phase: '正在执行…' })
-      return true
-    }
-    if (phase === 'assistant_generating') {
-      patchGroupStreamState(id, { phase: '正在生成回复…' })
-      return true
-    }
-    if (phase === 'finalizing') {
-      patchGroupStreamState(id, { phase: '正在收尾…' })
+    if (['file_resolving', 'file_resolved', 'tool_running', 'planning', 'executing', 'assistant_generating', 'finalizing'].includes(phase)) {
+      patchGroupStreamState(id, { phase })
       return true
     }
     return false
@@ -270,7 +246,7 @@ export function useGroupStreamEvents(args: {
 
   function handleStreamMessageEvent(data: Record<string, unknown>, state: StreamEventState, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
-    patchGroupStreamState(activeSessionId(sessionId), { phase: '正在生成回复…' })
+    patchGroupStreamState(activeSessionId(sessionId), { phase: 'assistant_generating' })
     const type = speakerType(data)
     if (data && (type === 'expert' || type === 'user' || type === 'host')) {
       if (type === 'expert') {
@@ -293,7 +269,7 @@ export function useGroupStreamEvents(args: {
       if (suggestedNames.length) {
         groupSuggestedAddAgentNames.value = suggestedNames
         clearStreamingPlaceholders()
-        patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
+        patchGroupStreamState(activeSessionId(sessionId), { phase: 'recruiting' })
       }
     }
   }
@@ -316,7 +292,7 @@ export function useGroupStreamEvents(args: {
       if (suggestedNames.length) {
         groupSuggestedAddAgentNames.value = suggestedNames
         clearStreamingPlaceholders()
-        patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
+        patchGroupStreamState(activeSessionId(sessionId), { phase: 'recruiting' })
       }
       if (endData.suggested_next_speaker === 'user' || endData.phase === 'completed') {
         clearAttachedFiles()

@@ -51,8 +51,8 @@ export function useGroupComposerActions(args: {
 }) {
   const runGroupStream = createGroupChatStreamRunner({
     isSelectedSession: (sessionId) => args.selectedGroupSessionId() === sessionId,
-    setStreamingPhase: (text, sessionId) => {
-      args.patchGroupStreamState(sessionId || args.selectedGroupSessionId() || '', { phase: text })
+    setStreamingPhase: (phase, sessionId) => {
+      args.patchGroupStreamState(sessionId || args.selectedGroupSessionId() || '', { phase })
     },
     appendHostError: (content) => {
       args.groupDisplayMessages.value = [
@@ -94,7 +94,7 @@ export function useGroupComposerActions(args: {
     args.clearAutoSwitchHint()
     args.groupWaitingForUser.value = false
     args.groupSuggestedNextSpeaker.value = null
-    const { runToken, abort } = args.beginGroupStream(id, '正在确认…')
+    const { runToken, abort } = args.beginGroupStream(id, 'routing')
     const body: {
       message?: string
       client_message_id: string
@@ -145,7 +145,7 @@ export function useGroupComposerActions(args: {
     }
     args.groupDiscussionGoal.value = ''
     args.groupTargetAgentName.value = null
-    const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
+    const { runToken, abort } = args.beginGroupStream(detail.id, 'routing')
     try {
       const msg = base
       const clientMessageId = createClientMessageId()

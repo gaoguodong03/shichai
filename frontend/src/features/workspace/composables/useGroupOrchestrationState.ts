@@ -276,7 +276,7 @@ export function useGroupOrchestrationState(args: {
         if (sessionId) abortGroupStream(sessionId)
       } catch (_) {}
       const sessionId = selectedGroupSessionId()
-      if (sessionId) patchGroupStreamState(sessionId, { phase: '已暂停：请编辑后重新发送' })
+      if (sessionId) patchGroupStreamState(sessionId, { phase: 'stopped' })
       groupWaitingForUser.value = false
       groupSuggestedNextSpeaker.value = null
       clearStreamingPlaceholders()
