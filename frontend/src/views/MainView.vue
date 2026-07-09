@@ -980,7 +980,7 @@
             </div>
             <div v-if="(scenarioBundlePreview.bundle_preview.skills || []).length">
               <p class="text-xs text-muted leading-5">
-                技能名称：{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || [], scenarioBundlePreview.bundle_preview.skill_names).join('，') }}
+                技能名称：{{ displaySkillNames(scenarioBundlePreview.bundle_preview.skills || [], scenarioBundlePreview.bundle_preview.skill_display_names).join('，') }}
               </p>
             </div>
             <div v-if="(scenarioBundlePreview.bundle_preview.mcps || []).length">
@@ -1091,7 +1091,7 @@
             <p class="text-xs text-muted leading-5">专家名称：{{ agentBundlePreview.bundle_preview.name || '未命名专家' }}</p>
             <div v-if="(agentBundlePreview.bundle_preview.skills || []).length">
               <p class="text-xs text-muted leading-5">
-                技能名称：{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || [], agentBundlePreview.bundle_preview.skill_names).join('，') }}
+                技能名称：{{ displaySkillNames(agentBundlePreview.bundle_preview.skills || [], agentBundlePreview.bundle_preview.skill_display_names).join('，') }}
               </p>
             </div>
             <div v-if="(agentBundlePreview.bundle_preview.mcps || []).length">

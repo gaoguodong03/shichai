@@ -29,7 +29,7 @@ from app.core.settings_references import (
     replace_skill_path_in_user_configs as _replace_skill_path_in_user_configs,
 )
 from app.core.settings_bundle_import import (
-    bundle_skill_name_map as _bundle_skill_name_map,
+    bundle_skill_display_name_map as _bundle_skill_display_name_map,
     collect_tool_names_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_expert_bundle as _find_missing_references_for_expert_bundle,
@@ -411,7 +411,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
         if norm is None:
             raise HTTPException(status_code=400, detail="专家分享包无效")
         directory_names_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
-        skill_names = _bundle_skill_name_map(tmp, directory_names_in_zip)
+        skill_display_names = _bundle_skill_display_name_map(tmp, directory_names_in_zip)
         mcp_path = tmp / "mcp_servers.json"
         mcp_bundle: List[Dict[str, Any]] = []
         if mcp_path.is_file():
@@ -444,7 +444,7 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
                 "preview": {
                     "name": norm.get("name"),
                     "skills": directory_names_in_zip,
-                    "skill_names": skill_names,
+                    "skill_display_names": skill_display_names,
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_names": same_name_agent_names,
                     "would_overwrite_skills": overwritten_directory_names,

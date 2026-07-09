@@ -288,7 +288,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
                 bundle_preview: {
                   name: '导入专家',
                   skills: ['skill-imported'],
-                  skill_names: { 'skill-imported': '导入技能' },
+                  skill_display_names: { 'skill-imported': '导入技能' },
                   mcps: [{ name: '导入工具' }],
                 },
               }

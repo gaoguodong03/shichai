@@ -32,7 +32,7 @@ type ScenarioBundlePreview = {
     preset_name: string
     experts: { name: string }[]
     skills: string[]
-    skill_names?: Record<string, string>
+    skill_display_names?: Record<string, string>
     mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
@@ -50,7 +50,7 @@ type AgentBundlePreview = {
   bundle_preview?: {
     name?: string
     skills: string[]
-    skill_names?: Record<string, string>
+    skill_display_names?: Record<string, string>
     mcps: { name: string }[]
     missing_references?: ImportMissingReferences
     would_overwrite_skills?: string[]
@@ -206,7 +206,7 @@ export function useBundleImports(options: {
     for (const [oldId, newId] of Object.entries(bp.would_remap_skills || {})) {
       if (!overwrittenSkillIds.has(newId)) continue
       const fallbackName = displaySkillNames([newId])[0]
-      const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
+      const name = bp.skill_display_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
       if (name) rows.push(`技能：${name}`)
     }
     const overwrittenTools = new Set(bp.would_overwrite_tools || [])
@@ -227,7 +227,7 @@ export function useBundleImports(options: {
     for (const [oldId, newId] of Object.entries(bp.would_remap_skills || {})) {
       if (!overwrittenSkillIds.has(newId)) continue
       const fallbackName = displaySkillNames([newId])[0]
-      const name = bp.skill_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
+      const name = bp.skill_display_names?.[oldId] || (fallbackName && fallbackName !== newId ? fallbackName : '')
       if (name) rows.push(`技能：${name}`)
     }
     for (const toolName of bp.would_overwrite_tools || []) {

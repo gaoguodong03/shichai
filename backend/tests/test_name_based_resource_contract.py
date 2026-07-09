@@ -168,7 +168,6 @@ def test_normalize_skill_refs_keep_name_and_directory_name_only():
 
     assert refs == [
         {"name": "文档合著v1.1", "directory_name": "skill_fasfasdf"},
-        {"name": "检索", "directory_name": "skill-search"},
     ]
 
 

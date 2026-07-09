@@ -500,7 +500,7 @@ def skill_name_identity_import_plan(
     return directory_map, copy_pairs, list(dict.fromkeys(kept_existing))
 
 
-def bundle_skill_name_map(bundle_dir: Path, skill_directories: List[str] | None = None) -> Dict[str, str]:
+def bundle_skill_display_name_map(bundle_dir: Path, skill_directories: List[str] | None = None) -> Dict[str, str]:
     skill_directories = list(skill_directories) if skill_directories is not None else list_skill_directories_in_bundle_skills_dir(bundle_dir)
     skills_root = bundle_dir / "skills"
     out: Dict[str, str] = {}

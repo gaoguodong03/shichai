@@ -136,7 +136,7 @@ def normalize_skill_refs(raw: Any) -> List[Dict[str, str]]:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()
-        directory_name = _normalize_skill_folder(item.get("directory_name") or item.get("folder_name"))
+        directory_name = _normalize_skill_folder(item.get("directory_name"))
         if not name or not directory_name:
             continue
         key = name.casefold()
@@ -158,7 +158,7 @@ def normalize_agent_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         "llm_name": str(row.get("llm_name") or "").strip(),
         "description": str(row.get("description") or ""),
         "system_prompt": str(row.get("system_prompt") or "") if row.get("system_prompt") is not None else "",
-        "skills": normalize_skill_refs(row.get("skills") or row.get("skill_names") or []),
+        "skills": normalize_skill_refs(row.get("skills") or []),
     }
 
 

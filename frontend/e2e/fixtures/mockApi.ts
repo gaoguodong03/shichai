@@ -466,7 +466,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           bundle_preview: {
             name: '导入专家',
             skills: ['skill-imported'],
-            skill_names: { 'skill-imported': '导入技能' },
+            skill_display_names: { 'skill-imported': '导入技能' },
             mcps: [{ name: '导入工具' }],
             name_conflict_existing_names: [],
             would_overwrite_skills: [],
@@ -516,7 +516,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
           preset_name: '导入资源包场景',
           experts: [{ name: '问答专家' }],
           skills: ['skill-qa'],
-          skill_names: { 'skill-qa': '问答技能' },
+          skill_display_names: { 'skill-qa': '问答技能' },
           mcps: [{ name: '文件系统工具' }],
         },
         summary: {

@@ -149,9 +149,52 @@ def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Pa
         reset_current_username(token)
 
     assert preview["preview"]["name_conflict_existing_names"] == ["Scene A"]
+    assert "skill_names" not in preview["preview"]
+    assert preview["preview"]["skill_display_names"] == {"skill-shared-skill": "Skill A"}
     assert result["summary"]["kept_agent_names"] == ["Expert A"]
     assert result["summary"]["skills_kept"] == ["skill-local"]
     assert "old" in local_skill.joinpath("SKILL.md").read_text(encoding="utf-8")
+
+
+def test_expert_bundle_preview_uses_skill_display_names(monkeypatch, tmp_path: Path):
+    from app.core.expert_bundle import build_expert_bundle_zip_bytes
+    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
+    from app.main import app
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr("app.core.security.decode_access_token", lambda _t: "u1")
+
+    token = set_current_username("u1")
+    try:
+        ctx = get_current_user_context(default_fallback=False)
+        assert ctx is not None
+    finally:
+        reset_current_username(token)
+
+    source_skills = tmp_path / "source_skills"
+    incoming_skill = source_skills / "skill-incoming"
+    incoming_skill.mkdir(parents=True)
+    incoming_skill.joinpath("SKILL.md").write_text("---\nname: Incoming Skill\n---\nbody\n", encoding="utf-8")
+    raw = build_expert_bundle_zip_bytes(
+        {"name": "Imported Expert", "skills": [_skill_ref("Incoming Skill", "skill-incoming")]},
+        [],
+        source_skills,
+        ["skill-incoming"],
+    )
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/agents/import-bundle",
+        files={"file": ("expert.zip", raw, "application/zip")},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()["data"]["bundle_preview"]
+    assert "skill_names" not in preview
+    assert preview["skill_display_names"] == {"skill-incoming": "Incoming Skill"}
 
 
 def test_scene_bundle_import_creates_new_skill_directory_when_path_conflicts(monkeypatch, tmp_path: Path):

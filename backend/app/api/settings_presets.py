@@ -31,7 +31,7 @@ from app.core.session_preset_validate import (
     validation_to_api_dict,
 )
 from app.core.settings_bundle_import import (
-    bundle_skill_name_map as _bundle_skill_name_map,
+    bundle_skill_display_name_map as _bundle_skill_display_name_map,
     collect_mcp_refs_from_skill_dirs,
     copy_bundle_skills_to_user_by_name as _copy_bundle_skills_to_user_by_name,
     find_missing_references_for_scene_bundle as _find_missing_references_for_scene_bundle,
@@ -554,7 +554,7 @@ async def import_session_preset_bundle(
             raise HTTPException(status_code=400, detail="场景包内 preset 无效（需 name、agent_names）")
 
         skill_directories_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
-        skill_names = _bundle_skill_name_map(tmp, skill_directories_in_zip)
+        skill_display_names = _bundle_skill_display_name_map(tmp, skill_directories_in_zip)
         experts_preview = [
             {"name": str(x.get("name") or "")}
             for x in agent_bundle
@@ -620,7 +620,7 @@ async def import_session_preset_bundle(
                         "preset_name": norm["name"],
                         "experts": experts_preview,
                         "skills": skill_directories_in_zip,
-                        "skill_names": skill_names,
+                        "skill_display_names": skill_display_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite_skills,
                         "would_skip_skills": [],
@@ -709,7 +709,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
         skill_directories_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
-        skill_names = _bundle_skill_name_map(tmp, skill_directories_in_zip)
+        skill_display_names = _bundle_skill_display_name_map(tmp, skill_directories_in_zip)
         user_skills = _get_skills_dir()
         skill_directory_map, _skill_copy_pairs, overwritten_skill_directories = _skill_name_identity_import_plan(
             tmp,
@@ -747,7 +747,7 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
                         if str(x.get("name") or "").strip()
                     ],
                     "skills": skill_directories_in_zip,
-                    "skill_names": skill_names,
+                    "skill_display_names": skill_display_names,
                     "mcps": [{"name": str(x.get("name") or "")} for x in mcp_bundle],
                     "name_conflict_existing_names": preset_name_conflicts,
                     "would_overwrite_skills": overwritten_skill_directories,

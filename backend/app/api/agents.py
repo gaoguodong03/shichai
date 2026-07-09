@@ -169,7 +169,7 @@ async def import_agent_instance_bundle(
     """导入专家包：合并技能、MCP 与专家条目。"""
     from app.api.settings_mcp import load_mcp_config
     from app.core.expert_bundle import read_expert_bundle_manifest
-    from app.core.settings_bundle_import import bundle_skill_name_map, find_missing_references_for_expert_bundle
+    from app.core.settings_bundle_import import bundle_skill_display_name_map, find_missing_references_for_expert_bundle
     from app.core.scenario_bundle import (
         extract_scenario_bundle_dir,
         list_skill_directories_in_bundle_skills_dir,
@@ -193,7 +193,7 @@ async def import_agent_instance_bundle(
 
         user_skills = _agent_skills_dir()
         skill_directories_in_zip = list_skill_directories_in_bundle_skills_dir(tmp)
-        skill_names = bundle_skill_name_map(tmp, skill_directories_in_zip)
+        skill_display_names = bundle_skill_display_name_map(tmp, skill_directories_in_zip)
         from app.core.settings_bundle_import import skill_name_identity_import_plan
 
         _skill_directory_map, _skill_copy_pairs, would_overwrite = skill_name_identity_import_plan(
@@ -239,7 +239,7 @@ async def import_agent_instance_bundle(
                     "bundle_preview": {
                         "name": norm.get("name"),
                         "skills": skill_directories_in_zip,
-                        "skill_names": skill_names,
+                        "skill_display_names": skill_display_names,
                         "mcps": mcps_preview,
                         "would_overwrite_skills": would_overwrite,
                         "would_skip_skills": [],
