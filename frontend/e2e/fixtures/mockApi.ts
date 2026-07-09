@@ -14,7 +14,25 @@ type Message = {
   }
   created_at: string
   client_message_id?: string
-  skill_result?: Record<string, unknown>
+  skill_result?: SkillResult
+}
+
+type ArtifactRef = {
+  type: string
+  name: string
+  path: string
+}
+
+type SkillNextAction = {
+  agent_turn: 'respond' | 'continue'
+  skill_session: 'keep' | 'release'
+}
+
+type SkillResult = {
+  execution_status: 'succeeded' | 'blocked' | 'failed'
+  content: string
+  artifacts: ArtifactRef[]
+  next_action: SkillNextAction
 }
 
 type Session = {
