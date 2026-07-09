@@ -115,7 +115,7 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     tool_content = _read("app/agent/group_chat_tool_result_content.py")
 
     assert "resolve_skill_session_state" not in skill_session
-    assert "[[SKILL_SESSION_STATE]]" in skill_session
+    assert 'render_platform_prompt("skill.session.state_instruction.v1", {})' in skill_session
     assert "SKILL_SESSION_STATE_START" not in skill_session
     assert "announcement:" not in host_messages
     assert "reason:" not in host_messages

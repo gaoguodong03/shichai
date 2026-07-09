@@ -42,6 +42,7 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         ROOT / "backend/app/agent/simple_agent_messages.py",
         ROOT / "backend/app/agent/skill_agent_runtime.py",
         ROOT / "backend/app/agent/simple_agent_finalization.py",
+        ROOT / "backend/app/agent/skill_session_contract.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
     for phrase in [
@@ -56,6 +57,7 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "## 技能脚本工具",
         "工具已经执行完成。请基于最近的工具返回",
         "你是书童四九平台主持人，只负责调度，不代替专家回答业务内容。",
+        "非脚本 Skill、MCP / HTTP / workspace 工具后的流程判断",
     ]:
         assert phrase not in combined
     for prompt_id in [
@@ -74,5 +76,6 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "expert.turn.default_task.v1",
         "expert.turn.user_content.v1",
         "presentation.rewrite.user_prompt.v1",
+        "skill.session.state_instruction.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
