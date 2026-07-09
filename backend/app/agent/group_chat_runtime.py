@@ -50,6 +50,15 @@ from app.core.security import get_current_user
 logger = logging.getLogger(__name__)
 
 MAX_EXPERT_TURNS_PER_STREAM = 32
+HOST_TAKEOVER_TEXT_MARKERS = (
+    "交给主持人",
+    "请主持人接管",
+    "主持人接管",
+    "换专家",
+    "结束当前技能",
+    "结束当前 Skill",
+    "结束当前skill",
+)
 
 
 def _dedupe_names(values: List[Any]) -> List[str]:
@@ -132,6 +141,14 @@ def _user_requests_recruitment(text: str) -> bool:
     if not value:
         return False
     return any(token in value for token in ("邀请", "加人", "加入专家", "添加专家", "再加", "请加", "拉进来"))
+
+
+def _message_requests_host_scheduler_takeover(text: str) -> bool:
+    """Detect the explicit host-takeover text intents allowed by the contract."""
+    value = str(text or "").strip()
+    if not value:
+        return False
+    return any(marker in value for marker in HOST_TAKEOVER_TEXT_MARKERS)
 
 
 def _finalize_suggested_add_agent_names(
@@ -271,6 +288,11 @@ async def _run_contract_events(
     host_agent = _host_snapshot_to_agent(session_item)
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
     orchestration_state = load_group_orchestration_state(group_session_id)
+    if not request.target_agent_name and _message_requests_host_scheduler_takeover(user_text):
+        if "continuation" in orchestration_state or "host_scheduler" in orchestration_state:
+            orchestration_state.pop("continuation", None)
+            orchestration_state.pop("host_scheduler", None)
+            write_group_orchestration_state(group_session_id, orchestration_state)
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
     next_action = user_text or "请根据用户输入完成任务。"

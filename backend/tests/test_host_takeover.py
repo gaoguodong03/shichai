@@ -96,6 +96,77 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
 
 
 @pytest.mark.asyncio
+async def test_host_takeover_text_clears_short_term_route_state(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.write_group_orchestration_state(
+        "s-host-takeover-text",
+        {
+            "host_scheduler": {
+                "current_phase": "旧阶段",
+                "next_speaker": "文书专员",
+                "next_action": "继续旧任务",
+            },
+            "continuation": {
+                "owner_agent_name": "文书专员",
+                "skill_policy": "keep",
+                "skill": "writer-skill",
+                "next_action": "继续旧 Skill",
+            },
+        },
+    )
+
+    host_calls = 0
+
+    async def _host_decision(*_args, **_kwargs):
+        nonlocal host_calls
+        host_calls += 1
+        return {
+            "current_phase": "重新调度",
+            "next_speaker": "user",
+            "next_action": "我已接管调度，请补充新的专家分工要求。",
+            "suggested_add_agent_names": [],
+        }
+
+    async def _expert_should_not_run(**_kwargs):
+        raise AssertionError("host takeover text must enter host scheduler")
+        if False:
+            yield ""
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_run_one_expert_turn", _expert_should_not_run)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-host-takeover-text",
+            request=GroupChatRequest(message="请主持人接管，重新安排", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions={"s-host-takeover-text": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
+            session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
+            app_settings={},
+            agent_map={"文书专员": {"name": "文书专员", "skills": [{"directory_name": "writer-skill"}]}},
+            agent_names=["文书专员"],
+            messages=[],
+            discussion_goal="写文章",
+            user_text="请主持人接管，重新安排",
+        )
+    ]
+
+    assert host_calls == 1
+    loaded = state.load_group_orchestration_state("s-host-takeover-text")
+    assert "continuation" not in loaded
+    assert loaded["host_scheduler"] == {
+        "current_phase": "重新调度",
+        "next_speaker": "user",
+        "next_action": "我已接管调度，请补充新的专家分工要求。",
+    }
+    assert any("我已接管调度" in event for event in events)
+
+
+@pytest.mark.asyncio
 async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
 
