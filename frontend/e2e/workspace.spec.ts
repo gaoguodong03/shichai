@@ -514,7 +514,6 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
               '问答专家': { name: '问答专家', role: '回答用户问题' },
               '写作专家': { name: '写作专家', role: '整理文档与结论' },
             },
-            orchestration_profile: 'scene',
           },
         }),
       })

@@ -67,7 +67,6 @@ test.describe('验收 5/6：设置中心', () => {
               [hostName]: { name: hostName, role: '群聊主持人' },
               '问答专家': { name: '问答专家', role: '回答用户问题' },
             },
-            orchestration_profile: 'recruitment',
           },
         }),
       })
