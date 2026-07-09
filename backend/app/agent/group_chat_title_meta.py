@@ -1,4 +1,4 @@
-"""Title and lightweight skill-gate helpers for group chat."""
+"""Title helpers for group chat."""
 from __future__ import annotations
 
 import asyncio
@@ -235,32 +235,3 @@ def _record_user_message_and_refresh_title(
             max_chars=18,
             max_user_messages=6,
         )
-
-
-def _skill_requires_confirmation_gate(skill_content: str) -> bool:
-    """Detect staged skills that require user confirmation before continuing."""
-    s = (skill_content or "").lower()
-    if not s:
-        return False
-    has_stages = ("stage 1" in s and "stage 2" in s) or ("阶段" in s and ("步骤" in s or "流程" in s))
-    requires_confirm = ("ask if" in s) or ("wait for user confirmation" in s) or ("用户确认" in s) or ("请确认" in s)
-    return has_stages and requires_confirm
-
-
-def _infer_required_user_fields_for_skill(skill_content: str, model_output: str) -> List[Dict[str, Any]]:
-    """Expose a consistent required_user_fields gate when a staged skill asks for confirmation."""
-    if not _skill_requires_confirmation_gate(skill_content):
-        return []
-    text = (model_output or "").strip()
-    if not text:
-        return []
-    has_question = ("?" in text) or ("？" in text) or ("请确认" in text) or ("是否" in text) or ("请补充" in text)
-    if not has_question:
-        return []
-    return [
-        {
-            "key": "workflow_user_confirmation",
-            "label": "请确认是否按当前流程继续，或补充缺失信息",
-            "required": True,
-        }
-    ]

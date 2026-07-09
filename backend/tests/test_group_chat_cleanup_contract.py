@@ -55,6 +55,7 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "app/agent/scene_runtime.py",
         "app/agent/group_orchestration_fsm.py",
         "app/agent/group_chat_skill_session.py",
+        "app/agent/group_chat_hooks.py",
         "app/core/scene_scheduler.py",
     ):
         assert not (ROOT / deleted_path).exists()
@@ -96,3 +97,11 @@ def test_group_chat_runtime_does_not_replace_unverified_delivery_claims():
 
     assert "guard_unverified_delivery_claims" not in runtime_text
     assert "本轮没有确认文件生成成功" not in runtime_text
+
+
+def test_group_chat_title_meta_does_not_infer_required_user_fields():
+    title_meta = _read("app/agent/group_chat_title_meta.py")
+
+    assert "_infer_required_user_fields_for_skill" not in title_meta
+    assert "_skill_requires_confirmation_gate" not in title_meta
+    assert "required_user_fields" not in title_meta
