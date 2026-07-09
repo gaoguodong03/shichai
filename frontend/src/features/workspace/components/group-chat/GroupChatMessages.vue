@@ -132,9 +132,9 @@
                           <template v-else>
                             <p
                               class="group-chat-plain-text"
-                              :class="messageSpeakerType(msg) === 'user' && isShortSingleLine(formatUserBubbleForDisplay(messageContent(msg)))"
+                              :class="messageSpeakerType(msg) === 'user' && isShortSingleLine(messageContent(msg))"
                             >
-                              {{ formatUserBubbleForDisplay(messageContent(msg)) }}
+                              {{ messageContent(msg) }}
                             </p>
                             <div
                               v-if="messageSpeakerType(msg) === 'user' && userAttachmentNames(msg).length"
@@ -256,7 +256,6 @@ const {
   renderMarkdown,
   agentBodyContent,
   isShortSingleLine,
-  formatUserBubbleForDisplay,
   userAttachmentNames,
   deleteGroupMessage,
   copyAgentMessageToClipboard,

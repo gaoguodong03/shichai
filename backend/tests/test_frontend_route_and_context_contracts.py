@@ -195,6 +195,18 @@ def test_frontend_does_not_parse_file_references_from_message_content():
         assert forbidden not in combined
 
 
+def test_frontend_user_message_display_does_not_strip_legacy_discussion_goal_marker():
+    src = read("frontend/src/features/workspace/composables/useGroupMessageList.ts")
+    for forbidden in [
+        "stripDiscussionGoalForDisplay",
+        "formatUserBubbleForDisplay",
+        "【讨论目标】",
+        "raw.startsWith(prefix)",
+    ]:
+        assert forbidden not in src
+    assert "return messageSpeakerType(msg) === 'user' ? content : agentBodyContent(content)" in src
+
+
 def test_frontend_message_rendering_does_not_read_legacy_debug_tool_trace():
     files = [
         "frontend/src/features/workspace/composables/useGroupMessageList.ts",

@@ -45,7 +45,6 @@ export interface GroupChatMessageContext {
   renderMarkdown: ContextValue
   agentBodyContent: ContextValue
   isShortSingleLine: ContextValue
-  formatUserBubbleForDisplay: ContextValue
   userAttachmentNames: ContextValue
   deleteGroupMessage: ContextValue
   copyAgentMessageToClipboard: ContextValue

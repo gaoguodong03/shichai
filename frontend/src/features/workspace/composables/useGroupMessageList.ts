@@ -211,24 +211,6 @@ export function useGroupMessageList(args: {
     return renderSnippetMarkdownHtml(renderMarkdown(text))
   }
 
-  function stripDiscussionGoalForDisplay(content: string): string {
-    const raw = (content ?? '').trim()
-    if (!raw) return ''
-    const prefix = '【讨论目标】'
-    const withoutGoalPrefix = raw.startsWith(prefix)
-      ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
-      : raw
-    return withoutGoalPrefix
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/^\s+|\s+$/g, '')
-  }
-
-  function formatUserBubbleForDisplay(content: string): string {
-    let text = stripDiscussionGoalForDisplay(content || '')
-    text = text.replace(/\n{3,}/g, '\n\n')
-    return text.trimEnd()
-  }
-
   function isShortSingleLine(text: string): string | null {
     const trimmed = (text || '').trim()
     if (!trimmed || trimmed.includes('\n')) return null
@@ -245,7 +227,7 @@ export function useGroupMessageList(args: {
 
   function messageActionContent(msg: MsgExt): string {
     const content = messageContent(msg)
-    return messageSpeakerType(msg) === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
+    return messageSpeakerType(msg) === 'user' ? content : agentBodyContent(content)
   }
 
   function messageCopyActionKey(msg: MsgExt): string {
@@ -490,7 +472,6 @@ export function useGroupMessageList(args: {
     messageSkill,
     messageCreatedAt,
     messageContent,
-    formatUserBubbleForDisplay,
     isShortSingleLine,
     userAttachmentNames,
     formatGroupMsgTime,
