@@ -6,8 +6,12 @@ from app.agent.tool_spec import ToolSpec
 from app.agent.read_path_utils import looks_like_url_or_remote_path, strip_llm_junk_from_read_path
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.agent.workspace_visibility import (
+    WorkspacePathError,
     internal_diagnostic_path_error,
+    internal_system_path_error,
     is_internal_diagnostic_workspace_path,
+    is_internal_system_workspace_path,
+    normalize_public_workspace_path,
 )
 from app.api.files import get_workspace_root_path
 from app.core.security import get_current_user
@@ -40,12 +44,10 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
     if looks_like_url_or_remote_path(raw):
         return "", (
             "错误：read_workspace_file 只能读取当前工作区内的相对路径文件。"
-            "请使用诸如 github-weekly-snapshot.md 或 memory/facts.md。"
+            "请使用诸如 github-weekly-snapshot.md 或 notes/report.md。"
         )
     cleaned = strip_llm_junk_from_read_path(raw) or raw
-    normalized = cleaned.strip().lstrip("/").replace("\\", "/")
-    if ".." in normalized:
-        return "", "错误：路径不能包含 ..。"
+    normalized = cleaned.strip().replace("\\", "/")
     pseudo_names = {"stdout", "stderr", "returncode", "exit_code"}
     if normalized.strip("/") in pseudo_names:
         return "", (
@@ -61,6 +63,12 @@ def _workspace_relative_for_session(*, session_id: str, path: str) -> tuple[str,
         normalized = ""
     elif normalized.startswith(current_prefix + "/"):
         normalized = normalized[len(current_prefix) + 1 :]
+    try:
+        normalized = normalize_public_workspace_path(normalized)
+    except WorkspacePathError as exc:
+        if exc.code == "internal_system_path":
+            return "", internal_system_path_error(normalized or raw)
+        return "", f"错误：{exc}"
     full = (ws_root / normalized).resolve()
     try:
         rel = str(full.relative_to(ws_root)).replace("\\", "/")
@@ -77,6 +85,8 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
         rel, err = _workspace_relative_for_session(session_id=session_id or "", path=raw)
         if err:
             return err
+        if is_internal_system_workspace_path(rel):
+            return internal_system_path_error(rel)
         if is_internal_diagnostic_workspace_path(rel):
             return internal_diagnostic_path_error(rel)
         ws_root = get_workspace_root_path(session_id)

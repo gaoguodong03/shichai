@@ -6,7 +6,7 @@ import { publishBoolPreference, TOC_WORKSPACE_OPEN_STORAGE_KEY } from './workspa
 type SessionMetaMessage = {
   message_id?: string
   speaker: { type?: string; agent_name?: string }
-  content: string
+  message?: { content?: string }
 }
 
 type SessionMetaDetail = {
@@ -50,7 +50,7 @@ export function useSessionMetaPanel(args: {
           agent_name: did,
           name,
           message_id: (m.message_id || `idx-${idx}`) as string,
-          snippet: toSnippet(String(m.content || ''), 50),
+          snippet: toSnippet(String(m.message?.content || ''), 50),
         }
       })
   })

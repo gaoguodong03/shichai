@@ -1,33 +1,21 @@
 type ToolRawMeta = { toolName: string; rawReturn: string }
 
 function parseToolRawResult(raw: string): ToolRawMeta {
-  const matched = raw.match(/^工具\s+([^\s]+)\s+的执行结果:\s*/)
-  if (matched) return { toolName: matched[1], rawReturn: raw.slice(matched[0].length) || raw }
   try {
     const parsed = JSON.parse((raw || '').trim()) as {
-      action?: string
-      tool?: string
-      _sandbox_trace?: { tool_name?: string }
+      type?: string
+      name?: string
+      path?: string
     }
-    if (parsed?.action === 'tool_call' && parsed?.tool) {
-      return { toolName: String(parsed.tool), rawReturn: raw }
-    }
-    const toolCall = (parsed as { tool_call?: { name?: unknown; provider?: unknown; provider_tool?: unknown } })?.tool_call
-    if (toolCall && typeof toolCall === 'object') {
-      const provider = String(toolCall.provider || '').trim()
-      const providerTool = String(toolCall.provider_tool || '').trim()
-      const name = String(toolCall.name || providerTool || 'tool').trim()
-      const label = provider && providerTool ? `${provider}: ${providerTool}` : name
-      return { toolName: label, rawReturn: raw }
-    }
-    if (parsed?._sandbox_trace) {
-      const sandboxToolName = String(parsed._sandbox_trace.tool_name || '').trim()
-      return { toolName: sandboxToolName ? `sandbox: ${sandboxToolName}` : 'sandbox', rawReturn: raw }
+    const type = String(parsed?.type || '').trim()
+    const name = String(parsed?.name || parsed?.path || '').trim()
+    if (type || name) {
+      return { toolName: type ? `artifact: ${type}` : 'artifact', rawReturn: raw }
     }
   } catch {
-    // ignore malformed tool payloads
+    // ignore malformed artifact payloads
   }
-  return { toolName: 'sandbox', rawReturn: raw }
+  return { toolName: 'artifact', rawReturn: raw }
 }
 
 const toolRawMetaCache = new Map<string, ToolRawMeta>()
@@ -49,43 +37,13 @@ export function formatToolPopover(raw: string): string {
   return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
-function extractToolCallBlocks(content: string): string[] {
-  const text = content || ''
-  if (!text.trim()) return []
-  const blocks = text.match(/```json\s*([\s\S]*?)```/gi) || []
-  const out: string[] = []
-  for (const block of blocks) {
-    const inner = block.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
-    if (!inner) continue
-    try {
-      const parsed = JSON.parse(inner) as { action?: string; tool?: string }
-      if (parsed?.action === 'tool_call' && parsed?.tool) {
-        out.push(inner)
-      }
-    } catch {
-      // ignore malformed fenced JSON
-    }
-  }
-  return out
-}
-
-export function getToolRawResults(msg: { content?: string; tool_results?: unknown[] }): string[] {
-  const explicit = (msg.tool_results || [])
+export function getToolRawResults(msg: { skill_result?: { artifacts?: unknown[] } }): string[] {
+  return (msg.skill_result?.artifacts || [])
     .map((item) => {
       if (!item || typeof item !== 'object') return ''
-      const row = item as {
-        tool_call?: { name?: unknown; provider?: unknown; provider_tool?: unknown }
-        execution_status?: unknown
-        result_code?: unknown
-        message?: unknown
-        output?: unknown
-        error_log?: unknown
-      }
-      return JSON.stringify(row, null, 2)
+      return JSON.stringify(item, null, 2)
     })
     .filter((x) => !!(x || '').trim())
-  if (explicit.length) return explicit
-  return extractToolCallBlocks(msg.content || '')
 }
 
 function tryFormatJson(s: string): string {

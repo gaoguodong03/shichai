@@ -32,11 +32,27 @@ function speakerAgentName(data: Record<string, unknown> | GroupMessage | null | 
 
 function messageContent(data: Record<string, unknown> | GroupMessage | null | undefined): string {
   const body = data?.message && typeof data.message === 'object' ? data.message as { content?: unknown } : null
-  return String(body?.content ?? (data as { content?: unknown } | null | undefined)?.content ?? '')
+  return String(body?.content ?? '')
 }
 
 function toDisplayMessage(data: Record<string, unknown>): GroupMessage {
-  return { ...data, content: messageContent(data) } as GroupMessage
+  return {
+    ...data,
+    message: {
+      ...((data.message && typeof data.message === 'object') ? data.message : {}),
+      content: messageContent(data),
+    },
+  } as GroupMessage
+}
+
+function withMessageContent(msg: GroupMessage, content: string): GroupMessage {
+  return {
+    ...msg,
+    message: {
+      ...(msg.message || {}),
+      content,
+    },
+  }
 }
 
 export function useGroupStreamEvents(args: {
@@ -112,10 +128,10 @@ export function useGroupStreamEvents(args: {
     const isSameStreaming =
       speakerType(last) === 'expert' && speakerAgentName(last) === id && (last as { _streaming?: boolean })._streaming
     if (isSameStreaming) {
-      if ((last as { _streamingStatus?: boolean })._streamingStatus || !(last.content || '').trim()) {
+      if ((last as { _streamingStatus?: boolean })._streamingStatus || !messageContent(last).trim()) {
         groupDisplayMessages.value = [
           ...list.slice(0, -1),
-          { ...last, ...extra, content: statusContent, _streaming: true, _streamingStatus: true } as GroupMessage,
+          withMessageContent({ ...last, ...extra, _streaming: true, _streamingStatus: true } as GroupMessage, statusContent),
         ]
       }
       return
@@ -125,7 +141,7 @@ export function useGroupStreamEvents(args: {
       ...cleared,
       {
         speaker: { type: 'expert', agent_name: id },
-        content: statusContent,
+        message: { content: statusContent },
         _streaming: true,
         _streamingStatus: true,
         ...extra,
@@ -157,12 +173,20 @@ export function useGroupStreamEvents(args: {
     const appendToExisting =
       speakerType(last) === 'expert' && speakerAgentName(last) === agentName && (last as { _streaming?: boolean })._streaming
     if (appendToExisting) {
-      const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : (last.content || '') + text
-      const next = [...list.slice(0, -1), { ...last, content, _streamingStatus: false } as GroupMessage]
+      const content = (last as { _streamingStatus?: boolean })._streamingStatus ? text : messageContent(last) + text
+      const next = [...list.slice(0, -1), withMessageContent({ ...last, _streamingStatus: false } as GroupMessage, content)]
       groupDisplayMessages.value = next
     } else {
       const cleared = list.map((m) => ((m as GroupMessage)._streaming ? ({ ...(m as GroupMessage), _streaming: false } as GroupMessage) : m))
-      groupDisplayMessages.value = [...cleared, { speaker: { type: 'expert', agent_name: agentName }, content: text, _streaming: true, _streamingStatus: false } as unknown as GroupMessage]
+      groupDisplayMessages.value = [
+        ...cleared,
+        {
+          speaker: { type: 'expert', agent_name: agentName },
+          message: { content: text },
+          _streaming: true,
+          _streamingStatus: false,
+        } as unknown as GroupMessage,
+      ]
       scrollLatestAssistantRowToLowerMiddle()
     }
     scrollLatestAssistantRowToLowerMiddle()

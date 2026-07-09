@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.group_chat_state import save_group_history
+from app.api.group_chat_state import ACTIVE_GROUP_RUNS, save_group_history
 from app.core.user_context import reset_current_user_identity, set_current_user_identity
 
 
@@ -57,6 +59,20 @@ def _expert_msg(message_id: str, content: str, created_at: str = "20260624000100
         "message": {"content": content},
         "created_at": created_at,
     }
+
+
+@contextmanager
+def _session_running(session_id: str):
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(asyncio.sleep(60))
+    ACTIVE_GROUP_RUNS[session_id] = {"run_id": "run-test", "task": task, "phase": "executing"}
+    try:
+        yield
+    finally:
+        ACTIVE_GROUP_RUNS.pop(session_id, None)
+        task.cancel()
+        loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+        loop.close()
 
 
 def test_checkpoint_object_uses_contract_fields_without_secondary_markdown_snapshot(client: TestClient):
@@ -199,6 +215,29 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     snapshots_resp = client.get(f"/api/sessions/{cloned_session_id}/snapshots")
     assert snapshots_resp.status_code == 200
     assert len(snapshots_resp.json()["data"]["checkpoints"]) == 1
+
+
+def test_clone_and_rollback_reject_running_session(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "运行中禁止分叉回滚"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    token = _set_user()
+    try:
+        save_group_history(session_id, [_user_msg("msg-1", "第一条")])
+    finally:
+        reset_current_user_identity(token)
+    checkpoint_id = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["checkpoint_id"]
+
+    with _session_running(session_id):
+        clone_resp = client.post(f"/api/sessions/{session_id}/clone")
+        rollback_resp = client.post(
+            f"/api/sessions/{session_id}/rollback",
+            json={"checkpoint_id": checkpoint_id},
+        )
+
+    assert clone_resp.status_code == 409
+    assert rollback_resp.status_code == 409
 
 
 def test_snapshots_expose_contract_ids_and_last_message_id(client: TestClient):

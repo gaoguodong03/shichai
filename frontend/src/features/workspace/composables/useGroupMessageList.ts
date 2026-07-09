@@ -22,7 +22,6 @@ export type GroupMessage = {
     attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
     target_agent_name?: string | null
   }
-  content: string
   created_at?: string
   _streaming?: boolean
   _streamingStatus?: boolean
@@ -39,7 +38,6 @@ type MsgExt = {
   speaker?: { type?: string; agent_name?: string; skill?: string }
   created_at?: string
   message?: { content?: string }
-  content?: string
 }
 
 export function useGroupMessageList(args: {
@@ -463,11 +461,17 @@ export function useGroupMessageList(args: {
   }
 
   function messageContent(msg: MsgExt): string {
-    return String(msg?.message?.content ?? msg?.content ?? '').trim()
+    return String(msg?.message?.content ?? '').trim()
   }
 
   function toDisplayMessage(msg: GroupMessage): GroupMessage {
-    return { ...msg, content: messageContent(msg) }
+    return {
+      ...msg,
+      message: {
+        ...(msg.message || {}),
+        content: messageContent(msg),
+      },
+    }
   }
 
   watch(
@@ -517,6 +521,7 @@ export function useGroupMessageList(args: {
     messageAgentName,
     messageSkill,
     messageCreatedAt,
+    messageContent,
     formatUserBubbleForDisplay,
     isShortSingleLine,
     extractUserFileReferenceNames,

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.agent.tool_spec import ToolSpec
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
+from app.agent.workspace_visibility import WorkspacePathError, internal_system_path_error, normalize_public_workspace_path
 from app.api.files import get_workspace_root
 from app.core.security import get_current_user
 
@@ -116,12 +117,17 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
                 "错误：content 不是可保存的最终正文，已拒绝写入工作区。"
                 "请把要保存的完整正文传给 content。"
             )
-        normalized = path_value.strip("/").replace("\\", "/")
-        if ".." in normalized:
-            return "错误：路径不能包含 ..。"
+        try:
+            normalized = normalize_public_workspace_path(path_value)
+        except WorkspacePathError as exc:
+            if exc.code == "internal_system_path":
+                return internal_system_path_error(path_value)
+            return f"错误：{exc}"
         ws_root = get_workspace_root(workspace_id)
         target = (ws_root / normalized).resolve()
-        if not str(target).startswith(str(ws_root.resolve())):
+        try:
+            target.relative_to(ws_root.resolve())
+        except ValueError:
             return f"错误：路径 {path_value} 不在当前工作区内。"
         if target.exists() and not allow_overwrite:
             return (

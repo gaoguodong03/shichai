@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from app.agent.workspace_visibility import WorkspacePathError, normalize_public_workspace_path
 from app.api.files import get_workspace_root_path
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,14 @@ def _extract_path(ref_body: str) -> str:
 
 def _safe_workspace_file_path(workspace_id: str, rel_path: str) -> Path:
     ws_root = get_workspace_root_path(workspace_id).resolve()
-    cleaned = (rel_path or "").strip().replace("\\", "/").lstrip("/")
-    if not cleaned:
-        raise ValueError("empty path")
+    try:
+        cleaned = normalize_public_workspace_path(rel_path)
+    except WorkspacePathError as exc:
+        raise ValueError(str(exc)) from exc
     target = (ws_root / cleaned).resolve()
-    if not str(target).startswith(str(ws_root)):
+    try:
+        target.relative_to(ws_root)
+    except ValueError:
         raise ValueError("path out of workspace")
     return target
 

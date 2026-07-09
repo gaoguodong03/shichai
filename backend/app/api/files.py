@@ -13,6 +13,11 @@ from app.session_state.paths import (
     ensure_session_layout,
     resolve_workspace_path,
 )
+from app.agent.workspace_visibility import (
+    WorkspacePathError,
+    is_internal_system_workspace_path,
+    normalize_public_workspace_path,
+)
 
 router = APIRouter(tags=["files"])
 logger = logging.getLogger(__name__)
@@ -98,12 +103,30 @@ def _resolve_workspace_path(workspace_id: str, relative_path: str, user: Current
     workspace 根目录位于 sessions/{workspace_id}/workspace。
     """
     ws_root = get_workspace_root(workspace_id, user=user)
-    # 去掉前导斜杠、归一化，禁止 ..
-    normalized = (relative_path or "").strip("/").replace("..", "")
+    try:
+        normalized = normalize_public_workspace_path(relative_path or "", allow_empty=True)
+    except WorkspacePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     full = (ws_root / normalized).resolve()
-    if not str(full).startswith(str(ws_root)):
+    try:
+        full.relative_to(ws_root)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     return full
+
+
+def _normalize_workspace_filename(filename: str) -> str:
+    """Return a single file name accepted by the public workspace file API."""
+    raw = str(filename or "").strip().replace("\\", "/")
+    if not raw:
+        raise HTTPException(status_code=400, detail="filename is required")
+    if "/" in raw or raw in {".", ".."} or ".." in raw.split("/"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        normalize_public_workspace_path(raw)
+    except WorkspacePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return raw
 
 
 # 以下带子路径的路由（如 /files/mkdir）必须注册在 /files 之前，否则 POST /files 可能先匹配导致 404
@@ -115,7 +138,18 @@ def _count_files_recursively(root: Path) -> int:
     """统计目录下文件数量（递归）。"""
     if not root.exists() or not root.is_dir():
         return 0
-    return sum(1 for p in root.rglob("*") if p.is_file())
+    count = 0
+    for p in root.rglob("*"):
+        if not p.is_file():
+            continue
+        try:
+            rel = str(p.relative_to(root)).replace("\\", "/")
+        except ValueError:
+            continue
+        if is_internal_system_workspace_path(rel):
+            continue
+        count += 1
+    return count
 
 
 def _workspace_session_ids_with_dirs(current_user: CurrentUser, session_definitions: dict[str, dict]) -> list[str]:
@@ -168,9 +202,7 @@ async def create_workspace_dir(
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """在指定 workspace 内新建子目录（path 为父目录相对路径，空表示根目录）。完整路径: POST /api/workspaces/{id}/files/mkdir"""
-    dirname = (body.dirname or "").strip().replace("..", "").replace("\\", "").strip("/")
-    if not dirname:
-        raise HTTPException(status_code=400, detail="dirname is required")
+    dirname = _normalize_workspace_filename(body.dirname)
     try:
         parent = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
@@ -220,6 +252,8 @@ async def list_workspace_files(
         try:
             stat = p.stat()
             rel = str(p.relative_to(ws_root)).replace("\\", "/")
+            if is_internal_system_workspace_path(rel):
+                continue
             entries.append({
                 "name": p.name,
                 "path": rel,
@@ -359,11 +393,7 @@ async def create_workspace_file(
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """在指定 workspace 内新建新文件（path 为 workspace 内目录相对路径，body.filename 为文件名）"""
-    if not body.filename or not body.filename.strip():
-        raise HTTPException(status_code=400, detail="filename is required")
-    fn = body.filename.strip().replace("..", "").replace("/", "")
-    if not fn:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    fn = _normalize_workspace_filename(body.filename)
     try:
         dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
@@ -372,7 +402,9 @@ async def create_workspace_file(
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
     ws_root = get_workspace_root(workspace_id, user=current_user)
-    if not str(target).startswith(str(ws_root)):
+    try:
+        target.relative_to(ws_root)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
@@ -388,11 +420,7 @@ async def upload_workspace_file(
     current_user: CurrentUser = Depends(user_context_dependency),
 ):
     """向指定 workspace 目录上传文件（path 为 workspace 内相对路径，空表示该 workspace 根目录）"""
-    if not file.filename or not file.filename.strip():
-        raise HTTPException(status_code=400, detail="filename is required")
-    fn = file.filename.strip().replace("..", "").replace("/", "").replace("\\", "")
-    if not fn:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    fn = _normalize_workspace_filename(file.filename or "")
     try:
         dir_path = _resolve_workspace_path(workspace_id, path or "", current_user)
     except HTTPException:
@@ -401,7 +429,9 @@ async def upload_workspace_file(
         raise HTTPException(status_code=400, detail="Path must be a directory")
     target = (dir_path / fn).resolve()
     ws_root = get_workspace_root(workspace_id, user=current_user)
-    if not str(target).startswith(str(ws_root)):
+    try:
+        target.relative_to(ws_root)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     try:
         with target.open("wb") as out:
@@ -436,8 +466,10 @@ async def rename_workspace_file(
     new_name = (body.new_name or "").strip().replace("\\", "/")
     if not new_name:
         raise HTTPException(status_code=400, detail="new_name is required")
-    if ".." in new_name:
-        raise HTTPException(status_code=400, detail="Invalid new_name")
+    try:
+        normalized_new_name = normalize_public_workspace_path(new_name)
+    except WorkspacePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     try:
         target = _resolve_workspace_path(workspace_id, path, current_user)
     except HTTPException:
@@ -448,12 +480,13 @@ async def rename_workspace_file(
         raise HTTPException(status_code=400, detail="Cannot rename a directory")
     ws_root = get_workspace_root(workspace_id, user=current_user)
     # 兼容：若仅传文件名，沿用“同目录重命名”；若包含 /，视为工作区内目标相对路径（可移动）。
-    if "/" in new_name:
-        candidate = new_name.strip("/")
-        new_path = (ws_root / candidate).resolve()
+    if "/" in normalized_new_name:
+        new_path = (ws_root / normalized_new_name).resolve()
     else:
-        new_path = (target.parent / new_name).resolve()
-    if not str(new_path).startswith(str(ws_root)):
+        new_path = (target.parent / normalized_new_name).resolve()
+    try:
+        new_path.relative_to(ws_root)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid new_name")
     new_path.parent.mkdir(parents=True, exist_ok=True)
     target.rename(new_path)

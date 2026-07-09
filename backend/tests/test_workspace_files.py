@@ -182,7 +182,14 @@ def test_workspace_path_traversal_blocked(client):
         "/api/workspaces/ws4/files/download",
         params={"path": "../../../etc/passwd"},
     )
-    assert r.status_code in (400, 404)
+    assert r.status_code == 400
+
+
+def test_workspace_file_api_rejects_internal_system_paths(client):
+    """文件 API 不允许访问 memory、checkpoints 或绝对路径。"""
+    for path in ("memory/facts.md", "checkpoints/HEAD.json", "/tmp/secret.txt"):
+        r = client.get("/api/workspaces/ws-internal/files/content", params={"path": path})
+        assert r.status_code == 400
 
 
 def test_workspace_id_traversal_blocked(temp_user_data_root):
@@ -419,8 +426,8 @@ def test_write_workspace_file_rejects_dsml_tool_call_payload(temp_user_data_root
     assert not (ws / "leaked.md").exists()
 
 
-def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data_root):
-    """废弃诊断 JSONL 不再是平台保留文件，存在时按普通工作区文件读取。"""
+def test_read_file_rejects_internal_memory_paths(temp_user_data_root):
+    """memory/ 是内部运行态目录，不能通过工作区读取工具暴露。"""
     from app.api.files import get_workspace_root
     from app.tools.read_file import create_read_file_tool
 
@@ -431,7 +438,8 @@ def test_read_file_allows_memory_jsonl_as_regular_workspace_files(temp_user_data
     tool = create_read_file_tool("sess-r")
     out = asyncio.run(tool.ainvoke({"path": "memory/llm_roundtrips.jsonl"}))
 
-    assert "secret" in out
+    assert "内部系统目录" in out
+    assert "secret" not in out
 
 
 def test_workspace_read_tool_is_named_read_workspace_file():
@@ -500,8 +508,8 @@ def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root
     assert rel == "scripts/saved_data/result_20260523_123036/analysis_report.txt"
 
 
-def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user_data_root, monkeypatch):
-    """废弃诊断 JSONL 不再被工具层隐藏。"""
+def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_root, monkeypatch):
+    """memory/ 是内部运行态目录，不进入工作区列表工具结果。"""
     from app.agent import tools_for_skill as tool_module
     from app.agent.session_workspace_policy import sandbox_session_dir
     from app.agent.tools_for_skill import _create_builtin_workspace_tools
@@ -531,9 +539,9 @@ def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user
     out = asyncio.run(list_tool.ainvoke({"path": ""}))
 
     assert "handoff-note.txt" in out
-    assert "memory/facts.md" in out
-    assert "llm_roundtrips" in out
-    assert "orchestrator_audit" in out
+    assert "memory/facts.md" not in out
+    assert "llm_roundtrips" not in out
+    assert "orchestrator_audit" not in out
 
 
 def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data_root, monkeypatch):

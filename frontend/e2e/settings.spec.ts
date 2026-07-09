@@ -13,7 +13,7 @@ test.describe('验收 5/6：设置中心', () => {
     await expect(page.locator('form > section').nth(1).getByRole('heading', { name: '配置主持人' })).toBeVisible()
     await expect(page.getByRole('button', { name: '恢复默认' })).toHaveCount(0)
     await page.getByPlaceholder('写入适用于所有会话、场景、主持人和专家的项目规则。').fill('自动化验收全局规则')
-    await page.getByPlaceholder('例如：你是群聊主持人，只负责决定下一位发言人与 next_prompt，不代写专家正文。').fill('自动化验收主持人提示词')
+    await page.getByPlaceholder('例如：你是群聊主持人，只负责决定下一位发言人与 next_action，不代写专家正文。').fill('自动化验收主持人提示词')
     await page.getByRole('button', { name: '保存' }).click()
     await expect(page.getByText('已保存')).toBeVisible()
 
@@ -37,20 +37,20 @@ test.describe('验收 5/6：设置中心', () => {
     const state = createE2eState()
     state.sessions[0] = {
       ...state.sessions[0],
-      leader_agent_name: '四九',
+      host: { name: '四九' },
       messages: [
         {
           message_id: 'host-global-name',
-          role: 'host',
-          agent_name: '四九',
-          content: '请问答专家继续。',
-        } as never,
+          speaker: { type: 'host', agent_name: '四九' },
+          message: { content: '请问答专家继续。' },
+        },
       ],
     }
     await loginByStorage(page)
     await mockApi(page, state)
     await page.route('**/api/sessions/session-existing', async (route) => {
       if (route.request().method() !== 'GET') return route.fallback()
+      const hostName = String(state.hostProfile.display_name || state.hostProfile.name || '四九')
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -62,9 +62,9 @@ test.describe('验收 5/6：设置中心', () => {
             updated_at: '2026-05-23T08:00:00Z',
             messages: state.sessions[0].messages,
             agent_names: state.sessions[0].agent_names,
-            leader_agent_name: '四九',
+            host: { name: hostName },
             agent_map: {
-              '四九': { name: '四九', role: '群聊主持人' },
+              [hostName]: { name: hostName, role: '群聊主持人' },
               '问答专家': { name: '问答专家', role: '回答用户问题' },
             },
             orchestration_profile: 'recruitment',

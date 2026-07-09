@@ -40,6 +40,11 @@ function messageSkill(message: GroupMessage | Record<string, unknown> | null | u
   return String(speaker?.skill || '').trim()
 }
 
+function messageContent(message: GroupMessage | Record<string, unknown> | null | undefined): string {
+  const body = message?.message && typeof message.message === 'object' ? message.message as { content?: unknown } : null
+  return String(body?.content || '')
+}
+
 export function useGroupOrchestrationState(args: {
   selectedGroupSessionId: () => string | null
   groupDetail: Ref<GroupDetailLike | null>
@@ -405,7 +410,7 @@ export function useGroupOrchestrationState(args: {
   })
 
   const streamingPulse = computed(() => {
-    const len = currentActiveStreamingMessage.value?.content?.length || 0
+    const len = messageContent(currentActiveStreamingMessage.value).length
     const bucket = Math.floor(len / 20) % 4
     return ['', '.', '..', '...'][bucket] || ''
   })

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import tempfile
 import json
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
@@ -34,6 +36,31 @@ def client(_session_test_env):
     from app.main import app
 
     return TestClient(app)
+
+
+def _user_msg(message_id: str, content: str) -> dict:
+    return {
+        "message_id": message_id,
+        "speaker": {"type": "user"},
+        "message": {"content": content},
+        "created_at": "2026062908104800",
+    }
+
+
+@contextmanager
+def _session_running(session_id: str):
+    from app.api.group_chat_state import ACTIVE_GROUP_RUNS
+
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(asyncio.sleep(60))
+    ACTIVE_GROUP_RUNS[session_id] = {"run_id": "run-test", "task": task, "phase": "executing"}
+    try:
+        yield
+    finally:
+        ACTIVE_GROUP_RUNS.pop(session_id, None)
+        task.cancel()
+        loop.run_until_complete(asyncio.gather(task, return_exceptions=True))
+        loop.close()
 
 
 def test_sessions_create_list_get_delete_flow(client: TestClient):
@@ -97,6 +124,30 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
     updated = update_resp.json()["data"]
     assert updated["agent_names"] == []
     assert "agent_ids" not in updated
+
+
+def test_delete_message_rejects_running_session(client: TestClient):
+    from app.api.group_chat_state import load_group_history, save_group_history
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    create_resp = client.post("/api/sessions", json={"title": "运行中禁止删消息"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        save_group_history(session_id, [_user_msg("msg-1", "不能删")])
+    finally:
+        reset_current_user_identity(token)
+
+    with _session_running(session_id):
+        delete_resp = client.delete(f"/api/sessions/{session_id}/messages/msg-1")
+
+    assert delete_resp.status_code == 409
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        assert load_group_history(session_id)[0]["message_id"] == "msg-1"
+    finally:
+        reset_current_user_identity(token)
 
 
 @pytest.mark.asyncio

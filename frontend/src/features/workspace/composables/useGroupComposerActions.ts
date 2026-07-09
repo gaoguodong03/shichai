@@ -58,7 +58,7 @@ export function useGroupComposerActions(args: {
     appendHostError: (content) => {
       args.groupDisplayMessages.value = [
         ...args.groupDisplayMessages.value,
-        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, content } as GroupMessage,
+        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content } } as GroupMessage,
       ]
     },
     updateAutoSwitchHint: args.updateAutoSwitchHint,
@@ -143,7 +143,6 @@ export function useGroupComposerActions(args: {
         message_id: `msg-${Date.now()}`,
         speaker: { type: 'user' },
         message: { content: msg, attachments },
-        content: msg,
         client_message_id: clientMessageId,
       } as GroupMessage
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]

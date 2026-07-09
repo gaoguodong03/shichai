@@ -18,6 +18,7 @@ from app.api.group_chat_state import (
     load_group_history,
     load_group_orchestration_state,
     load_session_definitions,
+    reject_group_session_mutation_if_running,
     save_group_history,
     save_session_definitions,
     write_group_orchestration_state,
@@ -412,6 +413,7 @@ def clone_session_from_checkpoint(
     checkpoint_id: Optional[str] = None,
     message_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    reject_group_session_mutation_if_running(session_id, operation="cloning")
     normalized_checkpoint_id = str(checkpoint_id or "").strip()
     normalized_message_id = str(message_id or "").strip()
     if normalized_checkpoint_id:
@@ -435,14 +437,12 @@ def clone_session_from_checkpoint(
 
 
 async def rollback_session_to_checkpoint(session_id: str, checkpoint_id: str) -> Dict[str, Any]:
+    reject_group_session_mutation_if_running(session_id, operation="rollback")
     layout = _session_layout(session_id)
     chain = load_chain(layout)
     if checkpoint_id not in chain:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
 
-    from app.agent.group_session_service import _cancel_group_session_run
-
-    await _cancel_group_session_run(session_id, reason="rollback")
     checkpoint = read_checkpoint(layout, checkpoint_id)
     _apply_checkpoint(session_id, checkpoint)
     rollback_checkpoint = capture_session_checkpoint(session_id, reason="rollback")

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.agent.message_contracts import ChatMessageRecord
@@ -26,6 +27,26 @@ ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
 ACTIVE_GROUP_RUNS_LOCK = asyncio.Lock()
 GROUP_SESSION_EVENT_SUBSCRIBERS: Dict[str, List[asyncio.Queue[Dict[str, Any]]]] = {}
 GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK = asyncio.Lock()
+
+
+def group_session_has_active_run(group_session_id: str) -> bool:
+    """Return whether a session has a live run that must not be state-mutated."""
+    active = ACTIVE_GROUP_RUNS.get(group_session_id)
+    if not isinstance(active, dict):
+        return False
+    task = active.get("task")
+    if isinstance(task, asyncio.Task):
+        return not task.done()
+    return active.get("running") is True
+
+
+def reject_group_session_mutation_if_running(group_session_id: str, *, operation: str) -> None:
+    """Reject clone/rollback/message deletion while the session is generating."""
+    if group_session_has_active_run(group_session_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"session is running; stop current run before {operation}",
+        )
 
 
 def _session_json_path(root: Path, session_id: str) -> Path:

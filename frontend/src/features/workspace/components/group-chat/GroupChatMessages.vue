@@ -93,7 +93,7 @@
                                 v-show="expandedToolKey === sandboxToolKey(msg, i, tri)"
                                 class="group-chat-sandbox-detail"
                               >
-                                <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
+                                <span class="group-chat-tool-popover-title">产物引用</span>
                                 <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
                               </div>
                             </div>
@@ -113,14 +113,14 @@
                               <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
-                              <span class="group-chat-tool-popover-title">Sandbox 调用 · 原始返回值</span>
+                              <span class="group-chat-tool-popover-title">产物引用</span>
                               <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
                             </div>
                           </div>
                         </div>
                         <div class="group-chat-bubble-body">
                           <template v-if="isMemberJoinedMessage(msg)">
-                            <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(msg.content || '') }}</p>
+                            <p class="group-chat-system-text">{{ formatUserBubbleForDisplay(messageContent(msg)) }}</p>
                           </template>
                           <template v-else-if="messageSpeakerType(msg) !== 'user'">
                             <div
@@ -130,24 +130,24 @@
                               aria-live="polite"
                             >
                               <span class="group-chat-running-status-dot" aria-hidden="true" />
-                              <span>{{ agentBodyContent(msg.content || '') }}</span>
+                              <span>{{ agentBodyContent(messageContent(msg)) }}</span>
                             </div>
-                            <div v-else class="group-chat-markdown" v-html="renderMarkdown(agentBodyContent(msg.content || ''))"></div>
+                            <div v-else class="group-chat-markdown" v-html="renderMarkdown(agentBodyContent(messageContent(msg)))"></div>
                           </template>
                           <!-- 用户 & 主持人：统一按纯文本单行渲染，避免多余换行与居中 -->
                           <template v-else>
                             <p
                               class="group-chat-plain-text"
-                              :class="messageSpeakerType(msg) === 'user' && isShortSingleLine(formatUserBubbleForDisplay(msg.content || ''))"
+                              :class="messageSpeakerType(msg) === 'user' && isShortSingleLine(formatUserBubbleForDisplay(messageContent(msg)))"
                             >
-                              {{ formatUserBubbleForDisplay(msg.content || '') }}
+                              {{ formatUserBubbleForDisplay(messageContent(msg)) }}
                             </p>
                             <div
-                              v-if="messageSpeakerType(msg) === 'user' && extractUserFileReferenceNames(msg.content || '').length"
+                              v-if="messageSpeakerType(msg) === 'user' && extractUserFileReferenceNames(messageContent(msg)).length"
                               class="group-chat-user-file-ref-wrap"
                             >
                               <span
-                                v-for="(fileName, fileIdx) in extractUserFileReferenceNames(msg.content || '')"
+                                v-for="(fileName, fileIdx) in extractUserFileReferenceNames(messageContent(msg))"
                                 :key="`${msg.message_id || i}-file-ref-${fileIdx}`"
                                 class="group-chat-user-file-ref-tag"
                               >
@@ -251,6 +251,7 @@ const {
   messageAgentName,
   messageSkill,
   messageCreatedAt,
+  messageContent,
   activeStreamingSpeakerName,
   streamingPulse,
   formatSkill,
@@ -287,7 +288,7 @@ function getNonSandboxToolRawResults(msg: GroupMessage) {
 }
 
 function showMessageActions(msg: GroupMessage) {
-  return !isMemberJoinedMessage(msg) && Boolean((msg.content || '').trim())
+  return !isMemberJoinedMessage(msg) && Boolean(messageContent(msg).trim())
 }
 
 function sandboxGroupKey(msg: GroupMessage, index: number) {

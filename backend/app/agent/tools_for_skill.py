@@ -23,7 +23,12 @@ from app.mcp.manager import (
 from app.agent.session_workspace_policy import sandbox_session_dir
 from app.agent.skill_tool_naming import build_skill_script_tool_name
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
-from app.agent.workspace_visibility import is_internal_diagnostic_workspace_path
+from app.agent.workspace_visibility import (
+    WorkspacePathError,
+    is_internal_diagnostic_workspace_path,
+    is_internal_system_workspace_path,
+    normalize_public_workspace_path,
+)
 from app.tools.call_api import call_api
 from app.tools.http_api_tool import create_http_api_tool
 from app.tools.read_file import create_read_file_tool
@@ -70,12 +75,14 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
     user_id = get_current_user().username
 
     def _rel_safe(path: str) -> str:
-        raw = str(path or "").strip().replace("\\", "/")
-        if raw.startswith("/") or ".." in raw:
-            raise ValueError("路径不在当前工作区")
-        normalized = raw.strip("/")
+        try:
+            normalized = normalize_public_workspace_path(path or "", allow_empty=True)
+        except WorkspacePathError as exc:
+            raise ValueError(str(exc)) from exc
         probe = (ws_root / normalized).resolve()
-        if not str(probe).startswith(str(ws_root.resolve())):
+        try:
+            probe.relative_to(ws_root.resolve())
+        except ValueError:
             raise ValueError("路径不在当前工作区")
         return normalized
 
@@ -109,6 +116,8 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
                 workspace_rel = raw_path[len(workspace_root) + 1 :]
             else:
                 workspace_rel = raw_path
+            if is_internal_system_workspace_path(workspace_rel):
+                continue
             candidate_rel = Path(workspace_rel)
             if candidate_rel.parent.as_posix() == rel_prefix and pattern.match(candidate_rel.name):
                 candidates.append(candidate_rel.as_posix())
@@ -216,8 +225,8 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         if cleaned:
             try:
                 _rel_safe(cleaned)
-            except ValueError:
-                return "错误：路径不在当前工作区。"
+            except ValueError as exc:
+                return f"错误：{exc}"
         svc = get_shared_sandbox_service()
         try:
             items = await svc.list_workspace_files_flat(
@@ -246,6 +255,8 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
             workspace_rel = ""
             if p.startswith(workspace_root + "/"):
                 workspace_rel = p[len(workspace_root) + 1 :]
+            if workspace_rel and is_internal_system_workspace_path(workspace_rel):
+                continue
             if workspace_rel and is_internal_diagnostic_workspace_path(workspace_rel):
                 continue
             if p.startswith(root + "/"):

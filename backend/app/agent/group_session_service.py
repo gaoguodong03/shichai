@@ -25,6 +25,7 @@ from app.api.group_chat_state import (
     load_group_history as _load_group_history,
     load_group_orchestration_state as _load_group_orchestration_state,
     load_session_definitions as _load_session_definitions,
+    reject_group_session_mutation_if_running as _reject_group_session_mutation_if_running,
     runtime_for_session as _runtime_for_session,
     save_group_history as _save_group_history,
     save_session_definitions as _save_session_definitions,
@@ -394,6 +395,7 @@ async def stop_group_session_run(group_session_id: str):
 
 async def delete_group_message(group_session_id: str, message_id: str):
     """从会话列表和会话历史中彻底删除一条消息（含专家发言），避免污染下一轮 Agent 的上下文。"""
+    _reject_group_session_mutation_if_running(group_session_id, operation="deleting messages")
     session_definitions = _load_session_definitions()
     if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")

@@ -28,7 +28,7 @@ def temp_user_data_root():
                 os.environ.pop("ALLOW_ANONYMOUS_API", None)
 
 
-def test_file_ref_resolver_injects_content(temp_user_data_root):
+def test_file_ref_resolver_rejects_internal_memory_content(temp_user_data_root):
     from app.api.files import get_workspace_root_path
     from app.agent.file_ref_resolver import resolve_file_refs_in_text
 
@@ -41,7 +41,8 @@ def test_file_ref_resolver_injects_content(temp_user_data_root):
     out = resolve_file_refs_in_text(text, "sess-file-ref")
     assert "【文件内容已解析】" in out
     assert "[文件: memory/facts.md]" in out
-    assert "hello from memory" in out
+    assert "内部系统目录" in out
+    assert "hello from memory" not in out
 
 
 def test_file_ref_resolver_logs_summary_without_content(temp_user_data_root, caplog):
