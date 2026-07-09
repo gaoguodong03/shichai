@@ -47,9 +47,9 @@ export function useScenarioEditor(options: {
   scenarioSearch: Ref<string>
   agentInstances: Ref<AgentItem[]>
   skills: Ref<SkillItem[]>
-  llmProviders: Ref<Record<string, { base_url?: string; model?: string; api_key_env?: string; label?: string }>>
+  llmProviders: Ref<Record<string, { base_url?: string; model?: string; api_key_env?: string }>>
 }) {
-  const { selectedId, resourceSubModule, scenarioSearch, agentInstances, skills, llmProviders } = options
+  const { selectedId, resourceSubModule, scenarioSearch, agentInstances, skills } = options
 
   const scenarioPresets = ref<ScenarioPreset[]>([])
   const scenarioLoading = ref(false)
@@ -166,9 +166,7 @@ export function useScenarioEditor(options: {
   }
 
   function scenarioLlmOptionLabel(pid: string) {
-    const model = llmProviders.value[pid]
-    if (!model) return pid
-    return model.label || model.model || pid
+    return pid
   }
 
   function resetScenarioDraft() {

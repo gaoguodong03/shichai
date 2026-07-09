@@ -31,8 +31,8 @@
                 class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
               >
                 <option value="">使用应用默认</option>
-                <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
-                  {{ meta.label || name }}
+                <option v-for="name in Object.keys(llmProviders)" :key="name" :value="name">
+                  {{ name }}
                 </option>
               </select>
             </div>
@@ -154,7 +154,7 @@ const emit = defineEmits<{
 
 const skills = ref<{ directory_name: string; name: string; description?: string }[]>([])
 const skillSearch = ref('')
-const llmProviders = ref<Record<string, { label: string }>>({})
+const llmProviders = ref<Record<string, { model?: string }>>({})
 
 const form = ref({
   name: '',
@@ -342,8 +342,8 @@ async function fetchAppSettings() {
   if (j.status === 'ok' && j.data?.llm_providers) {
     llmProviders.value = Object.fromEntries(
       Object.entries(j.data.llm_providers).map(([k, v]: [string, any]) => [
-        String(v.model || k),
-        { label: String(v.model || k) },
+        String(k),
+        { model: String(v.model || k) },
       ])
     )
   }

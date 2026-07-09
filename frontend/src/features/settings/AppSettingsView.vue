@@ -34,8 +34,8 @@
                   class="w-full border border-input-border rounded-lg px-3 py-2 text-sm bg-input-bg text-primary focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                 >
                   <option value="">使用应用默认</option>
-                  <option v-for="(meta, name) in llmProviders" :key="name" :value="name">
-                    {{ meta.label || name }}
+                  <option v-for="name in Object.keys(llmProviders)" :key="name" :value="name">
+                    {{ name }}
                   </option>
                 </select>
               </div>
@@ -144,7 +144,7 @@ function emptyForm(): HostForm {
 const form = ref<HostForm>(emptyForm())
 const skillSearch = ref('')
 const skills = ref<Array<{ directory_name: string; name: string; description?: string }>>([])
-const llmProviders = ref<Record<string, { label?: string; model?: string }>>({})
+const llmProviders = ref<Record<string, { model?: string }>>({})
 
 const filteredSkills = computed(() => {
   const list = skills.value || []
@@ -223,7 +223,7 @@ async function loadLLMProviders() {
     const r = await apiRequest('/settings/app')
     const j = await r.json().catch(() => ({}))
     if (j?.status === 'ok' && j?.data?.llm_providers) {
-      llmProviders.value = { ...(j.data.llm_providers as Record<string, { label?: string; model?: string }>) }
+      llmProviders.value = { ...(j.data.llm_providers as Record<string, { model?: string }>) }
     } else {
       llmProviders.value = {}
     }

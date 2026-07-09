@@ -108,12 +108,9 @@ def resolve_llm_api_key(
 
 
 def describe_llm_provider(llm_name: str, cfg: Dict[str, Any]) -> str:
-    """Human-readable model label for user-facing notices."""
-    model = str(cfg.get("model") or llm_name or "").strip() or str(llm_name or "").strip() or "unknown"
-    label = str(cfg.get("label") or "").strip()
-    if label and label != model:
-        return f"{label}（{model}）"
-    return model
+    """Return provider model text for notices without using legacy display labels."""
+    model = str(cfg.get("model") or llm_name or "").strip()
+    return model or str(llm_name or "").strip() or "unknown"
 
 
 def build_llm_credential_notice(llm_name: str, cfg: Dict[str, Any]) -> str:

@@ -69,7 +69,6 @@ type LlmBundlePreview = {
     provider: {
       base_url?: string
       model?: string
-      label?: string
       api_key_env?: string
       api_key_ref?: string
       api_key_set?: boolean

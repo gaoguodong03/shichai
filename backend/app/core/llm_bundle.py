@@ -19,6 +19,7 @@ def sanitize_llm_provider_for_bundle(provider: Dict[str, Any]) -> Dict[str, Any]
         copied.pop("api_key", None)
         copied.pop("api_key_env", None)
         copied.pop("api_key_ref", None)
+        copied.pop("label", None)
     return copied if isinstance(copied, dict) else {}
 
 
@@ -30,7 +31,7 @@ def provider_for_settings_import(provider: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _model_name(llm_name: str, provider: Dict[str, Any]) -> str:
-    return str((provider or {}).get("model") or llm_name or "").strip()
+    return str(llm_name or "").strip()
 
 
 def build_llm_bundle_zip_bytes(llm_name: str, provider: Dict[str, Any], *, default_llm: str = "") -> bytes:

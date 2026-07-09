@@ -446,11 +446,12 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert app_settings.status_code == 200
     put_settings = client.put(
         "/api/settings/app",
-        json={"default_llm": "qwen", "llm_providers": {"qwen": {"model": "qwen3-max"}}},
+        json={"default_llm": "qwen", "llm_providers": {"qwen": {"model": "qwen3-max", "label": "通义千问"}}},
         headers=headers,
     )
     assert put_settings.status_code == 200
     assert put_settings.json()["data"]["default_llm"] == "qwen"
+    assert "label" not in put_settings.json()["data"]["llm_providers"]["qwen"]
     secret_settings = client.put(
         "/api/settings/app",
         json={
@@ -484,7 +485,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         manifest_text = zf.read("llm_bundle.json").decode("utf-8")
         manifest = json.loads(manifest_text)
     assert "sk-inline-secret" not in manifest_text
-    assert manifest["name"] == "qwen3-max"
+    assert manifest["name"] == "qwen"
     assert manifest["provider"]["model"] == "qwen3-max"
     assert manifest["provider"]["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert "api_key" not in manifest["provider"]
@@ -498,7 +499,8 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert preview_llm.status_code == 200
     preview = preview_llm.json()["data"]["bundle_preview"]
-    assert preview["name"] == "qwen3-max"
+    assert preview["name"] == "qwen"
+    assert preview["would_conflict_name"] is True
     assert preview["provider"]["model"] == "qwen3-max"
     assert "api_key" not in preview["provider"]
 
@@ -508,8 +510,25 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         files={"file": ("qwen.zip", exported_llm.content, "application/zip")},
         headers=headers,
     )
+    assert imported_llm.status_code == 409
+
+    remove_same_name = client.put(
+        "/api/settings/app",
+        json={
+            "default_llm": "qwen3-max",
+            "llm_providers": {"qwen3-max": {"model": "qwen3-max"}},
+        },
+        headers=headers,
+    )
+    assert remove_same_name.status_code == 200
+    imported_llm = client.post(
+        "/api/settings/llm-providers/import-bundle",
+        data={"dry_run": "false"},
+        files={"file": ("qwen.zip", exported_llm.content, "application/zip")},
+        headers=headers,
+    )
     assert imported_llm.status_code == 200
-    assert imported_llm.json()["data"]["summary"]["imported_name"] == "qwen3-max"
+    assert imported_llm.json()["data"]["summary"]["imported_name"] == "qwen"
 
     host_profile = client.put(
         "/api/settings/host-profile",

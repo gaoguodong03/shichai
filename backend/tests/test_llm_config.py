@@ -180,6 +180,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
         "api_key_env": "EXAMPLE_API_KEY",
         "api_key_ref": "vault-example",
         "api_key_set": True,
+        "label": "Example Chat",
         "temperature": 0.2,
         "max_tokens": 128,
         "top_p": 0.9,
@@ -196,6 +197,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert "api_key" not in manifest_provider
     assert "api_key_env" not in manifest_provider
     assert "api_key_ref" not in manifest_provider
+    assert "label" not in manifest_provider
 
     bundle_dir = extract_scenario_bundle_dir(raw)
     try:
@@ -205,12 +207,13 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
 
         shutil.rmtree(bundle_dir, ignore_errors=True)
 
-    assert provider_id == "example-chat"
+    assert provider_id == "example"
     assert bundled["base_url"] == "https://example.test/v1"
     assert bundled["model"] == "example-chat"
     assert "api_key" not in bundled
     assert "api_key_env" not in bundled
     assert "api_key_ref" not in bundled
+    assert "label" not in bundled
     assert bundled["api_key_set"] is True
     assert bundled["temperature"] == 0.2
     assert bundled["max_tokens"] == 128
@@ -254,6 +257,7 @@ def test_build_llm_credential_notice_mentions_model():
         {"model": "qwen3-max", "label": "通义千问"},
     )
     assert "qwen3-max" in notice
+    assert "通义千问" not in notice
     assert "没有配置密钥或密钥错误" in notice
 
 

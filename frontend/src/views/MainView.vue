@@ -558,7 +558,7 @@
                 ]"
               >
                 <div class="truncate font-medium flex items-center gap-2">
-                  <span class="truncate">{{ llmProviders[modelName]?.label || modelName }}</span>
+                  <span class="truncate">{{ modelName }}</span>
                   <span
                     v-if="modelName === llmDefault"
                     class="px-2 py-0.5 text-xs rounded-full bg-accent-subtle text-accent-subtle-text"
@@ -571,8 +571,8 @@
               <button
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted hover:text-danger hover:bg-danger-subtle opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-                :aria-label="`删除模型 ${llmProviders[modelName]?.label || modelName}`"
-                :title="`删除模型 ${llmProviders[modelName]?.label || modelName}`"
+                :aria-label="`删除模型 ${modelName}`"
+                :title="`删除模型 ${modelName}`"
                 @click.stop="deleteLlmProvider(modelName)"
               >
                 ×

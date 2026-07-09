@@ -25,7 +25,7 @@ export type McpServerRow = {
   metadata?: Record<string, any>
 }
 
-export type LlmProviderMap = Record<string, { base_url?: string; model?: string; api_key_env?: string; label?: string }>
+export type LlmProviderMap = Record<string, { base_url?: string; model?: string; api_key_env?: string }>
 
 const NEW_SKILL_DRAFT_PREFIX = '__new_skill__'
 
@@ -81,7 +81,7 @@ export function useResourceCollections(args: {
     if (!q) return names
     return names.filter((name) => {
       const meta = llmProviders.value[name] || {}
-      const hay = `${name} ${meta.label || ''} ${meta.model || ''}`.toLowerCase()
+      const hay = `${name} ${meta.model || ''}`.toLowerCase()
       return hay.includes(q)
     })
   })
@@ -277,11 +277,9 @@ export function useResourceCollections(args: {
   }
 
   async function deleteLlmProvider(modelName: string) {
-    const provider = llmProviders.value[modelName]
-    const label = provider?.label || modelName
     const ok = await appConfirm({
       title: '删除模型',
-      message: `确定删除模型「${label}」？`,
+      message: `确定删除模型「${modelName}」？`,
       variant: 'danger',
       confirmText: '删除',
     })

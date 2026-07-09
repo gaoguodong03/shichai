@@ -100,12 +100,19 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
     return out
 
 
+def _sanitize_llm_provider_row(meta: Any) -> Dict[str, Any]:
+    """Remove legacy model-resource fields while preserving request settings."""
+    out = dict(meta or {}) if isinstance(meta, dict) else {}
+    out.pop("label", None)
+    return out
+
+
 def _refresh_builtin_llm_provider_presets(providers: Any) -> Dict[str, Dict[str, Any]]:
     """Merge built-in providers and refresh old bundled Jeniya presets only."""
     if not isinstance(providers, dict):
         providers = {}
     out: Dict[str, Dict[str, Any]] = {
-        str(k): dict(v or {}) if isinstance(v, dict) else {}
+        str(k): _sanitize_llm_provider_row(v)
         for k, v in providers.items()
     }
     for k, v in _DEFAULT_LLM_PROVIDERS.items():
@@ -150,7 +157,7 @@ def _load_llm_provider_resources() -> Dict[str, Dict[str, Any]]:
             continue
         meta = dict(raw)
         meta.pop("name", None)
-        providers[name] = meta
+        providers[name] = _sanitize_llm_provider_row(meta)
     return providers
 
 
@@ -162,7 +169,7 @@ def _save_llm_provider_resources(providers: Dict[str, Dict[str, Any]]) -> None:
     for name, meta in providers.items():
         if not isinstance(meta, dict):
             continue
-        row = dict(meta)
+        row = _sanitize_llm_provider_row(meta)
         row["name"] = str(name)
         rows.append(row)
     mirror_rows_to_resource_dir(
@@ -220,7 +227,7 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(providers, dict):
         safe_providers: Dict[str, Dict[str, Any]] = {}
         for pid, meta in providers.items():
-            m = dict(meta or {}) if isinstance(meta, dict) else {}
+            m = _sanitize_llm_provider_row(meta)
             api_key = (m.get("api_key") or "").strip()
             m["api_key_set"] = bool(api_key)
             m.pop("api_key", None)
@@ -308,7 +315,7 @@ def save_app_settings(data: Dict[str, Any]):
                 base["api_key_ref"] = old.get("api_key_ref")
             if isinstance(meta.get("api_key_ref"), str) and not (meta.get("api_key_ref") or "").strip():
                 base.pop("api_key_ref", None)
-            merged[str(pid)] = base
+            merged[str(pid)] = _sanitize_llm_provider_row(base)
         deleted_defaults = sorted(k for k in _DEFAULT_LLM_PROVIDERS if k not in merged)
         if deleted_defaults:
             patch["_deleted_llm_providers"] = deleted_defaults
