@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 from app.agent.expert_runtime import build_expert_turn_runtime, resolve_expert_skill
+from app.agent.group_chat_expert_resolution import _last_user_message_text
 
 
 class FakeSkillsLoader:
@@ -146,3 +147,19 @@ def test_build_expert_turn_runtime_blocks_when_skill_content_missing():
     assert runtime.blocked is True
     assert runtime.skill_route_debug["blocking_error"] == "expert_skill_content_missing"
     assert called["tool"] is False
+
+
+def test_last_user_message_text_ignores_legacy_top_level_content():
+    assert (
+        _last_user_message_text(
+            [
+                {
+                    "speaker": {"type": "user"},
+                    "message": {"content": "标准用户正文"},
+                    "content": "旧顶层用户正文",
+                }
+            ]
+        )
+        == "标准用户正文"
+    )
+    assert _last_user_message_text([{"speaker": {"type": "user"}, "content": "旧顶层用户正文"}]) == ""

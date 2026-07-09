@@ -38,7 +38,7 @@ def _message_content(message: Dict[str, Any]) -> str:
     body = message.get("message") if isinstance(message, dict) else None
     if isinstance(body, dict):
         return str(body.get("content") or "").strip()
-    return str(message.get("content") or "").strip() if isinstance(message, dict) else ""
+    return ""
 
 
 def _ensure_scene_profile_contract(session_item: Dict[str, Any]) -> bool:

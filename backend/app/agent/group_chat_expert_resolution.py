@@ -62,5 +62,5 @@ def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:
             body = message.get("message")
             if isinstance(body, dict):
                 return str(body.get("content") or "").strip()
-            return str(message.get("content") or "").strip()
+            return ""
     return ""

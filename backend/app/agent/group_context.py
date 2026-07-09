@@ -22,13 +22,13 @@ def _clip_context_message(content: str, max_chars_per_message: int) -> str:
 
 
 def _message_content(message: Dict[str, Any]) -> str:
-    """Read message text from the canonical nested shape, with read-only legacy tolerance."""
+    """Read message text from the canonical nested shape."""
     if not isinstance(message, dict):
         return ""
     body = message.get("message")
     if isinstance(body, dict):
         return str(body.get("content") or "").strip()
-    return str(message.get("content") or "").strip()
+    return ""
 
 
 def _message_speaker(message: Dict[str, Any]) -> tuple[str, str]:
@@ -38,7 +38,7 @@ def _message_speaker(message: Dict[str, Any]) -> tuple[str, str]:
     speaker = message.get("speaker")
     if isinstance(speaker, dict):
         return str(speaker.get("type") or "").strip(), str(speaker.get("agent_name") or "").strip()
-    return str(message.get("role") or "").strip(), str(message.get("agent_name") or "").strip()
+    return "", ""
 
 
 def messages_to_context(

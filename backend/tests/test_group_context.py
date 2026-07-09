@@ -3,10 +3,10 @@ from app.agent import group_context
 
 def test_messages_to_expert_context_filters_repeated_technical_errors():
     messages = [
-        {"role": "user", "content": "请分析数据"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "Error code: 400 context length is only"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "有效业务结论"},
-        {"role": "assistant", "agent_id": "agent-a", "content": "有效业务结论"},
+        {"speaker": {"type": "user"}, "message": {"content": "请分析数据"}},
+        {"speaker": {"type": "expert", "agent_name": "专家A"}, "message": {"content": "Error code: 400 context length is only"}},
+        {"speaker": {"type": "expert", "agent_name": "专家A"}, "message": {"content": "有效业务结论"}},
+        {"speaker": {"type": "expert", "agent_name": "专家A"}, "message": {"content": "有效业务结论"}},
     ]
 
     text = group_context.messages_to_expert_context(messages)
@@ -19,8 +19,8 @@ def test_messages_to_expert_context_filters_repeated_technical_errors():
 
 def test_messages_to_expert_context_marks_history_as_reference_not_repeat_task():
     messages = [
-        {"role": "assistant", "agent_id": "agent-a", "content": "上一轮已经给出的完整结论"},
-        {"role": "user", "content": "这里再补充一个新的约束"},
+        {"speaker": {"type": "expert", "agent_name": "专家A"}, "message": {"content": "上一轮已经给出的完整结论"}},
+        {"speaker": {"type": "user"}, "message": {"content": "这里再补充一个新的约束"}},
     ]
 
     text = group_context.messages_to_expert_context(messages)
@@ -42,7 +42,7 @@ def test_messages_to_context_preserves_tail_when_truncating_long_messages():
     )
 
     text = group_context.messages_to_context(
-        [{"role": "assistant", "agent_id": "agent-material", "content": long_material}],
+        [{"speaker": {"type": "expert", "agent_name": "材料专家"}, "message": {"content": long_material}}],
         max_chars_per_message=180,
     )
 
@@ -57,3 +57,32 @@ def test_normalize_discussion_goal_removes_frontend_prefix():
 
 def test_title_from_first_message_limits_text():
     assert group_context.title_from_first_message("【讨论目标】\n这是一个很长很长的标题", max_chars=6) == "这是一个很长"
+
+
+def test_messages_to_context_ignores_legacy_top_level_content():
+    text = group_context.messages_to_context(
+        [
+            {
+                "role": "user",
+                "content": "旧顶层正文不应进入上下文",
+                "speaker": {"type": "user"},
+                "message": {"content": "标准正文"},
+            },
+            {
+                "role": "assistant",
+                "content": "旧助手正文不应进入上下文",
+                "speaker": {"type": "expert", "agent_name": "专家A"},
+                "message": {"content": ""},
+            },
+            {
+                "role": "assistant",
+                "agent_name": "旧专家",
+                "content": "只有旧字段的正文不应进入上下文",
+            },
+        ]
+    )
+
+    assert "标准正文" in text
+    assert "旧顶层正文不应进入上下文" not in text
+    assert "旧助手正文不应进入上下文" not in text
+    assert "只有旧字段的正文不应进入上下文" not in text
