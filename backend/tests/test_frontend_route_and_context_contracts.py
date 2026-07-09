@@ -128,6 +128,29 @@ def test_e2e_stream_mocks_use_current_sse_event_payloads():
     assert "skill_result?: SkillResult" in mock_api
 
 
+def test_e2e_chat_stream_mock_requires_frontend_client_message_id_without_fallback():
+    mock_api = read("frontend/e2e/fixtures/mockApi.ts")
+    chat_handler = re.search(
+        r"if \(chatStreamMatch && method === 'POST'\) \{([\s\S]*?)\n    \}",
+        mock_api,
+    )
+    assert chat_handler is not None
+    request_type = re.search(r"const body = readBody<\{([\s\S]*?)\}>\(route\)", chat_handler.group(1))
+    assert request_type is not None
+    assert "client_message_id: string" in request_type.group(1)
+    assert "client_message_id?: string" not in request_type.group(1)
+    assert "if (!body.client_message_id) return json(route, { detail: 'client_message_id is required' }, 422)" in chat_handler.group(1)
+
+    persisted_user_message = re.search(
+        r"session\.messages\.push\(\{[\s\S]*?speaker: \{ type: 'user' \},[\s\S]*?created_at: now,[\s\S]*?\n\s*\}\)",
+        chat_handler.group(1),
+    )
+    assert persisted_user_message is not None
+    assert "client_message_id: body.client_message_id," in persisted_user_message.group(0)
+    assert "body.client_message_id ||" not in persisted_user_message.group(0)
+    assert "client-${Date.now()}" not in persisted_user_message.group(0)
+
+
 def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
     files = [
         "frontend/src/api/chat.ts",

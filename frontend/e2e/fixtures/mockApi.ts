@@ -371,10 +371,11 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       const id = decodeURIComponent(chatStreamMatch[1])
       const body = readBody<{
         message?: string
-        client_message_id?: string
+        client_message_id: string
         attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
         target_agent_name?: string | null
       }>(route)
+      if (!body.client_message_id) return json(route, { detail: 'client_message_id is required' }, 422)
       const session = state.sessions.find((s) => s.id === id)
       const answer = '自动化测试回复：需求已收到。'
       if (session) {
@@ -387,7 +388,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
             attachments: body.attachments || [],
             target_agent_name: body.target_agent_name || null,
           },
-          client_message_id: body.client_message_id || `client-${Date.now()}`,
+          client_message_id: body.client_message_id,
           created_at: now,
         })
         session.messages.push({
