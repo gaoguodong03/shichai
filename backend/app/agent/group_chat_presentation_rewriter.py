@@ -7,23 +7,9 @@ import os
 from typing import Any, Dict
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
+from app.agent.platform_prompts import render_platform_prompt
 
 logger = logging.getLogger(__name__)
-
-
-PRESENTATION_REWRITE_PHASE = "presentation_rewriting"
-
-_SYSTEM_PROMPT = """你是群聊前端展示层的表达整理器。
-
-你的任务只是在不改变业务结果的前提下，把专家本轮原始回复整理成用户可读的 Markdown。
-
-硬性规则：
-- 只改变表达、排版、结构和语气，不新增事实、链接、路径、数量、状态或结论。
-- 不删除用户判断任务所必需的信息；可以合并重复内容、压缩冗长正文。
-- 不继续检索、不调用工具、不分析下一步执行方案。
-- 不改变成功、失败、等待用户补充、需要确认等状态。
-- 如果原文是 JSON、工具结果、Title/URL/Highlights 列表或混杂格式，整理成自然的中文说明、列表或表格。
-- 只输出整理后的 Markdown 正文，不要解释你的改写过程。"""
 
 
 def _response_text(response: Any) -> str:
@@ -60,7 +46,12 @@ async def _rewrite_content(
             "请按系统规则输出前端最终展示文案。"
         )
         response = await asyncio.wait_for(
-            client.ainvoke([SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=human_prompt)]),
+            client.ainvoke(
+                [
+                    SystemMessage(content=render_platform_prompt("presentation.rewrite.v1", {})),
+                    HumanMessage(content=human_prompt),
+                ]
+            ),
             timeout=_timeout_seconds(),
         )
         rewritten = _response_text(response)

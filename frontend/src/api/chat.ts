@@ -9,6 +9,7 @@ export interface ChatStreamRequestPayload {
 }
 
 interface StreamChatEventHandlers {
+  onStart?: (data: Record<string, unknown>) => void
   onRoute?: (data: Record<string, unknown>) => void
   onProgress?: (data: { text?: string; phase?: string; agent_name?: string; skill?: string }) => void
   onMessage?: (data: Record<string, unknown>) => void
@@ -17,7 +18,10 @@ interface StreamChatEventHandlers {
 }
 
 interface SessionEventHandlers {
-  onUpdate?: (data: Record<string, unknown>) => void
+  onSnapshot?: (data: Record<string, unknown>) => void
+  onRuntime?: (data: Record<string, unknown>) => void
+  onMessage?: (data: Record<string, unknown>) => void
+  onDeleted?: (data: Record<string, unknown>) => void
   onKeepalive?: (data: Record<string, unknown>) => void
   onError?: (error: unknown) => void
 }
@@ -94,7 +98,8 @@ export async function streamSessionChat(
   await readEventStream(
     response,
     (eventType, data) => {
-      if (eventType === 'route') handlers.onRoute?.(data)
+      if (eventType === 'start') handlers.onStart?.(data)
+      else if (eventType === 'route') handlers.onRoute?.(data)
       else if (eventType === 'progress') handlers.onProgress?.(data as { text?: string; phase?: string; agent_name?: string; skill?: string })
       else if (eventType === 'message') handlers.onMessage?.(data)
       else if (eventType === 'end') handlers.onEnd?.(data)
@@ -120,7 +125,10 @@ export async function streamSessionEvents(
   await readEventStream(
     response,
     (eventType, data) => {
-      if (eventType === 'session_update') handlers.onUpdate?.(data)
+      if (eventType === 'snapshot') handlers.onSnapshot?.(data)
+      else if (eventType === 'runtime') handlers.onRuntime?.(data)
+      else if (eventType === 'message') handlers.onMessage?.(data)
+      else if (eventType === 'deleted') handlers.onDeleted?.(data)
       else if (eventType === 'keepalive') handlers.onKeepalive?.(data)
       else if (eventType === 'error') handlers.onError?.(data)
     },

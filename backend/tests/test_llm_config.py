@@ -74,7 +74,7 @@ def test_traced_llm_client_logs_prompt_summary_by_default(caplog, monkeypatch):
     assert "method=astream" in caplog.text
     assert "method=stream" in caplog.text
     assert "model=test-model" in caplog.text
-    assert "message_count=" in caplog.text
+    assert "input_messages=" in caplog.text
     assert "prompt_chars=" in caplog.text
     assert "系统提示词全文" not in caplog.text
     assert "用户提示词全文" not in caplog.text

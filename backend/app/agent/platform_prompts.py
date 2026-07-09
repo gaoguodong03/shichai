@@ -75,10 +75,16 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 专家职责：
 {agent_description}
 
+讨论目标：
+{discussion_goal}
+
+本轮用户输入：
+{user_prompt}
+
 候选 Skill：
 {skill_directories}
 
-本轮任务：
+主持人下一步动作：
 {next_action}
 
 必须输出单个 JSON 对象，字段只能是：
@@ -94,6 +100,56 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 
 用户输入：
 {user_message}
+        """,
+    ),
+    "title.group_topic.v1": _prompt(
+        "title.group_topic.v1",
+        """
+你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。
+
+输出要求：
+- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）
+- 中文主题，长度约 15 字，最多 {max_chars} 字
+- 不要使用引号或括号，不要以句号、感叹号或问号结尾
+        """,
+    ),
+    "presentation.rewrite.v1": _prompt(
+        "presentation.rewrite.v1",
+        """
+你是群聊前端展示层的表达整理器。
+
+你的任务只是在不改变业务结果的前提下，把专家本轮原始回复整理成用户可读的 Markdown。
+
+硬性规则：
+- 只改变表达、排版、结构和语气，不新增事实、链接、路径、数量、状态或结论。
+- 不删除用户判断任务所必需的信息；可以合并重复内容、压缩冗长正文。
+- 不继续检索、不调用工具、不分析下一步执行方案。
+- 不改变成功、失败、等待用户补充、需要确认等状态。
+- 如果原文是 JSON、工具结果、Title/URL/Highlights 列表或混杂格式，整理成自然的中文说明、列表或表格。
+- 只输出整理后的 Markdown 正文，不要解释你的改写过程。
+        """,
+    ),
+    "skill.execution.tools_header.v1": _prompt(
+        "skill.execution.tools_header.v1",
+        """
+你可以使用以下工具：
+{tool_lines}
+        """,
+    ),
+    "skill.execution.exa_search.v1": _prompt(
+        "skill.execution.exa_search.v1",
+        """
+## Exa 搜索工具使用说明
+调用 {tool_name} 时必须使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{{"query": "北京 烟花 燃放", "numResults": 10}}。
+可选参数：numResults（数量）、livecrawl（'fallback'|'preferred'|'always'|'never'）、type（'auto'|'fast'）。type 不要用 'news' 等无效值。
+        """,
+    ),
+    "skill.execution.response_policy.v1": _prompt(
+        "skill.execution.response_policy.v1",
+        """
+当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数。
+
+当你不需要使用工具时，直接回复用户的问题。
         """,
     ),
 }

@@ -178,7 +178,25 @@ export function useGroupStreamRuntime(args: {
     void streamSessionEvents(
       sessionId,
       {
-        onUpdate: () => {
+        onSnapshot: () => {
+          if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
+          groupSessionEventsConnected = true
+          if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
+          scheduleGroupSessionPushRefresh(sessionId)
+        },
+        onRuntime: () => {
+          if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
+          groupSessionEventsConnected = true
+          if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
+          scheduleGroupSessionPushRefresh(sessionId)
+        },
+        onMessage: () => {
+          if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
+          groupSessionEventsConnected = true
+          if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()
+          scheduleGroupSessionPushRefresh(sessionId)
+        },
+        onDeleted: () => {
           if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
           groupSessionEventsConnected = true
           if (restoredRuntimePollSessionId === sessionId) clearRestoredRuntimePollTimer()

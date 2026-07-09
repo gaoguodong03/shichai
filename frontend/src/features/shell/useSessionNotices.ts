@@ -5,7 +5,7 @@ export type SessionNotice = { running?: boolean; hasUpdate?: boolean }
 
 type SessionRuntimeRow = {
   id: string
-  runtime_state?: { running?: boolean }
+  runtime?: { running?: boolean }
 }
 
 export function useSessionNotices(options: {
@@ -49,7 +49,7 @@ export function useSessionNotices(options: {
 
   function syncSessionRuntimeNotices(sessions: SessionRuntimeRow[]) {
     for (const session of sessions) {
-      if (session.runtime_state?.running === true) {
+      if (session.runtime?.running === true) {
         patchSessionNotice(session.id, { running: true })
       }
     }

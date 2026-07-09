@@ -22,6 +22,7 @@ from app.api.group_chat_state import (
     save_group_history as _save_group_history,
     save_session_definitions as _save_session_definitions,
 )
+from app.agent.platform_prompts import render_platform_prompt
 from app.api.settings_app import load_app_settings
 from app.api.settings_secrets import load_api_secret_values
 logger = logging.getLogger(__name__)
@@ -73,13 +74,7 @@ async def _ai_title_from_recent_user_messages(
             return ""
 
         client = llm.get_client()
-        system_prompt = (
-            "你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。\n"
-            "输出要求：\n"
-            "- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）\n"
-            f"- 中文主题，长度约 15 字（允许最多 {max_chars} 字）\n"
-            "- 不要使用引号或括号，不要以句号/感叹号/问号结尾\n"
-        )
+        system_prompt = render_platform_prompt("title.group_topic.v1", {"max_chars": max_chars})
         content = "最近用户发言：\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(user_texts)])
         resp = await client.ainvoke([SystemMessage(content=system_prompt), HumanMessage(content=content)])
         raw = (getattr(resp, "content", "") or "").strip()
@@ -209,7 +204,7 @@ def _record_user_message_and_refresh_title(
         if client_message_id:
             user_msg["client_message_id"] = client_message_id
         messages.append(user_msg)
-        _save_group_history(group_session_id, messages)
+        _save_group_history(group_session_id, messages, checkpoint_trigger="turn_started")
         session_item["updated_at"] = format_storage_timestamp()
 
     current_title = (session_item.get("title") or "").strip()

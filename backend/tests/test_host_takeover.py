@@ -44,7 +44,7 @@ def test_group_chat_request_accepts_structured_target_agent_name():
 @pytest.mark.asyncio
 async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     calls = {}
-    session_item = {"scheduler_state": {"current_phase": "阶段1"}}
+    session_item = {}
 
     class FakeSkillsLoader:
         def get_skill_full_content(self, skill_id):
@@ -82,6 +82,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
         group_session_id="group-1",
         app_settings={},
         session_item=session_item,
+        host_scheduler_state={"current_phase": "阶段1"},
     )
 
     assert out["next_speaker"] == "写作专家"
@@ -92,8 +93,4 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     assert "网文专用主持 Skill 正文" in system_prompt
     assert "只允许输出上述字段" in user_prompt
     assert '"next_action"' in user_prompt
-    assert session_item["scheduler_state"] == {
-        "current_phase": "阶段2",
-        "next_speaker": "写作专家",
-        "next_action": "请写大纲",
-    }
+    assert "scheduler_state" not in session_item

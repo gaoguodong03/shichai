@@ -140,14 +140,6 @@ export function useGroupOrchestrationState(args: {
     if (!payload) return []
     const agentNames = payload.suggested_add_agent_names as string[] | undefined
     if (Array.isArray(agentNames) && agentNames.length) return agentNames
-    const singleAgentName = payload.suggested_add_agent_name as string | undefined
-    if (typeof singleAgentName === 'string' && singleAgentName.trim()) return [singleAgentName.trim()]
-    const routing = payload.routing as { expert_route_debug?: Record<string, unknown> } | undefined
-    const routeDebug = routing?.expert_route_debug
-    const routedAgentNames = routeDebug?.suggested_add_agent_names as string[] | undefined
-    if (Array.isArray(routedAgentNames) && routedAgentNames.length) return routedAgentNames
-    const routedSingleAgentName = routeDebug?.suggested_add_agent_name as string | undefined
-    if (typeof routedSingleAgentName === 'string' && routedSingleAgentName.trim()) return [routedSingleAgentName.trim()]
     return []
   }
 
@@ -418,12 +410,6 @@ export function useGroupOrchestrationState(args: {
     return ['', '.', '..', '...'][bucket] || ''
   })
 
-  function parseAgentNamesFromHostContent(content: string | null | undefined): string[] {
-    if (!content) return []
-    const matches = content.match(/agent-[a-zA-Z0-9\-]+/gi) || []
-    return [...new Set(matches)]
-  }
-
   function resolveSuggestedNamesFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
     const direct = extractSuggestedAddNames(payload)
@@ -436,12 +422,7 @@ export function useGroupOrchestrationState(args: {
       return uniq.slice(0, 3)
     }
     if (direct.length) return normalize(direct)
-
-    const role = messageSpeakerType(payload)
-    const content = String(payload.content || '')
-    if (!content || (role !== 'host' && role !== 'expert')) return []
-    if (!/(建议邀请|邀请以下|推荐.*加入|补充.*专家|加入讨论)/.test(content)) return []
-    return normalize(parseAgentNamesFromHostContent(content))
+    return []
   }
 
   function handleLoadedMessages(messages: GroupMessage[]) {
@@ -450,21 +431,12 @@ export function useGroupOrchestrationState(args: {
     const lastHost = [...messages].reverse().find((message) => messageSpeakerType(message) === 'host')
     const lastMsg = lastHost as {
       suggested_add_agent_names?: string[]
-      suggested_add_agent_name?: string
-      content?: string
     } | undefined
     if (!lastMsg) return
     const suggestedNames = extractSuggestedAddNames(lastMsg as Record<string, unknown>)
     if (suggestedNames.length) {
       groupSuggestedAddAgentNames.value = resolveSuggestedNamesFromPayload(lastMsg as Record<string, unknown>)
       return
-    }
-    if (lastMsg.content) {
-      const aliasMap = buildExpertAliasMap()
-      const parsed = parseAgentNamesFromHostContent(lastMsg.content)
-        .map((id) => aliasMap.get(id) || '')
-        .filter(Boolean)
-      if (parsed.length) groupSuggestedAddAgentNames.value = parsed
     }
   }
 

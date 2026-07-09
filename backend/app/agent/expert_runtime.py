@@ -18,6 +18,7 @@ from app.agent.skill_session_locks import clear_skill_session_lock, locked_skill
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 from app.agent.structured_output_contracts import ExpertSkillSelectionPayload, parse_strict_pydantic_object
 from app.agent.tools_for_skill import build_tools_for_group_chat
+from app.agent.platform_prompts import render_platform_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -83,18 +84,18 @@ async def expert_llm_pick_skill(
             lines.append(f'- skill="{sid}" | （未加载元数据，仍须从 id 中选择）')
     catalog = "\n".join(lines)
     um = (round_user_text or "").strip() or _last_user_message_text(messages)
-    sys_msg = (
-        "你是专家的任务分发模块。只做一件事：根据讨论目标与本轮用户输入，"
-        "从下方候选 Skill 中为该专家**恰好选一个** skill。\n"
-        "必须只输出一个 JSON 对象，不要输出其他文字：\n"
-        '{"selected_skill":"<从候选中复制的确切 skill>"}\n'
-        "选择依据：用户任务与各 Skill 名称、描述的匹配度。"
+    sys_msg = render_platform_prompt(
+        "expert.select_skill.v1",
+        {
+            "agent_name": agent_name,
+            "agent_description": agent_profile.get("description") or "（无）",
+            "discussion_goal": discussion_goal or "（无）",
+            "user_prompt": um or "（无）",
+            "skill_directories": catalog,
+            "next_action": round_user_text or "（无）",
+        },
     )
-    human = (
-        f"【讨论目标】\n{discussion_goal or '（无）'}\n\n"
-        f"【本轮用户输入】\n{um or '（无）'}\n\n"
-        f"【候选 Skill】\n{catalog}\n"
-    )
+    human = "请按系统提示选择本轮唯一 Skill。"
     try:
         client = llm.get_client()
         out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human)])
@@ -123,6 +124,7 @@ async def resolve_expert_skill(
     discussion_goal: str,
     messages: List[Dict[str, Any]],
     session_item: Dict[str, Any],
+    orchestration_state: Optional[Dict[str, Any]] = None,
     app_settings: Dict[str, Any],
     round_user_text: str,
     skills_loader: Any,
@@ -132,13 +134,15 @@ async def resolve_expert_skill(
     """Resolve the Skill for one expert turn; locked Skill sessions win."""
     _ = app_settings
     skill_directories = _skill_directory_names(agent_profile)
+    orchestration_state = orchestration_state if isinstance(orchestration_state, dict) else {}
 
-    owner = str(session_item.get("skill_session_owner_name") or "").strip().casefold()
-    locked_raw = str(session_item.get("skill_session_skill") or "").strip()
+    continuation = orchestration_state.get("continuation") if isinstance(orchestration_state.get("continuation"), dict) else {}
+    owner = str(continuation.get("owner_agent_name") or "").strip().casefold()
+    locked_raw = str(continuation.get("skill") or "").strip()
     if owner == str(agent_name or "").strip().casefold() and locked_raw and locked_raw not in skill_directories:
-        clear_skill_session_lock(session_item)
+        clear_skill_session_lock(orchestration_state)
 
-    locked = locked_skill_for_expert(session_item, expert_agent_name=agent_name, expert_skills=skill_directories)
+    locked = locked_skill_for_expert(orchestration_state, expert_agent_name=agent_name, expert_skills=skill_directories)
     if locked:
         content = skills_loader.get_skill_full_content(locked)
         if content:
@@ -196,6 +200,7 @@ async def build_expert_turn_runtime(
     discussion_goal: str,
     messages: List[Dict[str, Any]],
     session_item: Dict[str, Any],
+    orchestration_state: Optional[Dict[str, Any]] = None,
     app_settings: Dict[str, Any],
     round_user_text: str,
     extra_system_prompt: str,
@@ -211,6 +216,7 @@ async def build_expert_turn_runtime(
         discussion_goal=discussion_goal,
         messages=messages,
         session_item=session_item,
+        orchestration_state=orchestration_state,
         app_settings=app_settings,
         round_user_text=round_user_text,
         skills_loader=skills_loader,

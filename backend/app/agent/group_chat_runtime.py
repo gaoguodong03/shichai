@@ -25,7 +25,7 @@ from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
 from app.agent.group_chat_streaming import iter_with_keepalive, stream_background_events
 from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_recent_context
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
-from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent
+from app.agent.session_contracts import GroupChatRequest, SseEndEvent, SseErrorEvent, SseProgressEvent, SseRouteEvent, SseStartEvent
 from app.api.agents import load_agent_instances
 from app.api.group_chat_state import (
     build_session_payload,
@@ -33,11 +33,13 @@ from app.api.group_chat_state import (
     finish_group_run,
     format_storage_timestamp,
     load_group_history,
+    load_group_orchestration_state,
     load_session_definitions,
     register_group_run,
     save_group_history,
     save_session_definitions,
     update_group_run,
+    write_group_orchestration_state,
 )
 from app.api.settings_app import load_app_settings
 from app.core.init import ensure_mcp_and_skills_initialized
@@ -197,6 +199,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             task=current_task if current_task is not None else asyncio.create_task(asyncio.sleep(0)),
         )
         try:
+            yield _sse("start", SseStartEvent(type="start", run_id=run_id).model_dump())
             async for event in _run_contract_events(
                 group_session_id=group_session_id,
                 request=request,
@@ -246,6 +249,8 @@ async def _run_contract_events(
     available_to_add = [item for item in agent_map.values() if str(item.get("name") or "").strip() not in agent_names]
     host_agent = _host_snapshot_to_agent(session_item)
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
+    orchestration_state = load_group_orchestration_state(group_session_id)
+    host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
     next_speaker = request.target_agent_name or ""
     next_action = user_text or "请根据用户输入完成任务。"
@@ -265,23 +270,31 @@ async def _run_contract_events(
             app_settings=app_settings,
             user_message=user_text,
             session_item=session_item,
+            host_scheduler_state=host_scheduler,
         )
         next_speaker = str(decision.get("next_speaker") or "user").strip()
         next_action = str(decision.get("next_action") or "").strip() or next_action
         suggested_add = [str(item).strip() for item in (decision.get("suggested_add_agent_names") or []) if str(item).strip()]
+        host_scheduler = {
+            "current_phase": str(decision.get("current_phase") or "").strip(),
+            "next_speaker": next_speaker,
+            "next_action": next_action,
+        }
+        orchestration_state["host_scheduler"] = host_scheduler
+        write_group_orchestration_state(group_session_id, orchestration_state)
         save_session_definitions(session_definitions)
 
     if next_speaker in {"user", "end"}:
         host_msg = _build_host_pause_message(
             skill=str(host_agent.get("skill_directory") or ""),
             next_speaker=next_speaker,
-            current_phase=str((session_item.get("scheduler_state") or {}).get("current_phase") or ""),
+            current_phase=str(host_scheduler.get("current_phase") or ""),
             next_action=next_action,
             host_agent_name=host_name,
         )
         if host_msg:
             messages.append(host_msg)
-            save_group_history(group_session_id, messages)
+            save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
             session_item["updated_at"] = format_storage_timestamp()
             save_session_definitions(session_definitions)
             yield _sse("message", host_msg)
@@ -369,6 +382,7 @@ async def _run_one_expert_turn(
         discussion_goal=discussion_goal,
         messages=messages,
         session_item=session_item,
+        orchestration_state=load_group_orchestration_state(group_session_id),
         app_settings=app_settings,
         round_user_text=user_text,
         extra_system_prompt="",
@@ -407,10 +421,10 @@ async def _run_one_expert_turn(
     accumulated: list[str] = []
     tool_results: list[dict[str, Any]] = []
     keep_skill_session = False
-    await update_group_run(group_session_id, run_id, phase="agent_running")
+    await update_group_run(group_session_id, run_id, phase="executing")
     yield _sse(
         "progress",
-        SseProgressEvent(type="progress", run_id=run_id, phase="agent_running", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
+        SseProgressEvent(type="progress", run_id=run_id, phase="executing", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
     )
     async for stream_item in iter_with_keepalive(runtime.agent.astream(initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"])):
         if not isinstance(stream_item, dict):
@@ -419,7 +433,7 @@ async def _run_one_expert_turn(
         if event_type == "keepalive":
             yield _sse(
                 "progress",
-                SseProgressEvent(type="progress", run_id=run_id, phase="agent_running", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
+                SseProgressEvent(type="progress", run_id=run_id, phase="executing", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
             )
             continue
         if event_type == "agent_step":
@@ -463,8 +477,8 @@ async def _run_one_expert_turn(
         ),
     }
     messages.append(assistant_msg)
-    save_group_history(group_session_id, messages)
+    save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
     session_item["updated_at"] = format_storage_timestamp()
     save_session_definitions(session_definitions)
-    await update_group_run(group_session_id, run_id, phase="message_ready")
+    await update_group_run(group_session_id, run_id, phase="finalizing")
     yield _sse("message", assistant_msg)

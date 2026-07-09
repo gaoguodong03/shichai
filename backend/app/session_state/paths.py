@@ -1,19 +1,17 @@
-"""Per-user / per-session path layout for git-like session state.
+"""Per-session checkpoint path layout.
 
 Canonical layout (multi-tenant isolated under data/users/{user_id}/):
 
     sessions/
-      index.json
       {session_id}/
         session.json              # session definition snapshot
         history.json              # runtime chat history (JSON)
         runtime.json              # live runtime mirror for UI recovery
-        chat.md                   # exported chat for agents / checkpoints
         workspace/                # live working tree (like git checkout)
         checkpoints/
           HEAD.json
           chain.json
-          commits/
+          snapshots/
           objects/
             blobs/
             trees/
@@ -56,10 +54,9 @@ class SessionLayoutPaths:
     session_json: Path
     history: Path
     runtime_json: Path
-    chat_md: Path
     workspace: Path
     checkpoints_root: Path
-    commits: Path
+    snapshots: Path
     head: Path
     chain: Path
 
@@ -74,10 +71,9 @@ class SessionLayoutPaths:
             session_json=session_root / "session.json",
             history=session_root / "history.json",
             runtime_json=session_root / "runtime.json",
-            chat_md=session_root / "chat.md",
             workspace=session_root / "workspace",
             checkpoints_root=checkpoints_root,
-            commits=checkpoints_root / "commits",
+            snapshots=checkpoints_root / "snapshots",
             head=checkpoints_root / "HEAD.json",
             chain=checkpoints_root / "chain.json",
         )
@@ -88,7 +84,7 @@ def ensure_session_layout(user_ctx: UserContext, session_id: str) -> SessionLayo
     layout = SessionLayoutPaths.from_user_ctx(user_ctx, session_id)
     layout.session_root.mkdir(parents=True, exist_ok=True)
     layout.checkpoints_root.mkdir(parents=True, exist_ok=True)
-    layout.commits.mkdir(parents=True, exist_ok=True)
+    layout.snapshots.mkdir(parents=True, exist_ok=True)
     UserObjectStorePaths.from_session_layout(layout)
     layout.workspace.mkdir(parents=True, exist_ok=True)
     return layout

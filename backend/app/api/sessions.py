@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 
 from app.core.security import user_context_dependency
@@ -39,12 +39,15 @@ logger = logging.getLogger(__name__)
 
 
 class SessionRollback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     checkpoint_id: Optional[str] = None
     message_id: Optional[str] = None
-    message_count: Optional[int] = None
 
 
 class SessionClone(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     checkpoint_id: Optional[str] = None
     message_id: Optional[str] = None
 
@@ -66,7 +69,7 @@ async def create_session(body: SessionCreateRequest):
     host = dict(body.host.model_dump()) if body.host else None
     if host is None:
         settings = load_app_settings()
-        host = normalize_host_profile(settings.get("host_profile") if isinstance(settings, dict) else {})
+        host = normalize_host_profile(settings.get("host") if isinstance(settings, dict) else {})
     data = create_session_internal(
         title=body.title or "新对话",
         agent_names=body.agent_names,
@@ -239,16 +242,14 @@ async def session_clone(session_id: str, body: SessionClone = SessionClone()):
 
 @router.post("/sessions/{session_id}/rollback")
 async def session_rollback(session_id: str, body: SessionRollback):
-    """回溯到指定 message_id / message_count / checkpoint，并删除其后的状态记录。"""
+    """回溯到指定 message_id 或 checkpoint，并删除其后的状态记录。"""
     checkpoint_id = (body.checkpoint_id or "").strip() or None
     message_id = (body.message_id or "").strip() or None
-    message_count = body.message_count if isinstance(body.message_count, int) and body.message_count > 0 else None
-    if not checkpoint_id and not message_id and not message_count:
-        raise HTTPException(status_code=400, detail="checkpoint_id, message_id or message_count is required")
+    if not checkpoint_id and not message_id:
+        raise HTTPException(status_code=400, detail="checkpoint_id or message_id is required")
     data = await rollback_session_to_message(
         session_id,
         checkpoint_id=checkpoint_id,
         message_id=message_id,
-        message_count=message_count,
     )
     return {"status": "ok", "data": data}

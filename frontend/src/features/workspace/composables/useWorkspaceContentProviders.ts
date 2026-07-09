@@ -29,9 +29,7 @@ import {
 } from './workspacePreferences'
 import {
   agentBodyContent,
-  formatSchedulerStatePopover,
   formatToolPopover,
-  getSchedulerStateRaw,
   getToolRawResults,
   toolRawMeta,
 } from '../workspaceMessageUtils'
@@ -616,8 +614,6 @@ export function useWorkspaceContentProviders(args: {
     expandedToolKey,
     toolRawMeta,
     formatToolPopover,
-    getSchedulerStateRaw,
-    formatSchedulerStatePopover,
     formatGroupMsgTime,
     formatGroupMsgFullTime,
     renderMarkdown,

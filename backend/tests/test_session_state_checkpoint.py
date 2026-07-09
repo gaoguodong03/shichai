@@ -59,6 +59,48 @@ def _expert_msg(message_id: str, content: str, created_at: str = "20260624000100
     }
 
 
+def test_checkpoint_object_uses_contract_fields_without_secondary_markdown_snapshot(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "检查点契约"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    client.post(
+        f"/api/workspaces/{session_id}/files",
+        json={"filename": "note.txt", "content": "checkpoint"},
+    )
+    token = _set_user()
+    try:
+        save_group_history(session_id, [_user_msg("msg-1", "第一条")])
+    finally:
+        reset_current_user_identity(token)
+
+    snapshot_resp = client.post(f"/api/sessions/{session_id}/snapshot")
+    assert snapshot_resp.status_code == 200
+    checkpoint = snapshot_resp.json()["data"]
+
+    assert checkpoint["checkpoint_id"]
+    assert checkpoint["parent_checkpoint_id"] is not None
+    assert checkpoint["trigger"] == "manual_snapshot"
+    assert checkpoint["session_blob"]
+    assert checkpoint["history_blob"]
+    assert "orchestration_state_blob" in checkpoint
+    assert checkpoint["workspace_tree"]
+    assert checkpoint["memory_tree"]
+    assert checkpoint["last_message_id"] == "msg-1"
+    assert "commit_id" not in checkpoint
+    assert "id" not in checkpoint
+    assert "parent" not in checkpoint
+    assert "reason" not in checkpoint
+    assert "chat_blob" not in checkpoint
+    assert "session_definition" not in checkpoint
+    assert "message_count" not in checkpoint
+
+    from app.core.user_context import build_user_context
+
+    user_ctx = build_user_context(user_id="free4inno", username="free4inno")
+    assert not (user_ctx.sessions_dir / session_id / "chat.md").exists()
+
+
 def test_clone_reuses_blob_objects(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "blob复用"})
     assert create_resp.status_code == 200
@@ -159,7 +201,7 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     assert len(snapshots_resp.json()["data"]["checkpoints"]) == 1
 
 
-def test_snapshots_expose_message_count_and_last_message_id(client: TestClient):
+def test_snapshots_expose_contract_ids_and_last_message_id(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "快照映射"})
     assert create_resp.status_code == 200
     session_id = create_resp.json()["data"]["id"]
@@ -181,8 +223,12 @@ def test_snapshots_expose_message_count_and_last_message_id(client: TestClient):
     assert snapshots_resp.status_code == 200
     checkpoints = snapshots_resp.json()["data"]["checkpoints"]
     assert len(checkpoints) >= 2
-    counts = [int(item["message_count"]) for item in checkpoints if isinstance(item, dict)]
-    assert 1 in counts and 2 in counts
+    for checkpoint in checkpoints:
+        assert checkpoint["checkpoint_id"]
+        assert "id" not in checkpoint
+        assert "message_count" not in checkpoint
+        assert "message_ids" not in checkpoint
+        assert "reason" not in checkpoint
     assert any(item.get("last_message_id") == "msg-1" for item in checkpoints)
     assert any(item.get("last_message_id") == "msg-2" for item in checkpoints)
 
@@ -197,7 +243,7 @@ def test_snapshots_expose_message_count_and_last_message_id(client: TestClient):
     assert messages[0]["message_id"] == "msg-1"
 
 
-def test_rollback_prefers_message_id_over_stale_checkpoint_id(client: TestClient):
+def test_rollback_rejects_legacy_message_count(client: TestClient):
     create_resp = client.post("/api/sessions", json={"title": "回溯优先级"})
     assert create_resp.status_code == 200
     session_id = create_resp.json()["data"]["id"]
@@ -215,19 +261,11 @@ def test_rollback_prefers_message_id_over_stale_checkpoint_id(client: TestClient
     finally:
         reset_current_user_identity(token)
 
-    snapshots = client.get(f"/api/sessions/{session_id}/snapshots").json()["data"]["checkpoints"]
-    latest_checkpoint_id = snapshots[-1]["id"]
-
     rollback_resp = client.post(
         f"/api/sessions/{session_id}/rollback",
-        json={"message_id": "msg-1", "checkpoint_id": latest_checkpoint_id},
+        json={"message_count": 1},
     )
-    assert rollback_resp.status_code == 200
-
-    detail_resp = client.get(f"/api/sessions/{session_id}")
-    messages = detail_resp.json()["data"]["messages"]
-    assert len(messages) == 1
-    assert messages[0]["message_id"] == "msg-1"
+    assert rollback_resp.status_code == 422
 
 
 def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: TestClient):
@@ -250,7 +288,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     finally:
         reset_current_user_identity(token)
 
-    cp1 = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["commit_id"]
+    cp1 = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["checkpoint_id"]
 
     client.put(
         f"/api/workspaces/{session_id}/files/content",
@@ -267,7 +305,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     finally:
         reset_current_user_identity(token)
 
-    cp2 = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["commit_id"]
+    cp2 = client.post(f"/api/sessions/{session_id}/snapshot").json()["data"]["checkpoint_id"]
     assert cp2 != cp1
 
     rollback_resp = client.post(
@@ -275,6 +313,9 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
         json={"checkpoint_id": cp1},
     )
     assert rollback_resp.status_code == 200
+    rollback_checkpoint_id = rollback_resp.json()["data"]["checkpoint_id"]
+    assert rollback_resp.json()["data"]["source_checkpoint_id"] == cp1
+    assert rollback_checkpoint_id not in {cp1, cp2}
 
     content_resp = client.get(
         f"/api/workspaces/{session_id}/files/content",
@@ -291,6 +332,10 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
 
     snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
     checkpoints = snapshots_resp.json()["data"]["checkpoints"]
-    checkpoint_ids = [item["id"] for item in checkpoints if isinstance(item, dict)]
-    assert checkpoint_ids[-1] == cp1
-    assert cp2 not in checkpoint_ids
+    checkpoint_ids = [item["checkpoint_id"] for item in checkpoints if isinstance(item, dict)]
+    assert checkpoint_ids[-1] == rollback_checkpoint_id
+    assert cp1 in checkpoint_ids
+    assert cp2 in checkpoint_ids
+    rollback_checkpoint = checkpoints[-1]
+    assert rollback_checkpoint["trigger"] == "rollback"
+    assert rollback_checkpoint["parent_checkpoint_id"] == cp2

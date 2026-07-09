@@ -239,39 +239,6 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(row.getByRole('button', { name: 'sandbox' })).toHaveCount(0)
   })
 
-  test('Skill 调度状态入口使用 sandbox 同款图标按钮', async ({ page }) => {
-    const state = createE2eState()
-    state.sessions[0].messages = [
-      {
-        message_id: 'assistant-scheduler-state',
-        role: 'assistant',
-        agent_name: '问答专家',
-        content: '下面由写作专家继续。',
-        meta: {
-          scheduler_state: {
-            current_phase: 'draft',
-            next_speaker: '写作专家',
-            speaker_task: '整理正文',
-          },
-        },
-      } as never,
-    ]
-
-    await loginByStorage(page)
-    await mockApi(page, state)
-    await page.goto('/')
-    await expectMainShell(page)
-    await page.getByRole('heading', { name: '已有验收会话' }).click()
-
-    const row = page.locator('[data-message-id="assistant-scheduler-state"]')
-    const toggle = row.getByRole('button', { name: '显示 Skill 调度状态 (1)' })
-    await expect(toggle).toBeVisible()
-    await expect(row.getByRole('button', { name: 'skill', exact: true })).toHaveCount(0)
-
-    await toggle.click()
-    await expect(row.getByText('Skill 调度状态')).toBeVisible()
-  })
-
   test('专家运行时先显示占位气泡并随状态更新', async ({ page }) => {
     const state = createE2eState()
     state.sessions[0].agent_names = ['问答专家', '写作专家']
@@ -284,8 +251,9 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
           status: 200,
           headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
           body: [
-            `event: route\ndata: ${JSON.stringify({ agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
-            `event: content\ndata: ${JSON.stringify({ agent_name: '写作专家', text: '', meta: { phase: 'file_writing' } })}\n\n`,
+            `event: start\ndata: ${JSON.stringify({ type: 'start', run_id: 'run-e2e-custom' })}\n\n`,
+            `event: route\ndata: ${JSON.stringify({ type: 'route', run_id: 'run-e2e-custom', agent_name: '写作专家', skill: 'skill-write' })}\n\n`,
+            `event: progress\ndata: ${JSON.stringify({ type: 'progress', run_id: 'run-e2e-custom', agent_name: '写作专家', skill: 'skill-write', phase: 'tool_running' })}\n\n`,
           ].join(''),
         })
         resolve()
@@ -330,12 +298,12 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await streamReachedFileWrite
     await fallbackStarted
     const placeholder = page.locator('.group-chat-msg-row-other').filter({ hasText: '写作专家' }).last()
-    await expect(placeholder.getByText('写入文件中...')).toBeVisible()
+    await expect(placeholder.getByText('正在运行中...')).toBeVisible()
 
     releaseFallback?.()
 
     await expect(page.getByText('文章草稿已经写入工作区。')).toBeVisible()
-    await expect(page.getByText('写入文件中...')).toHaveCount(0)
+    await expect(page.getByText('正在运行中...')).toHaveCount(0)
   })
 
   test('用户可以管理成员、插入文件并打开场景快捷入口', async ({ page }) => {

@@ -49,28 +49,6 @@ export function formatToolPopover(raw: string): string {
   return tryFormatJson(toolRawMeta(raw).rawReturn)
 }
 
-export function getSchedulerStateRaw(msg: { routing?: unknown }): string {
-  const routing = msg.routing && typeof msg.routing === 'object' ? msg.routing as { scheduler_state?: unknown } : null
-  const state = routing?.scheduler_state
-  if (!state || typeof state !== 'object') return ''
-  const data = state as {
-    current_phase?: unknown
-    next_speaker?: unknown
-    next_action?: unknown
-  }
-  const out = {
-    current_phase: String(data.current_phase || '').trim(),
-    next_speaker: String(data.next_speaker || '').trim(),
-    next_action: String(data.next_action || '').trim(),
-  }
-  if (!out.current_phase && !out.next_speaker && !out.next_action) return ''
-  return JSON.stringify(out, null, 2)
-}
-
-export function formatSchedulerStatePopover(raw: string): string {
-  return tryFormatJson(raw)
-}
-
 function extractToolCallBlocks(content: string): string[] {
   const text = content || ''
   if (!text.trim()) return []

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -48,13 +49,17 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     list_resp = client.get("/api/sessions")
     assert list_resp.status_code == 200
     sessions = list_resp.json()["data"]["sessions"]
-    assert any(row["id"] == session_id for row in sessions)
+    row = next(row for row in sessions if row["id"] == session_id)
+    assert "runtime" in row
+    assert "runtime_state" not in row
 
     get_resp = client.get(f"/api/sessions/{session_id}")
     assert get_resp.status_code == 200
     detail = get_resp.json()["data"]
     assert detail["id"] == session_id
     assert detail["messages"] == []
+    assert "runtime" in detail
+    assert "runtime_state" not in detail
 
     del_resp = client.delete(f"/api/sessions/{session_id}")
     assert del_resp.status_code == 200
@@ -313,6 +318,26 @@ def test_app_and_host_system_prompts_are_independent(client: TestClient):
     host_get = client.get("/api/settings/host-profile")
     assert app_get.json()["data"]["system_prompt"] == "全局平台规则"
     assert host_get.json()["data"]["system_prompt"] == "主持人调度规则"
+
+
+def test_app_settings_store_default_host_under_host_field(client: TestClient):
+    from app.api.settings_app import app_settings_path
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    host_resp = client.put(
+        "/api/settings/host-profile",
+        json={"name": "测试主持人", "system_prompt": "只做调度"},
+    )
+    assert host_resp.status_code == 200
+
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        raw = json.loads(app_settings_path().read_text(encoding="utf-8"))
+        assert raw["host"]["name"] == "测试主持人"
+        assert raw["host"]["system_prompt"] == "只做调度"
+        assert "host_profile" not in raw
+    finally:
+        reset_current_user_identity(token)
 
 
 def test_new_regular_session_uses_latest_default_host_profile(client: TestClient):

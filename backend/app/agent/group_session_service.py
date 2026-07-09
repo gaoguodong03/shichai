@@ -23,14 +23,16 @@ from app.api.group_chat_state import (
     format_storage_timestamp,
     frontend_history_message as _frontend_history_message,
     load_group_history as _load_group_history,
+    load_group_orchestration_state as _load_group_orchestration_state,
     load_session_definitions as _load_session_definitions,
-    runtime_state_for_session as _runtime_state_for_session,
+    runtime_for_session as _runtime_for_session,
     save_group_history as _save_group_history,
     save_session_definitions as _save_session_definitions,
+    write_group_orchestration_state as _write_group_orchestration_state,
 )
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import get_current_user
-from app.session_state.markdown import format_session_chat_markdown
+from app.session_state.markdown import format_session_export_markdown
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
 )
@@ -77,9 +79,11 @@ def _host_display_name(session_item: Dict[str, Any]) -> str:
     return str(host_snapshot.get("name") or "四九").strip() or "四九"
 
 
-def _clear_scheduler_state_for_session(session_item: Dict[str, Any]) -> None:
-    """Configuration changes invalidate host stage state from a previous scene/task."""
-    session_item.pop("scheduler_state", None)
+def _clear_host_scheduler_state(group_session_id: str) -> None:
+    """Configuration changes invalidate only the host_scheduler orchestration block."""
+    state = _load_group_orchestration_state(group_session_id)
+    state.pop("host_scheduler", None)
+    _write_group_orchestration_state(group_session_id, state)
 
 
 def create_session_internal(
@@ -111,7 +115,7 @@ def create_session_internal(
     }
     session_definitions[gsid] = row
     _save_session_definitions(session_definitions)
-    _save_group_history(gsid, [])
+    _save_group_history(gsid, [], checkpoint_trigger=None)
     # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
     try:
         from app.session_state.service import capture_session_checkpoint
@@ -129,7 +133,7 @@ def export_session_to_markdown(session_id: str, filename: Optional[str] = None) 
     messages = _load_group_history(session_id)
     if not messages:
         raise HTTPException(status_code=400, detail="会话无消息，无法导出")
-    md = format_session_chat_markdown(messages)
+    md = format_session_export_markdown(messages)
     ws_root = get_workspace_root(session_id)
     fn = filename or f"session-{session_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}00.md"
     fn = fn.replace("..", "").replace("/", "")
@@ -185,7 +189,7 @@ async def get_group_session(group_session_id: str):
             **_build_session_payload(group_session_id, session_item),
             "messages": messages,
             "agent_map": agent_map,
-            "runtime_state": _runtime_state_for_session(group_session_id, session_item),
+            "runtime": _runtime_for_session(group_session_id, session_item),
         },
     }
 
@@ -204,17 +208,23 @@ async def group_session_events_stream(group_session_id: str):
             snapshot = {
                 "type": "snapshot",
                 "session_id": group_session_id,
-                "timestamp": format_storage_timestamp(),
-                "runtime_state": _runtime_state_for_session(group_session_id, session_definitions.get(group_session_id) or {}),
+                "server_time": format_storage_timestamp(),
+                "runtime": _runtime_for_session(group_session_id, session_definitions.get(group_session_id) or {}),
+                "last_message_id": "",
+                "updated_at": str((session_definitions.get(group_session_id) or {}).get("updated_at") or ""),
             }
-            yield f"event: session_update\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
+            history = _load_group_history(group_session_id)
+            if history:
+                snapshot["last_message_id"] = str(history[-1].get("message_id") or "")
+            yield f"event: snapshot\ndata: {json.dumps(snapshot, ensure_ascii=False)}\n\n"
             while True:
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=_SSE_AGENT_KEEPALIVE_INTERVAL_SEC)
                 except asyncio.TimeoutError:
-                    yield f"event: keepalive\ndata: {json.dumps({'type': 'keepalive'}, ensure_ascii=False)}\n\n"
+                    yield f"event: keepalive\ndata: {json.dumps({'type': 'keepalive', 'server_time': format_storage_timestamp()}, ensure_ascii=False)}\n\n"
                     continue
-                yield f"event: session_update\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
+                event_name = str(item.get("type") or "message").strip() or "message"
+                yield f"event: {event_name}\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             raise
         finally:
@@ -245,7 +255,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 "updated_at": now,
             }
             _save_session_definitions(session_definitions)
-            _save_group_history(group_session_id, [])
+            _save_group_history(group_session_id, [], checkpoint_trigger="session_changed")
         else:
             raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
@@ -259,7 +269,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
             session_definitions[group_session_id]["title_auto_generated"] = False
     if body.host is not None:
         session_definitions[group_session_id]["host"] = body.host.model_dump()
-        _clear_scheduler_state_for_session(session_definitions[group_session_id])
+        _clear_host_scheduler_state(group_session_id)
     direct_names = body.agent_names
     if direct_names is not None:
         instances = load_agent_instances()
@@ -267,7 +277,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         deduped = _dedupe_names(list(direct_names or []))
         _validate_agent_names(deduped, valid_names)
         session_definitions[group_session_id]["agent_names"] = deduped
-        _clear_scheduler_state_for_session(session_definitions[group_session_id])
+        _clear_host_scheduler_state(group_session_id)
     add_names = body.add_agent_names
     remove_names = body.remove_agent_names
     if add_names or remove_names:
@@ -289,7 +299,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 current.discard(name)
         session_definitions[group_session_id]["agent_names"] = list(current)
         if current != before_names:
-            _clear_scheduler_state_for_session(session_definitions[group_session_id])
+            _clear_host_scheduler_state(group_session_id)
         # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
         unique_added = (
             list(
@@ -327,7 +337,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                         "created_at": format_storage_timestamp(),
                     }
                 )
-            _save_group_history(group_session_id, messages)
+            _save_group_history(group_session_id, messages, checkpoint_trigger="session_changed")
     if _ensure_scene_profile_contract(session_definitions[group_session_id]):
         pass
     session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
@@ -335,7 +345,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(group_session_id, reason="session_updated")
+        capture_session_checkpoint(group_session_id, reason="session_changed")
     except Exception:
         logger.warning("session_state update checkpoint failed: %s", group_session_id, exc_info=True)
     return {"status": "ok", "data": _build_session_payload(group_session_id, session_definitions[group_session_id])}
@@ -356,7 +366,7 @@ async def delete_group_session(group_session_id: str):
     del session_definitions[group_session_id]
     _save_session_definitions(session_definitions, preserve_unmentioned=False)
     _cleanup_orphan_group_histories(session_definitions)
-    # 删除会话目录（history / chat.md / workspace / checkpoints）
+    # 删除会话目录（history / workspace / checkpoints）
     user_ctx = current_user.ctx
     from app.session_state.paths import SessionLayoutPaths
 
@@ -392,5 +402,5 @@ async def delete_group_message(group_session_id: str, message_id: str):
     messages = [m for m in messages if m.get("message_id") != message_id]
     if len(messages) == before:
         raise HTTPException(status_code=404, detail="Message not found")
-    _save_group_history(group_session_id, messages)
+    _save_group_history(group_session_id, messages, checkpoint_trigger="message_deleted")
     return {"status": "ok", "data": {"message_id": message_id, "deleted": True}}

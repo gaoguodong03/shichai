@@ -174,24 +174,24 @@ def _save_llm_provider_resources(providers: Dict[str, Dict[str, Any]]) -> None:
 
 
 def load_app_settings() -> Dict[str, Any]:
-    """加载应用设置；合并默认 provider，保证新增的模型在未保存前也可用"""
+    """Load app settings with `host` as the only runtime host config field."""
     path = app_settings_path()
     data = {
         "default_llm": "qwen3-max",
         "system_prompt": "",
-        "host_profile": dict(_DEFAULT_HOST_PROFILE),
+        "host": dict(_DEFAULT_HOST_PROFILE),
     }
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
                 if isinstance(loaded, dict):
-                    hp = loaded.get("host_profile")
-                    if isinstance(hp, dict):
-                        loaded = dict(loaded)
-                        loaded["host_profile"] = normalize_host_profile(hp)
+                    loaded = dict(loaded)
+                    host = loaded.get("host")
+                    if isinstance(host, dict):
+                        loaded["host"] = normalize_host_profile(host)
+                    loaded.pop("host_profile", None)
                     if "system_prompt" in loaded:
-                        loaded = dict(loaded)
                         loaded["system_prompt"] = str(loaded.get("system_prompt") or "")
                     loaded.pop("llm_providers", None)
                 data.update(loaded)
@@ -241,7 +241,7 @@ class HostProfileBody(BaseModel):
 
 
 def _host_profile_response_payload(data: Dict[str, Any]) -> Dict[str, Any]:
-    hp = data.get("host_profile") or {}
+    hp = data.get("host") or {}
     return normalize_host_profile(hp if isinstance(hp, dict) else {})
 
 
@@ -255,7 +255,7 @@ async def get_host_profile():
 async def update_host_profile(body: HostProfileBody):
     incoming = body.model_dump(exclude_none=True)
     current = load_app_settings()
-    hp = current.get("host_profile") if isinstance(current.get("host_profile"), dict) else {}
+    hp = current.get("host") if isinstance(current.get("host"), dict) else {}
     merged = dict(hp if isinstance(hp, dict) else {})
     for k in (
         "name",
@@ -267,7 +267,7 @@ async def update_host_profile(body: HostProfileBody):
         if k in incoming:
             merged[k] = incoming[k]
     merged = normalize_host_profile(merged)
-    save_app_settings({"host_profile": merged})
+    save_app_settings({"host": merged})
     return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
 
 
@@ -280,7 +280,7 @@ async def get_host_profile_defaults():
 @router.post("/settings/host-profile/reset")
 async def reset_host_profile():
     """将主持人配置恢复为内置默认值。"""
-    save_app_settings({"host_profile": dict(_DEFAULT_HOST_PROFILE)})
+    save_app_settings({"host": dict(_DEFAULT_HOST_PROFILE)})
     return {"status": "ok", "data": _host_profile_response_payload(load_app_settings())}
 
 
@@ -320,6 +320,7 @@ def save_app_settings(data: Dict[str, Any]):
     current.update(patch)
     current.pop("router_tfidf", None)
     current.pop("llm_providers", None)
+    current.pop("host_profile", None)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(current, f, ensure_ascii=False, indent=2)
 

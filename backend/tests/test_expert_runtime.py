@@ -24,7 +24,14 @@ class FakeLlm:
 
 def test_resolve_expert_skill_uses_locked_skill_first():
     loader = FakeSkillsLoader({"sk1": "body 1", "sk2": "body 2"})
-    meta = {"skill_session_owner_name": "专家A", "skill_session_skill": "sk2"}
+    orchestration_state = {
+        "continuation": {
+            "owner_agent_name": "专家A",
+            "skill_policy": "keep",
+            "skill": "sk2",
+            "next_action": "继续处理",
+        }
+    }
 
     skill, content, debug = asyncio.run(
         resolve_expert_skill(
@@ -35,7 +42,8 @@ def test_resolve_expert_skill_uses_locked_skill_first():
             agent_name="专家A",
             discussion_goal="goal",
             messages=[],
-            session_item=meta,
+            session_item={},
+            orchestration_state=orchestration_state,
             app_settings={},
             round_user_text="",
             skills_loader=loader,

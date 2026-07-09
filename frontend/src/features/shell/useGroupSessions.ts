@@ -7,7 +7,7 @@ export type GroupSessionRow = {
   title: string
   updated_at: string
   agent_names?: string[]
-  runtime_state?: { running?: boolean }
+  runtime?: { running?: boolean }
 }
 
 export function useGroupSessions(args: {

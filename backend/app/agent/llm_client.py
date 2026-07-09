@@ -688,11 +688,11 @@ class _TracedLLMClient:
             return
         stats = _prompt_payload_stats(inp)
         logger.info(
-            "[Prompt] mode=summary method=%s model=%s base_url=%s message_count=%s prompt_chars=%s tool_call_count=%s",
+            "[Prompt] mode=summary method=%s model=%s base_url=%s input_messages=%s prompt_chars=%s tool_call_count=%s",
             method,
             self._model_name,
             self._provider_base_url,
-            stats["message_count"],
+            stats["input_messages"],
             stats["prompt_chars"],
             stats["tool_call_count"],
         )
@@ -729,7 +729,7 @@ def _prompt_payload_stats(value: Any) -> Dict[str, int]:
         return 0
 
     return {
-        "message_count": len(payload) if isinstance(payload, list) else (0 if payload is None else 1),
+        "input_messages": len(payload) if isinstance(payload, list) else (0 if payload is None else 1),
         "prompt_chars": _content_chars(payload),
         "tool_call_count": _tool_call_count(payload),
     }

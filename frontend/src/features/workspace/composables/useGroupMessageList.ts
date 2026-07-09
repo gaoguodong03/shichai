@@ -66,12 +66,10 @@ export function useGroupMessageList(args: {
   let renderedSessionId = ''
 
   type SessionCheckpoint = {
-    id: string
-    message_count?: number
+    checkpoint_id: string
     last_message_id?: string
-    message_ids?: string[]
     created_at?: string
-    reason?: string
+    trigger?: string
   }
 
   const sessionCheckpoints = ref<SessionCheckpoint[]>([])
@@ -103,21 +101,7 @@ export function useGroupMessageList(args: {
     }
   }
 
-  function messageCountForMessage(msg: GroupMessage, displayIndex?: number): number | null {
-    const messages = groupDetail.value?.messages
-    if (!Array.isArray(messages) || !messages.length) return null
-    const messageId = (msg.message_id || '').trim()
-    if (messageId) {
-      const idx = messages.findIndex((item) => item.message_id === messageId)
-      if (idx >= 0) return idx + 1
-    }
-    if (displayIndex != null && displayIndex >= 0 && displayIndex < messages.length) {
-      return displayIndex + 1
-    }
-    return null
-  }
-
-  function resolveCheckpointForMessage(msg: GroupMessage, displayIndex?: number): string | null {
+  function resolveCheckpointForMessage(msg: GroupMessage): string | null {
     const checkpoints = sessionCheckpoints.value
     if (!checkpoints.length) return null
 
@@ -125,42 +109,20 @@ export function useGroupMessageList(args: {
     if (messageId) {
       let byLastMessageId: string | null = null
       for (const cp of checkpoints) {
-        if (cp.last_message_id === messageId) byLastMessageId = cp.id
-        const ids = cp.message_ids
-        if (ids?.length && ids[ids.length - 1] === messageId) byLastMessageId = cp.id
+        if (cp.last_message_id === messageId) byLastMessageId = cp.checkpoint_id
       }
       if (byLastMessageId) return byLastMessageId
     }
-
-    const messageCount = messageCountForMessage(msg, displayIndex)
-    if (!messageCount) return null
-
-    let exactMatch: string | null = null
-    for (const cp of checkpoints) {
-      const count = Number(cp.message_count)
-      if (Number.isFinite(count) && count === messageCount) exactMatch = cp.id
-    }
-    if (exactMatch) return exactMatch
-
-    let best: string | null = null
-    let bestCount = -1
-    for (const cp of checkpoints) {
-      const count = Number(cp.message_count)
-      if (!Number.isFinite(count) || count > messageCount) continue
-      if (count >= bestCount) {
-        bestCount = count
-        best = cp.id
-      }
-    }
-    return best
+    return null
   }
 
   function canMessageStateAction(msg: GroupMessage, displayIndex?: number): boolean {
+    void displayIndex
     if ((msg as GroupMessage)._streaming) return false
     if (messageStateActionKey.value) return false
     if (sessionCheckpointsLoading.value) return false
     if (isMemberJoinedMessage(msg)) return false
-    return messageCountForMessage(msg, displayIndex) != null
+    return Boolean((msg.message_id || '').trim())
   }
 
   function messageStateActionBusy(msg: GroupMessage): boolean {
@@ -171,7 +133,8 @@ export function useGroupMessageList(args: {
   async function forkMessageState(msg: GroupMessage, displayIndex?: number) {
     const sessionId = (groupDetail.value?.id || '').trim()
     const messageId = (msg.message_id || '').trim()
-    const checkpointId = resolveCheckpointForMessage(msg, displayIndex)
+    void displayIndex
+    const checkpointId = resolveCheckpointForMessage(msg)
     if (!sessionId || !messageId || messageStateActionKey.value) return
     const ok = await appConfirm({
       title: '分叉会话',
@@ -206,9 +169,8 @@ export function useGroupMessageList(args: {
   async function rollbackMessageState(msg: GroupMessage, displayIndex?: number) {
     const sessionId = (groupDetail.value?.id || '').trim()
     const messageId = (msg.message_id || '').trim()
-    const messageCount = messageCountForMessage(msg, displayIndex)
     if (!sessionId || messageStateActionKey.value) return
-    if (!messageId && !messageCount) return
+    if (!messageId) return
     const ok = await appConfirm({
       title: '回溯会话',
       message: '确定回溯到该条发言对应的状态吗？此后的状态将被删除。',
@@ -223,7 +185,6 @@ export function useGroupMessageList(args: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message_id: messageId || undefined,
-          message_count: messageCount ?? undefined,
         }),
       })
       const payload = await response.json().catch(() => null)

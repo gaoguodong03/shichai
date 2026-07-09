@@ -93,21 +93,13 @@ export function useGroupStreamEvents(args: {
   function streamingStatusTextForPhase(phase: string): string {
     const key = String(phase || '').trim().toLowerCase()
     if (!key) return STREAMING_STATUS_DEFAULT
-    if (key === 'file_resolving' || key === 'preparing') return '正在处理文件...'
-    if (key === 'file_resolved' || key === 'file_parsed') return '文件已处理，正在继续...'
-    if (
-      key === 'file_writing' ||
-      key === 'file_write' ||
-      key === 'writing_file' ||
-      key === 'workspace_writing'
-    ) {
-      return '写入文件中...'
-    }
-    if (key === 'file_written' || key === 'workspace_written') return '文件已写入，正在继续...'
-    if (key === 'tool_running' || key === 'tool_pending') return '正在运行中...'
-    if (key === 'agent_waiting') return '正在等待任务完成...'
-    if (key === 'presentation_rewriting' || key === 'display_rewriting') return '正在整理表达...'
-    if (key === 'generating' || key === 'llm_generating' || key === 'assistant_generating') return '正在生成回复...'
+    if (key === 'file_resolving') return '正在处理文件...'
+    if (key === 'file_resolved') return '文件已处理，正在继续...'
+    if (key === 'tool_running') return '正在运行中...'
+    if (key === 'planning') return '正在规划...'
+    if (key === 'executing') return '正在执行...'
+    if (key === 'assistant_generating') return '正在生成回复...'
+    if (key === 'finalizing') return '正在收尾...'
     return STREAMING_STATUS_DEFAULT
   }
 
@@ -223,32 +215,32 @@ export function useGroupStreamEvents(args: {
     const id = activeSessionId(sessionId)
     const agentName = String(data?.agent_name || '').trim()
     if (agentName) ensureStreamingStatusPlaceholder(agentName, streamingStatusTextForPhase(phase))
-    if (phase === 'file_resolving' || phase === 'preparing') {
+    if (phase === 'file_resolving') {
       patchGroupStreamState(id, { phase: '正在处理文件引用…' })
       return true
     }
-    if (phase === 'file_resolved' || phase === 'file_parsed') {
+    if (phase === 'file_resolved') {
       patchGroupStreamState(id, { phase: '文件引用已处理' })
       return true
     }
-    if (phase === 'file_writing' || phase === 'file_write' || phase === 'writing_file' || phase === 'workspace_writing') {
-      patchGroupStreamState(id, { phase: '写入文件中…' })
-      return true
-    }
-    if (phase === 'file_written' || phase === 'workspace_written') {
-      patchGroupStreamState(id, { phase: '文件已写入' })
-      return true
-    }
-    if (phase === 'tool_running' || phase === 'tool_pending') {
+    if (phase === 'tool_running') {
       patchGroupStreamState(id, { phase: '技能任务运行中，完成后会继续回复…' })
       return true
     }
-    if (phase === 'agent_waiting') {
-      patchGroupStreamState(id, { phase: '仍在等待技能任务完成…' })
+    if (phase === 'planning') {
+      patchGroupStreamState(id, { phase: '正在规划…' })
       return true
     }
-    if (phase === 'presentation_rewriting' || phase === 'display_rewriting') {
-      patchGroupStreamState(id, { phase: '正在整理表达…' })
+    if (phase === 'executing') {
+      patchGroupStreamState(id, { phase: '正在执行…' })
+      return true
+    }
+    if (phase === 'assistant_generating') {
+      patchGroupStreamState(id, { phase: '正在生成回复…' })
+      return true
+    }
+    if (phase === 'finalizing') {
+      patchGroupStreamState(id, { phase: '正在收尾…' })
       return true
     }
     return false

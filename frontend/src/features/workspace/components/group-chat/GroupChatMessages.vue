@@ -57,31 +57,6 @@
                           </span>
                           <span v-if="messageSkill(msg)" class="group-chat-skill-tag">skill: {{ formatSkill(messageSkill(msg)) }}</span>
                           <div
-                            v-if="getSchedulerStateRaw(msg)"
-                            class="group-chat-tool-tag-wrap"
-                            :data-key="schedulerStateKey(msg, i)"
-                          >
-                            <button
-                              type="button"
-                              :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-sandbox-group-toggle', isSchedulerStateOpen(msg, i) && 'group-chat-tool-tag-expanded']"
-                              :aria-label="`${isSchedulerStateOpen(msg, i) ? '隐藏' : '显示'} Skill 调度状态 (1)`"
-                              :title="`${isSchedulerStateOpen(msg, i) ? '隐藏' : '显示'} Skill 调度状态 (1)`"
-                              @click="expandedToolKey = isSchedulerStateOpen(msg, i) ? null : schedulerStateKey(msg, i)"
-                            >
-                              <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <rect x="3" y="4" width="18" height="16" rx="3" />
-                                <path d="M8 9l3 3-3 3" />
-                                <path d="M13 15h3" />
-                              </svg>
-                              <span class="group-chat-sandbox-group-count" aria-hidden="true">1</span>
-                              <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
-                            <div v-if="isSchedulerStateOpen(msg, i)" class="group-chat-tool-popover">
-                              <span class="group-chat-tool-popover-title">Skill 调度状态</span>
-                              <pre class="group-chat-tool-popover-pre">{{ formatSchedulerStatePopover(getSchedulerStateRaw(msg)) }}</pre>
-                            </div>
-                          </div>
-                          <div
                             v-if="getSandboxToolRawResults(msg).length"
                             class="group-chat-tool-tag-wrap"
                             :data-key="sandboxGroupKey(msg, i)"
@@ -283,8 +258,6 @@ const {
   expandedToolKey,
   toolRawMeta,
   formatToolPopover,
-  getSchedulerStateRaw,
-  formatSchedulerStatePopover,
   formatGroupMsgFullTime,
   renderMarkdown,
   agentBodyContent,
@@ -315,14 +288,6 @@ function getNonSandboxToolRawResults(msg: GroupMessage) {
 
 function showMessageActions(msg: GroupMessage) {
   return !isMemberJoinedMessage(msg) && Boolean((msg.content || '').trim())
-}
-
-function schedulerStateKey(msg: GroupMessage, index: number) {
-  return `${messageToolKey(msg, index)}-scheduler-state`
-}
-
-function isSchedulerStateOpen(msg: GroupMessage, index: number) {
-  return expandedToolKey.value === schedulerStateKey(msg, index)
 }
 
 function sandboxGroupKey(msg: GroupMessage, index: number) {

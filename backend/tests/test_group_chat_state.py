@@ -59,7 +59,7 @@ def test_session_definitions_ignore_legacy_meta_json(tmp_path, monkeypatch):
     assert "s1" not in state.load_session_definitions()
 
 
-def test_runtime_state_writes_runtime_json_not_session_json(tmp_path, monkeypatch):
+def test_runtime_writes_runtime_json_not_session_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions(
         {
@@ -71,7 +71,7 @@ def test_runtime_state_writes_runtime_json_not_session_json(tmp_path, monkeypatc
         }
     )
 
-    state.write_group_runtime_state(
+    state.write_group_runtime(
         "s1",
         {
             "running": True,
@@ -84,7 +84,55 @@ def test_runtime_state_writes_runtime_json_not_session_json(tmp_path, monkeypatc
     assert (tmp_path / "s1" / "runtime.json").exists()
     loaded = state.load_session_definitions()["s1"]
     assert "runtime_state" not in loaded
-    assert state.runtime_state_for_session("s1", loaded)["run_id"] == "r1"
+    assert state.runtime_for_session("s1", loaded)["run_id"] == "r1"
+
+
+def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions(
+        {
+            "s1": {
+                "title": "会话",
+                "created_at": "2026062908104800",
+                "updated_at": "2026062908104800",
+            }
+        }
+    )
+
+    state.write_group_orchestration_state(
+        "s1",
+        {
+            "host_scheduler": {
+                "current_phase": "阶段2",
+                "next_speaker": "写作专家",
+                "next_action": "请写大纲",
+            },
+            "continuation": {
+                "owner_agent_name": "写作专家",
+                "skill_policy": "keep",
+                "skill": "article-writer",
+                "next_action": "继续补全正文",
+            },
+            "speaker_task": "旧字段",
+        },
+    )
+
+    loaded = state.load_group_orchestration_state("s1")
+    assert loaded == {
+        "continuation": {
+            "owner_agent_name": "写作专家",
+            "skill_policy": "keep",
+            "skill": "article-writer",
+            "next_action": "继续补全正文",
+        },
+        "host_scheduler": {
+            "current_phase": "阶段2",
+            "next_speaker": "写作专家",
+            "next_action": "请写大纲",
+        },
+    }
+    assert (tmp_path / "s1" / "orchestration_state.json").exists()
+    assert "scheduler_state" not in state.load_session_definitions()["s1"]
 
 
 def test_group_history_writes_canonical_speaker_messages(tmp_path, monkeypatch):
@@ -324,7 +372,7 @@ def test_build_archive_segments_ignores_host_messages():
     assert segments[0]["experts"][0]["messages"][0]["skill"] == "skill-a"
 
 
-def test_runtime_state_clears_done_task(tmp_path, monkeypatch):
+def test_runtime_clears_done_task(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
 
     async def done():
@@ -335,9 +383,9 @@ def test_runtime_state_clears_done_task(tmp_path, monkeypatch):
         task = loop.create_task(done())
         loop.run_until_complete(task)
         state.ACTIVE_GROUP_RUNS["s1"] = {"run_id": "r1", "task": task, "phase": "running"}
-        session_item = {"runtime_state": {"running": True}}
+        session_item = {}
 
-        runtime = state.runtime_state_for_session("s1", session_item)
+        runtime = state.runtime_for_session("s1", session_item)
 
         assert runtime == {"running": False}
         assert "runtime_state" not in session_item
@@ -346,21 +394,27 @@ def test_runtime_state_clears_done_task(tmp_path, monkeypatch):
         loop.close()
 
 
-def test_runtime_state_clears_stale_stored_run_without_active_task(tmp_path, monkeypatch):
+def test_runtime_clears_stale_stored_run_without_active_task(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     monkeypatch.setenv("GROUP_RUNTIME_STATE_STALE_SECONDS", "60")
     state.ACTIVE_GROUP_RUNS.clear()
 
-    session_item = {
-        "runtime_state": {
-            "running": True,
-            "run_id": "old-run",
-            "phase": "tool_running",
-            "started_at": "2026-05-24T00:00:00+00:00",
-        }
-    }
+    session_item = {}
+    (tmp_path / "s1").mkdir(parents=True)
+    (tmp_path / "s1" / "runtime.json").write_text(
+        json.dumps(
+            {
+                "running": True,
+                "run_id": "old-run",
+                "phase": "tool_running",
+                "started_at": "2026-05-24T00:00:00+00:00",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
-    runtime = state.runtime_state_for_session("s1", session_item)
+    runtime = state.runtime_for_session("s1", session_item)
 
     assert runtime == {"running": False}
     assert "runtime_state" not in session_item

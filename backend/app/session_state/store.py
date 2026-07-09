@@ -53,15 +53,15 @@ def read_tree(store: UserObjectStorePaths, tree_hash: str) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {"type": "tree", "entries": []}
 
 
-def write_commit(layout: SessionLayoutPaths, commit_id: str, commit_obj: Dict[str, Any]) -> Path:
-    commit_path = layout.commits / f"{commit_id}.json"
-    atomic_write_json(commit_path, commit_obj)
-    return commit_path
+def write_checkpoint(layout: SessionLayoutPaths, checkpoint_id: str, checkpoint_obj: Dict[str, Any]) -> Path:
+    checkpoint_path = layout.snapshots / f"{checkpoint_id}.json"
+    atomic_write_json(checkpoint_path, checkpoint_obj)
+    return checkpoint_path
 
 
-def read_commit(layout: SessionLayoutPaths, commit_id: str) -> Dict[str, Any]:
-    commit_path = layout.commits / f"{commit_id}.json"
-    data = json.loads(commit_path.read_text(encoding="utf-8"))
+def read_checkpoint(layout: SessionLayoutPaths, checkpoint_id: str) -> Dict[str, Any]:
+    checkpoint_path = layout.snapshots / f"{checkpoint_id}.json"
+    data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     return data if isinstance(data, dict) else {}
 
 
@@ -94,19 +94,19 @@ def load_head(layout: SessionLayoutPaths) -> Optional[str]:
     return head or None
 
 
-def save_head(layout: SessionLayoutPaths, commit_id: Optional[str]) -> None:
-    atomic_write_json(layout.head, {"head": commit_id or ""})
+def save_head(layout: SessionLayoutPaths, checkpoint_id: Optional[str]) -> None:
+    atomic_write_json(layout.head, {"head": checkpoint_id or ""})
 
 
-def prune_commits(layout: SessionLayoutPaths, keep_commit_ids: Iterable[str]) -> None:
-    keep = {str(item).strip() for item in keep_commit_ids if str(item).strip()}
-    if not layout.commits.exists():
+def prune_checkpoints(layout: SessionLayoutPaths, keep_checkpoint_ids: Iterable[str]) -> None:
+    keep = {str(item).strip() for item in keep_checkpoint_ids if str(item).strip()}
+    if not layout.snapshots.exists():
         return
-    for commit_path in layout.commits.glob("*.json"):
-        if commit_path.stem in keep:
+    for checkpoint_path in layout.snapshots.glob("*.json"):
+        if checkpoint_path.stem in keep:
             continue
         try:
-            commit_path.unlink()
+            checkpoint_path.unlink()
         except OSError:
             pass
 
@@ -121,6 +121,5 @@ def clear_directory_contents(path: Path) -> None:
             child.unlink(missing_ok=True)
 
 
-# Backward-compatible aliases
 SessionStatePaths = SessionLayoutPaths
 ensure_session_state_layout = ensure_session_layout

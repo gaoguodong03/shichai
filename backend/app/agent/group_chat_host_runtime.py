@@ -93,6 +93,7 @@ async def _host_decide_by_agent(
     orphan_session_agent_names: Optional[List[str]] = None,
     host_mode: str = "recruitment",
     session_item: Optional[Dict[str, Any]] = None,
+    host_scheduler_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Ask the host LLM for the next scheduler decision and validate it strictly."""
     _ = (
@@ -126,10 +127,8 @@ async def _host_decide_by_agent(
     system_content = "\n\n".join(part for part in system_parts if part)
 
     current_phase = ""
-    if isinstance(session_item, dict):
-        scheduler_state = session_item.get("scheduler_state")
-        if isinstance(scheduler_state, dict):
-            current_phase = str(scheduler_state.get("current_phase") or "").strip()
+    if isinstance(host_scheduler_state, dict):
+        current_phase = str(host_scheduler_state.get("current_phase") or "").strip()
     prompt = render_platform_prompt(
         "host.select_next_speaker.v1",
         {
@@ -152,8 +151,6 @@ async def _host_decide_by_agent(
         "next_speaker": str(decision.get("next_speaker") or "").strip(),
         "next_action": str(decision.get("next_action") or "").strip(),
     }
-    if isinstance(session_item, dict):
-        session_item["scheduler_state"] = state
     logger.info(
         "host_scheduler_decision session=%s host=%s next_speaker=%s current_phase=%s",
         group_session_id,

@@ -40,8 +40,6 @@ export interface GroupChatMessageContext {
   expandedToolKey: ContextValue
   toolRawMeta: ContextValue
   formatToolPopover: ContextValue
-  getSchedulerStateRaw: ContextValue
-  formatSchedulerStatePopover: ContextValue
   formatGroupMsgTime: ContextValue
   formatGroupMsgFullTime: ContextValue
   renderMarkdown: ContextValue

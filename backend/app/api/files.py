@@ -186,7 +186,7 @@ async def create_workspace_dir(
         raise HTTPException(status_code=400, detail=str(e))
     ws_root = get_workspace_root(workspace_id, user=current_user)
     rel = str(new_dir.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_mkdir")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -316,7 +316,7 @@ async def update_workspace_file_content(
         raise HTTPException(status_code=400, detail="Cannot edit a directory")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(body.content or "", encoding="utf-8")
-    _auto_checkpoint_workspace(workspace_id, "workspace_file_content_updated")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": path}}
 
 
@@ -347,7 +347,7 @@ async def delete_workspace_file(
             target.unlink()
         except OSError as e:
             raise HTTPException(status_code=500, detail=str(e))
-    _auto_checkpoint_workspace(workspace_id, "workspace_file_deleted")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": path, "deleted": True}}
 
 
@@ -376,7 +376,7 @@ async def create_workspace_file(
         raise HTTPException(status_code=400, detail="Invalid path")
     target.write_text(body.content or "", encoding="utf-8")
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_file_created")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -419,7 +419,7 @@ async def upload_workspace_file(
     finally:
         await file.close()
     rel = str(target.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_file_uploaded")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}
 
 
@@ -458,5 +458,5 @@ async def rename_workspace_file(
     new_path.parent.mkdir(parents=True, exist_ok=True)
     target.rename(new_path)
     rel = str(new_path.relative_to(ws_root)).replace("\\", "/")
-    _auto_checkpoint_workspace(workspace_id, "workspace_file_renamed")
+    _auto_checkpoint_workspace(workspace_id, "workspace_changed")
     return {"status": "ok", "data": {"path": rel}}

@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, List
 from app.agent.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
 from app.agent.llm_client import bind_tools_compat
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent import SimpleAgent
 from app.agent.skill_agent_paths import (
     _apply_audio_asr_path_from_user_message,
@@ -248,12 +249,8 @@ def create_skill_execution_agent(
     system_prompt += skill_full_content
     if expert_self_awareness and expert_self_awareness.strip():
         system_prompt += "\n\n---\n\n" + expert_self_awareness.strip()
-    system_prompt += """
-
-你可以使用以下工具：
-"""
-    for tool in tools:
-        system_prompt += f"- {tool.name}: {tool.description}\n"
+    tool_lines = "\n".join(f"- {tool.name}: {tool.description}" for tool in tools)
+    system_prompt += "\n\n" + render_platform_prompt("skill.execution.tools_header.v1", {"tool_lines": tool_lines})
     if tools:
         logger.debug("已添加工具指令到系统提示词")
     # 若包含 Exa 工具，注入 Exa MCP 使用说明（仅调用 exa 时生效）
@@ -266,18 +263,11 @@ def create_skill_execution_agent(
         "",
     )
     if exa_search_tool_name:
-        system_prompt += """
-## Exa 搜索工具使用说明
-调用 {tool_name} 时**必须**使用参数名 query（必需）传递搜索关键词，不要使用 __arg1。示例：{{"query": "北京 烟花 燃放", "numResults": 10}}。
-可选参数：numResults（数量）、livecrawl（'fallback'|'preferred'|'always'|'never'）、type（'auto'|'fast'）。type 不要用 'news' 等无效值。
-
-""".format(tool_name=exa_search_tool_name)
-    system_prompt += """
-当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数；
-
-当你不需要使用工具时，直接回复用户的问题。
-
-"""
+        system_prompt += "\n\n" + render_platform_prompt(
+            "skill.execution.exa_search.v1",
+            {"tool_name": exa_search_tool_name},
+        )
+    system_prompt += "\n\n" + render_platform_prompt("skill.execution.response_policy.v1", {})
     system_prompt += _skill_execution_extra_instructions(tools)
 
     async def call_model(state: AgentState, config=None):

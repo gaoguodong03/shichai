@@ -9,7 +9,7 @@ export type GroupDetail = {
   agent_map: Record<string, { name?: string; description?: string }>
   agent_names: string[]
   host?: { name?: string; llm_name?: string; system_prompt?: string; skill_name?: string; skill_directory?: string }
-  runtime_state?: { running?: boolean; agent_name?: string; skill?: string; phase?: string; started_at?: string }
+  runtime?: { running?: boolean; agent_name?: string; skill?: string; phase?: string; started_at?: string }
 }
 
 function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string): GroupDetail {
@@ -20,8 +20,8 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
   const host = (raw.host && typeof raw.host === 'object')
     ? (raw.host as GroupDetail['host'])
     : undefined
-  const runtime_state = (raw.runtime_state && typeof raw.runtime_state === 'object')
-    ? (raw.runtime_state as GroupDetail['runtime_state'])
+  const runtime = (raw.runtime && typeof raw.runtime === 'object')
+    ? (raw.runtime as GroupDetail['runtime'])
     : undefined
   return {
     id,
@@ -30,7 +30,7 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
     agent_map,
     agent_names,
     host,
-    runtime_state,
+    runtime,
   }
 }
 
@@ -66,7 +66,7 @@ export function hydrateRuntimeStateFromServer(args: {
     scheduleRestoredRuntimePoll,
     setLastRoute,
   } = args
-  const rt = detail.runtime_state
+  const rt = detail.runtime
   const st = groupStreamStates.value[detail.id]
   if (!rt?.running) {
     clearRestoredRuntimePollTimer()

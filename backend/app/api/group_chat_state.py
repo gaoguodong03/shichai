@@ -36,6 +36,40 @@ def _runtime_json_path(root: Path, session_id: str) -> Path:
     return root / session_id / "runtime.json"
 
 
+def _orchestration_json_path(root: Path, session_id: str) -> Path:
+    return root / session_id / "orchestration_state.json"
+
+
+def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only the current short-term orchestration contract groups."""
+    out: Dict[str, Any] = {}
+    continuation = raw.get("continuation") if isinstance(raw.get("continuation"), dict) else None
+    if continuation:
+        skill_policy = str(continuation.get("skill_policy") or "").strip()
+        owner = str(continuation.get("owner_agent_name") or "").strip()
+        next_action = str(continuation.get("next_action") or "").strip()
+        skill = str(continuation.get("skill") or "").strip()
+        if owner and skill_policy in {"keep", "release"}:
+            row: Dict[str, Any] = {
+                "owner_agent_name": owner,
+                "skill_policy": skill_policy,
+                "next_action": next_action,
+            }
+            if skill_policy == "keep" and skill:
+                row["skill"] = skill
+            out["continuation"] = row
+    host_scheduler = raw.get("host_scheduler") if isinstance(raw.get("host_scheduler"), dict) else None
+    if host_scheduler:
+        row = {
+            "current_phase": str(host_scheduler.get("current_phase") or "").strip(),
+            "next_speaker": str(host_scheduler.get("next_speaker") or "").strip(),
+            "next_action": str(host_scheduler.get("next_action") or "").strip(),
+        }
+        if any(row.values()):
+            out["host_scheduler"] = row
+    return out
+
+
 def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return the session definition shape that belongs in session.json."""
     allowed = {
@@ -150,7 +184,7 @@ def schedule_group_session_event(
     loop.create_task(publish_group_session_event(group_session_id, event_type, payload))
 
 
-def write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
+def write_group_runtime(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
     session_definitions = load_session_definitions()
     item = session_definitions.get(group_session_id)
     if item is None:
@@ -166,12 +200,31 @@ def write_group_runtime_state(group_session_id: str, state: Optional[Dict[str, A
     save_session_definitions(session_definitions)
     schedule_group_session_event(
         group_session_id,
-        "runtime_state",
-        {"runtime_state": state or {"running": False}},
+        "runtime",
+        {"runtime": state or {"running": False}},
     )
 
 
-def runtime_state_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
+def load_group_orchestration_state(group_session_id: str) -> Dict[str, Any]:
+    """Load refresh-safe short-term orchestration state for one session."""
+    raw = _read_json_object(_orchestration_json_path(ensure_sessions_dir(), group_session_id))
+    return _clean_orchestration_state(raw or {})
+
+
+def write_group_orchestration_state(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
+    """Write orchestration_state.json without copying old scheduler fields into session.json."""
+    root = ensure_sessions_dir()
+    path = _orchestration_json_path(root, group_session_id)
+    clean = _clean_orchestration_state(state or {})
+    if clean:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        with suppress(OSError):
+            path.unlink()
+
+
+def runtime_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "running": True,
         "run_id": str(active.get("run_id") or ""),
@@ -182,7 +235,7 @@ def runtime_state_for_active_run(active: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _runtime_state_stale_seconds() -> int:
+def _runtime_stale_seconds() -> int:
     raw = (os.getenv("GROUP_RUNTIME_STATE_STALE_SECONDS") or "1800").strip()
     try:
         return max(0, int(raw))
@@ -210,46 +263,43 @@ def _parse_runtime_timestamp(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _stored_runtime_state_is_stale(stored: Any) -> bool:
+def _stored_runtime_is_stale(stored: Any) -> bool:
     if not isinstance(stored, dict) or stored.get("running") is not True:
         return False
     started = _parse_runtime_timestamp(str(stored.get("started_at") or ""))
     if started is None:
         return True
     age = (datetime.now(timezone.utc) - started).total_seconds()
-    return age >= _runtime_state_stale_seconds()
+    return age >= _runtime_stale_seconds()
 
 
-def runtime_state_for_session(group_session_id: str, session_item: Dict[str, Any]) -> Dict[str, Any]:
+def runtime_for_session(group_session_id: str, session_item: Dict[str, Any]) -> Dict[str, Any]:
     active = ACTIVE_GROUP_RUNS.get(group_session_id)
     if active:
         task = active.get("task")
         if isinstance(task, asyncio.Task) and task.done():
             run_id = str(active.get("run_id") or "")
             logger.warning(
-                "group_chat_runtime_state_stale_done session=%s run_id=%s",
+                "group_chat_runtime_stale_done session=%s run_id=%s",
                 group_session_id,
                 run_id,
             )
             ACTIVE_GROUP_RUNS.pop(group_session_id, None)
-            session_item.pop("runtime_state", None)
-            write_group_runtime_state(group_session_id, None)
+            write_group_runtime(group_session_id, None)
         else:
-            return runtime_state_for_active_run(active)
+            return runtime_for_active_run(active)
     stored = None
     with suppress(Exception):
         stored = _read_json_object(_runtime_json_path(ensure_sessions_dir(), group_session_id))
-    stored = stored or session_item.get("runtime_state")
-    if _stored_runtime_state_is_stale(stored):
+    if _stored_runtime_is_stale(stored):
         logger.warning(
-            "group_chat_runtime_state_stale_stored session=%s run_id=%s phase=%s started_at=%s",
+            "group_chat_runtime_stale_stored session=%s run_id=%s phase=%s started_at=%s",
             group_session_id,
             str(stored.get("run_id") or "") if isinstance(stored, dict) else "",
             str(stored.get("phase") or "") if isinstance(stored, dict) else "",
             str(stored.get("started_at") or "") if isinstance(stored, dict) else "",
         )
-        session_item.pop("runtime_state", None)
-        write_group_runtime_state(group_session_id, None)
+        write_group_runtime(group_session_id, None)
         return {"running": False}
     return stored if isinstance(stored, dict) else {"running": False}
 
@@ -260,7 +310,6 @@ async def register_group_run(group_session_id: str, *, user_id: str, task: async
     state = {
         "running": True,
         "run_id": run_id,
-        "user_id": user_id,
         "agent_name": "",
         "skill": "",
         "phase": "routing",
@@ -272,7 +321,7 @@ async def register_group_run(group_session_id: str, *, user_id: str, task: async
         if isinstance(prev_task, asyncio.Task) and prev_task is not task and not prev_task.done():
             prev_task.cancel()
         ACTIVE_GROUP_RUNS[group_session_id] = {**state, "task": task}
-    write_group_runtime_state(group_session_id, state)
+    write_group_runtime(group_session_id, state)
     return run_id
 
 
@@ -283,7 +332,7 @@ async def update_group_run(group_session_id: str, run_id: str, **updates: Any) -
             return
         active.update({k: v for k, v in updates.items() if v is not None})
         state = {k: v for k, v in active.items() if k != "task"}
-    write_group_runtime_state(group_session_id, state)
+    write_group_runtime(group_session_id, state)
 
 
 async def finish_group_run(group_session_id: str, run_id: str) -> None:
@@ -292,7 +341,7 @@ async def finish_group_run(group_session_id: str, run_id: str) -> None:
         if not active or str(active.get("run_id") or "") != run_id:
             return
         ACTIVE_GROUP_RUNS.pop(group_session_id, None)
-    write_group_runtime_state(group_session_id, None)
+    write_group_runtime(group_session_id, None)
 
 
 async def cancel_group_session_run(group_session_id: str, *, reason: str) -> bool:
@@ -325,7 +374,7 @@ def build_session_payload(session_id: str, session_item: Dict[str, Any]) -> Dict
         "host": dict(session_item.get("host") or {}),
         "created_at": session_item.get("created_at", ""),
         "updated_at": session_item.get("updated_at", ""),
-        "runtime_state": runtime_state_for_session(session_id, session_item),
+        "runtime": runtime_for_session(session_id, session_item),
     }
     return out
 
@@ -415,7 +464,12 @@ def load_group_history(group_session_id: str) -> List[Dict[str, Any]]:
     return []
 
 
-def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) -> None:
+def save_group_history(
+    group_session_id: str,
+    messages: List[Dict[str, Any]],
+    *,
+    checkpoint_trigger: str | None = "turn_started",
+) -> None:
     from app.session_state.paths import ensure_session_layout
 
     user_ctx = get_current_user_context(default_fallback=False)
@@ -427,15 +481,13 @@ def save_group_history(group_session_id: str, messages: List[Dict[str, Any]]) ->
     path.parent.mkdir(parents=True, exist_ok=True)
     canonical_messages = [_canonical_history_message(item) for item in (messages or [])]
     path.write_text(json.dumps(canonical_messages, ensure_ascii=False, indent=2), encoding="utf-8")
-    schedule_group_session_event(
-        group_session_id,
-        "messages_updated",
-        {"message_count": len(messages or [])},
-    )
+    if canonical_messages:
+        schedule_group_session_event(group_session_id, "message", canonical_messages[-1])
     try:
         from app.session_state.service import capture_session_checkpoint
 
-        capture_session_checkpoint(group_session_id, reason="history_update")
+        if checkpoint_trigger:
+            capture_session_checkpoint(group_session_id, reason=checkpoint_trigger)
     except Exception:
         logger.warning("session_state history checkpoint failed: %s", group_session_id, exc_info=True)
 
