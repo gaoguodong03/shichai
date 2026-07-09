@@ -148,7 +148,7 @@ def test_checkpoint_session_blob_uses_only_session_contract_fields(client: TestC
 
     assert session_blob == {
         "title": "检查点会话字段",
-        "title_auto_generated": False,
+        "title_auto_generated": True,
         "agent_names": [],
         "host": session_blob["host"],
         "created_at": session_blob["created_at"],

@@ -132,12 +132,8 @@ def _schedule_group_title_refresh(
             if not isinstance(session_item, dict):
                 return
             current_title = (session_item.get("title") or "").strip()
-            placeholder_titles = ("新对话", "新群聊", "")
-            is_template_title = current_title.startswith("多Agent协作 ·")
-            title_auto_generated = session_item.get("title_auto_generated")
-            if title_auto_generated is None:
-                title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
-            if not (title_auto_generated or current_title in placeholder_titles or is_template_title):
+            title_auto_generated = session_item.get("title_auto_generated") is True
+            if not title_auto_generated:
                 logger.info(
                     "group_chat_title_background_skip session=%s reason=manual_title title=%r",
                     session_id,
@@ -208,21 +204,15 @@ def _record_user_message_and_refresh_title(
         session_item["updated_at"] = format_storage_timestamp()
 
     current_title = (session_item.get("title") or "").strip()
-    placeholder_titles = ("新对话", "新群聊", "")
-    is_template_title = current_title.startswith("多Agent协作 ·")
-    title_auto_generated = session_item.get("title_auto_generated")
-    if title_auto_generated is None:
-        title_auto_generated = current_title in placeholder_titles or is_template_title or len(current_title) <= 12
+    title_auto_generated = session_item.get("title_auto_generated") is True
     should_refresh_title = bool(
         not duplicate_user_message
         and (
-            current_title in placeholder_titles
-            or is_template_title
-            or (first_user_message and title_auto_generated)
+            (first_user_message and title_auto_generated)
             or (title_auto_generated and _title_refresh_every_user_message())
         )
     )
-    if should_refresh_title and first_user_message and (current_title in placeholder_titles or is_template_title):
+    if should_refresh_title and first_user_message:
         auto_title = _title_from_first_message(user_message, max_chars=10)
         if auto_title:
             session_item["title"] = auto_title

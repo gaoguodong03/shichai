@@ -100,15 +100,12 @@ def create_session_internal(
     gsid = f"group-{uuid.uuid4().hex[:12]}"
     now = format_storage_timestamp()
     session_definitions = _load_session_definitions()
-    raw_title = (title or "").strip()
-    placeholder_titles = {"新对话", "新群聊", ""}
-    title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("多Agent协作 ·")
     host_snapshot = dict(host or {})
     if not any(str(v or "").strip() for v in host_snapshot.values()):
         host_snapshot = {}
     row: Dict[str, Any] = {
         "title": title or "新对话",
-        "title_auto_generated": title_auto_generated,
+        "title_auto_generated": True,
         "agent_names": names,
         "host": host_snapshot,
         "created_at": now,
@@ -261,12 +258,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     if body.title is not None and str(body.title).strip():
         next_title = body.title.strip()
         session_definitions[group_session_id]["title"] = next_title
-        # 兼容历史前端自动模板标题：仍视为“自动生成”，允许后续被主题标题覆盖
-        if next_title.startswith("多Agent协作 ·") or next_title in {"新对话", "新群聊", ""}:
-            session_definitions[group_session_id]["title_auto_generated"] = True
-        else:
-            # 用户主动修改标题后，停止自动主题覆盖
-            session_definitions[group_session_id]["title_auto_generated"] = False
+        session_definitions[group_session_id]["title_auto_generated"] = False
     if body.host is not None:
         session_definitions[group_session_id]["host"] = body.host.model_dump()
         _clear_host_scheduler_state(group_session_id)

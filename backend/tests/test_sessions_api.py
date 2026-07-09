@@ -69,6 +69,7 @@ def test_sessions_create_list_get_delete_flow(client: TestClient):
     created = create_resp.json()["data"]
     session_id = created["id"]
     assert created["title"] == "回归测试会话"
+    assert created["title_auto_generated"] is True
     assert "speak_mode" not in created
     assert re.fullmatch(r"\d{16}", created["created_at"])
     assert re.fullmatch(r"\d{16}", created["updated_at"])
@@ -281,6 +282,30 @@ def test_update_empty_session_can_become_scene_without_join_messages(client: Tes
     detail_resp = client.get(f"/api/sessions/{session_id}")
     assert detail_resp.status_code == 200
     assert detail_resp.json()["data"]["messages"] == []
+
+
+def test_update_session_title_is_always_manual_contract(client: TestClient):
+    from app.api.group_chat_state import load_session_definitions
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    create_resp = client.post("/api/sessions", json={"title": "新对话", "agent_names": []})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    update_resp = client.put(
+        f"/api/sessions/{session_id}",
+        json={"title": "多Agent协作 · 旧模板标题"},
+    )
+
+    assert update_resp.status_code == 200
+    assert update_resp.json()["data"]["title"] == "多Agent协作 · 旧模板标题"
+    assert update_resp.json()["data"]["title_auto_generated"] is False
+    token = set_current_user_identity(user_id="free4inno", username="free4inno")
+    try:
+        session_item = load_session_definitions()[session_id]
+        assert session_item["title_auto_generated"] is False
+    finally:
+        reset_current_user_identity(token)
 
 
 def test_update_session_clears_stale_scheduler_state(client: TestClient):
