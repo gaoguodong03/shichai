@@ -274,13 +274,17 @@ async def _run_contract_events(
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
     next_action = user_text or "请根据用户输入完成任务。"
-    next_speaker, next_action, route_state_changed = resolve_group_entry_route(
+    entry_route, route_state_changed = resolve_group_entry_route(
         request=request,
         orchestration_state=orchestration_state,
         agent_names=agent_names,
         host_name=host_name,
         default_next_action=next_action,
     )
+    next_speaker = ""
+    if entry_route:
+        next_speaker = str(entry_route["next_speaker"]).strip()
+        next_action = str(entry_route["next_action"]).strip() or next_action
     if route_state_changed:
         write_group_orchestration_state(group_session_id, orchestration_state)
     suggested_add: list[str] = []
