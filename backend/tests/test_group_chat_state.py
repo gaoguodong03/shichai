@@ -114,7 +114,6 @@ def test_session_definition_persists_only_contract_fields(tmp_path, monkeypatch)
     raw = json.loads((tmp_path / "s1" / "session.json").read_text(encoding="utf-8"))
 
     assert raw == {
-        "id": "s1",
         "title": "会话",
         "title_auto_generated": True,
         "agent_names": ["专家A"],

@@ -94,7 +94,6 @@ def _clean_orchestration_state(raw: Dict[str, Any]) -> Dict[str, Any]:
 def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return the session definition shape that belongs in session.json."""
     allowed = {
-        "id",
         "title",
         "title_auto_generated",
         "agent_names",
