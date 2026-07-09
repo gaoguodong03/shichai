@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.api.settings_mcp import load_mcp_config, save_mcp_config
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.scenario_bundle import (
@@ -135,7 +135,7 @@ async def get_session_presets():
     return {"status": "ok", "data": {"presets": presets}}
 
 
-class SessionPresetItem(BaseModel):
+class SessionPresetItem(StrictRequestModel):
     name: str
     agent_names: List[str]
     description: Optional[str] = ""
@@ -143,7 +143,7 @@ class SessionPresetItem(BaseModel):
     host: Optional[Dict[str, Any]] = None
 
 
-class SessionPresetsBody(BaseModel):
+class SessionPresetsBody(StrictRequestModel):
     presets: List[SessionPresetItem]
 
 

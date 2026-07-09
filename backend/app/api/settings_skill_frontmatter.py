@@ -4,16 +4,16 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel
+from app.api.request_models import StrictRequestModel
 
-class SkillCreate(BaseModel):
+class SkillCreate(StrictRequestModel):
     """新建 Skill 请求"""
 
     name: Optional[str] = None
     description: Optional[str] = None
 
 
-class SkillUpdate(BaseModel):
+class SkillUpdate(StrictRequestModel):
     """更新 Skill 请求"""
 
     name: Optional[str] = None

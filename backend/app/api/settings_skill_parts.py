@@ -5,27 +5,27 @@ from pathlib import Path
 from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.api.settings_skill_store import _get_skills_dir
 
 ALLOWED_PART_TYPES = ("references", "assets", "scripts", "other")
 
 
-class PartFileCreate(BaseModel):
+class PartFileCreate(StrictRequestModel):
     """在 references/assets/scripts 下新建文件"""
 
     path: str
     content: str = ""
 
 
-class PartFileUpdate(BaseModel):
+class PartFileUpdate(StrictRequestModel):
     """更新 references/assets/scripts 下某文件内容"""
 
     content: str
 
 
-class PartDirCreate(BaseModel):
+class PartDirCreate(StrictRequestModel):
     """在 references/assets/scripts/other 下新建目录"""
 
     path: str

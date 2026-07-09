@@ -9,8 +9,8 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.agent.sandbox_image_policy import (
     image_for_variant,
     normalize_sandbox_variant,
@@ -27,19 +27,19 @@ from app.core.user_context import get_current_user_context, get_current_username
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
 
-class SandboxRequirementsBody(BaseModel):
+class SandboxRequirementsBody(StrictRequestModel):
     content: str = ""
 
 
-class SandboxSettingsBody(BaseModel):
+class SandboxSettingsBody(StrictRequestModel):
     image_variant: str = "standard"
 
 
-class SandboxRequirementsMergeBody(BaseModel):
+class SandboxRequirementsMergeBody(StrictRequestModel):
     requirements: List[str] = []
 
 
-class SandboxRequirementsStatusBody(BaseModel):
+class SandboxRequirementsStatusBody(StrictRequestModel):
     requirements: List[str] = []
 
 

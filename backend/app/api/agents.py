@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from app.api.request_models import StrictRequestModel
 
 from app.core.security import user_context_dependency
 from app.core.name_based_resources import normalize_agent_row, normalize_skill_refs
@@ -19,7 +19,7 @@ from app.core.resource_store import mirror_rows_to_resource_dir
 
 router = APIRouter(tags=["agents"], dependencies=[Depends(user_context_dependency)])
 
-class AgentCreate(BaseModel):
+class AgentCreate(StrictRequestModel):
     """新建 Agent 实例请求"""
     name: str
     description: str = ""
@@ -28,7 +28,7 @@ class AgentCreate(BaseModel):
     llm_name: Optional[str] = None
 
 
-class AgentUpdate(BaseModel):
+class AgentUpdate(StrictRequestModel):
     """更新 Agent 实例请求"""
     name: Optional[str] = None
     description: Optional[str] = None

@@ -222,8 +222,8 @@ def test_mcp_settings_rejects_legacy_runtime_fields(frontend_flow_client: TestCl
         },
         headers=headers,
     )
-    assert created.status_code == 400
-    assert "旧运行字段" in created.json()["detail"]
+    assert created.status_code == 422
+    assert "enabled" in created.text
 
     valid = client.post(
         "/api/settings/mcp",
@@ -239,8 +239,8 @@ def test_mcp_settings_rejects_legacy_runtime_fields(frontend_flow_client: TestCl
         json={"status": "connected"},
         headers=headers,
     )
-    assert updated.status_code == 400
-    assert "旧运行字段" in updated.json()["detail"]
+    assert updated.status_code == 422
+    assert "status" in updated.text
 
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -575,7 +575,6 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
         json={
             "presets": [
                 {
-                    "id": "scenario-front-flow",
                     "name": "前端流程场景",
                     "agent_names": ["前端流程专家"],
                     "description": "覆盖场景保存",

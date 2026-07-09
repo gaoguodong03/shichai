@@ -37,6 +37,12 @@ def _prompt(prompt_id: str, template: str) -> PlatformPrompt:
 
 
 PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
+    "host.system.boundary.v1": _prompt(
+        "host.system.boundary.v1",
+        """
+你是书童四九平台主持人，只负责调度，不代替专家回答业务内容。
+        """,
+    ),
     "host.select_next_speaker.v1": _prompt(
         "host.select_next_speaker.v1",
         """

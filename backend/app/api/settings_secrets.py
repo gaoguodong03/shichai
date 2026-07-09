@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.core.atomic_json import atomic_write_json
 from app.core.security import user_context_dependency
 from app.core.user_context import get_current_user_context
@@ -88,13 +88,13 @@ def _normalize_api_secret_id(raw: str) -> str:
     return s
 
 
-class ApiSecretCreate(BaseModel):
+class ApiSecretCreate(StrictRequestModel):
     id: str
     label: Optional[str] = None
     api_key: str = ""
 
 
-class ApiSecretUpdate(BaseModel):
+class ApiSecretUpdate(StrictRequestModel):
     label: Optional[str] = None
     api_key: Optional[str] = None
 

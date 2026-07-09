@@ -7,9 +7,9 @@
 import re
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
 from datetime import datetime, timezone
 
+from app.api.request_models import StrictRequestModel
 from app.core.security import create_access_token, CurrentUser, user_context_dependency
 from app.core.auth_db import create_user, get_user_by_username, verify_user, user_exists, update_password, rename_user
 from app.core.users_store import ensure_user_profile, rename_user_profile
@@ -24,22 +24,22 @@ def _is_valid_account(value: str) -> bool:
     return bool(PHONE_REGEX.match(value) or EMAIL_REGEX.match(value))
 
 
-class LoginBody(BaseModel):
+class LoginBody(StrictRequestModel):
     username: str
     password: str
 
 
-class RegisterBody(BaseModel):
+class RegisterBody(StrictRequestModel):
     username: str
     password: str
 
 
-class ChangeAccountBody(BaseModel):
+class ChangeAccountBody(StrictRequestModel):
     new_username: str
     current_password: str
 
 
-class ChangePasswordBody(BaseModel):
+class ChangePasswordBody(StrictRequestModel):
     current_password: str
     new_password: str
 

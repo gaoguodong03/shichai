@@ -5,8 +5,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.core.security import CurrentUser, user_context_dependency
 from app.session_state.paths import (
     SessionLayoutPaths,
@@ -130,7 +130,7 @@ def _normalize_workspace_filename(filename: str) -> str:
 
 
 # 以下带子路径的路由（如 /files/mkdir）必须注册在 /files 之前，否则 POST /files 可能先匹配导致 404
-class DirCreateBody(BaseModel):
+class DirCreateBody(StrictRequestModel):
     dirname: str
 
 
@@ -292,7 +292,7 @@ async def download_workspace_file(
     )
 
 
-class FileContentBody(BaseModel):
+class FileContentBody(StrictRequestModel):
     content: str = ""
 
 
@@ -323,12 +323,12 @@ async def get_workspace_file_content(
     )
 
 
-class FileCreateBody(BaseModel):
+class FileCreateBody(StrictRequestModel):
     filename: str
     content: str = ""
 
 
-class FileRenameBody(BaseModel):
+class FileRenameBody(StrictRequestModel):
     new_name: str
 
 

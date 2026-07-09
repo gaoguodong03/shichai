@@ -34,6 +34,7 @@ def test_prompt_render_rejects_missing_variables():
 
 def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
     runtime_files = [
+        ROOT / "backend/app/agent/group_chat_host_runtime.py",
         ROOT / "backend/app/agent/group_chat_memory_prompt.py",
         ROOT / "backend/app/agent/group_chat_prompt_builder.py",
         ROOT / "backend/app/agent/group_chat_presentation_rewriter.py",
@@ -54,9 +55,11 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "请直接基于上方工具结果中的 stdout",
         "## 技能脚本工具",
         "工具已经执行完成。请基于最近的工具返回",
+        "你是书童四九平台主持人，只负责调度，不代替专家回答业务内容。",
     ]:
         assert phrase not in combined
     for prompt_id in [
+        "host.system.boundary.v1",
         "expert.action.default.v1",
         "expert.action.memory.v1",
         "expert.action.structured_missing.v1",

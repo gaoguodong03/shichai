@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
+from app.api.request_models import StrictRequestModel
 from app.core.llm_bundle import (
     build_llm_bundle_zip_bytes,
     provider_for_settings_import,
@@ -25,7 +25,7 @@ from app.core.user_settings_paths import app_settings_path
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
 
 
-class AppSettingsBody(BaseModel):
+class AppSettingsBody(StrictRequestModel):
     """应用设置请求体"""
 
     default_llm: Optional[str] = None
@@ -237,7 +237,7 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
-class HostProfileBody(BaseModel):
+class HostProfileBody(StrictRequestModel):
     """主持人独立配置（账号级默认）。"""
 
     name: Optional[str] = None

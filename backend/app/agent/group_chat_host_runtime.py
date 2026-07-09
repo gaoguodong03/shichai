@@ -115,7 +115,7 @@ async def _host_decide_by_agent(
     system_parts = [
         host_system,
         host_skill_content,
-        "你是书童四九平台主持人，只负责调度，不代替专家回答业务内容。",
+        render_platform_prompt("host.system.boundary.v1", {}),
     ]
     if extra_system_prompt:
         system_parts.append(str(extra_system_prompt).strip())

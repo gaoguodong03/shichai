@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from app.api.request_models import StrictRequestModel
 
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
@@ -40,7 +40,7 @@ async def _invalidate_mcp_runtime_after_config_change():
         await dispose_mcp_runtime_for_user(un)
 
 
-class MCPTransport(BaseModel):
+class MCPTransport(StrictRequestModel):
     """MCP 传输配置"""
     type: str  # stdio, sse, http
     command: Optional[str] = None
@@ -50,10 +50,8 @@ class MCPTransport(BaseModel):
     headers: Optional[Dict[str, str]] = None
     env: Optional[Dict[str, str]] = None
 
-class MCPServerCreate(BaseModel):
+class MCPServerCreate(StrictRequestModel):
     """新建 MCP Server 请求"""
-    model_config = ConfigDict(extra="allow")
-
     name: str
     type: str = "mcp"
     description: str = ""
@@ -62,10 +60,8 @@ class MCPServerCreate(BaseModel):
     config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
-class MCPServerUpdate(BaseModel):
+class MCPServerUpdate(StrictRequestModel):
     """更新 MCP Server 请求"""
-    model_config = ConfigDict(extra="allow")
-
     name: Optional[str] = None
     type: Optional[str] = None
     description: Optional[str] = None
@@ -240,9 +236,6 @@ async def create_mcp_server(server: MCPServerCreate):
         raise HTTPException(status_code=409, detail="同名工具已存在")
 
     raw_server = server.model_dump(exclude_none=True)
-    if getattr(server, "model_extra", None):
-        raw_server.update(dict(server.model_extra or {}))
-    _reject_legacy_runtime_fields(raw_server)
     if server.transport is not None:
         raw_server["transport"] = server.transport.model_dump(exclude_none=True)
     new_server = normalize_tool_row(raw_server)
@@ -272,9 +265,6 @@ async def update_mcp_server(tool_name: str, server_update: MCPServerUpdate):
     
     server = dict(servers[server_index])
     update_data = server_update.model_dump(exclude_none=True)
-    if getattr(server_update, "model_extra", None):
-        update_data.update(dict(server_update.model_extra or {}))
-    _reject_legacy_runtime_fields(update_data)
     if server_update.transport is not None:
         update_data["transport"] = server_update.transport.model_dump(exclude_none=True)
     server.update(update_data)
@@ -449,7 +439,7 @@ async def get_mcp_server_tools(tool_name: str):
     }
 
 
-class MCPToolCallBody(BaseModel):
+class MCPToolCallBody(StrictRequestModel):
     """调用 MCP 工具的请求体（用于前端测试）"""
 
     arguments: Dict[str, Any] = {}
@@ -511,7 +501,7 @@ async def call_mcp_tool(server_name: str, tool_name: str, body: MCPToolCallBody)
     }
 
 
-class MCPSandboxCallBody(BaseModel):
+class MCPSandboxCallBody(StrictRequestModel):
     """沙箱调用：不关心具体工具名，只在该 MCP Server 上调用第一个工具"""
 
     arguments: Dict[str, Any] = {}
