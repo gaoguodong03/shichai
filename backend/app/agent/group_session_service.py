@@ -207,7 +207,6 @@ async def group_session_events_stream(group_session_id: str):
             subscribers.append(queue)
         try:
             snapshot = {
-                "type": "snapshot",
                 "session_id": group_session_id,
                 "server_time": format_storage_timestamp(),
                 "runtime": _runtime_for_session(group_session_id, session_definitions.get(group_session_id) or {}),
@@ -222,9 +221,9 @@ async def group_session_events_stream(group_session_id: str):
                 try:
                     item = await asyncio.wait_for(queue.get(), timeout=_SSE_AGENT_KEEPALIVE_INTERVAL_SEC)
                 except asyncio.TimeoutError:
-                    yield f"event: keepalive\ndata: {json.dumps({'type': 'keepalive', 'server_time': format_storage_timestamp()}, ensure_ascii=False)}\n\n"
+                    yield f"event: keepalive\ndata: {json.dumps({'server_time': format_storage_timestamp()}, ensure_ascii=False)}\n\n"
                     continue
-                event_name = str(item.get("type") or "message").strip() or "message"
+                event_name = str(item.pop("__event_type", None) or "message").strip() or "message"
                 yield f"event: {event_name}\ndata: {json.dumps(item, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             raise

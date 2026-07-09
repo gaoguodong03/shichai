@@ -172,16 +172,11 @@ async def publish_group_session_event(
     event_type: str,
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
-    if event_type == "message":
-        event = dict(payload or {})
-    else:
-        event = {
-            "type": event_type,
-            "session_id": group_session_id,
-            "timestamp": format_storage_timestamp(),
-        }
-        if payload:
-            event.update(payload)
+    event = {"__event_type": event_type}
+    if event_type in {"runtime", "deleted"}:
+        event["session_id"] = group_session_id
+    if payload:
+        event.update(payload)
     async with GROUP_SESSION_EVENT_SUBSCRIBERS_LOCK:
         queues = list(GROUP_SESSION_EVENT_SUBSCRIBERS.get(group_session_id) or [])
     stale: List[asyncio.Queue[Dict[str, Any]]] = []

@@ -112,12 +112,45 @@ async def test_session_events_stream_emits_snapshot_event_name_and_runtime_paylo
 
     event_type, payload = _parse_sse_block(first_chunk)
     assert event_type == "snapshot"
-    assert payload["type"] == "snapshot"
     assert payload["session_id"] == session_id
     assert payload["runtime"] == {"running": False}
     assert "server_time" in payload
     assert "updated_at" in payload
+    assert "type" not in payload
     assert "runtime_state" not in payload
+
+
+@pytest.mark.asyncio
+async def test_session_events_stream_keepalive_payload_contains_only_server_time(monkeypatch, tmp_path):
+    from app.agent import group_session_service
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr(group_session_service, "_SSE_AGENT_KEEPALIVE_INTERVAL_SEC", 0.001)
+    session_id = "s-events-keepalive-contract"
+    state.save_session_definitions(
+        {
+            session_id: {
+                "title": "保活事件协议",
+                "agent_names": [],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+
+    response = await group_session_service.group_session_events_stream(session_id)
+    body_iter = response.body_iterator
+    try:
+        await anext(body_iter)
+        event_type, payload = _parse_sse_block(await anext(body_iter))
+    finally:
+        close = getattr(body_iter, "aclose", None)
+        if close:
+            await close()
+
+    assert event_type == "keepalive"
+    assert set(payload) == {"server_time"}
 
 
 @pytest.mark.asyncio
