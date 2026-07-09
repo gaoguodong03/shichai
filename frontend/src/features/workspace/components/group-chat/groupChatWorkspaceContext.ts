@@ -80,6 +80,9 @@ export interface GroupChatComposerContext {
   attachedFiles: ContextValue
   removeAttachedFile: ContextValue
   groupDiscussionGoal: ContextValue
+  groupTargetAgentName: ContextValue
+  groupTargetAgentDisplayName: ContextValue
+  clearGroupTargetAgentName: ContextValue
   goalTextareaRef: ContextValue
   onAtInput: ContextValue
   onAtKeydown: ContextValue

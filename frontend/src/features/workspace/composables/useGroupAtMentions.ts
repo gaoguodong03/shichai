@@ -1,7 +1,7 @@
 import { computed, nextTick, ref, type Ref } from 'vue'
 
 export type AtMentionOption = {
-  type: 'host' | 'agent'
+  type: 'agent'
   id: string
   label: string
 }
@@ -16,15 +16,13 @@ const AT_END_REG = /[\s，。、；：！？,.\-;:!?（）【】《》""''\[\]{}
 export function useGroupAtMentions(args: {
   groupDetail: Ref<MentionGroupDetail | null>
   groupDiscussionGoal: Ref<string | null>
-  hostDisplayName: Ref<string>
-  defaultHostDisplayName: string
+  groupTargetAgentName: Ref<string | null>
   sendGroupMessage: () => void | Promise<void>
 }) {
   const {
     groupDetail,
     groupDiscussionGoal,
-    hostDisplayName,
-    defaultHostDisplayName,
+    groupTargetAgentName,
     sendGroupMessage,
   } = args
 
@@ -38,12 +36,10 @@ export function useGroupAtMentions(args: {
   const groupInputIsComposing = ref(false)
 
   const atMentionOptions = computed(() => {
-    const host = { type: 'host' as const, id: 'host', label: hostDisplayName.value || defaultHostDisplayName }
     const detail = groupDetail.value
     const ids = detail?.agent_names || []
     const map = detail?.agent_map || {}
-    const experts = ids.map((id) => ({ type: 'agent' as const, id, label: map[id]?.name || id }))
-    const list = [host, ...experts]
+    const list = ids.map((id) => ({ type: 'agent' as const, id, label: map[id]?.name || id }))
     const query = (atFilter.value || '').trim().toLowerCase()
     if (!query) return list
     return list.filter((option) =>
@@ -79,11 +75,11 @@ export function useGroupAtMentions(args: {
   }
 
   function selectMention(opt: AtMentionOption) {
-    const insertText = opt.type === 'host' ? `@${hostDisplayName.value || defaultHostDisplayName} ` : `@${opt.label} `
     const raw = groupDiscussionGoal.value ?? ''
-    const before = raw.slice(0, atInsertStart.value)
-    const after = raw.slice(atSelectionEnd.value)
-    const nextValue = before + insertText + after
+    const before = raw.slice(0, atInsertStart.value).replace(/\s+$/g, '')
+    const after = raw.slice(atSelectionEnd.value).replace(/^\s+/g, '')
+    const nextValue = before && after ? `${before} ${after}` : `${before}${after}`
+    groupTargetAgentName.value = opt.id
     showAtDropdown.value = false
 
     groupDiscussionGoal.value = nextValue
@@ -91,7 +87,7 @@ export function useGroupAtMentions(args: {
     nextTick(() => {
       const textarea = goalTextareaRef.value
       textarea?.focus()
-      const newPos = atInsertStart.value + insertText.length
+      const newPos = before.length + (before && after ? 1 : 0)
       textarea?.setSelectionRange(newPos, newPos)
     })
   }

@@ -140,6 +140,18 @@ def test_frontend_does_not_send_legacy_next_prompt_channel():
         assert forbidden not in combined
 
 
+def test_frontend_sends_structured_target_agent_without_at_text_control():
+    composer_actions = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
+    at_mentions = read("frontend/src/features/workspace/composables/useGroupAtMentions.ts")
+    provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
+
+    assert "groupTargetAgentName" in provider
+    assert "target_agent_name" in composer_actions
+    assert "groupTargetAgentName.value = opt.id" in at_mentions
+    assert "`@${" not in at_mentions
+    assert "insertText = " not in at_mentions
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

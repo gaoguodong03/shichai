@@ -22,7 +22,17 @@
                 @ignore-auto-switch="ignoreAutoSwitchAndPause"
               />
               <div class="group-chat-input-blocks">
-                <div v-if="attachedFiles.length" class="group-chat-file-tags">
+                <div v-if="attachedFiles.length || groupTargetAgentName" class="group-chat-file-tags">
+                  <button
+                    v-if="groupTargetAgentName"
+                    type="button"
+                    class="group-chat-file-tag"
+                    :title="groupTargetAgentDisplayName"
+                    @click="clearGroupTargetAgentName"
+                  >
+                    <span>指定：{{ groupTargetAgentDisplayName }}</span>
+                    <span class="group-chat-file-tag-close">×</span>
+                  </button>
                   <button
                     v-for="f in attachedFiles"
                     :key="f.path"
@@ -40,7 +50,7 @@
                     ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
-                    placeholder="输入 @ 可提及主持人或专家"
+                    placeholder="输入 @ 可指定专家"
                     rows="3"
                     @input="onAtInput('goal', $event)"
                     @keydown="onAtKeydown('goal', $event)"
@@ -399,6 +409,9 @@ const {
   attachedFiles,
   removeAttachedFile,
   groupDiscussionGoal,
+  groupTargetAgentName,
+  groupTargetAgentDisplayName,
+  clearGroupTargetAgentName,
   goalTextareaRef,
   onAtInput,
   onAtKeydown,

@@ -134,6 +134,15 @@ export function useWorkspaceContentProviders(args: {
     emitAgentAdded: () => emit('agent-added'),
   })
   const groupDiscussionGoal = ref<string | null>(null)
+  const groupTargetAgentName = ref<string | null>(null)
+  const groupTargetAgentDisplayName = computed(() => {
+    const id = String(groupTargetAgentName.value || '').trim()
+    if (!id) return ''
+    return groupDetail.value?.agent_map?.[id]?.name || id
+  })
+  function clearGroupTargetAgentName() {
+    groupTargetAgentName.value = null
+  }
   const {
     showShortcutEditorModal,
     shortcutEditorRef,
@@ -316,8 +325,7 @@ export function useWorkspaceContentProviders(args: {
   } = useGroupAtMentions({
     groupDetail,
     groupDiscussionGoal,
-    hostDisplayName: effectiveHostDisplayName,
-    defaultHostDisplayName: DEFAULT_HOST_DISPLAY_NAME,
+    groupTargetAgentName,
     sendGroupMessage,
   })
   let streamEventHandlers: ReturnType<typeof useGroupStreamEvents> | null = null
@@ -361,6 +369,7 @@ export function useWorkspaceContentProviders(args: {
     groupDetail,
     groupDisplayMessages,
     groupDiscussionGoal,
+    groupTargetAgentName,
     currentGroupStreamState,
     currentGroupStreaming,
     groupStreaming,
@@ -434,6 +443,7 @@ export function useWorkspaceContentProviders(args: {
     groupDetail,
     groupDisplayMessages,
     groupDiscussionGoal,
+    groupTargetAgentName,
     groupStreaming,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
@@ -474,6 +484,7 @@ export function useWorkspaceContentProviders(args: {
     () =>
       !!(
         (groupDiscussionGoal.value || '').trim() ||
+        (groupTargetAgentName.value || '').trim() ||
         attachedFiles.value.length
       ),
   )
@@ -491,6 +502,7 @@ export function useWorkspaceContentProviders(args: {
     () => props.selectedGroupSessionId,
     () => {
       groupDiscussionGoal.value = null
+      groupTargetAgentName.value = null
       clearAttachedFiles()
       resetOrchestrationForSessionSwitch()
       resetGroupWorkspacePanel()
@@ -635,6 +647,9 @@ export function useWorkspaceContentProviders(args: {
     attachedFiles,
     removeAttachedFile,
     groupDiscussionGoal,
+    groupTargetAgentName,
+    groupTargetAgentDisplayName,
+    clearGroupTargetAgentName,
     goalTextareaRef,
     onAtInput,
     onAtKeydown,

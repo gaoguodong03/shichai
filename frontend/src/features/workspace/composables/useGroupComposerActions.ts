@@ -11,6 +11,7 @@ import {
 
 type LastSentDraft = {
   goal: string
+  targetAgentName: string | null
   files: AttachedFile[]
 }
 
@@ -23,6 +24,7 @@ export function useGroupComposerActions(args: {
   groupDetail: Ref<GroupDetail | null>
   groupDisplayMessages: Ref<GroupMessage[]>
   groupDiscussionGoal: Ref<string | null>
+  groupTargetAgentName: Ref<string | null>
   groupStreaming: ComputedRef<boolean>
   groupWaitingForUser: Ref<boolean>
   groupSuggestedNextSpeaker: Ref<string | null>
@@ -78,7 +80,14 @@ export function useGroupComposerActions(args: {
     }))
   }
 
-  async function confirmGroupNext(_nextSpeaker: string) {
+  function requestTargetAgentName(nextSpeaker = ''): string | null {
+    const selected = String(args.groupTargetAgentName.value || '').trim()
+    if (selected) return selected
+    const next = String(nextSpeaker || '').trim()
+    return next && next !== 'host' ? next : null
+  }
+
+  async function confirmGroupNext(nextSpeaker: string) {
     const detail = args.groupDetail.value
     const id = detail?.id
     if (!detail || !id || args.groupStreaming.value) return
@@ -90,10 +99,13 @@ export function useGroupComposerActions(args: {
       message?: string
       client_message_id: string
       attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+      target_agent_name?: string
     } = { client_message_id: createClientMessageId() }
     const base = builtMessage()
+    const targetAgentName = requestTargetAgentName(nextSpeaker)
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
+      targetAgentName,
       files: [...(args.attachedFiles.value || [])],
     }
     const hasFiles = args.attachedFiles.value.length > 0
@@ -101,6 +113,8 @@ export function useGroupComposerActions(args: {
       const msg = base
       if (msg) body.message = msg
       if (hasFiles) body.attachments = requestAttachments()
+      if (targetAgentName) body.target_agent_name = targetAgentName
+      args.groupTargetAgentName.value = null
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
@@ -121,13 +135,16 @@ export function useGroupComposerActions(args: {
     if (!detail) return
     const base = builtMessage()
     const hasFiles = args.attachedFiles.value.length > 0
-    if (!detail || args.groupStreaming.value || (!base && !hasFiles)) return
+    const targetAgentName = requestTargetAgentName()
+    if (!detail || args.groupStreaming.value || (!base && !hasFiles && !targetAgentName)) return
     args.clearAutoSwitchHint()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
+      targetAgentName,
       files: [...(args.attachedFiles.value || [])],
     }
     args.groupDiscussionGoal.value = ''
+    args.groupTargetAgentName.value = null
     const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
     try {
       const msg = base
@@ -136,7 +153,7 @@ export function useGroupComposerActions(args: {
       const userMsg: GroupMessage = {
         message_id: `msg-${Date.now()}`,
         speaker: { type: 'user' },
-        message: { content: msg, attachments },
+        message: { content: msg, attachments, target_agent_name: targetAgentName },
         client_message_id: clientMessageId,
       } as GroupMessage
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
@@ -145,11 +162,13 @@ export function useGroupComposerActions(args: {
         message?: string
         client_message_id: string
         attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+        target_agent_name?: string
       } = {
         message: msg,
         client_message_id: clientMessageId,
       }
       if (attachments.length) body.attachments = attachments
+      if (targetAgentName) body.target_agent_name = targetAgentName
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
