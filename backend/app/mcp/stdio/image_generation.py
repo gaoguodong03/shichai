@@ -41,7 +41,7 @@ def _tool_result(
     *,
     execution_status: str,
     content: str,
-    artifacts: dict[str, Any] | None = None,
+    artifacts: list[dict[str, str]] | None = None,
     agent_turn: str = "respond",
     skill_session: str = "release",
 ) -> str:
@@ -49,7 +49,7 @@ def _tool_result(
         {
             "execution_status": execution_status,
             "content": content,
-            "artifacts": artifacts or {},
+            "artifacts": artifacts or [],
             "next_action": {
                 "agent_turn": agent_turn,
                 "skill_session": skill_session,
@@ -171,7 +171,7 @@ def generate_image(
         return _tool_result(
             execution_status="blocked",
             content="缺少 description，请传入具体图片提示词。",
-            artifacts={},
+            artifacts=[],
             skill_session="keep",
         )
 
@@ -181,14 +181,20 @@ def generate_image(
             return _tool_result(
                 execution_status="failed",
                 content=result,
-                artifacts={},
+                artifacts=[],
             )
         saved = _save_data_url(result, workspace_id=workspace_id, output_subdir=output_subdir)
-        artifacts: dict[str, Any] = {
-            "output": result if saved is None else saved.get("download_url") or saved.get("local_path") or "",
-        }
+        artifacts: list[dict[str, str]] = []
         if saved:
-            artifacts.update(saved)
+            file_path = str(saved.get("file_path") or "").strip()
+            if file_path:
+                artifacts.append(
+                    {
+                        "type": "image",
+                        "name": Path(file_path).name,
+                        "path": file_path,
+                    }
+                )
         return _tool_result(
             execution_status="succeeded",
             content="图片生成完成。",
@@ -199,7 +205,7 @@ def generate_image(
         return _tool_result(
             execution_status="failed",
             content=str(exc),
-            artifacts={},
+            artifacts=[],
         )
 
 
