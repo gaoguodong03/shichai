@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -177,6 +178,23 @@ def test_frontend_stores_backend_phase_values_in_stream_state():
         "phase === 'tool_running' ?",
     ]:
         assert forbidden not in combined
+
+
+def test_frontend_does_not_infer_runtime_phase_from_route_or_message_events():
+    src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+    route_handler = re.search(
+        r"function showStreamingRoutePlaceholder\([\s\S]*?\n  \}",
+        src,
+    )
+    message_handler = re.search(
+        r"function handleStreamMessageEvent\([\s\S]*?\n  \}",
+        src,
+    )
+
+    assert route_handler is not None
+    assert message_handler is not None
+    assert "phase:" not in route_handler.group(0)
+    assert "patchGroupStreamState(activeSessionId(sessionId), { phase: 'assistant_generating' })" not in message_handler.group(0)
 
 
 def test_workspace_panel_logic_is_extracted_to_composable():

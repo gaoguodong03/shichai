@@ -155,7 +155,6 @@ export function useGroupStreamEvents(args: {
     if (!agentName) return
     const id = activeSessionId(sessionId)
     patchGroupStreamState(id, {
-      phase: 'agent_routed',
       agentName,
       skill: String(data?.skill || '').trim(),
     })
@@ -246,7 +245,6 @@ export function useGroupStreamEvents(args: {
 
   function handleStreamMessageEvent(data: Record<string, unknown>, state: StreamEventState, sessionId = selectedGroupSessionId() || '') {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
-    patchGroupStreamState(activeSessionId(sessionId), { phase: 'assistant_generating' })
     const type = speakerType(data)
     if (data && (type === 'expert' || type === 'user' || type === 'host')) {
       if (type === 'expert') {
