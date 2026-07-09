@@ -454,10 +454,11 @@ async def _run_one_expert_turn(
     run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{agent_name}:{uuid.uuid4().hex}"}}
     accumulated: list[str] = []
     tool_results: list[dict[str, Any]] = []
-    await update_group_run(group_session_id, run_id, phase="executing")
+    current_phase = "executing"
+    await update_group_run(group_session_id, run_id, phase=current_phase)
     yield _sse(
         "progress",
-        SseProgressEvent(type="progress", run_id=run_id, phase="executing", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
+        SseProgressEvent(type="progress", run_id=run_id, phase=current_phase, agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
     )
     async for stream_item in iter_with_keepalive(runtime.agent.astream(initial_state, config=run_cfg, stream_mode=["updates", "messages", "values"])):
         if not isinstance(stream_item, dict):
@@ -466,7 +467,7 @@ async def _run_one_expert_turn(
         if event_type == "keepalive":
             yield _sse(
                 "progress",
-                SseProgressEvent(type="progress", run_id=run_id, phase="executing", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
+                SseProgressEvent(type="progress", run_id=run_id, phase=current_phase, agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
             )
             continue
         if event_type == "agent_step":
@@ -476,10 +477,11 @@ async def _run_one_expert_turn(
                 if content and content not in accumulated:
                     accumulated.append(content)
                 if getattr(message, "tool_calls", None):
-                    await update_group_run(group_session_id, run_id, phase="tool_running")
+                    current_phase = "tool_running"
+                    await update_group_run(group_session_id, run_id, phase=current_phase)
                     yield _sse(
                         "progress",
-                        SseProgressEvent(type="progress", run_id=run_id, phase="tool_running", agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
+                        SseProgressEvent(type="progress", run_id=run_id, phase=current_phase, agent_name=agent_name, skill=runtime.skill).model_dump(exclude_none=True),
                     )
             continue
         if event_type == "tool_step":

@@ -252,3 +252,75 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     assert "message_ready" not in update_phases
     assert "executing" in progress_phases
     assert "finalizing" in update_phases
+
+
+@pytest.mark.asyncio
+async def test_keepalive_progress_keeps_current_runtime_phase_after_tool_call(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+
+    class FakeAgent:
+        async def astream(self, *_args, **_kwargs):
+            yield {
+                "type": "agent_step",
+                "message": AIMessage(
+                    content="需要调用工具",
+                    tool_calls=[{"id": "tool-1", "name": "read_workspace_file", "args": {"path": "input.md"}}],
+                ),
+            }
+            yield {"type": "keepalive"}
+            yield {"type": "agent_step", "message": AIMessage(content="工具后回答")}
+
+    async def _fake_build_runtime(**_kwargs):
+        return SimpleNamespace(
+            blocked=False,
+            skill="skill-qa",
+            skill_route_diagnostics={},
+            agent=FakeAgent(),
+            tools=[],
+        )
+
+    updates: list[dict[str, Any]] = []
+
+    async def _record_update(_session_id: str, _run_id: str, **kwargs: Any):
+        updates.append(kwargs)
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr(runtime, "build_expert_turn_runtime", _fake_build_runtime)
+    monkeypatch.setattr(runtime, "update_group_run", _record_update)
+    state.save_session_definitions(
+        {
+            "s-tool-keepalive-phase": {
+                "title": "工具阶段",
+                "agent_names": ["问答专家"],
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+
+    events = [
+        _parse_sse_block(item)
+        async for item in runtime._run_one_expert_turn(
+            group_session_id="s-tool-keepalive-phase",
+            run_id="run-tool",
+            session_definitions=state.load_session_definitions(),
+            session_item=state.load_session_definitions()["s-tool-keepalive-phase"],
+            app_settings={},
+            agent_map={"问答专家": {"name": "问答专家", "skills": [{"directory_name": "skill-qa"}]}},
+            agent_name="问答专家",
+            messages=[],
+            discussion_goal="回答问题",
+            user_text="你好",
+            next_action="请回答",
+        )
+    ]
+
+    progress_phases = [payload.get("phase") for event, payload in events if event == "progress"]
+    assert [item.get("phase") for item in updates if item.get("phase")] == [
+        "agent_routed",
+        "executing",
+        "tool_running",
+        "finalizing",
+    ]
+    assert progress_phases == ["executing", "tool_running", "tool_running"]
