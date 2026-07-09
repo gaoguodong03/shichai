@@ -126,6 +126,36 @@ def test_sessions_api_uses_agent_names_contract(client: TestClient):
     assert "agent_ids" not in updated
 
 
+def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monkeypatch):
+    from app.api import sessions
+
+    async def broken_body():
+        raise RuntimeError("boom")
+        yield b""
+
+    class BrokenStream:
+        body_iterator = broken_body()
+
+    async def fake_group_chat_stream(session_id, request):
+        return BrokenStream()
+
+    monkeypatch.setattr(sessions, "group_chat_stream", fake_group_chat_stream)
+
+    response = client.post(
+        "/api/sessions/s-error/chat",
+        json={"message": "hi", "client_message_id": "cm-error"},
+    )
+
+    assert response.status_code == 200
+    error = response.json()["data"]["error"]
+    assert error == {
+        "type": "error",
+        "run_id": None,
+        "code": "chat_once_stream_error",
+        "message": "boom",
+    }
+
+
 def test_delete_message_rejects_running_session(client: TestClient):
     from app.api.group_chat_state import load_group_history, save_group_history
     from app.core.user_context import reset_current_user_identity, set_current_user_identity

@@ -15,7 +15,7 @@ from app.core.security import user_context_dependency
 from app.api.group_chat_state import build_session_payload, load_session_definitions
 from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.agent.group_chat_runtime import group_chat_stream
-from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest
+from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, SseErrorEvent
 from app.agent.group_session_service import (
     GroupSessionUpdate,
     create_session_internal,
@@ -168,10 +168,21 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
     except asyncio.CancelledError as e:
         interrupted = True
         logger.warning("session_chat_once 聚合流被取消: session=%s err=%s", session_id, e)
+        error_event = error_event or SseErrorEvent(
+            type="error",
+            run_id=None,
+            code="chat_once_cancelled",
+            message=str(e) or "chat once stream cancelled",
+        ).model_dump(exclude_none=False)
     except Exception as e:
         interrupted = True
         logger.exception("session_chat_once 聚合流失败: session=%s err=%s", session_id, e)
-        error_event = error_event or {"error": str(e)}
+        error_event = error_event or SseErrorEvent(
+            type="error",
+            run_id=None,
+            code="chat_once_stream_error",
+            message=str(e) or e.__class__.__name__,
+        ).model_dump(exclude_none=False)
 
     primary_message = message_events[-1] if message_events else None
     route_agent_name = route_event.get("agent_name") if isinstance(route_event, dict) else None
