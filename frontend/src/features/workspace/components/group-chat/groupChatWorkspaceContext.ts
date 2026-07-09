@@ -37,10 +37,10 @@ export interface GroupChatMessageContext {
   activeStreamingSpeakerName: ContextValue
   streamingPulse: ContextValue
   formatSkill: ContextValue
-  getToolRawResults: ContextValue
+  getArtifactDisplayItems: ContextValue
   expandedToolKey: ContextValue
-  toolRawMeta: ContextValue
-  formatToolPopover: ContextValue
+  artifactDisplayMeta: ContextValue
+  formatArtifactPopover: ContextValue
   formatGroupMsgTime: ContextValue
   formatGroupMsgFullTime: ContextValue
   renderMarkdown: ContextValue

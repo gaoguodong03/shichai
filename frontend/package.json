@@ -7,6 +7,7 @@
     "build": "vue-tsc && vite build",
     "test:copy": "node scripts/check-group-composer-copy.mjs",
     "test:message-actions": "node --disable-warning=ExperimentalWarning scripts/check-group-message-actions.mjs",
+    "test:message-artifacts": "node scripts/check-message-artifact-contract.mjs",
     "test:resource-import-icons": "node scripts/check-resource-import-icons.mjs",
     "test:message-time": "node --disable-warning=ExperimentalWarning scripts/check-message-time-format.mjs",
     "test:skill-label": "node --disable-warning=ExperimentalWarning scripts/check-group-skill-label.mjs",

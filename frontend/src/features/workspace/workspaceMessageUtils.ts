@@ -1,8 +1,8 @@
-type ToolRawMeta = { toolName: string; rawReturn: string }
+type ArtifactDisplayMeta = { label: string; serialized: string }
 
-function parseToolRawResult(raw: string): ToolRawMeta {
+function parseArtifactDisplayItem(serialized: string): ArtifactDisplayMeta {
   try {
-    const parsed = JSON.parse((raw || '').trim()) as {
+    const parsed = JSON.parse((serialized || '').trim()) as {
       type?: string
       name?: string
       path?: string
@@ -10,34 +10,34 @@ function parseToolRawResult(raw: string): ToolRawMeta {
     const type = String(parsed?.type || '').trim()
     const name = String(parsed?.name || parsed?.path || '').trim()
     if (type || name) {
-      return { toolName: type ? `artifact: ${type}` : 'artifact', rawReturn: raw }
+      return { label: type ? `artifact: ${type}` : 'artifact', serialized }
     }
   } catch {
     // ignore malformed artifact payloads
   }
-  return { toolName: 'artifact', rawReturn: raw }
+  return { label: 'artifact', serialized }
 }
 
-const toolRawMetaCache = new Map<string, ToolRawMeta>()
+const artifactDisplayMetaCache = new Map<string, ArtifactDisplayMeta>()
 
-export function toolRawMeta(raw: string): ToolRawMeta {
-  const key = String(raw || '')
-  const hit = toolRawMetaCache.get(key)
+export function artifactDisplayMeta(serialized: string): ArtifactDisplayMeta {
+  const key = String(serialized || '')
+  const hit = artifactDisplayMetaCache.get(key)
   if (hit) return hit
-  const parsed = parseToolRawResult(key)
-  toolRawMetaCache.set(key, parsed)
-  if (toolRawMetaCache.size > 500) {
-    const firstKey = toolRawMetaCache.keys().next().value
-    if (firstKey) toolRawMetaCache.delete(firstKey)
+  const parsed = parseArtifactDisplayItem(key)
+  artifactDisplayMetaCache.set(key, parsed)
+  if (artifactDisplayMetaCache.size > 500) {
+    const firstKey = artifactDisplayMetaCache.keys().next().value
+    if (firstKey) artifactDisplayMetaCache.delete(firstKey)
   }
   return parsed
 }
 
-export function formatToolPopover(raw: string): string {
-  return tryFormatJson(toolRawMeta(raw).rawReturn)
+export function formatArtifactPopover(serialized: string): string {
+  return tryFormatJson(artifactDisplayMeta(serialized).serialized)
 }
 
-export function getToolRawResults(msg: { skill_result?: { artifacts?: unknown[] } }): string[] {
+export function getArtifactDisplayItems(msg: { skill_result?: { artifacts?: unknown[] } }): string[] {
   return (msg.skill_result?.artifacts || [])
     .map((item) => {
       if (!item || typeof item !== 'object') return ''

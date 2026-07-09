@@ -29,9 +29,9 @@ import {
 } from './workspacePreferences'
 import {
   agentBodyContent,
-  formatToolPopover,
-  getToolRawResults,
-  toolRawMeta,
+  artifactDisplayMeta,
+  formatArtifactPopover,
+  getArtifactDisplayItems,
 } from '../workspaceMessageUtils'
 
 export type WorkspaceContentProps = {
@@ -604,10 +604,10 @@ export function useWorkspaceContentProviders(args: {
     activeStreamingSpeakerName,
     streamingPulse,
     formatSkill,
-    getToolRawResults,
+    getArtifactDisplayItems,
     expandedToolKey,
-    toolRawMeta,
-    formatToolPopover,
+    artifactDisplayMeta,
+    formatArtifactPopover,
     formatGroupMsgTime,
     formatGroupMsgFullTime,
     renderMarkdown,

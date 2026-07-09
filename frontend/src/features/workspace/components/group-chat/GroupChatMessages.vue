@@ -57,15 +57,15 @@
                           </span>
                           <span v-if="messageSkill(msg)" class="group-chat-skill-tag">skill: {{ formatSkill(messageSkill(msg)) }}</span>
                           <div
-                            v-if="getSandboxToolRawResults(msg).length"
+                            v-if="getSandboxArtifactDisplayItems(msg).length"
                             class="group-chat-tool-tag-wrap"
                             :data-key="sandboxGroupKey(msg, i)"
                           >
                             <button
                               type="button"
                               :class="['group-chat-skill-tag', 'group-chat-tool-tag', 'group-chat-sandbox-group-toggle', isSandboxGroupOpen(msg, i) && 'group-chat-tool-tag-expanded']"
-                              :aria-label="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxToolRawResults(msg).length})`"
-                              :title="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxToolRawResults(msg).length})`"
+                              :aria-label="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxArtifactDisplayItems(msg).length})`"
+                              :title="`${isSandboxGroupOpen(msg, i) ? '隐藏' : '显示'}沙箱调用 (${getSandboxArtifactDisplayItems(msg).length})`"
                               @click="expandedToolKey = isSandboxGroupOpen(msg, i) ? null : sandboxGroupKey(msg, i)"
                             >
                               <svg class="group-chat-sandbox-group-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -73,33 +73,33 @@
                                 <path d="M8 9l3 3-3 3" />
                                 <path d="M13 15h3" />
                               </svg>
-                              <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ getSandboxToolRawResults(msg).length }}</span>
+                              <span class="group-chat-sandbox-group-count" aria-hidden="true">{{ getSandboxArtifactDisplayItems(msg).length }}</span>
                               <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div v-if="isSandboxGroupOpen(msg, i)" class="group-chat-tool-popover group-chat-sandbox-group-popover">
                               <button
-                                v-for="(raw, tri) in getSandboxToolRawResults(msg)"
+                                v-for="(item, tri) in getSandboxArtifactDisplayItems(msg)"
                                 :key="`${sandboxGroupKey(msg, i)}-${tri}`"
                                 type="button"
                                 :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === sandboxToolKey(msg, i, tri) && 'group-chat-tool-tag-expanded']"
                                 @click.stop="expandedToolKey = expandedToolKey === sandboxToolKey(msg, i, tri) ? sandboxGroupKey(msg, i) : sandboxToolKey(msg, i, tri)"
                               >
-                                {{ toolRawMeta(raw).toolName }}
+                                {{ artifactDisplayMeta(item).label }}
                                 <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
                               </button>
                               <div
-                                v-for="(raw, tri) in getSandboxToolRawResults(msg)"
+                                v-for="(item, tri) in getSandboxArtifactDisplayItems(msg)"
                                 :key="`${sandboxToolKey(msg, i, tri)}-popover`"
                                 v-show="expandedToolKey === sandboxToolKey(msg, i, tri)"
                                 class="group-chat-sandbox-detail"
                               >
                                 <span class="group-chat-tool-popover-title">产物引用</span>
-                                <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
+                                <pre class="group-chat-tool-popover-pre">{{ formatArtifactPopover(item) }}</pre>
                               </div>
                             </div>
                           </div>
                           <div
-                            v-for="(raw, tri) in getNonSandboxToolRawResults(msg)"
+                            v-for="(item, tri) in getNonSandboxArtifactDisplayItems(msg)"
                             :key="tri"
                             class="group-chat-tool-tag-wrap"
                             :data-key="`${msg.message_id || i}-${tri}`"
@@ -109,12 +109,12 @@
                               :class="['group-chat-skill-tag', 'group-chat-tool-tag', expandedToolKey === `${msg.message_id || i}-${tri}` && 'group-chat-tool-tag-expanded']"
                               @click="expandedToolKey = expandedToolKey === `${msg.message_id || i}-${tri}` ? null : `${msg.message_id || i}-${tri}`"
                             >
-                              {{ toolRawMeta(raw).toolName }}
+                              {{ artifactDisplayMeta(item).label }}
                               <svg class="group-chat-tool-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                             </button>
                             <div v-if="expandedToolKey === `${msg.message_id || i}-${tri}`" class="group-chat-tool-popover">
                               <span class="group-chat-tool-popover-title">产物引用</span>
-                              <pre class="group-chat-tool-popover-pre">{{ formatToolPopover(raw) }}</pre>
+                              <pre class="group-chat-tool-popover-pre">{{ formatArtifactPopover(item) }}</pre>
                             </div>
                           </div>
                         </div>
@@ -255,10 +255,10 @@ const {
   activeStreamingSpeakerName,
   streamingPulse,
   formatSkill,
-  getToolRawResults,
+  getArtifactDisplayItems,
   expandedToolKey,
-  toolRawMeta,
-  formatToolPopover,
+  artifactDisplayMeta,
+  formatArtifactPopover,
   formatGroupMsgFullTime,
   renderMarkdown,
   agentBodyContent,
@@ -275,16 +275,16 @@ function messageToolKey(msg: GroupMessage, index: number) {
   return msg.message_id || index
 }
 
-function isSandboxToolRaw(raw: string) {
-  return toolRawMeta(raw).toolName.toLowerCase().startsWith('sandbox')
+function isSandboxArtifactItem(item: string) {
+  return artifactDisplayMeta(item).label.toLowerCase().startsWith('sandbox')
 }
 
-function getSandboxToolRawResults(msg: GroupMessage) {
-  return getToolRawResults(msg).filter(isSandboxToolRaw)
+function getSandboxArtifactDisplayItems(msg: GroupMessage) {
+  return getArtifactDisplayItems(msg).filter(isSandboxArtifactItem)
 }
 
-function getNonSandboxToolRawResults(msg: GroupMessage) {
-  return getToolRawResults(msg).filter((raw: string) => !isSandboxToolRaw(raw))
+function getNonSandboxArtifactDisplayItems(msg: GroupMessage) {
+  return getArtifactDisplayItems(msg).filter((item: string) => !isSandboxArtifactItem(item))
 }
 
 function showMessageActions(msg: GroupMessage) {
