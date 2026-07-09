@@ -18,7 +18,6 @@ def test_host_next_speaker_uses_nested_message_contract():
         skill="group-host-webnovel",
         next_speaker="文字创作专家",
         agent_map={"文字创作专家": {"name": "文字创作专家"}},
-        announcement="好的，我理解了你的需求。",
         current_phase="阶段2：撰写",
         next_action="请撰写正文。",
         host_agent_name="四九",

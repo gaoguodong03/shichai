@@ -32,7 +32,7 @@ def resolve_group_entry_route(
             changed = True
         return request.target_agent_name, default_next_action, changed
 
-    if continuation and user_requests_host_takeover(request.message, explicit_flag=None, host_display_name=host_name):
+    if continuation and user_requests_host_takeover(request.message, host_display_name=host_name):
         orchestration_state.pop("continuation", None)
         changed = True
 

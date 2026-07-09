@@ -511,8 +511,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
             messages: state.sessions[0].messages,
             agent_names: state.sessions[0].agent_names,
             agent_map: {
-              '问答专家': { name: '问答专家', role: '回答用户问题' },
-              '写作专家': { name: '写作专家', role: '整理文档与结论' },
+              '问答专家': { name: '问答专家', description: '回答用户问题' },
+              '写作专家': { name: '写作专家', description: '整理文档与结论' },
             },
           },
         }),

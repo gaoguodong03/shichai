@@ -68,7 +68,7 @@ def test_tool_exception_becomes_failed_tool_result_with_error_log():
     assert result["error_log"]["message"] == "cannot read"
 
 
-def test_missing_workspace_read_tool_needs_input():
+def test_missing_workspace_read_tool_is_blocked_without_required_user_fields():
     result = _missing_tool_result_record(
         tool_name="read_workspace_file",
         arguments={"path": "notes/a.md"},
@@ -77,4 +77,5 @@ def test_missing_workspace_read_tool_needs_input():
     )
 
     assert result["execution_status"] == "blocked"
-    assert result["required_user_fields"][0]["key"] == "tool_enablement"
+    assert result["message"] == "当前专家未启用 read_workspace_file，无法读取工作区文件。"
+    assert "required_user_fields" not in result

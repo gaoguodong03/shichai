@@ -20,6 +20,7 @@ def test_backend_extraction_modules_exist_without_legacy_smells():
     modules = (
         "app/agent/group_chat_memory_prompt.py",
         "app/agent/group_orchestration_fsm.py",
+        "app/agent/group_chat_skill_session.py",
         "app/agent/group_chat_host_runtime.py",
         "app/agent/group_chat_host_messages.py",
         "app/agent/simple_agent_finalization.py",
@@ -54,7 +55,6 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "app/agent/orchestrator_reducer.py",
         "app/agent/orchestrator_state.py",
         "app/agent/scene_runtime.py",
-        "app/agent/group_chat_skill_session.py",
         "app/agent/group_chat_hooks.py",
         "app/core/scene_scheduler.py",
     ):
@@ -105,3 +105,31 @@ def test_group_chat_title_meta_does_not_infer_required_user_fields():
     assert "_infer_required_user_fields_for_skill" not in title_meta
     assert "_skill_requires_confirmation_gate" not in title_meta
     assert "required_user_fields" not in title_meta
+
+
+def test_runtime_code_removes_legacy_skill_and_host_control_fields():
+    skill_session = _read("app/agent/skill_session_contract.py")
+    host_messages = _read("app/agent/group_chat_host_messages.py")
+    host_decision = _read("app/agent/group_host_decision.py")
+    tool_records = _read("app/agent/skill_tool_result_records.py")
+    tool_content = _read("app/agent/group_chat_tool_result_content.py")
+
+    assert "resolve_skill_session_state" not in skill_session
+    assert "[[SKILL_SESSION_STATE]]" not in skill_session
+    assert "SKILL_SESSION_STATE_START" not in skill_session
+    assert "announcement:" not in host_messages
+    assert "reason:" not in host_messages
+    assert "suggested_order:" not in host_messages
+    assert "explicit_flag" not in host_decision
+    assert "required_user_fields" not in tool_records
+    assert "required_user_fields" not in tool_content
+
+
+def test_frontend_e2e_mock_uses_current_resource_fields():
+    mock = (ROOT.parent / "frontend/e2e/fixtures/mockApi.ts").read_text(encoding="utf-8")
+
+    assert "role: string" not in mock
+    assert "is_leader" not in mock
+    assert "role:" not in mock
+    assert "label: 'Qwen'" not in mock
+    assert "kept_skill_ids" not in mock

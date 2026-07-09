@@ -71,14 +71,12 @@ def _build_host_next_speaker_message(
     skill: str,
     next_speaker: str,
     agent_map: Mapping[str, Mapping[str, Any]],
-    announcement: str | None = None,
     current_phase: str | None = None,
     next_action: str | None = None,
-    suggested_order: Any = None,
     host_agent_name: str = "",
 ) -> dict[str, Any]:
     """Build the fixed host handoff bubble for an expert turn."""
-    _ = (skill, announcement, suggested_order)
+    _ = skill
     action = str(next_action or "").strip()
     if str(next_speaker or "").strip().lower() == "end" or str(current_phase or "").strip().lower() == "end":
         return _build_host_pause_message(
@@ -102,15 +100,13 @@ def _build_host_pause_message(
     *,
     skill: str,
     next_speaker: str,
-    announcement: str | None = None,
     current_phase: str | None = None,
-    reason: str | None = None,
     next_action: str | None = None,
     host_agent_name: str = "",
 ) -> dict[str, Any] | None:
     """Build a host pause or completion message for user-visible scheduler output."""
     _ = skill
-    action = str(next_action or announcement or reason or "").strip()
+    action = str(next_action or "").strip()
     if str(next_speaker or "").strip().lower() == "end" or str(current_phase or "").strip().lower() == "end":
         return _host_message_base(
             content=action or HOST_END_MESSAGE,

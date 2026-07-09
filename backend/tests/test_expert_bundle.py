@@ -8,16 +8,13 @@ from app.core.expert_bundle import read_expert_bundle_manifest
 
 
 def test_merge_single_expert_skip_on_same_name():
-    user = [{"name": "Old", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""}]
+    user = [{"name": "Old", "description": "", "system_prompt": "", "skills": [], "llm_name": ""}]
     bundle_row = {
         "name": "Old",
-        "role": "",
+        "description": "",
         "system_prompt": "",
         "skills": [],
-        "tool_names": [],
-        "is_leader": False,
         "llm_name": "",
-        "avatar_url": "",
     }
     merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="skip")
     assert skipped is True
@@ -29,37 +26,31 @@ def test_merge_single_expert_skip_on_same_name():
 
 def test_merge_single_expert_overwrite_all_same_name_and_keep_import():
     user = [
-        {"name": "Same", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""},
-        {"name": "Same", "role": "", "system_prompt": "", "skills": [], "tool_names": [], "is_leader": False, "llm_name": "", "avatar_url": ""},
+        {"name": "Same", "description": "", "system_prompt": "", "skills": [], "llm_name": ""},
+        {"name": "Same", "description": "", "system_prompt": "", "skills": [], "llm_name": ""},
     ]
     bundle_row = {
         "name": "Same",
-        "role": "r",
+        "description": "r",
         "system_prompt": "p",
         "skills": [],
-        "tool_names": [],
-        "is_leader": False,
         "llm_name": "",
-        "avatar_url": "",
     }
     merged, fid, skipped, overwritten = merge_single_expert_into_instances(user, bundle_row, name_conflict="overwrite")
     assert skipped is False
     assert fid == "Same"
     assert overwritten == ["Same"]
     assert [x["name"] for x in merged] == ["Same"]
-    assert merged[0]["role"] == "r"
+    assert merged[0]["description"] == "r"
 
 
 def test_expert_bundle_zip_roundtrip():
     expert = {
         "name": "E",
-        "role": "",
+        "description": "",
         "system_prompt": "",
         "skills": [],
-        "tool_names": [],
-        "is_leader": False,
         "llm_name": "",
-        "avatar_url": "",
     }
     root = Path(tempfile.mkdtemp())
     try:

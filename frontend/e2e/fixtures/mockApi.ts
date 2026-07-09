@@ -33,10 +33,9 @@ type SkillRef = {
 
 type Agent = {
   name: string
-  role: string
+  description: string
   system_prompt?: string
   skills: SkillRef[]
-  is_leader?: boolean
 }
 
 type Skill = {
@@ -112,13 +111,13 @@ export function createE2eState(): E2eState {
     agents: [
       {
         name: '问答专家',
-        role: '回答用户问题',
+        description: '回答用户问题',
         system_prompt: '你负责回答验收问题。',
         skills: [{ name: '问答技能', directory_name: 'skill-qa' }],
       },
       {
         name: '写作专家',
-        role: '整理文档与结论',
+        description: '整理文档与结论',
         system_prompt: '你负责整理结构化文档。',
         skills: [{ name: '写作技能', directory_name: 'skill-write' }],
       },
@@ -178,7 +177,6 @@ export function createE2eState(): E2eState {
       system_prompt: '全局项目规则',
       llm_providers: {
         qwen: {
-          label: 'Qwen',
           provider: 'openai_compatible',
           base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
           model: 'qwen3-max',
@@ -243,7 +241,7 @@ function sessionResponse(session: Session, state: E2eState) {
     messages: session.messages,
     agent_names: session.agent_names || [],
     host: session.host || {},
-    agent_map: Object.fromEntries(state.agents.map((a) => [a.name, { name: a.name, role: a.role }])),
+    agent_map: Object.fromEntries(state.agents.map((a) => [a.name, { name: a.name, description: a.description }])),
   }
   return response
 }
@@ -272,7 +270,7 @@ function upsertAgent(state: E2eState, agentName: string, body: Record<string, un
   const existing = state.agents.find((a) => a.name === agentName || a.name === name)
   const next: Agent = {
     name,
-    role: String(body.role || existing?.role || body.description || '新建专家'),
+    description: String(body.description || existing?.description || '新建专家'),
     system_prompt: String(body.system_prompt || existing?.system_prompt || ''),
     skills: normalizeSkillRefs(body.skills, existing?.skills || []),
   }
@@ -480,7 +478,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       }
       state.agents.unshift({
         name: '导入专家',
-        role: '导入专家',
+        description: '导入专家',
         system_prompt: '',
         skills: [{ name: '导入技能', directory_name: 'skill-imported' }],
       })

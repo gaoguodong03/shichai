@@ -152,8 +152,6 @@ def _missing_tool_result_record(*, tool_name: str, arguments: dict, tool_call_id
         "message": message,
         "output": {"text": message},
     }
-    if status == "blocked":
-        payload["required_user_fields"] = [{"key": "tool_enablement", "label": "工具能力", "reason": "当前专家未启用读取工作区文件的能力。", "input_type": "tool"}]
-    else:
+    if status != "blocked":
         payload["error_log"] = {"message": message, "detail": f"available_tools={available_tools}", "retryable": False}
     return ToolResultRecord.model_validate(payload).model_dump(exclude_none=True)

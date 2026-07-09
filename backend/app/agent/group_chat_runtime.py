@@ -22,6 +22,7 @@ from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_use
 from app.agent.group_chat_host_messages import _build_host_pause_message
 from app.agent.group_chat_host_runtime import _host_decide_by_agent, _request_skills_loader
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
+from app.agent.group_chat_skill_session import apply_skill_result_to_orchestration_state, skill_result_from_content
 from app.agent.group_chat_streaming import iter_with_keepalive, stream_background_events
 from app.agent.group_context import messages_to_expert_context, normalize_discussion_goal, scheduler_recent_context
 from app.agent.group_chat_title_meta import _record_user_message_and_refresh_title
@@ -125,26 +126,6 @@ def _request_user_text(request: GroupChatRequest) -> str:
     if request.target_agent_name:
         text = (text + "\n\n" if text else "") + f"【本轮指定专家】{request.target_agent_name}"
     return text.strip()
-
-
-def _skill_result_from_content(
-    *,
-    status: str,
-    content: str,
-    keep_skill_session: bool,
-    artifacts: List[Dict[str, Any]] | None = None,
-) -> Dict[str, Any]:
-    """Build the canonical skill_result payload for an expert or host message."""
-    normalized = status if status in {"succeeded", "blocked", "failed"} else "failed"
-    return {
-        "execution_status": normalized,
-        "content": content or "无可展示内容。",
-        "artifacts": list(artifacts or []),
-        "next_action": {
-            "agent_turn": "continue" if keep_skill_session and normalized == "succeeded" else "respond",
-            "skill_session": "keep" if keep_skill_session else "release",
-        },
-    }
 
 
 def _user_requests_recruitment(text: str) -> bool:
@@ -475,7 +456,6 @@ async def _run_one_expert_turn(
     run_cfg = {"configurable": {"thread_id": f"group:{group_session_id}:{agent_name}:{uuid.uuid4().hex}"}}
     accumulated: list[str] = []
     tool_results: list[dict[str, Any]] = []
-    keep_skill_session = False
     await update_group_run(group_session_id, run_id, phase="executing")
     yield _sse(
         "progress",
@@ -519,17 +499,27 @@ async def _run_one_expert_turn(
     has_blocked = any(item.get("execution_status") == "blocked" for item in tool_results if isinstance(item, dict))
     status = "failed" if has_failed else "blocked" if has_blocked else "succeeded"
     artifacts = _collect_artifacts(tool_results)
+    skill_result = skill_result_from_content(
+        status=status,
+        content=content,
+        artifacts=artifacts,
+        tool_results=tool_results,
+    )
+    content = str(skill_result.get("content") or content or "无可展示内容。")
+    orchestration_state = load_group_orchestration_state(group_session_id)
+    if apply_skill_result_to_orchestration_state(
+        orchestration_state,
+        agent_name=agent_name,
+        skill=runtime.skill,
+        skill_result=skill_result,
+    ):
+        write_group_orchestration_state(group_session_id, orchestration_state)
     assistant_msg = {
         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
         "speaker": {"type": "expert", "agent_name": agent_name, "skill": runtime.skill},
         "message": {"content": content},
         "created_at": format_storage_timestamp(),
-        "skill_result": _skill_result_from_content(
-            status=status,
-            content=content,
-            keep_skill_session=keep_skill_session,
-            artifacts=artifacts,
-        ),
+        "skill_result": skill_result,
     }
     messages.append(assistant_msg)
     save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")

@@ -39,18 +39,9 @@ class ToolErrorLog(StrictTraceModel):
     retryable: bool = False
 
 
-class RequiredUserField(StrictTraceModel):
-    key: str = Field(min_length=1)
-    label: str = ""
-    required: bool = True
-    reason: str = ""
-    input_type: str = ""
-
-
 class ToolResultRecord(StrictTraceModel):
     tool_call: ToolCallRecord
     execution_status: Literal["succeeded", "blocked", "failed"]
     message: str
     output: ToolOutput = Field(default_factory=ToolOutput)
     error_log: ToolErrorLog | None = None
-    required_user_fields: list[RequiredUserField] = Field(default_factory=list)

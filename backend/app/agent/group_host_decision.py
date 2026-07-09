@@ -110,12 +110,9 @@ def parse_strict_host_scheduler_output(
 def user_requests_host_takeover(
     message: str,
     *,
-    explicit_flag: Optional[bool],
     host_display_name: str = "四九",
 ) -> bool:
     """Only allow host orchestration when user explicitly asks for host."""
-    if explicit_flag is True:
-        return True
     text = str(message or "").strip()
     if not text:
         return False

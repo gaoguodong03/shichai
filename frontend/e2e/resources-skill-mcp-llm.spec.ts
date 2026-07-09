@@ -83,7 +83,6 @@ test.describe('验收 4/6：资源中心技能、工具与模型', () => {
           data: {
             id: 'skill-imported',
             name: '导入技能',
-            kept_skill_ids: [],
             mcp_added: 1,
             mcp_skipped: 0,
           },

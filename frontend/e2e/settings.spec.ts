@@ -64,8 +64,8 @@ test.describe('验收 5/6：设置中心', () => {
             agent_names: state.sessions[0].agent_names,
             host: { name: hostName },
             agent_map: {
-              [hostName]: { name: hostName, role: '群聊主持人' },
-              '问答专家': { name: '问答专家', role: '回答用户问题' },
+              [hostName]: { name: hostName, description: '群聊主持人' },
+              '问答专家': { name: '问答专家', description: '回答用户问题' },
             },
           },
         }),
