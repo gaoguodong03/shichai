@@ -19,7 +19,7 @@ GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION = """
 场景协作中，普通专家本轮发言完成后默认交回主持人调度。
 
 脚本型 Skill 必须在 stdout JSON 中输出固定字段：
-`execution_status`、`result_code`、`message`、`artifacts`、`next_action`。
+`execution_status`、`content`、`artifacts`、`next_action`。
 `next_action.skill_session` 只允许 `keep` 或 `release`：
 `keep` 表示保留 Skill 会话锁，`release` 表示释放。
 """

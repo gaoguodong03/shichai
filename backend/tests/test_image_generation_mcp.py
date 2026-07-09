@@ -59,6 +59,9 @@ def test_generate_image_saves_data_url_to_workspace(
 
     artifacts = result["artifacts"]
     assert result["execution_status"] == "succeeded"
+    assert "result_code" not in result
+    assert "message" not in result
+    assert result["content"] == "图片生成完成。"
     assert artifacts["file_path"].startswith("generated_images/图片-")
     assert re.match(r"^generated_images/图片-\d{16}-[0-9a-f]{8}\.png$", artifacts["file_path"])
     assert not re.search(r"/图片-\d{8}-\d{6}", artifacts["file_path"])
@@ -92,6 +95,9 @@ def test_generate_image_without_workspace_uses_single_generated_images_dir(
 
     artifacts = result["artifacts"]
     assert result["execution_status"] == "succeeded"
+    assert "result_code" not in result
+    assert "message" not in result
+    assert result["content"] == "图片生成完成。"
     assert artifacts["file_path"].startswith("generated_images/图片-")
     assert "/generated_images/generated_images/" not in artifacts["local_path"]
     assert (tmp_path / "data" / artifacts["file_path"]).read_bytes() == b"fake-jpg"
@@ -130,6 +136,9 @@ def test_generate_image_saves_to_mcp_runtime_user_workspace(
         / result["artifacts"]["file_path"]
     )
     assert result["execution_status"] == "succeeded"
+    assert "result_code" not in result
+    assert "message" not in result
+    assert result["content"] == "图片生成完成。"
     assert expected.read_bytes() == b"runtime-user-jpg"
     assert not (
         tmp_path
@@ -152,7 +161,9 @@ def test_generate_image_reports_upstream_http_error_as_failure(monkeypatch: pyte
     result = json.loads(image_generation.generate_image(description="雪夜山门", pic_size="1024x1024"))
 
     assert result["execution_status"] == "failed"
-    assert result["message"] == "请求失败 HTTP 301: <html>Moved Permanently</html>"
+    assert "result_code" not in result
+    assert "message" not in result
+    assert result["content"] == "请求失败 HTTP 301: <html>Moved Permanently</html>"
 
 
 def test_chatanywhere_image_default_base_uses_https(monkeypatch: pytest.MonkeyPatch):

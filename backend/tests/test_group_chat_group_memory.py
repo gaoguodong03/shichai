@@ -114,7 +114,7 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assistant_msg = {
         "message_id": "expert-1",
         "speaker": {"type": "expert", "agent_name": "数据专家", "skill": "weekly-report"},
-        "content": "- 用户希望输出周报\n- 需要包含趋势图表",
+        "message": {"content": "- 用户希望输出周报\n- 需要包含趋势图表"},
         "created_at": "2026-05-13T12:31:50+00:00",
     }
     gc._persist_group_memory_turn(
@@ -133,7 +133,7 @@ def test_persist_group_memory_turn_updates_only_facts_for_assistant(tmp_path):
     assert not (ws / "memory" / "logs").exists()
 
 
-def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path):
+def test_persist_group_memory_turn_updates_index_from_skill_result_artifacts(tmp_path):
     gc = _get_memory_prompt_module()
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
@@ -141,22 +141,14 @@ def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path)
     assistant_msg = {
         "message_id": "expert-1",
         "speaker": {"type": "expert", "agent_name": "写作专家", "skill": "weekly-report"},
-        "content": "已完成周报初稿，并保存到工作区。",
+        "message": {"content": "已完成周报初稿，并保存到工作区。"},
         "created_at": "2026-05-13T12:31:50+00:00",
-        "tool_results": [
-            {
-                "tool_call": {
-                    "id": "tool-1",
-                    "name": "write_workspace_file",
-                    "kind": "workspace",
-                    "arguments": {"path": "reports/weekly.md"},
-                },
-                "execution_status": "succeeded",
-                "result_code": "file.written",
-                "message": "已写入当前 Chat 工作区文件：reports/weekly.md",
-                "output": {"text": "已写入当前 Chat 工作区文件：reports/weekly.md"},
-            }
-        ],
+        "skill_result": {
+            "execution_status": "succeeded",
+            "content": "已完成周报初稿，并保存到工作区。",
+            "artifacts": [{"type": "markdown", "name": "周报", "path": "reports/weekly.md"}],
+            "next_action": {"agent_turn": "respond", "skill_session": "release"},
+        },
     }
 
     gc._persist_group_memory_turn(

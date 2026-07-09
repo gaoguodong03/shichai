@@ -40,8 +40,7 @@ def _json(payload: dict[str, Any]) -> str:
 def _tool_result(
     *,
     execution_status: str,
-    result_code: str,
-    message: str,
+    content: str,
     artifacts: dict[str, Any] | None = None,
     agent_turn: str = "respond",
     skill_session: str = "release",
@@ -49,8 +48,7 @@ def _tool_result(
     return _json(
         {
             "execution_status": execution_status,
-            "result_code": result_code,
-            "message": message,
+            "content": content,
             "artifacts": artifacts or {},
             "next_action": {
                 "agent_turn": agent_turn,
@@ -166,14 +164,13 @@ def generate_image(
         output_subdir: 可选，写入工作区的相对目录，默认 generated_images。
 
     Returns:
-        JSON 字符串。外层字段为 execution_status、result_code、message、artifacts、next_action。
+        JSON 字符串。外层字段为 execution_status、content、artifacts、next_action。
     """
     prompt = (description or "").strip()
     if not prompt:
         return _tool_result(
             execution_status="blocked",
-            result_code="image_generation.missing_description",
-            message="缺少 description，请传入具体图片提示词。",
+            content="缺少 description，请传入具体图片提示词。",
             artifacts={},
             skill_session="keep",
         )
@@ -183,8 +180,7 @@ def generate_image(
         if _looks_like_upstream_failure(result):
             return _tool_result(
                 execution_status="failed",
-                result_code="image_generation.upstream_failed",
-                message=result,
+                content=result,
                 artifacts={},
             )
         saved = _save_data_url(result, workspace_id=workspace_id, output_subdir=output_subdir)
@@ -195,16 +191,14 @@ def generate_image(
             artifacts.update(saved)
         return _tool_result(
             execution_status="succeeded",
-            result_code="image_generation.generated",
-            message="图片生成完成。",
+            content="图片生成完成。",
             artifacts=artifacts,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("image_generation failed: %s", exc, exc_info=True)
         return _tool_result(
             execution_status="failed",
-            result_code="image_generation.exception",
-            message=str(exc),
+            content=str(exc),
             artifacts={},
         )
 

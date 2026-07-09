@@ -40,18 +40,16 @@ def _json(payload: dict[str, Any]) -> str:
 def _tool_result(
     *,
     execution_status: str,
-    result_code: str,
-    message: str,
-    artifacts: dict[str, Any] | None = None,
+    content: str,
+    artifacts: list[dict[str, Any]] | None = None,
     agent_turn: str = "respond",
     skill_session: str = "release",
 ) -> str:
     return _json(
         {
             "execution_status": execution_status,
-            "result_code": result_code,
-            "message": message,
-            "artifacts": artifacts or {},
+            "content": content,
+            "artifacts": artifacts or [],
             "next_action": {
                 "agent_turn": agent_turn,
                 "skill_session": skill_session,
@@ -256,7 +254,7 @@ def transcribe_audio_file(
         chunk_seconds: 可选分片秒数，默认 120；大文件会按该长度分片后逐段转写。
 
     Returns:
-        JSON 字符串，包含 execution_status、result_code、message、artifacts、next_action。
+        JSON 字符串，包含 execution_status、content、artifacts、next_action。
     """
     try:
         audio_path = resolve_data_audio_path(path)
@@ -281,23 +279,20 @@ def transcribe_audio_file(
                 if not text:
                     return _tool_result(
                         execution_status="failed",
-                        result_code="audio_asr.empty_segment",
-                        message=f"第 {idx} 段未返回可用转写文本。",
-                        artifacts={"segment_index": idx, "upstream": data},
+                        content=f"第 {idx} 段未返回可用转写文本。",
+                        artifacts=[],
                     )
                 texts.append(text)
         return _tool_result(
             execution_status="succeeded",
-            result_code="audio_asr.transcribed",
-            message="音频转写完成。",
-            artifacts={"text": "\n".join(texts).strip(), "segment_count": len(texts)},
+            content="\n".join(texts).strip() or "音频转写完成。",
+            artifacts=[],
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("audio_asr transcription failed: %s", exc, exc_info=True)
         return _tool_result(
             execution_status="failed",
-            result_code="audio_asr.failed",
-            message=str(exc),
+            content=str(exc),
         )
 
 

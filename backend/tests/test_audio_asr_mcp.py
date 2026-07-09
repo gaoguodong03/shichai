@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.mcp.stdio import audio_asr
+import json
 
 
 def test_resolve_data_audio_path_requires_backend_data_prefix(tmp_path: Path):
@@ -52,3 +53,14 @@ def test_get_api_key_requires_configuration(monkeypatch: pytest.MonkeyPatch):
 
     with pytest.raises(ValueError, match="QWEN_AUDIO_API_KEY"):
         audio_asr.get_api_key()
+
+
+def test_transcribe_audio_file_returns_current_stdout_shape_for_errors():
+    result = json.loads(audio_asr.transcribe_audio_file("backend/data/users/u/sessions/s/workspace/missing.wav"))
+
+    assert result["execution_status"] == "failed"
+    assert "result_code" not in result
+    assert "message" not in result
+    assert "content" in result
+    assert result["artifacts"] == []
+    assert result["next_action"] == {"agent_turn": "respond", "skill_session": "release"}

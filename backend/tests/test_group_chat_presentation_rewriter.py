@@ -33,22 +33,8 @@ async def test_rewrite_assistant_message_for_display_only_changes_frontend_copy(
             "agent_name": "信息检索专家",
             "skill": "web-search",
         },
-        "content": '[{"name":"条目 A","url":"https://example.com"}]',
+        "message": {"content": '[{"name":"条目 A","url":"https://example.com"}]'},
         "created_at": "2026070712000000",
-        "tool_results": [
-            {
-                "tool_call": {
-                    "id": "tool-search",
-                    "name": "web_search",
-                    "kind": "api",
-                    "arguments": {"query": "条目 A"},
-                },
-                "execution_status": "succeeded",
-                "result_code": "ok",
-                "message": "检索完成",
-                "output": {"json_data": [{"name": "条目 A", "url": "https://example.com"}]},
-            }
-        ],
     }
 
     display = await rewrite_assistant_message_for_display(
@@ -58,13 +44,13 @@ async def test_rewrite_assistant_message_for_display_only_changes_frontend_copy(
     )
 
     assert display is not original
-    assert display["content"] == "## 检索结果\n\n- 条目 A"
-    assert original["content"] == '[{"name":"条目 A","url":"https://example.com"}]'
-    assert display["tool_results"] == original["tool_results"]
+    assert display["message"]["content"] == "## 检索结果\n\n- 条目 A"
+    assert original["message"]["content"] == '[{"name":"条目 A","url":"https://example.com"}]'
+    assert "tool_results" not in display
     assert len(client.calls) == 1
     human_prompt = client.calls[0][1].content
     assert "你是信息检索专家。" in human_prompt
-    assert original["content"] in human_prompt
+    assert original["message"]["content"] in human_prompt
 
 
 @pytest.mark.asyncio
@@ -76,7 +62,7 @@ async def test_rewrite_assistant_message_for_display_falls_back_to_raw_on_llm_er
     original = {
         "message_id": "msg-fallback",
         "speaker": {"type": "expert", "agent_name": "信息检索专家", "skill": "web-search"},
-        "content": "原始回复",
+        "message": {"content": "原始回复"},
         "created_at": "2026070712000000",
     }
 
@@ -87,5 +73,5 @@ async def test_rewrite_assistant_message_for_display_falls_back_to_raw_on_llm_er
     )
 
     assert display is not original
-    assert display["content"] == "原始回复"
-    assert original["content"] == "原始回复"
+    assert display["message"]["content"] == "原始回复"
+    assert original["message"]["content"] == "原始回复"

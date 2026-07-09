@@ -69,10 +69,13 @@ async def rewrite_assistant_message_for_display(
 ) -> Dict[str, Any]:
     """Return a frontend display copy; never mutate the persisted assistant message."""
     display_msg = dict(assistant_msg)
-    raw_content = str(assistant_msg.get("content") or "")
-    display_msg["content"] = await _rewrite_content(
+    body = assistant_msg.get("message") if isinstance(assistant_msg, dict) else None
+    display_body = dict(body) if isinstance(body, dict) else {"content": ""}
+    raw_content = str(display_body.get("content") or "")
+    display_body["content"] = await _rewrite_content(
         llm=llm,
         expert_system_prompt=expert_system_prompt,
         raw_content=raw_content,
     )
+    display_msg["message"] = display_body
     return display_msg

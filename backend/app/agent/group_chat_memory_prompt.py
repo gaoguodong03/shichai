@@ -135,33 +135,14 @@ def _extract_paths_from_tool_output_value(value: Any) -> List[str]:
 
 def _extract_index_paths_from_message(msg: Dict[str, Any]) -> List[str]:
     paths: List[str] = []
-    tool_results = msg.get("tool_results") if isinstance(msg, dict) else []
-    for result in tool_results if isinstance(tool_results, list) else []:
-        if not isinstance(result, dict):
+    skill_result = msg.get("skill_result") if isinstance(msg, dict) else None
+    artifacts = skill_result.get("artifacts") if isinstance(skill_result, dict) else []
+    for artifact in artifacts if isinstance(artifacts, list) else []:
+        if not isinstance(artifact, dict):
             continue
-        call = result.get("tool_call")
-        if isinstance(call, dict):
-            args = call.get("arguments") or {}
-            if isinstance(args, dict):
-                for key in ("path", "file_path", "output_path", "target_path", "dst_path", "new_path", "workspace_path"):
-                    normalized = _normalize_workspace_index_path(args.get(key))
-                    if normalized:
-                        paths.append(normalized)
-        for artifact in result.get("artifacts") or []:
-            if not isinstance(artifact, dict):
-                continue
-            for key in ("path", "url"):
-                normalized = _normalize_workspace_index_path(artifact.get(key))
-                if normalized:
-                    paths.append(normalized)
-        output = result.get("output")
-        if isinstance(output, dict):
-            for key in ("text", "markdown", "stdout", "stderr", "json_data"):
-                paths.extend(_extract_paths_from_tool_output_value(output.get(key)))
-        error_log = result.get("error_log")
-        if isinstance(error_log, dict):
-            for key in ("message", "detail", "stdout", "stderr", "raw_output"):
-                paths.extend(_extract_paths_from_tool_output_value(error_log.get(key)))
+        normalized = _normalize_workspace_index_path(artifact.get("path"))
+        if normalized:
+            paths.append(normalized)
 
     deduped: List[str] = []
     seen = set()
@@ -201,7 +182,8 @@ def _persist_group_memory_turn(
     speaker = (msg or {}).get("speaker")
     if not isinstance(speaker, dict) or str(speaker.get("type") or "").strip() != "expert":
         return
-    content = str((msg or {}).get("content") or "").strip()
+    body = (msg or {}).get("message")
+    content = str(body.get("content") if isinstance(body, dict) else "").strip()
     if content:
         facts_delta = _extract_facts_from_response(content)
     else:
