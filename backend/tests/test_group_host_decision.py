@@ -2,7 +2,6 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent import group_host_decision as hd
-from app.agent.runtime_status import InterruptReason
 from app.agent.structured_output_contracts import HostSchedulerDecisionPayload
 
 
@@ -45,7 +44,6 @@ def test_strict_host_scheduler_accepts_valid_agent_decision():
         "next_action": "请整理大纲。",
         "suggested_add_agent_names": None,
         "phase": None,
-        "interrupt_reason": None,
         "decision_source": "host_scheduler_state",
     }
 
@@ -60,7 +58,7 @@ def test_strict_host_scheduler_rejects_wrapped_json_text():
 
     assert out["next_speaker"] == "user"
     assert out["next_action"] == hd.HOST_PROTOCOL_ERROR_MESSAGE
-    assert out["interrupt_reason"] == InterruptReason.PROTOCOL_ERROR.value
+    assert "interrupt_reason" not in out
     assert out["decision_source"] == "system_guard"
 
 

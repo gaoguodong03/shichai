@@ -29,7 +29,8 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
 
   test('name-based 主持人 Skill 快照不显示为缺失技能', async ({ page }) => {
     const state = createE2eState()
-    state.scenarios[0].host_config = {
+    state.scenarios[0].host = {
+      ...(state.scenarios[0].host || {}),
       skill_name: '问答技能',
       skill_directory: 'skill-qa',
     }
@@ -124,7 +125,7 @@ test.describe('验收 3/6：资源中心场景与专家', () => {
             name: '导入后场景',
             description: '导入后不能被空列表覆盖',
             agent_names: ['问答专家'],
-            leader_agent_name: '问答专家',
+            host: { name: '问答专家' },
             updated_at: '2026-05-29T06:43:22Z',
           },
         ]

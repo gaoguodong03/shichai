@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from app.agent.runtime_status import InterruptReason, RuntimePhase
+from app.agent.runtime_status import RuntimePhase
 from app.agent.structured_output_contracts import (
     HostSchedulerDecisionPayload,
     StructuredOutputProtocolError,
@@ -28,7 +28,6 @@ def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, An
         "next_action": HOST_PROTOCOL_ERROR_MESSAGE,
         "suggested_add_agent_names": [],
         "phase": RuntimePhase.AWAITING_USER.value,
-        "interrupt_reason": InterruptReason.PROTOCOL_ERROR.value,
         "decision_source": "system_guard",
         "protocol_error": reason,
     }
@@ -66,7 +65,6 @@ def _strict_host_decision_from_payload(
             "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
             "phase": None,
-            "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
         }
     if next_key == "user":
@@ -76,7 +74,6 @@ def _strict_host_decision_from_payload(
             "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
             "phase": None,
-            "interrupt_reason": InterruptReason.NEED_RECRUIT_EXPERT.value if suggested else None,
             "decision_source": "host_scheduler_state",
         }
     agent_name = names.get(next_key)
@@ -88,7 +85,6 @@ def _strict_host_decision_from_payload(
         "next_action": payload.next_action,
         "suggested_add_agent_names": suggested or None,
         "phase": None,
-        "interrupt_reason": None,
         "decision_source": "host_scheduler_state",
     }
 

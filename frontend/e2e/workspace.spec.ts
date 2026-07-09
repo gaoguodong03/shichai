@@ -395,7 +395,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
             id: 'scenario-local-history',
             name: '历史本地场景',
             agent_names: ['问答专家'],
-            leader_agent_name: '问答专家',
+            host: { name: '问答专家' },
           },
         ]),
       )

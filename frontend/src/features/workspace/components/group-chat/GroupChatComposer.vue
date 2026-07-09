@@ -453,9 +453,9 @@
                                       : ((groupDetail?.agent_map || {})[id]?.name || id)
                                   }}
                                 </span>
-                                <span v-if="id === leaderDisplayName" class="group-chat-member-badge">主持人</span>
+                                <span v-if="id === sceneHostMemberId" class="group-chat-member-badge">主持人</span>
                               </span>
-                              <button v-if="id !== leaderDisplayName" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
+                              <button v-if="id !== sceneHostMemberId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
@@ -598,7 +598,7 @@ const {
   agentAvatarColor,
   agentIndex,
   agentAvatarChar,
-  leaderDisplayName,
+  sceneHostMemberId,
   removeMember,
   invitableAgents,
   inviteSingleMember,

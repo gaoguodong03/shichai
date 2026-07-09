@@ -123,7 +123,7 @@ export interface GroupChatComposerContext {
   agentAvatarColor: ContextValue
   agentIndex: ContextValue
   agentAvatarChar: ContextValue
-  leaderDisplayName: ContextValue
+  sceneHostMemberId: ContextValue
   removeMember: ContextValue
   invitableAgents: ContextValue
   inviteSingleMember: ContextValue

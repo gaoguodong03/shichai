@@ -76,6 +76,26 @@ def test_group_chat_components_do_not_use_aggregate_context():
     assert "provideGroupChatWorkspacePanelContext" in combined
 
 
+def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+        "frontend/src/features/workspace/composables/useGroupStreamEvents.ts",
+        "frontend/e2e/fixtures/mockApi.ts",
+        "frontend/e2e/workspace.spec.ts",
+        "frontend/e2e/resources-scenario-expert.spec.ts",
+        "frontend/e2e/settings.spec.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for legacy in [
+        "leader_agent_name",
+        "host_config",
+        "resume_target_agent_name",
+        "required_user_fields",
+        "interrupt_reason",
+    ]:
+        assert legacy not in combined
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

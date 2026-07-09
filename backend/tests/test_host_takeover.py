@@ -13,7 +13,7 @@ def test_strict_host_response_rejects_extra_fields():
     out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], host_mode="scene")
     assert out["next_speaker"] == "user"
     assert out["next_action"] == HOST_PROTOCOL_ERROR_MESSAGE
-    assert out["interrupt_reason"] == "protocol_error"
+    assert "interrupt_reason" not in out
 
 
 def test_strict_host_response_accepts_next_action_only():

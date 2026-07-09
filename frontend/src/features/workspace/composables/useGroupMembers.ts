@@ -104,13 +104,12 @@ export function useGroupMembers(args: {
       .filter((d) => d.agent_name && !inGroup.has(d.agent_name))
   })
 
-  const leaderAgentName = computed(() => VIRTUAL_SCENE_HOST_ID)
-  const leaderDisplayName = computed(() => leaderAgentName.value)
+  const sceneHostMemberId = computed(() => VIRTUAL_SCENE_HOST_ID)
   const orderedMemberIds = computed(() => {
     const ids = [...(groupDetail.value?.agent_names || [])]
-    const leader = leaderAgentName.value
-    const rest = ids.filter((id) => id !== leader)
-    return [leader, ...rest]
+    const hostMemberId = sceneHostMemberId.value
+    const rest = ids.filter((id) => id !== hostMemberId)
+    return [hostMemberId, ...rest]
   })
 
   function agentIndex(agentName?: string): number {
@@ -198,7 +197,7 @@ export function useGroupMembers(args: {
   return {
     showAddMemberModal,
     invitableAgents,
-    leaderDisplayName,
+    sceneHostMemberId,
     orderedMemberIds,
     formatSkill,
     isHostBubbleMessage,

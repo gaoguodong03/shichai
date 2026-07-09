@@ -55,7 +55,7 @@ export function useGroupOrchestrationState(args: {
   currentGroupStreaming: ComputedRef<boolean>
   groupStreaming: ComputedRef<boolean>
   orderedMemberIds: ComputedRef<string[]>
-  leaderDisplayName: ComputedRef<string>
+  sceneHostMemberId: ComputedRef<string>
   effectiveHostDisplayName: ComputedRef<string>
   defaultHostDisplayName: string
   agentInstances: () => AgentItem[]
@@ -79,7 +79,7 @@ export function useGroupOrchestrationState(args: {
     currentGroupStreaming,
     groupStreaming,
     orderedMemberIds,
-    leaderDisplayName,
+    sceneHostMemberId,
     effectiveHostDisplayName,
     defaultHostDisplayName,
     agentInstances,
@@ -104,9 +104,6 @@ export function useGroupOrchestrationState(args: {
   const lastRoute = ref<{ sessionId: string; expertName: string; skill: string } | null>(null)
   const groupTurnLimitReached = ref(false)
   const groupOrchestrationPhase = ref('')
-  const groupInterruptReason = ref('')
-  const groupResumeTargetAgentName = ref<string | null>(null)
-  const groupRequiredUserFields = ref<Array<Record<string, unknown>>>([])
 
   const currentAutoSwitchHint = computed(() => {
     const hint = autoSwitchHint.value
@@ -207,25 +204,9 @@ export function useGroupOrchestrationState(args: {
 
   function applyOrchestrationEndMeta(endData: Record<string, unknown>) {
     groupOrchestrationPhase.value = typeof endData.phase === 'string' ? endData.phase.trim() : ''
-    groupInterruptReason.value = typeof endData.interrupt_reason === 'string' ? endData.interrupt_reason.trim() : ''
-    const resumeAgentName = typeof endData.resume_target_agent_name === 'string' ? endData.resume_target_agent_name.trim() : ''
-    groupResumeTargetAgentName.value = resumeAgentName || null
-    const required = endData.required_user_fields
-    groupRequiredUserFields.value = Array.isArray(required) ? (required as Array<Record<string, unknown>>) : []
   }
 
-  const orchestrationInterruptHint = computed(() => {
-    const reason = (groupInterruptReason.value || '').trim()
-    if (!reason) return ''
-    if (reason === 'need_user_input') return '需要你补充信息后继续'
-    if (reason === 'need_more_context') return '需要补充上下文后继续'
-    if (reason === 'need_recruit_expert') return '建议先邀请新专家后继续'
-    if (reason === 'tool_unavailable') return '工具不可用，建议确认后重试或换方案'
-    if (reason === 'timeout_or_budget_exceeded') return '已达轮次/预算限制，建议确认后继续'
-    if (reason === 'policy_or_security') return '触发安全/策略限制，需你确认'
-    if (reason === 'conflict_detected') return '决策冲突，已回落为等待确认'
-    return `中断原因：${reason}`
-  })
+  const orchestrationInterruptHint = computed(() => '')
 
   const pendingSuggestedAddAgentNames = computed(() => {
     const aliasMap = buildExpertAliasMap()
@@ -352,8 +333,6 @@ export function useGroupOrchestrationState(args: {
       if (s === 'host') return 'host'
       if (ids.includes(String(suggested))) return String(suggested)
     }
-    const resume = (groupResumeTargetAgentName.value || '').trim()
-    if (ids.includes(resume)) return resume
     return 'host'
   })
 
@@ -398,8 +377,8 @@ export function useGroupOrchestrationState(args: {
     const id = focusRoleForToolbar.value
     if (!id) return true
     if (id === 'host') return true
-    const leader = (leaderDisplayName.value || '').trim()
-    return Boolean(leader && leader !== 'host' && id === leader)
+    const hostMemberId = (sceneHostMemberId.value || '').trim()
+    return Boolean(hostMemberId && hostMemberId !== 'host' && id === hostMemberId)
   })
 
   const toolbarDisplaySpeakerId = computed(() => focusRoleForToolbar.value)
@@ -464,9 +443,6 @@ export function useGroupOrchestrationState(args: {
     lastRoute,
     groupTurnLimitReached,
     groupOrchestrationPhase,
-    groupInterruptReason,
-    groupResumeTargetAgentName,
-    groupRequiredUserFields,
     orchestrationInterruptHint,
     pendingSuggestedAgentItems,
     inviteSuggestedAgents,

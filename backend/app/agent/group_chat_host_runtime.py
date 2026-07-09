@@ -87,8 +87,6 @@ async def _host_decide_by_agent(
     group_session_id: str = "",
     messages: Optional[List[Dict[str, Any]]] = None,
     app_settings: Optional[Dict[str, Any]] = None,
-    pending_owner_agent_name: str = "",
-    pending_skill: str = "",
     user_message: str = "",
     orphan_session_agent_names: Optional[List[str]] = None,
     host_mode: str = "recruitment",
@@ -98,8 +96,6 @@ async def _host_decide_by_agent(
     """Ask the host LLM for the next scheduler decision and validate it strictly."""
     _ = (
         messages,
-        pending_owner_agent_name,
-        pending_skill,
         orphan_session_agent_names,
         host_mode,
     )
@@ -111,7 +107,6 @@ async def _host_decide_by_agent(
             "next_speaker": "user",
             "next_action": credential_notice,
             "suggested_add_agent_names": None,
-            "interrupt_reason": "tool_unavailable",
         }
 
     host_name = str(host_agent.get("name") or "四九").strip() or "四九"
