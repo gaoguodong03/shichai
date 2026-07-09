@@ -38,12 +38,12 @@ async def _rewrite_content(
 
     try:
         client = llm.get_client() if hasattr(llm, "get_client") else llm
-        human_prompt = (
-            "【专家系统提示词】\n"
-            f"{expert_system_prompt or '（无）'}\n\n"
-            "【专家本轮原始回复】\n"
-            f"{raw_content}\n\n"
-            "请按系统规则输出前端最终展示文案。"
+        human_prompt = render_platform_prompt(
+            "presentation.rewrite.user_prompt.v1",
+            {
+                "expert_system_prompt": expert_system_prompt or "（无）",
+                "original_content": raw_content,
+            },
         )
         response = await asyncio.wait_for(
             client.ainvoke(

@@ -205,7 +205,12 @@ def schedule_group_session_event(
     loop.create_task(publish_group_session_event(group_session_id, event_type, payload))
 
 
-def write_group_runtime(group_session_id: str, state: Optional[Dict[str, Any]]) -> None:
+def write_group_runtime(
+    group_session_id: str,
+    state: Optional[Dict[str, Any]],
+    *,
+    notify_runtime: Optional[Dict[str, Any]] = None,
+) -> None:
     session_definitions = load_session_definitions()
     item = session_definitions.get(group_session_id)
     if item is None:
@@ -222,7 +227,7 @@ def write_group_runtime(group_session_id: str, state: Optional[Dict[str, Any]]) 
     schedule_group_session_event(
         group_session_id,
         "runtime",
-        {"runtime": state or {"running": False}},
+        {"runtime": notify_runtime if notify_runtime is not None else state or {"running": False}},
     )
 
 
@@ -320,8 +325,9 @@ def runtime_for_session(group_session_id: str, session_item: Dict[str, Any]) -> 
             str(stored.get("phase") or "") if isinstance(stored, dict) else "",
             str(stored.get("started_at") or "") if isinstance(stored, dict) else "",
         )
-        write_group_runtime(group_session_id, None)
-        return {"running": False}
+        failed_runtime = {"running": False, "phase": "failed"}
+        write_group_runtime(group_session_id, None, notify_runtime=failed_runtime)
+        return failed_runtime
     return stored if isinstance(stored, dict) else {"running": False}
 
 

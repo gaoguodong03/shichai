@@ -129,6 +129,131 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 - 只输出整理后的 Markdown 正文，不要解释你的改写过程。
         """,
     ),
+    "presentation.rewrite.user_prompt.v1": _prompt(
+        "presentation.rewrite.user_prompt.v1",
+        """
+【专家系统提示词】
+{expert_system_prompt}
+
+【专家原始回复】
+{original_content}
+
+请按系统规则输出前端最终展示文案。
+        """,
+    ),
+    "expert.turn.default_task.v1": _prompt(
+        "expert.turn.default_task.v1",
+        """
+请紧扣讨论目标发言，不要偏离主题。
+        """,
+    ),
+    "expert.turn.user_content.v1": _prompt(
+        "expert.turn.user_content.v1",
+        """
+【群聊讨论目标】
+{discussion_goal}
+
+【本轮用户输入】
+{current_user_input}
+
+【最近讨论】
+{recent_context}
+
+{default_task}
+        """,
+    ),
+    "expert.action.default.v1": _prompt(
+        "expert.action.default.v1",
+        """
+【群聊讨论目标】
+{discussion_goal}
+
+【最近几轮讨论内容（按时间顺序，含用户与各位专家的发言要点）】
+{recent_history}
+
+【你这一轮的任务】
+1. 直接进入你的角色发言或交付结果，不要先写任务说明。
+2. 结合你的角色与专长，完成本轮的 1～2 个具体子任务；可从上方「最近几轮讨论内容」中摘取关键信息（链接、主题、用户偏好、已有文案等）直接使用。
+3. 若涉及生成图片/配图/封面：请根据讨论中的文案或要点确定配图主题与风格，并说明所需尺寸或数量（若已提及）。
+4. 仅输出你本轮可交付结果，不要在正文中安排下一位角色。
+
+【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行；不要用任务说明式开头。
+        """,
+    ),
+    "expert.action.memory.v1": _prompt(
+        "expert.action.memory.v1",
+        """
+{host_instruction_block}
+
+【群聊讨论目标】
+{discussion_goal}
+
+【任务要求】
+直接进入本轮角色发言或可执行结果，不要先说明当前子任务；若信息不足，先提出最小补充问题（最多 2 个）。
+
+{memory_prompt}
+
+【输出要求】
+聚焦执行，不复读整段历史；不要在正文中指定下一位角色。
+        """,
+    ),
+    "expert.action.structured_missing.v1": _prompt(
+        "expert.action.structured_missing.v1",
+        """
+{host_instruction_block}
+
+【群聊讨论目标】
+{discussion_goal}
+
+【输入依据】
+{input_prompt}
+
+【你本轮要完成的事情】
+1. 直接输出本轮角色发言或可执行结果，不要先说明你理解的子任务；
+2. 聚焦具体内容，不要泛泛解释；
+3. 只交付本轮结果，不要在正文中指定下一位角色。
+
+【输出格式】
+- 使用分点输出；
+- 每点尽量包含“动作 + 结果”；
+- 涉及链接/参数请显式写出。
+
+【边界条件】
+- 信息不足时，仅提出最多 2 个最小补充问题；
+- 不要复读整段历史，不要偏离讨论目标。
+
+【交付标准】
+- 结论清晰、可执行。
+        """,
+    ),
+    "expert.action.host_instruction.v1": _prompt(
+        "expert.action.host_instruction.v1",
+        """
+【主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）】
+{host_instruction}
+        """,
+    ),
+    "expert.action.output_format.v1": _prompt(
+        "expert.action.output_format.v1",
+        """
+【输出格式】
+请分点给出“动作 + 结果”，必要时给出链接/参数。
+        """,
+    ),
+    "expert.action.boundary.v1": _prompt(
+        "expert.action.boundary.v1",
+        """
+【边界条件】
+若信息不足，仅提出最多 2 个最小补充问题；不要复读整段历史。
+        """,
+    ),
+    "expert.action.delivery.v1": _prompt(
+        "expert.action.delivery.v1",
+        """
+【交付标准】
+输出应可直接执行，并能让下一位专家无歧义接力。
+        """,
+    ),
     "skill.execution.tools_header.v1": _prompt(
         "skill.execution.tools_header.v1",
         """
@@ -150,6 +275,169 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 当你需要使用工具时，选择当前运行环境提供的可用工具并填写参数。
 
 当你不需要使用工具时，直接回复用户的问题。
+        """,
+    ),
+    "skill.execution.extra_instructions.v1": _prompt(
+        "skill.execution.extra_instructions.v1",
+        """
+{workspace_tool_rules}
+{call_api_rules}
+{audio_asr_rules}
+{script_tool_rules}
+{mcp_tool_rules}
+        """,
+    ),
+    "skill.execution.multi_step_preface.v1": _prompt(
+        "skill.execution.multi_step_preface.v1",
+        """
+## 多步任务规则
+需要多步工具调用时，连续完成所有必要步骤；任务完成后再回复。
+        """,
+    ),
+    "skill.execution.timestamp_rule.v1": _prompt(
+        "skill.execution.timestamp_rule.v1",
+        """
+当前文件时间戳：`{timestamp}`。新建工作区文件时直接把这个时间戳写入文件名；不要使用 `<时间戳>` 占位符，不要自行换算、复用历史时间或等待工具替换。
+        """,
+    ),
+    "skill.execution.workspace_rules.v1": _prompt(
+        "skill.execution.workspace_rules.v1",
+        """
+## 工作区文件工具
+
+你拥有以下与当前会话工作区相关的工具：
+{file_tool_lines}
+
+{timestamp_rule}
+这些文件工具是任务过程能力，不限于用户显式要求保存或读取；只要当前任务需要检查已有文件、新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。
+
+{read_rule}
+{write_rule}
+{workspace_task_file_rule}
+{material_rule}
+对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
+
+所有 path 都应当是当前会话工作区的相对路径，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
+
+如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或【文件引用】，上一位专家的可见发言在最近讨论中；先基于最近讨论承接，不要自行构造文件名。
+
+若工具返回「文件不存在」，请先列出工作区目录或让用户确认真实路径；不要凭空猜测文件内容。
+        """,
+    ),
+    "skill.execution.workspace_read_rule.v1": _prompt(
+        "skill.execution.workspace_read_rule.v1",
+        """
+当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，你必须优先使用可用文件读取工具，而不是只用自然语言解释路径是否正确；path 必须用用户本条消息里写的路径，不要用会话里较早提到的旧文件路径。
+        """,
+    ),
+    "skill.execution.workspace_write_rule.v1": _prompt(
+        "skill.execution.workspace_write_rule.v1",
+        """
+当用户明确要求「保存/写入/覆盖某个文件」，或本轮任务需要把中间产物、最终产物沉淀为工作区文件时，优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说「请手动保存」或把全部内容堆在回复里。
+        """,
+    ),
+    "skill.execution.workspace_task_file_rule.v1": _prompt(
+        "skill.execution.workspace_task_file_rule.v1",
+        """
+调度任务由平台通过本轮提示词传入，不要自行读写任何调度状态文件。
+
+除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用 `文件名-当前文件时间戳.扩展名` 格式，例如 `report-2026070422145700.md`；直接使用本轮提示中的“当前文件时间戳”，不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。
+
+只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出「报告已保存至工作区」或类似结论。
+        """,
+    ),
+    "skill.execution.workspace_material_rule.v1": _prompt(
+        "skill.execution.workspace_material_rule.v1",
+        """
+对网页采集、资料检索、素材整理任务，采集到多条独立素材时，不要把所有素材写进一个文件；应为每一条独立素材分开调用 `write_workspace_file`，保存为 `materials/<序号>-<简短标题>.md` 等工作区相对路径，再在最终答复汇总文件清单。
+        """,
+    ),
+    "skill.execution.call_api_rules.v1": _prompt(
+        "skill.execution.call_api_rules.v1",
+        """
+## 外部 HTTP（call_api）
+
+当需要获取公开网页或 HTTP API 的响应时，使用 `call_api`。参数为 `url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。
+        """,
+    ),
+    "skill.execution.audio_asr_rules.v1": _prompt(
+        "skill.execution.audio_asr_rules.v1",
+        """
+## 音频转写路径规则
+
+调用 `audio-asr_transcribe_audio_file` 时，如果用户消息包含【文件引用：…】或工作区文件名，path 使用用户本条消息中的工作区相对路径即可（例如 `meeting.mp3`）。运行时会在工具执行前把它转换成 `backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、`sessions/<session_id>/workspace/` 等内部路径。
+        """,
+    ),
+    "skill.execution.script_tool_rules.v1": _prompt(
+        "skill.execution.script_tool_rules.v1",
+        """
+## 技能脚本工具
+
+用结构化工具调用执行当前技能脚本：`script_path` 填 scripts/ 下相对路径，`cli_args` 填字符串数组（如 `["--query","用户原话"]`）。不要传宿主机绝对路径。
+
+{script_tool_names}
+        """,
+    ),
+    "skill.execution.mcp_tool_rules.v1": _prompt(
+        "skill.execution.mcp_tool_rules.v1",
+        """
+## 本技能绑定的 MCP 工具
+
+以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，必须优先使用这些 MCP 工具完成步骤，不要用无关工具替代或仅靠猜测。参数以该工具 schema 为准，不要把所有参数塞进 `__arg1`，除非该工具本身只接受单字符串参数。
+
+{mcp_tool_names}
+        """,
+    ),
+    "skill.execution.script_done_instruction.v1": _prompt(
+        "skill.execution.script_done_instruction.v1",
+        """
+{prefix}请直接基于上方工具结果中的 stdout/stderr/returncode 生成最终答复。stdout/stderr 是返回字段，不是工作区文件；脚本结果已经在上方，不需要再读取 stdout、stderr 或 scripts/<脚本名>，也不要再次调用同一个脚本和相同参数。
+        """,
+    ),
+    "skill.execution.tool_message_content.v1": _prompt(
+        "skill.execution.tool_message_content.v1",
+        """
+工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}
+        """,
+    ),
+    "agent.final_synthesis.after_tool_success.v1": _prompt(
+        "agent.final_synthesis.after_tool_success.v1",
+        """
+工具已经执行成功。请严格遵循上方专家与技能系统提示词，基于工具结果输出最终自然语言答复。
+
+不要再次调用任何工具；不要说还需要执行脚本；stdout/stderr 是工具返回字段，不是文件路径。
+
+工具状态：{message}
+{stdout_block}
+{stderr_block}
+        """,
+    ),
+    "agent.final_synthesis.after_tool_outputs.v1": _prompt(
+        "agent.final_synthesis.after_tool_outputs.v1",
+        """
+工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。
+
+当前阶段进入结果收束；如果工具结果不足以回答，请明确说明已获得的信息和缺口。
+
+如果工具返回里包含“已写入当前 Chat 工作区文件”，最终答复必须使用工具返回的实际路径。
+
+如果 read_workspace_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，直接基于已有上下文完成发言。
+{summary_block}
+        """,
+    ),
+    "agent.continuation.after_output_limit.v1": _prompt(
+        "agent.continuation.after_output_limit.v1",
+        """
+上一条回复因为输出长度限制中断了。请从中断处无缝续写，直接继续正文；不要重写前文，不要道歉，不要输出新的标题。
+        """,
+    ),
+    "expert.self_awareness.v1": _prompt(
+        "expert.self_awareness.v1",
+        """
+## 你当前绑定的 Skill
+若用户询问你有哪些 skill、能力或工具包，必须依据下列清单回答，不要编造清单外的名称；本轮实际执行时仍以上文完整技能说明为准。
+
+{skill_lines}
         """,
     ),
 }

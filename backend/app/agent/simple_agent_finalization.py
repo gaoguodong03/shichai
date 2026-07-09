@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.platform_prompts import render_platform_prompt
 
 from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 
@@ -191,19 +192,20 @@ def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -
     stdout = str(payload.get("stdout") or "").strip()
     stderr = str(payload.get("stderr") or "").strip()
     message = str(payload.get("message") or "工具执行成功。").strip() or "工具执行成功。"
-    parts = [
-        "工具已经执行成功。请严格遵循上方专家与技能系统提示词，基于工具结果输出最终自然语言答复。",
-        "不要再次调用任何工具；不要说还需要执行脚本；stdout/stderr 是工具返回字段，不是文件路径。",
-        f"工具状态：{message}",
-    ]
     if stdout:
         parsed_stdout = _json_loads_maybe(stdout)
         if isinstance(parsed_stdout, (dict, list)):
             stdout = json.dumps(parsed_stdout, ensure_ascii=False, indent=2)
-        parts.append(f"stdout:\n{stdout}")
-    if stderr:
-        parts.append(f"stderr:\n{stderr}")
-    return HumanMessage(content="\n\n".join(parts))
+    return HumanMessage(
+        content=render_platform_prompt(
+            "agent.final_synthesis.after_tool_success.v1",
+            {
+                "message": message,
+                "stdout_block": f"\nstdout:\n{stdout}" if stdout else "",
+                "stderr_block": f"\nstderr:\n{stderr}" if stderr else "",
+            },
+        )
+    )
 
 
 def _raw_tool_outputs_summary(raw_outputs: list[str], *, limit: int = 2000) -> str:
@@ -315,16 +317,13 @@ def _markdown_code_block(text: str, info: str = "text") -> str:
 
 
 def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
-    parts = [
-        "工具已经执行完成。请基于最近的工具返回，直接给用户一段可展示的最终答复。",
-        "当前阶段进入结果收束；如果工具结果不足以回答，请明确说明已获得的信息和缺口。",
-        "如果工具返回里包含“已写入当前 Chat 工作区文件”，最终答复必须使用工具返回的实际路径。",
-        "如果 read_workspace_file 返回文件不存在，但本轮任务或最近讨论中已经包含所需内容，直接基于已有上下文完成发言。",
-    ]
     summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
-    if summary:
-        parts.append(f"工具返回摘要：\n{summary}")
-    return HumanMessage(content="\n\n".join(parts))
+    return HumanMessage(
+        content=render_platform_prompt(
+            "agent.final_synthesis.after_tool_outputs.v1",
+            {"summary_block": f"\n工具返回摘要：\n{summary}" if summary else ""},
+        )
+    )
 
 
 def _written_workspace_paths(raw_outputs: list[str]) -> list[str]:

@@ -398,9 +398,15 @@ def test_runtime_clears_stale_stored_run_without_active_task(tmp_path, monkeypat
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     monkeypatch.setenv("GROUP_RUNTIME_STATE_STALE_SECONDS", "60")
     state.ACTIVE_GROUP_RUNS.clear()
+    published: list[tuple[str, str, dict]] = []
+    monkeypatch.setattr(
+        state,
+        "schedule_group_session_event",
+        lambda session_id, event_type, payload=None: published.append((session_id, event_type, payload or {})),
+    )
+    state.save_session_definitions({"s1": {"title": "运行态会话", "updated_at": "t1"}})
 
     session_item = {}
-    (tmp_path / "s1").mkdir(parents=True)
     (tmp_path / "s1" / "runtime.json").write_text(
         json.dumps(
             {
@@ -416,5 +422,6 @@ def test_runtime_clears_stale_stored_run_without_active_task(tmp_path, monkeypat
 
     runtime = state.runtime_for_session("s1", session_item)
 
-    assert runtime == {"running": False}
+    assert runtime == {"running": False, "phase": "failed"}
+    assert published[-1] == ("s1", "runtime", {"runtime": {"running": False, "phase": "failed"}})
     assert "runtime_state" not in session_item

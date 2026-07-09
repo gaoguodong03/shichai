@@ -141,3 +141,10 @@ def test_main_view_stays_as_shell_without_thin_helper_files():
     assert "function syncSelectedResourceId" in collections
     assert not (ROOT / "frontend/src/features/resources/resourceSelection.ts").exists()
     assert not (ROOT / "frontend/src/features/shell/sessionAvatarDisplay.ts").exists()
+
+
+def test_app_entry_has_no_local_debug_ingest_probe():
+    src = read("frontend/src/App.vue")
+    assert "127.0.0.1:7242" not in src
+    assert "/ingest/" not in src
+    assert "X-Debug-Session-Id" not in src

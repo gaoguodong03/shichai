@@ -4,6 +4,7 @@ import os
 import re
 
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage
+from app.agent.platform_prompts import render_platform_prompt
 
 
 def _extract_text_content(message: BaseMessage) -> str:
@@ -79,12 +80,7 @@ def _ai_response_hit_output_limit(message: BaseMessage) -> bool:
 
 
 def _continuation_instruction() -> HumanMessage:
-    return HumanMessage(
-        content=(
-            "上一条回复因为输出长度限制中断了。请从中断处无缝续写，直接继续正文；"
-            "不要重写前文，不要道歉，不要输出新的标题。"
-        )
-    )
+    return HumanMessage(content=render_platform_prompt("agent.continuation.after_output_limit.v1", {}))
 
 
 def _max_output_continuations() -> int:

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
 from app.agent.group_chat_memory_prompt import build_checked_expert_action_prompt
+from app.agent.platform_prompts import render_platform_prompt
 
 
-DEFAULT_EXPERT_TASK = "请紧扣讨论目标发言，不要偏离主题。"
+DEFAULT_EXPERT_TASK = render_platform_prompt("expert.turn.default_task.v1", {})
 
 
 @dataclass(frozen=True)
@@ -66,13 +67,14 @@ def build_expert_turn_prompt(
         if not _has_any_section(user_content, ("最近讨论", "历史对话（供参考）", "最近几轮讨论内容")):
             user_content += "\n\n" + _section("最近讨论", context_text)
     else:
-        user_content = "\n\n".join(
-            [
-                _section("群聊讨论目标", (discussion_goal or "").strip() or "待用户提出讨论主题"),
-                _section("本轮用户输入", current_user_input),
-                _section("最近讨论", context_text),
-                DEFAULT_EXPERT_TASK,
-            ]
+        user_content = render_platform_prompt(
+            "expert.turn.user_content.v1",
+            {
+                "discussion_goal": (discussion_goal or "").strip() or "待用户提出讨论主题",
+                "current_user_input": current_user_input,
+                "recent_context": context_text,
+                "default_task": DEFAULT_EXPERT_TASK,
+            },
         )
 
     debug = {

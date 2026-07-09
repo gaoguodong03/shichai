@@ -1,6 +1,10 @@
 import pytest
+from pathlib import Path
 
 from app.agent.platform_prompts import PLATFORM_PROMPTS, get_platform_prompt, render_platform_prompt
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_platform_prompts_are_registered_by_prompt_id():
@@ -26,3 +30,46 @@ def test_host_prompt_requires_current_contract_fields():
 def test_prompt_render_rejects_missing_variables():
     with pytest.raises(KeyError):
         render_platform_prompt("title.generate.v1", {})
+
+
+def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
+    runtime_files = [
+        ROOT / "backend/app/agent/group_chat_memory_prompt.py",
+        ROOT / "backend/app/agent/group_chat_prompt_builder.py",
+        ROOT / "backend/app/agent/group_chat_presentation_rewriter.py",
+        ROOT / "backend/app/agent/expert_self_awareness.py",
+        ROOT / "backend/app/agent/simple_agent_messages.py",
+        ROOT / "backend/app/agent/skill_agent_runtime.py",
+        ROOT / "backend/app/agent/simple_agent_finalization.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
+    for phrase in [
+        "【你这一轮的任务】",
+        "【你本轮要完成的事情】",
+        "请紧扣讨论目标发言",
+        "请按系统规则输出前端最终展示文案",
+        "若用户询问你有哪些 skill",
+        "上一条回复因为输出长度限制中断了",
+        "## 多步任务规则",
+        "请直接基于上方工具结果中的 stdout",
+        "## 技能脚本工具",
+        "工具已经执行完成。请基于最近的工具返回",
+    ]:
+        assert phrase not in combined
+    for prompt_id in [
+        "expert.action.default.v1",
+        "expert.action.memory.v1",
+        "expert.action.structured_missing.v1",
+        "skill.execution.extra_instructions.v1",
+        "skill.execution.multi_step_preface.v1",
+        "skill.execution.script_done_instruction.v1",
+        "skill.execution.tool_message_content.v1",
+        "agent.final_synthesis.after_tool_success.v1",
+        "agent.final_synthesis.after_tool_outputs.v1",
+        "agent.continuation.after_output_limit.v1",
+        "expert.self_awareness.v1",
+        "expert.turn.default_task.v1",
+        "expert.turn.user_content.v1",
+        "presentation.rewrite.user_prompt.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS

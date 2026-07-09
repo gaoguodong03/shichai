@@ -42,13 +42,10 @@ def _find_tool_by_name(tool_name: str, tools: Sequence[ToolSpec]) -> ToolSpec | 
 def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
     """随实际绑定工具生成「多步规则 / 工作区 / call_api」说明，避免禁用能力后仍误导模型。"""
     names = {getattr(t, "name", "") for t in tools}
-    parts: List[str] = []
     script_names = sorted(n for n in names if n.startswith("run_skill_script_"))
+    preface = ""
     if not script_names:
-        parts.append(
-            "## 多步任务规则\n"
-            "需要多步工具调用时，连续完成所有必要步骤；任务完成后再回复。\n\n"
-        )
+        preface = render_platform_prompt("skill.execution.multi_step_preface.v1", {})
     file_lines: List[str] = []
     if "read_workspace_file" in names:
         file_lines.append("- read_workspace_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
@@ -62,69 +59,29 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         file_lines.append("- mkdir_workspace: 在工作区内新建目录。")
     if "list_workspace_directory" in names:
         file_lines.append("- list_workspace_directory: 递归列出目录中文件（含子目录）。")
+    workspace_tool_rules = ""
     if file_lines:
-        parts.append("## 文件操作（当前会话工作区）\n\n你拥有以下与「当前会话工作区」相关的工具：\n")
-        parts.append("\n".join(file_lines) + "\n\n**强制规则（优先级很高）：**\n")
+        timestamp_rule = ""
         if "write_workspace_file" in names:
-            timestamp = _current_workspace_file_timestamp()
-            parts.append(
-                f"- 当前文件时间戳：`{timestamp}`。新建工作区文件时直接把这个时间戳写入文件名；"
-                "不要使用 `<时间戳>` 占位符，不要自行换算、复用历史时间或等待工具替换。\n"
-            )
-        parts.append(
-            "- 这些文件工具是任务过程能力，不限于用户显式要求保存或读取；只要当前任务需要检查已有文件、"
-            "新建目录、沉淀阶段产物、保存可复用资料或交付最终文件，就主动调用相应工具。\n"
+            timestamp_rule = render_platform_prompt("skill.execution.timestamp_rule.v1", {"timestamp": _current_workspace_file_timestamp()})
+        workspace_tool_rules = render_platform_prompt(
+            "skill.execution.workspace_rules.v1",
+            {
+                "file_tool_lines": "\n".join(file_lines),
+                "timestamp_rule": timestamp_rule,
+                "read_rule": render_platform_prompt("skill.execution.workspace_read_rule.v1", {}) if "read_workspace_file" in names else "",
+                "write_rule": render_platform_prompt("skill.execution.workspace_write_rule.v1", {}) if "write_workspace_file" in names or "edit_workspace_file" in names else "",
+                "workspace_task_file_rule": render_platform_prompt("skill.execution.workspace_task_file_rule.v1", {}) if "write_workspace_file" in names else "",
+                "material_rule": render_platform_prompt("skill.execution.workspace_material_rule.v1", {}) if "write_workspace_file" in names else "",
+            },
         )
-        if "read_workspace_file" in names:
-            parts.append(
-                "- 当用户消息中出现「读取/打开/查看/查/展示 + 某个路径或文件名」时，"
-                "你**必须优先使用可用文件读取工具**，而不是只用自然语言解释路径是否正确；"
-                "path 必须用**用户本条消息里写的路径**，不要用会话里较早提到的旧文件路径。\n"
-            )
-        if "write_workspace_file" in names or "edit_workspace_file" in names:
-            parts.append(
-                "- 当用户明确要求「保存/写入/覆盖某个文件」，或本轮任务需要把中间产物、最终产物沉淀为工作区文件时，"
-                "优先调用 `write_workspace_file` 或 `edit_workspace_file`，而不是只说「请手动保存」或把全部内容堆在回复里。\n"
-            )
-        if "write_workspace_file" in names:
-            parts.append(_WORKSPACE_TASK_FILE_RULE)
-            parts.append(
-                "- 对网页采集、资料检索、素材整理任务，采集到多条独立素材时，不要把所有素材写进一个文件；"
-                "应为每一条独立素材分开调用 `write_workspace_file`，保存为 `materials/<序号>-<简短标题>.md` "
-                "等工作区相对路径，再在最终答复汇总文件清单。\n"
-            )
-        parts.append("- 对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。\n")
-        parts.append(
-            "- 所有 path 都应当是**当前会话工作区的相对路径**，不要暴露或要求用户输入任何 "
-            "`agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。\n\n"
-            "- 如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或【文件引用】，"
-            "上一位专家的可见发言在最近讨论中；先基于最近讨论承接，不要自行构造文件名。\n\n"
-            "若工具返回「文件不存在」，请先列出工作区目录或让用户确认真实路径；不要凭空猜测文件内容。\n\n"
-        )
-    if "call_api" in names:
-        parts.append(
-            "## 外部 HTTP（call_api）\n\n"
-            "当需要获取**公开**网页或 HTTP API 的响应时，使用 `call_api`。参数为 "
-            "`url`、`method`、`headers_json`、`body`；POST/PUT 时显式设置 method，并把 headers_json/body 写成 JSON 字符串。"
-            "服务端已做基础 SSRF 防护，无法访问内网或本机地址；若页面需登录或强反爬，结果可能不完整。\n\n"
-        )
-    if "audio-asr_transcribe_audio_file" in names:
-        parts.append(
-            "## 音频转写路径规则\n\n"
-            "调用 `audio-asr_transcribe_audio_file` 时，如果用户消息包含【文件引用：…】或工作区文件名，"
-            "path 使用用户本条消息中的工作区相对路径即可（例如 `meeting.mp3`）。运行时会在工具执行前把它转换成 "
-            "`backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、"
-            "`sessions/<session_id>/workspace/` 等内部路径。\n\n"
-        )
-    if script_names:
-        parts.append(
-            "## 技能脚本工具\n\n"
-            "用结构化工具调用执行当前技能脚本：`script_path` 填 scripts/ 下相对路径，"
-            "`cli_args` 填字符串数组（如 `[\"--query\",\"用户原话\"]`）。"
-            "不要传宿主机绝对路径。\n\n"
-            + "\n".join(f"- `{n}`" for n in script_names)
-            + "\n\n"
-        )
+    call_api_rules = render_platform_prompt("skill.execution.call_api_rules.v1", {}) if "call_api" in names else ""
+    audio_asr_rules = render_platform_prompt("skill.execution.audio_asr_rules.v1", {}) if "audio-asr_transcribe_audio_file" in names else ""
+    script_tool_rules = (
+        render_platform_prompt("skill.execution.script_tool_rules.v1", {"script_tool_names": "\n".join(f"- `{n}`" for n in script_names)})
+        if script_names
+        else ""
+    )
     mcp_names = sorted(
         {
             getattr(t, "name", "")
@@ -132,16 +89,22 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
             if _tool_mcp_identity(t)[0] or _tool_name_looks_like_bound_mcp(getattr(t, "name", ""))
         }
     )
-    if mcp_names:
-        parts.append(
-            "## 本技能绑定的 MCP 工具\n\n"
-            "以下工具由本技能声明并已加载；当流程需要对应外部能力（检索、地图、浏览器、读特定格式文件等）时，"
-            "**必须优先使用这些 MCP 工具**完成步骤，不要用无关工具替代或仅靠猜测。"
-            "参数以该工具 schema 为准，不要把所有参数塞进 `__arg1`，除非该工具本身只接受单字符串参数。\n\n"
-            + "\n".join(f"- `{n}`" for n in mcp_names)
-            + "\n\n"
-        )
-    return "".join(parts)
+    mcp_tool_rules = (
+        render_platform_prompt("skill.execution.mcp_tool_rules.v1", {"mcp_tool_names": "\n".join(f"- `{n}`" for n in mcp_names)})
+        if mcp_names
+        else ""
+    )
+    rendered = render_platform_prompt(
+        "skill.execution.extra_instructions.v1",
+        {
+            "workspace_tool_rules": workspace_tool_rules,
+            "call_api_rules": call_api_rules,
+            "audio_asr_rules": audio_asr_rules,
+            "script_tool_rules": script_tool_rules,
+            "mcp_tool_rules": mcp_tool_rules,
+        },
+    )
+    return (preface + rendered).strip() + ("\n\n" if rendered.strip() or preface else "")
 
 
 def _get_tool_call_arguments(tool_call: dict) -> dict:
@@ -170,16 +133,6 @@ _SKILL_AGENT_MAX_STEPS = max(2, int(os.getenv("SKILL_AGENT_MAX_STEPS", "6")))
 _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
     1, int(os.getenv("SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS", "1"))
 )
-
-_WORKSPACE_TASK_FILE_RULE = (
-    "- 调度任务由平台通过本轮提示词传入，不要自行读写任何调度状态文件。\n"
-    "- 除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用"
-    "`文件名-当前文件时间戳.扩展名` 格式，例如 `report-2026070422145700.md`；"
-    "直接使用本轮提示中的“当前文件时间戳”，不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"
-    "- 只有在工具返回写入成功后，才能对用户说文件已保存至工作区；不要仅凭自然语言回复写出"
-    "「报告已保存至工作区」或类似结论。\n"
-)
-
 
 def _resolve_mangled_tool_name(tool_name: str, valid_names: List[str]) -> str | None:
     """当模型将多个工具名拼接（如 amap-maps_maps_geo + amap-maps_maps_weather）时，解析出第一个有效工具名。"""
@@ -374,15 +327,14 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
 
     def _script_done_instruction(*, cached: bool = False) -> str:
         prefix = "已复用同一轮内相同参数的脚本执行结果。" if cached else "脚本已执行完成。"
-        return (
-            f"\n\n{prefix}请直接基于上方工具结果中的 stdout/stderr/returncode 生成最终答复。"
-            "stdout/stderr 是返回字段，不是工作区文件；脚本结果已经在上方，不需要再读取 stdout、stderr 或 scripts/<脚本名>，"
-            "也不要再次调用同一个脚本和相同参数。"
-        )
+        return "\n\n" + render_platform_prompt("skill.execution.script_done_instruction.v1", {"prefix": prefix})
 
     def _tool_message_content(tool_name: str, result_for_prompt: str, *, cached: bool = False) -> str:
         suffix = _script_done_instruction(cached=cached) if tool_name.startswith("run_skill_script_") else ""
-        return f"工具 {tool_name} 的执行结果: {result_for_prompt}{suffix}"
+        return render_platform_prompt(
+            "skill.execution.tool_message_content.v1",
+            {"tool_name": tool_name, "result_for_prompt": result_for_prompt, "suffix": suffix},
+        )
 
     def _audio_transcription_text_for_prompt(tool_name: str, result: object) -> str | None:
         if not tool_name.startswith("run_skill_script_audio-transcription"):

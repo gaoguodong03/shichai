@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from app.agent.platform_prompts import render_platform_prompt
+
 
 def build_expert_self_awareness_block(agent_profile: Dict[str, Any], skills_loader: Any) -> str:
     """构建专家“自我认知”提示块，列出绑定技能及描述。"""
@@ -35,9 +37,4 @@ def build_expert_self_awareness_block(agent_profile: Dict[str, Any], skills_load
     if not lines:
         return ""
 
-    return (
-        "## 你当前绑定的 Skill\n"
-        "若用户询问你有哪些 skill、能力或工具包，必须依据下列清单回答，不要编造清单外的名称；"
-        "本轮实际执行时仍以上文完整技能说明为准。\n\n"
-        + "\n\n".join(lines)
-    )
+    return render_platform_prompt("expert.self_awareness.v1", {"skill_lines": "\n\n".join(lines)})

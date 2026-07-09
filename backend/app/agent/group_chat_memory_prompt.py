@@ -13,22 +13,25 @@ from app.agent.group_context import (
     shorten_text as _shorten_text,
 )
 from app.agent.group_memory_store import build_dispatch_context, upsert_facts, upsert_index_entries
+from app.agent.platform_prompts import render_platform_prompt
 
 logger = logging.getLogger(__name__)
 
 
 def _build_action_prompt_fallback(discussion_goal: str, context: str) -> str:
     """Build the default expert action prompt when the host provides no instruction."""
-    return (
-        f"【群聊讨论目标】\n{discussion_goal}\n\n"
-        f"【最近几轮讨论内容（按时间顺序，含用户与各位专家的发言要点）】\n{context}\n\n"
-        "【你这一轮的任务】\n"
-        "1. 直接进入你的角色发言或交付结果，不要先写任务说明。\n"
-        "2. 结合你的角色与专长，完成本轮的 1～2 个具体子任务；可从上方「最近几轮讨论内容」中摘取关键信息（链接、主题、用户偏好、已有文案等）直接使用。\n"
-        "3. 若涉及生成图片/配图/封面：请根据讨论中的文案或要点确定配图主题与风格，并说明所需尺寸或数量（若已提及）。\n"
-        "4. 仅输出你本轮可交付结果，不要在正文中安排下一位角色。\n\n"
-        "【输出要求】信息量充足、紧扣目标；可分条书写；避免大段照抄全文，侧重提炼与执行；不要用任务说明式开头。"
+    return render_platform_prompt(
+        "expert.action.default.v1",
+        {"discussion_goal": discussion_goal, "recent_history": context},
     )
+
+
+def _host_instruction_block(host_instruction: str) -> str:
+    """Render the optional host instruction block through the central prompt registry."""
+    text = (host_instruction or "").strip()
+    if not text:
+        return ""
+    return render_platform_prompt("expert.action.host_instruction.v1", {"host_instruction": text})
 
 
 def _get_group_memory_settings(app_settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -237,21 +240,15 @@ def _build_action_prompt_with_memory(
         logger.warning("group memory read failed", exc_info=True)
 
     if dispatch.get("has_memory"):
-        chunks: List[str] = []
         host_line = (host_next_action or "").strip()
-        if host_line:
-            chunks.append(
-                "【主持人本轮指派（必须按此执行；与下方记忆摘录冲突时以本段为准）】\n" + host_line
-            )
-        chunks.extend(
-            [
-                f"【群聊讨论目标】\n{discussion_goal}",
-                "【任务要求】\n直接进入本轮角色发言或可执行结果，不要先说明当前子任务；若信息不足，先提出最小补充问题（最多 2 个）。",
-                str(dispatch.get("rendered") or "").strip(),
-            ]
+        return render_platform_prompt(
+            "expert.action.memory.v1",
+            {
+                "host_instruction_block": _host_instruction_block(host_line),
+                "discussion_goal": discussion_goal,
+                "memory_prompt": str(dispatch.get("rendered") or "").strip(),
+            },
         )
-        chunks.append("【输出要求】\n聚焦执行，不复读整段历史；不要在正文中指定下一位角色。")
-        return "\n\n".join([chunk for chunk in chunks if chunk])
 
     return (host_next_action or "").strip() or _build_action_prompt_fallback(discussion_goal, context)
 
@@ -295,30 +292,17 @@ def _ensure_structured_action_prompt(
     compact_len = len(_normalize_compare_text(prompt_text))
     missing_core = sum([not has_goal, not has_input, not has_output_format])
 
-    host_anchor = ""
-    if host_instruction and not host_already_in_prompt:
-        host_anchor = (
-            "【主持人本轮指派（必须按此执行；与下方模板冲突时以本段为准）】\n" + host_instruction + "\n\n"
-        )
+    host_anchor = _host_instruction_block(host_instruction) if host_instruction and not host_already_in_prompt else ""
 
     if (not prompt_text) or compact_len < 120 or missing_core >= 2:
-        parts: List[str] = []
-        if host_anchor:
-            parts.append(host_anchor.rstrip())
-        parts.extend(
-            [
-                f"【群聊讨论目标】\n{discussion_goal}",
-                f"【输入依据】\n{context_excerpt}",
-                "【你本轮要完成的事情】\n"
-                "1. 直接输出本轮角色发言或可执行结果，不要先说明你理解的子任务；\n"
-                "2. 聚焦具体内容，不要泛泛解释；\n"
-                "3. 只交付本轮结果，不要在正文中指定下一位角色。",
-                "【输出格式】\n- 使用分点输出；\n- 每点尽量包含“动作 + 结果”；\n- 涉及链接/参数请显式写出。",
-                "【边界条件】\n- 信息不足时，仅提出最多 2 个最小补充问题；\n- 不要复读整段历史，不要偏离讨论目标。",
-                "【交付标准】\n- 结论清晰、可执行。",
-            ]
+        return render_platform_prompt(
+            "expert.action.structured_missing.v1",
+            {
+                "host_instruction_block": host_anchor,
+                "discussion_goal": discussion_goal,
+                "input_prompt": context_excerpt,
+            },
         )
-        return "\n\n".join(parts)
 
     parts = [prompt_text]
     if not has_goal:
@@ -326,11 +310,11 @@ def _ensure_structured_action_prompt(
     if not has_input:
         parts.append(f"【输入依据】\n{context_excerpt}")
     if not has_output_format:
-        parts.append("【输出格式】\n请分点给出“动作 + 结果”，必要时给出链接/参数。")
+        parts.append(render_platform_prompt("expert.action.output_format.v1", {}))
     if not has_boundary:
-        parts.append("【边界条件】\n若信息不足，仅提出最多 2 个最小补充问题；不要复读整段历史。")
+        parts.append(render_platform_prompt("expert.action.boundary.v1", {}))
     if not has_delivery:
-        parts.append("【交付标准】\n输出应可直接执行，并能让下一位专家无歧义接力。")
+        parts.append(render_platform_prompt("expert.action.delivery.v1", {}))
     return "\n\n".join(parts)
 
 
