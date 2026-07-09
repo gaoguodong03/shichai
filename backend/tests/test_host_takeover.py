@@ -6,6 +6,7 @@ import pytest
 from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE, parse_strict_host_scheduler_output
 from app.agent.group_chat_host_runtime import _host_decide_by_agent
 from app.agent.session_contracts import GroupChatRequest
+from app.api import group_chat_state as state
 
 
 def test_strict_host_response_rejects_extra_fields():
@@ -39,6 +40,59 @@ def test_group_chat_request_accepts_structured_target_agent_name():
         target_agent_name="文书专员",
     )
     assert request.target_agent_name == "文书专员"
+
+
+@pytest.mark.asyncio
+async def test_continuation_routes_directly_without_host_decision(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.write_group_orchestration_state(
+        "s-continuation",
+        {
+            "continuation": {
+                "owner_agent_name": "文书专员",
+                "skill_policy": "keep",
+                "skill": "writer-skill",
+                "next_action": "继续根据用户补充写正文。",
+            }
+        },
+    )
+
+    async def _host_should_not_run(*_args, **_kwargs):
+        raise AssertionError("continuation must bypass host scheduler")
+
+    captured = {}
+
+    async def _fake_expert_turn(**kwargs):
+        captured["agent_name"] = kwargs["agent_name"]
+        captured["next_action"] = kwargs["next_action"]
+        if False:
+            yield ""
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_should_not_run)
+    monkeypatch.setattr(runtime, "_run_one_expert_turn", _fake_expert_turn)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-continuation",
+            request=GroupChatRequest(message="这里是补充材料", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions={"s-continuation": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
+            session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
+            app_settings={},
+            agent_map={"文书专员": {"name": "文书专员", "skills": [{"directory_name": "writer-skill"}]}},
+            agent_names=["文书专员"],
+            messages=[],
+            discussion_goal="写文章",
+            user_text="这里是补充材料",
+        )
+    ]
+
+    assert captured == {"agent_name": "文书专员", "next_action": "继续根据用户补充写正文。"}
+    assert any('"suggested_next_speaker": "文书专员"' in event for event in events)
 
 
 @pytest.mark.asyncio

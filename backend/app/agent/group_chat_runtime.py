@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from app.agent.messages import AIMessage, HumanMessage  # type: ignore
 from app.agent.expert_runtime import build_expert_turn_runtime
 from app.agent.group_chat_expert_resolution import _get_llm_for_agent, _last_user_message_text
+from app.agent.group_host_decision import user_requests_host_takeover
 from app.agent.group_chat_host_messages import _build_host_pause_message
 from app.agent.group_chat_host_runtime import _host_decide_by_agent, _request_skills_loader
 from app.agent.group_chat_prompt_builder import build_expert_turn_prompt
@@ -138,6 +139,50 @@ def _skill_result_from_content(
     }
 
 
+def _resolve_group_entry_route(
+    *,
+    request: GroupChatRequest,
+    orchestration_state: Dict[str, Any],
+    agent_names: List[str],
+    host_name: str,
+    default_next_action: str,
+) -> tuple[str, str, bool]:
+    """Resolve strict entry routing before calling the host scheduler."""
+    changed = False
+    continuation = orchestration_state.get("continuation") if isinstance(orchestration_state.get("continuation"), dict) else {}
+    host_scheduler = orchestration_state.get("host_scheduler") if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
+
+    if request.target_agent_name:
+        if continuation:
+            orchestration_state.pop("continuation", None)
+            changed = True
+        return request.target_agent_name, default_next_action, changed
+
+    if continuation and user_requests_host_takeover(request.message, explicit_flag=None, host_display_name=host_name):
+        orchestration_state.pop("continuation", None)
+        changed = True
+
+    scheduler_next = str((host_scheduler or {}).get("next_speaker") or "").strip()
+    if scheduler_next in agent_names:
+        continuation_owner = str((continuation or {}).get("owner_agent_name") or "").strip()
+        if continuation_owner and continuation_owner != scheduler_next:
+            orchestration_state.pop("continuation", None)
+            changed = True
+        return scheduler_next, str((host_scheduler or {}).get("next_action") or "").strip() or default_next_action, changed
+
+    continuation = orchestration_state.get("continuation") if isinstance(orchestration_state.get("continuation"), dict) else {}
+    owner = str((continuation or {}).get("owner_agent_name") or "").strip()
+    skill_policy = str((continuation or {}).get("skill_policy") or "").strip()
+    if owner:
+        if owner not in agent_names or skill_policy not in {"keep", "release"}:
+            orchestration_state.pop("continuation", None)
+            changed = True
+        else:
+            return owner, str(continuation.get("next_action") or "").strip() or default_next_action, changed
+
+    return "", default_next_action, changed
+
+
 def _collect_artifacts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Collect artifact references emitted by tools into the public skill_result."""
     artifacts: list[dict[str, Any]] = []
@@ -252,8 +297,16 @@ async def _run_contract_events(
     orchestration_state = load_group_orchestration_state(group_session_id)
     host_scheduler = dict(orchestration_state.get("host_scheduler") or {}) if isinstance(orchestration_state.get("host_scheduler"), dict) else {}
 
-    next_speaker = request.target_agent_name or ""
     next_action = user_text or "请根据用户输入完成任务。"
+    next_speaker, next_action, route_state_changed = _resolve_group_entry_route(
+        request=request,
+        orchestration_state=orchestration_state,
+        agent_names=agent_names,
+        host_name=host_name,
+        default_next_action=next_action,
+    )
+    if route_state_changed:
+        write_group_orchestration_state(group_session_id, orchestration_state)
     suggested_add: list[str] = []
     if not next_speaker:
         decision = await _host_decide_by_agent(
