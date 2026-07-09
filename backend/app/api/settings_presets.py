@@ -14,7 +14,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api.settings_mcp import load_mcp_config, save_mcp_config
-from app.core.host_config import normalize_host_config_dict
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.scenario_bundle import (
     build_scenario_bundle_zip_bytes,
@@ -141,7 +140,7 @@ class SessionPresetItem(BaseModel):
     agent_names: List[str]
     description: Optional[str] = ""
     system_prompt: Optional[str] = ""
-    host_config: Optional[Dict[str, Any]] = None
+    host: Optional[Dict[str, Any]] = None
 
 
 class SessionPresetsBody(BaseModel):
@@ -156,7 +155,7 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
     agent_names = [str(x).strip() for x in (item.agent_names or []) if str(x).strip()]
     if not name or not agent_names:
         return None
-    hc_norm: Optional[Dict[str, Any]] = None
+    host_norm: Optional[Dict[str, Any]] = None
     try:
         valid_agent_names = {
             str(d.get("name") or "").strip()
@@ -169,16 +168,16 @@ def _session_preset_item_to_disk_row(item: SessionPresetItem) -> Optional[Dict[s
         agent_names = [name for name in agent_names if name in valid_agent_names]
     if not agent_names:
         return None
-    if item.host_config is not None:
-        hc_norm = normalize_host_config_dict(item.host_config)
+    if item.host is not None:
+        host_norm = normalize_scenario_row({"name": name, "agent_names": agent_names, "host": item.host}).get("host")
     row: Dict[str, Any] = {
         "name": name,
         "agent_names": agent_names,
         "description": str(item.description or ""),
         "system_prompt": str(item.system_prompt or ""),
     }
-    if hc_norm is not None:
-        row["host_config"] = hc_norm
+    if host_norm is not None:
+        row["host"] = host_norm
     return row
 
 
@@ -207,13 +206,13 @@ def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]
 
 def _dict_to_session_preset_item(row: Dict[str, Any]) -> Optional[SessionPresetItem]:
     try:
-        hc = row.get("host_config")
+        host = row.get("host")
         return SessionPresetItem(
             name=str(row["name"]),
             agent_names=list(row["agent_names"]),
             description=str(row.get("description") or ""),
             system_prompt=str(row.get("system_prompt") or ""),
-            host_config=hc if isinstance(hc, dict) else None,
+            host=host if isinstance(host, dict) else None,
         )
     except Exception:
         return None

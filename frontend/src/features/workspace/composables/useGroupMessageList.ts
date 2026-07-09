@@ -17,6 +17,11 @@ export type GroupMessage = {
     agent_name?: string
     skill?: string
   }
+  message?: {
+    content?: string
+    attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    target_agent_name?: string | null
+  }
   content: string
   created_at?: string
   _streaming?: boolean
@@ -33,6 +38,7 @@ type GroupMessageDetail = {
 type MsgExt = {
   speaker?: { type?: string; agent_name?: string; skill?: string }
   created_at?: string
+  message?: { content?: string }
   content?: string
 }
 
@@ -227,7 +233,7 @@ export function useGroupMessageList(args: {
       }
       await onSessionRolledBack()
       const messages = groupDetail.value?.messages
-      groupDisplayMessages.value = Array.isArray(messages) ? [...messages] : []
+      groupDisplayMessages.value = Array.isArray(messages) ? messages.map(toDisplayMessage) : []
       await loadSessionCheckpoints()
     } catch {
       await appAlert({ title: '回溯失败', message: '回溯失败，请检查网络', variant: 'danger' })
@@ -303,7 +309,7 @@ export function useGroupMessageList(args: {
   }
 
   function messageActionContent(msg: MsgExt): string {
-    const content = msg.content || ''
+    const content = messageContent(msg)
     return messageSpeakerType(msg) === 'user' ? formatUserBubbleForDisplay(content) : agentBodyContent(content)
   }
 
@@ -495,6 +501,14 @@ export function useGroupMessageList(args: {
     return String(msg?.created_at || '').trim()
   }
 
+  function messageContent(msg: MsgExt): string {
+    return String(msg?.message?.content ?? msg?.content ?? '').trim()
+  }
+
+  function toDisplayMessage(msg: GroupMessage): GroupMessage {
+    return { ...msg, content: messageContent(msg) }
+  }
+
   watch(
     () => groupDetail.value?.id,
     (sessionId) => {
@@ -518,7 +532,7 @@ export function useGroupMessageList(args: {
       const sessionChanged = nextSessionId !== renderedSessionId
       renderedSessionId = nextSessionId
       const shouldFollow = sessionChanged || isNearGroupBottom()
-      const nextMessages = Array.isArray(messages) ? [...messages] : []
+      const nextMessages = Array.isArray(messages) ? messages.map(toDisplayMessage) : []
       groupDisplayMessages.value = nextMessages
       nextTick(() => {
         scheduleHydrateAuthImages()

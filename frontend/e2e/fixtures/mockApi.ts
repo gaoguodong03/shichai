@@ -2,9 +2,19 @@ import { expect, type Page, type Route } from '@playwright/test'
 
 type Message = {
   message_id: string
-  role: string
-  agent_name?: string
-  content: string
+  speaker: {
+    type: 'user' | 'host' | 'expert'
+    agent_name?: string
+    skill?: string
+  }
+  message: {
+    content: string
+    attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    target_agent_name?: string | null
+  }
+  created_at?: string
+  client_message_id?: string
+  skill_result?: Record<string, unknown>
 }
 
 type Session = {
@@ -13,9 +23,7 @@ type Session = {
   updated_at: string
   agent_names?: string[]
   messages: Message[]
-  system_prompt?: string
-  leader_agent_name?: string
-  host_config?: Record<string, unknown>
+  host?: Record<string, unknown>
 }
 
 type SkillRef = {
@@ -49,14 +57,12 @@ type McpServer = {
 }
 
 type ScenarioPreset = {
-  id: string
   name: string
   description: string
   system_prompt?: string
   agent_names?: string[]
-  leader_agent_name: string
+  host?: Record<string, unknown>
   updated_at: string
-  host_config?: Record<string, unknown>
 }
 
 type WorkspaceFile = {
@@ -95,11 +101,12 @@ export function createE2eState(): E2eState {
         messages: [
           {
             message_id: 'assistant-history',
-            role: 'assistant',
-            agent_name: '问答专家',
-            content: '历史回复：这里可以继续追问。',
+            speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+            message: { content: '历史回复：这里可以继续追问。' },
+            created_at: now,
           },
         ],
+        host: { name: '四九', llm_name: 'qwen', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
       },
     ],
     agents: [
@@ -140,14 +147,12 @@ export function createE2eState(): E2eState {
     ],
     scenarios: [
       {
-        id: 'scenario-qa',
         name: '问答验收场景',
         description: '用于 UI 自动化验收',
         system_prompt: '场景级项目规则',
         agent_names: ['问答专家', '写作专家'],
-        leader_agent_name: '问答专家',
+        host: { name: '四九', llm_name: 'qwen', system_prompt: '你是群聊主持人，只负责调度专家。', skill_directory: 'skill-qa' },
         updated_at: now,
-        host_config: { leader_agent_name: '四九', skill_name: '问答技能', skill_directory: 'skill-qa' },
       },
     ],
     secrets: [{ id: 'qwen-main', label: 'Qwen 主密钥', key_set: true }],
@@ -187,10 +192,11 @@ export function createE2eState(): E2eState {
       },
     },
     hostProfile: {
-      display_name: '四九',
-      llm_provider_id: 'qwen',
+      name: '四九',
+      llm_name: 'qwen',
       system_prompt: '你是群聊主持人，只负责调度专家。',
-      skill_names: ['问答技能'],
+      skill_name: '问答技能',
+      skill_directory: 'skill-qa',
     },
     sandboxSettings: {
       image_variant: 'standard',
@@ -236,12 +242,9 @@ function sessionResponse(session: Session, state: E2eState) {
     updated_at: session.updated_at,
     messages: session.messages,
     agent_names: session.agent_names || [],
+    host: session.host || {},
     agent_map: Object.fromEntries(state.agents.map((a) => [a.name, { name: a.name, role: a.role }])),
-    orchestration_profile: session.host_config ? 'scene' : 'recruitment',
   }
-  if (session.leader_agent_name) response.leader_agent_name = session.leader_agent_name
-  if (session.system_prompt) response.system_prompt = session.system_prompt
-  if (session.host_config) response.host_config = session.host_config
   return response
 }
 
@@ -302,16 +305,14 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, { sessions: state.sessions })
     }
     if (path === '/sessions' && method === 'POST') {
-      const body = readBody<{ title?: string; agent_names?: unknown[]; leader_agent_name?: string; system_prompt?: string; host_config?: Record<string, unknown> }>(route)
+      const body = readBody<{ title?: string; agent_names?: unknown[]; host?: Record<string, unknown> }>(route)
       const next: Session = {
         id: `session-new-${state.sessions.length + 1}`,
         title: String(body.title || '新对话'),
         updated_at: now,
         agent_names: Array.isArray(body.agent_names) ? body.agent_names.map(String) : [],
         messages: [],
-        system_prompt: String(body.system_prompt || ''),
-        leader_agent_name: body.leader_agent_name,
-        host_config: body.host_config,
+        host: body.host || { name: '四九', llm_name: 'qwen', skill_directory: 'skill-qa' },
       }
       state.sessions = [next, ...state.sessions.filter((s) => s.id !== next.id)]
       state.files[fileKey(next.id, '')] = state.files[fileKey(next.id, '')] || [
@@ -337,9 +338,8 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
         const remove = new Set(body.remove_agent_names.map(String))
         session.agent_names = (session.agent_names || []).filter((name) => !remove.has(name))
       }
-      if (typeof body.leader_agent_name === 'string') session.leader_agent_name = body.leader_agent_name
-      if (body.host_config && typeof body.host_config === 'object') {
-        session.host_config = body.host_config as Record<string, unknown>
+      if (body.host && typeof body.host === 'object') {
+        session.host = body.host as Record<string, unknown>
       }
       return ok(route, sessionResponse(session, state))
     }
@@ -353,18 +353,56 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
     const chatStreamMatch = path.match(/^\/sessions\/([^/]+)\/chat\/stream$/)
     if (chatStreamMatch && method === 'POST') {
       const id = decodeURIComponent(chatStreamMatch[1])
-      const body = readBody<{ message?: string }>(route)
+      const body = readBody<{
+        message?: string
+        client_message_id?: string
+        attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+        target_agent_name?: string | null
+      }>(route)
       const session = state.sessions.find((s) => s.id === id)
       const answer = '自动化测试回复：需求已收到。'
       if (session) {
         session.agent_names = session.agent_names?.length ? session.agent_names : ['问答专家']
-        session.messages.push({ message_id: `user-${session.messages.length + 1}`, role: 'user', content: body.message || '' })
-        session.messages.push({ message_id: `assistant-${session.messages.length + 1}`, role: 'assistant', agent_name: '问答专家', content: answer })
+        session.messages.push({
+          message_id: `user-${session.messages.length + 1}`,
+          speaker: { type: 'user' },
+          message: {
+            content: body.message || '',
+            attachments: body.attachments || [],
+            target_agent_name: body.target_agent_name || null,
+          },
+          client_message_id: body.client_message_id || `client-${Date.now()}`,
+          created_at: now,
+        })
+        session.messages.push({
+          message_id: `assistant-${session.messages.length + 1}`,
+          speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+          message: { content: answer },
+          created_at: now,
+          skill_result: {
+            execution_status: 'succeeded',
+            content: answer,
+            artifacts: [],
+            next_action: { agent_turn: 'respond', skill_session: 'release' },
+          },
+        })
       }
       return eventStream(route, [
-        ['route', { agent_name: '问答专家' }],
-        ['message', { message_id: 'assistant-stream', role: 'assistant', agent_name: '问答专家', content: answer }],
-        ['end', { waiting_for_user: true, interrupted: false }],
+        ['route', { type: 'route', run_id: 'run-e2e', agent_name: '问答专家', skill: 'skill-qa' }],
+        ['progress', { type: 'progress', run_id: 'run-e2e', phase: 'agent_running', agent_name: '问答专家', skill: 'skill-qa' }],
+        ['message', {
+          message_id: 'assistant-stream',
+          speaker: { type: 'expert', agent_name: '问答专家', skill: 'skill-qa' },
+          message: { content: answer },
+          created_at: now,
+          skill_result: {
+            execution_status: 'succeeded',
+            content: answer,
+            artifacts: [],
+            next_action: { agent_turn: 'respond', skill_session: 'release' },
+          },
+        }],
+        ['end', { type: 'end', run_id: 'run-e2e', phase: 'awaiting_user', waiting_for_user: true }],
       ])
     }
     if (path.match(/^\/sessions\/[^/]+\/chat\/stop$/) && method === 'POST') {
@@ -588,7 +626,7 @@ export async function mockApi(page: Page, state: E2eState = createE2eState()) {
       return ok(route, state.hostProfile)
     }
     if (path === '/settings/host-profile/defaults' && method === 'GET') {
-      return ok(route, { display_name: '四九', system_prompt: '默认主持人提示词' })
+      return ok(route, { name: '四九', system_prompt: '默认主持人提示词' })
     }
     if (path === '/settings/host-profile/reset' && method === 'POST') {
       return ok(route, state.hostProfile)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.agent.message_contracts import ToolResultRecord
+from app.agent.tool_trace_contracts import ToolResultRecord
 
 
 def _tool_mcp_identity(tool: object) -> tuple[str, str]:
@@ -48,7 +48,7 @@ def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
         "list_workspace_directory",
     }:
         return "workspace"
-    return "unknown"
+    return "api"
 
 
 def _stable_tool_call_name(tool_name: str, tool: object | None = None) -> str:
@@ -91,7 +91,7 @@ def _json_object_from_result(raw_result: object) -> dict | None:
 def _legacy_text_status(text: str) -> tuple[str, str]:
     stripped = str(text or "").strip()
     if stripped.startswith(("错误：未提供", "错误：content 为空", "错误：read_workspace_file 需要", "错误：write_workspace_file 需要")):
-        return "needs_input", "tool_input_required"
+        return "blocked", "tool_input_required"
     if stripped.startswith(("错误：", "Error:", "ERROR:")):
         return "failed", "tool_failed"
     return "succeeded", "ok"
@@ -104,7 +104,7 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     if isinstance(raw_payload, dict) and raw_payload.get("tool_call") and raw_payload.get("execution_status"):
         return ToolResultRecord.model_validate(raw_payload).model_dump(exclude_none=True)
     text = str(raw_result or "")
-    status, result_code = _legacy_text_status(text)
+    status, _result_code = _legacy_text_status(text)
     message = "工具执行成功" if status == "succeeded" else "工具执行失败"
     output: dict[str, Any] = {"text": text}
     error_log = None
@@ -117,7 +117,6 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
         message = str(raw_payload.get("message") or "").strip() or message
         output = {"text": text, "stdout": stdout, "stderr": stderr, "json_data": raw_payload}
         status = "failed" if ok is False or (isinstance(returncode, int) and returncode != 0) else "succeeded"
-        result_code = code or ("script_failed" if status == "failed" else "ok")
         if status == "failed":
             error_log = {"message": message or stderr or "脚本执行失败", "stdout": stdout, "stderr": stderr, "raw_output": text, "retryable": False}
     elif status == "failed":
@@ -125,7 +124,6 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,
-        "result_code": result_code,
         "message": message,
         "output": output,
     }
@@ -139,7 +137,6 @@ def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, a
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": "failed",
-        "result_code": "tool_exception",
         "message": message,
         "error_log": {"message": message, "detail": type(error).__name__, "raw_output": message, "retryable": False},
     }
@@ -147,16 +144,15 @@ def _tool_result_record_from_exception(*, tool_name: str, tool: object | None, a
 
 
 def _missing_tool_result_record(*, tool_name: str, arguments: dict, tool_call_id: str, available_tools: list[str]) -> dict:
-    status = "needs_input" if tool_name == "read_workspace_file" else "failed"
-    message = "当前专家未启用 read_workspace_file，无法读取工作区文件。" if status == "needs_input" else f"工具 {tool_name} 不存在。"
+    status = "blocked" if tool_name == "read_workspace_file" else "failed"
+    message = "当前专家未启用 read_workspace_file，无法读取工作区文件。" if status == "blocked" else f"工具 {tool_name} 不存在。"
     payload: dict[str, Any] = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=None, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,
-        "result_code": "tool_unavailable" if status == "needs_input" else "tool_not_found",
         "message": message,
         "output": {"text": message},
     }
-    if status == "needs_input":
+    if status == "blocked":
         payload["required_user_fields"] = [{"key": "tool_enablement", "label": "工具能力", "reason": "当前专家未启用读取工作区文件的能力。", "input_type": "tool"}]
     else:
         payload["error_log"] = {"message": message, "detail": f"available_tools={available_tools}", "retryable": False}

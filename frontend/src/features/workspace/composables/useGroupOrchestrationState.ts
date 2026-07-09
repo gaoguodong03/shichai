@@ -7,8 +7,6 @@ type GroupDetailLike = {
   id?: string
   agent_names: string[]
   agent_map: Record<string, { name?: string }>
-  leader_agent_name?: string
-  orchestration_profile?: string
 }
 
 type AgentItem = {
@@ -233,7 +231,6 @@ export function useGroupOrchestrationState(args: {
   })
 
   const pendingSuggestedAddAgentNames = computed(() => {
-    if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') return []
     const aliasMap = buildExpertAliasMap()
     const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))
     const normalized = (groupSuggestedAddAgentNames.value || [])
@@ -429,7 +426,6 @@ export function useGroupOrchestrationState(args: {
 
   function resolveSuggestedNamesFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
-    if (String(groupDetail.value?.orchestration_profile || '').toLowerCase() === 'scene') return []
     const direct = extractSuggestedAddNames(payload)
     const aliasMap = buildExpertAliasMap()
     const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))

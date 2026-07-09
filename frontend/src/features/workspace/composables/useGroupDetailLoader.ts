@@ -8,13 +8,8 @@ export type GroupDetail = {
   messages: GroupMessage[]
   agent_map: Record<string, { name?: string; description?: string }>
   agent_names: string[]
-  leader_agent_name?: string
-  scenario_name?: string
-  system_prompt?: string
-  host_config?: { leader_agent_name?: string; llm_name?: string; system_prompt?: string; skill_name?: string; skill_directory?: string }
+  host?: { name?: string; llm_name?: string; system_prompt?: string; skill_name?: string; skill_directory?: string }
   runtime_state?: { running?: boolean; agent_name?: string; skill?: string; phase?: string; started_at?: string }
-  /** recruitment：可推荐邀请；scene：名单固定，不展示招募条 */
-  orchestration_profile?: string
 }
 
 function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string): GroupDetail {
@@ -22,10 +17,9 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
   const messages = Array.isArray(raw.messages) ? raw.messages as GroupDetail['messages'] : []
   const agent_map = (raw.agent_map && typeof raw.agent_map === 'object') ? (raw.agent_map as GroupDetail['agent_map']) : {}
   const agent_names = Array.isArray(raw.agent_names) ? (raw.agent_names as string[]) : []
-  const host_config = (raw.host_config && typeof raw.host_config === 'object')
-    ? (raw.host_config as GroupDetail['host_config'])
+  const host = (raw.host && typeof raw.host === 'object')
+    ? (raw.host as GroupDetail['host'])
     : undefined
-  const orch = String(raw.orchestration_profile ?? '').trim().toLowerCase()
   const runtime_state = (raw.runtime_state && typeof raw.runtime_state === 'object')
     ? (raw.runtime_state as GroupDetail['runtime_state'])
     : undefined
@@ -35,12 +29,8 @@ function normalizeGroupDetail(raw: Record<string, unknown>, fallbackId: string):
     messages,
     agent_map,
     agent_names,
-    leader_agent_name: String(raw.leader_agent_name ?? ''),
-    scenario_name: String(raw.scenario_name ?? '').trim() || undefined,
-    system_prompt: String(raw.system_prompt ?? '').trim() || undefined,
-    host_config,
+    host,
     runtime_state,
-    orchestration_profile: orch === 'scene' || orch === 'recruitment' ? orch : undefined,
   }
 }
 

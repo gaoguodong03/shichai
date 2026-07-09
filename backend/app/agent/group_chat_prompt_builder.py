@@ -1,8 +1,4 @@
-"""Group-chat prompt assembly helpers.
-
-Keep host/expert handoff context in one place so runtime orchestration does not
-silently drop user input, speaker tasks, or recent context on one branch.
-"""
+"""Group-chat prompt assembly helpers for the host-to-expert contract."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -39,19 +35,19 @@ def build_expert_turn_prompt(
     user_message: str,
     recent_context: str,
     app_settings: Mapping[str, Any],
-    speaker_task: Optional[str] = None,
+    next_action: Optional[str] = None,
 ) -> PromptBundle:
     """Build the HumanMessage content for one expert turn.
 
-    `speaker_task` is the host handoff contract. It must stay visible to the
+    `next_action` is the host handoff contract. It must stay visible to the
     expert, while the latest user input stays explicit instead of only appearing
     inside a clipped history excerpt.
     """
-    task_text = (speaker_task or "").strip() or DEFAULT_EXPERT_TASK
+    task_text = (next_action or "").strip() or DEFAULT_EXPERT_TASK
     current_user_input = (user_message or "").strip() or "（无）"
     context_text = (recent_context or "").strip() or "（无）"
 
-    if (speaker_task or "").strip():
+    if (next_action or "").strip():
         user_content = _build_checked_next_prompt(
             session_id,
             target_agent_name,
@@ -80,7 +76,7 @@ def build_expert_turn_prompt(
         )
 
     debug = {
-        "has_speaker_task": bool((speaker_task or "").strip()),
+        "has_next_action": bool((next_action or "").strip()),
         "has_user_message": bool((user_message or "").strip()),
         "has_recent_context": bool((recent_context or "").strip()),
         "user_content_len": len(user_content),

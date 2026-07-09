@@ -8,7 +8,6 @@ from typing import Any
 
 from app.agent.messages import AIMessage, BaseMessage, HumanMessage
 
-from app.agent.structured_output_contracts import McpToolResultPayload
 from app.agent.tool_spec import ToolSpec
 
 _AUDIO_ASR_TOOL_NAME = "audio-asr_transcribe_audio_file"
@@ -103,14 +102,21 @@ def _forced_mcp_file_ref_tool_call(messages: list[BaseMessage], tools: list[Tool
 
 
 def _text_artifact_from_mcp_result(payload: dict[str, Any]) -> str:
-    try:
-        parsed = McpToolResultPayload.model_validate(payload)
-    except Exception:
+    if str(payload.get("execution_status") or "").strip() != "succeeded":
         return ""
-    if parsed.execution_status != "succeeded":
-        return ""
-    transcript = parsed.artifacts.get("text")
-    return transcript.strip() if isinstance(transcript, str) and transcript.strip() else ""
+    content = str(payload.get("content") or "").strip()
+    if content:
+        return content
+    artifacts = payload.get("artifacts")
+    if isinstance(artifacts, list):
+        for item in artifacts:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("type") or "").strip() in {"markdown", "json", "table", "other"}:
+                text = str(item.get("name") or item.get("path") or "").strip()
+                if text:
+                    return text
+    return ""
 
 
 def _mcp_tool_result_direct_final_message(tool_out: dict[str, Any]) -> AIMessage | None:

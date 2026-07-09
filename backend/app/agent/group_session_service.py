@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from app.api.agents import enrich_agent_instances, load_agent_instances
 from app.api.files import get_workspace_root_path
@@ -29,11 +28,8 @@ from app.api.group_chat_state import (
     save_group_history as _save_group_history,
     save_session_definitions as _save_session_definitions,
 )
-from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.core.scene_host import VIRTUAL_SCENE_HOST_ID
 from app.core.security import get_current_user
-from app.agent.group_orchestration_fsm import default_orchestration_profile_for_new_session
-from app.agent.scene_runtime import load_session_scenario_row
 from app.session_state.markdown import format_session_chat_markdown
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
@@ -41,20 +37,12 @@ from app.agent.group_chat_streaming import (
 from app.agent.group_chat_title_meta import (
     _ensure_scene_profile_contract,
 )
+from app.agent.session_contracts import SessionUpdateRequest
 
 logger = logging.getLogger(__name__)
 
 
-class GroupSessionUpdate(BaseModel):
-    title: Optional[str] = None
-    system_prompt: Optional[str] = None
-    leader_agent_name: Optional[str] = None
-    host_config: Optional[Dict[str, Any]] = None
-    scenario_name: Optional[str] = None
-    orchestration_profile: Optional[str] = None  # recruitment | scene
-    agent_names: Optional[List[str]] = None
-    add_agent_names: Optional[List[str]] = None
-    remove_agent_names: Optional[List[str]] = None
+GroupSessionUpdate = SessionUpdateRequest
 
 
 def _dedupe_names(values: Optional[List[str]]) -> List[str]:
@@ -91,13 +79,9 @@ def _clear_scheduler_state_for_session(session_item: Dict[str, Any]) -> None:
 def create_session_internal(
     title: str = "新对话",
     agent_names: Optional[List[str]] = None,
-    leader_agent_name: Optional[str] = None,
-    host_config: Optional[Dict[str, Any]] = None,
-    system_prompt: Optional[str] = None,
-    scenario_name: Optional[str] = None,
-    orchestration_profile: Optional[str] = None,
+    host: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """新建一条会话；主持人配置运行时从账号设置或场景资源解析。"""
+    """Create session.json from the current contract without legacy controls."""
     instances = load_agent_instances()
     names = _dedupe_names(agent_names)
     valid_names = set(_agent_name_map(instances))
@@ -108,23 +92,17 @@ def create_session_internal(
     raw_title = (title or "").strip()
     placeholder_titles = {"新对话", "新群聊", ""}
     title_auto_generated = raw_title in placeholder_titles or raw_title.startswith("多Agent协作 ·")
-    scenario = str(scenario_name or "").strip()
-    profile = str(orchestration_profile or "").strip().lower()
-    if profile not in ("recruitment", "scene"):
-        profile = "scene" if scenario else default_orchestration_profile_for_new_session(agent_names=names)
+    host_snapshot = dict(host or {})
+    if not any(str(v or "").strip() for v in host_snapshot.values()):
+        host_snapshot = {}
     row: Dict[str, Any] = {
         "title": title or "新对话",
         "title_auto_generated": title_auto_generated,
         "agent_names": names,
+        "host": host_snapshot,
         "created_at": now,
         "updated_at": now,
-        "orchestration_profile": profile,
     }
-    if scenario:
-        row["scenario_name"] = scenario
-    scene_system_prompt = str(system_prompt or "").strip()
-    if scene_system_prompt:
-        row["system_prompt"] = scene_system_prompt
     session_definitions[gsid] = row
     _save_session_definitions(session_definitions)
     _save_group_history(gsid, [])
@@ -189,12 +167,8 @@ async def get_group_session(group_session_id: str):
         for k, v in agent_map_raw.items()
         if k in relevant_names
     }
-    app_settings_gs = load_app_settings()
-    hp_gs = normalize_host_profile(app_settings_gs.get("host_profile") or {})
-    scenario_gs = load_session_scenario_row(session_item)
-    hc_gs = scenario_gs.get("host_config") if isinstance(scenario_gs.get("host_config"), dict) else {}
-    hc_dn = str(hc_gs.get("leader_agent_name") or "").strip()
-    host_dn = hc_dn or str(hp_gs.get("leader_agent_name") or "四九").strip() or "四九"
+    host_snapshot = session_item.get("host") if isinstance(session_item.get("host"), dict) else {}
+    host_dn = str(host_snapshot.get("name") or "四九").strip() or "四九"
     agent_map[VIRTUAL_SCENE_HOST_ID] = {
         "name": host_dn,
         "description": "群聊场景主持人",
@@ -251,7 +225,7 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """更新群聊：重命名、主持人配置、追加 Agent 等。若会话定义不存在但请求为邀请，则自动新建该会话条目以避免 404。"""
+    """Update only current session contract fields: title, host, and agent_names."""
     session_definitions = _load_session_definitions()
     if group_session_id not in session_definitions:
         if body.add_agent_names:
@@ -260,7 +234,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 "title": "新群聊",
                 "title_auto_generated": True,
                 "agent_names": [],
-                "orchestration_profile": "recruitment",
+                "host": {},
                 "created_at": now,
                 "updated_at": now,
             }
@@ -277,32 +251,8 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         else:
             # 用户主动修改标题后，停止自动主题覆盖
             session_definitions[group_session_id]["title_auto_generated"] = False
-    if body.system_prompt is not None:
-        scene_system_prompt = str(body.system_prompt or "").strip()
-        if scene_system_prompt:
-            session_definitions[group_session_id]["system_prompt"] = scene_system_prompt
-        else:
-            session_definitions[group_session_id].pop("system_prompt", None)
-    if body.scenario_name is not None:
-        scenario_name = str(body.scenario_name or "").strip()
-        if scenario_name:
-            session_definitions[group_session_id]["scenario_name"] = scenario_name
-            session_definitions[group_session_id]["orchestration_profile"] = "scene"
-        else:
-            session_definitions[group_session_id].pop("scenario_name", None)
-        _clear_scheduler_state_for_session(session_definitions[group_session_id])
-    if body.host_config is not None:
-        _clear_scheduler_state_for_session(session_definitions[group_session_id])
-        # 兼容旧前端：会话不再保存 host_config，只把该操作视为切换到场景编排。
-        session_definitions[group_session_id]["orchestration_profile"] = "scene"
-    elif body.leader_agent_name is not None:
-        # 旧协议字段已废弃；主持人由账号 host_profile 或 scenario_name 指向的场景资源解析。
-        _clear_scheduler_state_for_session(session_definitions[group_session_id])
-    if body.orchestration_profile is not None:
-        op = str(body.orchestration_profile).strip().lower()
-        if op not in ("recruitment", "scene"):
-            raise HTTPException(status_code=400, detail="orchestration_profile must be recruitment or scene")
-        session_definitions[group_session_id]["orchestration_profile"] = op
+    if body.host is not None:
+        session_definitions[group_session_id]["host"] = body.host.model_dump()
         _clear_scheduler_state_for_session(session_definitions[group_session_id])
     direct_names = body.agent_names
     if direct_names is not None:
@@ -312,8 +262,6 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         _validate_agent_names(deduped, valid_names)
         session_definitions[group_session_id]["agent_names"] = deduped
         _clear_scheduler_state_for_session(session_definitions[group_session_id])
-        if deduped and str(session_definitions[group_session_id].get("orchestration_profile") or "").strip().lower() in ("", "recruitment"):
-            session_definitions[group_session_id]["orchestration_profile"] = "scene"
     add_names = body.add_agent_names
     remove_names = body.remove_agent_names
     if add_names or remove_names:

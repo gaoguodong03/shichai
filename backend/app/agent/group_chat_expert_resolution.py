@@ -10,11 +10,18 @@ from app.agent.llm_client import (
     resolve_llm_provider_entry,
 )
 from app.api.settings_secrets import load_api_secret_values
-from app.agent.scene_runtime import pick_scene_host_skill
 
 
 def _pick_resolved_host_skill(skill_directories: List[str]) -> str:
-    return pick_scene_host_skill(skill_directories)
+    """Pick the most specific host Skill directory from a host snapshot."""
+    cleaned = [str(item or "").strip() for item in skill_directories or [] if str(item or "").strip()]
+    if not cleaned:
+        return ""
+    for item in cleaned:
+        lowered = item.lower()
+        if "host" in lowered or "主持" in lowered:
+            return item
+    return cleaned[0]
 
 
 def _resolve_llm_config_for_agent(
@@ -52,5 +59,8 @@ def _last_user_message_text(messages: List[Dict[str, Any]]) -> str:
     for message in reversed(messages or []):
         speaker = message.get("speaker") if isinstance(message, dict) and isinstance(message.get("speaker"), dict) else {}
         if isinstance(message, dict) and speaker.get("type") == "user":
+            body = message.get("message")
+            if isinstance(body, dict):
+                return str(body.get("content") or "").strip()
             return str(message.get("content") or "").strip()
     return ""

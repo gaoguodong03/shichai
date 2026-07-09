@@ -32,6 +32,14 @@ def _message_speaker_type(message: Dict[str, Any]) -> str:
     return str(speaker.get("type") or "").strip()
 
 
+def _message_content(message: Dict[str, Any]) -> str:
+    """Read message text from the nested history shape."""
+    body = message.get("message") if isinstance(message, dict) else None
+    if isinstance(body, dict):
+        return str(body.get("content") or "").strip()
+    return str(message.get("content") or "").strip() if isinstance(message, dict) else ""
+
+
 def _ensure_scene_profile_contract(session_item: Dict[str, Any]) -> bool:
     """No-op after the name-based session contract removed legacy upgrades."""
     _ = session_item
@@ -54,7 +62,7 @@ async def _ai_title_from_recent_user_messages(
                 continue
             if _message_speaker_type(m) != "user":
                 continue
-            content = (m.get("content") or "").strip()
+            content = _message_content(m)
             if not content:
                 continue
             user_texts.append(_normalize_discussion_goal(content))
@@ -172,9 +180,11 @@ def _record_user_message_and_refresh_title(
     messages: List[Dict[str, Any]],
     user_message: str,
     client_message_id: str,
+    attachments: List[Dict[str, Any]] | None = None,
+    target_agent_name: str | None = None,
 ) -> None:
     """Append a user message once and schedule title refresh while title is automatic."""
-    if not user_message:
+    if not user_message and not attachments and not target_agent_name:
         return
     session_item = session_definitions[group_session_id]
     duplicate_user_message = bool(
@@ -189,7 +199,11 @@ def _record_user_message_and_refresh_title(
         user_msg: Dict[str, Any] = {
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
             "speaker": {"type": "user"},
-            "content": user_message,
+            "message": {
+                "content": user_message,
+                "attachments": list(attachments or []),
+                "target_agent_name": target_agent_name or None,
+            },
             "created_at": format_storage_timestamp(),
         }
         if client_message_id:

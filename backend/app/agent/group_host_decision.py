@@ -1,10 +1,14 @@
-"""Pure host-decision parsing helpers for group chat."""
+"""Pure host-decision parsing helpers for group chat.
+
+This file accepts only the host JSON contract from
+docs/contracts/runtime-interface-contract.md. It does not translate legacy
+speaker_task/reason/next_prompt fields into the current next_action protocol.
+"""
 from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
 
-from app.agent.group_chat_host_messages import HOST_END_MESSAGE
 from app.agent.orchestrator_state import InterruptReason, OrchestrationPhase
 from app.agent.structured_output_contracts import (
     HostSchedulerDecisionPayload,
@@ -17,21 +21,16 @@ HOST_PROTOCOL_ERROR_MESSAGE = "主持人输出格式错误，请重试或联系�
 
 
 def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, Any]:
+    """Return the canonical protection decision for invalid host JSON."""
     return {
-        "task_done": True,
         "next_speaker": "user",
-        "reason": reason,
-        "announcement": HOST_PROTOCOL_ERROR_MESSAGE,
         "current_phase": "",
-        "speaker_task": HOST_PROTOCOL_ERROR_MESSAGE,
-        "suggested_order": None,
-        "suggested_add_agent_names": None,
+        "next_action": HOST_PROTOCOL_ERROR_MESSAGE,
+        "suggested_add_agent_names": [],
         "phase": OrchestrationPhase.AWAITING_USER.value,
-        "owner_agent_name": None,
         "interrupt_reason": InterruptReason.PROTOCOL_ERROR.value,
         "decision_source": "system_guard",
-        "handoff_reason": reason,
-        "required_user_fields": [],
+        "protocol_error": reason,
     }
 
 
@@ -50,6 +49,7 @@ def _strict_host_decision_from_payload(
     *,
     orchestration_profile: str = "recruitment",
 ) -> Dict[str, Any]:
+    """Validate host routing against current session members and return canonical fields."""
     scene_mode = str(orchestration_profile or "").strip().lower() == "scene"
     raw_next = payload.next_speaker.strip()
     next_key = raw_next.casefold()
@@ -59,87 +59,37 @@ def _strict_host_decision_from_payload(
         raise StructuredOutputProtocolError("scene mode forbids suggested_add_agent_names", schema_name="HostSchedulerDecisionPayload")
     if suggested and next_key != "user":
         raise StructuredOutputProtocolError("suggested_add_agent_names requires next_speaker=user", schema_name="HostSchedulerDecisionPayload")
-    if next_key == "invite" and scene_mode:
-        raise StructuredOutputProtocolError("scene mode forbids invite", schema_name="HostSchedulerDecisionPayload")
     if next_key == "end":
-        if payload.current_phase.strip() != "end":
-            raise StructuredOutputProtocolError("end requires current_phase=end", schema_name="HostSchedulerDecisionPayload")
         return {
-            "task_done": True,
             "next_speaker": "end",
-            "reason": payload.reason or "主持人严格协议调度",
-            "announcement": HOST_END_MESSAGE,
             "current_phase": payload.current_phase,
-            "speaker_task": payload.speaker_task,
-            "suggested_order": None,
+            "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
             "phase": None,
-            "owner_agent_name": None,
             "interrupt_reason": None,
             "decision_source": "host_scheduler_state",
-            "handoff_reason": payload.reason,
-            "required_user_fields": [],
         }
     if next_key == "user":
-        if not payload.speaker_task.strip():
-            raise StructuredOutputProtocolError("user requires speaker_task", schema_name="HostSchedulerDecisionPayload")
         return {
-            "task_done": True,
             "next_speaker": "user",
-            "reason": payload.reason or "主持人严格协议调度",
-            "announcement": "请用户继续发言。",
             "current_phase": payload.current_phase,
-            "speaker_task": payload.speaker_task,
-            "suggested_order": None,
+            "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
             "phase": None,
-            "owner_agent_name": None,
             "interrupt_reason": InterruptReason.NEED_RECRUIT_EXPERT.value if suggested else None,
             "decision_source": "host_scheduler_state",
-            "handoff_reason": payload.reason,
-            "required_user_fields": [],
-        }
-    if next_key == "invite":
-        if not payload.speaker_task.strip():
-            raise StructuredOutputProtocolError("invite requires speaker_task", schema_name="HostSchedulerDecisionPayload")
-        return {
-            "task_done": True,
-            "next_speaker": "invite",
-            "reason": payload.reason or "主持人严格协议调度",
-            "announcement": "",
-            "current_phase": payload.current_phase,
-            "speaker_task": payload.speaker_task,
-            "suggested_order": None,
-            "suggested_add_agent_names": suggested or None,
-            "phase": None,
-            "owner_agent_name": None,
-            "interrupt_reason": InterruptReason.NEED_RECRUIT_EXPERT.value,
-            "decision_source": "host_scheduler_state",
-            "handoff_reason": payload.reason,
-            "required_user_fields": [],
         }
     agent_name = names.get(next_key)
     if not agent_name:
         raise StructuredOutputProtocolError("next_speaker is not in allowed participants", schema_name="HostSchedulerDecisionPayload")
-    if not payload.speaker_task.strip():
-        raise StructuredOutputProtocolError("agent next_speaker requires speaker_task", schema_name="HostSchedulerDecisionPayload")
-    profile = next((d for d in agent_profiles if str((d or {}).get("name") or "").strip() == agent_name), {})
-    display_name = str((profile or {}).get("name") or agent_name).strip()
     return {
-        "task_done": True,
         "next_speaker": agent_name,
-        "reason": payload.reason or "主持人严格协议调度",
-        "announcement": f"下面由 {display_name} 发言。",
         "current_phase": payload.current_phase,
-        "speaker_task": payload.speaker_task,
-        "suggested_order": None,
+        "next_action": payload.next_action,
         "suggested_add_agent_names": suggested or None,
         "phase": None,
-        "owner_agent_name": None,
         "interrupt_reason": None,
         "decision_source": "host_scheduler_state",
-        "handoff_reason": payload.reason,
-        "required_user_fields": [],
     }
 
 
@@ -149,6 +99,7 @@ def parse_strict_host_scheduler_output(
     *,
     orchestration_profile: str = "recruitment",
 ) -> Dict[str, Any]:
+    """Parse host scheduler JSON without legacy cleanup or natural-language fallback."""
     try:
         payload = parse_strict_pydantic_object(content, HostSchedulerDecisionPayload)
         return _strict_host_decision_from_payload(

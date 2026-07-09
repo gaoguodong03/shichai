@@ -56,14 +56,14 @@ export function getSchedulerStateRaw(msg: { routing?: unknown }): string {
   const data = state as {
     current_phase?: unknown
     next_speaker?: unknown
-    speaker_task?: unknown
+    next_action?: unknown
   }
   const out = {
     current_phase: String(data.current_phase || '').trim(),
     next_speaker: String(data.next_speaker || '').trim(),
-    speaker_task: String(data.speaker_task || '').trim(),
+    next_action: String(data.next_action || '').trim(),
   }
-  if (!out.current_phase && !out.next_speaker && !out.speaker_task) return ''
+  if (!out.current_phase && !out.next_speaker && !out.next_action) return ''
   return JSON.stringify(out, null, 2)
 }
 

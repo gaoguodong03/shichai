@@ -1,4 +1,8 @@
-"""统一会话 API：与群聊共用存储，所有会话均为「带主持人的会话」。详见仓库 README / docs/书童四九.md。"""
+"""统一会话 API 薄入口。
+
+本文件只接收当前契约请求模型并转交服务层；旧的会话控制字段在
+Pydantic 边界被拒绝，不能进入运行时主路径。
+"""
 import asyncio
 import json
 import logging
@@ -9,7 +13,8 @@ from typing import Optional, List, Dict, Any
 from app.core.security import user_context_dependency
 
 from app.api.group_chat_state import build_session_payload, load_session_definitions
-from app.agent.group_chat_runtime import GroupChatRequest, group_chat_stream
+from app.agent.group_chat_runtime import group_chat_stream
+from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest
 from app.agent.group_session_service import (
     GroupSessionUpdate,
     create_session_internal,
@@ -30,16 +35,6 @@ from app.session_state.service import (
 
 router = APIRouter(tags=["sessions"], dependencies=[Depends(user_context_dependency)])
 logger = logging.getLogger(__name__)
-
-
-class SessionCreate(BaseModel):
-    title: str = "新对话"
-    agent_names: List[str] = []
-    system_prompt: Optional[str] = None
-    scenario_name: Optional[str] = None
-    orchestration_profile: Optional[str] = None
-    leader_agent_name: Optional[str] = None
-    host_config: Optional[Dict[str, Any]] = None  # 场景虚拟主持人配置
 
 
 class SessionRollback(BaseModel):
@@ -65,16 +60,12 @@ async def list_sessions():
 
 
 @router.post("/sessions")
-async def create_session(body: SessionCreate):
+async def create_session(body: SessionCreateRequest):
     """新建会话（默认仅主持人，agent_names 为空）"""
     data = create_session_internal(
         title=body.title or "新对话",
         agent_names=body.agent_names,
-        leader_agent_name=body.leader_agent_name,
-        host_config=body.host_config,
-        system_prompt=body.system_prompt,
-        scenario_name=body.scenario_name,
-        orchestration_profile=body.orchestration_profile,
+        host=dict(body.host.model_dump()) if body.host else None,
     )
     return {"status": "ok", "data": data}
 
@@ -130,7 +121,7 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
         raise HTTPException(status_code=500, detail="chat fallback unavailable")
 
     route_event: Optional[Dict[str, Any]] = None
-    content_events: List[Dict[str, Any]] = []
+    progress_events: List[Dict[str, Any]] = []
     message_events: List[Dict[str, Any]] = []
     end_event: Optional[Dict[str, Any]] = None
     error_event: Optional[Dict[str, Any]] = None
@@ -158,8 +149,8 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
                     continue
                 if event_type == "route":
                     route_event = payload
-                elif event_type == "content":
-                    content_events.append(payload)
+                elif event_type == "progress":
+                    progress_events.append(payload)
                 elif event_type == "message":
                     message_events.append(payload)
                 elif event_type == "end":
@@ -191,7 +182,7 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
         "status": "ok",
         "data": {
             "route": route_event,
-            "contents": content_events,
+            "progress": progress_events,
             "messages": message_events,
             "message": primary_message,
             "end": end_event,

@@ -3,12 +3,14 @@ import { apiFetch, apiUrl, type ApiResult } from './base'
 export interface ChatStreamRequestPayload {
   message?: string
   session_id: string
-  client_message_id?: string
+  client_message_id: string
+  attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+  target_agent_name?: string | null
 }
 
 interface StreamChatEventHandlers {
   onRoute?: (data: Record<string, unknown>) => void
-  onContent?: (data: { text?: string; agent_name?: string; meta?: { phase?: string } }) => void
+  onProgress?: (data: { text?: string; phase?: string; agent_name?: string; skill?: string }) => void
   onMessage?: (data: Record<string, unknown>) => void
   onEnd?: (data: Record<string, unknown>) => void
   onError?: (error: unknown) => void
@@ -22,7 +24,7 @@ interface SessionEventHandlers {
 
 interface ChatOnceResponseData {
   route?: Record<string, unknown> | null
-  contents?: Array<{ text?: string; agent_name?: string; meta?: { phase?: string } }>
+  progress?: Array<{ text?: string; phase?: string; agent_name?: string; skill?: string }>
   messages?: Record<string, unknown>[]
   message?: Record<string, unknown> | null
   end?: Record<string, unknown> | null
@@ -79,6 +81,8 @@ export async function streamSessionChat(
   const body = {
     message: payload.message ?? '',
     client_message_id: payload.client_message_id,
+    attachments: payload.attachments || [],
+    target_agent_name: payload.target_agent_name || null,
   }
   const response = await fetch(apiUrl(`/sessions/${sessionId}/chat/stream`), {
     method: 'POST',
@@ -91,7 +95,7 @@ export async function streamSessionChat(
     response,
     (eventType, data) => {
       if (eventType === 'route') handlers.onRoute?.(data)
-      else if (eventType === 'content') handlers.onContent?.(data as { text?: string; agent_name?: string; meta?: { phase?: string } })
+      else if (eventType === 'progress') handlers.onProgress?.(data as { text?: string; phase?: string; agent_name?: string; skill?: string })
       else if (eventType === 'message') handlers.onMessage?.(data)
       else if (eventType === 'end') handlers.onEnd?.(data)
       else if (eventType === 'error') handlers.onError?.(data)
@@ -132,6 +136,8 @@ export async function chatOnceRequest(payload: ChatStreamRequestPayload): Promis
     body: JSON.stringify({
       message: payload.message ?? '',
       client_message_id: payload.client_message_id,
+      attachments: payload.attachments || [],
+      target_agent_name: payload.target_agent_name || null,
     }),
   })
 }

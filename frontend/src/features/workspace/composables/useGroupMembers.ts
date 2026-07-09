@@ -16,7 +16,7 @@ type GroupMemberMessage = {
 type GroupMemberDetail = {
   id?: string
   agent_names: string[]
-  leader_agent_name?: string
+  host?: { name?: string }
   agent_map: Record<string, { name?: string }>
 }
 
@@ -77,7 +77,7 @@ export function useGroupMembers(args: {
     const mid = String(speaker.agent_name || '').trim()
     if (!mid) return false
     if (mid === VIRTUAL_SCENE_HOST_ID) return true
-    const lid = String(groupDetail.value?.leader_agent_name || '').trim()
+    const lid = String(groupDetail.value?.host?.name || '').trim()
     if (lid && mid === lid) {
       const sid = speaker.skill
       const label = formatSkill(sid)

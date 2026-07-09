@@ -93,7 +93,7 @@ def validate_session_preset(
                     row["agent"] = agent_name
                 out.missing_skills.append(row)
 
-    hc_raw = preset.get("host_config")
+    hc_raw = preset.get("host") or preset.get("host_config")
     if isinstance(hc_raw, dict):
         hc = normalize_host_config_dict(hc_raw)
         skill_directory = str(hc.get("skill_directory") or "").strip()

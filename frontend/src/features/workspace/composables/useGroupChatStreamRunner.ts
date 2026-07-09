@@ -1,7 +1,7 @@
 import { chatOnceRequest, streamSessionChat, type ChatStreamRequestPayload } from '@/api/chat'
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
-type StreamContent = { text?: string; agent_name?: string; meta?: { phase?: string } }
+type StreamProgress = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
 
 export function createGroupChatStreamRunner(deps: {
@@ -10,7 +10,7 @@ export function createGroupChatStreamRunner(deps: {
   appendHostError: (content: string) => void
   updateAutoSwitchHint: (payload: Record<string, unknown>, sessionId: string) => void
   showStreamingRoutePlaceholder: (payload: StreamRoute, sessionId: string) => void
-  consumeStreamingStatusContent: (data: StreamContent, sessionId: string) => boolean
+  consumeStreamingStatusContent: (data: StreamProgress, sessionId: string) => boolean
   appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
@@ -35,7 +35,7 @@ export function createGroupChatStreamRunner(deps: {
             deps.updateAutoSwitchHint(data, sessionId)
             deps.showStreamingRoutePlaceholder(data, sessionId)
           },
-          onContent: (data) => {
+          onProgress: (data) => {
             if (data?.text != null && data?.agent_name) {
               if (deps.consumeStreamingStatusContent(data, sessionId)) return
               if (!isSelectedStreamSession()) return
@@ -79,7 +79,7 @@ export function createGroupChatStreamRunner(deps: {
         }
         const data = (fallback.data || {}) as {
           route?: Record<string, unknown> | null
-          contents?: StreamContent[]
+          progress?: StreamProgress[]
           messages?: Record<string, unknown>[]
           message?: Record<string, unknown> | null
           end?: Record<string, unknown> | null
@@ -87,8 +87,8 @@ export function createGroupChatStreamRunner(deps: {
           interrupted?: boolean
         }
         if (data.route) deps.updateAutoSwitchHint(data.route, sessionId)
-        if (Array.isArray(data.contents)) {
-          for (const chunk of data.contents) {
+        if (Array.isArray(data.progress)) {
+          for (const chunk of data.progress) {
             if (chunk?.text != null && chunk?.agent_name) {
               if (deps.consumeStreamingStatusContent(chunk, sessionId)) continue
               if (!isSelectedStreamSession()) continue

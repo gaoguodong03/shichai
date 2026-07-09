@@ -16,7 +16,7 @@ type LastSentDraft = {
 }
 
 type StreamState = { sawExpertAssistantMessageThisRun: boolean }
-type StreamContent = { text?: string; agent_name?: string; meta?: { phase?: string } }
+type StreamContent = { text?: string; agent_name?: string; phase?: string; skill?: string }
 type StreamRoute = { agent_name?: string; skill?: string }
 
 export function useGroupComposerActions(args: {
@@ -73,6 +73,14 @@ export function useGroupComposerActions(args: {
     return buildGroupDraftMessage(args.groupDiscussionGoal.value || '', args.groupNextPrompt.value || '')
   }
 
+  function requestAttachments(): Array<{ type: 'workspace_file'; path: string; name?: string }> {
+    return (args.attachedFiles.value || []).map((file) => ({
+      type: 'workspace_file',
+      path: file.path,
+      name: file.name,
+    }))
+  }
+
   async function confirmGroupNext(_nextSpeaker: string) {
     const detail = args.groupDetail.value
     const id = detail?.id
@@ -81,7 +89,11 @@ export function useGroupComposerActions(args: {
     args.groupWaitingForUser.value = false
     args.groupSuggestedNextSpeaker.value = null
     const { runToken, abort } = args.beginGroupStream(id, '正在确认…')
-    const body: { message?: string } = {}
+    const body: {
+      message?: string
+      client_message_id: string
+      attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+    } = { client_message_id: createClientMessageId() }
     const base = builtMessage()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
@@ -90,8 +102,9 @@ export function useGroupComposerActions(args: {
     }
     const hasFiles = args.attachedFiles.value.length > 0
     try {
-      const msg = hasFiles ? args.buildMessageWithFileReferences(base) : base
+      const msg = base
       if (msg) body.message = msg
+      if (hasFiles) body.attachments = requestAttachments()
       const shouldEmitMessageSent = await runGroupStream(id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()
@@ -123,14 +136,27 @@ export function useGroupComposerActions(args: {
     args.groupNextPrompt.value = ''
     const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
     try {
-      const msg = args.buildMessageWithFileReferences(base)
-      const userMsg: GroupMessage = { message_id: `msg-${Date.now()}`, speaker: { type: 'user' }, content: msg }
+      const msg = base
+      const clientMessageId = createClientMessageId()
+      const attachments = requestAttachments()
+      const userMsg: GroupMessage = {
+        message_id: `msg-${Date.now()}`,
+        speaker: { type: 'user' },
+        message: { content: msg, attachments },
+        content: msg,
+        client_message_id: clientMessageId,
+      } as GroupMessage
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
       args.scrollGroupToBottom()
-      const body: Record<string, unknown> = {
+      const body: {
+        message?: string
+        client_message_id: string
+        attachments?: Array<{ type: 'workspace_file'; path: string; name?: string }>
+      } = {
         message: msg,
-        client_message_id: createClientMessageId(),
+        client_message_id: clientMessageId,
       }
+      if (attachments.length) body.attachments = attachments
       const shouldEmitMessageSent = await runGroupStream(detail.id, body, abort.signal)
       if (shouldEmitMessageSent) {
         await args.refreshGroupWorkspaceAfterExternalChange()

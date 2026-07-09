@@ -8,7 +8,7 @@ import { SESSION_PRESETS_UPDATED_EVENT_NAME } from '@/features/workspace/composa
 type SkillRef = { name: string; directory_name: string }
 
 export interface ScenarioHostConfig {
-  leader_agent_name?: string
+  name?: string
   system_prompt?: string
   llm_name?: string
   skill_name?: string
@@ -18,7 +18,7 @@ export interface ScenarioHostConfig {
 export interface ScenarioPreset {
   name: string
   agent_names: string[]
-  host_config?: ScenarioHostConfig
+  host?: ScenarioHostConfig
   description?: string
   system_prompt?: string
 }
@@ -197,9 +197,9 @@ export function useScenarioEditor(options: {
       description: s.description || '',
       system_prompt: s.system_prompt || '',
     }
-    const hc = s.host_config
+    const hc = s.host || (s as { host_config?: ScenarioHostConfig }).host_config
     if (hc && typeof hc === 'object') {
-      scenarioLeaderDisplayName.value = (hc.leader_agent_name as string) || ''
+      scenarioLeaderDisplayName.value = (hc.name || (hc as { leader_agent_name?: string }).leader_agent_name) || ''
       scenarioLeaderSkill.value = normalizeScenarioLeaderSkill(hc)
       scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
       scenarioLeaderLlmName.value = (hc.llm_name as string) || ''
@@ -225,7 +225,7 @@ export function useScenarioEditor(options: {
       agent_names: [],
       description: '',
       system_prompt: '',
-      host_config: {},
+      host: {},
     }
     scenarioPresets.value = [
       next,
@@ -260,8 +260,8 @@ export function useScenarioEditor(options: {
           description: p.description || '',
           system_prompt: p.system_prompt || '',
         }
-        if (p.host_config && typeof p.host_config === 'object') {
-          row.host_config = p.host_config
+        if (p.host && typeof p.host === 'object') {
+          row.host = p.host
         }
         return row
       }),
@@ -292,8 +292,8 @@ export function useScenarioEditor(options: {
       return
     }
     const leaderSkill = scenarioLeaderSkill.value
-    const host_config: ScenarioHostConfig = {
-      leader_agent_name: scenarioLeaderDisplayName.value.trim() || undefined,
+    const host: ScenarioHostConfig = {
+      name: scenarioLeaderDisplayName.value.trim() || undefined,
       system_prompt: scenarioLeaderSystemPrompt.value || undefined,
       llm_name: scenarioLeaderLlmName.value || undefined,
       skill_name: leaderSkill?.name || undefined,
@@ -309,7 +309,7 @@ export function useScenarioEditor(options: {
               description: scenarioDraft.value.description || '',
               system_prompt: scenarioDraft.value.system_prompt || '',
               agent_names: agentNames,
-              host_config,
+              host,
             }
           : p,
       )

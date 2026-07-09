@@ -228,7 +228,7 @@ def collect_skill_directories_and_tool_names_for_preset(
 ) -> Tuple[Set[str], Set[str]]:
     skill_directories: Set[str] = set()
     tool_names: Set[str] = set()
-    hc_raw = preset.get("host_config")
+    hc_raw = preset.get("host") or preset.get("host_config")
     if isinstance(hc_raw, dict):
         hc = normalize_host_config_dict(hc_raw)
         skill_directory = str(hc.get("skill_directory") or "").strip()

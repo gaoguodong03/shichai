@@ -17,7 +17,6 @@ from app.core.llm_bundle import (
     read_llm_bundle_manifest,
 )
 from app.core.scenario_bundle import extract_scenario_bundle_dir
-from app.core.host_config import normalize_host_config_dict
 from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
 from app.core.user_context import get_current_user_context
@@ -76,7 +75,7 @@ _DEFAULT_LLM_PROVIDERS = {
 }
 
 _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
-    "leader_agent_name": "四九",
+    "name": "四九",
     "system_prompt": "",
     "llm_name": "",
     "skill_name": "",
@@ -85,14 +84,19 @@ _DEFAULT_HOST_PROFILE: Dict[str, Any] = {
 
 
 def normalize_host_profile(raw: Any) -> Dict[str, Any]:
-    """主持人独立配置：名称 + Agent 同构能力字段。"""
+    """Normalize the account-level default host snapshot."""
     if not isinstance(raw, dict):
         raw = {}
-    base_cfg = normalize_host_config_dict(raw)
-    leader_name = str(raw.get("leader_agent_name") or "").strip() or str(_DEFAULT_HOST_PROFILE["leader_agent_name"])
     out = dict(_DEFAULT_HOST_PROFILE)
-    out.update(base_cfg)
-    out["leader_agent_name"] = leader_name
+    out.update(
+        {
+            "name": str(raw.get("name") or raw.get("leader_agent_name") or _DEFAULT_HOST_PROFILE["name"]).strip() or "四九",
+            "system_prompt": str(raw.get("system_prompt") or ""),
+            "llm_name": str(raw.get("llm_name") or "").strip(),
+            "skill_name": str(raw.get("skill_name") or "").strip(),
+            "skill_directory": str(raw.get("skill_directory") or "").strip().replace("\\", "/").strip("/"),
+        }
+    )
     return out
 
 
@@ -229,7 +233,7 @@ def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
 class HostProfileBody(BaseModel):
     """主持人独立配置（账号级默认）。"""
 
-    leader_agent_name: Optional[str] = None
+    name: Optional[str] = None
     system_prompt: Optional[str] = None
     llm_name: Optional[str] = None
     skill_name: Optional[str] = None
@@ -254,7 +258,7 @@ async def update_host_profile(body: HostProfileBody):
     hp = current.get("host_profile") if isinstance(current.get("host_profile"), dict) else {}
     merged = dict(hp if isinstance(hp, dict) else {})
     for k in (
-        "leader_agent_name",
+        "name",
         "system_prompt",
         "llm_name",
         "skill_name",

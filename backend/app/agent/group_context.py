@@ -21,6 +21,26 @@ def _clip_context_message(content: str, max_chars_per_message: int) -> str:
     return content[:head_len].rstrip() + marker + content[-tail_len:].lstrip()
 
 
+def _message_content(message: Dict[str, Any]) -> str:
+    """Read message text from the canonical nested shape, with read-only legacy tolerance."""
+    if not isinstance(message, dict):
+        return ""
+    body = message.get("message")
+    if isinstance(body, dict):
+        return str(body.get("content") or "").strip()
+    return str(message.get("content") or "").strip()
+
+
+def _message_speaker(message: Dict[str, Any]) -> tuple[str, str]:
+    """Return speaker type and agent name from a history record."""
+    if not isinstance(message, dict):
+        return "", ""
+    speaker = message.get("speaker")
+    if isinstance(speaker, dict):
+        return str(speaker.get("type") or "").strip(), str(speaker.get("agent_name") or "").strip()
+    return str(message.get("role") or "").strip(), str(message.get("agent_name") or "").strip()
+
+
 def messages_to_context(
     messages: List[Dict[str, Any]],
     max_turns: int = 15,
@@ -31,10 +51,9 @@ def messages_to_context(
     recent = messages[-max_turns * 2:] if len(messages) > max_turns * 2 else messages
     lines = []
     for m in recent:
-        role = m.get("role", "")
-        content = (m.get("content") or "").strip()
+        role, agent_name = _message_speaker(m)
+        content = _message_content(m)
         content = _clip_context_message(content, max_chars_per_message)
-        agent_name = m.get("agent_name", "")
         if role == "user":
             lines.append(f"【用户】{content}")
         elif role == "host":
@@ -77,11 +96,12 @@ def messages_to_expert_context(messages: List[Dict[str, Any]]) -> str:
     seen: set[tuple[str, str, str]] = set()
     skipped = 0
     for m in messages or []:
-        content = (m.get("content") or "").strip() if isinstance(m, dict) else ""
+        content = _message_content(m) if isinstance(m, dict) else ""
         if is_group_context_noise(content):
             skipped += 1
             continue
-        key = (str(m.get("role") or ""), str(m.get("agent_name") or ""), content)
+        role, agent_name = _message_speaker(m)
+        key = (role, agent_name, content)
         if key in seen:
             skipped += 1
             continue

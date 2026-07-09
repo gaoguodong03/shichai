@@ -9,7 +9,8 @@ type StreamEventState = {
 type StreamStatusPayload = {
   text?: string
   agent_name?: string
-  meta?: { phase?: string }
+  phase?: string
+  skill?: string
 }
 
 type StreamRoutePayload = {
@@ -27,6 +28,15 @@ function speakerType(data: Record<string, unknown> | GroupMessage | null | undef
 function speakerAgentName(data: Record<string, unknown> | GroupMessage | null | undefined): string {
   const speaker = data?.speaker && typeof data.speaker === 'object' ? data.speaker as { agent_name?: unknown } : null
   return String(speaker?.agent_name || '').trim()
+}
+
+function messageContent(data: Record<string, unknown> | GroupMessage | null | undefined): string {
+  const body = data?.message && typeof data.message === 'object' ? data.message as { content?: unknown } : null
+  return String(body?.content ?? (data as { content?: unknown } | null | undefined)?.content ?? '')
+}
+
+function toDisplayMessage(data: Record<string, unknown>): GroupMessage {
+  return { ...data, content: messageContent(data) } as GroupMessage
 }
 
 export function useGroupStreamEvents(args: {
@@ -148,7 +158,7 @@ export function useGroupStreamEvents(args: {
     })
   }
 
-  /** 流式展示：追加一条 content chunk 到当前专家占位消息，或新建占位 */
+  /** Append a progress text chunk to the current expert placeholder. */
   function appendStreamingContent(agentName: string, text: string) {
     const list = [...groupDisplayMessages.value]
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean; _streamingStatus?: boolean }) | undefined
@@ -167,20 +177,21 @@ export function useGroupStreamEvents(args: {
     nextTick(() => scheduleHydrateAuthImages())
   }
 
-  /** 流式结束：用服务端完整 assistant 消息替换占位，或直接追加 */
+  /** Replace the streaming placeholder with the complete assistant message. */
   function replaceOrPushAssistantMessage(data: Record<string, unknown>) {
+    const displayData = toDisplayMessage(data)
     const list = groupDisplayMessages.value
     const last = list[list.length - 1] as (GroupMessage & { _streaming?: boolean }) | undefined
     const replacedStreamingPlaceholder =
-      speakerType(data) === 'expert' &&
+      speakerType(displayData) === 'expert' &&
       speakerType(last) === 'expert' &&
-      speakerAgentName(last) === speakerAgentName(data) &&
+      speakerAgentName(last) === speakerAgentName(displayData) &&
       (last as { _streaming?: boolean })._streaming
     if (replacedStreamingPlaceholder) {
-      const { _streaming: _, ...rest } = data
+      const { _streaming: _, ...rest } = displayData
       groupDisplayMessages.value = [...list.slice(0, -1), rest as GroupMessage]
     } else {
-      groupDisplayMessages.value = [...list, data as GroupMessage]
+      groupDisplayMessages.value = [...list, displayData]
     }
     nextTick(() => {
       scheduleHydrateAuthImages()
@@ -188,7 +199,7 @@ export function useGroupStreamEvents(args: {
         scrollLatestAssistantRowToLowerMiddle()
         return
       }
-      scrollGroupAssistantMessageIntoView(data)
+      scrollGroupAssistantMessageIntoView(displayData as unknown as Record<string, unknown>)
     })
   }
 
@@ -207,7 +218,7 @@ export function useGroupStreamEvents(args: {
   }
 
   function consumeStreamingStatusContent(data: StreamStatusPayload, sessionId = selectedGroupSessionId() || ''): boolean {
-    const phase = String(data?.meta?.phase || '').trim()
+    const phase = String(data?.phase || '').trim()
     if (!phase) return false
     const id = activeSessionId(sessionId)
     const agentName = String(data?.agent_name || '').trim()
@@ -254,13 +265,10 @@ export function useGroupStreamEvents(args: {
           state.sawExpertAssistantMessageThisRun = true
         }
       } else {
-        groupDisplayMessages.value = [...groupDisplayMessages.value, data as GroupMessage]
+        groupDisplayMessages.value = [...groupDisplayMessages.value, toDisplayMessage(data)]
         if (type === 'user' && (data as { message_id?: string }).message_id) {
           nextTick(() => scrollToMessage(String((data as { message_id?: string }).message_id || '')))
         }
-      }
-      if (data.next_prompt) {
-        groupNextPrompt.value = (data.next_prompt as string || '').trim()
       }
       if (extractAutoInvitedNames(data).length) {
         groupSuggestedAddAgentNames.value = []
@@ -296,10 +304,8 @@ export function useGroupStreamEvents(args: {
         clearStreamingPlaceholders()
         patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
       }
-      if (endData.next_prompt) {
-        groupNextPrompt.value = String(endData.next_prompt || '').trim()
-      }
-      if (endData.suggested_next_speaker === 'user' || endData.discussion_ended) {
+      groupNextPrompt.value = ''
+      if (endData.suggested_next_speaker === 'user' || endData.phase === 'completed') {
         clearAttachedFiles()
       }
       if (groupTurnLimitReached.value) {
@@ -316,7 +322,7 @@ export function useGroupStreamEvents(args: {
         }
       }
     }
-    if (endData.discussion_ended) {
+    if (endData.phase === 'completed') {
       clearAttachedFiles()
     }
     if (state.sawExpertAssistantMessageThisRun) {

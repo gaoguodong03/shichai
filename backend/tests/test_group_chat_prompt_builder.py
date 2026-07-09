@@ -17,14 +17,14 @@ def test_expert_turn_prompt_keeps_host_task_and_user_input_without_memory(monkey
         user_message="开始写报告",
         recent_context="以下最近讨论仅供承接上下文；本轮用户输入优先。\n\n【用户】开始写报告",
         app_settings={"group_memory": {"enabled": True, "dispatch_top_k": 3, "max_facts": 20}},
-        speaker_task="请基于用户目标“智能软件工程及伦理”报告，按文档合著v1.1流程推进写作。",
+        next_action="请基于用户目标“智能软件工程及伦理”报告，按文档合著v1.1流程推进写作。",
     )
 
     assert "【主持人本轮指派" in bundle.user_content
     assert "智能软件工程及伦理" in bundle.user_content
     assert "【本轮用户输入】\n开始写报告" in bundle.user_content
     assert "【最近讨论】" in bundle.user_content
-    assert bundle.debug["has_speaker_task"] is True
+    assert bundle.debug["has_next_action"] is True
     assert bundle.debug["has_user_message"] is True
 
 
@@ -38,7 +38,7 @@ def test_expert_turn_prompt_direct_user_branch_uses_same_builder():
         user_message="帮我找三篇论文",
         recent_context="【用户】帮我找三篇论文",
         app_settings={"group_memory": {"enabled": False}},
-        speaker_task="",
+        next_action="",
     )
 
     assert "【群聊讨论目标】\n查资料" in bundle.user_content

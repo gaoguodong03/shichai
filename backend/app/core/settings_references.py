@@ -63,9 +63,10 @@ def replace_skill_path_in_user_configs(old_path: str, new_path: str) -> None:
     presets = _load_scenario_rows()
     changed = False
     for preset in presets:
-        if not isinstance(preset, dict) or not isinstance(preset.get("host_config"), dict):
+        host = preset.get("host") if isinstance(preset, dict) else None
+        if not isinstance(preset, dict) or not isinstance(host, dict):
             continue
-        hc = preset["host_config"]
+        hc = host
         if str(hc.get("skill_directory") or "").strip() == old_path:
             hc["skill_directory"] = new_path
             changed = True
@@ -91,8 +92,8 @@ def remove_skill_path_from_user_configs(skill_path: str, skill_name: str = "") -
             if not isinstance(row, dict):
                 continue
             targets = [row]
-            if isinstance(row.get("host_config"), dict):
-                targets.append(row["host_config"])
+            if isinstance(row.get("host"), dict):
+                targets.append(row["host"])
             for target in targets:
                 if "skill_directory" in target and str(target.get("skill_directory") or "").strip() == path_name and skill_name:
                     target["skill_name"] = skill_name

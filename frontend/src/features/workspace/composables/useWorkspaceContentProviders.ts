@@ -90,15 +90,16 @@ export function useWorkspaceContentProviders(args: {
   const effectiveHostDisplayName = computed(() => {
     const hostMapName = String(groupDetail.value?.agent_map?.['agent-scene-host']?.name || '').trim()
     if (hostMapName) return hostMapName
-    const hostConfigName = String(groupDetail.value?.host_config?.leader_agent_name || '').trim()
-    if (hostConfigName) return hostConfigName
+    const hostName = String(groupDetail.value?.host?.name || '').trim()
+    if (hostName) return hostName
     return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
   })
   async function loadHostDisplayName() {
     try {
       const r = await apiRequest('/settings/host-profile')
       const j = await r.json().catch(() => ({}))
-      const next = String((j as { data?: { leader_agent_name?: string } })?.data?.leader_agent_name || '').trim()
+      const data = (j as { data?: { name?: string; leader_agent_name?: string } })?.data
+      const next = String(data?.name || data?.leader_agent_name || '').trim()
       hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
     } catch {
       hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME

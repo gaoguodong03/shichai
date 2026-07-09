@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
-from app.agent.group_orchestration_fsm import effective_orchestration_profile
 from app.agent.message_contracts import ChatMessageRecord
 from app.core.user_context import get_current_user_context
 
@@ -44,6 +43,10 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         "runtime_state",
         "leader_agent_name",
         "host_config",
+        "scenario_name",
+        "orchestration_profile",
+        "system_prompt",
+        "context",
         "pending_owner_agent_name",
         "pending_skill",
         "pending_phase",
@@ -320,35 +323,18 @@ def build_session_payload(session_id: str, session_item: Dict[str, Any]) -> Dict
         "title": session_item.get("title", "新对话"),
         "title_auto_generated": session_item.get("title_auto_generated"),
         "agent_names": names,
+        "host": dict(session_item.get("host") or {}),
         "created_at": session_item.get("created_at", ""),
         "updated_at": session_item.get("updated_at", ""),
         "runtime_state": runtime_state_for_session(session_id, session_item),
     }
-    scenario_name = str(session_item.get("scenario_name") or "").strip()
-    if scenario_name:
-        out["scenario_name"] = scenario_name
-    system_prompt = str(session_item.get("system_prompt") or "").strip()
-    if system_prompt:
-        out["system_prompt"] = system_prompt
-    prof = str(session_item.get("orchestration_profile") or "").strip().lower()
-    if prof in ("recruitment", "scene"):
-        out["orchestration_profile"] = prof
-    else:
-        out["orchestration_profile"] = effective_orchestration_profile(session_item, agent_names=list(session_item.get("agent_names") or []))
     return out
 
 
 def load_session_definitions() -> Dict[str, Dict[str, Any]]:
+    """Load sessions by scanning sessions/{session_id}/session.json only."""
     root = ensure_sessions_dir()
-    index_path = root / SESSION_INDEX_FILE
     out: Dict[str, Dict[str, Any]] = {}
-    if index_path.exists():
-        try:
-            data = json.loads(index_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                out = {str(k): v for k, v in data.items() if isinstance(v, dict)}
-        except Exception:
-            pass
     for child in root.iterdir():
         if not child.is_dir():
             continue
@@ -365,9 +351,8 @@ def load_session_definitions() -> Dict[str, Dict[str, Any]]:
 
 
 def save_session_definitions(session_definitions: Dict[str, Dict[str, Any]], *, preserve_unmentioned: bool = True) -> None:
+    """Persist each session definition to its own session.json file."""
     root = ensure_sessions_dir()
-    index_path = root / SESSION_INDEX_FILE
-    index_path.parent.mkdir(parents=True, exist_ok=True)
     data = {str(k): _clean_session_definition(v) for k, v in (session_definitions or {}).items() if isinstance(v, dict)}
     if preserve_unmentioned:
         try:
@@ -384,7 +369,6 @@ def save_session_definitions(session_definitions: Dict[str, Dict[str, Any]], *, 
                     data[session_id] = _clean_session_definition(incoming_item)
         except Exception:
             data = {str(k): _clean_session_definition(v) for k, v in (session_definitions or {}).items() if isinstance(v, dict)}
-    index_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     for session_id, item in data.items():
         session_path = _session_json_path(root, session_id)
         session_path.parent.mkdir(parents=True, exist_ok=True)

@@ -21,7 +21,7 @@
               <div>
                 <label class="block text-sm font-medium text-primary mb-1">名称</label>
                 <input
-                  v-model="form.leader_agent_name"
+                  v-model="form.name"
                   type="text"
                   class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
                   placeholder="例如：四九"
@@ -47,7 +47,7 @@
                 v-model="form.system_prompt"
                 rows="6"
                 class="w-full bg-input-bg text-primary border border-input-border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y themed-scrollbar focus:outline-none focus:ring-2 focus:ring-input-focus-ring focus:border-input-focus-ring"
-                placeholder="例如：你是群聊主持人，只负责决定下一位发言人与 next_prompt，不代写专家正文。"
+                placeholder="例如：你是群聊主持人，只负责决定下一位发言人与 next_action，不代写专家正文。"
               />
             </div>
 
@@ -124,7 +124,7 @@ const HOST_NAME_UPDATED_EVENT_NAME = 'agent-host-display-name-updated'
 const INITIAL_SKILL_RENDER_LIMIT = 80
 
 type HostForm = {
-  leader_agent_name: string
+  name: string
   system_prompt: string
   skill_name: string
   skill_directory: string
@@ -133,7 +133,7 @@ type HostForm = {
 
 function emptyForm(): HostForm {
   return {
-    leader_agent_name: '四九',
+    name: '四九',
     system_prompt: '',
     skill_name: '',
     skill_directory: '',
@@ -176,7 +176,7 @@ const hiddenSkillCount = computed(() => Math.max(0, filteredSkills.value.length 
 
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
-  next.leader_agent_name = String(d.leader_agent_name ?? '四九')
+  next.name = String(d.name ?? d.leader_agent_name ?? '四九')
   next.system_prompt = String(d.system_prompt ?? '')
   next.llm_name = String(d.llm_name ?? '')
   next.skill_name = String(d.skill_name ?? '').trim()
@@ -243,7 +243,7 @@ async function load() {
     if (j?.status === 'ok' && j?.data) {
       const d = j.data as Record<string, unknown>
       applyHostData(d)
-      const hasAny = Boolean(form.value.leader_agent_name || form.value.system_prompt || form.value.skill_directory)
+      const hasAny = Boolean(form.value.name || form.value.system_prompt || form.value.skill_directory)
       if (!hasAny) {
         const rd = await apiRequest('/settings/host-profile/defaults')
         const jd = await rd.json().catch(() => ({}))
@@ -265,7 +265,7 @@ async function save() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        leader_agent_name: form.value.leader_agent_name,
+        name: form.value.name,
         system_prompt: form.value.system_prompt,
         skill_name: form.value.skill_name,
         skill_directory: form.value.skill_directory,

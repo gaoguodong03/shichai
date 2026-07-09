@@ -357,7 +357,7 @@ def find_missing_references_for_scene_bundle(
         if agent_name not in bundle_expert_by_name and agent_name not in existing_expert_names:
             _add_missing_reference(missing, "experts", agent_name, required_by=scene_label, source="scene")
 
-    host_config = normalize_host_config_dict(preset.get("host_config"))
+    host_config = normalize_host_config_dict(preset.get("host") or preset.get("host_config"))
     skill_refs: Dict[str, List[str]] = {}
     host_skill_directory = str(host_config.get("skill_directory") or "").strip()
     if host_skill_directory:

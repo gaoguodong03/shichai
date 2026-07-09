@@ -6,7 +6,7 @@ import { USER_STORAGE_KEY } from './workspacePreferences'
 const SHORTCUT_STORAGE_KEY_BASE = 'agent.group.shortcuts.v1'
 
 export type ShortcutHostConfig = {
-  leader_agent_name?: string
+  name?: string
   system_prompt?: string
   llm_name?: string
   skill_name?: string
@@ -16,8 +16,7 @@ export type ShortcutHostConfig = {
 export type ShortcutPreset = {
   name: string
   agent_names: string[]
-  leader_agent_name?: string
-  host_config?: ShortcutHostConfig
+  host?: ShortcutHostConfig
   description?: string
   system_prompt?: string
 }
@@ -59,13 +58,13 @@ export function useShortcutPresets(args: {
     if (!hc) return undefined
     const skillDirectory = String(hc.skill_directory || '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
     const out: ShortcutHostConfig = {
-      leader_agent_name: String(hc.leader_agent_name || '').trim(),
+      name: String(hc.name || (hc as { leader_agent_name?: string }).leader_agent_name || '').trim(),
       llm_name: String(hc.llm_name || '').trim(),
       system_prompt: String(hc.system_prompt || ''),
       skill_name: String(hc.skill_name || '').trim(),
       skill_directory: skillDirectory,
     }
-    return out.leader_agent_name || out.llm_name || out.system_prompt || out.skill_name || out.skill_directory ? out : undefined
+    return out.name || out.llm_name || out.system_prompt || out.skill_name || out.skill_directory ? out : undefined
   }
 
   function getCurrentUserShortcutStorageKey(): string {
@@ -93,13 +92,13 @@ export function useShortcutPresets(args: {
       const key = name.trim().toLowerCase()
       if (!name || !agentNames.length || seen.has(key)) continue
       seen.add(key)
-      const lid = String(raw?.leader_agent_name || '').trim()
-      const hc = normalizeShortcutHostConfig(raw?.host_config as ShortcutHostConfig | undefined)
+      const legacyHost = (raw as { host_config?: ShortcutHostConfig }).host_config
+      const legacyLeader = String((raw as { leader_agent_name?: string }).leader_agent_name || '').trim()
+      const hc = normalizeShortcutHostConfig((raw?.host || legacyHost || (legacyLeader ? { name: legacyLeader } : undefined)) as ShortcutHostConfig | undefined)
       out.push({
         name,
         agent_names: agentNames,
-        leader_agent_name: hc?.leader_agent_name || lid || agentNames[0] || '',
-        host_config: hc,
+        host: hc,
         description: String(raw?.description || '').trim(),
         system_prompt: String(raw?.system_prompt || '').trim(),
       })
@@ -167,12 +166,7 @@ export function useShortcutPresets(args: {
         description: p.description || '',
         system_prompt: p.system_prompt || '',
       }
-      if (p.host_config) {
-        row.host_config = p.host_config
-        row.leader_agent_name = p.host_config.leader_agent_name || '四九'
-      } else {
-        row.leader_agent_name = p.leader_agent_name || p.agent_names[0] || ''
-      }
+      if (p.host) row.host = p.host
       return row
     })
     try {
@@ -221,9 +215,7 @@ export function useShortcutPresets(args: {
     const body: Record<string, unknown> = {
       title,
       agent_names: targetExperts,
-      scenario_name: title,
-      orchestration_profile: 'scene',
-      system_prompt: p.system_prompt || '',
+      host: p.host,
     }
     const reusableSessionId = reusableBlankSessionIdForScenario()
     try {
