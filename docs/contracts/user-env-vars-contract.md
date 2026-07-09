@@ -90,7 +90,7 @@ settings/secrets.enc.json
 
 | 运行单元 | 注入规则 |
 |----------|----------|
-| LLM Provider | 读取模型配置中的 `api_key_env`，解析后传给 LLM 客户端。 |
+| 模型调用 | 读取模型配置中的 `api_key_env`，解析后传给 LLM 客户端。 |
 | MCP stdio | 只把 `server_config.mcpServers.*.env` 中声明的变量传给子进程。 |
 | MCP SSE / HTTP | 只替换 URL 和 headers 中的 `${env:...}`。 |
 | 保存型 HTTP API | 只替换配置中出现的 `${env:...}`。 |

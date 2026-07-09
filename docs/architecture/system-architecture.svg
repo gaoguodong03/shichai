@@ -111,7 +111,7 @@
   <text class="node-text" x="385" y="1175">配置 / 会话 / Skill / 工作区文件 / 账号</text>
   <rect class="node external" x="1025" y="1122" width="420" height="66"/>
   <text class="node-title" x="1055" y="1152">外部服务</text>
-  <text class="node-text" x="1055" y="1175">LLM Provider / MCP Server / 镜像与容器运行时</text>
+  <text class="node-text" x="1055" y="1175">模型服务 / MCP Server / 镜像与容器运行时</text>
 
   <path class="arrow-main" d="M900 277 L900 382"/>
   <text class="label" x="918" y="338">请求进入后端</text>

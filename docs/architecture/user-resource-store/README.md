@@ -22,7 +22,7 @@ data/users/{user_id}/
 
   resources/
     scenarios/
-      {scenario_id}/
+      {name}/
         scenario.json
 
     agents/
@@ -39,11 +39,11 @@ data/users/{user_id}/
         other/
 
     tools/
-      {tool_id}/
+      {name}/
         tool.json
 
     models/
-      {model_provider_id}/
+      {name}/
         model.json
 
   settings/
@@ -79,10 +79,10 @@ data/users/{user_id}/
 ## 术语
 
 - 场景：一次群聊或任务的编排模板，描述参与专家、主持人配置、运行策略和目标示例。
-- 专家：可被场景引用的角色配置，描述提示词、模型偏好、Skill 和工具权限。
+- 专家：可被场景引用的角色配置，描述提示词、模型偏好和 Skill 引用；工具权限由本轮选中的 Skill `allowed-tools` 决定。
 - Skill：可执行能力包，包含 `SKILL.md`、脚本、资产、模板和其他文件。
 - 工具：MCP 或外部工具配置，可能引用 `${env:NAME}`，但不能保存环境变量真实值。
-- 模型：模型提供商和模型参数配置，可能引用 `api_key_env`，但不能保存环境变量真实值。
+- 模型：模型调用参数配置，可能引用 `api_key_env`，但不能保存环境变量真实值。
 - 会话：一次真实聊天或群聊运行后的历史记录、事件和工作区产物。
 
 ## 顶层原则

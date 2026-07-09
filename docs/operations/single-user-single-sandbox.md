@@ -26,7 +26,7 @@
 - 脚本执行 `cwd` 固定为 `/workspace/<session_id>`。
 - 脚本输入输出文件统一在 `/workspace/<session_id>` 下。
 - 详细相对路径约定见 `docs/skills/skill-script-paths.md`。
-- 对历史技能提示中的 `scripts/config.json` 做兼容映射到会话根 `config.json`。
+- 技能提示统一引用会话根 `config.json`；历史 `scripts/config.json` 引用应通过迁移或文档修正清理，不进入运行时兜底路径。
 - 支持脚本后缀：`.py`、`.sh`、`.bash`、`.ps1`、`.cmd`、`.bat`；沙箱内分别使用 `python3/python`、`bash`、`pwsh`、`cmd.exe` 执行。
 
 ## 基础依赖

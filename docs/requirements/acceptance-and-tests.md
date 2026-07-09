@@ -25,10 +25,10 @@
 |----------|----------|----------------|--------------|----------|
 | UR-01 账号与用户隔离 | 认证、用户资源根、受保护路由 | `test_auth_sqlite.py`、`test_sessions_api.py`、`frontend/e2e/auth.spec.ts` | 登录、刷新、跨账号资源隔离 | P0 必测 |
 | UR-02 工作区与统一会话 | 会话 API、工作区、SSE 协议 | `test_sessions_api.py`、`test_group_chat_stream_protocol.py`、`test_frontend_business_flows.py`、`frontend/e2e/workspace.spec.ts` | 新建会话、发送消息、上传/引用文件、刷新恢复 | P0 必测 |
-| UR-03 主持人与专家协作 | 调度 FSM、主持人决策、专家 runtime | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 普通会话推荐专家、场景会话固定名单、`@专家` 路由 | P0 必测 |
+| UR-03 主持人与专家协作 | 调度 FSM、主持人决策、专家 runtime | `test_group_orchestration_fsm.py`、`test_scene_scheduler.py`、`test_host_takeover.py`、`test_expert_runtime.py` | 普通会话推荐专家、场景会话固定名单、`target_agent_name` 路由 | P0 必测 |
 | UR-04 资源中心 | 场景、专家、Skill、MCP、LLM、文件配置 | `test_agents_api.py`、`test_frontend_business_flows.py`、`frontend/e2e/resources-*.spec.ts` | 资源中心增删改查、保存后会话可用 | P0 必测 |
 | UR-05 Skill 与脚本执行 | Skill 契约、脚本工具、沙箱挂载 | `test_file_ref_and_gateway.py`、`test_group_chat_skill_script_cli_flow.py`、`test_skill_agent_tool_resolution.py` | 绑定 Skill 的专家执行脚本，缺依赖时可诊断 | P0 必测 |
-| UR-06 MCP 工具能力 | MCP 配置、工具权限、工具网关 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 新增 MCP、授权专家调用、断连/鉴权错误可见 | P0 必测 |
+| UR-06 MCP 工具能力 | MCP 配置、工具权限、工具网关 | `test_file_ref_and_gateway.py`、`test_skill_agent_tool_resolution.py`、`test_frontend_business_flows.py` | 新增 MCP、通过 Skill `allowed-tools` 授权调用、断连/鉴权错误可见 | P0 必测 |
 | UR-07 沙箱运行环境 | OpenSandbox、requirements、镜像选择 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | 普通版/Playwright 版沙箱、依赖安装、超时诊断 | P0 必测 |
 | UR-08 工作区文件管理 | 工作区文件 API、文件引用、路径保护 | `test_workspace_files.py`、`test_file_ref_and_gateway.py`、`test_frontend_business_flows.py` | 上传、预览、编辑、下载、专家生成文件落盘 | P0 必测 |
 | UR-09 导出与导入 | 资源包导出、ZIP 导入、冲突预览 | `test_bundle_import_api.py`、`test_scenario_bundle.py`、`test_expert_bundle.py`、`frontend/e2e/resources-*.spec.ts` | 场景/专家/Skill 导出导入、冲突确认、依赖提示 | P1 必测 |
@@ -108,12 +108,12 @@
 **需求**
 - 用户可以配置 MCP Server。
 - 系统在启动或用户上下文加载时初始化可用 MCP 工具。
-- Agent 只获得当前专家配置允许的 MCP 工具。
+- Agent 只获得当前 Skill `allowed-tools` 声明的 MCP 工具。
 - MCP 断连时应可重连或给出可诊断错误。
 
 **验收点**
 - 新增、编辑、删除 MCP 配置后，资源中心显示一致。
-- 无权限或未绑定的 MCP 工具不会出现在专家可用工具集中。
+- 未在当前 Skill `allowed-tools` 声明的 MCP 工具不会出现在本轮工具集中。
 - 工具参数归一化后，常见参数别名能正确调用。
 - 远端 MCP 断连时，日志包含 server/tool 维度信息。
 
@@ -152,12 +152,12 @@
 对应需求：UR-10
 
 **需求**
-- 用户可以配置 LLM Provider、模型与平台内用户级环境变量。
+- 用户可以配置模型调用配置、模型名称与平台内用户级环境变量。
 - 环境变量真实值等敏感配置不应在前端明文泄露。
 - 应用设置、主题、偏好与账号安全配置应拆分管理。
 
 **验收点**
-- LLM 配置保存后，新会话使用最新 Provider。
+- 模型配置保存后，新会话使用最新配置。
 - 前端列表不展示完整变量值，只展示是否已设置等状态。
 - 主题切换后刷新页面仍保持选择。
 - 修改密码或安全配置后，旧凭据按预期失效。

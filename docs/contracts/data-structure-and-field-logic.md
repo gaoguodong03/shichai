@@ -24,7 +24,7 @@ backend/data/users/{user_id}/
   profile.json
 
   resources/
-    scenarios/{scenario_name}/scenario.json
+    scenarios/{name}/scenario.json
     agents/{agent_name}/agent.json
     skills/{skill_directory}/SKILL.md
     tools/{tool_name}/tool.json

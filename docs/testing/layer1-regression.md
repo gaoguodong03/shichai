@@ -80,7 +80,7 @@
 - `test_scene_runtime.py`：场景 runtime 入口、虚拟主持人与候选专家策略。
 - `test_expert_runtime.py`：专家 runtime 入口、技能选择与工具组装。
 - `test_scene_scheduler.py`：场景调度收敛与建议专家逻辑。
-- `test_host_takeover.py`：主持人接管语义、`@专家` 强制路由、主持人输出解析。
+- `test_host_takeover.py`：主持人接管语义、`target_agent_name` 强制路由、主持人输出解析。
 - `test_group_chat_cleanup_contract.py`：不再生成旧版 `host_plan`、`orchestrator_audit` 运行期文件。
 - `test_orchestration_contracts.py`：调度和终止事件合同约束。
 
@@ -89,7 +89,7 @@
 - `test_group_memory_store.py`：事实去重、工作区索引写入、facts/index 分发上下文。
 - `test_group_chat_group_memory.py`：群聊 facts 注入、专家工具产物索引、图片预览 markdown、自动继续信号。
 - `test_group_chat_stream_protocol.py`：群聊流式事件协议。
-- `test_group_chat_skill_script_cli_flow.py`：前端 `@专家` 触发 Skill 脚本，并通过 CLI argv 传参。
+- `test_group_chat_skill_script_cli_flow.py`：结构化目标专家字段触发 Skill 脚本，模型传 manifest `args` 字段，平台转换为 CLI 参数。
 
 ### 沙箱
 

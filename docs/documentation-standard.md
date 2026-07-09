@@ -15,6 +15,7 @@
 | 测试用例、回归、上线验收 | `docs/testing/` | `test-case-catalog.md`、`layer1-regression.md`、`pre-release-testing.md` |
 | 用户教程、验收手册、截图 | `docs/user-manual/` | `user-guide.md`、`README.md` |
 | Skill、MCP、沙箱工具契约 | `docs/skills/` | `skill-standard.md`、`host-skill.md`、`sandbox-tool-interface.md` |
+| 代码书写规范和模块拆分边界 | `docs/development/` | `coding-standard.md`、`module-file-boundaries.md` |
 | 部署和运维约束 | `docs/operations/` | `single-user-single-sandbox.md` |
 | 发布、提测、部署和验收入口 | `docs/release/` | `README.md` |
 
@@ -24,6 +25,7 @@
 - `design/` 是正式详细设计和接口说明交付物。它只能引用或派生 `contracts/` 的字段定义，不能单独新增字段口径。
 - `architecture/` 只放结构性说明、架构图、项目结构、资源包和用户资源存储边界，不维护运行字段表。
 - `skills/` 只放 Skill、主持人 Skill、脚本和沙箱工具规范。涉及运行态字段时必须对齐 `contracts/`。
+- `development/` 放代码书写规范、模块拆分边界和面向 AI 编程代理的工程约束。它只能引用 `contracts/` 和 `design/` 的目标口径，不能单独定义字段契约。
 - `testing/` 只放测试策略、回归清单和验收用例，不承担需求或字段源头职责。
 - 旧项目管理目录和旧阶段计划目录不再作为正式文档目录使用；历史计划、旧审计和兼容台账不进入当前文档入口。
 
@@ -42,6 +44,7 @@
 | 验收标准变化 | `requirements/acceptance-and-tests.md`、`testing/test-case-catalog.md`、`testing/layer1-regression.md`、`testing/pre-release-testing.md` |
 | API 或模块边界变化 | `contracts/runtime-interface-contract.md`、`design/interface-document.md`、`design/detailed-design-spec.md`、必要时同步 `architecture/project-structure.md` |
 | 数据结构或字段变化 | `contracts/data-structure-and-field-logic.md`、必要时同步 `contracts/runtime-interface-contract.md` |
+| 代码组织、模块边界或 AI 编程约束变化 | `development/coding-standard.md`、`development/module-file-boundaries.md`、必要时同步 `architecture/project-structure.md` |
 | Skill/MCP/沙箱契约变化 | `skills/*.md`、必要时同步 `operations/*.md` |
 | 用户操作路径变化 | `user-manual/user-guide.md`、`user-manual/README.md` 和截图脚本 |
 | 部署方式变化 | `README.md`、`release/README.md`、`operations/*.md`、`testing/pre-release-testing.md` |

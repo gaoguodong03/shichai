@@ -33,7 +33,7 @@ users
 路径：
 
 ```text
-resources/scenarios/<scenario_id>/scenario.json
+resources/scenarios/<name>/scenario.json
 ```
 
 职责：
@@ -46,7 +46,6 @@ resources/scenarios/<scenario_id>/scenario.json
 
 ```json
 {
-  "id": "scenario-ppt-writing-v1",
   "name": "编写PPT",
   "description": "把用户想法转成PPT大纲、配图并组装PPTX",
   "agent_names": ["PPT引导专家", "图片生成专家"],
@@ -57,7 +56,6 @@ resources/scenarios/<scenario_id>/scenario.json
     "skill_directory": "group-host-ppt-writing",
     "system_prompt": "",
     "llm_name": "",
-    "mcp_server_ids": [],
     "file_capabilities": {
       "read": true,
       "edit": true,
@@ -101,8 +99,8 @@ resources/agents/<agent_name>/agent.json
 
 职责：
 
-- 描述专家角色、系统提示词、默认模型、可用 Skill 和工具。
-- 专家可以引用 Skill、工具和模型，但不复制它们。
+- 描述专家角色、系统提示词、默认模型和可用 Skill。
+- 专家可以引用 Skill 和模型，但不复制它们；工具权限由本轮选中的 Skill frontmatter `allowed-tools` 决定。
 
 建议字段：
 
@@ -115,7 +113,6 @@ resources/agents/<agent_name>/agent.json
     {"name": "PPT大纲生成", "directory_name": "ppt-outline-to-deck"},
     {"name": "PPTX 组装", "directory_name": "pptx-deck-assembler"}
   ],
-  "tool_ids": [],
   "llm_name": "",
   "runtime_params": {
     "temperature": null,
@@ -166,7 +163,7 @@ resources/skills/<directory_name>/
 路径：
 
 ```text
-resources/tools/<tool_id>/tool.json
+resources/tools/<name>/tool.json
 ```
 
 职责：
@@ -178,7 +175,6 @@ resources/tools/<tool_id>/tool.json
 
 ```json
 {
-  "id": "amap-maps",
   "name": "高德地图",
   "type": "mcp",
   "enabled": true,
@@ -196,30 +192,23 @@ resources/tools/<tool_id>/tool.json
 路径：
 
 ```text
-resources/models/<model_provider_id>/model.json
+resources/models/<name>/model.json
 ```
 
 职责：
 
-- 保存模型提供商、base_url、模型名和可配置参数。
+- 保存模型资源名称、base_url、模型名和可配置参数。
 - API key 只保存 `api_key_env` 环境变量名。
 
 示例：
 
 ```json
 {
-  "id": "qwen",
-  "name": "Qwen",
-  "provider": "openai-compatible",
+  "name": "qwen3-max",
   "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "models": [
-    {
-      "id": "qwen-plus",
-      "display_name": "Qwen Plus",
-      "supports_tools": true
-    }
-  ],
+  "model": "qwen3-max",
   "api_key_env": "QWEN_API_KEY",
+  "params": {},
   "version": 1
 }
 ```
@@ -380,9 +369,9 @@ resources/
 导入冲突规则：
 
 - 目标账号导入时不使用导出方 id 判断冲突。
-- 资源身份统一使用名称：场景 `name`、专家 `name`、Skill frontmatter `name`、工具 `name`、模型 `name`。
+- 资源身份统一使用当前契约字段：场景 `name`、专家 `name`、Skill `directory_name`、工具 `name`、模型 `name`。
 - 同名资源表示覆盖本地资源内容。
-- Skill 同名覆盖时保留本地目录名，删除旧目录内容，再写入导入包中同名 Skill 的完整目录。
+- Skill 按 `directory_name` 定位本地目录；导入同名展示名 Skill 时，只能作为导入冲突提示或目录映射依据，不能通过 frontmatter `name` 反查运行时 Skill。
 - 不同名资源按当前命名规则创建新目录并写入。
 - 导入期间可以生成临时 Skill 目录映射，用于把包内 `directory_name` 重写为目标账号本地目录名；该映射不持久化为业务数据。
 - 导入摘要统一使用“新增 x 个，覆盖 x 个，失败 x 个”，不再使用“保留 x 个”。
@@ -401,7 +390,7 @@ rename
 关键资源更新前保留版本：
 
 ```text
-.history/<resource_type>/<resource_id>/<timestamp>.json
+.history/<resource_type>/<resource_key>/<timestamp>.json
 ```
 
 最低要求：

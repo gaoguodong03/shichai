@@ -55,7 +55,7 @@ backend/data/users/{user_id}/
   profile.json
 
   resources/
-    scenarios/{scenario_name}/scenario.json
+    scenarios/{name}/scenario.json
     agents/{agent_name}/agent.json
     skills/{skill_directory}/SKILL.md
     tools/{tool_name}/tool.json
@@ -69,7 +69,6 @@ backend/data/users/{user_id}/
       settings.json
 
   sessions/
-    index.json
     {session_id}/
       session.json
       history.json
@@ -109,8 +108,7 @@ backend/data/users/{user_id}/
 
 | 文件或目录 | 职责 |
 |------------|------|
-| `sessions/index.json` | 当前用户会话列表摘要和排序信息 |
-| `session.json` | 会话定义：标题、场景、参与专家、新建时间、归档状态等 |
+| `sessions/{session_id}/session.json` | 会话定义：标题、主持人、参与专家、新建时间、更新时间等；会话列表通过扫描该文件生成 |
 | `history.json` | 平台消息事实：用户、主持人、专家和 Skill 控制结果；不保存工具 stdout、stderr、调用参数和耗时 |
 | `runtime.json` | UI 恢复所需运行中镜像，只包含前端显示和停止运行需要的字段 |
 | `orchestration_state.json` | 刷新不能丢的短期编排状态，如续跑专家、Skill 策略和主持人调度阶段 |
@@ -150,7 +148,7 @@ backend/data/users/{user_id}/
 |------|----------|------|
 | 认证与账号 | `/api/auth/login`、`/api/auth/register`、`/api/auth/account`、`/api/auth/password` | 登录、注册、账号和密码维护 |
 | 统一会话 | `/api/sessions`、`/api/sessions/{id}`、`/api/sessions/{id}/chat/stream` | 会话 CRUD、流式消息、历史和状态 |
-| 专家资源 | `/api/agents/*`、`/api/dha/instances/*` | 专家 CRUD 和专家包导入导出 |
+| 专家资源 | `/api/agents/*` | 专家 CRUD 和专家包导入导出 |
 | 场景资源 | `/api/settings/session-presets/*` | 场景列表、保存、导入导出 |
 | Skill | `/api/settings/skills/*` | Skill 元信息、`SKILL.md`、文件分区、ZIP 导入导出 |
 | MCP | `/api/settings/mcp/*` | MCP 配置、连接测试、工具列表、工具调用、导入导出 |
@@ -244,7 +242,7 @@ POST /api/sessions/{session_id}/chat/stream
 主要流程：
 
 1. 前端请求会话列表或创建会话。
-2. 后端在当前用户 `sessions/` 下维护 `index.json` 和会话目录。
+2. 后端在当前用户 `sessions/` 下维护会话目录；会话列表通过扫描 `sessions/{session_id}/session.json` 生成，不以 `index.json` 作为列表契约。
 3. 用户发送消息时进入 `/chat/stream`。
 4. 后端读取会话定义、历史、场景和专家资源。
 5. 运行时通过 SSE 返回路由、内容、工具和结束事件。
@@ -330,7 +328,7 @@ POST /api/sessions/{session_id}/chat/stream
 | 资源 | 设计重点 |
 |------|----------|
 | 场景 | 保存主持人配置、协作专家和场景规则，引用专家与 Skill |
-| 专家 | 保存名称、模型、描述、系统提示词、Skill 引用和工具权限 |
+| 专家 | 保存名称、模型、描述、系统提示词和 Skill 引用；工具权限由本轮 Skill `allowed-tools` 决定 |
 | Skill | 目录化保存 `SKILL.md`、脚本、引用资料、资产和模板 |
 | MCP | 保存标准 MCP `server_config`、工具 schema 和环境变量引用 |
 | 模型 | 保存 Base URL、模型名、参数和环境变量名 |
@@ -387,7 +385,7 @@ POST /api/sessions/{session_id}/chat/stream
 
 字段边界：
 
-- 工具定义字段只保留 `name`、`description`、`input_schema`、`source`、`provider`、`provider_tool`。其中 `source` 是主流程分发字段，只允许 `mcp`、`http_api`、`workspace`、`skill_script`；`provider` 和 `provider_tool` 只用于日志、trace 和排障，不参与业务分支。
+- 工具定义字段只保留 `name`、`description`、`input_schema`、`source`、`provider`、`provider_tool`。其中 `source` 是主流程分发字段，只允许 `mcp`、`script`、`workspace`、`api`；`provider` 和 `provider_tool` 只用于日志、trace 和排障，不参与业务分支。
 - LLM 可见字段只允许 `name`、`description`、`input_schema`。`source`、`provider`、`provider_tool`、用户目录、session 绝对路径、环境变量真实值、sandbox id 和本地执行路径都不得暴露给模型。
 - 实现代码必须按本节契约删除旧兜底逻辑，不保留通用 `call_api`、无 manifest 脚本注入、`script_path` / `cli_args` 入口、按工具名前缀猜测执行路径、缺失 `source` 后自动猜测 provider 等兼容分支。
 - `allowed-tools` 只保留 `mcp`、`http_api`、`python`。`workspace` 删除，因为工作区 CRUD 是平台默认能力；`skill_script` 删除，因为脚本能力由当前 Skill 的 `scripts/manifest.json` 决定。
@@ -395,7 +393,7 @@ POST /api/sessions/{session_id}/chat/stream
 - Skill 脚本必须提供 `scripts/manifest.json`。manifest 只写 `entry`、`description`、`args`；平台根据 `args` 自动生成 `input_schema`，并把模型参数转换为 CLI 参数。manifest 不写 `input_schema`、`cli_args` 或 `invocation`。
 - `execution_status` 只允许 `succeeded`、`blocked`、`failed`，不使用 `needs_input` 或 `result_code`。
 - `next_action.agent_turn` 控制当前专家本轮继续行动还是回复用户；`next_action.skill_session` 控制下一条用户消息是否回到同一专家和同一 Skill。二者独立，`continue+keep`、`continue+release`、`respond+keep`、`respond+release` 四种组合都合法。
-- 工具执行日志使用 `source=mcp|skill_script|workspace|http_api`，不设置 `unknown`。`provider` 表示 MCP server、Skill `directory_name`、`workspace` 或保存的 HTTP API 工具名；`provider_tool` 表示 MCP 原始工具、脚本入口、工作区动作或 API 动作名。执行层应尽量记录 `provider` 和 `provider_tool`，便于 trace 与排障；确实无值时省略，不写 `null`，也不得用这两个字段驱动业务分支。
+- 工具执行日志使用 `source=mcp|script|workspace|api`，不设置 `unknown`。`provider` 表示 MCP server、Skill `directory_name`、`workspace` 或保存的 HTTP API 工具名；`provider_tool` 表示 MCP 原始工具、脚本入口、工作区动作或 API 动作名。执行层应尽量记录 `provider` 和 `provider_tool`，便于 trace 与排障；确实无值时省略，不写 `null`，也不得用这两个字段驱动业务分支。
 - `error_log`、stdout、stderr、调用参数、耗时和中间结构化返回属于执行 trace 或运行日志，不进入 `history.json` 的消息核心字段。
 
 关键文件：
@@ -428,7 +426,7 @@ POST /api/sessions/{session_id}/chat/stream
 
 设计目标：
 
-- 用户可以配置 MCP Server，并把工具能力授权给专家和 Skill。
+- 用户可以配置 MCP Server，并把工具能力授权给 Skill `allowed-tools`。
 - 运行时只暴露本轮允许的 MCP 工具。
 - 连接、鉴权、参数和远端错误可诊断。
 
@@ -456,7 +454,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 - MCP Server 连接失败：返回连接失败诊断。
 - 鉴权失败：提示环境变量缺失或远端凭据问题。
 - 工具 schema 不合法：不进入可用工具列表。
-- 未授权 MCP：不暴露给专家工具集合。
+- 未在当前 Skill `allowed-tools.mcp` 声明的 MCP：不进入本轮外部工具集合。
 
 验收测试：
 

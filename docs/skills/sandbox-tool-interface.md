@@ -9,7 +9,7 @@
 - 不确定文件名时，先使用 `list_workspace_directory`；`read_workspace_file` 只读取调用方提供的精确相对路径，不负责遍历工作区猜候选路径。
 - 文件读写和脚本执行都只能访问当前会话工作区边界；模型不需要也不应该感知宿主机绝对路径。
 - 工具返回值是给模型继续推理用的内部结果；最终回复应总结用户关心的结论，不要原样倾倒长 JSON/stdout，除非用户明确要求。
-- LLM 可见工具字段统一为 `name`、`description`、`input_schema`。平台内部用 `source` 分发到 `mcp`、`http_api`、`workspace`、`skill_script` 四类执行路径；`provider` 和 `provider_tool` 只用于日志与 trace，执行层应尽量记录，但不得参与分发或业务分支。
+- LLM 可见工具字段统一为 `name`、`description`、`input_schema`。平台内部用 `source` 分发到 `mcp`、`api`、`workspace`、`script` 四类执行路径；`provider` 和 `provider_tool` 只用于日志与 trace，执行层应尽量记录，但不得参与分发或业务分支。
 - 实现应直接删除旧兜底逻辑，不保留通用 `call_api`、无 manifest 脚本注入、`script_path` / `cli_args` 入口、按工具名前缀猜执行路径、缺失 `source` 后自动猜 provider 等兼容分支。
 
 ## 内置工作区工具

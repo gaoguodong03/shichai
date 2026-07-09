@@ -48,8 +48,8 @@ shichai/
 
 | 文件 | 职责 |
 |------|------|
-| `group_chat.py` | 会话核心实现：主持人调度、`group_chat_stream`、`build_tools_for_group_chat`、流式 SSE、历史/meta 存储；并暴露 `create_session_internal`、`export_session_to_markdown` 等供 `sessions` 复用；另含 `GET /sessions/{id}/archive`。 |
-| `sessions.py` | **统一会话 API**：`GET/POST /sessions`、`GET/PUT/DELETE /sessions/{id}`、`POST /sessions/{id}/chat/stream`、`POST /sessions/{id}/export`；与 group_chat 共用存储，新对话即「仅主持人」会话。 |
+| `group_chat.py` | 旧 group chat 路由壳，只保留会话归档辅助接口；聊天主链路不在这里实现。 |
+| `sessions.py` | **统一会话 API**：`GET/POST /sessions`、`GET/PUT/DELETE /sessions/{id}`、`POST /sessions/{id}/chat/stream`、停止运行和导出入口；聊天流转交 `agent/group_chat_runtime.py`。 |
 | `settings_skills.py` | Skill 配置与导入导出主路由。 |
 | `settings_skill_store.py` / `settings_skill_parts.py` | Skill 文件读写、分片资源管理。 |
 | `settings_mcp.py` | MCP Server 配置、工具列表、测试调用与导入导出。 |
@@ -68,8 +68,13 @@ shichai/
 | `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
 | `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, session_id)`，按当前 Skill 的 `allowed-tools.mcp` / `allowed-tools.http_api` 注入外部工具，默认注入工作区 CRUD，并按 `scripts/manifest.json` 注入当前 Skill 脚本工具。 |
 | `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
+| `group_chat_runtime.py` | 群聊一轮请求的总编排入口，串联路由、主持人、专家、工具、历史和 SSE。 |
+| `group_orchestration_fsm.py` | 会话入口路由优先级和短期续跑状态解析。 |
+| `group_host_decision.py` | 主持人严格 JSON 输出解析、校验和保护决策。 |
+| `group_chat_prompt_builder.py` | 群聊运行 Prompt 块组装。 |
+| `group_chat_streaming.py` | SSE 事件构造和流式输出辅助。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |
-| `leader_scheduler.py` | 群聊主持人调度。 |
+| `leader_scheduler.py` | 历史命名文件；新代码不应继续扩展 leader 术语，主持人调度以 `host` 契约和 `group_host_decision.py` 为准。 |
 | `orchestrator_state.py` | 编排状态、阶段与中断原因定义。 |
 
 ### `core/`
@@ -92,7 +97,7 @@ shichai/
 
 | 文件 | 职责 |
 |------|------|
-| `loader.py` | 扫描用户 `skills_dir`、读取 SKILL.md；业务用 `get_skills_loader_for_user`；`get_skills_loader()` 仅兼容无用户上下文场景。 |
+| `loader.py` | 扫描用户 `skills_dir`、读取 SKILL.md；业务入口必须使用 `get_skills_loader_for_user` 并显式传入用户上下文。 |
 
 ### `tools/`
 
@@ -102,7 +107,7 @@ shichai/
 | `run_skill_script.py` | `create_run_skill_script_tool(directory_name)` → `run_skill_script`。 |
 | `call_api.py` | 保存型 HTTP API 的内部执行器；通用 `call_api` 不作为 LLM 可见工具注入。 |
 | `filesystem_session_wrapper.py` | `wrap_filesystem_tools(tools, session_id)`，按会话限定工作区路径。 |
-| `read_file.py` | 遗留读文件工具（已由 MCP file-reader/filesystem 替代，若仍存在则仅兼容）。 |
+| `read_file.py` | 历史读文件工具说明；主路径使用 MCP file-reader/filesystem 或工作区文件工具，不作为新能力入口。 |
 | `write_workspace_file.py` | 写工作区文件（若被其他模块使用）。 |
 
 当前项目**未使用**独立 `models/`、`storage/`、`utils/` 目录；数据与持久化分散在 api/skills/core 及本地文件（如 `backend/data/users/{user_id}/sessions`）。
@@ -139,6 +144,7 @@ shichai/
 | `docs/release/` | 发版、提测、部署和验收统一入口 |
 | `docs/user-manual/` | 用户说明、上线验收手册、截图和 PDF |
 | `docs/skills/` | Skill、脚本路径、沙箱工具接口规范 |
+| `docs/development/` | 代码书写规范、模块拆分边界和 AI 编程约束 |
 | `docs/operations/` | 部署和运行约束 |
 
 ## 命名与组织原则
@@ -153,6 +159,8 @@ shichai/
 - [数据结构与字段逻辑](../contracts/data-structure-and-field-logic.md)：资源身份、用户目录、会话文件和落盘字段。
 - [详细设计说明书](../design/detailed-design-spec.md)：模块职责、处理流程、异常处理和测试映射。
 - [接口文档](../design/interface-document.md)：对外 API 说明。
+- [代码书写规范](../development/coding-standard.md)：契约优先、删除旧兜底和测试要求。
+- [模块与文件拆分边界](../development/module-file-boundaries.md)：后端、前端和测试的文件职责边界。
 - [镜像与依赖边界](images-and-dependencies.md)：主应用、OpenSandbox、技能沙箱与用户依赖的职责划分。
 - [需求说明与验收测试](../requirements/acceptance-and-tests.md)：产品需求、模块验收点与回归测试建议。
 - [发布入口](../release/README.md)：发版、提测、部署和验收的阅读顺序。

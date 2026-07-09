@@ -160,8 +160,8 @@ await shot('workspace-overview.png', [
   { label: 4, selector: 'textarea, [contenteditable="true"]' },
 ])
 await shot('workspace-message-reply.png', [
-  { label: 1, selector: 'text=@问答验收专家' },
-  { label: 2, selector: 'text=当前会话已绑定问答验收专家' },
+  { label: 1, selector: 'text=当前会话已绑定问答验收专家' },
+  { label: 2, selector: 'text=问答验收专家' },
   { label: 3, selector: 'textarea, [contenteditable="true"]' },
   { label: 4, selector: 'button:has-text("发送")' },
 ])

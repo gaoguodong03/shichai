@@ -85,7 +85,7 @@ st49-resource-bundle.zip
 |------|----------|----------|
 | 场景 | `scenario.json.name` | `resources/scenarios/<scenario-dir>/` 只是落盘目录 |
 | 专家 | `agent.json.name` | `resources/agents/<agent-dir>/` 只是落盘目录 |
-| Skill | `SKILL.md` frontmatter `name` | `resources/skills/<skill-directory>/` 是本地执行路径 |
+| Skill | `directory_name` | `resources/skills/<skill-directory>/` 是本地执行路径，frontmatter `name` 只做展示和导入同名判断 |
 | 工具 | `tool.json.name` | `resources/tools/<tool-dir>/` 只是落盘目录 |
 | 模型 | `model.json.name` | `resources/models/<model-dir>/` 只是落盘目录 |
 
@@ -101,7 +101,7 @@ st49-resource-bundle.zip
 - `scenario_id`
 - `*_ids`
 
-目录名不是业务身份。Skill 的 `directory_name` 是执行路径字段，导入时必须根据目标账号本地目录重写引用。
+Skill 的 `directory_name` 是查找、引用和执行路径字段。导入时如果发生同名覆盖或目录冲突，必须根据目标账号本地目录重写引用。
 
 ## 4. 导出规则
 
@@ -182,7 +182,7 @@ Skill 同名覆盖时必须保留目标账号的本地目录名，原因是本�
 
 - 专家 `skills[].directory_name`
 - 场景主持人配置中的 Skill 引用
-- Skill frontmatter 中引用其他 Skill 或工具时涉及的本地目录字段
+- Skill frontmatter 中引用其他 Skill 时涉及的 `directory_name` 字段
 
 ## 7. 环境变量边界
 

@@ -37,7 +37,7 @@
 | 标题生成模板 | 平台代码仓库 | 是 |
 | 展示重写模板 | 平台代码仓库 | 是 |
 | 系统提示词 | 设置页，平台级配置 | 否，运行时作为 `system_prompt` 注入 |
-| 会话提示词 | 场景创建会话时带入 | 否，运行时作为 `session_prompt` 注入 |
+| 场景初始化提示材料 | 场景资源 `system_prompt` | 否，不作为会话定义字段；是否进入运行时由创建会话逻辑显式决定 |
 | 主持人或专家提示词 | Agent 配置字段 | 否，运行时作为 `agent_prompt` 注入 |
 | Skill 正文 | `SKILL.md` | 否，运行时进入对应 Skill 调用 |
 
@@ -48,7 +48,7 @@
 | Prompt 块 | 含义 | 来源 | 进入 LLM 规则 |
 |-----------|------|------|----------------|
 | `system_prompt` | 整个平台级别的提示词 | 设置页中的书童四九平台提示词 | 需要平台级规则的调用进入 |
-| `session_prompt` | 当前 session 的提示词 | 场景配置字段；自由招募会话为空 | 场景会话进入，自由招募会话不进入 |
+| `scenario_prompt` | 场景初始化提示材料 | 场景资源 `system_prompt`；不保存为会话定义字段 | 只有创建逻辑明确带入时进入 |
 | `memory_prompt` | 会话记忆、事实和文件索引摘要 | 平台运行时生成 | 只进入摘要或索引，不进入调试信息 |
 | `agent_prompt` | 当前主持人或专家的提示词 | 主持人或专家配置字段 | 当前调用者为主持人或专家时进入 |
 | `host_select_agent_prompt` | 主持人选择专家的调用模板 | 平台内置模板 | 仅主持人选择专家时进入 |
@@ -66,7 +66,7 @@
 
 ```text
 system_prompt
-session_prompt
+scenario_prompt
 memory_prompt
 agent_prompt
 host_select_agent_prompt
@@ -81,7 +81,7 @@ user_prompt
 
 ```text
 system_prompt
-session_prompt
+scenario_prompt
 memory_prompt
 agent_prompt
 expert_select_skill_prompt
@@ -96,7 +96,7 @@ user_prompt
 
 ```text
 system_prompt
-session_prompt
+scenario_prompt
 memory_prompt
 agent_prompt
 skill_execution_prompt
@@ -116,14 +116,14 @@ title_generation_prompt
 recent_user_text
 ```
 
-这类调用也必须使用平台内置模板文件中的 `prompt_id`，但不强制注入 `system_prompt`、`session_prompt`、`memory_prompt` 或 `agent_prompt`。
+这类调用也必须使用平台内置模板文件中的 `prompt_id`，但不强制注入 `system_prompt`、`scenario_prompt`、`memory_prompt` 或 `agent_prompt`。
 
 ## 6. Prompt 组装顺序
 
 完整任务型 LLM 调用使用以下顺序：
 
 1. `system_prompt`
-2. `session_prompt`
+2. `scenario_prompt`
 3. `memory_prompt`
 4. `agent_prompt`
 5. 当前调用专属 Prompt：`host_select_agent_prompt`、`expert_select_skill_prompt` 或 `skill_execution_prompt`

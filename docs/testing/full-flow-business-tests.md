@@ -67,16 +67,16 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 | --- | --- | --- |
 | 登录与账号 | 注册、登录、多用户隔离、修改账号、修改密码、非法账号拦截 | `tests/test_auth_sqlite.py`、`frontend/e2e/auth.spec.ts`、`frontend/e2e/settings.spec.ts` |
 | 工作空间会话 | 新建会话、列表、详情、改名/更新、停止、删除、缺失会话 404 | `tests/test_sessions_api.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/workspace.spec.ts` |
-| 对话流 | 在会话中发出问题并检查回答、非流式兜底、SSE 事件协议、route/content/message/end、停止/中断状态 | `tests/test_frontend_business_flows.py`、`tests/test_group_chat_stream_protocol.py`、`tests/test_group_chat_skill_script_cli_flow.py`、`tests/test_host_takeover.py`、`frontend/e2e/workspace.spec.ts` |
+| 对话流 | 在会话中发出问题并检查回答、非流式接口响应、SSE 事件协议、route/progress/message/end/error、停止/中断状态 | `tests/test_frontend_business_flows.py`、`tests/test_group_chat_stream_protocol.py`、`tests/test_group_chat_skill_script_cli_flow.py`、`tests/test_host_takeover.py`、`frontend/e2e/workspace.spec.ts` |
 | 工作区文件 | 新建目录、新建文件、读取内容、更新内容、上传、下载、重命名/移动、删除、路径穿越防护 | `tests/test_workspace_files.py`、`tests/test_file_ref_and_gateway.py`、`tests/test_frontend_business_flows.py` |
-| 文件引用 | `【文件引用：...】` 展开、路径提取、URL/远程路径替换为真实工作区文件 | `tests/test_file_ref_and_gateway.py` |
+| 文件引用 | `attachments[]` 工作区文件引用校验、路径保护、URL/远程路径替换为真实工作区文件 | `tests/test_file_ref_and_gateway.py` |
 | 资源中心-场景 | 场景列表、保存、导出包、上传导入、导入冲突、同名覆盖 | `tests/test_scenario_bundle.py`、`tests/test_session_preset_validate.py`、`tests/test_bundle_import_api.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
-| 资源中心-专家 | Agent/Expert 新建、列表、更新、删除、别名路由、导入校验、导出包逻辑 | `tests/test_agents_api.py`、`tests/test_agent_import_validate.py`、`tests/test_expert_bundle.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
-| 资源中心-Skill | Skill 新建、编辑名称/描述/正文、`auto-tools`/依赖解析、内容读取、parts 文件增删改查、ZIP 导入导出基础链路 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_group_chat_skill_script_cli_flow.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
-| Skill 脚本执行 | CLI-only 参数、`.py`/`.sh`/`.bash` 命令构造、沙箱路径、requirements 注入、工具成功后自然语言合成链路 | `tests/test_file_ref_and_gateway.py`、`tests/test_sandbox_service.py`、`tests/test_group_chat_skill_script_cli_flow.py` |
+| 资源中心-专家 | Agent/Expert 新建、列表、更新、删除、`target_agent_name` 路由、导入校验、导出包逻辑 | `tests/test_agents_api.py`、`tests/test_agent_import_validate.py`、`tests/test_expert_bundle.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
+| 资源中心-Skill | Skill 新建、编辑名称/描述/正文、`allowed-tools`/依赖解析、内容读取、parts 文件增删改查、ZIP 导入导出基础链路 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_group_chat_skill_script_cli_flow.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
+| Skill 脚本执行 | manifest `args` 结构化参数、`.py`/`.sh`/`.bash` 命令构造、沙箱路径、requirements 注入、工具成功后自然语言合成链路 | `tests/test_file_ref_and_gateway.py`、`tests/test_sandbox_service.py`、`tests/test_group_chat_skill_script_cli_flow.py` |
 | 资源中心-MCP | MCP 新建、启用、禁用、更新、删除、工具参数归一、沙箱调用入口 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_file_ref_and_gateway.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
-| 资源中心-LLM | Provider 配置白名单、模型参数、thinking/tool choice 兼容、默认 LLM 保存 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
-| 设置-主持人/应用 | 主持人 profile、默认 provider、LLM provider 保存与敏感字段隐藏 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
+| 资源中心-LLM | 模型配置白名单、模型参数、thinking/tool choice 兼容、默认模型保存 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
+| 设置-主持人/应用 | 主持人 profile、默认模型、模型配置保存与敏感字段隐藏 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-环境变量 | 环境变量新增、列表隐藏真实值、更新、删除 | `tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-沙箱 | 镜像 variant 保存、requirements 保存/merge、用户级沙箱复用/重建、网络策略、预热去重 | `tests/test_sandbox_service.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 编排与场景运行时 | 场景 runtime、专家 runtime、主持人接管、轮次状态机、need-user-input 合约 | `tests/test_scene_runtime.py`、`tests/test_expert_runtime.py`、`tests/test_group_orchestration_fsm.py`、`tests/test_orchestration_contracts.py` |

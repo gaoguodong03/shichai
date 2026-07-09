@@ -209,12 +209,8 @@ Content-Type: application/json
 {
   "title": "新对话",
   "agent_names": ["写作专家"],
-  "system_prompt": "",
-  "scenario_name": "场景名称",
-  "orchestration_profile": "scene",
-  "leader_agent_name": "四九",
-  "host_config": {
-    "leader_agent_name": "四九",
+  "host": {
+    "name": "四九",
     "llm_name": "qwen3-max",
     "system_prompt": "主持人提示词",
     "skill_name": "主持人 Skill",
@@ -229,11 +225,12 @@ Content-Type: application/json
 |------|------|------|------|
 | `title` | string | 否 | 会话标题，默认“新对话” |
 | `agent_names` | string[] | 否 | 参与专家名称列表 |
-| `system_prompt` | string | 否 | 会话额外系统提示 |
-| `scenario_name` | string | 否 | 场景名称引用 |
-| `orchestration_profile` | string | 否 | 编排模式，如 `scene` |
-| `leader_agent_name` | string | 否 | 主持人显示名 |
-| `host_config` | object | 否 | 场景或会话主持人配置 |
+| `host` | object | 否 | 会话级主持人快照；上层对象固定为 `host` |
+| `host.name` | string | 否 | 主持人显示名 |
+| `host.llm_name` | string | 否 | 主持人使用的模型名称 |
+| `host.system_prompt` | string | 否 | 主持人调度提示词，只影响主持人 |
+| `host.skill_name` | string | 否 | 主持人 Skill 展示名快照，不作为加载主键 |
+| `host.skill_directory` | string | 否 | 主持人 Skill 目录名，引用 Skill `directory_name` |
 
 ### 5.3 会话详情
 
@@ -744,7 +741,7 @@ Content-Type: multipart/form-data
 
 ```json
 {
-  "leader_agent_name": "四九",
+  "name": "四九",
   "system_prompt": "主持人提示词",
   "llm_name": "qwen3-max",
   "skill_name": "主持人 Skill",
@@ -852,7 +849,7 @@ GET /
 | 用户隔离 | 所有受保护接口必须基于当前用户上下文读写 |
 | 环境变量脱敏 | 前端接口不得返回完整变量值 |
 | 路径安全 | 工作区文件路径必须归一化并拒绝 `../` |
-| 工具授权 | 专家工具集合由专家配置和当前 Skill 声明收敛 |
+| 工具授权 | 外部工具集合由当前 Skill `allowed-tools` 收敛；专家不直接保存工具权限 |
 | 导入导出安全 | ZIP 包不携带账号凭据和环境变量真实值 |
 | 运行态可见 | 工具失败、等待用户、沙箱异常必须通过事件或响应返回 |
 

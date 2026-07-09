@@ -83,7 +83,7 @@
 |--------|------|----------------|
 | `st49_skill_script_execute_start` | Skill 脚本开始进入统一网关 | `user_id`、`directory_name`、`session_id`、`requirements_hash`、`requirements_present` |
 | `st49_skill_env_passthrough` | Skill 执行前透传到沙箱的环境变量检查 | `present_keys`、`missing_keys`，音频转写重点看 `QWEN_AUDIO_API_KEY` |
-| `st49_sandbox_command_env_injected` | SandboxService 兜底把用户 requirements 注入脚本环境 | `user_id`、`tool_name`、`requirements_hash` |
+| `st49_sandbox_command_env_injected` | SandboxService 将本轮用户 requirements 注入脚本环境 | `user_id`、`tool_name`、`requirements_hash` |
 | `st49_sandbox_requirements_loaded` | 后端读到了该用户的 `requirements.txt` | `user_id`、`path`、`bytes`、`non_comment_lines` |
 | `st49_sandbox_requirements_check` | 沙箱执行前检查依赖 hash | `dep_hash`、`installed_hash`、`verified_hash`、`sandbox_id`、`image_ref` |
 | `st49_sandbox_requirements_install_start` | 开始在用户沙箱内 pip install | `user_id`、`dep_hash`、`sandbox_id`、`timeout_ms` |

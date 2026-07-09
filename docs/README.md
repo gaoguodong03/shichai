@@ -13,6 +13,7 @@
 | `testing/` | 测试用例、回归测试、上线前测试、全流程业务测试 | [test-case-catalog.md](testing/test-case-catalog.md)、[layer1-regression.md](testing/layer1-regression.md)、[pre-release-testing.md](testing/pre-release-testing.md)、[full-flow-business-tests.md](testing/full-flow-business-tests.md) |
 | `user-manual/` | 面向用户和验收人员的操作手册、截图、PDF | [user-guide.md](user-manual/user-guide.md)、[README.md](user-manual/README.md) |
 | `skills/` | Skill 规范、主持人 Skill、脚本路径、沙箱工具接口 | [skill-standard.md](skills/skill-standard.md)、[host-skill.md](skills/host-skill.md)、[skill-script-paths.md](skills/skill-script-paths.md)、[sandbox-tool-interface.md](skills/sandbox-tool-interface.md) |
+| `development/` | 面向开发者和 AI 编程代理的代码书写规范、模块拆分边界 | [coding-standard.md](development/coding-standard.md)、[module-file-boundaries.md](development/module-file-boundaries.md) |
 | `operations/` | 部署、运行、沙箱和运维约束 | [single-user-single-sandbox.md](operations/single-user-single-sandbox.md) |
 | `release/` | 发版、提测、部署和验收的统一入口 | [README.md](release/README.md) |
 
@@ -23,9 +24,10 @@
 3. 设计和接口：读 [design/detailed-design-spec.md](design/detailed-design-spec.md) 和 [design/interface-document.md](design/interface-document.md)。
 4. 架构和代码入口：读 [architecture/system-architecture.md](architecture/system-architecture.md) 和 [architecture/project-structure.md](architecture/project-structure.md)。
 5. 开发验证：读 [testing/test-case-catalog.md](testing/test-case-catalog.md)、[testing/layer1-regression.md](testing/layer1-regression.md) 和 [testing/pre-release-testing.md](testing/pre-release-testing.md)。
-6. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/host-skill.md](skills/host-skill.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)。
-7. 发布和上线验收：先读 [release/README.md](release/README.md)，再按范围进入 [testing/pre-release-testing.md](testing/pre-release-testing.md)、[operations/single-user-single-sandbox.md](operations/single-user-single-sandbox.md) 和 [user-manual/README.md](user-manual/README.md)。
-8. 用户操作：读 [user-manual/user-guide.md](user-manual/user-guide.md)。
+6. 代码书写和拆分：读 [development/coding-standard.md](development/coding-standard.md) 和 [development/module-file-boundaries.md](development/module-file-boundaries.md)。
+7. Skill 和工具扩展：读 [skills/skill-standard.md](skills/skill-standard.md)、[skills/host-skill.md](skills/host-skill.md)、[skills/skill-script-paths.md](skills/skill-script-paths.md)。
+8. 发布和上线验收：先读 [release/README.md](release/README.md)，再按范围进入 [testing/pre-release-testing.md](testing/pre-release-testing.md)、[operations/single-user-single-sandbox.md](operations/single-user-single-sandbox.md) 和 [user-manual/README.md](user-manual/README.md)。
+9. 用户操作：读 [user-manual/user-guide.md](user-manual/user-guide.md)。
 
 ## 维护规则
 
@@ -35,4 +37,5 @@
 - 字段、接口、运行逻辑、平台内用户级环境变量或平台内置 Prompt 组装变更先更新 `contracts/`，再同步 `design/`、测试和用户手册。
 - 架构变更必须同步 `architecture/project-structure.md` 或对应架构专题文档。
 - 新增测试或调整回归范围必须同步 `testing/layer1-regression.md` 和 `testing/pre-release-testing.md`。
+- 代码组织、模块边界、AI 编程约束或重写策略变化，必须同步 `development/`。
 - 发版、提测、部署或验收路径变化，必须同步 `release/README.md`。

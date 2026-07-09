@@ -30,15 +30,15 @@
 | TC-UR02-04 | UR-02 | API | 已有会话 | 删除会话后继续发消息 | 列表不再显示，后续发送被拒绝 | `backend/tests/test_sessions_api.py` |
 | TC-UR03-01 | UR-03 | API | 普通会话无专家 | 用户提出复杂任务 | 主持人推荐可邀请专家 | `backend/tests/test_group_host_decision.py` |
 | TC-UR03-02 | UR-03 | API | 场景会话有固定专家 | 用户发起场景任务 | 调度只使用场景内专家 | `backend/tests/test_scene_scheduler.py` |
-| TC-UR03-03 | UR-03 | API/E2E | 会话有多个专家 | 用户 `@专家` 发消息 | 被点名专家优先响应 | `backend/tests/test_host_takeover.py`、`frontend/e2e/workspace.spec.ts` |
+| TC-UR03-03 | UR-03 | API/E2E | 会话有多个专家 | 用户通过 `target_agent_name` 指定专家 | 被指定专家优先响应 | `backend/tests/test_host_takeover.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR03-04 | UR-03 | API | 专家需要补充字段 | 专家返回补充请求 | 会话进入等待用户状态 | `backend/tests/test_group_orchestration_fsm.py` |
 | TC-UR04-01 | UR-04 | API/E2E | 已登录 | 新建、编辑、删除专家 | 列表和详情同步更新 | `backend/tests/test_agents_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | TC-UR04-02 | UR-04 | E2E | 已登录 | 编辑 Skill 的 `SKILL.md` 和脚本 | 保存后详情页展示最新内容 | `frontend/e2e/resources-skill-mcp-llm.spec.ts` |
-| TC-UR04-03 | UR-04 | API/E2E | 已登录 | 新增 MCP 和模型配置 | 资源中心展示配置，专家可引用授权项 | `backend/tests/test_llm_config.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
+| TC-UR04-03 | UR-04 | API/E2E | 已登录 | 新增 MCP 和模型配置 | 资源中心展示配置，Skill 可通过 `allowed-tools` 引用工具 | `backend/tests/test_llm_config.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | TC-UR05-01 | UR-05 | API | 专家绑定 Skill | 用户请求触发 Skill | runtime 选择对应 Skill 并组装工具 | `backend/tests/test_skill_agent_tool_resolution.py` |
 | TC-UR05-02 | UR-05 | API | Skill 声明脚本 | 执行脚本工具 | 输出、错误、超时能回传会话 | `backend/tests/test_group_chat_skill_script_cli_flow.py` |
 | TC-UR05-03 | UR-05 | API | Skill 依赖缺失 | 触发需要依赖的脚本 | 返回 requirements 或沙箱版本诊断 | `backend/tests/test_skill_mcp_and_script_requirements.py` |
-| TC-UR06-01 | UR-06 | API | 专家未授权某 MCP | 询问需要该 MCP 的任务 | 未授权工具不进入工具列表 | `backend/tests/test_skill_agent_tool_resolution.py` |
+| TC-UR06-01 | UR-06 | API | 当前 Skill 未声明某 MCP | 询问需要该 MCP 的任务 | 未声明工具不进入本轮工具列表 | `backend/tests/test_skill_agent_tool_resolution.py` |
 | TC-UR06-02 | UR-06 | API | MCP 配置错误 | 调用 MCP 工具 | 返回连接、鉴权或参数维度错误 | `backend/tests/test_file_ref_and_gateway.py` |
 | TC-UR06-03 | UR-06 | E2E | 配置远程 MCP 环境变量 | 查看配置详情 | 前端不展示完整变量值 | `frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | TC-UR07-01 | UR-07 | API | 已登录 | 保存普通版或 Playwright 版沙箱 | 新会话读取对应沙箱版本 | `backend/tests/test_sandbox_service.py` |
@@ -47,7 +47,7 @@
 | TC-UR08-01 | UR-08 | API/E2E | 工作区已有文件 | 上传、预览、编辑、保存、下载 | 内容正确，操作后列表刷新 | `backend/tests/test_workspace_files.py`、`frontend/e2e/workspace.spec.ts` |
 | TC-UR08-02 | UR-08 | API | 恶意路径 `../` | 请求读取工作区外文件 | 返回拒绝，不泄露路径内容 | `backend/tests/test_file_ref_and_gateway.py` |
 | TC-UR08-03 | UR-08 | API | 专家生成文件 | 工具写入当前工作区 | 新文件出现在对应会话文件列表 | `backend/tests/test_sandbox_workspace_fs.py` |
-| TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名覆盖和本地 id 重映射项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
+| TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名覆盖和 `name` / `directory_name` 引用重写项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | TC-UR09-02 | UR-09 | API | ZIP 结构错误 | 上传导入 | 返回明确结构错误 | `backend/tests/test_scenario_bundle.py` |
 | TC-UR09-03 | UR-09 | API | 专家资源包 | 导入专家包 | 专家、Skill 和工具引用按规则落库 | `backend/tests/test_expert_bundle.py` |
 | TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型、环境变量和默认主持人 | 新会话可引用最新配置，设置响应和前端均不泄露完整变量值 | `backend/tests/test_llm_config.py`、`backend/tests/test_sessions_api.py`、`backend/tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
