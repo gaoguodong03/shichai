@@ -254,7 +254,7 @@ announcement = "主持人输出格式错误，请重试或联系管理员。"
 3. 构造专家输入：讨论目标、本轮用户输入、最近讨论、路由决策 `next_action`。
 4. `agent.astream(...)` 进入 `SimpleAgent` 工具循环。
 5. 收集模型文本和工具调用；工具 stdout、stderr、退出码和耗时写入执行 trace 或运行日志。
-6. 用 `resolve_skill_session_state()` 解析 Skill 是否 `keep` / `release`。
+6. 从脚本 stdout 或专家隐藏状态块解析标准 `next_action`，沉淀为消息级 `skill_result.next_action`。
 7. 写入专家消息、历史、记忆。
 8. 根据 `skill_result.next_action`、hook、soft stop 和 Skill 状态决定 `end` 或交回主持人。
 

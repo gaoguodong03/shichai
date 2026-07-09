@@ -1,3 +1,5 @@
+import json
+
 from app.agent.group_chat_skill_session import (
     apply_skill_result_to_orchestration_state,
     skill_result_from_content,
@@ -22,6 +24,59 @@ def test_skill_result_uses_script_stdout_next_action_from_tool_results():
     )
 
     assert result["next_action"] == {"agent_turn": "respond", "skill_session": "keep"}
+
+
+def test_skill_result_uses_hidden_state_block_and_strips_visible_content():
+    hidden_payload = {
+        "execution_status": "blocked",
+        "content": "缺少继续处理所需的信息。",
+        "artifacts": [],
+        "next_action": {"agent_turn": "respond", "skill_session": "keep"},
+    }
+
+    result = skill_result_from_content(
+        status="succeeded",
+        content="请补充目标受众。\n\n[[SKILL_SESSION_STATE]]\n"
+        + json.dumps(hidden_payload, ensure_ascii=False)
+        + "\n[[/SKILL_SESSION_STATE]]",
+        artifacts=[],
+        tool_results=[],
+    )
+
+    assert result["execution_status"] == "blocked"
+    assert result["content"] == "请补充目标受众。"
+    assert result["next_action"] == {"agent_turn": "respond", "skill_session": "keep"}
+
+
+def test_conflicting_script_stdout_and_hidden_state_block_fails_protocol():
+    hidden_payload = {
+        "execution_status": "succeeded",
+        "content": "交回主持人。",
+        "artifacts": [],
+        "next_action": {"agent_turn": "respond", "skill_session": "release"},
+    }
+
+    result = skill_result_from_content(
+        status="succeeded",
+        content="脚本已完成。\n\n[[SKILL_SESSION_STATE]]\n"
+        + json.dumps(hidden_payload, ensure_ascii=False)
+        + "\n[[/SKILL_SESSION_STATE]]",
+        artifacts=[],
+        tool_results=[
+            {
+                "tool_call": {"id": "call-1", "name": "run_skill_script", "kind": "script"},
+                "execution_status": "succeeded",
+                "message": "脚本完成",
+                "output": {
+                    "stdout": '{"execution_status":"succeeded","content":"继续处理。","artifacts":[],"next_action":{"agent_turn":"continue","skill_session":"keep"}}',
+                },
+            }
+        ],
+    )
+
+    assert result["execution_status"] == "failed"
+    assert "互相冲突" in result["content"]
+    assert result["next_action"] == {"agent_turn": "respond", "skill_session": "release"}
 
 
 def test_invalid_script_stdout_becomes_failed_skill_result():

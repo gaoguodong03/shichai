@@ -8,6 +8,7 @@ extract strict Skill stdout payloads; routing state is derived from
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -17,6 +18,12 @@ from app.agent.structured_output_contracts import SkillScriptStdoutPayload
 
 _DEFAULT_NEXT_ACTION = {"agent_turn": "respond", "skill_session": "release"}
 _GENERIC_EMPTY_CONTENT = {"", "模型没有返回可展示的文字内容。", "无可展示内容。"}
+_HIDDEN_STATE_START = "[[SKILL_SESSION_STATE]]"
+_HIDDEN_STATE_END = "[[/SKILL_SESSION_STATE]]"
+_HIDDEN_STATE_TAIL_RE = re.compile(
+    r"\s*\[\[SKILL_SESSION_STATE\]\]\s*(?P<body>\{.*\})\s*\[\[/SKILL_SESSION_STATE\]\]\s*\Z",
+    re.S,
+)
 
 
 def _json_object(value: Any) -> dict[str, Any] | None:
@@ -58,21 +65,40 @@ def _script_stdout_payload_from_result(result: dict[str, Any]) -> tuple[SkillScr
     return None, ""
 
 
-def _next_action_from_tool_results(tool_results: list[dict[str, Any]] | None) -> tuple[dict[str, str], str]:
-    next_action = dict(_DEFAULT_NEXT_ACTION)
-    protocol_error = ""
+def _script_payload_from_tool_results(tool_results: list[dict[str, Any]] | None) -> tuple[SkillScriptStdoutPayload | None, str]:
+    payload: SkillScriptStdoutPayload | None = None
     for result in tool_results or []:
         if not isinstance(result, dict):
             continue
         tool_call = result.get("tool_call") if isinstance(result.get("tool_call"), dict) else {}
         if str(tool_call.get("kind") or "").strip() != "script":
             continue
-        payload, error = _script_stdout_payload_from_result(result)
-        if payload is not None:
-            next_action = payload.next_action.model_dump()
-        elif error and not protocol_error:
-            protocol_error = error
-    return next_action, protocol_error
+        parsed, error = _script_stdout_payload_from_result(result)
+        if parsed is not None:
+            if payload is not None and parsed.model_dump() != payload.model_dump():
+                return None, "同一轮出现多个互相冲突的 Skill 流程控制信号。"
+            payload = parsed
+        elif error:
+            return None, error
+    return payload, ""
+
+
+def _hidden_state_payload_from_content(content: str) -> tuple[str, SkillScriptStdoutPayload | None, str]:
+    text = str(content or "")
+    if _HIDDEN_STATE_START not in text and _HIDDEN_STATE_END not in text:
+        return text, None, ""
+    match = _HIDDEN_STATE_TAIL_RE.search(text)
+    if not match:
+        return text, None, "专家隐藏状态块不符合平台协议：必须直接追加到正文末尾并包含合法 JSON 对象。"
+    visible = text[: match.start()].strip()
+    payload = _strict_skill_stdout_payload(match.group("body"))
+    if payload is None:
+        return visible, None, "专家隐藏状态块不符合平台协议：缺少 next_action 或字段结构非法。"
+    return visible, payload, ""
+
+
+def _flow_payloads_conflict(first: SkillScriptStdoutPayload, second: SkillScriptStdoutPayload) -> bool:
+    return first.model_dump() != second.model_dump()
 
 
 def skill_result_from_content(
@@ -84,9 +110,18 @@ def skill_result_from_content(
 ) -> dict[str, Any]:
     """Build the canonical skill_result payload for an expert message."""
     normalized = status if status in {"succeeded", "blocked", "failed"} else "failed"
-    next_action, protocol_error = _next_action_from_tool_results(tool_results)
+    visible_content, hidden_payload, hidden_error = _hidden_state_payload_from_content(content)
+    script_payload, script_error = _script_payload_from_tool_results(tool_results)
+    protocol_error = script_error or hidden_error
+    flow_payload = hidden_payload or script_payload
+    if not protocol_error and hidden_payload is not None and script_payload is not None and _flow_payloads_conflict(hidden_payload, script_payload):
+        protocol_error = "同一轮出现互相冲突的 Skill 流程控制信号。"
+        flow_payload = None
+    if flow_payload is not None:
+        normalized = flow_payload.execution_status
+    next_action = flow_payload.next_action.model_dump() if flow_payload is not None else dict(_DEFAULT_NEXT_ACTION)
     problem_content = problem_tool_result_content(tool_results)
-    display_content = content or "无可展示内容。"
+    display_content = visible_content or (flow_payload.content if flow_payload is not None else "") or "无可展示内容。"
     if protocol_error:
         normalized = "failed"
         display_content = protocol_error
