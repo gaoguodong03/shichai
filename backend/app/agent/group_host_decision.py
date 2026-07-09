@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from app.agent.runtime_status import RuntimePhase
 from app.agent.structured_output_contracts import (
     HostSchedulerDecisionPayload,
     StructuredOutputProtocolError,
@@ -26,9 +25,6 @@ def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, An
         "current_phase": "",
         "next_action": HOST_PROTOCOL_ERROR_MESSAGE,
         "suggested_add_agent_names": [],
-        "phase": RuntimePhase.AWAITING_USER.value,
-        "decision_source": "system_guard",
-        "protocol_error": reason,
     }
 
 
@@ -63,8 +59,6 @@ def _strict_host_decision_from_payload(
             "current_phase": payload.current_phase,
             "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
-            "phase": None,
-            "decision_source": "host_scheduler_state",
         }
     if next_key == "user":
         return {
@@ -72,8 +66,6 @@ def _strict_host_decision_from_payload(
             "current_phase": payload.current_phase,
             "next_action": payload.next_action,
             "suggested_add_agent_names": suggested or None,
-            "phase": None,
-            "decision_source": "host_scheduler_state",
         }
     agent_name = names.get(next_key)
     if not agent_name:
@@ -83,8 +75,6 @@ def _strict_host_decision_from_payload(
         "current_phase": payload.current_phase,
         "next_action": payload.next_action,
         "suggested_add_agent_names": suggested or None,
-        "phase": None,
-        "decision_source": "host_scheduler_state",
     }
 
 

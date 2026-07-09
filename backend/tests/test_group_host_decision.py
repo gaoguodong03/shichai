@@ -43,8 +43,6 @@ def test_strict_host_scheduler_accepts_valid_agent_decision():
         "current_phase": "资料收集",
         "next_action": "请整理大纲。",
         "suggested_add_agent_names": None,
-        "phase": None,
-        "decision_source": "host_scheduler_state",
     }
 
 
@@ -59,7 +57,9 @@ def test_strict_host_scheduler_rejects_wrapped_json_text():
     assert out["next_speaker"] == "user"
     assert out["next_action"] == hd.HOST_PROTOCOL_ERROR_MESSAGE
     assert "interrupt_reason" not in out
-    assert out["decision_source"] == "system_guard"
+    assert "decision_source" not in out
+    assert "protocol_error" not in out
+    assert "phase" not in out
 
 
 def test_strict_host_scheduler_rejects_agent_id_next_speaker():
