@@ -84,7 +84,6 @@ export function createGroupChatStreamRunner(deps: {
           message?: Record<string, unknown> | null
           end?: Record<string, unknown> | null
           error?: Record<string, unknown> | null
-          interrupted?: boolean
         }
         if (data.route) deps.updateAutoSwitchHint(data.route, sessionId)
         if (Array.isArray(data.progress)) {
@@ -104,7 +103,7 @@ export function createGroupChatStreamRunner(deps: {
           deps.handleStreamEndEvent(data.end, state, sessionId)
           shouldEmitMessageSent = true
         }
-        if (!data.end && (data.error || data.interrupted)) {
+        if (!data.end && data.error) {
           const errText = String(data.error?.error || data.error?.detail || '').trim()
           failureHint = errText || failureHint
           deps.setStreamingPhase('failed', sessionId)

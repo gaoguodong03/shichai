@@ -417,8 +417,10 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
     assert chat.status_code == 200
     data = chat.json()["data"]
     assert data["message"]["message"]["content"] == answer
+    assert set(data) == {"route", "progress", "messages", "message", "end", "error"}
+    assert data["end"]["type"] == "end"
+    assert data["end"]["phase"] == "awaiting_user"
     assert data["end"]["waiting_for_user"] is True
-    assert data["interrupted"] is False
 
     detail = client.get(f"/api/sessions/{session_id}", headers=headers)
     assert detail.status_code == 200

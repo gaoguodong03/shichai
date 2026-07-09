@@ -147,7 +147,9 @@ def test_chat_once_stream_error_uses_sse_error_contract(client: TestClient, monk
     )
 
     assert response.status_code == 200
-    error = response.json()["data"]["error"]
+    data = response.json()["data"]
+    assert set(data) == {"route", "progress", "messages", "message", "end", "error"}
+    error = data["error"]
     assert error == {
         "type": "error",
         "run_id": None,

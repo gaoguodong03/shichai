@@ -33,7 +33,6 @@ interface ChatOnceResponseData {
   message?: Record<string, unknown> | null
   end?: Record<string, unknown> | null
   error?: Record<string, unknown> | null
-  interrupted?: boolean
 }
 
 async function readEventStream(

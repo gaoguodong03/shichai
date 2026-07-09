@@ -120,6 +120,16 @@ def test_e2e_stream_mocks_use_current_sse_event_payloads():
         assert "phase:" in payload
 
 
+def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
+    files = [
+        "frontend/src/api/chat.ts",
+        "frontend/src/features/workspace/composables/useGroupChatStreamRunner.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+
+    assert "interrupted" not in combined
+
+
 def test_frontend_does_not_parse_file_references_from_message_content():
     files = [
         "frontend/src/features/workspace/composables/useGroupMessageList.ts",

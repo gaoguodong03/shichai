@@ -135,7 +135,6 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
     error_event: Optional[Dict[str, Any]] = None
 
     buffer = ""
-    interrupted = False
     try:
         async for chunk in body_iter:
             part = chunk.decode("utf-8", errors="ignore") if isinstance(chunk, (bytes, bytearray)) else str(chunk)
@@ -166,7 +165,6 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
                 elif event_type == "error":
                     error_event = payload
     except asyncio.CancelledError as e:
-        interrupted = True
         logger.warning("session_chat_once 聚合流被取消: session=%s err=%s", session_id, e)
         error_event = error_event or SseErrorEvent(
             type="error",
@@ -175,7 +173,6 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
             message=str(e) or "chat once stream cancelled",
         ).model_dump(exclude_none=False)
     except Exception as e:
-        interrupted = True
         logger.exception("session_chat_once 聚合流失败: session=%s err=%s", session_id, e)
         error_event = error_event or SseErrorEvent(
             type="error",
@@ -206,7 +203,6 @@ async def session_chat_once(session_id: str, request: GroupChatRequest):
             "message": primary_message,
             "end": end_event,
             "error": error_event,
-            "interrupted": interrupted or (end_event is None),
         },
     }
 
