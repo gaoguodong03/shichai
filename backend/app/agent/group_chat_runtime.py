@@ -123,8 +123,6 @@ def _request_user_text(request: GroupChatRequest) -> str:
     attachment_lines = _attachment_prompt_lines(request)
     if attachment_lines:
         text = (text + "\n\n" if text else "") + "【工作区附件】\n" + attachment_lines
-    if request.target_agent_name:
-        text = (text + "\n\n" if text else "") + f"【本轮指定专家】{request.target_agent_name}"
     return text.strip()
 
 
