@@ -17,7 +17,7 @@ def test_deleted_skill_reference_keeps_display_name(monkeypatch, tmp_path):
             [{"name": "专家", "skills": [{"name": "旧名", "directory_name": "skill-a"}]}]
         )
         _mirror_session_presets_to_resources(
-            [{"name": "场景", "agent_names": ["专家"], "host_config": {"leader_agent_name": "主持人", "skill_name": "旧名", "skill_directory": "skill-a"}}]
+            [{"name": "场景", "agent_names": ["专家"], "host": {"name": "主持人", "skill_name": "旧名", "skill_directory": "skill-a"}}]
         )
 
         remove_skill_path_from_user_configs("skill-a", "技能 A")
@@ -25,8 +25,8 @@ def test_deleted_skill_reference_keeps_display_name(monkeypatch, tmp_path):
         expert = json.loads((ctx.agents_dir / "专家" / "agent.json").read_text(encoding="utf-8"))
         preset = json.loads((ctx.scenarios_dir / "场景" / "scenario.json").read_text(encoding="utf-8"))
         assert expert["skills"] == [{"name": "技能 A", "directory_name": "skill-a"}]
-        assert preset["host_config"]["skill_name"] == "技能 A"
-        assert preset["host_config"]["skill_directory"] == "skill-a"
+        assert preset["host"]["skill_name"] == "技能 A"
+        assert preset["host"]["skill_directory"] == "skill-a"
     finally:
         reset_current_username(token)
 

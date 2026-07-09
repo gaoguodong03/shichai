@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional
 
-from app.agent.group_chat_memory_prompt import _build_checked_next_prompt
+from app.agent.group_chat_memory_prompt import build_checked_expert_action_prompt
 
 
 DEFAULT_EXPERT_TASK = "请紧扣讨论目标发言，不要偏离主题。"
@@ -48,13 +48,13 @@ def build_expert_turn_prompt(
     context_text = (recent_context or "").strip() or "（无）"
 
     if (next_action or "").strip():
-        user_content = _build_checked_next_prompt(
+        user_content = build_checked_expert_action_prompt(
             session_id,
             target_agent_name,
             (discussion_goal or "").strip(),
             context_text,
             dict(app_settings or {}),
-            decision_next_prompt=task_text,
+            host_next_action=task_text,
         ).strip()
         if task_text and task_text not in user_content:
             user_content = _section(

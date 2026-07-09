@@ -181,7 +181,7 @@ def _normalize_scenario_host_config(raw: Any) -> Dict[str, Any]:
     skill_name = str(cfg.get("skill_name") or "").strip()
     skill_directory = _normalize_skill_folder(cfg.get("skill_directory"))
     return {
-        "name": str(cfg.get("name") or cfg.get("leader_agent_name") or "").strip(),
+        "name": str(cfg.get("name") or "").strip(),
         "llm_name": str(cfg.get("llm_name") or "").strip(),
         "system_prompt": str(cfg.get("system_prompt") or "").strip() if cfg.get("system_prompt") is not None else None,
         "skill_name": skill_name,
@@ -202,6 +202,6 @@ def normalize_scenario_row(raw: Dict[str, Any]) -> Dict[str, Any]:
         "name": name,
         "description": str(row.get("description") or ""),
         "system_prompt": str(row.get("system_prompt") or "") if row.get("system_prompt") is not None else "",
-        "host": _normalize_scenario_host_config(row.get("host") or row.get("host_config")),
+        "host": _normalize_scenario_host_config(row.get("host")),
         "agent_names": agent_names,
     }

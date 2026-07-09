@@ -176,7 +176,7 @@ const hiddenSkillCount = computed(() => Math.max(0, filteredSkills.value.length 
 
 function applyHostData(d: Record<string, unknown>) {
   const next = emptyForm()
-  next.name = String(d.name ?? d.leader_agent_name ?? '四九')
+  next.name = String(d.name ?? '四九')
   next.system_prompt = String(d.system_prompt ?? '')
   next.llm_name = String(d.llm_name ?? '')
   next.skill_name = String(d.skill_name ?? '').trim()

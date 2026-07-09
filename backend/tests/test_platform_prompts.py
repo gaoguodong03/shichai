@@ -20,7 +20,7 @@ def test_host_prompt_requires_current_contract_fields():
     )
 
     assert '"next_action"' in rendered
-    assert "speaker_task" in rendered and "不要输出" in rendered
+    assert "只允许输出上述字段" in rendered
 
 
 def test_prompt_render_rejects_missing_variables():

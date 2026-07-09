@@ -369,12 +369,13 @@ def test_frontend_workspace_session_and_file_flow(frontend_flow_client: TestClie
 
 def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient, monkeypatch):
     from app.agent import group_chat_runtime as group_chat
+    from app.agent import group_chat_expert_resolution as expert_resolution
 
     client = frontend_flow_client
     headers = _headers("frontend-chat@example.test")
     answer = "2+2 等于 4。"
     monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: _FakeLLM([AIMessage(content=answer)]))
-    monkeypatch.setattr(group_chat, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
+    monkeypatch.setattr(expert_resolution, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
 
     skill = client.post(
         "/api/settings/skills",
@@ -406,23 +407,27 @@ def test_frontend_session_question_answer_flow(frontend_flow_client: TestClient,
 
     chat = client.post(
         f"/api/sessions/{session_id}/chat",
-        json={"message": "@问答专家 你好，2+2 等于几？"},
+        json={
+            "message": "你好，2+2 等于几？",
+            "client_message_id": "frontend-chat-1",
+            "target_agent_name": "问答专家",
+        },
         headers=headers,
     )
     assert chat.status_code == 200
     data = chat.json()["data"]
-    assert data["message"]["content"] == answer
+    assert data["message"]["message"]["content"] == answer
     assert data["end"]["waiting_for_user"] is True
     assert data["interrupted"] is False
 
     detail = client.get(f"/api/sessions/{session_id}", headers=headers)
     assert detail.status_code == 200
     messages = detail.json()["data"]["messages"]
-    assert any(m["speaker"]["type"] == "user" and "2+2" in m["content"] for m in messages)
+    assert any(m["speaker"]["type"] == "user" and "2+2" in m["message"]["content"] for m in messages)
     assert any(
         m["speaker"]["type"] == "expert"
         and m["speaker"].get("agent_name") == "问答专家"
-        and m["content"] == answer
+        and m["message"]["content"] == answer
         for m in messages
     )
 
@@ -508,11 +513,11 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
 
     host_profile = client.put(
         "/api/settings/host-profile",
-        json={"leader_agent_name": "测试主持人", "skill_name": "", "skill_directory": ""},
+        json={"name": "测试主持人", "skill_name": "", "skill_directory": ""},
         headers=headers,
     )
     assert host_profile.status_code == 200
-    assert host_profile.json()["data"]["leader_agent_name"] == "测试主持人"
+    assert host_profile.json()["data"]["name"] == "测试主持人"
 
     secret = client.post(
         "/api/settings/api-secrets",
@@ -555,7 +560,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
                     "name": "前端流程场景",
                     "agent_names": ["前端流程专家"],
                     "description": "覆盖场景保存",
-                    "host_config": {"leader_agent_name": "主持人", "skill_name": "", "skill_directory": ""},
+                    "host": {"name": "主持人", "skill_name": "", "skill_directory": ""},
                 }
             ]
         },

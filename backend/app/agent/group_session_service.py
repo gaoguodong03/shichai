@@ -71,6 +71,12 @@ def _validate_agent_names(names: List[str], valid_names: set[str]) -> None:
             raise HTTPException(status_code=400, detail=f"专家 {name} 不存在")
 
 
+def _host_display_name(session_item: Dict[str, Any]) -> str:
+    """Return the current session host display name for host-authored messages."""
+    host_snapshot = session_item.get("host") if isinstance(session_item.get("host"), dict) else {}
+    return str(host_snapshot.get("name") or "四九").strip() or "四九"
+
+
 def _clear_scheduler_state_for_session(session_item: Dict[str, Any]) -> None:
     """Configuration changes invalidate host stage state from a previous scene/task."""
     session_item.pop("scheduler_state", None)
@@ -306,17 +312,9 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 messages.append(
                     {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "speaker": {"type": "host"},
-                        "content": f"已邀请“{display_name}”加入会话",
+                        "speaker": {"type": "host", "agent_name": _host_display_name(session_definitions[group_session_id])},
+                        "message": {"content": f"已邀请“{display_name}”加入会话"},
                         "created_at": format_storage_timestamp(),
-                        "debug": {
-                            "tool_trace": [
-                                {
-                                    "event": "member_joined",
-                                    "data": {"joined_agent_names": [name]},
-                                }
-                            ]
-                        },
                     }
                 )
             for name in unique_removed:
@@ -324,17 +322,9 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                 messages.append(
                     {
                         "message_id": f"msg-{uuid.uuid4().hex[:8]}",
-                        "speaker": {"type": "host"},
-                        "content": f"已将“{display_name}”移出会话",
+                        "speaker": {"type": "host", "agent_name": _host_display_name(session_definitions[group_session_id])},
+                        "message": {"content": f"已将“{display_name}”移出会话"},
                         "created_at": format_storage_timestamp(),
-                        "debug": {
-                            "tool_trace": [
-                                {
-                                    "event": "member_left",
-                                    "data": {"left_agent_names": [name]},
-                                }
-                            ]
-                        },
                     }
                 )
             _save_group_history(group_session_id, messages)

@@ -8,9 +8,9 @@ from app.agent.group_chat_host_runtime import _host_decide_by_agent
 from app.agent.session_contracts import GroupChatRequest
 
 
-def test_strict_host_response_rejects_legacy_next_prompt():
-    raw = '```json\n{"task_done": false, "next_speaker": "专家甲", "next_prompt": "请结合上文补充要点", "reason": "继续"}\n```'
-    out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], orchestration_profile="scene")
+def test_strict_host_response_rejects_extra_fields():
+    raw = '```json\n{"current_phase": "补充信息", "next_speaker": "专家甲", "next_action": "请补充要点", "extra_note": "继续"}\n```'
+    out = parse_strict_host_scheduler_output(raw, [{"name": "专家甲"}], host_mode="scene")
     assert out["next_speaker"] == "user"
     assert out["next_action"] == HOST_PROTOCOL_ERROR_MESSAGE
     assert out["interrupt_reason"] == "protocol_error"
@@ -18,7 +18,7 @@ def test_strict_host_response_rejects_legacy_next_prompt():
 
 def test_strict_host_response_accepts_next_action_only():
     raw = '```json\n{"current_phase": "补充信息", "next_speaker": "user", "next_action": "请补充信息"}\n```'
-    out = parse_strict_host_scheduler_output(raw, [], orchestration_profile="recruitment")
+    out = parse_strict_host_scheduler_output(raw, [], host_mode="recruitment")
     assert out["next_speaker"] == "user"
     assert out["next_action"] == "请补充信息"
 
@@ -90,8 +90,7 @@ async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     user_prompt = calls["messages"][1].content
     assert "主持人系统提示" in system_prompt
     assert "网文专用主持 Skill 正文" in system_prompt
-    assert "speaker_task" in user_prompt
-    assert "不要输出" in user_prompt
+    assert "只允许输出上述字段" in user_prompt
     assert '"next_action"' in user_prompt
     assert session_item["scheduler_state"] == {
         "current_phase": "阶段2",

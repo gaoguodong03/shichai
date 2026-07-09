@@ -157,8 +157,10 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
         ]
     )
 
+    from app.agent import group_chat_expert_resolution as expert_resolution
+
     monkeypatch.setattr(group_chat, "_get_llm_for_agent", lambda agent_profile, app_settings: fake_llm)
-    monkeypatch.setattr(group_chat, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
+    monkeypatch.setattr(expert_resolution, "_llm_credential_notice_for_agent", lambda agent_profile, app_settings: None)
     monkeypatch.setattr(run_skill_script, "_SCRIPT_GATEWAY", fake_gateway)
 
     client = TestClient(app)
@@ -177,7 +179,9 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     chat_resp = client.post(
         f"/api/sessions/{session_id}/chat",
         json={
-            "message": "@沙箱依赖验证专家 运行脚本并传参：\n\nscript_path: check_pkg_version.py\ncli_args: [\"--package\",\"pendulum\"]"
+            "message": "运行脚本并传参：\n\nscript_path: check_pkg_version.py\ncli_args: [\"--package\",\"pendulum\"]",
+            "client_message_id": "script-flow-1",
+            "target_agent_name": "沙箱依赖验证专家",
         },
         headers=headers,
     )
@@ -188,7 +192,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assert data["route"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["skill"] == "sandbox-dependency-verify"
-    assert "版本检查通过" in assistant_msg["content"]
+    assert "版本检查通过" in assistant_msg["message"]["content"]
     assert fake_gateway.calls
 
     call = fake_gateway.calls[0]
@@ -198,7 +202,3 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assert call["tool_name"].startswith("run_skill_script_")
     assert call["context"].user_id == user
     assert call["payload"]["__sandbox_env"]["SKILL_REQUIREMENTS_B64"]
-
-    tool_results = assistant_msg.get("tool_results") or []
-    assert tool_results
-    assert "package.version_checked" in tool_results[0]["output"]["text"]

@@ -1,4 +1,4 @@
-"""Group-chat memory facts and next-prompt assembly helpers."""
+"""Group-chat memory facts and expert action prompt assembly helpers."""
 from __future__ import annotations
 
 import logging
@@ -17,8 +17,8 @@ from app.agent.group_memory_store import build_dispatch_context, upsert_facts, u
 logger = logging.getLogger(__name__)
 
 
-def _build_next_prompt_fallback(discussion_goal: str, context: str) -> str:
-    """Fallback next_prompt when the host decision does not provide one."""
+def _build_action_prompt_fallback(discussion_goal: str, context: str) -> str:
+    """Build the default expert action prompt when the host provides no instruction."""
     return (
         f"【群聊讨论目标】\n{discussion_goal}\n\n"
         f"【最近几轮讨论内容（按时间顺序，含用户与各位专家的发言要点）】\n{context}\n\n"
@@ -230,17 +230,17 @@ def _persist_group_memory_turn(
         )
 
 
-def _build_next_prompt_with_memory(
+def _build_action_prompt_with_memory(
     session_id: str,
     target_agent_name: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
-    decision_next_prompt: Optional[str] = None,
+    host_next_action: Optional[str] = None,
 ) -> str:
     mem = _get_group_memory_settings(app_settings)
     if not mem["enabled"]:
-        return (decision_next_prompt or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+        return (host_next_action or "").strip() or _build_action_prompt_fallback(discussion_goal, context)
 
     dispatch = {"has_memory": False, "rendered": ""}
     try:
@@ -256,7 +256,7 @@ def _build_next_prompt_with_memory(
 
     if dispatch.get("has_memory"):
         chunks: List[str] = []
-        host_line = (decision_next_prompt or "").strip()
+        host_line = (host_next_action or "").strip()
         if host_line:
             chunks.append(
                 "【主持人本轮指派（必须按此执行；与下方记忆摘录冲突时以本段为准）】\n" + host_line
@@ -271,10 +271,10 @@ def _build_next_prompt_with_memory(
         chunks.append("【输出要求】\n聚焦执行，不复读整段历史；不要在正文中指定下一位角色。")
         return "\n\n".join([chunk for chunk in chunks if chunk])
 
-    return (decision_next_prompt or "").strip() or _build_next_prompt_fallback(discussion_goal, context)
+    return (host_next_action or "").strip() or _build_action_prompt_fallback(discussion_goal, context)
 
 
-def _ensure_structured_next_prompt(
+def _ensure_structured_action_prompt(
     prompt: str,
     discussion_goal: str,
     context: str,
@@ -282,7 +282,7 @@ def _ensure_structured_next_prompt(
     *,
     host_round_instruction: Optional[str] = None,
 ) -> str:
-    """Lightly validate next_prompt structure and fill missing execution anchors."""
+    """Lightly validate expert action prompt structure and fill missing execution anchors."""
     _ = target_agent_name
     prompt_text = (prompt or "").strip()
     context_excerpt = _shorten_text(context, max_chars=1600)
@@ -352,26 +352,26 @@ def _ensure_structured_next_prompt(
     return "\n\n".join(parts)
 
 
-def _build_checked_next_prompt(
+def build_checked_expert_action_prompt(
     session_id: str,
     target_agent_name: str,
     discussion_goal: str,
     context: str,
     app_settings: Dict[str, Any],
-    decision_next_prompt: Optional[str] = None,
+    host_next_action: Optional[str] = None,
 ) -> str:
-    raw = _build_next_prompt_with_memory(
+    raw = _build_action_prompt_with_memory(
         session_id=session_id,
         target_agent_name=target_agent_name,
         discussion_goal=discussion_goal,
         context=context,
         app_settings=app_settings,
-        decision_next_prompt=decision_next_prompt,
+        host_next_action=host_next_action,
     )
-    return _ensure_structured_next_prompt(
+    return _ensure_structured_action_prompt(
         prompt=raw,
         discussion_goal=discussion_goal,
         context=context,
         target_agent_name=target_agent_name,
-        host_round_instruction=decision_next_prompt,
+        host_round_instruction=host_next_action,
     )

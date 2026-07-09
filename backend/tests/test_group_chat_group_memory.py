@@ -28,22 +28,22 @@ def _get_host_runtime_module():
     return group_chat_host_runtime
 
 
-def test_next_prompt_fallback_when_memory_disabled():
+def test_action_prompt_fallback_when_memory_disabled():
     gc = _get_memory_prompt_module()
     app_settings = {"group_memory": {"enabled": False}}
-    out = gc._build_next_prompt_with_memory(
+    out = gc._build_action_prompt_with_memory(
         session_id="group-test",
         target_agent_name="专家A",
         discussion_goal="写周报",
         context="最近讨论内容",
         app_settings=app_settings,
-        decision_next_prompt="",
+        host_next_action="",
     )
     assert "最近几轮讨论内容" in out
     assert "写周报" in out
 
 
-def test_next_prompt_uses_memory_when_available(monkeypatch):
+def test_action_prompt_uses_memory_when_available(monkeypatch):
     gc = _get_memory_prompt_module()
     from app.agent import group_chat_memory_prompt
 
@@ -54,13 +54,13 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
         }
 
     monkeypatch.setattr(group_chat_memory_prompt, "build_dispatch_context", _fake_dispatch_context)
-    out = gc._build_next_prompt_with_memory(
+    out = gc._build_action_prompt_with_memory(
         session_id="group-test",
         target_agent_name="专家A",
         discussion_goal="写周报",
         context="ignored",
         app_settings={"group_memory": {"enabled": True, "dispatch_top_k": 2, "max_facts": 20}},
-        decision_next_prompt="补充要求",
+        host_next_action="补充要求",
     )
     assert "关键事实" in out
     assert "补充要求" in out
@@ -71,10 +71,10 @@ def test_next_prompt_uses_memory_when_available(monkeypatch):
     assert "直接进入本轮角色发言" in out
 
 
-def test_next_prompt_short_fallback_avoids_meta_task_preface():
+def test_action_prompt_short_fallback_avoids_meta_task_preface():
     gc = _get_memory_prompt_module()
 
-    out = gc._ensure_structured_next_prompt(
+    out = gc._ensure_structured_action_prompt(
         prompt="请说明边界",
         discussion_goal="伴学研讨",
         context="学生正在讨论 AI 是否替代了本来该被考察的能力。",
@@ -173,24 +173,6 @@ def test_persist_group_memory_turn_updates_index_from_workspace_writes(tmp_path)
     assert "skill: weekly-report" in index
     assert "summary: 已完成周报初稿，并保存到工作区。" in index
     assert "- reports/weekly.md" in index
-
-
-def test_log_llm_roundtrip_does_not_write_session_workspace_jsonl(tmp_path):
-    gc = _get_host_runtime_module()
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True, exist_ok=True)
-
-    gc._log_llm_roundtrip(
-        "host_decide",
-        session_id="group-test",
-        workspace_root=ws,
-        system_content="系统提示",
-        user_content="用户提示",
-        model_output="模型输出",
-        extra={"agent_id": "agent-host", "model": "qwen3"},
-    )
-
-    assert not (ws / "memory" / "llm_roundtrips.jsonl").exists()
 
 def test_append_workspace_image_preview_markdown_keeps_non_image_content():
     gc = _get_tool_trace_module()

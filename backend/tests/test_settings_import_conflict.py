@@ -8,13 +8,13 @@ def test_merge_session_presets_skip_by_name(tmp_path, monkeypatch):
     try:
         settings_presets_api._mirror_session_presets_to_resources(
             [
-                {"name": "同名场景", "agent_names": ["专家1"], "host_config": {"leader_agent_name": "主持人"}},
-                {"name": "其他场景", "agent_names": ["专家2"], "host_config": {"leader_agent_name": "主持人"}},
+                {"name": "同名场景", "agent_names": ["专家1"], "host": {"name": "主持人"}},
+                {"name": "其他场景", "agent_names": ["专家2"], "host": {"name": "主持人"}},
             ],
         )
 
         merged, imported_names, skipped_by_name, overwritten_names = settings_presets_api._merge_session_presets_into_file(
-            [{"name": "同名场景", "agent_names": ["新专家"], "host_config": {"leader_agent_name": "主持人"}}],
+            [{"name": "同名场景", "agent_names": ["新专家"], "host": {"name": "主持人"}}],
             "skip",
         )
     finally:
@@ -32,13 +32,13 @@ def test_merge_session_presets_overwrites_same_name_resource(tmp_path, monkeypat
     try:
         settings_presets_api._mirror_session_presets_to_resources(
             [
-                {"name": "同名场景", "agent_names": ["专家1"], "host_config": {"leader_agent_name": "主持人"}},
-                {"name": "保留", "agent_names": ["专家3"], "host_config": {"leader_agent_name": "主持人"}},
+                {"name": "同名场景", "agent_names": ["专家1"], "host": {"name": "主持人"}},
+                {"name": "保留", "agent_names": ["专家3"], "host": {"name": "主持人"}},
             ],
         )
 
         merged, imported_names, skipped_by_name, overwritten_names = settings_presets_api._merge_session_presets_into_file(
-            [{"name": "同名场景", "agent_names": ["新专家"], "host_config": {"leader_agent_name": "主持人"}}],
+            [{"name": "同名场景", "agent_names": ["新专家"], "host": {"name": "主持人"}}],
             "overwrite",
         )
     finally:

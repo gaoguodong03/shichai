@@ -127,7 +127,7 @@ def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Pa
     )
     save_mcp_config([_mcp_row("Tool A")])
     api._mirror_session_presets_to_resources(
-        [{"name": "Scene A", "agent_names": ["Expert A"], "host_config": {"leader_agent_name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-local"}}]
+        [{"name": "Scene A", "agent_names": ["Expert A"], "host": {"name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-local"}}]
     )
 
     source_skills = tmp_path / "source_skills"
@@ -135,7 +135,7 @@ def test_scene_bundle_import_keeps_same_name_resources(monkeypatch, tmp_path: Pa
     shared_skill.mkdir(parents=True)
     shared_skill.joinpath("SKILL.md").write_text("---\nname: Skill A\ndescription: new\n---\nnew\n", encoding="utf-8")
     raw = build_scenario_bundle_zip_bytes(
-        {"name": "Scene A", "agent_names": ["Expert A"], "host_config": {"leader_agent_name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-shared-skill"}},
+        {"name": "Scene A", "agent_names": ["Expert A"], "host": {"name": "主持人", "skill_name": "Skill A", "skill_directory": "skill-shared-skill"}},
         [{"name": "Expert A", "description": "new role", "skills": [_skill_ref("Skill A", "skill-shared-skill")]}],
         [_mcp_row("Tool A")],
         source_skills,
@@ -172,7 +172,7 @@ def test_scene_bundle_import_creates_new_skill_directory_when_path_conflicts(mon
     incoming_skill.mkdir(parents=True)
     incoming_skill.joinpath("SKILL.md").write_text("---\nname: New Skill\ndescription: new\n---\nnew\n", encoding="utf-8")
     raw = build_scenario_bundle_zip_bytes(
-        {"name": "New Scene", "agent_names": ["New Expert"], "host_config": {"leader_agent_name": "主持人", "skill_name": "New Skill", "skill_directory": "skill-shared-skill"}},
+        {"name": "New Scene", "agent_names": ["New Expert"], "host": {"name": "主持人", "skill_name": "New Skill", "skill_directory": "skill-shared-skill"}},
         [{"name": "New Expert", "skills": [_skill_ref("New Skill", "skill-shared-skill")]}],
         [],
         source_skills,

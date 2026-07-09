@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from app.core.host_config import normalize_host_config_dict
+from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_scenario_row
 
 
@@ -93,9 +93,9 @@ def validate_session_preset(
                     row["agent"] = agent_name
                 out.missing_skills.append(row)
 
-    hc_raw = preset.get("host") or preset.get("host_config")
+    hc_raw = preset.get("host")
     if isinstance(hc_raw, dict):
-        hc = normalize_host_config_dict(hc_raw)
+        hc = normalize_host_profile_dict(hc_raw)
         skill_directory = str(hc.get("skill_directory") or "").strip()
         if skill_directory and not skill_has_content(skill_directory):
             out.missing_skills.append({"context": "host", "skill": skill_directory})

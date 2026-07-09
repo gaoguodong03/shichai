@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from app.agent.orchestrator_state import InterruptReason
+from app.agent.runtime_status import InterruptReason
 from app.agent.sandbox_adapter import (
     SandboxAdapter,
     SandboxPolicy,

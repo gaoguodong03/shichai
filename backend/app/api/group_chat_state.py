@@ -38,25 +38,18 @@ def _runtime_json_path(root: Path, session_id: str) -> Path:
 
 def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return the session definition shape that belongs in session.json."""
-    out = dict(item or {})
-    for key in (
-        "runtime_state",
-        "leader_agent_name",
-        "host_config",
-        "scenario_name",
-        "orchestration_profile",
-        "system_prompt",
-        "context",
-        "pending_owner_agent_name",
-        "pending_skill",
-        "pending_phase",
-        "pending_required_user_fields",
-        "pending_handoff_reason",
-        "skill_session_owner_name",
-        "skill_session_skill",
-    ):
-        out.pop(key, None)
-    return out
+    allowed = {
+        "id",
+        "title",
+        "title_auto_generated",
+        "agent_names",
+        "host",
+        "created_at",
+        "updated_at",
+        "add_agent_names",
+        "remove_agent_names",
+    }
+    return {key: value for key, value in dict(item or {}).items() if key in allowed}
 
 
 def _read_json_object(path: Path) -> Dict[str, Any] | None:
@@ -90,6 +83,12 @@ def _canonical_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
 def frontend_history_message(msg: Dict[str, Any]) -> Dict[str, Any]:
     """Return a UI-facing canonical message copy."""
     return _canonical_history_message(dict(msg or {}))
+
+
+def _message_content(msg: Dict[str, Any]) -> str:
+    """Read visible text from the current canonical message body."""
+    body = msg.get("message") if isinstance(msg.get("message"), dict) else {}
+    return str(body.get("content") or "")
 
 
 def ensure_sessions_dir() -> Path:
@@ -507,7 +506,7 @@ def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
             cur = _ensure_current()
             cur["user"] = {
                 "message_id": m.get("message_id"),
-                "content": m.get("content") or "",
+                "content": _message_content(m),
                 "created_at": m.get("created_at"),
             }
             continue
@@ -524,7 +523,7 @@ def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any
                 experts[agent_name] = {"agent_name": agent_name, "messages": []}
             item = {
                 "message_id": m.get("message_id"),
-                "content": m.get("content") or "",
+                "content": _message_content(m),
                 "created_at": m.get("created_at"),
             }
             if speaker.get("skill") is not None:

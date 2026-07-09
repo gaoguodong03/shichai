@@ -171,7 +171,7 @@ _SKILL_AGENT_MAX_REPEATED_TOOL_ROUNDS = max(
 )
 
 _WORKSPACE_TASK_FILE_RULE = (
-    "- 调度任务由平台通过本轮提示词传入，不要新建、读取或覆盖 `speaker_task.txt`、`next_speaker.txt`。\n"
+    "- 调度任务由平台通过本轮提示词传入，不要自行读写任何调度状态文件。\n"
     "- 除非用户明确指定已有路径或固定文件名，所有由你命名并写入工作区的新文件都必须使用"
     "`文件名-当前文件时间戳.扩展名` 格式，例如 `report-2026070422145700.md`；"
     "直接使用本轮提示中的“当前文件时间戳”，不要使用 `YYYYMMDDTHHMMSSZ`、`YYYYMMDD-HHMMSS`、冒号或没有时间戳的产物名。\n"

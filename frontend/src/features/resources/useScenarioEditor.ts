@@ -197,9 +197,9 @@ export function useScenarioEditor(options: {
       description: s.description || '',
       system_prompt: s.system_prompt || '',
     }
-    const hc = s.host || (s as { host_config?: ScenarioHostConfig }).host_config
+    const hc = s.host
     if (hc && typeof hc === 'object') {
-      scenarioLeaderDisplayName.value = (hc.name || (hc as { leader_agent_name?: string }).leader_agent_name) || ''
+      scenarioLeaderDisplayName.value = hc.name || ''
       scenarioLeaderSkill.value = normalizeScenarioLeaderSkill(hc)
       scenarioLeaderSystemPrompt.value = (hc.system_prompt as string) || ''
       scenarioLeaderLlmName.value = (hc.llm_name as string) || ''

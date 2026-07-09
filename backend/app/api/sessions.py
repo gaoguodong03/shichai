@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 from app.core.security import user_context_dependency
 
 from app.api.group_chat_state import build_session_payload, load_session_definitions
+from app.api.settings_app import load_app_settings, normalize_host_profile
 from app.agent.group_chat_runtime import group_chat_stream
 from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest
 from app.agent.group_session_service import (
@@ -62,10 +63,14 @@ async def list_sessions():
 @router.post("/sessions")
 async def create_session(body: SessionCreateRequest):
     """新建会话（默认仅主持人，agent_names 为空）"""
+    host = dict(body.host.model_dump()) if body.host else None
+    if host is None:
+        settings = load_app_settings()
+        host = normalize_host_profile(settings.get("host_profile") if isinstance(settings, dict) else {})
     data = create_session_internal(
         title=body.title or "新对话",
         agent_names=body.agent_names,
-        host=dict(body.host.model_dump()) if body.host else None,
+        host=host,
     )
     return {"status": "ok", "data": data}
 

@@ -91,7 +91,7 @@ async def _host_decide_by_agent(
     pending_skill: str = "",
     user_message: str = "",
     orphan_session_agent_names: Optional[List[str]] = None,
-    orchestration_profile: str = "recruitment",
+    host_mode: str = "recruitment",
     session_item: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Ask the host LLM for the next scheduler decision and validate it strictly."""
@@ -100,7 +100,7 @@ async def _host_decide_by_agent(
         pending_owner_agent_name,
         pending_skill,
         orphan_session_agent_names,
-        orchestration_profile,
+        host_mode,
     )
     settings = load_app_settings() if app_settings is None else app_settings
     credential_notice = _llm_credential_notice_for_agent(host_agent, settings)
@@ -146,7 +146,7 @@ async def _host_decide_by_agent(
     raw = response.content if hasattr(response, "content") else str(response)
     if isinstance(raw, list):
         raw = "".join(str(item) for item in raw)
-    decision = parse_strict_host_scheduler_output(str(raw or ""), agent_profiles, orchestration_profile="recruitment")
+    decision = parse_strict_host_scheduler_output(str(raw or ""), agent_profiles, host_mode="recruitment")
     state = {
         "current_phase": str(decision.get("current_phase") or "").strip(),
         "next_speaker": str(decision.get("next_speaker") or "").strip(),

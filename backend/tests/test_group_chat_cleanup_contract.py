@@ -47,6 +47,18 @@ def test_backend_extraction_modules_exist_without_legacy_smells():
 
 
 def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
+    for deleted_path in (
+        "app/agent/leader_scheduler.py",
+        "app/agent/orchestrator_runtime.py",
+        "app/agent/orchestrator_reducer.py",
+        "app/agent/orchestrator_state.py",
+        "app/agent/scene_runtime.py",
+        "app/agent/group_orchestration_fsm.py",
+        "app/agent/group_chat_skill_session.py",
+        "app/core/scene_scheduler.py",
+    ):
+        assert not (ROOT / deleted_path).exists()
+
     combined = "\n".join(
         _read(path)
         for path in (
@@ -57,7 +69,6 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
             "app/api/sessions.py",
             "app/agent/group_memory_store.py",
             "app/agent/expert_runtime.py",
-            "app/agent/leader_scheduler.py",
             "app/agent/sandbox_audit.py",
             "app/agent/tools_for_skill.py",
             "app/tools/write_workspace_file.py",

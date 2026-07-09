@@ -518,7 +518,7 @@ def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user
         ):
             root = sandbox_session_dir(session_id).rstrip("/")
             return [
-                {"path": f"{root}/speaker_task.txt", "name": "speaker_task.txt", "size": 5},
+                {"path": f"{root}/handoff-note.txt", "name": "handoff-note.txt", "size": 5},
                 {"path": f"{root}/memory/facts.md", "name": "facts.md", "size": 5},
                 {"path": f"{root}/memory/llm_roundtrips.jsonl", "name": "llm_roundtrips.jsonl", "size": 5},
                 {"path": f"{root}/memory/orchestrator_audit.jsonl", "name": "orchestrator_audit.jsonl", "size": 5},
@@ -530,7 +530,7 @@ def test_list_workspace_directory_allows_memory_jsonl_as_regular_files(temp_user
 
     out = asyncio.run(list_tool.ainvoke({"path": ""}))
 
-    assert "speaker_task.txt" in out
+    assert "handoff-note.txt" in out
     assert "memory/facts.md" in out
     assert "llm_roundtrips" in out
     assert "orchestrator_audit" in out

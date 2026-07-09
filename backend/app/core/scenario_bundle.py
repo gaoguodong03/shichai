@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import unquote_plus, urlsplit
 
-from app.core.host_config import normalize_host_config_dict
+from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row, strip_resource_ids
 
 BUNDLE_VERSION = 1
@@ -228,9 +228,9 @@ def collect_skill_directories_and_tool_names_for_preset(
 ) -> Tuple[Set[str], Set[str]]:
     skill_directories: Set[str] = set()
     tool_names: Set[str] = set()
-    hc_raw = preset.get("host") or preset.get("host_config")
+    hc_raw = preset.get("host")
     if isinstance(hc_raw, dict):
-        hc = normalize_host_config_dict(hc_raw)
+        hc = normalize_host_profile_dict(hc_raw)
         skill_directory = str(hc.get("skill_directory") or "").strip()
         if skill_directory:
             skill_directories.add(skill_directory)

@@ -64,7 +64,7 @@ def test_tool_exception_becomes_failed_tool_result_with_error_log():
     )
 
     assert result["execution_status"] == "failed"
-    assert result["result_code"] == "tool_exception"
+    assert result["message"] == "cannot read"
     assert result["error_log"]["message"] == "cannot read"
 
 
@@ -76,5 +76,5 @@ def test_missing_workspace_read_tool_needs_input():
         available_tools=["write_workspace_file"],
     )
 
-    assert result["execution_status"] == "needs_input"
+    assert result["execution_status"] == "blocked"
     assert result["required_user_fields"][0]["key"] == "tool_enablement"

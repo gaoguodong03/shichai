@@ -1,15 +1,15 @@
 """Pure host-decision parsing helpers for group chat.
 
 This file accepts only the host JSON contract from
-docs/contracts/runtime-interface-contract.md. It does not translate legacy
-speaker_task/reason/next_prompt fields into the current next_action protocol.
+docs/contracts/runtime-interface-contract.md. It rejects every field outside
+the current next_action protocol.
 """
 from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
 
-from app.agent.orchestrator_state import InterruptReason, OrchestrationPhase
+from app.agent.runtime_status import InterruptReason, RuntimePhase
 from app.agent.structured_output_contracts import (
     HostSchedulerDecisionPayload,
     StructuredOutputProtocolError,
@@ -27,7 +27,7 @@ def host_protocol_error_decision(reason: str = "protocol_error") -> Dict[str, An
         "current_phase": "",
         "next_action": HOST_PROTOCOL_ERROR_MESSAGE,
         "suggested_add_agent_names": [],
-        "phase": OrchestrationPhase.AWAITING_USER.value,
+        "phase": RuntimePhase.AWAITING_USER.value,
         "interrupt_reason": InterruptReason.PROTOCOL_ERROR.value,
         "decision_source": "system_guard",
         "protocol_error": reason,
@@ -47,10 +47,10 @@ def _strict_host_decision_from_payload(
     payload: HostSchedulerDecisionPayload,
     agent_profiles: List[Dict[str, Any]],
     *,
-    orchestration_profile: str = "recruitment",
+    host_mode: str = "recruitment",
 ) -> Dict[str, Any]:
     """Validate host routing against current session members and return canonical fields."""
-    scene_mode = str(orchestration_profile or "").strip().lower() == "scene"
+    scene_mode = str(host_mode or "").strip().lower() == "scene"
     raw_next = payload.next_speaker.strip()
     next_key = raw_next.casefold()
     names = _agent_name_map(agent_profiles)
@@ -97,7 +97,7 @@ def parse_strict_host_scheduler_output(
     content: str,
     agent_profiles: List[Dict[str, Any]],
     *,
-    orchestration_profile: str = "recruitment",
+    host_mode: str = "recruitment",
 ) -> Dict[str, Any]:
     """Parse host scheduler JSON without legacy cleanup or natural-language fallback."""
     try:
@@ -105,7 +105,7 @@ def parse_strict_host_scheduler_output(
         return _strict_host_decision_from_payload(
             payload,
             agent_profiles,
-            orchestration_profile=orchestration_profile,
+            host_mode=host_mode,
         )
     except StructuredOutputProtocolError as exc:
         return host_protocol_error_decision(str(exc))

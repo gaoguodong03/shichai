@@ -90,7 +90,7 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
     out = dict(_DEFAULT_HOST_PROFILE)
     out.update(
         {
-            "name": str(raw.get("name") or raw.get("leader_agent_name") or _DEFAULT_HOST_PROFILE["name"]).strip() or "四九",
+            "name": str(raw.get("name") or _DEFAULT_HOST_PROFILE["name"]).strip() or "四九",
             "system_prompt": str(raw.get("system_prompt") or ""),
             "llm_name": str(raw.get("llm_name") or "").strip(),
             "skill_name": str(raw.get("skill_name") or "").strip(),

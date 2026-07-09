@@ -72,22 +72,18 @@ def _session_definition_snapshot(session_id: str) -> Dict[str, Any]:
     if not isinstance(item, dict):
         raise HTTPException(status_code=404, detail="Group session not found")
     snapshot = copy.deepcopy(item)
-    for key in (
-        "runtime_state",
-        "leader_agent_name",
-        "host_config",
-        "pending_owner_agent_id",
-        "pending_owner_agent_name",
-        "pending_skill_id",
-        "pending_skill",
-        "pending_phase",
-        "pending_required_user_fields",
-        "pending_handoff_reason",
-        "skill_session_owner_name",
-        "skill_session_skill",
-    ):
-        snapshot.pop(key, None)
-    return snapshot
+    allowed = {
+        "id",
+        "title",
+        "title_auto_generated",
+        "agent_names",
+        "host",
+        "created_at",
+        "updated_at",
+        "add_agent_names",
+        "remove_agent_names",
+    }
+    return {key: value for key, value in snapshot.items() if key in allowed}
 
 
 def _canonical_state_hash(session_definition: Dict[str, Any], tree_hash: str, chat_hash: str) -> str:

@@ -58,7 +58,7 @@ export function useShortcutPresets(args: {
     if (!hc) return undefined
     const skillDirectory = String(hc.skill_directory || '').trim().replace(/^[\\/]+/, '').replace(/[\\/]+$/g, '')
     const out: ShortcutHostConfig = {
-      name: String(hc.name || (hc as { leader_agent_name?: string }).leader_agent_name || '').trim(),
+      name: String(hc.name || '').trim(),
       llm_name: String(hc.llm_name || '').trim(),
       system_prompt: String(hc.system_prompt || ''),
       skill_name: String(hc.skill_name || '').trim(),
@@ -92,9 +92,7 @@ export function useShortcutPresets(args: {
       const key = name.trim().toLowerCase()
       if (!name || !agentNames.length || seen.has(key)) continue
       seen.add(key)
-      const legacyHost = (raw as { host_config?: ShortcutHostConfig }).host_config
-      const legacyLeader = String((raw as { leader_agent_name?: string }).leader_agent_name || '').trim()
-      const hc = normalizeShortcutHostConfig((raw?.host || legacyHost || (legacyLeader ? { name: legacyLeader } : undefined)) as ShortcutHostConfig | undefined)
+      const hc = normalizeShortcutHostConfig(raw?.host as ShortcutHostConfig | undefined)
       out.push({
         name,
         agent_names: agentNames,

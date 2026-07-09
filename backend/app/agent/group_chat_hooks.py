@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.agent.hook_pipeline import HookPriority, HookResult
-from app.agent.orchestrator_state import InterruptReason
+from app.agent.runtime_status import InterruptReason
 
 
 class _NeedUserInputHeuristicHook:

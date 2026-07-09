@@ -18,7 +18,7 @@ def test_strip_resource_ids_removes_all_resource_id_keys():
         "name": "协同写作",
         "agent_id": "agent-a",
         "agent_ids": ["agent-a"],
-        "host_config": {
+        "host": {
             "skill_id": "skill-a",
             "skill_ids": ["skill-a"],
             "mcp_server_id": "mcp-a",
@@ -33,7 +33,7 @@ def test_strip_resource_ids_removes_all_resource_id_keys():
 
     assert "id" not in json.dumps(stripped, ensure_ascii=False)
     assert stripped["name"] == "协同写作"
-    assert stripped["host_config"]["llm_name"] == "deepseek-v4-flash"
+    assert stripped["host"]["llm_name"] == "deepseek-v4-flash"
 
 
 def test_normalize_tool_row_preserves_mcp_server_config_string_and_lowercases_type():
@@ -215,9 +215,8 @@ def test_normalize_scenario_row_keeps_minimal_prompt_host_and_agent_names():
             "discussion_goal_example": "旧字段",
             "agents": ["文档合著专家v1.1"],
             "agent_names": ["图片生成专家v1.0", "信息检索专家v1.0"],
-            "host_config": {
-                "display_name": "旧主持人",
-                "leader_agent_name": "协同写作场景主持人",
+            "host": {
+                "name": "协同写作场景主持人",
                 "llm_name": "deepseek-v4-flash",
                 "system_prompt": None,
                 "skills": [{"name": "旧列表", "directory_name": "skill-old"}],
@@ -234,8 +233,8 @@ def test_normalize_scenario_row_keeps_minimal_prompt_host_and_agent_names():
         "name": "协同写作v1.1",
         "description": "",
         "system_prompt": "场景级项目规则",
-        "host_config": {
-            "leader_agent_name": "协同写作场景主持人",
+        "host": {
+            "name": "协同写作场景主持人",
             "llm_name": "deepseek-v4-flash",
             "system_prompt": None,
             "skill_name": "协同写作主持人v1.2",

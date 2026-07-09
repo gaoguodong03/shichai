@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent import group_host_decision as hd
-from app.agent.orchestrator_state import InterruptReason
+from app.agent.runtime_status import InterruptReason
 from app.agent.structured_output_contracts import HostSchedulerDecisionPayload
 
 
@@ -19,15 +19,15 @@ def test_host_payload_accepts_current_next_action_contract():
 
 
 @pytest.mark.parametrize(
-    "legacy_field",
-    ["speaker_task", "reason", "next_prompt", "announcement", "invite", "agent_id"],
+    "extra_field",
+    ["unexpected_instruction", "extra_reason", "extra_payload", "announcement_text", "invite_target", "agent_ref"],
 )
-def test_host_payload_rejects_legacy_fields(legacy_field):
+def test_host_payload_rejects_extra_fields(extra_field):
     data = {
         "current_phase": "资料收集",
         "next_speaker": "写作专家",
         "next_action": "请整理大纲。",
-        legacy_field: "旧字段",
+        extra_field: "额外字段",
     }
 
     with pytest.raises(ValidationError):

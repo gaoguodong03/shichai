@@ -98,8 +98,8 @@ export function useWorkspaceContentProviders(args: {
     try {
       const r = await apiRequest('/settings/host-profile')
       const j = await r.json().catch(() => ({}))
-      const data = (j as { data?: { name?: string; leader_agent_name?: string } })?.data
-      const next = String(data?.name || data?.leader_agent_name || '').trim()
+      const data = (j as { data?: { name?: string } })?.data
+      const next = String(data?.name || '').trim()
       hostDisplayName.value = next || DEFAULT_HOST_DISPLAY_NAME
     } catch {
       hostDisplayName.value = DEFAULT_HOST_DISPLAY_NAME

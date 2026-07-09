@@ -5,12 +5,12 @@ from app.agent.session_contracts import GroupChatRequest, SessionCreateRequest, 
 
 
 @pytest.mark.parametrize(
-    "legacy_field",
-    ["system_prompt", "scenario_name", "orchestration_profile", "leader_agent_name", "host_config"],
+    "extra_field",
+    ["extra_prompt", "scene_alias", "runtime_mode", "host_alias", "host_snapshot"],
 )
-def test_session_create_rejects_legacy_fields(legacy_field):
+def test_session_create_rejects_extra_fields(extra_field):
     with pytest.raises(ValidationError):
-        SessionCreateRequest.model_validate({"title": "新对话", legacy_field: "旧值"})
+        SessionCreateRequest.model_validate({"title": "新对话", extra_field: "额外值"})
 
 
 def test_session_create_accepts_host_snapshot_and_agent_names():
@@ -27,16 +27,16 @@ def test_session_create_accepts_host_snapshot_and_agent_names():
 
 
 @pytest.mark.parametrize(
-    "legacy_field",
+    "extra_field",
     ["action", "host_takeover_requested", "ignore_auto_agent_name", "ignore_auto_skill", "agent_name", "next_speaker"],
 )
-def test_group_chat_request_rejects_legacy_control_fields(legacy_field):
+def test_group_chat_request_rejects_extra_control_fields(extra_field):
     with pytest.raises(ValidationError):
         GroupChatRequest.model_validate(
             {
                 "message": "请处理",
                 "client_message_id": "client-1",
-                legacy_field: "旧控制",
+                extra_field: "额外控制",
             }
         )
 
@@ -60,6 +60,6 @@ def test_group_chat_request_accepts_attachments_and_target_agent():
     assert parsed.target_agent_name == "写作专家"
 
 
-def test_session_update_rejects_legacy_fields():
+def test_session_update_rejects_extra_fields():
     with pytest.raises(ValidationError):
-        SessionUpdateRequest.model_validate({"host_config": {"name": "旧主持人"}})
+        SessionUpdateRequest.model_validate({"host_snapshot": {"name": "额外主持人"}})

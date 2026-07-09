@@ -5,7 +5,7 @@ from app.core.session_preset_validate import (
     validate_session_preset,
     validation_to_api_dict,
 )
-from app.core.host_config import normalize_host_config_dict
+from app.core.host_profile_contract import normalize_host_profile_dict
 
 
 def test_extract_presets_wrapped():
@@ -27,7 +27,7 @@ def test_validate_missing_agent():
     preset = {
         "name": "P",
         "agent_names": ["缺失专家"],
-        "host_config": {"skill_name": "主持技能", "skill_directory": "skill-host"},
+        "host": {"skill_name": "主持技能", "skill_directory": "skill-host"},
     }
     v = validate_session_preset(
         preset,
@@ -44,7 +44,7 @@ def test_validate_host_skill_and_mcp():
     preset = {
         "name": "P",
         "agent_names": ["专家 A"],
-        "host_config": {
+        "host": {
             "skill_name": "主持技能",
             "skill_directory": "skill-host",
         },
@@ -67,7 +67,7 @@ def test_validate_empty_host_skills_do_not_create_missing_group_host():
     preset = {
         "name": "P",
         "agent_names": ["专家 A"],
-        "host_config": {"skill_name": "", "skill_directory": ""},
+        "host": {"skill_name": "", "skill_directory": ""},
     }
     agents = {"专家 A": {"skills": []}}
     v = validate_session_preset(
@@ -82,14 +82,14 @@ def test_validate_empty_host_skills_do_not_create_missing_group_host():
 
 
 def test_group_host_without_skills_has_no_default_dependency():
-    cfg = normalize_host_config_dict({"skill_name": "", "skill_directory": ""})
+    cfg = normalize_host_profile_dict({"skill_name": "", "skill_directory": ""})
 
     assert cfg["skill_name"] == ""
     assert cfg["skill_directory"] == ""
 
 
 def test_group_host_ignores_malformed_skill_refs():
-    cfg = normalize_host_config_dict(
+    cfg = normalize_host_profile_dict(
         {
             "skill_name": "",
             "skill_directory": "skill-host",
@@ -100,8 +100,8 @@ def test_group_host_ignores_malformed_skill_refs():
     assert cfg["skill_directory"] == "skill-host"
 
 
-def test_host_config_normalizes_to_single_host_skill():
-    cfg = normalize_host_config_dict(
+def test_host_profile_normalizes_to_single_host_skill():
+    cfg = normalize_host_profile_dict(
         {
             "skill_name": "主持人 A",
             "skill_directory": "/host-a",

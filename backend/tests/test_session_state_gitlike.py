@@ -45,7 +45,7 @@ def _user_msg(message_id: str, content: str, created_at: str = "2026062400000000
     return {
         "message_id": message_id,
         "speaker": {"type": "user"},
-        "content": content,
+        "message": {"content": content},
         "created_at": created_at,
     }
 
@@ -54,7 +54,7 @@ def _expert_msg(message_id: str, content: str, created_at: str = "20260624000100
     return {
         "message_id": message_id,
         "speaker": {"type": "expert", "agent_name": "agent-demo"},
-        "content": content,
+        "message": {"content": content},
         "created_at": created_at,
     }
 
@@ -145,7 +145,7 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
     detail_resp = client.get(f"/api/sessions/{cloned_session_id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()["data"]
-    assert detail["messages"][0]["content"] == "先记录一条消息"
+    assert detail["messages"][0]["message"]["content"] == "先记录一条消息"
 
     content_resp = client.get(
         f"/api/workspaces/{cloned_session_id}/files/content",
@@ -287,7 +287,7 @@ def test_rollback_restores_previous_checkpoint_and_trims_later_state(client: Tes
     assert detail_resp.status_code == 200
     messages = detail_resp.json()["data"]["messages"]
     assert len(messages) == 1
-    assert messages[0]["content"] == "第一版"
+    assert messages[0]["message"]["content"] == "第一版"
 
     snapshots_resp = client.get(f"/api/sessions/{session_id}/snapshots")
     checkpoints = snapshots_resp.json()["data"]["checkpoints"]

@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import yaml
 
-from app.core.host_config import normalize_host_config_dict
+from app.core.host_profile_contract import normalize_host_profile_dict
 from app.core.name_based_resources import normalize_tool_row
 from app.core.scenario_bundle import list_skill_directories_in_bundle_skills_dir
 
@@ -357,9 +357,9 @@ def find_missing_references_for_scene_bundle(
         if agent_name not in bundle_expert_by_name and agent_name not in existing_expert_names:
             _add_missing_reference(missing, "experts", agent_name, required_by=scene_label, source="scene")
 
-    host_config = normalize_host_config_dict(preset.get("host") or preset.get("host_config"))
+    host_profile = normalize_host_profile_dict(preset.get("host"))
     skill_refs: Dict[str, List[str]] = {}
-    host_skill_directory = str(host_config.get("skill_directory") or "").strip()
+    host_skill_directory = str(host_profile.get("skill_directory") or "").strip()
     if host_skill_directory:
         skill_refs.setdefault(host_skill_directory, []).append(host_label)
 

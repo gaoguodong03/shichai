@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Dict, List, Protocol
 
-from app.agent.orchestrator_state import InterruptReason
+from app.agent.runtime_status import InterruptReason
 
 
 class HookPriority(IntEnum):

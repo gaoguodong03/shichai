@@ -178,7 +178,7 @@ def test_update_session_presets_mirrors_scenarios_resource_files(monkeypatch, tm
                     name="资源目录场景",
                     agent_names=["资源目录专家"],
                     description="验证场景资源落盘",
-                    host_config={"leader_agent_name": "主持人"},
+                    host={"name": "主持人"},
                 )
             ]
         )
@@ -216,7 +216,7 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
                     "name": "线上导入场景",
                     "agent_names": ["线上专家"],
                     "description": "只剩资源目录镜像时也应能刷新出来",
-                    "host_config": {"leader_agent_name": "主持人"},
+                    "host": {"name": "主持人"},
                 },
                 ensure_ascii=False,
             ),
@@ -228,7 +228,7 @@ def test_get_session_presets_recovers_from_scenario_resource_files(monkeypatch, 
             {
                 "name": "线上导入场景",
                 "agent_names": ["线上专家"],
-                "host_config": {"leader_agent_name": "主持人", "llm_name": "", "system_prompt": None, "skill_name": "", "skill_directory": ""},
+                "host": {"name": "主持人", "llm_name": "", "system_prompt": None, "skill_name": "", "skill_directory": ""},
                 "description": "只剩资源目录镜像时也应能刷新出来",
                 "system_prompt": "",
             }
@@ -258,7 +258,7 @@ def test_get_session_presets_does_not_log_noisy_ids(monkeypatch, tmp_path, caplo
                 {
                     "name": "安静场景",
                     "agent_names": ["安静专家"],
-                    "host_config": {"leader_agent_name": "主持人"},
+                    "host": {"name": "主持人"},
                 },
                 ensure_ascii=False,
             ),

@@ -61,7 +61,7 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
   "next_action": "下一步动作说明",
   "suggested_add_agent_names": ["可邀请专家名称"]
 }}
-不要输出 reason、speaker_task、next_prompt、announcement、invite 或任何 id 字段。
+只允许输出上述字段；不要输出任何额外字段或解释文本。
         """,
     ),
     "expert.select_skill.v1": _prompt(

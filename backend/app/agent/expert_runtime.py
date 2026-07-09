@@ -14,7 +14,7 @@ from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
 from app.agent.expert_self_awareness import build_expert_self_awareness_block
 from app.agent.group_chat_expert_resolution import _last_user_message_text
 from app.agent.skill_agent_runtime import create_skill_execution_agent
-from app.agent.group_orchestration_fsm import clear_skill_session_lock, locked_skill_for_expert
+from app.agent.skill_session_locks import clear_skill_session_lock, locked_skill_for_expert
 from app.agent.skill_session_contract import GROUP_EXPERT_SKILL_SESSION_STATE_INSTRUCTION
 from app.agent.structured_output_contracts import ExpertSkillSelectionPayload, parse_strict_pydantic_object
 from app.agent.tools_for_skill import build_tools_for_group_chat
