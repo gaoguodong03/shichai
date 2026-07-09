@@ -331,6 +331,19 @@ def test_frontend_does_not_auto_route_from_end_suggested_next_speaker():
     assert "nextTick(() => confirmGroupNext" not in src
 
 
+def test_frontend_waiting_state_follows_end_waiting_for_user():
+    src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+    end_handler = re.search(
+        r"function handleStreamEndEvent\([\s\S]*?\n  \}",
+        src,
+    )
+
+    assert end_handler is not None
+    assert "if (endData.waiting_for_user)" in end_handler.group(0)
+    assert "groupWaitingForUser.value = true" in end_handler.group(0)
+    assert "groupWaitingForUser.value = !!endData.turns_limit_reached" not in end_handler.group(0)
+
+
 def test_frontend_does_not_infer_runtime_phase_from_route_or_message_events():
     src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
     route_handler = re.search(

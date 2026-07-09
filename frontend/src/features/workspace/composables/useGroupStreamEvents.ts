@@ -275,7 +275,7 @@ export function useGroupStreamEvents(args: {
     applyOrchestrationEndMeta(endData)
     if (endData.waiting_for_user) {
       groupTurnLimitReached.value = !!endData.turns_limit_reached
-      groupWaitingForUser.value = !!endData.turns_limit_reached
+      groupWaitingForUser.value = true
       groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
         ? String(endData.suggested_next_speaker)
         : null
