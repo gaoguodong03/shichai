@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import tempfile
 from contextlib import contextmanager
@@ -115,6 +116,44 @@ def test_checkpoint_object_uses_contract_fields_without_secondary_markdown_snaps
 
     user_ctx = build_user_context(user_id="free4inno", username="free4inno")
     assert not (user_ctx.sessions_dir / session_id / "chat.md").exists()
+
+
+def test_checkpoint_session_blob_uses_only_session_contract_fields(client: TestClient):
+    create_resp = client.post("/api/sessions", json={"title": "检查点会话字段"})
+    assert create_resp.status_code == 200
+    session_id = create_resp.json()["data"]["id"]
+
+    from app.core.user_context import build_user_context
+
+    user_ctx = build_user_context(user_id="free4inno", username="free4inno")
+    session_path = user_ctx.sessions_dir / session_id / "session.json"
+    polluted = json.loads(session_path.read_text(encoding="utf-8"))
+    polluted.update(
+        {
+            "add_agent_names": ["临时专家"],
+            "remove_agent_names": ["移除专家"],
+            "runtime_state": {"running": True},
+            "speaker_task": "旧任务",
+            "instruction": "旧指令",
+            "next_prompt": "旧提示",
+        }
+    )
+    session_path.write_text(json.dumps(polluted, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    snapshot_resp = client.post(f"/api/sessions/{session_id}/snapshot")
+    assert snapshot_resp.status_code == 200
+    checkpoint = snapshot_resp.json()["data"]
+    blob_path = user_ctx.sessions_dir / session_id / "checkpoints" / "objects" / "blobs" / checkpoint["session_blob"]
+    session_blob = json.loads(blob_path.read_text(encoding="utf-8"))
+
+    assert session_blob == {
+        "title": "检查点会话字段",
+        "title_auto_generated": False,
+        "agent_names": [],
+        "host": session_blob["host"],
+        "created_at": session_blob["created_at"],
+        "updated_at": session_blob["updated_at"],
+    }
 
 
 def test_clone_reuses_blob_objects(client: TestClient):

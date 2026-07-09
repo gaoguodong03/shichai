@@ -86,8 +86,6 @@ def _session_definition_snapshot(session_id: str) -> Dict[str, Any]:
         "host",
         "created_at",
         "updated_at",
-        "add_agent_names",
-        "remove_agent_names",
     }
     return {key: copy.deepcopy(value) for key, value in item.items() if key in allowed}
 

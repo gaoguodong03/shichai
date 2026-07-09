@@ -101,8 +101,6 @@ def _clean_session_definition(item: Dict[str, Any]) -> Dict[str, Any]:
         "host",
         "created_at",
         "updated_at",
-        "add_agent_names",
-        "remove_agent_names",
     }
     return {key: value for key, value in dict(item or {}).items() if key in allowed}
 

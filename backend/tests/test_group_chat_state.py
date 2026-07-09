@@ -87,6 +87,43 @@ def test_runtime_writes_runtime_json_not_session_json(tmp_path, monkeypatch):
     assert state.runtime_for_session("s1", loaded)["run_id"] == "r1"
 
 
+def test_session_definition_persists_only_contract_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    state.save_session_definitions(
+        {
+            "s1": {
+                "id": "s1",
+                "title": "会话",
+                "title_auto_generated": True,
+                "agent_names": ["专家A"],
+                "host": {"name": "四九"},
+                "created_at": "2026062908104800",
+                "updated_at": "2026062908104900",
+                "add_agent_names": ["专家B"],
+                "remove_agent_names": ["专家C"],
+                "runtime_state": {"running": True},
+                "pending_owner_agent_name": "专家A",
+                "speaker_task": "旧任务",
+                "instruction": "旧指令",
+                "next_prompt": "旧提示",
+            }
+        }
+    )
+
+    raw = json.loads((tmp_path / "s1" / "session.json").read_text(encoding="utf-8"))
+
+    assert raw == {
+        "id": "s1",
+        "title": "会话",
+        "title_auto_generated": True,
+        "agent_names": ["专家A"],
+        "host": {"name": "四九"},
+        "created_at": "2026062908104800",
+        "updated_at": "2026062908104900",
+    }
+
+
 def test_orchestration_state_writes_short_term_state_not_session_json(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
     state.save_session_definitions(
