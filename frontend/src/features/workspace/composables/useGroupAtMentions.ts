@@ -16,7 +16,6 @@ const AT_END_REG = /[\s，。、；：！？,.\-;:!?（）【】《》""''\[\]{}
 export function useGroupAtMentions(args: {
   groupDetail: Ref<MentionGroupDetail | null>
   groupDiscussionGoal: Ref<string | null>
-  groupNextPrompt: Ref<string>
   hostDisplayName: Ref<string>
   defaultHostDisplayName: string
   sendGroupMessage: () => void | Promise<void>
@@ -24,20 +23,18 @@ export function useGroupAtMentions(args: {
   const {
     groupDetail,
     groupDiscussionGoal,
-    groupNextPrompt,
     hostDisplayName,
     defaultHostDisplayName,
     sendGroupMessage,
   } = args
 
   const showAtDropdown = ref(false)
-  const atSource = ref<'goal' | 'nextPrompt'>('goal')
+  const atSource = ref<'goal'>('goal')
   const atFilter = ref('')
   const atInsertStart = ref(0)
   const atSelectionEnd = ref(0)
   const atSelectedIndex = ref(0)
   const goalTextareaRef = ref<HTMLTextAreaElement | null>(null)
-  const nextPromptTextareaRef = ref<HTMLTextAreaElement | null>(null)
   const groupInputIsComposing = ref(false)
 
   const atMentionOptions = computed(() => {
@@ -54,7 +51,7 @@ export function useGroupAtMentions(args: {
     )
   })
 
-  function openAtDropdown(source: 'goal' | 'nextPrompt', value: string, insertStart: number, selectionEnd: number) {
+  function openAtDropdown(source: 'goal', value: string, insertStart: number, selectionEnd: number) {
     atSource.value = source
     atInsertStart.value = insertStart
     atSelectionEnd.value = selectionEnd
@@ -63,7 +60,7 @@ export function useGroupAtMentions(args: {
     showAtDropdown.value = true
   }
 
-  function onAtInput(source: 'goal' | 'nextPrompt', e: Event) {
+  function onAtInput(source: 'goal', e: Event) {
     const el = e.target as HTMLTextAreaElement
     const value = el.value
     const start = el.selectionStart ?? 0
@@ -83,28 +80,23 @@ export function useGroupAtMentions(args: {
 
   function selectMention(opt: AtMentionOption) {
     const insertText = opt.type === 'host' ? `@${hostDisplayName.value || defaultHostDisplayName} ` : `@${opt.label} `
-    const target = atSource.value
-    const raw = target === 'goal' ? (groupDiscussionGoal.value ?? '') : groupNextPrompt.value
+    const raw = groupDiscussionGoal.value ?? ''
     const before = raw.slice(0, atInsertStart.value)
     const after = raw.slice(atSelectionEnd.value)
     const nextValue = before + insertText + after
     showAtDropdown.value = false
 
-    if (target === 'goal') {
-      groupDiscussionGoal.value = nextValue
-    } else {
-      groupNextPrompt.value = nextValue
-    }
+    groupDiscussionGoal.value = nextValue
 
     nextTick(() => {
-      const textarea = target === 'goal' ? goalTextareaRef.value : nextPromptTextareaRef.value
+      const textarea = goalTextareaRef.value
       textarea?.focus()
       const newPos = atInsertStart.value + insertText.length
       textarea?.setSelectionRange(newPos, newPos)
     })
   }
 
-  function onAtKeydown(_source: 'goal' | 'nextPrompt', e: KeyboardEvent) {
+  function onAtKeydown(_source: 'goal', e: KeyboardEvent) {
     if (!showAtDropdown.value || atMentionOptions.value.length === 0) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -150,7 +142,6 @@ export function useGroupAtMentions(args: {
 
   return {
     goalTextareaRef,
-    nextPromptTextareaRef,
     onAtInput,
     onAtKeydown,
     onGroupInputEnter,

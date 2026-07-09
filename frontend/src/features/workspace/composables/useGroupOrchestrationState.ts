@@ -21,7 +21,6 @@ type StreamStateLike = {
 
 type LastSentDraft = {
   goal: string
-  nextPrompt: string
   files: { name: string; path: string }[]
 }
 
@@ -50,7 +49,6 @@ export function useGroupOrchestrationState(args: {
   groupDetail: Ref<GroupDetailLike | null>
   groupDisplayMessages: Ref<GroupMessage[]>
   groupDiscussionGoal: Ref<string | null>
-  groupNextPrompt: Ref<string>
   currentGroupStreamState: ComputedRef<StreamStateLike>
   currentGroupStreaming: ComputedRef<boolean>
   groupStreaming: ComputedRef<boolean>
@@ -74,7 +72,6 @@ export function useGroupOrchestrationState(args: {
     groupDetail,
     groupDisplayMessages,
     groupDiscussionGoal,
-    groupNextPrompt,
     currentGroupStreamState,
     currentGroupStreaming,
     groupStreaming,
@@ -284,7 +281,6 @@ export function useGroupOrchestrationState(args: {
       const draft = lastSentDraft.value
       if (draft) {
         groupDiscussionGoal.value = draft.goal
-        groupNextPrompt.value = draft.nextPrompt
         setAttachedFiles(draft.files || [])
       }
       nextTick(() => {

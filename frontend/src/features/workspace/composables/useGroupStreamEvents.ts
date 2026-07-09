@@ -58,7 +58,6 @@ function withMessageContent(msg: GroupMessage, content: string): GroupMessage {
 export function useGroupStreamEvents(args: {
   selectedGroupSessionId: () => string | null
   groupDisplayMessages: Ref<GroupMessage[]>
-  groupNextPrompt: Ref<string>
   groupTurnLimitReached: Ref<boolean>
   groupWaitingForUser: Ref<boolean>
   groupSuggestedNextSpeaker: Ref<string | null>
@@ -81,7 +80,6 @@ export function useGroupStreamEvents(args: {
   const {
     selectedGroupSessionId,
     groupDisplayMessages,
-    groupNextPrompt,
     groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
@@ -320,14 +318,13 @@ export function useGroupStreamEvents(args: {
         clearStreamingPlaceholders()
         patchGroupStreamState(activeSessionId(sessionId), { phase: '等待你确认邀请…' })
       }
-      groupNextPrompt.value = ''
       if (endData.suggested_next_speaker === 'user' || endData.phase === 'completed') {
         clearAttachedFiles()
       }
       if (groupTurnLimitReached.value) {
         void appAlert({
           title: '已自动暂停',
-          message: '本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查并必要时编辑「下一专家提示词」，然后点击「确认并继续」。',
+          message: '本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查当前回复，然后点击「确认并继续」。',
           variant: 'warning',
         })
       }

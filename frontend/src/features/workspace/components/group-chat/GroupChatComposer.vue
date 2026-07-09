@@ -35,8 +35,7 @@
                     <span class="group-chat-file-tag-close">×</span>
                   </button>
                 </div>
-                <!-- 单框模式：仅讨论目标（未勾选「提示词框」时） -->
-                <div v-if="!showNextPromptField" class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
+                <div class="group-chat-input-block group-chat-input-block-single group-chat-input-block-at">
                   <textarea
                     ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
@@ -90,122 +89,6 @@
                     <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
                   </div>
                 </div>
-                <!-- 双框模式：勾选「提示词框」时显示 -->
-                <template v-else>
-                  <div class="group-chat-input-block group-chat-input-block-at">
-                    <label class="group-chat-input-block-label">输入消息</label>
-                    <textarea
-                      ref="goalTextareaRef"
-                      v-model="groupDiscussionGoal"
-                      class="group-chat-input-block-textarea"
-                      placeholder="输入 @ 可提及主持人或专家"
-                      rows="3"
-                      @input="onAtInput('goal', $event)"
-                      @keydown="onAtKeydown('goal', $event)"
-                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
-                      @compositionstart="onGroupCompositionStart"
-                      @compositionend="onGroupCompositionEnd"
-                      @blur="closeAtDropdownOnBlur"
-                    />
-                    <div v-if="showAtDropdown && atSource === 'goal'" class="group-chat-at-dropdown">
-                      <ul class="group-chat-members-list">
-                        <li
-                          v-for="(opt, idx) in atMentionOptions"
-                          :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
-                          @mousedown.prevent
-                          @click="selectMention(opt)"
-                        >
-                          <span
-                            v-if="opt.type === 'host'"
-                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
-                            aria-hidden="true"
-                          >
-                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                          </span>
-                          <span
-                            v-else
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="
-                              expertAvatarUrl(opt.id)
-                                ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_names?.indexOf(opt.id) ?? -1) }
-                            "
-                          >
-                            <img
-                              v-if="expertAvatarUrl(opt.id)"
-                              :src="expertAvatarUrl(opt.id)!"
-                              alt=""
-                              class="group-chat-avatar-photo"
-                            />
-                            <template v-else>{{ agentAvatarChar(opt.id) }}</template>
-                          </span>
-                          <span class="group-chat-at-label">{{ opt.label }}</span>
-                        </li>
-                      </ul>
-                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
-                    </div>
-                  </div>
-                  <div class="group-chat-input-block group-chat-input-block-at">
-                    <label class="group-chat-input-block-label">
-                      下一专家提示词
-                      <span v-if="groupWaitingForUser" class="group-chat-prompt-hint">（可编辑后点「确认并继续」）</span>
-                    </label>
-                    <textarea
-                      ref="nextPromptTextareaRef"
-                      v-model="groupNextPrompt"
-                      class="group-chat-input-block-textarea"
-                      placeholder="给下一个专家的提示词（可留空由主持人自动生成），输入 @ 可提及主持人或专家"
-                      rows="3"
-                      @input="onAtInput('nextPrompt', $event)"
-                      @keydown="onAtKeydown('nextPrompt', $event)"
-                      @keydown.enter.exact.prevent="onGroupInputEnter($event)"
-                      @compositionstart="onGroupCompositionStart"
-                      @compositionend="onGroupCompositionEnd"
-                      @blur="closeAtDropdownOnBlur"
-                    />
-                    <div v-if="showAtDropdown && atSource === 'nextPrompt'" class="group-chat-at-dropdown">
-                      <ul class="group-chat-members-list">
-                        <li
-                          v-for="(opt, idx) in atMentionOptions"
-                          :key="opt.id"
-                          class="group-chat-members-item group-chat-members-item-clickable"
-                          :class="{ 'group-chat-at-item-selected': idx === atSelectedIndex }"
-                          @mousedown.prevent
-                          @click="selectMention(opt)"
-                        >
-                          <span
-                            v-if="opt.type === 'host'"
-                            class="group-chat-avatar group-chat-avatar-sm group-chat-at-special-icon group-chat-at-host-avatar group-chat-avatar-host-logo"
-                            aria-hidden="true"
-                          >
-                            <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                          </span>
-                          <span
-                            v-else
-                            class="group-chat-avatar group-chat-avatar-sm"
-                            :style="
-                              expertAvatarUrl(opt.id)
-                                ? { background: 'transparent', overflow: 'hidden' }
-                                : { backgroundColor: agentAvatarColor(groupDetail?.agent_names?.indexOf(opt.id) ?? -1) }
-                            "
-                          >
-                            <img
-                              v-if="expertAvatarUrl(opt.id)"
-                              :src="expertAvatarUrl(opt.id)!"
-                              alt=""
-                              class="group-chat-avatar-photo"
-                            />
-                            <template v-else>{{ agentAvatarChar(opt.id) }}</template>
-                          </span>
-                          <span class="group-chat-at-label">{{ opt.label }}</span>
-                        </li>
-                      </ul>
-                      <p v-if="!atMentionOptions.length" class="group-chat-add-member-empty">无匹配</p>
-                    </div>
-                  </div>
-                </template>
               </div>
               <div class="group-chat-input-toolbar">
                 <div class="group-chat-toolbar-left">
@@ -216,7 +99,7 @@
                       title="当前焦点角色（点击管理成员）"
                       aria-haspopup="dialog"
                       :aria-expanded="showAddMemberModal"
-                      @click="showAddMemberModal = true; showMoreMenu = false"
+                      @click="showAddMemberModal = true"
                     >
                       <span
                         v-if="toolbarDisplayShowHostAvatar"
@@ -275,44 +158,6 @@
                       />
                       <span>场景</span>
                     </button>
-                  </div>
-                  <div ref="moreMenuRef" class="group-chat-add-member-wrap">
-                    <button
-                      type="button"
-                      class="group-chat-toolbar-btn group-chat-toolbar-btn-icon"
-                      @click="showMoreMenu = !showMoreMenu"
-                    >
-                      <span
-                        class="group-chat-toolbar-icon group-chat-toolbar-icon-mask"
-                        :style="workspaceIconStyle(moreIconUrl)"
-                        aria-hidden="true"
-                      />
-                    </button>
-                    <div v-if="showMoreMenu" class="group-chat-add-member-dropdown group-chat-more-dropdown">
-                      <div class="group-chat-more-row group-chat-more-toggle-row">
-                        <button
-                          type="button"
-                          class="group-chat-toggle-pill"
-                          :class="{ 'group-chat-toggle-pill-active': showNextPromptField }"
-                          @click="onShowNextPromptFieldChangeByClick"
-                        >
-                          <svg
-                            class="group-chat-toggle-pill-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.6"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                          >
-                            <rect x="4" y="5" width="16" height="14" rx="2" />
-                            <path d="M8 9h8" />
-                            <path d="M8 13h5" />
-                          </svg>
-                          <span>提示词框</span>
-                        </button>
-                      </div>
-                    </div>
                   </div>
                   <!-- 居中弹窗：文件 -->
                   <div v-if="showInsertFileModal" class="group-chat-modal-overlay" @click.self="!insertLocalFileUploading && (showInsertFileModal = false)">
@@ -499,7 +344,7 @@
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
                   <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
-                    已自动暂停（已运行 32 轮）。如需继续，请检查并编辑「下一专家提示词」，然后点击「确认并继续」。
+                    已自动暂停（已运行 32 轮）。如需继续，请检查当前回复后点击「确认并继续」。
                   </span>
                   <button
                     v-if="currentGroupStreaming"
@@ -529,7 +374,6 @@ import GroupChatStatusBars from './GroupChatStatusBars.vue'
 import { workspaceIconStyle } from '../../workspaceIconStyle'
 import fileIconUrl from '@/assets/icons/workspace/file.svg'
 import folderIconUrl from '@/assets/icons/workspace/folder.svg'
-import moreIconUrl from '@/assets/icons/workspace/more.svg'
 import scenarioOpenIconUrl from '@/assets/icons/workspace/scenario-open.svg'
 import uploadIconUrl from '@/assets/icons/workspace/upload.svg'
 
@@ -554,7 +398,6 @@ const {
   ignoreAutoSwitchAndPause,
   attachedFiles,
   removeAttachedFile,
-  showNextPromptField,
   groupDiscussionGoal,
   goalTextareaRef,
   onAtInput,
@@ -569,10 +412,6 @@ const {
   atSelectedIndex,
   selectMention,
   groupDetail,
-  groupNextPrompt,
-  showMoreMenu,
-  moreMenuRef,
-  onShowNextPromptFieldChangeByClick,
   openInsertFileModal,
   showInsertFileModal,
   insertFileRef,

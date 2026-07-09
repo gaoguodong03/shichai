@@ -116,6 +116,30 @@ def test_frontend_does_not_parse_file_references_from_message_content():
         assert forbidden not in combined
 
 
+def test_frontend_does_not_send_legacy_next_prompt_channel():
+    files = [
+        "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",
+        "frontend/src/features/workspace/components/group-chat/groupChatWorkspaceContext.ts",
+        "frontend/src/features/workspace/composables/groupMessageDraft.ts",
+        "frontend/src/features/workspace/composables/useGroupComposerActions.ts",
+        "frontend/src/features/workspace/composables/useGroupAtMentions.ts",
+        "frontend/src/features/workspace/composables/useGroupMessageList.ts",
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+        "frontend/src/features/workspace/composables/useGroupStreamEvents.ts",
+        "frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts",
+        "backend/app/agent/group_context.py",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for forbidden in [
+        "groupNextPrompt",
+        "nextPrompt",
+        "next_prompt",
+        "【给下一 Agent 的提示】",
+        "下一专家提示词",
+    ]:
+        assert forbidden not in combined
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

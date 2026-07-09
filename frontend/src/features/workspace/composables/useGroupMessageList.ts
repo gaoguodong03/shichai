@@ -220,7 +220,6 @@ export function useGroupMessageList(args: {
       ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
       : raw
     return withoutGoalPrefix
-      .replace(/(?:^|\n{2,})【给下一 Agent 的提示】[\s\S]*?$/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .replace(/^\s+|\s+$/g, '')
   }

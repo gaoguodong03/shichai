@@ -1538,7 +1538,7 @@
 .group-chat-dismiss-suggested-btn:hover {
   color: var(--color-text);
 }
-/* 底部输入区：整块对话框，单框或双框（讨论目标 + 下一 Agent 提示词） */
+/* 底部输入区：消息输入、附件和成员提及 */
 .group-chat-input-blocks {
   display: flex;
   flex-direction: column;
@@ -1635,21 +1635,6 @@
   background: var(--color-agent-box-0);
   color: #fff;
   border-color: transparent;
-}
-.group-chat-at-next-avatar {
-  background: var(--color-list-hover);
-  color: var(--color-text-muted);
-}
-.group-chat-input-block-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  margin: 0 0 0.35rem 0;
-}
-.group-chat-prompt-hint {
-  font-weight: 400;
-  opacity: 0.9;
 }
 .group-chat-input-block-textarea {
   width: 100%;
@@ -2000,36 +1985,6 @@
   cursor: pointer;
 }
 .group-chat-auto-toggle span { user-select: none; }
-.group-chat-more-toggle-row {
-  justify-content: flex-start;
-}
-.group-chat-toggle-pill {
-  padding: 0.18rem 0.6rem;
-  width: 100%;
-  border-radius: 999px;
-  border: 2px solid var(--color-border);
-  background: var(--color-list-hover);
-  color: var(--color-text);
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.group-chat-toggle-pill-full {
-  text-align: center;
-}
-.group-chat-toggle-pill-icon {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-}
-.group-chat-toggle-pill-active {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent-subtle-text);
-  border-color: var(--color-accent);
-}
 .group-chat-confirm-btn {
   padding: 0.375rem 0.75rem;
   font-size: 0.8125rem;
@@ -2512,15 +2467,6 @@
   object-fit: contain;
   border-radius: 6px;
 }
-.group-chat-more-dropdown {
-  min-width: 8rem;
-  width: 8rem;
-}
-.group-chat-more-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.8125rem; color: var(--color-text); }
-.group-chat-more-row-btn { width: 100%; justify-content: flex-start; background: none; border: none; cursor: pointer; text-align: left; }
-.group-chat-more-row-btn:hover { background: var(--color-list-hover); }
-.group-chat-more-add-remove { justify-content: space-between; flex-wrap: wrap; }
-.group-chat-more-inner { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--color-border-light); }
 .group-chat-remove-member-btn { flex-shrink: 0; font-size: 0.6875rem; padding: 0.2rem 0.4rem; color: var(--color-danger); background: var(--color-danger-subtle, rgba(220,38,38,0.1)); border: 1px solid var(--color-border); border-radius: 4px; cursor: pointer; }
 .group-chat-remove-member-btn:hover { opacity: 0.9; }
 .group-chat-add-remove-section { margin-top: 0.5rem; }

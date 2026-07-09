@@ -148,9 +148,9 @@ def title_from_first_message(text: str, max_chars: int = 10) -> str:
     if not text or not isinstance(text, str):
         return ""
     s = text.strip()
-    for prefix in ("【讨论目标】", "【给下一 Agent 的提示】"):
-        if s.startswith(prefix):
-            s = s[len(prefix) :].lstrip("\n ")
+    prefix = "【讨论目标】"
+    if s.startswith(prefix):
+        s = s[len(prefix) :].lstrip("\n ")
     first_line = s.split("\n")[0].strip() if s else ""
     if not first_line:
         return ""

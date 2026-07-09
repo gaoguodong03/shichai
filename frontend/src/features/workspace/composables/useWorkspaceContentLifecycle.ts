@@ -11,8 +11,6 @@ import {
 
 export function useWorkspaceContentLifecycle(args: {
   showGroupWorkspace: Ref<boolean>
-  showMoreMenu: Ref<boolean>
-  moreMenuRef: Ref<HTMLElement | null>
   expandedToolKey: Ref<string | null>
   setSessionMetaPopoverOpenFromPreference: (open: boolean) => void
   loadShortcutPresets: () => unknown
@@ -21,8 +19,6 @@ export function useWorkspaceContentLifecycle(args: {
 }) {
   const {
     showGroupWorkspace,
-    showMoreMenu,
-    moreMenuRef,
     expandedToolKey,
     setSessionMetaPopoverOpenFromPreference,
     loadShortcutPresets,
@@ -38,9 +34,7 @@ export function useWorkspaceContentLifecycle(args: {
   }
 
   function closeMembersDropdown(e: MouseEvent) {
-    const target = e.target as Node
     const el = e.target as HTMLElement
-    if (moreMenuRef.value && !moreMenuRef.value.contains(target)) showMoreMenu.value = false
     if (!el?.closest?.('.group-chat-tool-tag-wrap')) expandedToolKey.value = null
   }
 

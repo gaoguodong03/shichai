@@ -61,7 +61,6 @@ export function useWorkspaceContentProviders(args: {
   const groupDetail = ref<GroupDetail | null>(null)
   const groupLoading = ref(false)
   const groupError = ref<string | null>(null)
-  const groupNextPrompt = ref('')
   const {
     groupStreamStates,
     currentGroupStreamState,
@@ -317,7 +316,6 @@ export function useWorkspaceContentProviders(args: {
   } = useGroupAtMentions({
     groupDetail,
     groupDiscussionGoal,
-    groupNextPrompt,
     hostDisplayName: effectiveHostDisplayName,
     defaultHostDisplayName: DEFAULT_HOST_DISPLAY_NAME,
     sendGroupMessage,
@@ -363,7 +361,6 @@ export function useWorkspaceContentProviders(args: {
     groupDetail,
     groupDisplayMessages,
     groupDiscussionGoal,
-    groupNextPrompt,
     currentGroupStreamState,
     currentGroupStreaming,
     groupStreaming,
@@ -406,7 +403,6 @@ export function useWorkspaceContentProviders(args: {
   streamEventHandlers = useGroupStreamEvents({
     selectedGroupSessionId: () => props.selectedGroupSessionId,
     groupDisplayMessages,
-    groupNextPrompt,
     groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
@@ -438,7 +434,6 @@ export function useWorkspaceContentProviders(args: {
     groupDetail,
     groupDisplayMessages,
     groupDiscussionGoal,
-    groupNextPrompt,
     groupStreaming,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
@@ -465,13 +460,9 @@ export function useWorkspaceContentProviders(args: {
   })
 
   const expandedToolKey = ref<string | null>(null)
-  const moreMenuRef = ref<HTMLElement | null>(null)
-  const showMoreMenu = ref(false)
 
   const { toggleGroupWorkspaceOpen } = useWorkspaceContentLifecycle({
     showGroupWorkspace,
-    showMoreMenu,
-    moreMenuRef,
     expandedToolKey,
     setSessionMetaPopoverOpenFromPreference,
     loadShortcutPresets,
@@ -479,17 +470,10 @@ export function useWorkspaceContentProviders(args: {
     cleanupGroupStreamRuntime,
   })
 
-  const showNextPromptField = ref(false)
-  function onShowNextPromptFieldChangeByClick() {
-    showNextPromptField.value = !showNextPromptField.value
-    if (showNextPromptField.value) showMoreMenu.value = false
-  }
-
   const canSend = computed(
     () =>
       !!(
         (groupDiscussionGoal.value || '').trim() ||
-        (groupNextPrompt.value || '').trim() ||
         attachedFiles.value.length
       ),
   )
@@ -502,12 +486,11 @@ export function useWorkspaceContentProviders(args: {
     { immediate: true },
   )
 
-  // 切换会话时，清空上一场的「下一 Agent 提示词」、文件引用等状态，避免串场
+  // 切换会话时清空上一场输入和附件，避免串场。
   watch(
     () => props.selectedGroupSessionId,
     () => {
       groupDiscussionGoal.value = null
-      groupNextPrompt.value = ''
       clearAttachedFiles()
       resetOrchestrationForSessionSwitch()
       resetGroupWorkspacePanel()
@@ -651,7 +634,6 @@ export function useWorkspaceContentProviders(args: {
     ignoreAutoSwitchAndPause,
     attachedFiles,
     removeAttachedFile,
-    showNextPromptField,
     groupDiscussionGoal,
     goalTextareaRef,
     onAtInput,
@@ -666,10 +648,6 @@ export function useWorkspaceContentProviders(args: {
     atSelectedIndex,
     selectMention,
     groupDetail,
-    groupNextPrompt,
-    showMoreMenu,
-    moreMenuRef,
-    onShowNextPromptFieldChangeByClick,
     openInsertFileModal,
     showInsertFileModal,
     insertFileRef,

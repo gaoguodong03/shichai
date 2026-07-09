@@ -79,7 +79,6 @@ export interface GroupChatComposerContext {
   ignoreAutoSwitchAndPause: ContextValue
   attachedFiles: ContextValue
   removeAttachedFile: ContextValue
-  showNextPromptField: ContextValue
   groupDiscussionGoal: ContextValue
   goalTextareaRef: ContextValue
   onAtInput: ContextValue
@@ -94,10 +93,6 @@ export interface GroupChatComposerContext {
   atSelectedIndex: ContextValue
   selectMention: ContextValue
   groupDetail: ContextValue
-  groupNextPrompt: ContextValue
-  showMoreMenu: ContextValue
-  moreMenuRef: ContextValue
-  onShowNextPromptFieldChangeByClick: ContextValue
   openInsertFileModal: ContextValue
   showInsertFileModal: ContextValue
   insertFileRef: ContextValue

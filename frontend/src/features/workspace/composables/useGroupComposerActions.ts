@@ -11,7 +11,6 @@ import {
 
 type LastSentDraft = {
   goal: string
-  nextPrompt: string
   files: AttachedFile[]
 }
 
@@ -24,7 +23,6 @@ export function useGroupComposerActions(args: {
   groupDetail: Ref<GroupDetail | null>
   groupDisplayMessages: Ref<GroupMessage[]>
   groupDiscussionGoal: Ref<string | null>
-  groupNextPrompt: Ref<string>
   groupStreaming: ComputedRef<boolean>
   groupWaitingForUser: Ref<boolean>
   groupSuggestedNextSpeaker: Ref<string | null>
@@ -69,7 +67,7 @@ export function useGroupComposerActions(args: {
   })
 
   function builtMessage(): string {
-    return buildGroupDraftMessage(args.groupDiscussionGoal.value || '', args.groupNextPrompt.value || '')
+    return buildGroupDraftMessage(args.groupDiscussionGoal.value || '')
   }
 
   function requestAttachments(): Array<{ type: 'workspace_file'; path: string; name?: string }> {
@@ -96,7 +94,6 @@ export function useGroupComposerActions(args: {
     const base = builtMessage()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
-      nextPrompt: String(args.groupNextPrompt.value || ''),
       files: [...(args.attachedFiles.value || [])],
     }
     const hasFiles = args.attachedFiles.value.length > 0
@@ -128,11 +125,9 @@ export function useGroupComposerActions(args: {
     args.clearAutoSwitchHint()
     args.lastSentDraft.value = {
       goal: String(args.groupDiscussionGoal.value || ''),
-      nextPrompt: String(args.groupNextPrompt.value || ''),
       files: [...(args.attachedFiles.value || [])],
     }
     args.groupDiscussionGoal.value = ''
-    args.groupNextPrompt.value = ''
     const { runToken, abort } = args.beginGroupStream(detail.id, '正在分配专家…')
     try {
       const msg = base
