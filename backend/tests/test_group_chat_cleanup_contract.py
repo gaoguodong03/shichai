@@ -19,6 +19,7 @@ def test_backend_core_files_stay_bounded_after_extraction():
 def test_backend_extraction_modules_exist_without_legacy_smells():
     modules = (
         "app/agent/group_chat_memory_prompt.py",
+        "app/agent/group_orchestration_fsm.py",
         "app/agent/group_chat_host_runtime.py",
         "app/agent/group_chat_host_messages.py",
         "app/agent/simple_agent_finalization.py",
@@ -53,7 +54,6 @@ def test_group_chat_removes_legacy_mode_and_internal_memory_artifacts():
         "app/agent/orchestrator_reducer.py",
         "app/agent/orchestrator_state.py",
         "app/agent/scene_runtime.py",
-        "app/agent/group_orchestration_fsm.py",
         "app/agent/group_chat_skill_session.py",
         "app/agent/group_chat_hooks.py",
         "app/core/scene_scheduler.py",
