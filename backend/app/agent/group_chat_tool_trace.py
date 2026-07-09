@@ -99,10 +99,9 @@ def _iter_values(value: Any) -> Iterable[Any]:
 
 
 def _looks_like_success_payload(payload: dict[str, Any]) -> bool:
-    status = str(payload.get("execution_status") or payload.get("status") or "").strip().lower()
-    code = str(payload.get("result_code") or payload.get("code") or "").strip().lower()
+    status = str(payload.get("execution_status") or "").strip().lower()
     ok = payload.get("ok")
-    return ok is True or status in {"succeeded", "success", "completed"} or code in {"succeeded", "success", "file.generated"}
+    return ok is True or status == "succeeded"
 
 
 def _extract_success_paths_from_payload(payload: dict[str, Any]) -> List[str]:
