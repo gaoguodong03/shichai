@@ -253,7 +253,9 @@ def test_clone_copies_workspace_and_chat_state(client: TestClient):
 
     snapshots_resp = client.get(f"/api/sessions/{cloned_session_id}/snapshots")
     assert snapshots_resp.status_code == 200
-    assert len(snapshots_resp.json()["data"]["checkpoints"]) == 1
+    checkpoints = snapshots_resp.json()["data"]["checkpoints"]
+    assert len(checkpoints) == 1
+    assert checkpoints[0]["trigger"] == "clone"
 
 
 def test_clone_and_rollback_reject_running_session(client: TestClient):

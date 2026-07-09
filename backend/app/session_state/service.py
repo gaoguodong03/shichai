@@ -369,7 +369,7 @@ def _copy_session_state(source_session_id: str, target_session_id: str, checkpoi
     copied = copy.deepcopy(checkpoint)
     copied["checkpoint_id"] = f"checkpoint-{uuid.uuid4().hex[:16]}"
     copied["parent_checkpoint_id"] = None
-    copied["trigger"] = f"clone:{source_session_id}"
+    copied["trigger"] = "clone"
     copied["session_blob"] = _copy_blob(source_store, target_store, str(checkpoint["session_blob"]))
     copied["history_blob"] = _copy_blob(source_store, target_store, str(checkpoint["history_blob"]))
     copied["orchestration_state_blob"] = _copy_blob(source_store, target_store, checkpoint.get("orchestration_state_blob"))
