@@ -53,6 +53,8 @@ def messages_to_context(
     for m in recent:
         role, agent_name = _message_speaker(m)
         content = _message_content(m)
+        if not content:
+            continue
         content = _clip_context_message(content, max_chars_per_message)
         if role == "user":
             lines.append(f"【用户】{content}")

@@ -86,3 +86,5 @@ def test_messages_to_context_ignores_legacy_top_level_content():
     assert "旧顶层正文不应进入上下文" not in text
     assert "旧助手正文不应进入上下文" not in text
     assert "只有旧字段的正文不应进入上下文" not in text
+    assert "旧专家" not in text
+    assert "【助手】" not in text
