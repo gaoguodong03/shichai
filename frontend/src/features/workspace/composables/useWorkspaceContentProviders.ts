@@ -427,7 +427,6 @@ export function useWorkspaceContentProviders(args: {
     clearAutoSwitchHint,
     emitAgentAdded: () => emit('agent-added'),
     loadGroupDetail,
-    confirmGroupNext,
   })
   const {
     appendStreamingContent,

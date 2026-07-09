@@ -75,7 +75,6 @@ export function useGroupStreamEvents(args: {
   clearAutoSwitchHint: () => void
   emitAgentAdded: () => void
   loadGroupDetail: () => Promise<void> | void
-  confirmGroupNext: (nextSpeaker: string) => Promise<void> | void
 }) {
   const {
     selectedGroupSessionId,
@@ -97,7 +96,6 @@ export function useGroupStreamEvents(args: {
     clearAutoSwitchHint,
     emitAgentAdded,
     loadGroupDetail,
-    confirmGroupNext,
   } = args
 
   function activeSessionId(sessionId = selectedGroupSessionId() || ''): string {
@@ -301,12 +299,6 @@ export function useGroupStreamEvents(args: {
           message: '本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查当前回复，然后点击「确认并继续」。',
           variant: 'warning',
         })
-      }
-      if (!endData.turns_limit_reached) {
-        const suggestedNext = endData.suggested_next_speaker
-        if (suggestedNext && suggestedNext !== 'user') {
-          nextTick(() => confirmGroupNext(String(suggestedNext)))
-        }
       }
     }
     if (endData.phase === 'completed') {

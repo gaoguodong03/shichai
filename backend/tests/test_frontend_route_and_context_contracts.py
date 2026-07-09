@@ -318,6 +318,19 @@ def test_frontend_stores_backend_phase_values_in_stream_state():
         assert forbidden not in combined
 
 
+def test_frontend_does_not_auto_route_from_end_suggested_next_speaker():
+    src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
+    end_handler = re.search(
+        r"function handleStreamEndEvent\([\s\S]*?\n  \}",
+        src,
+    )
+
+    assert end_handler is not None
+    assert "groupSuggestedNextSpeaker.value =" in end_handler.group(0)
+    assert "confirmGroupNext(" not in end_handler.group(0)
+    assert "nextTick(() => confirmGroupNext" not in src
+
+
 def test_frontend_does_not_infer_runtime_phase_from_route_or_message_events():
     src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
     route_handler = re.search(
