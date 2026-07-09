@@ -37,11 +37,12 @@ def test_travel_expense_script_runs_without_pandas_for_single_city():
     payload = _run_script("--query", "南京差旅住宿标准")
 
     assert payload["execution_status"] == "succeeded"
-    assert payload["result_code"] == "travel_standards.extracted"
+    assert "result_code" not in payload
+    assert "message" not in payload
     assert payload["next_action"]["skill_session"] == "keep"
-    assert payload["artifacts"]["matched_records"] == 1
-    assert "江苏南京市（常规时段）住宿费标准" in payload["artifacts"]["description"]
-    assert "其他人员380元/人·天" in payload["artifacts"]["description"]
+    assert payload["artifacts"] == []
+    assert "江苏南京市（常规时段）住宿费标准" in payload["content"]
+    assert "其他人员380元/人·天" in payload["content"]
 
 
 def test_travel_expense_script_does_not_treat_person_type_as_other_region():
@@ -49,19 +50,20 @@ def test_travel_expense_script_does_not_treat_person_type_as_other_region():
 
     assert payload["execution_status"] == "succeeded"
     assert payload["next_action"]["skill_session"] == "keep"
-    assert payload["artifacts"]["matched_records"] == 4
-    assert payload["artifacts"]["keywords"]["person_type"] == "others"
-    description = payload["artifacts"]["description"]
-    assert "北京全市（常规时段）其他人员住宿费上限为500元/人·天" in description
-    assert "上海全市（常规时段）其他人员住宿费上限为500元/人·天" in description
-    assert "广东广州市（常规时段）其他人员住宿费上限为450元/人·天" in description
-    assert "深圳全市（常规时段）其他人员住宿费上限为450元/人·天" in description
-    assert "其他地区" not in description
+    assert payload["artifacts"] == []
+    assert "北京全市（常规时段）其他人员住宿费上限为500元/人·天" in payload["content"]
+    assert "上海全市（常规时段）其他人员住宿费上限为500元/人·天" in payload["content"]
+    assert "广东广州市（常规时段）其他人员住宿费上限为450元/人·天" in payload["content"]
+    assert "深圳全市（常规时段）其他人员住宿费上限为450元/人·天" in payload["content"]
+    assert "其他地区" not in payload["content"]
 
 
 def test_travel_expense_script_handles_missing_place_as_keep():
     payload = _run_script("--query", "差旅费标准是多少")
 
     assert payload["execution_status"] == "blocked"
-    assert payload["result_code"] == "input.missing_place"
+    assert "result_code" not in payload
+    assert "message" not in payload
+    assert "content" in payload
+    assert payload["artifacts"] == []
     assert payload["next_action"]["skill_session"] == "keep"

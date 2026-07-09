@@ -52,9 +52,8 @@ class _FakeScriptGateway:
                 "stdout": json.dumps(
                     {
                         "execution_status": "succeeded",
-                        "result_code": "package.version_checked",
-                        "message": "pendulum==3.0.0",
-                        "artifacts": {"package": "pendulum", "version": "3.0.0"},
+                        "content": "pendulum==3.0.0",
+                        "artifacts": [],
                         "next_action": {"agent_turn": "respond", "skill_session": "release"},
                     },
                     ensure_ascii=False,
@@ -115,9 +114,8 @@ args = parser.parse_args()
 import json
 print(json.dumps({
     "execution_status": "succeeded",
-    "result_code": "package.version_checked",
-    "message": f"{args.package}==3.0.0",
-    "artifacts": {"package": args.package, "version": "3.0.0"},
+    "content": f"{args.package}==3.0.0",
+    "artifacts": [],
     "next_action": {"agent_turn": "respond", "skill_session": "release"},
 }, ensure_ascii=False))
 """,
@@ -192,7 +190,7 @@ def test_frontend_at_mention_runs_skill_script_with_cli_args(_frontend_flow_env,
     assert data["route"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["agent_name"] == "沙箱依赖验证专家"
     assert assistant_msg["speaker"]["skill"] == "sandbox-dependency-verify"
-    assert "版本检查通过" in assistant_msg["message"]["content"]
+    assert assistant_msg["message"]["content"] == "pendulum==3.0.0"
     assert fake_gateway.calls
 
     call = fake_gateway.calls[0]
