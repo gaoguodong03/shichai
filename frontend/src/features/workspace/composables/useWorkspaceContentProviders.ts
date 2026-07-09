@@ -341,7 +341,6 @@ export function useWorkspaceContentProviders(args: {
     autoSwitchIgnoreLoading,
     lastSentDraft,
     lastRoute,
-    groupTurnLimitReached,
     orchestrationInterruptHint,
     pendingSuggestedAgentItems,
     inviteSuggestedAgents,
@@ -410,7 +409,6 @@ export function useWorkspaceContentProviders(args: {
   streamEventHandlers = useGroupStreamEvents({
     selectedGroupSessionId: () => props.selectedGroupSessionId,
     groupDisplayMessages,
-    groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
     groupSuggestedAddAgentNames,
@@ -682,7 +680,6 @@ export function useWorkspaceContentProviders(args: {
     inviteSingleMember,
     insertLocalFileInputRef,
     onInsertLocalFile,
-    groupTurnLimitReached,
     effectiveNextSpeaker,
     canSend,
     groupStreaming,

@@ -11,7 +11,6 @@
                 :streaming-speaker-name="currentActiveStreamingMessage ? activeStreamingSpeakerName : ''"
                 :streaming-pulse="streamingPulse"
                 :waiting-for-user="groupWaitingForUser"
-                :turn-limit-reached="groupTurnLimitReached"
                 :next-speaker-text="nextSpeakerLabelText"
                 :interrupt-hint="orchestrationInterruptHint"
                 :current-streaming="currentGroupStreaming"
@@ -353,9 +352,6 @@
                   />
                 </div>
                 <div class="group-chat-toolbar-right group-chat-send-row">
-                  <span v-if="groupTurnLimitReached && groupWaitingForUser" class="group-chat-turn-hint">
-                    已自动暂停（已运行 32 轮）。如需继续，请检查当前回复后点击「确认并继续」。
-                  </span>
                   <button
                     v-if="currentGroupStreaming"
                     type="button"
@@ -456,7 +452,6 @@ const {
   inviteSingleMember,
   insertLocalFileInputRef,
   onInsertLocalFile,
-  groupTurnLimitReached,
   effectiveNextSpeaker,
   canSend,
   groupStreaming,

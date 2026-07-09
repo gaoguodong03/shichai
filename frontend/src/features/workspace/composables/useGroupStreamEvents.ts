@@ -1,5 +1,4 @@
 import { nextTick, type Ref } from 'vue'
-import { appAlert } from '@/composables/useAppDialog'
 import type { GroupMessage } from './useGroupMessageList'
 
 type StreamEventState = {
@@ -58,7 +57,6 @@ function withMessageContent(msg: GroupMessage, content: string): GroupMessage {
 export function useGroupStreamEvents(args: {
   selectedGroupSessionId: () => string | null
   groupDisplayMessages: Ref<GroupMessage[]>
-  groupTurnLimitReached: Ref<boolean>
   groupWaitingForUser: Ref<boolean>
   groupSuggestedNextSpeaker: Ref<string | null>
   groupSuggestedAddAgentNames: Ref<string[]>
@@ -79,7 +77,6 @@ export function useGroupStreamEvents(args: {
   const {
     selectedGroupSessionId,
     groupDisplayMessages,
-    groupTurnLimitReached,
     groupWaitingForUser,
     groupSuggestedNextSpeaker,
     groupSuggestedAddAgentNames,
@@ -274,7 +271,6 @@ export function useGroupStreamEvents(args: {
     if (sessionId && selectedGroupSessionId() !== sessionId) return
     applyOrchestrationEndMeta(endData)
     if (endData.waiting_for_user) {
-      groupTurnLimitReached.value = !!endData.turns_limit_reached
       groupWaitingForUser.value = true
       groupSuggestedNextSpeaker.value = endData.suggested_next_speaker != null
         ? String(endData.suggested_next_speaker)
@@ -292,13 +288,6 @@ export function useGroupStreamEvents(args: {
       }
       if (endData.suggested_next_speaker === 'user' || endData.phase === 'completed') {
         clearAttachedFiles()
-      }
-      if (groupTurnLimitReached.value) {
-        void appAlert({
-          title: '已自动暂停',
-          message: '本次任务中专家已连续运行 32 轮。\n\n如需继续，请检查当前回复，然后点击「确认并继续」。',
-          variant: 'warning',
-        })
       }
     }
     if (endData.phase === 'completed') {

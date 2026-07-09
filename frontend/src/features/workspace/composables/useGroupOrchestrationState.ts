@@ -102,7 +102,6 @@ export function useGroupOrchestrationState(args: {
   const autoSwitchIgnoreLoading = ref(false)
   const lastSentDraft = ref<LastSentDraft | null>(null)
   const lastRoute = ref<{ sessionId: string; expertName: string; skill: string } | null>(null)
-  const groupTurnLimitReached = ref(false)
   const groupOrchestrationPhase = ref('')
 
   const currentAutoSwitchHint = computed(() => {
@@ -411,7 +410,6 @@ export function useGroupOrchestrationState(args: {
 
   function resetOrchestrationForSessionSwitch() {
     groupWaitingForUser.value = false
-    groupTurnLimitReached.value = false
     groupSuggestedNextSpeaker.value = null
     groupSuggestedAddAgentNames.value = []
   }
@@ -426,7 +424,6 @@ export function useGroupOrchestrationState(args: {
     autoSwitchIgnoreLoading,
     lastSentDraft,
     lastRoute,
-    groupTurnLimitReached,
     groupOrchestrationPhase,
     orchestrationInterruptHint,
     pendingSuggestedAgentItems,

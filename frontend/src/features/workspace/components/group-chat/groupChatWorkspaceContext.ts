@@ -126,7 +126,6 @@ export interface GroupChatComposerContext {
   inviteSingleMember: ContextValue
   insertLocalFileInputRef: ContextValue
   onInsertLocalFile: ContextValue
-  groupTurnLimitReached: ContextValue
   effectiveNextSpeaker: ContextValue
   canSend: ContextValue
   groupStreaming: ContextValue

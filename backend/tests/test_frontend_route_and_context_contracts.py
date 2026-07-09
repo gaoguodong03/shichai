@@ -344,6 +344,19 @@ def test_frontend_waiting_state_follows_end_waiting_for_user():
     assert "groupWaitingForUser.value = !!endData.turns_limit_reached" not in end_handler.group(0)
 
 
+def test_frontend_and_e2e_do_not_use_non_contract_turn_limit_end_field():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupStreamEvents.ts",
+        "frontend/src/features/workspace/components/group-chat/GroupChatStatusBars.vue",
+        "frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue",
+        "frontend/e2e/workspace.spec.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    assert "turns_limit_reached" not in combined
+    assert "groupTurnLimitReached" not in combined
+    assert "已达轮次上限" not in combined
+
+
 def test_frontend_does_not_infer_runtime_phase_from_route_or_message_events():
     src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
     route_handler = re.search(
