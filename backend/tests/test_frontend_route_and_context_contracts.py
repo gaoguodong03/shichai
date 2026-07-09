@@ -138,6 +138,21 @@ def test_frontend_chat_once_contract_does_not_read_interrupted_flag():
     assert "interrupted" not in combined
 
 
+def test_frontend_local_session_messages_include_created_at():
+    composer = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
+    time_format = read("frontend/src/features/workspace/messageTimeFormat.ts")
+    assert "currentStorageTimestamp" in composer
+    assert "getUTCFullYear" in time_format
+    assert "getFullYear()" not in time_format
+    optimistic_user = re.search(
+        r"const userMsg: GroupMessage = \{[\s\S]*?client_message_id: clientMessageId,[\s\S]*?\n\s*\}",
+        composer,
+    )
+    assert optimistic_user is not None
+    assert "created_at:" in optimistic_user.group(0)
+    assert "{ message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content }, created_at: createdAt }" in composer
+
+
 def test_frontend_does_not_parse_file_references_from_message_content():
     files = [
         "frontend/src/features/workspace/composables/useGroupMessageList.ts",

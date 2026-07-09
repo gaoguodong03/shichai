@@ -8,6 +8,7 @@ import {
   buildGroupDraftMessage,
   createClientMessageId,
 } from './groupMessageDraft'
+import { currentStorageTimestamp } from '../messageTimeFormat'
 
 type LastSentDraft = {
   goal: string
@@ -55,9 +56,10 @@ export function useGroupComposerActions(args: {
       args.patchGroupStreamState(sessionId || args.selectedGroupSessionId() || '', { phase })
     },
     appendHostError: (content) => {
+      const createdAt = currentStorageTimestamp()
       args.groupDisplayMessages.value = [
         ...args.groupDisplayMessages.value,
-        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content } } as GroupMessage,
+        { message_id: `msg-${Date.now()}`, speaker: { type: 'host' }, message: { content }, created_at: createdAt } as GroupMessage,
       ]
     },
     updateAutoSwitchHint: args.updateAutoSwitchHint,
@@ -150,10 +152,12 @@ export function useGroupComposerActions(args: {
       const msg = base
       const clientMessageId = createClientMessageId()
       const attachments = requestAttachments()
+      const createdAt = currentStorageTimestamp()
       const userMsg: GroupMessage = {
         message_id: `msg-${Date.now()}`,
         speaker: { type: 'user' },
         message: { content: msg, attachments, target_agent_name: targetAgentName },
+        created_at: createdAt,
         client_message_id: clientMessageId,
       } as GroupMessage
       args.groupDisplayMessages.value = [...args.groupDisplayMessages.value, userMsg]
