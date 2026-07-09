@@ -96,6 +96,89 @@ async def test_continuation_routes_directly_without_host_decision(monkeypatch, t
 
 
 @pytest.mark.asyncio
+async def test_existing_member_suppresses_unsolicited_recruitment(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "执行中",
+            "next_speaker": "user",
+            "next_action": "请补充材料。",
+            "suggested_add_agent_names": ["检索专家"],
+        }
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-recruit-suppressed",
+            request=GroupChatRequest(message="继续写正文", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions={"s-recruit-suppressed": {"agent_names": ["文书专员"], "host": {"name": "四九"}}},
+            session_item={"agent_names": ["文书专员"], "host": {"name": "四九"}},
+            app_settings={},
+            agent_map={
+                "文书专员": {"name": "文书专员"},
+                "检索专家": {"name": "检索专家"},
+            },
+            agent_names=["文书专员"],
+            messages=[],
+            discussion_goal="写文章",
+            user_text="继续写正文",
+        )
+    ]
+
+    end_events = [event for event in events if event.startswith("event: end")]
+    assert end_events
+    assert '"phase": "awaiting_user"' in end_events[-1]
+    assert "suggested_add_agent_names" not in end_events[-1]
+
+
+@pytest.mark.asyncio
+async def test_zero_member_session_keeps_host_recruitment_suggestions(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "招募",
+            "next_speaker": "user",
+            "next_action": "建议先邀请检索专家。",
+            "suggested_add_agent_names": ["检索专家"],
+        }
+
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda *_args, **_kwargs: object())
+
+    events = [
+        item
+        async for item in runtime._run_contract_events(
+            group_session_id="s-recruit-zero-member",
+            request=GroupChatRequest(message="帮我写文章", client_message_id="client-1"),
+            run_id="run-1",
+            session_definitions={"s-recruit-zero-member": {"agent_names": [], "host": {"name": "四九"}}},
+            session_item={"agent_names": [], "host": {"name": "四九"}},
+            app_settings={},
+            agent_map={"检索专家": {"name": "检索专家"}},
+            agent_names=[],
+            messages=[],
+            discussion_goal="写文章",
+            user_text="帮我写文章",
+        )
+    ]
+
+    end_events = [event for event in events if event.startswith("event: end")]
+    assert end_events
+    assert '"phase": "recruiting"' in end_events[-1]
+    assert '"suggested_add_agent_names": ["检索专家"]' in end_events[-1]
+
+
+@pytest.mark.asyncio
 async def test_host_decide_uses_platform_scheduler_prompt(monkeypatch):
     calls = {}
     session_item = {}

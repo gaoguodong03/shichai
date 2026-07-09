@@ -66,6 +66,14 @@ def _sse(event_type: str, payload: Dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _end_event_payload(end: SseEndEvent) -> Dict[str, Any]:
+    """Serialize end events without empty optional recruitment suggestions."""
+    payload = end.model_dump(exclude_none=True)
+    if not payload.get("suggested_add_agent_names"):
+        payload.pop("suggested_add_agent_names", None)
+    return payload
+
+
 def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
     """Convert the session `host` snapshot into the Agent-like shape used by LLM helpers."""
     host = session_item.get("host") if isinstance(session_item.get("host"), dict) else {}
@@ -183,6 +191,39 @@ def _resolve_group_entry_route(
     return "", default_next_action, changed
 
 
+def _user_requests_recruitment(text: str) -> bool:
+    """Return whether the current user turn explicitly asks to invite more experts."""
+    value = str(text or "").strip()
+    if not value:
+        return False
+    return any(token in value for token in ("邀请", "加人", "加入专家", "添加专家", "再加", "请加", "拉进来"))
+
+
+def _finalize_suggested_add_agent_names(
+    *,
+    suggested: List[str],
+    agent_names: List[str],
+    available_to_add: List[Dict[str, Any]],
+    user_text: str,
+) -> List[str]:
+    """Apply the recruitment contract before exposing suggestions to the frontend."""
+    available = {
+        str(item.get("name") or "").strip()
+        for item in available_to_add or []
+        if isinstance(item, dict) and str(item.get("name") or "").strip()
+    }
+    deduped: list[str] = []
+    for raw in suggested or []:
+        name = str(raw or "").strip()
+        if name and name in available and name not in deduped:
+            deduped.append(name)
+    if not deduped:
+        return []
+    if agent_names and not _user_requests_recruitment(user_text):
+        return []
+    return deduped
+
+
 def _collect_artifacts(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Collect artifact references emitted by tools into the public skill_result."""
     artifacts: list[dict[str, Any]] = []
@@ -264,7 +305,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
             error = SseErrorEvent(type="error", run_id=run_id, code="runtime_error", message=str(exc) or exc.__class__.__name__)
             yield _sse("error", error.model_dump(exclude_none=True))
             end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
-            yield _sse("end", end.model_dump(exclude_none=True))
+            yield _sse("end", _end_event_payload(end))
         finally:
             await finish_group_run(group_session_id, run_id)
 
@@ -327,7 +368,12 @@ async def _run_contract_events(
         )
         next_speaker = str(decision.get("next_speaker") or "user").strip()
         next_action = str(decision.get("next_action") or "").strip() or next_action
-        suggested_add = [str(item).strip() for item in (decision.get("suggested_add_agent_names") or []) if str(item).strip()]
+        suggested_add = _finalize_suggested_add_agent_names(
+            suggested=[str(item).strip() for item in (decision.get("suggested_add_agent_names") or []) if str(item).strip()],
+            agent_names=agent_names,
+            available_to_add=available_to_add,
+            user_text=user_text,
+        )
         host_scheduler = {
             "current_phase": str(decision.get("current_phase") or "").strip(),
             "next_speaker": next_speaker,
@@ -359,7 +405,7 @@ async def _run_contract_events(
             waiting_for_user=next_speaker != "end",
             suggested_add_agent_names=suggested_add,
         )
-        yield _sse("end", end.model_dump(exclude_none=True))
+        yield _sse("end", _end_event_payload(end))
         return
 
     if next_speaker not in agent_names:
@@ -371,7 +417,7 @@ async def _run_contract_events(
         )
         yield _sse("error", error.model_dump(exclude_none=True))
         end = SseEndEvent(type="end", run_id=run_id, phase="failed", waiting_for_user=True)
-        yield _sse("end", end.model_dump(exclude_none=True))
+        yield _sse("end", _end_event_payload(end))
         return
 
     turns = 0
@@ -385,7 +431,7 @@ async def _run_contract_events(
                 waiting_for_user=True,
                 suggested_next_speaker=next_speaker,
             )
-            yield _sse("end", end.model_dump(exclude_none=True))
+            yield _sse("end", _end_event_payload(end))
             return
         async for event in _run_one_expert_turn(
             group_session_id=group_session_id,
@@ -408,7 +454,7 @@ async def _run_contract_events(
             waiting_for_user=True,
             suggested_next_speaker=next_speaker,
         )
-        yield _sse("end", end.model_dump(exclude_none=True))
+        yield _sse("end", _end_event_payload(end))
         return
 
 
