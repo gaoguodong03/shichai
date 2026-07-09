@@ -464,6 +464,18 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 上一条回复因为输出长度限制中断了。请从中断处无缝续写，直接继续正文；不要重写前文，不要道歉，不要输出新的标题。
         """,
     ),
+    "agent.text_tool_protocol.retry.v1": _prompt(
+        "agent.text_tool_protocol.retry.v1",
+        """
+上一步没有产生可执行的工具调用，平台未执行任何文件操作。请重新选择可用文件工具并填写参数完成任务。
+        """,
+    ),
+    "agent.text_tool_protocol.failure.v1": _prompt(
+        "agent.text_tool_protocol.failure.v1",
+        """
+本轮工具调用格式不符合要求，平台未执行文件操作；如果需要保存或修改文件，请重新发起任务。
+        """,
+    ),
     "expert.self_awareness.v1": _prompt(
         "expert.self_awareness.v1",
         """

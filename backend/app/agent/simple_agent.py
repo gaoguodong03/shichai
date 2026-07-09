@@ -8,6 +8,7 @@ from typing import Any
 
 from app.agent.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
@@ -69,14 +70,8 @@ _WORKSPACE_MUTATING_TOOL_NAMES = {
     "rename_workspace_file",
 }
 _TEXT_TOOL_PROTOCOL_RETRY_LIMIT = 1
-_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION = (
-    "上一步没有产生可执行的工具调用，平台未执行任何文件操作。"
-    "请重新选择可用文件工具并填写参数完成任务。"
-)
-_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT = (
-    "本轮工具调用格式不符合要求，平台未执行文件操作；"
-    "如果需要保存或修改文件，请重新发起任务。"
-)
+_TEXT_TOOL_PROTOCOL_RETRY_INSTRUCTION = render_platform_prompt("agent.text_tool_protocol.retry.v1", {})
+_TEXT_TOOL_PROTOCOL_FAILURE_CONTENT = render_platform_prompt("agent.text_tool_protocol.failure.v1", {})
 
 
 def _text_tool_protocol_failure_message() -> AIMessage:

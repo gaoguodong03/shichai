@@ -48,6 +48,18 @@ def test_normalize_read_file_path_argument_only_cleans_existing_argument():
     assert missing == {}
 
 
+def test_workspace_path_helpers_do_not_promote_arg1_to_path():
+    from app.agent import skill_agent_paths
+
+    read_args = {"__arg1": "路径是 memory/facts.md"}
+    skill_agent_paths._normalize_read_file_path_argument(read_args)
+    assert read_args == {"__arg1": "路径是 memory/facts.md"}
+
+    audio_args = {"__arg1": "meeting.mp3", "language": "zh"}
+    skill_agent_paths._apply_audio_asr_path_from_user_message(audio_args, [], "group-audio")
+    assert audio_args == {"__arg1": "meeting.mp3", "language": "zh"}
+
+
 def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkeypatch, tmp_path):
     from app.agent.messages import HumanMessage
 

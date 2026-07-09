@@ -26,14 +26,13 @@ def _tool_is_workspace_plain_read_file(tool_name: str) -> bool:
 
 
 def _normalize_read_file_path_argument(arguments: dict) -> None:
-    raw_arg = (arguments.get("path") or arguments.get("__arg1") or "").strip()
+    raw_arg = str(arguments.get("path") or "").strip()
     if not raw_arg:
         return
     fixed = strip_llm_junk_from_read_path(raw_arg)
     if fixed and fixed != raw_arg:
         logger.info("read_workspace_file: 清理模型 path 中的说明性文字: %s -> %s", raw_arg, fixed)
         arguments["path"] = fixed
-        arguments.pop("__arg1", None)
 
 
 def _looks_like_audio_workspace_rel_path(path: str) -> bool:
@@ -77,10 +76,9 @@ def _apply_audio_asr_path_from_user_message(
 ) -> None:
     """Convert only an explicit audio tool path; user text is not a path source."""
     _ = messages
-    cur = str(arguments.get("path") or arguments.get("__arg1") or "").strip()
+    cur = str(arguments.get("path") or "").strip()
     if cur.startswith("backend/data/"):
         arguments["path"] = cur
-        arguments.pop("__arg1", None)
         return
 
     if not _looks_like_audio_workspace_rel_path(cur):
@@ -89,7 +87,6 @@ def _apply_audio_asr_path_from_user_message(
     if converted and converted != cur:
         logger.info("audio_asr: 工作区音频路径转换为 backend/data 路径: %s -> %s", cur, converted)
         arguments["path"] = converted
-        arguments.pop("__arg1", None)
 
 
 def _apply_image_generation_workspace_id(arguments: dict, workspace_id: str) -> None:
