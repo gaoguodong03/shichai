@@ -429,7 +429,7 @@ async def _run_one_expert_turn(
         error = SseErrorEvent(
             type="error",
             run_id=run_id,
-            code=str((runtime.skill_route_debug or {}).get("blocking_error") or "expert_runtime_blocked"),
+            code=str((runtime.skill_route_diagnostics or {}).get("blocking_error") or "expert_runtime_blocked"),
             message=f"Expert runtime blocked for {agent_name}",
         )
         yield _sse("error", error.model_dump(exclude_none=True))

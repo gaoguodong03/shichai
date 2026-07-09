@@ -143,11 +143,11 @@
                               {{ formatUserBubbleForDisplay(messageContent(msg)) }}
                             </p>
                             <div
-                              v-if="messageSpeakerType(msg) === 'user' && extractUserFileReferenceNames(messageContent(msg)).length"
+                              v-if="messageSpeakerType(msg) === 'user' && userAttachmentNames(msg).length"
                               class="group-chat-user-file-ref-wrap"
                             >
                               <span
-                                v-for="(fileName, fileIdx) in extractUserFileReferenceNames(messageContent(msg))"
+                                v-for="(fileName, fileIdx) in userAttachmentNames(msg)"
                                 :key="`${msg.message_id || i}-file-ref-${fileIdx}`"
                                 class="group-chat-user-file-ref-tag"
                               >
@@ -264,7 +264,7 @@ const {
   agentBodyContent,
   isShortSingleLine,
   formatUserBubbleForDisplay,
-  extractUserFileReferenceNames,
+  userAttachmentNames,
   deleteGroupMessage,
   copyAgentMessageToClipboard,
   isMessageCopied,

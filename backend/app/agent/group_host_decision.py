@@ -6,7 +6,6 @@ the current next_action protocol.
 """
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Optional
 
 from app.agent.runtime_status import RuntimePhase
@@ -107,35 +106,6 @@ def parse_strict_host_scheduler_output(
         return host_protocol_error_decision(str(exc))
 
 
-def user_requests_host_takeover(
-    message: str,
-    *,
-    host_display_name: str = "四九",
-) -> bool:
-    """Only allow host orchestration when user explicitly asks for host."""
-    text = str(message or "").strip()
-    if not text:
-        return False
-    host_name = (host_display_name or "四九").strip()
-    lowered = text.lower()
-    if "@主持人" in text or "@四九" in text or (host_name and f"@{host_name}" in text):
-        return True
-    host_aliases = ["主持人", "四九"]
-    if host_name and host_name not in host_aliases:
-        host_aliases.append(host_name)
-    alias_pattern = "|".join([re.escape(x) for x in host_aliases if x])
-    summon_patterns = [
-        rf"(请|让|由|麻烦|需要)?\s*({alias_pattern})\s*(来|接管|安排|协调|分配|调度|负责|处理|决策)",
-        rf"(请|让|由|麻烦|需要)\s*({alias_pattern})\b",
-    ]
-    for pat in summon_patterns:
-        if re.search(pat, text, flags=re.I):
-            return True
-    if host_name and host_name.lower() in lowered and re.search(r"(接管|安排|协调|分配|调度|负责|处理|决策)", text):
-        return True
-    return False
-
-
 def heuristic_recommend_agents(
     discussion_goal: str, all_instances: List[Dict[str, Any]], max_n: Optional[int] = None
 ) -> List[str]:
@@ -176,66 +146,3 @@ def heuristic_recommend_agents(
     if max_n is not None:
         return picked[:max(0, int(max_n))]
     return picked
-
-
-def extract_candidate_agent_names_from_text(
-    text: str,
-    all_instances: List[Dict[str, Any]],
-    *,
-    max_n: int = 2,
-) -> List[str]:
-    """Extract candidate experts from host natural-language text."""
-    t = (text or "").strip().lower()
-    if not t:
-        return []
-    out: List[str] = []
-    for d in all_instances or []:
-        name = str(d.get("name") or "").strip().lower()
-        description = str(d.get("description") or "").strip().lower()
-        if name and name in t:
-            out.append(str(d.get("name") or "").strip())
-        elif description and description in t:
-            out.append(str(d.get("name") or "").strip())
-        if len(out) >= max_n:
-            break
-    return list(dict.fromkeys(out))[:max_n]
-
-
-def extract_explicit_requested_agent_names(user_text: str, all_instances: List[Dict[str, Any]]) -> List[str]:
-    """Extract experts explicitly named by the user."""
-    text = (user_text or "").strip().lower()
-    if not text:
-        return []
-    out: List[str] = []
-    for d in all_instances or []:
-        name = str(d.get("name") or "").strip()
-        name_hit = bool(name) and (name.lower() in text)
-        if name_hit:
-            out.append(name)
-    return list(dict.fromkeys(out))
-
-
-def extract_forced_at_mention_agent_name(user_text: str, all_instances: List[Dict[str, Any]]) -> Optional[str]:
-    """Return an Agent name only when the message starts with an expert @ mention."""
-    text = (user_text or "").strip()
-    if not text.startswith("@"):
-        return None
-    m = re.match(r"^\s*@([^\s，。,；;：:！!？?\)\]】】]+)", text, flags=re.I)
-    if not m:
-        return None
-    mention = (m.group(1) or "").strip().lower()
-    if not mention:
-        return None
-    for d in all_instances or []:
-        name = str(d.get("name") or "").strip()
-        description = str(d.get("description") or "").strip()
-        if not name:
-            continue
-        candidates = set()
-        if name:
-            candidates.add(name.lower())
-        if description:
-            candidates.add(description.lower())
-        if mention in candidates:
-            return name
-    return None

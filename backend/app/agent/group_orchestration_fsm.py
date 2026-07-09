@@ -1,15 +1,14 @@
 """Entry routing FSM for one group-chat turn.
 
 This module owns the pre-host routing priority from
-docs/contracts/runtime-interface-contract.md: target expert, host takeover,
-host_scheduler, and continuation. It mutates only the short-term
-orchestration_state object passed by the caller and returns the chosen route.
+docs/contracts/runtime-interface-contract.md: target expert, host_scheduler,
+and continuation. It mutates only the short-term orchestration_state object
+passed by the caller and returns the chosen route.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from app.agent.group_host_decision import user_requests_host_takeover
 from app.agent.session_contracts import GroupChatRequest
 
 
@@ -31,10 +30,6 @@ def resolve_group_entry_route(
             orchestration_state.pop("continuation", None)
             changed = True
         return request.target_agent_name, default_next_action, changed
-
-    if continuation and user_requests_host_takeover(request.message, host_display_name=host_name):
-        orchestration_state.pop("continuation", None)
-        changed = True
 
     scheduler_next = str((host_scheduler or {}).get("next_speaker") or "").strip()
     if scheduler_next in agent_names:

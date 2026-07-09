@@ -31,7 +31,7 @@
                     :title="f.path"
                     @click="removeAttachedFile(f.path)"
                   >
-                    <span>【文件引用：{{ f.name }}】</span>
+                    <span>文件：{{ f.name }}</span>
                     <span class="group-chat-file-tag-close">×</span>
                   </button>
                 </div>

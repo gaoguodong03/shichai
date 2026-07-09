@@ -97,6 +97,25 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
         assert legacy not in combined
 
 
+def test_frontend_does_not_parse_file_references_from_message_content():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupMessageList.ts",
+        "frontend/src/features/workspace/components/group-chat/GroupChatMessages.vue",
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+        "frontend/src/features/workspace/composables/useGroupStreamEvents.ts",
+        "frontend/src/features/workspace/composables/groupMessageDraft.ts",
+    ]
+    combined = "\n".join(read(path) for path in files)
+    for forbidden in [
+        "extractUserFileReferenceNames",
+        "matchAll(/【文件引用",
+        "【文件引用：[^】]+】",
+        "fileRefMatches",
+        "detectHostTakeoverIntent",
+    ]:
+        assert forbidden not in combined
+
+
 def test_workspace_panel_logic_is_extracted_to_composable():
     src = read("frontend/src/features/workspace/WorkspaceContent.vue")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")

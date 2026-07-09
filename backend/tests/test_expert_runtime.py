@@ -108,7 +108,7 @@ def test_build_expert_turn_runtime_creates_agent_entry_bundle():
 
     assert runtime.blocked is False
     assert runtime.skill == "sk1"
-    assert runtime.skill_route_debug["strategy"] == "single_loaded_skill"
+    assert runtime.skill_route_diagnostics["strategy"] == "single_loaded_skill"
     assert calls["tool_builder"] == ("专家A", "g1", "sk1")
     assert "专家系统提示" in runtime.skill_content
     assert "你的职责：写作专家" in runtime.skill_content
@@ -145,7 +145,7 @@ def test_build_expert_turn_runtime_blocks_when_skill_content_missing():
     )
 
     assert runtime.blocked is True
-    assert runtime.skill_route_debug["blocking_error"] == "expert_skill_content_missing"
+    assert runtime.skill_route_diagnostics["blocking_error"] == "expert_skill_content_missing"
     assert called["tool"] is False
 
 

@@ -133,7 +133,7 @@ async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
         return SimpleNamespace(
             blocked=False,
             skill="skill-qa",
-            skill_route_debug={},
+            skill_route_diagnostics={},
             agent=FakeAgent(),
             tools=[],
         )

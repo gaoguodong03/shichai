@@ -239,7 +239,7 @@ export function useWorkspaceContentProviders(args: {
     renderSnippetMarkdown,
     formatUserBubbleForDisplay,
     isShortSingleLine,
-    extractUserFileReferenceNames,
+    userAttachmentNames,
     formatGroupMsgTime,
     formatGroupMsgFullTime,
     messageSpeakerType,
@@ -287,10 +287,8 @@ export function useWorkspaceContentProviders(args: {
     removeAttachedFile,
     clearAttachedFiles,
     setAttachedFiles,
-    buildMessageWithFileReferences,
   } = useGroupFileReferences({
     sessionId: () => groupDetail.value?.id,
-    prompt: groupNextPrompt,
     loadWorkspace: loadGroupWorkspace,
   })
   let composerActions: ReturnType<typeof useGroupComposerActions> | null = null
@@ -459,7 +457,6 @@ export function useWorkspaceContentProviders(args: {
     appendStreamingContent,
     handleStreamMessageEvent,
     handleStreamEndEvent,
-    buildMessageWithFileReferences,
     clearAutoSwitchHint,
     clearStreamingPlaceholders,
     scrollGroupToBottom,
@@ -622,7 +619,7 @@ export function useWorkspaceContentProviders(args: {
     agentBodyContent,
     isShortSingleLine,
     formatUserBubbleForDisplay,
-    extractUserFileReferenceNames,
+    userAttachmentNames,
     deleteGroupMessage,
     copyAgentMessageToClipboard,
     isMessageCopied,

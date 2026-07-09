@@ -35,7 +35,7 @@ class ExpertTurnRuntime:
     agent_profile: Dict[str, Any]
     skill: str = ""
     skill_content: str = ""
-    skill_route_debug: Dict[str, Any] = field(default_factory=dict)
+    skill_route_diagnostics: Dict[str, Any] = field(default_factory=dict)
     tools: List[Any] = field(default_factory=list)
     llm: Any = None
     agent: Any = None
@@ -228,7 +228,7 @@ async def build_expert_turn_runtime(
         agent_profile=agent_profile,
         skill=skill,
         skill_content=base_skill_content,
-        skill_route_debug=route_debug,
+        skill_route_diagnostics=route_debug,
     )
     if not skill or not base_skill_content:
         return runtime

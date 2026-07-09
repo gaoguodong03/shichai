@@ -43,7 +43,6 @@ export function useGroupComposerActions(args: {
   appendStreamingContent: (agentName: string, text: string) => void
   handleStreamMessageEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
   handleStreamEndEvent: (data: Record<string, unknown>, state: StreamState, sessionId: string) => void
-  buildMessageWithFileReferences: (base: string) => string
   clearAutoSwitchHint: () => void
   clearStreamingPlaceholders: () => void
   scrollGroupToBottom: () => void

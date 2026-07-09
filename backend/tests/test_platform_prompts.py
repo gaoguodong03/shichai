@@ -79,3 +79,14 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "skill.session.state_instruction.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
+
+
+def test_backend_prompts_do_not_teach_legacy_file_ref_protocol():
+    files = [
+        ROOT / "backend/app/agent/platform_prompts.py",
+        ROOT / "backend/app/mcp/stdio/file_reader_mcp.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+    assert "【文件引用" not in combined
+    assert not (ROOT / "backend/app/agent/file_ref_resolver.py").exists()

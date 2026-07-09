@@ -87,7 +87,7 @@ def list_directory(path: str = "") -> str:
 def read_file(path: str) -> str:
     """读取纯文本文件（txt、md、json、yaml 等）。path 为相对路径（如 report.txt 或带子目录的 output/pages/xxx/text.md）。
 
-    当用户消息中出现【文件引用：…】时：若为【文件引用：显示名｜路径】，以竖线后的路径为准；若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
+    当本轮消息带有结构化附件时，path 使用附件中的工作区相对路径；若是 PDF、DOC、Excel，请使用 read_pdf、read_docx、read_xlsx。"""
     p = _resolve_path(path)
     if not p:
         return "错误：无效路径或路径超出允许范围。"
@@ -102,7 +102,7 @@ def read_file(path: str) -> str:
 def read_pdf(path: str, max_pages: int = 50) -> str:
     """从 PDF 文件提取文本。path 为相对路径（如 report.pdf）。
 
-    当用户消息中出现【文件引用：xxx.pdf】时，使用此工具。
+    当结构化附件或用户明确路径指向 PDF 时，使用此工具。
 
     Args:
         path: 相对路径，如 report.pdf
@@ -141,7 +141,7 @@ def _extract_pdf_text(path: Path, max_pages: int) -> str:
 def read_docx(path: str) -> str:
     """从 DOCX 文件提取文本。path 为相对路径（如 report.docx）。
 
-    当用户消息中出现【文件引用：xxx.docx】时，使用此工具。"""
+    当结构化附件或用户明确路径指向 DOCX 时，使用此工具。"""
     p = _resolve_path(path)
     if not p:
         return "错误：无效路径或路径超出允许范围。"
@@ -177,7 +177,7 @@ def _extract_docx_text(path: Path) -> str:
 def read_xlsx(path: str, max_rows: int = 500) -> str:
     """从 Excel 文件（xlsx）提取文本。path 为相对路径（如 data.xlsx）。
 
-    当用户消息中出现【文件引用：xxx.xlsx】时，使用此工具。
+    当结构化附件或用户明确路径指向 Excel 文件时，使用此工具。
 
     Args:
         path: 相对路径，如 data.xlsx

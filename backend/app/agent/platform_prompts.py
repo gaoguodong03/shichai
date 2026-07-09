@@ -348,11 +348,11 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
 {write_rule}
 {workspace_task_file_rule}
 {material_rule}
-对于【文件引用：…】标签，path 一律视为工作区内相对路径使用（如 `report.md` 或 `notes/report.txt`）。
+如果本轮用户消息带有结构化附件，附件会在提示词中以“工作区附件”列出；工具 path 一律使用其中的工作区相对路径（如 `report.md` 或 `notes/report.txt`）。
 
 所有 path 都应当是当前会话工作区的相对路径，不要暴露或要求用户输入任何 `agent-outputs/`、`workspaces/<会话ID>/...` 这类内部前缀。
 
-如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或【文件引用】，上一位专家的可见发言在最近讨论中；先基于最近讨论承接，不要自行构造文件名。
+如果本轮任务说“材料包/提纲/草稿/分析已整理”等，但没有给出明确文件路径或结构化附件，上一位专家的可见发言在最近讨论中；先基于最近讨论承接，不要自行构造文件名。
 
 若工具返回「文件不存在」，请先列出工作区目录或让用户确认真实路径；不要凭空猜测文件内容。
         """,
@@ -398,7 +398,7 @@ PLATFORM_PROMPTS: dict[str, PlatformPrompt] = {
         """
 ## 音频转写路径规则
 
-调用 `audio-asr_transcribe_audio_file` 时，如果用户消息包含【文件引用：…】或工作区文件名，path 使用用户本条消息中的工作区相对路径即可（例如 `meeting.mp3`）。运行时会在工具执行前把它转换成 `backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、`sessions/<session_id>/workspace/` 等内部路径。
+调用 `audio-asr_transcribe_audio_file` 时，path 必须来自本轮结构化附件中的工作区相对路径，或用户明确写出的工作区相对路径（例如 `meeting.mp3`）。运行时会在工具执行前把显式 path 转换成 `backend/data/...` 完整数据路径；不要要求用户提供 `backend/data/`、`users/<user_id>/`、`sessions/<session_id>/workspace/` 等内部路径。
         """,
     ),
     "skill.execution.script_tool_rules.v1": _prompt(

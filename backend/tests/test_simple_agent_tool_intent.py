@@ -1586,34 +1586,16 @@ async def test_simple_agent_direct_final_for_audio_asr_mcp_without_truncation():
 
 
 @pytest.mark.asyncio
-async def test_simple_agent_forces_audio_asr_tool_for_audio_file_ref_before_llm_reply():
-    stale_reply = AIMessage(content="我会复述旧的截断结果，但不应该被调用")
-    transcript = "完整音频转写"
+async def test_simple_agent_does_not_force_audio_asr_tool_from_message_file_ref():
+    model_reply = AIMessage(content="请通过结构化附件或明确工具参数提供音频文件。")
     called = {"tool": 0}
 
     async def _tool_runner(state, tools):
         called["tool"] += 1
-        last = state["messages"][-1]
-        tool_calls = getattr(last, "tool_calls", None) or []
-        assert tool_calls[0]["name"] == "audio-asr_transcribe_audio_file"
-        assert tool_calls[0]["args"]["path"] == "学生降转及研究方向调整.mp3"
-        raw = json.dumps(
-            {
-                "execution_status": "succeeded",
-                "content": transcript,
-                "artifacts": [],
-                "next_action": {"agent_turn": "respond", "skill_session": "release"},
-            },
-            ensure_ascii=False,
-        )
-        return {
-            "messages": [ToolMessage(content=raw, tool_call_id=tool_calls[0]["id"])],
-            "tool_calls": [{"tool": "audio-asr_transcribe_audio_file", "arguments": tool_calls[0]["args"]}],
-            "tool_raw_outputs": [raw],
-        }
+        raise AssertionError("旧正文文件引用不能强制触发音频 ASR 工具")
 
     agent = SimpleAgent(
-        llm=_FakeLLM([stale_reply]),
+        llm=_FakeLLM([model_reply]),
         tools=[ToolSpec(name="audio-asr_transcribe_audio_file", description="转写音频")],
         system_prompt="x",
         tool_runner=_tool_runner,
@@ -1631,10 +1613,9 @@ async def test_simple_agent_forces_audio_asr_tool_for_audio_file_ref_before_llm_
         }
     )
 
-    assert called["tool"] == 1
-    assert str(out["messages"][-1].content) == transcript
-    assert "旧的截断" not in str(out["messages"][-1].content)
-    assert any(
+    assert called["tool"] == 0
+    assert str(out["messages"][-1].content) == "请通过结构化附件或明确工具参数提供音频文件。"
+    assert not any(
         item.get("source") == "forced_mcp_file_ref_tool_call"
         for item in (out.get("tool_attempt_debug") or [])
     )

@@ -356,7 +356,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
       buffer: Buffer.from('# 上传到根目录\n'),
     })
 
-    await expect(page.getByText('【文件引用：upload-root.md】')).toBeVisible()
+    await expect(page.getByText('文件：upload-root.md')).toBeVisible()
     expect(uploadPathParams).toEqual([''])
   })
 

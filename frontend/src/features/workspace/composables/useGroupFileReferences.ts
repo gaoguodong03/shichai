@@ -21,37 +21,11 @@ function childPath(basePath: string, childName: string): string {
   return basePath ? `${basePath}/${childName}` : childName
 }
 
-function clearFileReferenceFromPrompt(prompt: Ref<string>, file: AttachedFile) {
-  const targets = new Set(
-    [file.name, file.path, file.path.split('/').pop()]
-      .map((value) => String(value || '').trim())
-      .filter(Boolean),
-  )
-  if (!targets.size || !prompt.value) return
-
-  let changed = false
-  const kept = String(prompt.value)
-    .split(/\r?\n/)
-    .filter((line) => {
-      const match = line.trim().match(/^【文件引用：(.+)】$/)
-      if (!match) return true
-      const parts = match[1].split('｜').map((value) => value.trim()).filter(Boolean)
-      if (!parts.some((part) => targets.has(part))) return true
-      changed = true
-      return false
-    })
-
-  if (changed) {
-    prompt.value = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
-  }
-}
-
 export function useGroupFileReferences(args: {
   sessionId: () => string | undefined
-  prompt: Ref<string>
   loadWorkspace: () => Promise<unknown>
 }) {
-  const { sessionId, prompt, loadWorkspace } = args
+  const { sessionId, loadWorkspace } = args
 
   const showInsertFileModal = ref(false)
   const insertFileRef = ref<HTMLElement | null>(null)
@@ -154,9 +128,7 @@ export function useGroupFileReferences(args: {
   }
 
   function removeAttachedFile(path: string) {
-    const removed = attachedFiles.value.find((file) => file.path === path)
     attachedFiles.value = attachedFiles.value.filter((file) => file.path !== path)
-    if (removed) clearFileReferenceFromPrompt(prompt, removed)
   }
 
   function clearAttachedFiles() {
@@ -165,13 +137,6 @@ export function useGroupFileReferences(args: {
 
   function setAttachedFiles(files: AttachedFile[]) {
     attachedFiles.value = [...files]
-  }
-
-  function buildMessageWithFileReferences(base: string): string {
-    const fileRefs = attachedFiles.value.length
-      ? '\n\n' + attachedFiles.value.map((file) => `【文件引用：${file.name}｜${file.path}】`).join('\n')
-      : ''
-    return `${base}${fileRefs}`.trim()
   }
 
   return {
@@ -194,6 +159,5 @@ export function useGroupFileReferences(args: {
     removeAttachedFile,
     clearAttachedFiles,
     setAttachedFiles,
-    buildMessageWithFileReferences,
   }
 }

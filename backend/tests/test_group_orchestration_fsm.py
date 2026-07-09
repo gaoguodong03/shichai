@@ -104,7 +104,7 @@ def test_invalid_continuation_is_cleared_and_host_scheduler_can_run():
     assert "continuation" not in orchestration_state
 
 
-def test_host_takeover_request_clears_continuation_before_scheduler():
+def test_message_text_host_mention_does_not_clear_continuation():
     orchestration_state = {
         "continuation": {
             "owner_agent_name": "写作专家",
@@ -122,5 +122,5 @@ def test_host_takeover_request_clears_continuation_before_scheduler():
         default_next_action="默认动作",
     )
 
-    assert (speaker, action, changed) == ("", "默认动作", True)
-    assert "continuation" not in orchestration_state
+    assert (speaker, action, changed) == ("写作专家", "继续写", False)
+    assert "continuation" in orchestration_state

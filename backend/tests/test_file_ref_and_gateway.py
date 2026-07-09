@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 import shutil
 import tempfile
@@ -26,45 +25,6 @@ def temp_user_data_root():
                 os.environ["ALLOW_ANONYMOUS_API"] = old_anon
             else:
                 os.environ.pop("ALLOW_ANONYMOUS_API", None)
-
-
-def test_file_ref_resolver_rejects_internal_memory_content(temp_user_data_root):
-    from app.api.files import get_workspace_root_path
-    from app.agent.file_ref_resolver import resolve_file_refs_in_text
-
-    ws = get_workspace_root_path("sess-file-ref")
-    ws.mkdir(parents=True, exist_ok=True)
-    (ws / "memory").mkdir(parents=True, exist_ok=True)
-    (ws / "memory" / "facts.md").write_text("hello from memory", encoding="utf-8")
-
-    text = "请参考【文件引用：facts｜memory/facts.md】后继续。"
-    out = resolve_file_refs_in_text(text, "sess-file-ref")
-    assert "【文件内容已解析】" in out
-    assert "[文件: memory/facts.md]" in out
-    assert "内部系统目录" in out
-    assert "hello from memory" not in out
-
-
-def test_file_ref_resolver_logs_summary_without_content(temp_user_data_root, caplog):
-    from app.api.files import get_workspace_root_path
-    from app.agent.file_ref_resolver import resolve_file_refs_in_text
-
-    ws = get_workspace_root_path("sess-file-ref-log")
-    ws.mkdir(parents=True, exist_ok=True)
-    (ws / "notes.md").write_text("sensitive file body", encoding="utf-8")
-
-    text = "请参考【文件引用：notes｜notes.md】。"
-    with caplog.at_level(logging.INFO, logger="app.agent.file_ref_resolver"):
-        out = resolve_file_refs_in_text(text, "sess-file-ref-log")
-
-    assert "sensitive file body" in out
-    messages = "\n".join(record.getMessage() for record in caplog.records)
-    assert "file_ref_resolved" in messages
-    assert "workspace_id=sess-file-ref-log" in messages
-    assert "ref_count=1" in messages
-    assert "injected_count=1" in messages
-    assert "total_chars=" in messages
-    assert "sensitive file body" not in messages
 
 
 def test_looks_like_url_or_remote_path():
@@ -117,6 +77,34 @@ def test_apply_audio_asr_path_converts_workspace_file_ref_to_backend_data(monkey
         "backend/data/users/user-audio/sessions/group-audio/workspace/"
         "学生降转及研究方向调整.mp3"
     )
+
+
+def test_apply_audio_asr_path_does_not_infer_from_user_message_file_ref(monkeypatch, tmp_path):
+    from app.agent.messages import HumanMessage
+
+    from app.agent import skill_agent_paths
+    from app.api.files import get_workspace_root_path
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-audio", username="audio@example.com")
+    try:
+        ws = get_workspace_root_path("group-audio")
+        ws.mkdir(parents=True, exist_ok=True)
+        (ws / "学生降转及研究方向调整.mp3").write_bytes(b"audio")
+
+        args = {"language": "zh"}
+        msgs = [
+            HumanMessage(
+                content="请转写【文件引用：学生降转及研究方向调整.mp3｜学生降转及研究方向调整.mp3】"
+            )
+        ]
+
+        skill_agent_paths._apply_audio_asr_path_from_user_message(args, msgs, "group-audio")
+    finally:
+        reset_current_user_identity(token)
+
+    assert args == {"language": "zh"}
 
 
 def test_apply_image_generation_workspace_id_defaults_to_current_workspace():
@@ -197,15 +185,6 @@ def test_skill_extra_instructions_tell_audio_asr_to_use_workspace_relative_paths
     assert "audio-asr_transcribe_audio_file" in instructions
     assert "工作区相对路径" in instructions
     assert "不要要求用户提供 `backend/data/`" in instructions
-
-
-def test_file_ref_resolver_blocks_traversal(temp_user_data_root):
-    from app.agent.file_ref_resolver import resolve_file_refs_in_text
-
-    text = "bad【文件引用：x｜../../secret.txt】"
-    out = resolve_file_refs_in_text(text, "sess-file-ref")
-    assert "【文件内容已解析】" in out
-    assert "读取失败" in out or "不存在" in out
 
 
 def test_normalize_skill_script_path_strips_scripts_prefix():

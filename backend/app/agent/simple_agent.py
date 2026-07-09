@@ -8,10 +8,7 @@ from typing import Any
 
 from app.agent.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from app.agent.llm_client import bind_tools_compat
-from app.agent.simple_agent_mcp_tools import (
-    _forced_mcp_file_ref_tool_call,
-    _mcp_tool_result_direct_final_message,
-)
+from app.agent.simple_agent_mcp_tools import _mcp_tool_result_direct_final_message
 from app.agent.simple_agent_introspection import (
     _bound_skill_introspection_message,
     _user_text_for_bound_skill_introspection,
@@ -579,15 +576,6 @@ class SimpleAgent:
         text_tool_protocol_retries = 0
         for step in range(self.max_steps):
             response = await self._call_model(client, messages, step=step + 1)
-            if not (getattr(response, "tool_calls", None) or []):
-                forced = _forced_mcp_file_ref_tool_call(messages, tools)
-                if forced is not None:
-                    logger.info(
-                        "SimpleAgent: forcing audio ASR tool call for file ref path=%s",
-                        forced.debug.get("path"),
-                    )
-                    tool_attempt_debug.append(forced.debug)
-                    response = forced.message
             if not (getattr(response, "tool_calls", None) or []) and _looks_like_text_tool_call_protocol(response):
                 text_tool_protocol_retries, protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
                     response=response,
@@ -1117,15 +1105,6 @@ class SimpleAgent:
         for step in range(self.max_steps):
             t0 = time.perf_counter()
             response = await self._call_model(client, messages, step=step + 1)
-            if not (getattr(response, "tool_calls", None) or []):
-                forced = _forced_mcp_file_ref_tool_call(messages, tools)
-                if forced is not None:
-                    logger.info(
-                        "SimpleAgent: forcing audio ASR tool call for file ref path=%s",
-                        forced.debug.get("path"),
-                    )
-                    tool_attempt_debug.append(forced.debug)
-                    response = forced.message
             if not (getattr(response, "tool_calls", None) or []) and _looks_like_text_tool_call_protocol(response):
                 text_tool_protocol_retries, _protocol_message, should_retry = _append_text_tool_protocol_retry_or_failure(
                     response=response,

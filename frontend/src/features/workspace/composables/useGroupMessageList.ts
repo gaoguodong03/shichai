@@ -37,7 +37,10 @@ type GroupMessageDetail = {
 type MsgExt = {
   speaker?: { type?: string; agent_name?: string; skill?: string }
   created_at?: string
-  message?: { content?: string }
+  message?: {
+    content?: string
+    attachments?: Array<{ type?: string; path?: string; name?: string }>
+  }
 }
 
 export function useGroupMessageList(args: {
@@ -212,32 +215,14 @@ export function useGroupMessageList(args: {
   function stripDiscussionGoalForDisplay(content: string): string {
     const raw = (content ?? '').trim()
     if (!raw) return ''
-    const fileRefMatches = Array.from(raw.matchAll(/【文件引用：([^】]+)】/g))
-    const fileExpandedBlockRegex = /(?:^|\n)\[文件:\s*[^\]]+\][\s\S]*?(?=\n【文件引用：|\n【给下一 Agent 的提示】|$)/g
     const prefix = '【讨论目标】'
     const withoutGoalPrefix = raw.startsWith(prefix)
       ? raw.slice(prefix.length).replace(/^\s*\n?/, '').trim()
       : raw
-    const cleaned = withoutGoalPrefix
-      .replace(/(?:^|\n{2,})【给下一 Agent 的提示】[\s\S]*?(?=\n{2,}【文件引用：|$)/g, '')
-      .replace(/(?:^|\n)【文件引用：[^】]+】/g, '')
-      .replace(/(?:^|\n)【文件内容已解析】/g, '')
-      .replace(fileExpandedBlockRegex, '')
+    return withoutGoalPrefix
+      .replace(/(?:^|\n{2,})【给下一 Agent 的提示】[\s\S]*?$/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .replace(/^\s+|\s+$/g, '')
-    if (!cleaned && fileRefMatches.length) {
-      const refs = fileRefMatches
-        .map((match) => {
-          const payload = String(match[1] || '').trim()
-          if (!payload) return ''
-          const parts = payload.split('｜').map((item) => item.trim()).filter(Boolean)
-          const path = parts.length >= 2 ? parts[1] : parts[0]
-          return path ? `【文件引用：${path}】` : ''
-        })
-        .filter(Boolean)
-      if (refs.length) return refs.join('\n')
-    }
-    return cleaned
   }
 
   function formatUserBubbleForDisplay(content: string): string {
@@ -252,17 +237,10 @@ export function useGroupMessageList(args: {
     return trimmed.length <= 12 ? 'group-chat-plain-text-nowrap' : null
   }
 
-  function extractUserFileReferenceNames(content: string): string[] {
-    if (!content) return []
-    const matches = Array.from(String(content).matchAll(/【文件引用：([^】]+)】/g))
-    const names = matches
-      .map((match) => {
-        const payload = String(match?.[1] || '').trim()
-        if (!payload) return ''
-        const parts = payload.split('｜').map((item) => item.trim()).filter(Boolean)
-        if (!parts.length) return ''
-        return parts[0] || parts[parts.length - 1] || ''
-      })
+  function userAttachmentNames(msg: MsgExt): string[] {
+    const attachments = Array.isArray(msg?.message?.attachments) ? msg.message.attachments : []
+    const names = attachments
+      .map((item) => String(item?.name || item?.path || '').trim())
       .filter(Boolean)
     return [...new Set(names)]
   }
@@ -524,7 +502,7 @@ export function useGroupMessageList(args: {
     messageContent,
     formatUserBubbleForDisplay,
     isShortSingleLine,
-    extractUserFileReferenceNames,
+    userAttachmentNames,
     formatGroupMsgTime,
     formatGroupMsgFullTime,
     saveAgentMessageToFile,
