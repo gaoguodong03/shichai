@@ -1,75 +1,217 @@
-# 导出场景压缩包：实现方式与名称引用说明
+# 资源包导入导出契约
 
-## 实现入口与调用链
+本文定义资源中心导入导出的当前严格契约。资源包用于在账号之间复制可复用平台配置，导入语义是“让最新导入的资源可直接使用”，不是兼容旧包、合并旧字段或迁移历史会话数据。
 
-1. **HTTP 接口**（[`backend/app/api/settings_presets.py`](../../backend/app/api/settings_presets.py)）
-   - `GET /settings/session-presets/{preset_id}/export-bundle`：流式返回 ZIP，下载文件名 `scenario-bundle-{safe_name}.zip`。
-   - `POST /settings/session-presets/import-bundle`：上传 ZIP 场景包，支持 dry run 预览和确认导入。
+## 1. 适用范围
 
-2. **组装 ZIP 的核心函数**
-   - [`_session_preset_bundle_zip_for_preset(preset_id)`](../../backend/app/api/settings_presets.py)：按 `preset_id` 从当前用户的 `resources/scenarios/*/scenario.json` 里找场景行；拉全量 `resources/agents/*/agent.json`，按场景里的 `agent_names` 挑出专家行；用 [`collect_skill_and_mcp_ids_for_preset`](../../backend/app/core/scenario_bundle.py) 收集技能/MCP 引用；从 `load_mcp_config()` 里按工具配置名取出 `resources/tools/*/tool.json` 对应的 MCP 行；最后调用 [`build_scenario_bundle_zip_bytes`](../../backend/app/core/scenario_bundle.py)。
+资源包覆盖资源中心的五类资源：
 
-```mermaid
-flowchart LR
-  preset_id --> loadPresets
-  loadPresets --> matchRow
-  matchRow --> expertRows
-  matchRow --> collectIds
-  collectIds --> mcpRows
-  expertRows --> zipBytes
-  mcpRows --> zipBytes
-  zipBytes --> StreamingResponse
+| bundle_type | 根资源 | 递归包含 |
+|-------------|--------|----------|
+| `scenario` | 场景 | 场景引用的专家、专家引用的 Skill、Skill 引用的工具 |
+| `agent` | 专家 | 专家引用的 Skill、Skill 引用的工具 |
+| `skill` | Skill | Skill 声明的工具 |
+| `tool` | 工具 | 无 |
+| `model` | 模型 | 无 |
+
+不允许 `mixed` 类型。模型另算：场景包和专家包只保留 `llm_name` 引用，不导出模型配置；只有模型包才导入导出模型配置。
+
+资源包不覆盖：
+
+- 会话、消息历史、运行态、`workspace/`、`checkpoints/`。
+- 用户记忆、沙箱运行缓存、临时扫描结果。
+- 环境变量真实值、账号凭据、用户密码。
+- 旧协议、旧 id、旧目录兼容逻辑。
+
+## 2. ZIP 结构
+
+资源包使用资源中心镜像结构：
+
+```text
+st49-resource-bundle.zip
+  bundle.json
+
+  resources/
+    scenarios/
+      <scenario-dir>/
+        scenario.json
+
+    agents/
+      <agent-dir>/
+        agent.json
+
+    skills/
+      <skill-directory>/
+        SKILL.md
+        scripts/
+        references/
+        assets/
+        templates/
+        other/
+
+    tools/
+      <tool-dir>/
+        tool.json
+
+    models/
+      <model-dir>/
+        model.json
 ```
 
-## ZIP 里有什么
+`bundle.json` 只描述包，不承载业务配置：
 
-由 [`build_scenario_bundle_zip_bytes`](../../backend/app/core/scenario_bundle.py) 写入：
+```json
+{
+  "exported_at": "2026-07-09T00:00:00Z",
+  "bundle_type": "scenario",
+  "root_resources": [
+    { "type": "scenario", "name": "示例场景" }
+  ],
+  "resource_counts": {
+    "scenarios": 1,
+    "agents": 3,
+    "skills": 5,
+    "tools": 4,
+    "models": 0
+  }
+}
+```
 
-| 路径 | 内容 |
-|------|------|
-| `scenario_bundle.json` | `bundle_version`、`exported_at`（UTC ISO）、`preset`（**整份场景行原样**，含 `id`、`agent_names`、顶层 `system_prompt`、`host_config` 等） |
-| `dha_instances.json` | 场景中每个专家名称对应专家的一条记录（经 `strip_agent_row_for_disk` 处理） |
-| `mcp_servers.json` | **仅当**收集到的 `mcp_ids` 非空时写入；为当前用户配置里这些 id 的 MCP 条目 |
-| `skills/<directory_name>/...` | 每个技能目录下含 `SKILL.md` 才会打包；路径为 `skills/{directory_name}/相对文件` |
+## 3. 身份字段
 
-**注意**：场景预设行、专家、Skill、MCP 在包内按名称和目录名维持引用关系；导入到目标账号时，名称用于判断冲突，目录名仅作为 Skill 文件路径。
+导入导出按名称判断资源身份：
 
-## 各类引用怎么来、怎么用
+| 资源 | 业务身份 | 路径说明 |
+|------|----------|----------|
+| 场景 | `scenario.json.name` | `resources/scenarios/<scenario-dir>/` 只是落盘目录 |
+| 专家 | `agent.json.name` | `resources/agents/<agent-dir>/` 只是落盘目录 |
+| Skill | `SKILL.md` frontmatter `name` | `resources/skills/<skill-directory>/` 是本地执行路径 |
+| 工具 | `tool.json.name` | `resources/tools/<tool-dir>/` 只是落盘目录 |
+| 模型 | `model.json.name` | `resources/models/<model-dir>/` 只是落盘目录 |
 
-导入时统一采用「名称即版本」规则：
+禁止在资源包业务结构中出现以下字段：
 
-- 名称相同：认为目标账号已有同名资源，覆盖本地资源内容并保留目标账号的本地目录。
-- 名称不同：认为是新版本或新资源，生成新的本地目录后导入。
-- 包内目录名只用于解开 ZIP 内部的 Skill 文件路径，落盘前会按目标账号重新映射。
+- `id`
+- `agent_id`
+- `expert_id`
+- `skill_id`
+- `mcp_server_id`
+- `provider_id`
+- `model_id`
+- `scenario_id`
+- `*_ids`
 
-### 1. 场景预设 id（`preset.id`）
+目录名不是业务身份。Skill 的 `directory_name` 是执行路径字段，导入时必须根据目标账号本地目录重写引用。
 
-- 导出时 URL 参数 `preset_id` 必须与 `resources/scenarios/*/scenario.json` 里某行的 `id` 一致。
-- 下载文件名里的 `safe_name`：对该 id 去掉 `..`、`/`、`\`，为空则 `"scenario"` —— **只做安全化，不改 id 本身**。
+## 4. 导出规则
 
-### 2. 专家名称
+导出前必须先校验依赖树；缺少下层依赖时禁止导出。
 
-- 包内 `dha_instances.json` 只包含场景 `agent_names` 里、且在本地专家资源里能找到的专家。
-- [`strip_agent_row_for_disk`](../../backend/app/core/scenario_bundle.py) 会去掉兼容字段和运行期派生字段，只保留 name-based 配置。
-- 导入时专家按 `name` 判断冲突；同名覆盖本地专家内容，不同名生成新的本地专家目录，并重写场景中的专家引用。
+### 4.1 场景包
 
-### 3. 技能目录名
+场景包必须包含：
 
-- [`collect_skill_and_mcp_ids_for_preset`](../../backend/app/core/scenario_bundle.py) 汇总：
-  - 场景 `host_config` 里规范化后的 `skill_directory`、`mcp_server_ids`；
-  - 每个关联专家的 `skills[].directory_name`、`mcp_server_ids`。
-- ZIP 里每个技能对应 `skills_root / {directory_name}`，且必须有 `SKILL.md` 才会打进包。
-- 导入时 Skill 按 `SKILL.md` frontmatter 里的 `name` 判断冲突；同名覆盖本地 Skill 内容并保留本地目录名，不同名生成新的本地目录名，并重写专家、场景主持人和 Skill frontmatter 中的相关引用。
+1. 根场景。
+2. 场景 `agent_names` 引用的全部专家。
+3. 这些专家 `skills[].directory_name` 引用的全部 Skill。
+4. 这些 Skill `allowed-tools` 声明的全部工具。
 
-### 4. MCP id
+场景包不包含模型配置，只保留场景、专家中的 `llm_name` 引用。
 
-- 收集的是一串 **字符串 id**，再从 [`load_mcp_config()`](../../backend/app/api/settings_mcp.py) 里按 id 取完整条目写入导出包内的 `mcp_servers.json`（本地没有的 id 不会出现）。本地 MCP 配置来自 `resources/tools/*/tool.json`。
-- 导入时 MCP 按 `name` 判断冲突；同名覆盖本地 MCP 配置并保留本地 id，不同名生成新的 `mcp-*` 本地 id，并重写专家、场景主持人和 Skill frontmatter 中的 MCP 引用。
+### 4.2 专家包
 
-### 5. 导入场景包时预设 id 冲突
+专家包必须包含：
 
-- 场景按 `name` 判断冲突；同名覆盖本地场景内容并保留本地 `scenario-*` id，不同名生成新的 `scenario-*` 本地 id。包内 `preset.id` 不决定覆盖关系。
+1. 根专家。
+2. 专家 `skills[].directory_name` 引用的全部 Skill。
+3. 这些 Skill `allowed-tools` 声明的全部工具。
 
----
+专家包不包含模型配置，只保留专家中的 `llm_name` 引用。
 
-**一句话**：导出包是「按场景 id 取行 + 按引用收集专家/技能/MCP 快照」打成 ZIP；包内 id 保持原样用于内部引用；导入时只按名称判断版本，同名覆盖目标账号内容并保留本地 id，不同名生成目标账号的新 id 后落盘。
+### 4.3 Skill 包
+
+Skill 包必须包含：
+
+1. 根 Skill 的完整目录。
+2. Skill `allowed-tools` 声明的全部工具。
+
+### 4.4 工具包和模型包
+
+工具包只包含工具配置。模型包只包含模型配置。模型包不得导出环境变量真实值。
+
+## 5. 导入规则
+
+导入必须先完整校验，再原子写入。校验失败时不得写入任何资源。
+
+导入流程：
+
+1. 解包到临时目录。
+2. 校验 `bundle.json`、`bundle_type` 和 `resources/` 树。
+3. 校验资源字段，只允许当前契约字段。
+4. 校验依赖树完整性。
+5. 计算同名覆盖、新增资源和 Skill 目录映射。
+6. 用户确认后在临时写入区生成目标资源树。
+7. 原子替换目标资源。
+8. 刷新资源中心索引或缓存。
+
+同名导入语义：
+
+| 资源 | 同名处理 |
+|------|----------|
+| 场景 | 覆盖本地场景内容 |
+| 专家 | 覆盖本地专家内容 |
+| Skill | 保留本地目录名，删除旧目录内容，写入导入包中同名 Skill 的全部文件 |
+| 工具 | 覆盖本地工具内容 |
+| 模型 | 只在导入模型包时覆盖本地模型内容 |
+
+不同名资源按当前命名规则创建新目录并写入。
+
+## 6. Skill 目录映射
+
+Skill 同名覆盖时必须保留目标账号的本地目录名，原因是本地其他专家可能已经引用该目录。
+
+导入时需要生成临时 `directory_map`：
+
+```text
+包内 skill directory_name -> 目标账号本地 skill directory_name
+```
+
+这个映射只用于本次导入期间重写引用，不作为业务数据持久化。
+
+需要重写的引用包括：
+
+- 专家 `skills[].directory_name`
+- 场景主持人配置中的 Skill 引用
+- Skill frontmatter 中引用其他 Skill 或工具时涉及的本地目录字段
+
+## 7. 环境变量边界
+
+资源包不得包含平台内用户级环境变量真实值。
+
+工具和模型配置中如需敏感值，只允许保存环境变量名或 `${env:NAME}` 占位。导入后目标账号必须在自己的 `settings/env.enc.json` 中配置对应环境变量。
+
+场景、专家、Skill、工具和模型导入不得创建、覆盖或删除目标账号环境变量。
+
+## 8. 导入摘要
+
+导入预览和导入结果统一使用以下口径：
+
+```text
+新增 x 个，覆盖 x 个，失败 x 个
+```
+
+场景树导入需要按资源类型拆分展示：
+
+- 场景：新增 x 个，覆盖 x 个，失败 x 个
+- 专家：新增 x 个，覆盖 x 个，失败 x 个
+- Skill：新增 x 个，覆盖 x 个，失败 x 个
+- 工具：新增 x 个，覆盖 x 个，失败 x 个
+- 模型：新增 x 个，覆盖 x 个，失败 x 个
+
+不再使用“保留 x 个”描述同名资源。同名资源的正式语义是覆盖。
+
+## 9. 历史数据边界
+
+`backend/data/users` 中已有的历史数据不因导入导出契约变更而主动重写。
+
+当前主导入导出链路只接受本文定义的当前资源包结构。旧包、旧字段、旧 id、旧目录兼容不进入主链路。如果未来确需处理历史数据，应设计一次性迁移脚本，而不是在导入、运行时或资源解析主路径中保留兜底逻辑。

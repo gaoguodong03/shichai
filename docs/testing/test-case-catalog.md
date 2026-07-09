@@ -40,7 +40,7 @@
 | TC-UR05-03 | UR-05 | API | Skill 依赖缺失 | 触发需要依赖的脚本 | 返回 requirements 或沙箱版本诊断 | `backend/tests/test_skill_mcp_and_script_requirements.py` |
 | TC-UR06-01 | UR-06 | API | 专家未授权某 MCP | 询问需要该 MCP 的任务 | 未授权工具不进入工具列表 | `backend/tests/test_skill_agent_tool_resolution.py` |
 | TC-UR06-02 | UR-06 | API | MCP 配置错误 | 调用 MCP 工具 | 返回连接、鉴权或参数维度错误 | `backend/tests/test_file_ref_and_gateway.py` |
-| TC-UR06-03 | UR-06 | E2E | 配置远程 MCP 密钥 | 查看配置详情 | 前端不展示完整密钥 | `frontend/e2e/resources-skill-mcp-llm.spec.ts` |
+| TC-UR06-03 | UR-06 | E2E | 配置远程 MCP 环境变量 | 查看配置详情 | 前端不展示完整变量值 | `frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | TC-UR07-01 | UR-07 | API | 已登录 | 保存普通版或 Playwright 版沙箱 | 新会话读取对应沙箱版本 | `backend/tests/test_sandbox_service.py` |
 | TC-UR07-02 | UR-07 | API | 默认禁网策略 | 脚本尝试未授权网络访问 | 请求被拦截并返回诊断 | `backend/tests/test_sandbox_policy_runtime.py` |
 | TC-UR07-03 | UR-07 | API | requirements 变化 | 安装依赖并执行脚本 | 依赖状态可追踪，失败可诊断 | `backend/tests/test_sandbox_requirements_runtime.py` |
@@ -50,12 +50,12 @@
 | TC-UR09-01 | UR-09 | API/E2E | 有场景资源包 | 导入前预览 | 展示对象、依赖、缺失引用、同名覆盖和本地 id 重映射项 | `backend/tests/test_bundle_import_api.py`、`frontend/e2e/resources-scenario-expert.spec.ts` |
 | TC-UR09-02 | UR-09 | API | ZIP 结构错误 | 上传导入 | 返回明确结构错误 | `backend/tests/test_scenario_bundle.py` |
 | TC-UR09-03 | UR-09 | API | 专家资源包 | 导入专家包 | 专家、Skill 和工具引用按规则落库 | `backend/tests/test_expert_bundle.py` |
-| TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型、API Key 和默认主持人 | 新会话可引用最新配置，设置响应和前端均不泄露完整 Key | `backend/tests/test_llm_config.py`、`backend/tests/test_sessions_api.py`、`backend/tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
+| TC-UR10-01 | UR-10 | API/E2E | 已登录 | 保存模型、环境变量和默认主持人 | 新会话可引用最新配置，设置响应和前端均不泄露完整变量值 | `backend/tests/test_llm_config.py`、`backend/tests/test_sessions_api.py`、`backend/tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | TC-UR10-02 | UR-10 | E2E | 已登录 | 切换主题后刷新 | 主题保持 | `frontend/e2e/settings.spec.ts` |
 | TC-UR10-03 | UR-10 | API/E2E | 已登录 | 修改密码或账号安全项 | 保存反馈明确，错误不触发误登出 | `backend/tests/test_auth_sqlite.py`、`frontend/e2e/settings.spec.ts` |
 | TC-UR11-01 | UR-11 | API | 后端启动 | 请求 `/health` | 返回 `{ "status": "ok" }` | `backend/tests/test_lifespan.py` |
 | TC-UR11-02 | UR-11 | API | `STATIC_DIR` 存在 | 请求根路径和非 API 路由 | 返回前端入口和 SPA fallback | `backend/tests/test_static_spa.py` |
-| TC-UR11-03 | UR-11 | 脚本 | 准备 1Panel 打包 | 运行打包测试 | 包内不含本地输出、缓存、认证库和本地密钥 | `backend/tests/test_pack_1panel_backup.py` |
+| TC-UR11-03 | UR-11 | 脚本 | 准备 1Panel 打包 | 运行打包测试 | 包内不含本地输出、缓存、认证库和用户级环境变量真实值 | `backend/tests/test_pack_1panel_backup.py` |
 
 ## 4. 新增测试规则
 

@@ -49,11 +49,10 @@ resources/scenarios/<scenario_id>/scenario.json
   "id": "scenario-ppt-writing-v1",
   "name": "编写PPT",
   "description": "把用户想法转成PPT大纲、配图并组装PPTX",
-  "system_prompt": "仅适用于该场景的项目规则",
   "agent_names": ["PPT引导专家", "图片生成专家"],
-  "leader_agent_name": "四九",
   "discussion_goal_example": "帮我做一个面向学生的AI工具介绍PPT",
-  "host_config": {
+  "host": {
+    "name": "四九",
     "skill_name": "PPT主持技能",
     "skill_directory": "group-host-ppt-writing",
     "system_prompt": "",
@@ -173,7 +172,7 @@ resources/tools/<tool_id>/tool.json
 职责：
 
 - 保存 MCP server 或其他外部工具配置。
-- 可以引用密钥，但不能保存明文密钥。
+- 可以引用平台内用户级环境变量，但不能保存变量真实值。
 
 示例：
 
@@ -186,7 +185,7 @@ resources/tools/<tool_id>/tool.json
   "command": "python",
   "args": ["server.py"],
   "env": {
-    "AMAP_API_KEY": {"secret_ref": "amap_api_key"}
+    "AMAP_API_KEY": "${env:AMAP_API_KEY}"
   },
   "version": 1
 }
@@ -203,7 +202,7 @@ resources/models/<model_provider_id>/model.json
 职责：
 
 - 保存模型提供商、base_url、模型名和可配置参数。
-- API key 只保存 `secret_ref`。
+- API key 只保存 `api_key_env` 环境变量名。
 
 示例：
 
@@ -220,7 +219,7 @@ resources/models/<model_provider_id>/model.json
       "supports_tools": true
     }
   ],
-  "api_key_ref": "qwen_api_key",
+  "api_key_env": "QWEN_API_KEY",
   "version": 1
 }
 ```
@@ -263,56 +262,61 @@ resources/models/<model_provider_id>/model.json
 
 ```text
 sessions/
-  index.json
   <session_id>/
     session.json
     history.json
     runtime.json
-    chat.md
+    orchestration_state.json
     workspace/
+    memory/
+    checkpoints/
 ```
 
 文件职责：
 
-- `index.json`：会话列表摘要。
-- `session.json`：标题、场景、参与专家、新建时间、归档状态等会话定义。
+- `session.json`：会话主信息，包括标题、自动标题开关、参与专家、主持人快照和时间戳。
 - `history.json`：聊天消息。
-- `runtime.json`：下一轮发言者、pending owner、host plan、运行时快照。
-- `chat.md`：面向 Agent / 检查点的会话 Markdown 快照。
+- `runtime.json`：UI 恢复镜像，只保存前端显示和停止运行需要的字段。
+- `orchestration_state.json`：刷新不能丢的短期编排状态。
 - `workspace/`：本次会话产生的文件。
+- `memory/`：本次会话内部记忆状态。
+- `checkpoints/`：会话检查点、对象存储和回滚链。
 
-会话必须保存资源快照引用：
+会话必须保存运行所需的主信息：
 
 ```json
 {
-  "scenario_id": "scenario-ppt-writing-v1",
-  "scenario_version": 1,
-  "agent_refs": [
-    {"id": "agent-ppt-guide", "name_snapshot": "PPT引导专家", "version": 1}
-  ],
-  "skill_refs": [
-    {"id": "ppt-outline-to-deck", "name_snapshot": "PPT大纲生成", "version": 1}
-  ]
+  "title": "新对话",
+  "title_auto_generated": true,
+  "agent_names": ["PPT引导专家", "图片生成专家"],
+  "host": {
+    "name": "四九",
+    "llm_name": "",
+    "system_prompt": "",
+    "skill_directory": "group-host-ppt-writing"
+  },
+  "created_at": "2026070812000000",
+  "updated_at": "2026070812050000"
 }
 ```
 
-这样旧会话不会被后续资源改名或删除破坏展示。
+场景资源只在创建会话时作为初始化模板使用；创建后会话不再保存 `scenario_name`，也不通过场景资源解析主持人。
 
-## 5. 设置与密钥层
+## 5. 设置与环境变量层
 
 账号级设置文件：
 
 ```text
 settings/app.json
-settings/secrets.enc.json
+settings/env.enc.json
 settings/sandbox/requirements.txt
 ```
 
 规则：
 
-- 明文密钥不得出现在 `resources/`、`sessions/`、导出 bundle 或沙箱挂载目录。
-- 资源文件只能保存 `secret_ref`。
-- 导出工具或模型时，只导出缺失密钥提示，不导出真实值。
+- 环境变量真实值不得出现在 `resources/`、`sessions/`、导出 bundle 或沙箱挂载目录。
+- 资源文件只能保存 `api_key_env` 或 `${env:NAME}`。
+- 导出工具或模型时，只导出缺失环境变量提示，不导出真实值。
 - 沙箱运行时由后端按本轮需要注入临时环境变量。
 
 ## 6. 沙箱投影
@@ -333,40 +337,56 @@ settings/sandbox/requirements.txt
 - `/skills` 必须只读或 copy-on-write。
 - 本轮工具注册器只注册场景和专家允许的 Skill。
 - 模型上下文只暴露本轮允许的专家、Skill 和工具。
-- `settings/secrets.enc.json`、账号密码、完整用户配置不得挂载进沙箱。
+- `settings/env.enc.json`、账号密码、完整用户配置不得挂载进沙箱。
 - 工具调用输出写入当前 session 的 `workspace/`。
 
 ## 7. 导入导出
 
-资源 bundle 必须包含 manifest：
+资源包用于复制资源中心配置，使用资源中心镜像结构：
 
 ```text
 bundle.json
 resources/
+  scenarios/
+  agents/
+  skills/
+  tools/
+  models/
 ```
+
+`bundle.json` 只描述包，不承载业务配置。`bundle_type` 只允许 `scenario`、`agent`、`skill`、`tool`、`model`，不允许 `mixed`。
 
 导入流程：
 
 1. 解包到临时目录。
-2. 读取 manifest。
-3. 计算依赖图。
-4. dry-run 返回将导入、将覆盖、id 重映射、缺失引用和需要密钥的内容。
-5. 用户确认后写入资源目录。
-6. 原子更新 index。
+2. 读取 `bundle.json`。
+3. 校验资源字段和依赖树。
+4. dry-run 返回将新增、将覆盖和需要补环境变量的内容。
+5. 用户确认后在临时写入区生成目标资源树。
+6. 原子替换目标资源目录并更新索引。
 7. 记录导入事件。
 
 导出规则：
 
-- 导出场景时递归带上引用的专家、专家引用的 Skill 和工具配置。
-- 导出专家时带上引用的 Skill 和工具配置。
-- 导出 Skill 时带完整目录。
-- 不导出 vault 中的真实密钥。
+- 导出场景时递归带上引用的专家、专家引用的 Skill、Skill 引用的工具配置。
+- 导出专家时递归带上引用的 Skill 和 Skill 引用的工具配置。
+- 导出 Skill 时带完整 Skill 目录和 Skill 引用的工具配置。
+- 导出工具时只带工具配置。
+- 导出模型时只带模型配置。
+- 场景包和专家包只保留 `llm_name`，不导出模型配置。
+- 不导出 `settings/env.enc.json` 中的环境变量真实值。
+- 导出前发现下层依赖缺失时禁止导出。
 
 导入冲突规则：
 
 - 目标账号导入时不使用导出方 id 判断冲突。
-- 资源名称相同表示版本一致，覆盖目标账号已有资源内容并保留本地 id，包内引用映射到这个本地 id。
-- 资源名称不同表示新版本或新资源，即使导出方 id 与本地 id 相同，也生成新的本地 id 后导入。
+- 资源身份统一使用名称：场景 `name`、专家 `name`、Skill frontmatter `name`、工具 `name`、模型 `name`。
+- 同名资源表示覆盖本地资源内容。
+- Skill 同名覆盖时保留本地目录名，删除旧目录内容，再写入导入包中同名 Skill 的完整目录。
+- 不同名资源按当前命名规则创建新目录并写入。
+- 导入期间可以生成临时 Skill 目录映射，用于把包内 `directory_name` 重写为目标账号本地目录名；该映射不持久化为业务数据。
+- 导入摘要统一使用“新增 x 个，覆盖 x 个，失败 x 个”，不再使用“保留 x 个”。
+- 旧包、旧 id、旧字段、旧目录兼容不进入主导入链路；历史数据处理应单独设计一次性迁移脚本。
 
 ## 8. 写入和备份
 
@@ -403,7 +423,7 @@ rename
 - `resources/tools/`
 - `resources/models/`
 - `settings/app.json`
-- `settings/secrets.enc.json`
+- `settings/env.enc.json`
 - `settings/sandbox/requirements.txt`
 - `sessions/{session_id}/...`
 
@@ -417,5 +437,5 @@ rename
 - 场景能正确解析专家、专家能正确解析 Skill。
 - 删除 Skill 后，场景/专家详情能显示可读缺失引用。
 - 沙箱挂载用户全部 Skill，但只注册本轮允许工具。
-- 导入导出不包含明文密钥。
+- 导入导出不包含环境变量真实值。
 - 老会话历史能显示当时的专家名和场景名快照。

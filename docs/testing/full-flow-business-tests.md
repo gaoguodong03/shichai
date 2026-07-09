@@ -57,7 +57,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
 - `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
 - `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
-- `frontend/e2e/settings.spec.ts`：全局设置、配色、密钥、账号、安全和沙箱 requirements。
+- `frontend/e2e/settings.spec.ts`：全局设置、配色、环境变量、账号、安全和沙箱 requirements。
 
 通过标准：Playwright `chrome` 项目全部通过，无控制台致命错误、无页面白屏、无找不到可见控件的失败。
 
@@ -77,7 +77,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 | 资源中心-MCP | MCP 新建、启用、禁用、更新、删除、工具参数归一、沙箱调用入口 | `tests/test_skill_mcp_and_script_requirements.py`、`tests/test_file_ref_and_gateway.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | 资源中心-LLM | Provider 配置白名单、模型参数、thinking/tool choice 兼容、默认 LLM 保存 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/resources-skill-mcp-llm.spec.ts` |
 | 设置-主持人/应用 | 主持人 profile、默认 provider、LLM provider 保存与敏感字段隐藏 | `tests/test_llm_config.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
-| 设置-API 密钥 | 密钥新增、列表隐藏明文、更新、删除 | `tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
+| 设置-环境变量 | 环境变量新增、列表隐藏真实值、更新、删除 | `tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 设置-沙箱 | 镜像 variant 保存、requirements 保存/merge、用户级沙箱复用/重建、网络策略、预热去重 | `tests/test_sandbox_service.py`、`tests/test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` |
 | 编排与场景运行时 | 场景 runtime、专家 runtime、主持人接管、轮次状态机、need-user-input 合约 | `tests/test_scene_runtime.py`、`tests/test_expert_runtime.py`、`tests/test_group_orchestration_fsm.py`、`tests/test_orchestration_contracts.py` |
 | 记忆与审计 | 群聊记忆注入、事实存储、旧版运行审计文件清理合同 | `tests/test_group_chat_group_memory.py`、`tests/test_group_memory_store.py`、`tests/test_group_chat_cleanup_contract.py` |
@@ -89,7 +89,7 @@ npm run test:e2e:full -- --headed e2e/workspace.spec.ts
 
 - `test_frontend_workspace_session_and_file_flow`：串起会话新建/更新/停止/删除，以及工作区文件目录、文本、上传、移动、删除；
 - `test_frontend_session_question_answer_flow`：新建问答 Skill 与专家，在会话里发出一个问题，检查返回答案、会话历史落盘与会话导出；
-- `test_frontend_resource_center_and_settings_flow`：串起资源中心与设置页的主要 CRUD，包括场景、专家、Skill、Skill parts、MCP、LLM 设置、全局设置、API 密钥、沙箱设置。
+- `test_frontend_resource_center_and_settings_flow`：串起资源中心与设置页的主要 CRUD，包括场景、专家、Skill、Skill parts、MCP、LLM 设置、全局设置、环境变量、沙箱设置。
 
 该文件会把真实 Docker/OpenSandbox 预热和 MCP 连接替换成测试替身，因此适合作为本地与 CI 的稳定业务链路门禁。底层沙箱复用、requirements 注入、脚本执行等真实行为仍由 `test_sandbox_service.py` 与 `test_group_chat_skill_script_cli_flow.py` 覆盖。
 

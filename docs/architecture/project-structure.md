@@ -16,7 +16,7 @@ shichai/
 │   │   ├── core/            # 生命周期、运行环境、静态挂载、用户上下文、安全、用户存储
 │   │   ├── mcp/             # MCP 管理、工具参数归一化
 │   │   ├── skills/          # Skills 加载（SKILL.md 扫描与内容获取）
-│   │   └── tools/           # 内置工具：export_session、run_skill_script、call_api、filesystem 包装等
+│   │   └── tools/           # 内置工具：export_session、run_skill_script、保存型 HTTP API 执行、工作区文件工具等
 │   ├── config/              # 认证用户模板等本地配置
 │   ├── data/                # 用户运行数据目录（运行时生成，不提交）
 │   ├── requirements.txt
@@ -55,7 +55,7 @@ shichai/
 | `settings_mcp.py` | MCP Server 配置、工具列表、测试调用与导入导出。 |
 | `settings_presets.py` | 场景/会话预设与场景资源包导入导出。 |
 | `settings_app.py` | 应用设置和主持人配置。 |
-| `settings_secrets.py` | 用户密钥配置。 |
+| 环境变量设置接口 | 用户级环境变量配置。 |
 | `sandbox_settings.py` | 用户沙箱版本和 requirements 设置。 |
 | `files.py` | Agent 工作区文件：workspace 路径、上传/下载/列表/重命名/读取。 |
 | `auth.py` | 登录/注册等认证。 |
@@ -66,7 +66,7 @@ shichai/
 | 文件 | 职责 |
 |------|------|
 | `skill_agent_runtime.py` | 技能执行 Agent 运行时：构建系统提示、绑定工具 schema、驱动 `SimpleAgent` 的 agent/tool/final 步进。 |
-| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, workspace_id)`，按 Agent 的 mcp_server_ids/Skill 依赖过滤 MCP + 只读 file-reader/filesystem + call_api + 每个 Skill 目录的 `run_skill_script_<directory_name>`。 |
+| `tools_for_skill.py` | **工具组装**：`build_tools_for_group_chat(agent_profile, session_id)`，按当前 Skill 的 `allowed-tools.mcp` / `allowed-tools.http_api` 注入外部工具，默认注入工作区 CRUD，并按 `scripts/manifest.json` 注入当前 Skill 脚本工具。 |
 | `expert_runtime.py` | 专家回合入口：根据专家绑定 Skill、用户输入和会话状态选定 Skill，并组装工具。 |
 | `llm_client.py` | LLM 客户端封装（如 Qwen）。 |
 | `leader_scheduler.py` | 群聊主持人调度。 |
@@ -100,7 +100,7 @@ shichai/
 |------|------|
 | `export_session.py` | `create_export_session_tool(session_id)` → `export_session_to_md`。 |
 | `run_skill_script.py` | `create_run_skill_script_tool(directory_name)` → `run_skill_script`。 |
-| `call_api.py` | 全局 `call_api` 工具。 |
+| `call_api.py` | 保存型 HTTP API 的内部执行器；通用 `call_api` 不作为 LLM 可见工具注入。 |
 | `filesystem_session_wrapper.py` | `wrap_filesystem_tools(tools, session_id)`，按会话限定工作区路径。 |
 | `read_file.py` | 遗留读文件工具（已由 MCP file-reader/filesystem 替代，若仍存在则仅兼容）。 |
 | `write_workspace_file.py` | 写工作区文件（若被其他模块使用）。 |

@@ -17,7 +17,7 @@
 | UR-07 沙箱运行环境 | 工具运行层、外部服务、用户隔离数据 | OpenSandbox、镜像选择、requirements、超时和网络策略 |
 | UR-08 工作区文件管理 | UI、API、工具运行层、用户隔离数据 | 文件预览、编辑、下载、路径白名单、工具读写边界 |
 | UR-09 导出与导入 | UI、API、用户隔离数据 | ZIP 资源包、依赖预览、冲突处理、跨账号迁移 |
-| UR-10 模型、密钥与个人设置 | UI、API、Agent 编排、用户隔离数据、外部服务 | LLM Provider、密钥脱敏、默认主持人、主题和账号安全 |
+| UR-10 模型、环境变量与个人设置 | UI、API、Agent 编排、用户隔离数据、外部服务 | LLM Provider、环境变量脱敏、默认主持人、主题和账号安全 |
 | UR-11 部署与运维 | API、工具运行层、外部服务 | 健康检查、Docker/1Panel、数据卷、OpenSandbox 和日志诊断 |
 
 ```mermaid
@@ -57,7 +57,7 @@ flowchart TB
     Router["路由与页面壳<br/>/workspace<br/>/resources/:section<br/>/settings/:section"]
     WorkspaceUI["工作区 UI<br/>会话列表 / 消息流 / 工作区文件"]
     ResourceUI["资源中心 UI<br/>场景 / 专家 / Skill / MCP / LLM / 文件"]
-    SettingsUI["设置 UI<br/>应用 / 主题 / 密钥 / 账号安全 / 沙箱"]
+    SettingsUI["设置 UI<br/>应用 / 主题 / 环境变量 / 账号安全 / 沙箱"]
   end
 
   subgraph API["FastAPI API 接入层"]
@@ -87,7 +87,7 @@ flowchart TB
     UserRoot["backend/data/users/{user_id}"]
     Resources["resources/<br/>scenarios / agents / skills / tools / models"]
     Sessions["sessions/<br/>历史 / meta / workspaces"]
-    Config["config/<br/>settings / secrets refs / mcp / sandbox"]
+    Config["settings/<br/>app / env vars / mcp / sandbox"]
   end
 
   subgraph EXT["外部服务"]
@@ -139,7 +139,7 @@ flowchart TB
 | 前端路由与页面壳 | 控制主导航、鉴权跳转、资源与设置分区 | `/workspace`、`/resources/:section`、`/settings/:section` | 新增一级页面先改 `frontend/src/router/index.ts`；新增资源或设置分区先扩展对应 section 集合和 `MainView` 内容提供器。 |
 | 工作区 UI | 展示会话、消息流、输入框、文件面板和专家协作状态 | 调 `/api/sessions/*`、`/api/workspaces/*`，消费 SSE 事件 | 新增会话交互、消息状态、工具可视化，优先接在工作区组件和 SSE 事件解析处。 |
 | 资源中心 UI | 管理场景、专家、Skill、MCP、LLM 和文件资源 | 调 `/api/agents/*`、`/api/settings/*`、`/api/workspaces/*` | 新增一种用户可配置资源，先定义资源模型和后端 API，再在资源中心增加 section。 |
-| 设置 UI | 管理应用设置、密钥、账号安全、沙箱策略和主题 | 调 `/api/settings/app`、`/api/settings/api-secrets`、`/api/settings/sandbox`、`/api/auth/*` | 新增个人级配置放到设置层；如果会影响运行时，还要在后端 runtime 读取该配置。 |
+| 设置 UI | 管理应用设置、环境变量、账号安全、沙箱策略和主题 | 调 `/api/settings/app`、`/api/settings/env-vars`、`/api/settings/sandbox`、`/api/auth/*` | 新增个人级配置放到设置层；如果会影响运行时，还要在后端 runtime 读取该配置。 |
 | API 路由注册 | 把业务 API 统一挂到 `/api` 下，提供后端入口 | `backend/app/api/routes.py` 的 `register_api_routes()` | 新增后端业务入口时新建或扩展 `backend/app/api/*.py`，再在 `routes.py` 注册。 |
 | 认证与用户上下文 | 登录、注册、改密、Token 校验、解析稳定 `user_id` | `/api/auth/*`，`user_context_dependency` | 任何读写用户数据的新 API 都必须依赖用户上下文，不直接拼全局路径。 |
 | 统一会话 API | 会话 CRUD、流式对话、停止、导出、事件流 | `/api/sessions/*`，主入口 `/api/sessions/{session_id}/chat/stream` | 新增会话级动作接在 `sessions.py`；若动作会触发专家执行，再进入群聊运行时。 |
@@ -149,7 +149,7 @@ flowchart TB
 | Skill 管理 | Skill CRUD、ZIP 导入导出、`SKILL.md` 与文件分区管理 | `/api/settings/skills/*`，脚本契约见 `run_skill_script` | 新增可复用工作方法时优先做 Skill；需要代码执行时放到 Skill 脚本并通过 `run_skill_script` 调用。 |
 | MCP 管理 | 管理外部 MCP Server 配置、连接、工具 schema 和直接调用 | `/api/settings/mcp/*`，stdio / streamable HTTP | 新增外部工具服务优先做 MCP Server；后端只保存配置、测试连接并把工具转成 `ToolSpec`。 |
 | 工具与沙箱运行层 | 统一执行内置工具、MCP、Skill 脚本，处理并发、超时、工作区挂载 | `ToolSpec`、OpenSandbox、用户 requirements | 新增系统内置能力可做 `backend/app/tools/*`；需要隔离执行的能力走沙箱策略和 `run_skill_script`。 |
-| 用户隔离数据 | 按 `user_id` 保存资源、会话、工作区、配置和密钥引用 | `backend/data/users/{user_id}/resources`、`sessions`、`config` | 新增持久化数据时先归入 `resources`、`sessions` 或 `config`，用现有用户上下文和原子写入工具。 |
+| 用户隔离数据 | 按 `user_id` 保存资源、会话、工作区、设置和环境变量引用 | `backend/data/users/{user_id}/resources`、`sessions`、`settings` | 新增持久化数据时先归入 `resources`、`sessions` 或 `settings`，用现有用户上下文和原子写入工具。 |
 | 外部服务 | 提供模型、MCP 远端能力、沙箱镜像和控制面 | LLM Provider API、MCP 协议、OpenSandbox API | 新增第三方能力时先判断是模型、MCP 还是沙箱镜像；不要绕过运行时直接从 UI 调外部服务。 |
 
 ## 新增能力接入规则

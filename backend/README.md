@@ -9,7 +9,7 @@ FastAPI 服务：统一会话流、Agent 配置、每用户 MCP / Skills、工�
 | `SHUTONG_USER_DATA_ROOT` | 用户数据根目录，默认 `backend/data/users`；每个用户独占 `data/users/{username}/`（会话、工作区、配置、技能副本）。旧名 `SHICHAI_USER_DATA_ROOT` 已废弃。 |
 | `AUTH_SECRET` | JWT 签名密钥，生产环境务必修改。 |
 | `ALLOW_ANONYMOUS_API` | 设为 `1` 时允许无 Bearer 访问（仅本地调试，**禁止**用于生产）。 |
-| `QWEN_API_KEY` 等 | 各 LLM 提供商的 API Key，见应用内「设置」。 |
+| `QWEN_API_KEY` 等 | 部署级默认环境变量；产品内主契约是应用内「设置 → 环境变量」。 |
 | `CALL_API_TIMEOUT` | `call_api` 请求超时秒数，默认 `30`。 |
 | `CALL_API_DISABLE_SSRF_GUARD` | 设为 `1` 时跳过 call_api 的主机 SSRF 检查（仅本地调试，**禁止**生产）。 |
 | `CALL_API_HTML_EXTRACT` | 设为 `0` 时不对 HTML 响应做 trafilatura 正文提取（仅用去标签纯文本/短片段）。默认开启。 |
@@ -24,7 +24,7 @@ FastAPI 服务：统一会话流、Agent 配置、每用户 MCP / Skills、工�
 python -m venv venv
 # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-# 复制并编辑 .env，至少设置模型 Key 与 AUTH_SECRET
+# 复制并编辑 .env，至少设置部署级默认模型环境变量与 AUTH_SECRET
 cp .env.example .env
 # 新建本地账号；密码会写入 SQLite hash，不要提交运行时配置文件
 python manage_accounts.py add --username demo@example.com --password 'change-me'

@@ -232,9 +232,9 @@ await shot('settings-host.png', [
   { label: 4, selector: 'button:has-text("保存")' },
 ])
 
-await goto('/settings/secrets')
-await shot('settings-secret.png', [
-  { label: 1, selector: 'button:has-text("新建密钥")' },
+await goto('/settings/env-vars')
+await shot('settings-env.png', [
+  { label: 1, selector: 'button:has-text("新建环境变量")' },
   { label: 2, selector: 'text=jeniya' },
   { label: 3, selector: 'text=已保存' },
   { label: 4, selector: 'button:has-text("保存")' },

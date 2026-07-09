@@ -15,7 +15,7 @@
 | 角色 | 目标 | 关键能力 |
 |------|------|----------|
 | 普通用户 | 使用专家与技能完成任务 | 登录、新建会话、上传文件、调用工具、查看结果 |
-| 配置用户 | 维护个人资源 | 管理 Agent、Skills、MCP、LLM、沙箱与密钥 |
+| 配置用户 | 维护个人资源 | 管理 Agent、Skills、MCP、LLM、沙箱与环境变量 |
 | 运维/部署者 | 保证服务稳定运行 | 配置环境变量、镜像、OpenSandbox、健康检查 |
 | 开发/测试者 | 安全迭代系统 | 按模块开发、运行回归、验证接口契约 |
 
@@ -32,7 +32,7 @@
 | UR-07 沙箱运行环境 | OpenSandbox、requirements、镜像选择 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | 普通版/Playwright 版沙箱、依赖安装、超时诊断 | P0 必测 |
 | UR-08 工作区文件管理 | 工作区文件 API、文件引用、路径保护 | `test_workspace_files.py`、`test_file_ref_and_gateway.py`、`test_frontend_business_flows.py` | 上传、预览、编辑、下载、专家生成文件落盘 | P0 必测 |
 | UR-09 导出与导入 | 资源包导出、ZIP 导入、冲突预览 | `test_bundle_import_api.py`、`test_scenario_bundle.py`、`test_expert_bundle.py`、`frontend/e2e/resources-*.spec.ts` | 场景/专家/Skill 导出导入、冲突确认、依赖提示 | P1 必测 |
-| UR-10 模型、密钥与个人设置 | LLM、密钥、主题、账号安全 | `test_llm_config.py`、`test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` | 保存模型、密钥脱敏、主题和账号安全设置 | P1 必测 |
+| UR-10 模型、环境变量与个人设置 | LLM、环境变量、主题、账号安全 | `test_llm_config.py`、`test_frontend_business_flows.py`、`frontend/e2e/settings.spec.ts` | 保存模型、环境变量脱敏、主题和账号安全设置 | P1 必测 |
 | UR-11 部署与运维 | 健康检查、Docker/1Panel、日志诊断 | `test_lifespan.py`、`test_sandbox_service.py`、前端构建 | `/health`、容器启动、OpenSandbox 可达、日志关键词 | P1 上线必测 |
 
 ## 5. 核心业务模块
@@ -147,18 +147,18 @@
 - 资源包结构错误、依赖缺失或冲突时返回明确错误。
 - 导入完成后，场景、专家、技能与工具配置可在对应资源中心栏目查看。
 
-### 5.8 LLM、密钥与应用设置
+### 5.8 LLM、环境变量与应用设置
 
 对应需求：UR-10
 
 **需求**
-- 用户可以配置 LLM Provider、模型与 API Key。
-- API Key 等敏感配置不应在前端明文泄露。
+- 用户可以配置 LLM Provider、模型与平台内用户级环境变量。
+- 环境变量真实值等敏感配置不应在前端明文泄露。
 - 应用设置、主题、偏好与账号安全配置应拆分管理。
 
 **验收点**
 - LLM 配置保存后，新会话使用最新 Provider。
-- 前端列表不展示完整密钥，只展示脱敏信息或状态。
+- 前端列表不展示完整变量值，只展示是否已设置等状态。
 - 主题切换后刷新页面仍保持选择。
 - 修改密码或安全配置后，旧凭据按预期失效。
 
@@ -181,7 +181,7 @@
 
 | 类别 | 要求 | 验收方式 |
 |------|------|----------|
-| 安全 | 用户数据隔离、路径白名单、SSRF 防护、密钥脱敏 | 单元测试 + 手工攻击用例 |
+| 安全 | 用户数据隔离、路径白名单、SSRF 防护、环境变量脱敏 | 单元测试 + 手工攻击用例 |
 | 稳定性 | MCP 生命周期在同一任务初始化/清理，沙箱错误可诊断 | 后端测试 + 日志检查 |
 | 可维护性 | 入口薄、模块边界清晰、前端按业务域组织 | 代码审查 + 目录检查 |
 | 可测试性 | 核心 API、校验器、调度器、工具网关有回归测试 | `pytest` 与前端构建 |

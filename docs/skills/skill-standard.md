@@ -33,6 +33,7 @@ name: 示例技能
 description: 用于一句话说明触发场景，帮助专家选择是否使用该 Skill。
 allowed-tools:
   mcp: []
+  http_api: []
   python: []
 ---
 ```
@@ -44,6 +45,18 @@ allowed-tools:
 | `name` | 必填 | 用户可读名称，建议 2~12 个中文字符或短英文名。 |
 | `description` | 必填 | 写清楚“什么时候用”，不要只写能力口号。 |
 | `allowed-tools` | 必填 | 使用统一结构；没有额外工具时也保留空值。 |
+
+`allowed-tools` 只描述外部工具依赖和脚本依赖：
+
+| 字段 | 规范 |
+| --- | --- |
+| `mcp` | 本 Skill 允许调用的 MCP server 名称列表。 |
+| `http_api` | 本 Skill 允许调用的保存型 HTTP API 工具名称列表。 |
+| `python` | 本 Skill 脚本运行所需 Python 依赖列表，不是 LLM 工具授权。 |
+
+工作区 CRUD 是平台默认能力，不写入 `allowed-tools`。当前 Skill 的脚本工具由 `scripts/manifest.json` 决定，也不写入 `allowed-tools`。通用 `call_api` 不再作为 LLM 可见工具，不允许在 Skill 中声明。
+
+实现层必须按该结构删除旧兜底逻辑：不要兼容旧 `mcp_server_ids`、`api`、`workspace`、`skill_script` 声明；不要把未声明的通用 `call_api` 或无 manifest 脚本注入给模型。
 
 `description` 只用于帮助平台和专家判断“什么时候用”，不应总结完整流程。它应包含：
 
@@ -94,11 +107,8 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 [[SKILL_SESSION_STATE]]
 {
   "execution_status": "blocked",
-  "result_code": "input.confirmation_required",
-  "message": "等待用户补充或确认",
-  "artifacts": {
-    "required_fields": ["用户回复"]
-  },
+  "content": "等待用户补充或确认",
+  "artifacts": [],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -139,34 +149,37 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 ### 4.1 调用契约
 
-脚本型 Skill 统一通过 `run_skill_script_<directory_name>` 调用，输入固定使用 `cli_args`。
+脚本型 Skill 统一通过 `run_skill_script_<directory_name>` 调用。模型看到的参数由 `scripts/manifest.json` 的 `args` 生成，模型按结构化字段传参，平台负责转换为 CLI 参数。
 
 推荐写法：
 
 ```text
 调用 run_skill_script_<directory_name>：
-- script_path: crawl_and_store.py
-- cli_args: ["--url", "<url>", "--output", "<workspace-relative-path>"]
+- url: <url>
+- output_path: <workspace-relative-path>
 ```
 
 约束：
 
-- `script_path` 写脚本文件名即可，如 `crawl_and_store.py`。
-- 文档示例统一使用脚本文件名，便于模型稳定复用。
-- 脚本参数必须是 argv 数组 JSON，例如 `["--name", "value"]`。
+- 脚本入口只写在 `scripts/manifest.json` 的 `entry` 字段中，Skill 正文不再要求模型传 `script_path`。
+- Skill 正文应使用 manifest 中的参数名，例如 `url`、`output_path`，不要让模型直接传 `cli_args`。
+- 平台将模型传入的结构化参数转换为 CLI 参数，例如 `output_path` 转为 `--output-path <value>`。
 - 脚本必须把结构化结果写到 stdout，错误写到 stderr，并使用退出码表达成功或失败。
-- stdout JSON 必须使用标准字段：`execution_status`、`result_code`、`message`，并按需输出 `artifacts` 与 `next_action`。
+- stdout JSON 必须使用标准字段：`execution_status`、`content`、`artifacts`、`next_action`。
 
 成功且声明 Skill 会话结束的 stdout 示例：
 
 ```json
 {
   "execution_status": "succeeded",
-  "result_code": "completed",
-  "message": "已生成结果文件。",
-  "artifacts": {
-    "output_path": "outputs/result.txt"
-  },
+  "content": "已生成结果文件。",
+  "artifacts": [
+    {
+      "type": "file",
+      "name": "结果文件",
+      "path": "outputs/result.txt"
+    }
+  ],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -176,18 +189,55 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 ### 4.2 `scripts/manifest.json`
 
-脚本型 Skill 推荐提供 `scripts/manifest.json`，用于说明脚本、参数和必填项。最小示例：
+脚本型 Skill 必须提供 `scripts/manifest.json`，用于说明脚本入口、工具说明和 CLI 参数。manifest 只写 `entry`、`description`、`args`；不要手写 `input_schema`、`cli_args` 或 `invocation`。平台会根据 `args` 自动生成 LLM 可见的 `input_schema`。
+
+没有 `scripts/manifest.json` 的脚本型 Skill 不是标准 Skill，平台不应注入脚本工具，也不应回退到默认 `cli_args`、`script_path` 或其他兼容入口。
 
 ```json
 {
-  "crawl_and_store.py": {
-    "description": "抓取章节并保存为工作区文件",
-    "input_schema": {
-      "type": "object",
-      "required": ["url", "output"]
+  "entry": "crawl_and_store.py",
+  "description": "抓取章节并保存为工作区文件。",
+  "args": [
+    {
+      "name": "url",
+      "description": "要抓取的网页 URL。",
+      "required": true
+    },
+    {
+      "name": "output_path",
+      "description": "保存结果的工作区相对路径。",
+      "required": true
     }
-  }
+  ]
 }
+```
+
+字段规范：
+
+| 字段 | 是否必填 | 规范 |
+| --- | --- | --- |
+| `entry` | 必填 | 脚本入口，相对 `scripts/` 目录；禁止绝对路径、`../`、shell 管道。 |
+| `description` | 必填 | 给 LLM 看的脚本工具说明，说明脚本做什么、产出什么。 |
+| `args` | 必填 | CLI 参数定义数组；无参数脚本也写空数组。 |
+| `args[].name` | 必填 | 参数名，使用 snake_case；平台执行时转换为 `--kebab-case`。 |
+| `args[].description` | 必填 | 给 LLM 的参数说明。 |
+| `args[].required` | 可选 | 是否必填，默认 `false`。 |
+| `args[].default` | 可选 | 默认值。 |
+| `args[].repeatable` | 可选 | 是否可重复，默认 `false`；值为数组时平台展开为多次同名 CLI 参数。 |
+
+模型调用工具时传入结构化参数：
+
+```json
+{
+  "url": "https://example.com/chapter/1",
+  "output_path": "materials/chapter-1.md"
+}
+```
+
+平台执行时转换为：
+
+```bash
+python scripts/crawl_and_store.py --url https://example.com/chapter/1 --output-path materials/chapter-1.md
 ```
 
 ### 4.3 给 Skill 作者的脚本函数调用建议
@@ -196,20 +246,20 @@ description: 当用户需要抓取 WebNovel 小说章节、整理公开网页资
 
 #### 4.3.1 在 `SKILL.md` 中写清楚工具调用
 
-在执行步骤里写明实际工具名、脚本名和 argv 数组：
+在执行步骤里写明实际工具名和 manifest 参数名：
 
 ```text
 调用 run_skill_script_<directory_name>：
-- script_path: transcribe_audio.py
-- cli_args: ["--file", "<工作区相对路径>", "--language", "zh"]
+- file_path: <工作区相对路径>
+- language: zh
 ```
 
 约定：
 
-- `script_path` 只写 `scripts/` 下的文件名，不写 `scripts/foo.py`、工作区路径或宿主机绝对路径。
-- `cli_args` 必须是字符串数组，对应 Python `argparse` 的命令行参数。
+- 脚本入口只在 `scripts/manifest.json` 中声明，Skill 正文不让模型传 `script_path`。
+- 参数名必须来自 manifest 的 `args[].name`。
 - 所有用户文件路径都用工作区相对路径，例如 `uploads/audio.wav`、`outputs/result.json`。
-- 多参数脚本要在 `scripts/manifest.json` 里写 `input_schema.required`，让系统能提前发现缺参。
+- 必填参数要在 `scripts/manifest.json` 里写 `required: true`，让系统能提前发现缺参。
 
 #### 4.3.2 沙箱依赖怎么声明和导入
 
@@ -223,6 +273,7 @@ name: 示例技能
 description: 当用户需要处理表格并生成统计结果时使用。
 allowed-tools:
   mcp: []
+  http_api: []
   python:
     - pandas>=2.2
     - openpyxl>=3.1
@@ -241,11 +292,8 @@ try:
 except ImportError:
     print(json.dumps({
         "execution_status": "failed",
-        "result_code": "dependency.missing",
-        "message": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。",
-        "artifacts": {
-            "missing_dependencies": ["pandas>=2.2"]
-        },
+        "content": "缺少 Python 依赖 pandas，请先加入沙箱 requirements.txt。",
+        "artifacts": [],
         "next_action": {
             "agent_turn": "respond",
             "skill_session": "release"
@@ -263,29 +311,41 @@ except ImportError:
 | 字段 | 建议 | 说明 |
 | --- | --- | --- |
 | `execution_status` | 必填 | 枚举：`succeeded`、`blocked`、`failed`。 |
-| `result_code` | 必填 | 稳定机器码，如 `completed`、`input.missing`、`dependency.missing`。 |
-| `message` | 必填 | 给专家和用户看的短说明。 |
-| `artifacts` | 按需 | 结构化结果。文件路径、计数、明细数组都放在这里。 |
-| `next_action.agent_turn` | 按需 | 枚举：`continue`、`respond`。控制当前专家回合是否继续行动。 |
-| `next_action.skill_session` | 按需 | 枚举：`keep`、`release`。控制下一条用户消息是否回到同一专家和 Skill。 |
+| `content` | 必填 | 脚本产出的正文结果；平台不做 LLM 总结或改写。 |
+| `artifacts` | 必填 | 产物索引数组。无产物时写 `[]`。 |
+| `next_action.agent_turn` | 必填 | 枚举：`continue`、`respond`。控制当前专家回合是否继续行动。 |
+| `next_action.skill_session` | 必填 | 枚举：`keep`、`release`。控制下一条用户消息是否回到同一专家和 Skill。 |
 
-如果你说的“短接数”是音频/视频切片或分段数，字段建议命名为 `segment_count` 或 `chunk_count`，并同时给出 `segments` 明细：
+`artifacts` 中每一项固定为：
+
+```json
+{
+  "type": "file | directory | image | table | json | markdown | other",
+  "name": "用户可读名称",
+  "path": "相对路径或资源路径"
+}
+```
+
+不要在 `artifacts` 内嵌 `data`、长文本、表格行或 JSON 明细。即使产物类型是 `json`、`table` 或 `markdown`，真实内容也写入 workspace 文件，并通过 `path` 读取。
+
+如果你说的“短接数”是音频/视频切片或分段数，脚本应把完整明细写入工作区文件，并在 `artifacts` 中返回该文件：
 
 ```json
 {
   "execution_status": "succeeded",
-  "result_code": "transcribed",
-  "message": "转写完成。",
-  "artifacts": {
-    "text": "完整转写文本……",
-    "chunk_seconds": 120,
-    "segment_count": 3,
-    "segments": [
-      {"index": 1, "total": 3, "text": "第一段……"},
-      {"index": 2, "total": 3, "text": "第二段……"},
-      {"index": 3, "total": 3, "text": "第三段……"}
-    ]
-  },
+  "content": "转写完成，共 3 段，完整结果已保存。",
+  "artifacts": [
+    {
+      "type": "json",
+      "name": "转写明细",
+      "path": "outputs/transcript.json"
+    },
+    {
+      "type": "markdown",
+      "name": "转写正文",
+      "path": "outputs/transcript.md"
+    }
+  ],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -293,12 +353,12 @@ except ImportError:
 }
 ```
 
-计数字段要遵守：
+产物文件内的计数字段要遵守：
 
 - 用整数，不要写成“3段”“共三段”。
 - 名称稳定，避免同一个脚本有时叫 `count`，有时叫 `num`。
-- 如果有明细数组，`segment_count` 应等于 `len(segments)`。
-- 失败时也可以给 `processed_count`、`failed_count`，方便模型说明完成了多少、哪里失败。
+- 如果产物文件里有明细数组，`segment_count` 应等于 `len(segments)`。
+- 失败时如需记录 `processed_count`、`failed_count`，也写入产物文件或执行 trace；stdout 只保留 `content`、`artifacts` 和 `next_action`。
 
 #### 4.3.4 Python 脚本最小模板
 
@@ -326,11 +386,8 @@ def main() -> None:
     if not input_path.exists():
         emit({
             "execution_status": "blocked",
-            "result_code": "file.missing",
-            "message": f"找不到输入文件：{args.input}",
-            "artifacts": {
-                "required_fields": ["input"]
-            },
+            "content": f"找不到输入文件：{args.input}",
+            "artifacts": [],
             "next_action": {
                 "agent_turn": "respond",
                 "skill_session": "keep"
@@ -344,12 +401,14 @@ def main() -> None:
 
     emit({
         "execution_status": "succeeded",
-        "result_code": "completed",
-        "message": "处理完成。",
-        "artifacts": {
-            "output_path": str(output_path),
-            "result": result
-        },
+        "content": "处理完成。",
+        "artifacts": [
+            {
+                "type": "json",
+                "name": "处理结果",
+                "path": str(output_path)
+            }
+        ],
         "next_action": {
             "agent_turn": "respond",
             "skill_session": "release"
@@ -366,8 +425,8 @@ if __name__ == "__main__":
         print(str(exc), file=sys.stderr)
         emit({
             "execution_status": "failed",
-            "result_code": "runtime.failed",
-            "message": str(exc),
+            "content": str(exc),
+            "artifacts": [],
             "next_action": {
                 "agent_turn": "respond",
                 "skill_session": "release"
@@ -377,18 +436,18 @@ if __name__ == "__main__":
 
 ## 5. Skill 会话锁
 
-专家在群聊中使用某个 Skill 后，系统会记录 Skill 会话锁：
+专家在群聊中使用某个 Skill 且需要跨轮继续时，系统会在 `orchestration_state.json.continuation` 中记录接续状态：
 
-- `skill_session_owner_name`：当前继续处理该 Skill 的专家名称；
-- `skill_session_skill`：当前继续使用的 Skill 目录名。
+- `owner_agent_name`：下一轮优先接回的专家名称；
+- `skill_policy`：`keep` 表示继续同一 Skill，`release` 表示接回同一专家但重新选择 Skill；
+- `skill`：`skill_policy=keep` 时继续使用的 Skill 目录名。
 
-会话锁存在且仍有效时，下一条用户消息默认直接交给该专家继续处理，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
+`continuation` 存在、仍有效且 `skill_policy=keep` 时，下一条用户消息默认直接交给该专家继续同一 Skill，四九不会参与本轮调度。只有满足以下条件之一时才回到四九：
 
-- 脚本或 MCP 工具 stdout JSON 输出 `next_action.skill_session=release`；
-- 非脚本 Skill 的专家正文末尾追加隐藏状态块，且其中 `next_action.skill_session=release`；
+- 脚本 stdout JSON 输出 `next_action.skill_session=release`；
+- 非脚本 Skill，或 MCP / HTTP / workspace 工具后的专家隐藏状态块输出 `next_action.skill_session=release`；
 - 用户明确说“结束 skill / 退出技能 / 交给主持人 / 请下一位专家”等；
-- 用户 `@` 或点名其他专家；
-- 平台入口路由收到明确的 `host_takeover_requested` 或 `ignore_auto_agent_name` 字段；
+- 用户消息请求中的 `target_agent_name` 指向其他会话成员；
 - 当前专家或 Skill 已不在会话有效范围内。
 
 ## 6. 结束点判断规范
@@ -397,18 +456,22 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 
 ### 6.1 标准流程控制
 
-脚本型 Skill 和返回 JSON 的 MCP 工具通过 stdout JSON 的 `next_action` 控制流程。非脚本 Skill 通过专家正文末尾的隐藏状态块表达同一组字段。
+脚本型 Skill 通过 stdout JSON 的 `next_action` 控制流程。MCP / HTTP / workspace 工具本身不要求返回 `next_action`；这些工具执行后如果需要 LLM 判断下一步，专家最终回复末尾必须追加隐藏状态块。非脚本 Skill 也通过专家正文末尾的隐藏状态块表达同一组字段。
 
 规则：
 
-- `next_action.agent_turn=continue`：当前专家回合继续行动，例如继续编辑文件或调用下一个工具。
-- `next_action.agent_turn=respond`：当前专家基于脚本结果生成最终答复。
-- `next_action.skill_session=keep`：下一条用户消息继续回到同一专家和同一 Skill。
-- `next_action.skill_session=release`：释放 Skill 会话锁，下一轮交回主持人调度。
+- `next_action.agent_turn=continue`：当前专家本轮继续行动，例如继续编辑文件或调用下一个工具；它不决定下一条用户消息归属。
+- `next_action.agent_turn=respond`：当前专家本轮回复用户；它不等于一定释放 Skill 会话。
+- `next_action.skill_session=keep`：下一条用户消息继续回到同一专家和同一 Skill；它不决定当前专家本轮是否继续行动。
+- `next_action.skill_session=release`：释放 Skill 会话锁，下一轮交回主持人或正常入口调度。
+
+`agent_turn` 和 `skill_session` 是两个维度，四种组合都合法：`continue+keep`、`continue+release`、`respond+keep`、`respond+release`。平台只校验枚举和结构，不把某个组合硬判为非法。具体语义见 `docs/skills/skill-session-flow.md`。
 
 完整字段与允许值见 `docs/skills/skill-session-flow.md`。
 
-普通非脚本专家没有结构化工具结果或隐藏状态块时，单轮发言结束后默认释放 Skill 会话。场景协作中的阶段成员建议显式写出隐藏状态块，让平台可以记录本轮 Skill 已完成、等待用户补充或需要继续锁定。
+脚本 stdout 缺少 `next_action`、字段缺失、枚举非法或 JSON 结构不合法时，按协议失败处理：`execution_status=failed`、`agent_turn=respond`、`skill_session=release`，并向用户展示脚本输出不符合平台协议。
+
+未绑定流程型 Skill、也没有工具后续判断的普通自然语言专家，单轮发言结束后可默认释放 Skill 会话。绑定 Skill、场景协作关键阶段成员，或 MCP / HTTP / workspace 工具执行后需要决定本轮继续和跨轮锁定时，专家最终回复必须追加隐藏状态块，让平台可以记录本轮 Skill 已完成、等待用户补充或需要继续锁定。
 
 隐藏状态块示例：
 
@@ -416,9 +479,8 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 [[SKILL_SESSION_STATE]]
 {
   "execution_status": "succeeded",
-  "result_code": "completed",
-  "message": "处理完成。",
-  "artifacts": {},
+  "content": "处理完成。",
+  "artifacts": [],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -434,7 +496,7 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 满足任一条件时，脚本 stdout 或专家隐藏状态块输出 `next_action.skill_session=release`：
 
 - 已交付用户请求的最终结果，且不需要同一 Skill 继续追问或处理；
-- 脚本成功执行，已总结结果和文件路径；
+- 脚本成功执行，已在 `content` 中给出文本结果，并在 `artifacts` 中登记产物路径；
 - 当前 Skill 判断后续应由四九重新选择专家；
 - 已向用户提出确认问题，且下一轮应由主持人根据用户回复重新调度；
 - 任务无法继续且已给出明确失败原因和替代建议。
@@ -464,7 +526,7 @@ Skill 的“结束点”不是单轮回复结束，而是当前 Skill 在群聊�
 四九负责调度，专家负责执行。Skill 编写时必须保持边界：
 
 - 专家可以说明“建议交回四九重新安排”，但不要自行指定下一位专家。
-- 专家回复使用自然语言、工具结果总结、隐藏状态块或脚本 stdout JSON；主持人调度字段只出现在主持人 Skill 中。
+- 专家回复使用自然语言、脚本 `content`、隐藏状态块或脚本 stdout JSON；主持人调度字段只出现在主持人 Skill 中。
 - 主持人 Skill 不代写专家正文；流程型主持人 Skill 只输出 `current_phase`、`next_speaker`、`speaker_task`，由平台负责展示主持消息并把 `speaker_task` 交给下一位专家。
 - Skill 会话未结束时，专家应继续沿同一 Skill 推进，不把用户消息重新交给四九。
 
@@ -492,7 +554,7 @@ python scripts/validate_skill_cli_contract.py
 - 需要参数时通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=keep`，并继续锁定同一专家；
 - 最终交付后通过 stdout JSON 或隐藏状态块输出 `next_action.skill_session=release`，并回到四九调度；
 - 用户说“结束 skill / 交给主持人”时能退出锁定；
-- 脚本型 Skill 的 `script_path`、`cli_args`、stdout/stderr 与退出码符合约定；
+- 脚本型 Skill 的 `scripts/manifest.json`、manifest 参数、stdout/stderr 与退出码符合约定；
 - 工作产物写入会话工作区，而不是写入 Skill 目录。
 
 ## 9. 最小模板
@@ -507,6 +569,7 @@ name: <技能名称>
 description: 当用户需要<流程任务>时使用；边界是<相邻任务如何交回主持人或其他专家>。
 allowed-tools:
   mcp: []
+  http_api: []
   python: []
 ---
 
@@ -535,11 +598,8 @@ allowed-tools:
 [[SKILL_SESSION_STATE]]
 {
   "execution_status": "blocked",
-  "result_code": "input.confirmation_required",
-  "message": "等待用户补充或确认",
-  "artifacts": {
-    "required_fields": ["用户回复"]
-  },
+  "content": "等待用户补充或确认",
+  "artifacts": [],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -554,11 +614,14 @@ allowed-tools:
 [[SKILL_SESSION_STATE]]
 {
   "execution_status": "succeeded",
-  "result_code": "<稳定结果码>",
-  "message": "<完成说明>",
-  "artifacts": {
-    "workspace_path": "<工作区相对路径>"
-  },
+  "content": "<完成说明>",
+  "artifacts": [
+    {
+      "type": "file | directory | image | table | json | markdown | other",
+      "name": "<用户可读名称>",
+      "path": "<工作区相对路径>"
+    }
+  ],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -601,6 +664,7 @@ name: <技能名称>
 description: 当用户需要<确定性处理任务>时使用；输入为<输入>，产出<结果>。
 allowed-tools:
   mcp: []
+  http_api: []
   python:
     - <需要的 Python 依赖>
 ---
@@ -625,23 +689,27 @@ allowed-tools:
 ## 脚本调用
 
 调用 run_skill_script_<directory_name>：
-- script_path: <script-name>.py
-- cli_args: ["--input", "<工作区相对路径>", "--output", "outputs/<结果文件>"]
+- input_path: <工作区相对路径>
+- output_path: outputs/<结果文件>
 
 ## scripts/manifest.json
 
 ```json
 {
-  "<script-name>.py": {
-    "description": "<脚本用途>",
-    "input_schema": {
-      "type": "object",
-      "required": ["input", "output"]
+  "entry": "<script-name>.py",
+  "description": "<脚本用途>",
+  "args": [
+    {
+      "name": "input_path",
+      "description": "工作区内输入文件相对路径。",
+      "required": true
     },
-    "examples": [
-      ["--input", "uploads/input.txt", "--output", "outputs/result.md"]
-    ]
-  }
+    {
+      "name": "output_path",
+      "description": "工作区内输出文件相对路径。",
+      "required": true
+    }
+  ]
 }
 ```
 
@@ -653,11 +721,14 @@ allowed-tools:
 
 {
   "execution_status": "succeeded",
-  "result_code": "completed",
-  "message": "处理完成。",
-  "artifacts": {
-    "output_path": "outputs/<结果文件>"
-  },
+  "content": "处理完成。",
+  "artifacts": [
+    {
+      "type": "markdown",
+      "name": "结果文件",
+      "path": "outputs/<结果文件>"
+    }
+  ],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -668,11 +739,8 @@ allowed-tools:
 
 {
   "execution_status": "blocked",
-  "result_code": "input.missing",
-  "message": "缺少输入文件路径。",
-  "artifacts": {
-    "required_fields": ["input"]
-  },
+  "content": "缺少输入文件路径。",
+  "artifacts": [],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "keep"
@@ -683,11 +751,8 @@ allowed-tools:
 
 {
   "execution_status": "failed",
-  "result_code": "runtime.failed",
-  "message": "<失败原因>",
-  "artifacts": {
-    "stderr_tail": "<关键错误信息>"
-  },
+  "content": "<失败原因>",
+  "artifacts": [],
   "next_action": {
     "agent_turn": "respond",
     "skill_session": "release"
@@ -696,8 +761,8 @@ allowed-tools:
 
 ## 关键规则
 
-- 脚本必须是非交互式，输入固定来自 `cli_args`。
-- `script_path` 只写脚本文件名，例如 `analyze_table.py`。
+- 脚本必须是非交互式，输入固定来自 manifest `args` 对应的 CLI 参数。
+- `entry` 只写脚本文件名，例如 `analyze_table.py`。
 - stdout 只输出一个 JSON 对象。
 - 只有脚本 stdout 中的 `artifacts` 或实际文件检查确认产物存在后，才能向用户说明已生成文件。
 - Python 依赖统一写在 frontmatter 的 `allowed-tools.python` 数组中。
@@ -710,7 +775,7 @@ allowed-tools:
 
 ## 结束点判断
 
-- 脚本返回 `execution_status=succeeded` 时，总结 `artifacts` 并交付结果。
-- 脚本返回 `execution_status=blocked` 时，说明缺少什么。
-- 脚本返回 `execution_status=failed` 时，说明失败原因和可修正方式。
+- 脚本返回 `execution_status=succeeded` 时，直接交付 `content`，并列出 `artifacts` 里的产物名称和路径。
+- 脚本返回 `execution_status=blocked` 时，直接交付 `content`，请用户补充继续所需信息。
+- 脚本返回 `execution_status=failed` 时，直接交付 `content`，必要时提示查看执行 trace 或 stderr。
 ````

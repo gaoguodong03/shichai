@@ -30,7 +30,7 @@
 | UR-07 沙箱运行环境 | 第一层回归中的沙箱服务和生命周期测试 | 普通版/Playwright 版镜像各做一次启动或冒烟 |
 | UR-08 工作区文件管理 | 第一层回归中的工作区文件和路径保护测试 | 上传、预览、编辑、下载、专家生成文件落盘 |
 | UR-09 导出与导入 | 第一层回归中的资源包导入导出测试 | 导出资源包后换账号导入，检查预览、冲突和导入结果 |
-| UR-10 模型、密钥与个人设置 | 第一层回归中的 LLM 配置和设置业务流测试 | 保存模型、密钥、主题、账号安全设置并刷新检查 |
+| UR-10 模型、环境变量与个人设置 | 第一层回归中的 LLM 配置和设置业务流测试 | 保存模型、环境变量、主题、账号安全设置并刷新检查 |
 | UR-11 部署与运维 | 前端构建、生命周期测试、沙箱测试 | Docker/1Panel 健康检查、数据卷持久化和日志关键词排查 |
 
 若某项用户需求本次改动直接影响，即使第一层回归通过，也应执行该行的补充验收。
@@ -207,7 +207,7 @@ npm run build
 - `frontend/e2e/workspace.spec.ts`：新建会话、发送消息、成员管理、文件插入、场景快捷入口；
 - `frontend/e2e/resources-scenario-expert.spec.ts`：资源中心场景配置、专家新建与保存；
 - `frontend/e2e/resources-skill-mcp-llm.spec.ts`：技能详情、技能依赖、工具新建、模型参数保存；
-- `frontend/e2e/settings.spec.ts`：全局设置、配色、密钥、账号、安全和沙箱 requirements。
+- `frontend/e2e/settings.spec.ts`：全局设置、配色、环境变量、账号、安全和沙箱 requirements。
 
 调试时可打开浏览器：
 
@@ -301,7 +301,9 @@ http://<server-ip>:8100
 
 重点确认：
 
-- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`result_code`、`message`、`artifacts`、`next_action`；
+- 脚本型 Skill 的 stdout JSON 使用 `execution_status`、`content`、`artifacts`、`next_action`；
+- `content` 是脚本文本结果，平台不做 LLM 总结或改写；
+- `artifacts` 是产物索引数组，每项固定为 `type`、`name`、`path`；
 - `next_action.agent_turn` 只允许 `continue` 或 `respond`；
 - `next_action.skill_session` 只允许 `keep` 或 `release`；
 - `next_action.skill_session=keep` 表示保留同一专家与同一 Skill，等待用户补充或继续处理；

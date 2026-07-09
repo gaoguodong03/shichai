@@ -46,13 +46,14 @@
 
 ## 5. 输出契约
 
-流程型主持人 Skill 应要求模型输出可解析的 JSON，字段至少包含：
+流程型主持人 Skill 应要求模型只输出可解析的 JSON。固定字段为三个必填字段和一个可选字段：
 
 ```json
 {
   "current_phase": "阶段xxxx",
   "next_speaker": "资料整理专家",
-  "speaker_task": "请根据用户目标整理资料范围，完成后交回主持人判断下一阶段。"
+  "speaker_task": "请根据用户目标整理资料范围，完成后交回主持人判断下一阶段。",
+  "suggested_add_agent_names": []
 }
 ```
 
@@ -61,18 +62,31 @@
 | 字段 | 含义 |
 | --- | --- |
 | `current_phase` | 当前场景阶段。场景型主持人应持续更新，避免重复安排同一阶段。 |
-| `next_speaker` | 下一步目标。写场内专家名称，也可以写 `"user"`、`"invite"` 或 `"end"`。 |
+| `next_speaker` | 下一步目标。写场内专家名称，也可以写 `"user"` 或 `"end"`。 |
 | `speaker_task` | 交给下一位专家的自包含任务说明。平台会把它作为后台任务文本注入专家回合。 |
+| `suggested_add_agent_names` | 可选字段。需要邀请专家时填写专家名称数组，并把 `next_speaker` 写成 `"user"`。 |
 
 `next_speaker` 的填写建议：
 
 - 写场内专家名称，例如 `"资料整理专家"`。
 - 写 `"user"` 表示等待用户补充、确认或继续输入。
-- 写 `"invite"` 表示需要先邀请或补充专家。
 - 写 `"end"` 表示本轮会话或场景已经结束。
-- 只填写场内专家名称、`"user"`、`"invite"` 或 `"end"`。
+- 只填写场内专家名称、`"user"` 或 `"end"`。不要输出 `"invite"`。
+
+需要邀请专家时，不使用 `"invite"`，而是输出：
+
+```json
+{
+  "current_phase": "招募确认",
+  "next_speaker": "user",
+  "speaker_task": "当前任务需要补充<专家类型>参与，请用户确认是否邀请合适专家后继续。",
+  "suggested_add_agent_names": ["<专家角色A>"]
+}
+```
 
 主持人 Skill 正文中的 `场景角色`、`标准流程`、`调度规则` 和输出 JSON 都应使用专家名称，不写 agent id，避免把运行时标识混入可读流程说明。
+
+主持人 JSON 不允许输出 `reason`、`next_prompt`、`task_done`、`announcement`、`phase`、`owner_agent_name`、`interrupt_reason`、`decision_source`、`handoff_reason`、`required_user_fields`、`suggested_order` 或任何 id 类字段。
 
 `speaker_task` 的约束：
 
@@ -99,11 +113,11 @@
 
 ## 7. 阶段状态
 
-场景模式下，平台会把主持人输出的 `current_phase`、`next_speaker`、`speaker_task` 保存到会话 meta 的 `scheduler_state`，供下一轮主持人决策参考。
+场景模式下，平台会把主持人输出的 `current_phase`、`next_speaker`、`speaker_task` 保存到编排状态中的 `host_scheduler`，供下一轮主持人决策参考。
 
 注意：
 
-- `scheduler_state` 是后台 meta，不是工作区文件。
+- `host_scheduler` 是后台编排状态，不是工作区文件。
 - 后台状态可能滞后于刚发言专家的正文。主持人每轮必须先判断上一位专家是否已经完成 `speaker_task`。
 - 如果专家已经给出明确答案、文件、查询结果或可交付结论，主持人应推进阶段、等待用户或结束。
 
@@ -138,8 +152,9 @@ allowed-tools:
 
 - 只输出调度状态；专家正文、工具结果、方案成品或最终交付物由对应专家完成。
 - `current_phase` 是标准阶段字段，写成 `阶段xxxx` 或当前场景定义的阶段名。
-- `next_speaker` 写当前场景内专家名称、`user`、`invite` 或 `end`。
+- `next_speaker` 写当前场景内专家名称、`user` 或 `end`。
 - `speaker_task` 是唯一任务交接字段，要写成下一位专家可直接执行的任务单。
+- 需要邀请专家时，`next_speaker` 写 `user`，并在 `suggested_add_agent_names` 中填写建议邀请的专家名称。
 - 如果用户目标还不清楚，先交还用户补充信息。
 - 场景角色表、标准流程表、调度规则正文和输出 JSON 使用专家名称，不写 agent id。
 
@@ -155,7 +170,7 @@ allowed-tools:
 
 | 阶段 | 阶段名 | 允许交接对象 | 主持人判断标准 | 完成后去向 |
 |---|---|---|---|---|
-| 1 | 入口分流 | <专家角色A>、<专家角色B>、user、invite | 判断用户请求类型、专家是否足够或信息是否不足。 | 进入对应阶段、邀请专家或等待用户。 |
+| 1 | 入口分流 | <专家角色A>、<专家角色B>、user | 判断用户请求类型、专家是否足够或信息是否不足。 | 进入对应阶段、建议邀请专家或等待用户。 |
 | 2 | <阶段名> | <专家角色A> | <进入该阶段的条件> | <下一阶段>。 |
 | 3 | <阶段名> | <专家角色B> | <进入该阶段的条件> | <下一阶段或收束>。 |
 | 4 | 收束 | user、end | 本轮目标已完成，或需要用户给新要求。 | 等待用户或停止。 |
@@ -190,17 +205,19 @@ allowed-tools:
 当需要邀请专家时：
 
 {
-  "current_phase": "阶段xxxx",
-  "next_speaker": "invite",
-  "speaker_task": "当前任务需要补充<专家类型>参与，请先邀请合适专家后再继续。"
+  "current_phase": "招募确认",
+  "next_speaker": "user",
+  "speaker_task": "当前任务需要补充<专家类型>参与，请用户确认是否邀请合适专家后继续。",
+  "suggested_add_agent_names": ["<专家角色A>"]
 }
 
 ## 输出边界
 
 - 场景角色、流程阶段和交接对象应与当前场景一致。
 - 主持人模板只描述调度判断；专家内部写法、工具参数、文件生成细节写进专家 Skill。
-- `next_speaker` 使用场内专家名称、`user`、`invite` 或 `end`。
+- `next_speaker` 使用场内专家名称、`user` 或 `end`。
 - 输出 JSON 固定包含 `current_phase`、`next_speaker`、`speaker_task`。
+- 输出 JSON 可以包含 `suggested_add_agent_names`；只有 `next_speaker` 为 `user` 时才能填写。
 - 下一位专家由主持人选择，专家只完成 `speaker_task`。
 ```
 

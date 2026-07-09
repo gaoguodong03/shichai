@@ -37,10 +37,10 @@ ALLOW_ANONYMOUS_API=0
 
 约束：
 
-- 会话、资源、文件、Skill、MCP、模型、密钥和沙箱配置都按当前用户隔离。
+- 会话、资源、文件、Skill、MCP、模型、环境变量和沙箱配置都按当前用户隔离。
 - 未登录或令牌无效返回 `401`。
 - 业务错误不要滥用 `401`，例如当前密码错误应返回 `400`。
-- API Key 等敏感字段返回前端时必须脱敏。
+- 环境变量真实值等敏感字段返回前端时必须脱敏。
 
 ### 2.3 通用响应
 
@@ -78,9 +78,9 @@ ALLOW_ANONYMOUS_API=0
 | 场景资源 | `/api/settings/session-presets/*` | 场景列表、保存、导入导出 |
 | Skill | `/api/settings/skills/*` | Skill 列表、正文、文件分区、ZIP 导入导出 |
 | MCP 工具 | `/api/settings/mcp/*` | MCP 配置、连接测试、工具列表、工具调用、导入导出 |
-| 工作区文件 | `/api/workspaces/*` | 会话文件列表、上传、编辑、下载、删除、重命名 |
+| 工作区文件 | `/api/sessions/{session_id}/workspace/*` | 会话文件列表、上传、编辑、下载、删除、重命名 |
 | 模型与设置 | `/api/settings/app`、`/api/settings/host-profile`、`/api/settings/llm-providers/*` | 应用设置、主持人、模型导入导出 |
-| 密钥 | `/api/settings/api-secrets/*` | 密钥新增、更新、删除、脱敏列表 |
+| 环境变量 | `/api/settings/env-vars/*` | 用户级环境变量新增、更新、删除、脱敏列表 |
 | 沙箱 | `/api/settings/sandbox*` | 沙箱版本、requirements、依赖状态 |
 | 运维 | `/health` | 健康检查 |
 
@@ -272,7 +272,15 @@ Accept: text/event-stream
 ```json
 {
   "message": "请帮我处理这个任务",
-  "client_message_id": "client-msg-xxxx"
+  "client_message_id": "client-msg-xxxx",
+  "attachments": [
+    {
+      "type": "workspace_file",
+      "name": "附件1.pdf",
+      "path": "附件1.pdf"
+    }
+  ],
+  "target_agent_name": "写作专家"
 }
 ```
 
@@ -280,6 +288,11 @@ Accept: text/event-stream
 
 - 这是当前会话主入口。
 - 普通会话、场景会话和多专家协作都使用该接口。
+- `client_message_id` 必填，用于幂等和消息关联。
+- `message` 可以为空，但 `message`、`attachments`、`target_agent_name` 至少一个有效。
+- `attachments` 只引用当前会话工作区内已存在的文件；原始文件上传先走工作区文件接口。
+- `target_agent_name` 可选；存在时必须是当前会话成员，本轮直接交给该专家。
+- 请求体不接受 `action`、`host_takeover_requested`、`ignore_auto_agent_name`、`ignore_auto_skill`、`agent_name`、`next_speaker` 等旧控制字段。
 - 后端返回 SSE 事件。
 
 ### 5.7 非流式对话
@@ -297,7 +310,7 @@ POST /api/sessions/{session_id}/chat
   "status": "ok",
   "data": {
     "route": {},
-    "contents": [],
+    "progress": [],
     "messages": [],
     "message": {},
     "end": {},
@@ -306,6 +319,8 @@ POST /api/sessions/{session_id}/chat
   }
 }
 ```
+
+聚合结果必须保持 `/chat/stream` 同一套事件载荷：`route`、`progress`、`message`、`end`、`error`。不得为了非流式接口重新生成 `contents`、顶层 `content` 或 `meta.phase`。
 
 ### 5.8 停止会话回复
 
@@ -330,7 +345,25 @@ GET /api/sessions/{session_id}/events/stream
 Accept: text/event-stream
 ```
 
-用于会话运行态和消息更新订阅。
+用于会话运行态和消息更新订阅，不返回 `/chat/stream` 的聊天编排事件。
+
+事件：
+
+| 事件 | 载荷重点 | 说明 |
+|------|----------|------|
+| `snapshot` | `session_id`、`server_time`、`runtime`、`last_message_id`、`updated_at` | 连接成功后立即发送，用于刷新恢复。 |
+| `runtime` | `session_id`、`runtime` | `runtime.json` 变化时推送。 |
+| `message` | 与 `history.json` 相同的完整消息结构 | 新消息落盘后可选推送；前端也可按 `last_message_id` 触发重拉。 |
+| `keepalive` | `server_time` | 保活，不改变业务状态。 |
+| `deleted` | `session_id` | 会话被删除。 |
+| `error` | `code`、`message` | 订阅错误。 |
+
+约束：
+
+- 关闭浏览器窗口或断开 `/events/stream` 只取消本次订阅，不停止后端运行。
+- 停止当前回复必须调用 `POST /api/sessions/{session_id}/chat/stop`。
+- 后端发现 `runtime.json.running=true` 但进程内任务不存在且超过过期阈值时，清理运行态并推送 `runtime`，`running=false`、`phase="failed"`。
+- 新窗口通过 `GET /api/sessions/{session_id}` 读取历史消息；`/events/stream` 不回放历史 `/chat/stream` 事件。
 
 ### 5.11 导出会话 Markdown
 
@@ -345,7 +378,7 @@ POST /api/sessions/{session_id}/export
   "status": "ok",
   "data": {
     "path": "session-xxx.md",
-    "download_url": "/api/workspaces/{session_id}/files/download?path=session-xxx.md"
+    "download_url": "/api/sessions/{session_id}/workspace/files/download?path=session-xxx.md"
   }
 }
 ```
@@ -359,29 +392,53 @@ POST /api/sessions/{session_id}/export
 | `POST` | `/api/sessions/{session_id}/clone` | 从当前或指定检查点克隆会话 |
 | `POST` | `/api/sessions/{session_id}/rollback` | 回滚到指定消息或检查点 |
 
-克隆请求体：
+克隆请求体可为空；如需从历史状态分叉，必须且只能提供 `checkpoint_id` 或 `message_id` 之一：
 
 ```json
 {
-  "checkpoint_id": "commit-xxxx",
   "message_id": "msg-xxxx"
 }
 ```
 
-回滚请求体至少提供一个字段：
+回滚请求体必须且只能提供 `checkpoint_id` 或 `message_id` 之一：
 
 ```json
 {
-  "checkpoint_id": "commit-xxxx",
-  "message_id": "msg-xxxx",
-  "message_count": 3
+  "checkpoint_id": "checkpoint-xxxx"
 }
 ```
+
+检查点摘要对象字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `checkpoint_id` | string | 对外检查点身份。 |
+| `parent_checkpoint_id` | string / null | 上一个检查点身份。 |
+| `created_at` | string | 检查点创建时间。 |
+| `trigger` | string | 检查点触发来源，如 `turn_started`、`turn_completed`、`workspace_changed`、`manual_snapshot`、`rollback`、`clone`；只用于审计和展示。 |
+| `state_hash` | sha256 | 整体状态 hash，用于显示和一致性校验。 |
+| `last_message_id` | string / null | 快照对应的最后一条消息 ID。 |
+
+`session_blob`、`history_blob`、`orchestration_state_blob`、`workspace_tree`、`memory_tree` 是检查点内部落盘字段，只允许后端恢复逻辑读取，普通列表和详情接口不返回。
+
+接口不再返回或接收 `commit_id`、`parent`、`reason`、`session_definition`、`chat_blob`、`message_count`。`trigger` 不进入 `state_hash`，也不得被运行时用作恢复分支判断。
+
+行为约束：
+
+- 接收用户消息后、专家或工具执行前创建 `turn_started` 检查点；一轮完整结束后创建 `turn_completed` 检查点。
+- 文件上传、新建、保存、删除、重命名完成后创建 `workspace_changed` 检查点；自动保存和连续编辑可短窗口合并。
+- rollback 到 `message_id` 表示恢复该消息完成后的状态；没有精确检查点时使用不晚于该消息的最近检查点。找不到可用检查点返回错误。
+- rollback 不删除旧检查点链，而是在目标状态上生成新的检查点并更新当前会话 `HEAD`。
+- 会话运行中允许修改工作区文件；clone、rollback 和删除消息在运行中不可用，必须等待当前回复结束或先停止当前运行后才能操作。
+- 当前回合读取附件或工作区输入时，以本轮 `turn_started` 检查点的工作区快照为准；运行中用户修改文件只影响后续回合。
+- 本轮工具或专家产物写入当前 `workspace/`，与运行中用户文件操作按完成顺序串行落盘；同一路径后完成的写入覆盖先完成的写入，且每次写入都形成可回滚检查点。
+- `message_id` 不存在、对象缺失或 hash 校验失败时返回错误，不进行猜测恢复。
+- 检查点默认逻辑永久保留，不自动清理或压缩。
 
 ### 5.13 会话归档
 
 ```http
-GET /api/sessions/{group_session_id}/archive
+GET /api/sessions/{session_id}/archive
 ```
 
 返回归档片段和专家信息映射，用于会话归档展示或下载前组装。
@@ -399,19 +456,24 @@ data: {"key":"value"}
 
 | 事件 | 说明 | 典型字段 |
 |------|------|----------|
-| `start` | 本轮开始 | `session_id` |
-| `route` | 路由到专家或 Skill | `agent_name`、`skill`、`skill_route_debug` |
-| `content` | 增量内容 | `content` |
-| `tool_start` | 工具开始 | `tool`、`args` |
-| `tool_result` | 工具结果 | `tool`、`status`、`result`、`error` |
-| `message` | 完整消息 | `message_id`、`role`、`speaker`、`content`、`agent_name` |
-| `end` | 本轮结束 | `phase`、`waiting_for_user`、`suggested_add_agent_names` |
-| `error` | 错误 | `error`、`detail` |
+| `start` | 本轮开始 | `session_id`、`run_id` |
+| `route` | 路由到专家或 Skill | `run_id`、`agent_name`、`skill` |
+| `progress` | 当前运行阶段 | `run_id`、`phase`、`agent_name`、`skill`、`text` |
+| `message` | 完整消息 | `message_id`、`speaker`、`message`、`created_at`、`client_message_id`、`skill_result` |
+| `end` | 本轮结束 | `run_id`、`phase`、`waiting_for_user`、`suggested_next_speaker`、`suggested_add_agent_names` |
+| `error` | 错误 | `run_id`、`code`、`message` |
 
 约束：
 
 - 前端不自行推断主持人调度结果，只消费后端 `route` 和 `end`。
+- `route` 不返回 `expert_route_debug`、`skill_route_debug`、`routing`、`route_source`。`route_source` 只用于后端内部日志和测试断言，不进入 API 响应或 SSE 事件。
+- `progress.phase` 必须等于当前 `runtime.json.phase`；平台不使用 `meta.phase`。
 - `end.waiting_for_user=true` 表示界面应等待用户继续输入或确认。
+- 平台不提供 `discussion_ended` 字段；`end` 表示当前回合结束，不表示整个会话关闭。
+- `tool_start`、`tool_result` 不作为顶层 SSE 事件；工具明细进入执行 trace、运行日志或 `skill_result.artifacts`。
+- `error.message` 只放错误文本，不承载附件、主持人下一步或完整消息结构；需要给用户展示的恢复说明应另发标准 `message` 事件。
+- 前端可以把 `progress.phase` 映射成中文 UI 文案，但不能把 UI 文案或本地 `_streaming` 状态写回 API、历史、运行态或 mock。
+- 前端不得从 `message.content` 正则推断招募专家、下一位专家、文件引用或路由结果；这些必须来自结构化字段。
 - 场景模式下，后端会抑制场景外专家招募建议。
 
 ## 7. 专家接口
@@ -573,19 +635,13 @@ POST /api/settings/mcp
   "name": "Exa 搜索",
   "type": "mcp",
   "description": "搜索工具",
-  "transport": {
-    "type": "stdio",
-    "command": "npx",
-    "args": ["-y", "exa-mcp-server"],
-    "env": {
-      "EXA_API_KEY": "${vault:exa}"
-    }
-  },
-  "server_config": null,
+  "server_config": "{\"mcpServers\":{\"exa-search\":{\"command\":\"npx\",\"args\":[\"-y\",\"exa-mcp-server\"],\"env\":{\"EXA_API_KEY\":\"${env:EXA_API_KEY}\"}}}}",
   "config": {},
   "metadata": {}
 }
 ```
+
+`server_config` 使用 MCP 标准配置结构的 JSON 字符串。导入标准 `mcpServers` JSON 时按工具名称保存到 `server_config`。
 
 ### 10.3 更新和删除 MCP
 
@@ -610,33 +666,33 @@ POST /api/settings/mcp
 | `GET` | `/api/settings/mcp/{tool_name}/export-zip` | 导出 MCP ZIP |
 | `POST` | `/api/settings/mcp/import-zip` | 导入 MCP ZIP |
 
-导出包不得包含密钥明文，只能保存密钥引用。
+导出包不得包含环境变量真实值，只能保存 `${env:NAME}` 引用名。
 
 ## 11. 工作区文件接口
 
 ### 11.1 有文件的会话列表
 
 ```http
-GET /api/workspaces/sessions-with-files
+GET /api/sessions/with-workspace-files
 ```
 
 ### 11.2 文件列表
 
 ```http
-GET /api/workspaces/{workspace_id}/files?path=
+GET /api/sessions/{session_id}/workspace/files?path=
 ```
 
 ### 11.3 新建文件或目录
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/workspaces/{workspace_id}/files` | 新建文件 |
-| `POST` | `/api/workspaces/{workspace_id}/files/mkdir` | 新建目录 |
+| `POST` | `/api/sessions/{session_id}/workspace/files` | 新建文件 |
+| `POST` | `/api/sessions/{session_id}/workspace/files/mkdir` | 新建目录 |
 
 ### 11.4 上传文件
 
 ```http
-POST /api/workspaces/{workspace_id}/files/upload
+POST /api/sessions/{session_id}/workspace/files/upload
 Content-Type: multipart/form-data
 ```
 
@@ -644,24 +700,27 @@ Content-Type: multipart/form-data
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/workspaces/{workspace_id}/files/content?path=...` | 读取文件内容 |
-| `PUT` | `/api/workspaces/{workspace_id}/files/content` | 保存文件内容 |
-| `DELETE` | `/api/workspaces/{workspace_id}/files/content?path=...` | 删除文件 |
+| `GET` | `/api/sessions/{session_id}/workspace/files/content?path=...` | 读取文件内容 |
+| `PUT` | `/api/sessions/{session_id}/workspace/files/content` | 保存文件内容 |
+| `DELETE` | `/api/sessions/{session_id}/workspace/files/content?path=...` | 删除文件 |
 
 ### 11.6 下载和重命名
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/workspaces/{workspace_id}/files/download?path=...` | 下载文件 |
-| `PUT` | `/api/workspaces/{workspace_id}/files/rename` | 重命名文件或目录 |
+| `GET` | `/api/sessions/{session_id}/workspace/files/download?path=...` | 下载文件 |
+| `PUT` | `/api/sessions/{session_id}/workspace/files/rename` | 重命名或移动文件 |
 
 路径约束：
 
 - `path` 必须是工作区相对路径。
-- 后端拒绝路径穿越。
+- 重命名或移动目标使用 `target_path`，含义为当前会话 `workspace/` 内目标相对路径。
+- 后端拒绝路径穿越、绝对路径、`memory/`、`checkpoints/`、运行日志目录和任何会话内部系统目录。
+- `workspace/` 内允许普通点文件，例如 `.gitignore` 和 `.env.example`。
 - 当前用户只能访问自己的会话工作区。
+- 用户主动导出的 Markdown、ZIP、报告等成果文件可以写入 `workspace/`；运行日志、trace 和中间缓存不得写入 `workspace/`。
 
-## 12. 模型、主持人、密钥和应用设置接口
+## 12. 模型、主持人、环境变量和应用设置接口
 
 ### 12.1 应用设置
 
@@ -670,7 +729,7 @@ Content-Type: multipart/form-data
 | `GET` | `/api/settings/app` | 获取应用设置、默认模型和模型配置 |
 | `PUT` | `/api/settings/app` | 更新应用设置 |
 
-响应中的模型 API Key 不返回明文，只返回 `api_key_set`。
+响应中的模型环境变量真实值不返回明文，只返回是否已配置的状态。
 
 ### 12.2 默认主持人
 
@@ -700,18 +759,20 @@ Content-Type: multipart/form-data
 | `GET` | `/api/settings/llm-providers/{llm_name}/export-bundle` | 导出模型配置 ZIP |
 | `POST` | `/api/settings/llm-providers/import-bundle` | 导入模型配置 ZIP |
 
-模型包不导入 API Key 明文。
+模型包不导入环境变量真实值。
 
-### 12.4 密钥接口
+### 12.4 环境变量接口
+
+平台内用户级环境变量是产品主契约，不等同于宿主机 `.env`。宿主机环境变量只作为部署级默认值。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/api/settings/api-secrets` | 密钥列表，脱敏返回 |
-| `POST` | `/api/settings/api-secrets` | 新建密钥 |
-| `PUT` | `/api/settings/api-secrets/{secret_id}` | 更新密钥 |
-| `DELETE` | `/api/settings/api-secrets/{secret_id}` | 删除密钥 |
+| `GET` | `/api/settings/env-vars` | 环境变量列表，不返回真实值 |
+| `POST` | `/api/settings/env-vars` | 新建环境变量 |
+| `PUT` | `/api/settings/env-vars/{name}` | 更新环境变量 |
+| `DELETE` | `/api/settings/env-vars/{name}` | 删除环境变量 |
 
-密钥可被模型和 MCP 通过 `${vault:secret_id}` 或密钥引用字段使用。
+环境变量可被模型、MCP、HTTP API、Skill 脚本和沙箱通过 `api_key_env` 或 `${env:NAME}` 使用。旧 `/api/settings/api-secrets`、`${vault:...}` 和 `api_key_ref` 不属于当前目标契约。
 
 ## 13. 沙箱接口
 
@@ -789,10 +850,10 @@ GET /
 | 规则 | 说明 |
 |------|------|
 | 用户隔离 | 所有受保护接口必须基于当前用户上下文读写 |
-| 密钥脱敏 | 前端接口不得返回完整 API Key |
+| 环境变量脱敏 | 前端接口不得返回完整变量值 |
 | 路径安全 | 工作区文件路径必须归一化并拒绝 `../` |
 | 工具授权 | 专家工具集合由专家配置和当前 Skill 声明收敛 |
-| 导入导出安全 | ZIP 包不携带账号凭据和密钥明文 |
+| 导入导出安全 | ZIP 包不携带账号凭据和环境变量真实值 |
 | 运行态可见 | 工具失败、等待用户、沙箱异常必须通过事件或响应返回 |
 
 ## 16. 测试映射
@@ -815,8 +876,8 @@ GET /
 
 1. 是否改变前端调用路径或请求字段。
 2. 是否改变 SSE 事件类型或事件载荷。
-3. 是否影响用户隔离、密钥脱敏、路径安全或工具授权。
-4. 是否需要更新 `frontend/e2e/fixtures/mockApi.ts`。
+3. 是否影响用户隔离、环境变量脱敏、路径安全或工具授权。
+4. 是否需要更新 `frontend/e2e/fixtures/mockApi.ts`；mock 必须使用真实 API 的事件名和消息结构，不得保留旧字段。
 5. 是否需要更新 `docs/testing/test-case-catalog.md`。
 6. 是否需要补充后端 API 测试或前端 E2E。
 

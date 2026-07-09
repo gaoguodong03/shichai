@@ -48,7 +48,7 @@
 | UR-07 沙箱运行环境 | `test_sandbox_service.py`、`test_lifespan.py`、`test_file_ref_and_gateway.py` | Docker/OpenSandbox 镜像、Playwright 版沙箱冒烟 |
 | UR-08 工作区文件管理 | `test_workspace_files.py`、`test_file_ref_and_gateway.py`、`test_frontend_business_flows.py` | 图片、PDF、Office 等文件前端预览 |
 | UR-09 导出与导入 | `test_bundle_import_api.py`、`test_scenario_bundle.py`、`test_expert_bundle.py` | 跨账号导入、冲突确认和导入后页面检查 |
-| UR-10 模型、密钥与个人设置 | `test_llm_config.py`、`test_frontend_business_flows.py` | 设置页保存反馈、真实模型 Key 连通性 |
+| UR-10 模型、环境变量与个人设置 | `test_llm_config.py`、`test_frontend_business_flows.py` | 设置页保存反馈、模型环境变量连通性 |
 | UR-11 部署与运维 | `test_lifespan.py`、`test_sandbox_service.py`、前端构建 | 1Panel/Docker 健康检查、数据卷持久化、日志排查 |
 
 ## 已纳入第一层的测试文件（当前 31 个）
