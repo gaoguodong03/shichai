@@ -34,7 +34,7 @@
 | `settings_presets.py` | 场景资源 API。 |
 | `settings_skills.py`、`settings_skill_store.py`、`settings_skill_frontmatter.py`、`settings_skill_parts.py` | Skill 列表、正文、frontmatter 和分片文件管理。 |
 | `settings_mcp.py` | MCP 和工具资源 API。 |
-| `settings_app.py`、`settings_secrets.py`、`sandbox_settings.py` | 应用设置、用户级环境变量和沙箱设置 API。 |
+| `settings_app.py`、`settings_env_vars.py`、`sandbox_settings.py` | 应用设置、用户级环境变量和沙箱设置 API。 |
 | `files.py` | 工作区文件 API。 |
 | `auth.py` | 认证和账号 API。 |
 
@@ -231,7 +231,7 @@
 | `useScenarioEditor.ts` | 场景编辑字段和保存逻辑。 |
 | `useResourceCollections.ts` | 资源集合加载和刷新。 |
 | `useBundleImports.ts`、`useZipResourceImports.ts` | 导入导出流程。 |
-| `mcpConfigContract.ts` | MCP 配置导入导出契约。 |
+| `frontend/src/features/resources/mcpConfigContract.ts` | MCP 配置导入导出契约。 |
 | `ApiSecretsSettingsView.vue` | 用户级环境变量设置。 |
 | `SandboxSettingsView.vue` | 沙箱设置。 |
 

@@ -434,3 +434,24 @@ def test_resource_import_docs_do_not_advertise_legacy_conflict_controls():
         "是否跳过",
     ]:
         assert legacy_control not in section
+
+
+def test_module_boundary_doc_uses_current_resource_file_paths():
+    """Module boundary docs must cite current filenames, not removed secret/resource paths."""
+    text = (PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md").read_text(encoding="utf-8")
+
+    assert "settings_env_vars.py" in text
+    assert "settings_secrets.py" not in text
+    assert "frontend/src/features/resources/mcpConfigContract.ts" in text
+    assert "frontend/src/features/settings/mcpConfigContract.ts" not in text
+    assert (PROJECT_ROOT / "backend" / "app" / "api" / "settings_env_vars.py").exists()
+    assert (PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "mcpConfigContract.ts").exists()
+
+
+def test_sandbox_tool_docs_use_current_workspace_rename_schema():
+    """Sandbox tool authoring docs must match the current workspace rename parameter."""
+    text = (PROJECT_ROOT / "docs" / "skills" / "sandbox-tool-interface.md").read_text(encoding="utf-8")
+    section = text.split("### `rename_workspace_file`", 1)[1].split("### `mkdir_workspace`", 1)[0]
+
+    assert "target_path" in section
+    assert "new_name" not in section

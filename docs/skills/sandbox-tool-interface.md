@@ -87,13 +87,13 @@
 ```json
 {
   "path": "notes/draft.md",
-  "new_name": "notes/final.md"
+  "target_path": "notes/final.md"
 }
 ```
 
 约束：
 
-- `new_name` 可以是新文件名，也可以是新的相对路径。
+- `target_path` 可以是新文件名，也可以是新的相对路径。
 - 禁止 `..` 和工作区外路径。
 
 ### `mkdir_workspace`
