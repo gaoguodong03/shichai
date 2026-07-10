@@ -164,8 +164,8 @@ def test_app_settings_preserves_top_level_system_prompt(monkeypatch, tmp_path):
         reset_current_user_identity(token)
 
 
-def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
-    """模型包使用资源包镜像结构，且不得导出 API Key 或密钥绑定信息。"""
+def test_llm_bundle_zip_roundtrip_keeps_env_reference_without_plaintext_api_key():
+    """模型包使用资源包镜像结构，保留环境变量引用但不导出 API Key 明文。"""
     from app.core.llm_bundle import (
         LLM_MANIFEST_NAME,
         build_llm_bundle_zip_bytes,
@@ -200,7 +200,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert manifest_provider["name"] == "example"
     assert "plain-secret" not in manifest_text
     assert "api_key" not in manifest_provider
-    assert "api_key_env" not in manifest_provider
+    assert manifest_provider["api_key_env"] == "EXAMPLE_API_KEY"
     assert "label" not in manifest_provider
 
     bundle_dir = extract_scenario_bundle_dir(raw)
@@ -215,7 +215,7 @@ def test_llm_bundle_zip_roundtrip_omits_plaintext_api_key():
     assert bundled["base_url"] == "https://example.test/v1"
     assert bundled["model"] == "example-chat"
     assert "api_key" not in bundled
-    assert "api_key_env" not in bundled
+    assert bundled["api_key_env"] == "EXAMPLE_API_KEY"
     assert "label" not in bundled
     assert "api_key_set" not in bundled
     assert bundled["temperature"] == 0.2

@@ -475,7 +475,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert app_settings.status_code == 200
     put_settings = client.put(
         "/api/settings/app",
-        json={"default_llm": "qwen", "llm_providers": {"qwen": {"model": "qwen3-max", "label": "通义千问"}}},
+        json={"default_llm": "qwen", "llm_providers": {"qwen": {"model": "qwen3-max", "api_key_env": "QWEN_API_KEY", "label": "通义千问"}}},
         headers=headers,
     )
     assert put_settings.status_code == 200
@@ -489,6 +489,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
                 "qwen": {
                     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
                     "model": "qwen3-max",
+                    "api_key_env": "QWEN_API_KEY",
                     "api_key": "sk-inline-secret",
                 }
             },
@@ -524,7 +525,7 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     assert model["model"] == "qwen3-max"
     assert model["base_url"] == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert "api_key" not in model
-    assert "api_key_env" not in model
+    assert model["api_key_env"] == "QWEN_API_KEY"
 
     preview_llm = client.post(
         "/api/settings/llm-providers/import-bundle",
