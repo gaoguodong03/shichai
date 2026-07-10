@@ -173,6 +173,8 @@ async def publish_group_session_event(
     payload: Optional[Dict[str, Any]] = None,
 ) -> None:
     event = {"__event_type": event_type}
+    if event_type == "message" and payload:
+        payload = frontend_history_message(payload)
     if event_type in {"runtime", "deleted"}:
         event["session_id"] = group_session_id
     if payload:

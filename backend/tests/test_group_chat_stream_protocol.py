@@ -193,6 +193,23 @@ async def test_session_events_stream_message_payload_matches_history_contract(mo
 
 
 @pytest.mark.asyncio
+async def test_session_events_message_publisher_rejects_legacy_message_fields(monkeypatch, tmp_path):
+    from app.api import group_chat_state as state
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    legacy_message = {
+        "message_id": "msg-legacy",
+        "speaker": {"type": "expert", "agent_name": "问答专家"},
+        "message": {"content": "旧字段不应进入事件"},
+        "created_at": "2026070900010000",
+        "role": "assistant",
+    }
+
+    with pytest.raises(ValueError):
+        await state.publish_group_session_event("s-events-message-contract", "message", legacy_message)
+
+
+@pytest.mark.asyncio
 async def test_expert_turn_uses_contract_phase_names(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state
