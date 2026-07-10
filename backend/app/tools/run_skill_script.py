@@ -81,13 +81,16 @@ def _get_skills_dir() -> Path:
 
 
 def skill_has_skill_md(directory_name: str) -> bool:
-    """用于组装工具列表：仅当磁盘上存在该 skill 目录且含 SKILL.md 时才注册 run_skill_script，避免 Agent 里陈旧 directory_name 指向空壳目录。"""
+    """Return whether the Skill has the files required for script-tool injection."""
     sid = (directory_name or "").strip()
     if not sid:
         return False
     try:
         home = (_get_skills_dir() / sid).resolve()
-        return (home / "SKILL.md").is_file()
+        if not (home / "SKILL.md").is_file():
+            return False
+        manifest = _load_manifest(home / "scripts")
+        return bool(manifest)
     except Exception:
         return False
 

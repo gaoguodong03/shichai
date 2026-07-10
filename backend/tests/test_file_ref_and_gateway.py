@@ -270,6 +270,33 @@ def test_run_skill_script_tool_description_lists_available_scripts(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_build_tools_does_not_inject_script_tool_without_manifest(monkeypatch, tmp_path):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-no-script-manifest", username="no-manifest@example.com")
+    try:
+        skill_dir = tmp_path / "users" / "user-no-script-manifest" / "resources" / "skills" / "no-manifest"
+        scripts_dir = skill_dir / "scripts"
+        scripts_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: No Manifest\n---\nbody\n", encoding="utf-8")
+        (scripts_dir / "loose.py").write_text("print('loose')\n", encoding="utf-8")
+
+        monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: [])
+        tools = await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "no-manifest"}]},
+            "workspace-no-manifest",
+            resolved_skill="no-manifest",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    names = {getattr(tool, "name", "") for tool in tools}
+    assert not any(name.startswith("run_skill_script_") for name in names)
+
+
+@pytest.mark.asyncio
 async def test_build_tools_blocks_call_api_when_declared_mcp_is_unavailable(monkeypatch):
     from app.agent import tools_for_skill
     from app.core.user_context import reset_current_user_identity, set_current_user_identity

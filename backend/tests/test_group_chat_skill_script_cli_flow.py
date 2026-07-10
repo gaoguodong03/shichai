@@ -121,6 +121,18 @@ print(json.dumps({
 """,
         encoding="utf-8",
     )
+    (scripts_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "check_pkg_version.py": {
+                    "description": "检查 Python 包版本",
+                    "input_schema": {"type": "object", "required": ["package"]},
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     from app.skills.loader import invalidate_skills_cache_for_user
 
