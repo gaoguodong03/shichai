@@ -241,20 +241,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     """Update only current session contract fields: title, host, and agent_names."""
     session_definitions = _load_session_definitions()
     if group_session_id not in session_definitions:
-        if body.add_agent_names:
-            now = format_storage_timestamp()
-            session_definitions[group_session_id] = {
-                "title": "新群聊",
-                "title_auto_generated": True,
-                "agent_names": [],
-                "host": {},
-                "created_at": now,
-                "updated_at": now,
-            }
-            _save_session_definitions(session_definitions)
-            _save_group_history(group_session_id, [], checkpoint_trigger="session_changed")
-        else:
-            raise HTTPException(status_code=404, detail="Group session not found")
+        raise HTTPException(status_code=404, detail="Group session not found")
     if body.title is not None and str(body.title).strip():
         next_title = body.title.strip()
         session_definitions[group_session_id]["title"] = next_title

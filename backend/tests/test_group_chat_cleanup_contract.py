@@ -114,6 +114,8 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     host_decision = _read("app/agent/group_host_decision.py")
     tool_records = _read("app/agent/skill_tool_result_records.py")
     tool_content = _read("app/agent/group_chat_tool_result_content.py")
+    skill_runtime = _read("app/agent/skill_agent_runtime.py")
+    default_app_settings = _read("config/app_settings.json")
 
     assert "resolve_skill_session_state" not in skill_session
     assert 'render_platform_prompt("skill.session.state_instruction.v1", {})' in skill_session
@@ -124,6 +126,9 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     assert "explicit_flag" not in host_decision
     assert "required_user_fields" not in tool_records
     assert "required_user_fields" not in tool_content
+    assert "content JSON 回退" not in skill_runtime
+    assert "tool_call = json.loads(json_str)" not in skill_runtime
+    assert "speaker_task" not in default_app_settings
 
 
 def test_expert_skill_selection_does_not_advertise_keyword_fallback():

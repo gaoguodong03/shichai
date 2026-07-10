@@ -6,7 +6,7 @@ import os
 import time
 from datetime import datetime
 from typing import TypedDict, Annotated, Sequence, List
-from app.agent.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage, ToolMessage
+from app.agent.messages import BaseMessage, AIMessage, SystemMessage, ToolMessage
 from app.agent.llm_client import bind_tools_compat
 from app.agent.platform_prompts import render_platform_prompt
 from app.agent.simple_agent import SimpleAgent
@@ -575,164 +575,10 @@ async def _call_tool_impl(state: AgentState, tools: list[ToolSpec]):
             "tool_raw_outputs": tool_raw_outputs,
         }
 
-    content = last_message.content
-    try:
-        if "```json" in content:
-            json_str = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            json_str = content.split("```")[1].split("```")[0].strip()
-        else:
-            json_str = content
-        tool_call = json.loads(json_str)
-        requested_tool_name = tool_call.get("tool")
-        tool_name = _resolve_tool_name_for_skill_call(requested_tool_name, state["tools"])
-        arguments = normalize_tool_args(tool_name, _get_tool_call_arguments(tool_call), tools)
-        tool = None
-        for t in state["tools"]:
-            if t.name == tool_name:
-                tool = t
-                break
-        if tool:
-            if tool_name == "audio-asr_transcribe_audio_file":
-                _apply_audio_asr_path_from_user_message(arguments, messages, workspace_id)
-            if tool_name == "image-generation_generate_image":
-                _apply_image_generation_workspace_id(arguments, workspace_id)
-            if _tool_is_workspace_plain_read_file(tool_name):
-                _normalize_read_file_path_argument(arguments)
-            tool_attempt_debug.append({
-                "requested_tool": requested_tool_name,
-                "resolved_tool": tool_name,
-                "matched": True,
-                "available_tools": [t.name for t in state["tools"]][:30],
-            })
-            try:
-                t_tool = time.perf_counter()
-                tool_calls_trace.append({"tool": tool_name, "arguments": arguments})
-                cache_key = _cache_key_for_tool(tool_name, arguments)
-                cached_entry = tool_result_cache.get(cache_key) if tool_name.startswith("run_skill_script_") else None
-                if isinstance(cached_entry, dict):
-                    result = cached_entry.get("raw", "")
-                    result_for_prompt = str(cached_entry.get("prompt") or _safe_tool_result_for_prompt(result, tool_name))
-                    logger.info(
-                        "sandbox_script_cache_hit tool=%s args_hash=%s raw_len=%s",
-                        tool_name,
-                        str(abs(hash(cache_key))),
-                        len(str(result)),
-                    )
-                    tool_attempt_debug.append({
-                        "source": "run_skill_script_cache_hit",
-                        "tool": tool_name,
-                        "matched": True,
-                    })
-                else:
-                    logger.debug(
-                        "skill_tool_execute_start tool=%s arg_keys=%s",
-                        tool_name,
-                        sorted(arguments.keys()) if isinstance(arguments, dict) else [],
-                    )
-                    result = await _execute_tool_safely(tool, arguments)
-                    result_for_prompt = _safe_tool_result_for_prompt(result, tool_name)
-                    logger.info(
-                        "skill_tool_execute_done tool=%s elapsed_ms=%s result_len=%s",
-                        tool_name,
-                        int((time.perf_counter() - t_tool) * 1000),
-                        len(str(result)),
-                    )
-                    if tool_name.startswith("run_skill_script_") and _cacheable_script_result(result):
-                        tool_result_cache[cache_key] = {"raw": str(result), "prompt": result_for_prompt}
-                        logger.debug(
-                            "sandbox_script_cache_store tool=%s args_hash=%s raw_len=%s",
-                            tool_name,
-                            str(abs(hash(cache_key))),
-                            len(str(result)),
-                        )
-                tool_raw_outputs.append(str(result))
-                tool_result_records.append(
-                    _tool_result_record_from_raw(
-                        tool_name=tool_name,
-                        tool=tool,
-                        arguments=arguments,
-                        tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
-                        raw_result=result,
-                    )
-                )
-                # 注意：当模型没有返回结构化 tool_calls（而是通过 content JSON 回退解析）时，
-                # 不能向 OpenAI ChatCompletions 发送 role=tool 的消息（必须紧跟在带 tool_calls 的 assistant 之后）。
-                # 这里将工具输出作为普通 HumanMessage 反馈给模型，确保消息序列合法。
-                return {
-                    "messages": [HumanMessage(content=_tool_message_content(tool_name, result_for_prompt, cached=isinstance(cached_entry, dict)))],
-                    "tool_attempt_debug": tool_attempt_debug,
-                    "tool_calls": tool_calls_trace,
-                    "tool_results": tool_result_records,
-                    "tool_raw_outputs": tool_raw_outputs,
-                }
-            except Exception as e:
-                logger.warning(
-                    "skill_tool_execute_failed tool=%s elapsed_ms=%s err=%s",
-                    tool_name,
-                    int((time.perf_counter() - t_tool) * 1000) if "t_tool" in locals() else 0,
-                    str(e)[:500],
-                )
-                error_message = _tool_error_message(tool_name, e)
-                tool_raw_outputs.append(error_message)
-                tool_result_records.append(
-                    _tool_result_record_from_exception(
-                        tool_name=tool_name,
-                        tool=tool,
-                        arguments=arguments,
-                        tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
-                        error=e,
-                    )
-                )
-                return {
-                    "messages": [HumanMessage(content=error_message)],
-                    "tool_attempt_debug": tool_attempt_debug,
-                    "tool_calls": tool_calls_trace,
-                    "tool_results": tool_result_records,
-                    "tool_raw_outputs": tool_raw_outputs,
-                }
-        tool_attempt_debug.append({
-            "requested_tool": requested_tool_name,
-            "resolved_tool": tool_name,
-            "matched": False,
-            "available_tools": [t.name for t in state["tools"]][:30],
-        })
-        if tool_name == "read_workspace_file":
-            tool_result_records.append(
-                _missing_tool_result_record(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
-                    available_tools=[t.name for t in state["tools"]],
-                )
-            )
-            return {
-                "messages": [HumanMessage(content=_read_workspace_unavailable_message())],
-                "tool_attempt_debug": tool_attempt_debug,
-                "tool_calls": tool_calls_trace,
-                "tool_results": tool_result_records,
-                "tool_raw_outputs": tool_raw_outputs,
-            }
-        tool_result_records.append(
-            _missing_tool_result_record(
-                tool_name=tool_name,
-                arguments=arguments,
-                tool_call_id=str(tool_call.get("id") or tool_name or "tool"),
-                available_tools=[t.name for t in state["tools"]],
-            )
-        )
-        return {
-            "messages": [HumanMessage(content=_tool_missing_message(tool_name))],
-            "tool_attempt_debug": tool_attempt_debug,
-            "tool_calls": tool_calls_trace,
-            "tool_results": tool_result_records,
-            "tool_raw_outputs": tool_raw_outputs,
-        }
-    except Exception as e:
-        return {
-            "messages": [HumanMessage(content=_tool_parse_error_message(e))],
-            "tool_attempt_debug": tool_attempt_debug,
-            "tool_calls": tool_calls_trace,
-            "tool_results": tool_result_records,
-            "tool_raw_outputs": tool_raw_outputs,
-        }
+    return {
+        "messages": [],
+        "tool_attempt_debug": tool_attempt_debug,
+        "tool_calls": tool_calls_trace,
+        "tool_results": tool_result_records,
+        "tool_raw_outputs": tool_raw_outputs,
+    }

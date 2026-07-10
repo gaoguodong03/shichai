@@ -469,3 +469,19 @@ def test_new_regular_session_uses_latest_default_host_profile(client: TestClient
 def test_sessions_get_returns_404_for_missing_id(client: TestClient):
     resp = client.get("/api/sessions/group-not-exist-123456")
     assert resp.status_code == 404
+
+
+def test_sessions_update_missing_id_does_not_create_session_from_add_agents(client: TestClient):
+    agent_resp = client.post("/api/agents", json={"name": "缺失会话专家"})
+    assert agent_resp.status_code == 200
+
+    resp = client.put(
+        "/api/sessions/group-not-exist-add-agent",
+        json={"add_agent_names": ["缺失会话专家"]},
+    )
+
+    assert resp.status_code == 404
+    list_resp = client.get("/api/sessions")
+    assert list_resp.status_code == 200
+    session_ids = {row["id"] for row in list_resp.json()["data"]["sessions"]}
+    assert "group-not-exist-add-agent" not in session_ids
