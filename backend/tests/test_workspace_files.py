@@ -187,8 +187,8 @@ def test_workspace_path_traversal_blocked(client):
 
 
 def test_workspace_file_api_rejects_internal_system_paths(client):
-    """文件 API 不允许访问 memory、checkpoints 或绝对路径。"""
-    for path in ("memory/facts.md", "checkpoints/HEAD.json", "/tmp/secret.txt"):
+    """文件 API 不允许访问 memory、checkpoints、运行日志目录或绝对路径。"""
+    for path in ("memory/facts.md", "checkpoints/HEAD.json", "execution_logs/tool-execution.jsonl", "/tmp/secret.txt"):
         r = client.get("/api/workspaces/ws-internal/files/content", params={"path": path})
         assert r.status_code == 400
 
@@ -428,17 +428,22 @@ def test_write_workspace_file_rejects_dsml_tool_call_payload(temp_user_data_root
 
 
 def test_read_file_rejects_internal_memory_paths(temp_user_data_root):
-    """memory/ 是内部运行态目录，不能通过工作区读取工具暴露。"""
+    """内部运行态目录不能通过工作区读取工具暴露。"""
     from app.api.files import get_workspace_root
     from app.tools.read_file import create_read_file_tool
 
     ws = get_workspace_root("sess-r")
     (ws / "memory").mkdir(parents=True, exist_ok=True)
     (ws / "memory" / "llm_roundtrips.jsonl").write_text('{"secret": true}\n', encoding="utf-8")
+    (ws / "execution_logs").mkdir(parents=True, exist_ok=True)
+    (ws / "execution_logs" / "tool-execution.jsonl").write_text('{"secret": true}\n', encoding="utf-8")
 
     tool = create_read_file_tool("sess-r")
     out = asyncio.run(tool.ainvoke({"path": "memory/llm_roundtrips.jsonl"}))
 
+    assert "内部系统目录" in out
+    assert "secret" not in out
+    out = asyncio.run(tool.ainvoke({"path": "execution_logs/tool-execution.jsonl"}))
     assert "内部系统目录" in out
     assert "secret" not in out
 
@@ -546,7 +551,7 @@ def test_read_file_allows_script_generated_workspace_outputs(temp_user_data_root
 
 
 def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_root, monkeypatch):
-    """memory/ 是内部运行态目录，不进入工作区列表工具结果。"""
+    """内部运行态目录不进入工作区列表工具结果。"""
     from app.agent import tools_for_skill as tool_module
     from app.agent.session_workspace_policy import sandbox_session_dir
     from app.agent.tools_for_skill import _create_builtin_workspace_tools
@@ -567,6 +572,7 @@ def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_r
                 {"path": f"{root}/memory/facts.md", "name": "facts.md", "size": 5},
                 {"path": f"{root}/memory/llm_roundtrips.jsonl", "name": "llm_roundtrips.jsonl", "size": 5},
                 {"path": f"{root}/memory/orchestrator_audit.jsonl", "name": "orchestrator_audit.jsonl", "size": 5},
+                {"path": f"{root}/execution_logs/tool-execution.jsonl", "name": "tool-execution.jsonl", "size": 5},
             ]
 
     monkeypatch.setattr(tool_module, "get_shared_sandbox_service", lambda: _FakeSandboxService())
@@ -579,6 +585,7 @@ def test_list_workspace_directory_filters_internal_memory_paths(temp_user_data_r
     assert "memory/facts.md" not in out
     assert "llm_roundtrips" not in out
     assert "orchestrator_audit" not in out
+    assert "tool-execution.jsonl" not in out
 
 
 def test_rename_workspace_file_recovers_single_timestamped_source(temp_user_data_root, monkeypatch):

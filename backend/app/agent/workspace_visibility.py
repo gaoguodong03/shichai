@@ -13,6 +13,7 @@ _INTERNAL_DIAGNOSTIC_PREFIXES = (
 _INTERNAL_SYSTEM_DIRS = {
     "memory",
     "checkpoints",
+    "execution_logs",
     "logs",
     "runtime_logs",
     "traces",
