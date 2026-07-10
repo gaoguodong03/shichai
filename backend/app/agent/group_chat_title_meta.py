@@ -41,12 +41,6 @@ def _message_content(message: Dict[str, Any]) -> str:
     return ""
 
 
-def _ensure_scene_profile_contract(session_item: Dict[str, Any]) -> bool:
-    """No-op after the name-based session contract removed legacy upgrades."""
-    _ = session_item
-    return False
-
-
 async def _ai_title_from_recent_user_messages(
     llm: Any,
     messages: List[Dict[str, Any]],

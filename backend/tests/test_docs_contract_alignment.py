@@ -56,6 +56,18 @@ def test_backend_runtime_does_not_keep_session_index_contract():
     assert "sessions/index.json" not in combined
 
 
+def test_backend_runtime_does_not_keep_noop_scene_profile_upgrade_hook():
+    """Session runtime must not keep empty legacy scene-profile upgrade hooks."""
+    runtime_files = [
+        PROJECT_ROOT / "backend" / "app" / "agent" / "group_session_service.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_title_meta.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
+
+    assert "_ensure_scene_profile_contract" not in combined
+    assert "scene_profile" not in combined
+
+
 def test_simple_agent_tool_summary_helpers_are_not_named_as_fallbacks():
     """Tool-result summary paths are product behavior, not legacy fallback branches."""
     runtime_files = [

@@ -37,9 +37,6 @@ from app.session_state.markdown import format_session_export_markdown
 from app.agent.group_chat_streaming import (
     SSE_AGENT_KEEPALIVE_INTERVAL_SEC as _SSE_AGENT_KEEPALIVE_INTERVAL_SEC,
 )
-from app.agent.group_chat_title_meta import (
-    _ensure_scene_profile_contract,
-)
 from app.agent.session_contracts import SessionUpdateRequest
 
 logger = logging.getLogger(__name__)
@@ -146,8 +143,6 @@ async def get_group_session(group_session_id: str):
     if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
     session_item = session_definitions[group_session_id]
-    if _ensure_scene_profile_contract(session_item):
-        _save_session_definitions(session_definitions)
     messages = _load_group_history(group_session_id)
     instances = load_agent_instances()
     enriched_instances = await enrich_agent_instances(instances, workspace_id=group_session_id)
@@ -314,8 +309,6 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
                     }
                 )
             _save_group_history(group_session_id, messages, checkpoint_trigger="manual_snapshot")
-    if _ensure_scene_profile_contract(session_definitions[group_session_id]):
-        pass
     session_definitions[group_session_id]["updated_at"] = format_storage_timestamp()
     _save_session_definitions(session_definitions)
     try:

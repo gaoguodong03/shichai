@@ -441,10 +441,12 @@ def test_frontend_does_not_send_legacy_next_prompt_channel():
 
 
 def test_frontend_sends_structured_target_agent_without_at_text_control():
+    composer = read("frontend/src/features/workspace/components/group-chat/GroupChatComposer.vue")
     composer_actions = read("frontend/src/features/workspace/composables/useGroupComposerActions.ts")
     at_mentions = read("frontend/src/features/workspace/composables/useGroupAtMentions.ts")
     provider = read("frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts")
 
+    assert "输入 @ 可指定专家" not in composer
     assert "groupTargetAgentName" in provider
     assert "target_agent_name" in composer_actions
     assert "groupTargetAgentName.value = opt.id" in at_mentions

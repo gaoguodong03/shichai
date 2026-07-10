@@ -9,7 +9,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.getByRole('menuitem', { name: '空会话' }).click()
     await expect(page.getByRole('heading', { name: '新对话' })).toBeVisible()
 
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请回答这条 UI 自动化消息')
+    await page.getByPlaceholder('输入消息').fill('请回答这条 UI 自动化消息')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('建议先邀请问答专家加入会话。')).toBeVisible()
@@ -73,8 +73,8 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expect(page.locator('.group-chat-workspace-preview-textarea')).toHaveValue(/# 验收说明/)
     await page.locator('.group-chat-workspace-preview').getByRole('button', { name: '取消' }).click()
 
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请更新工作区文件')
-    await expect(page.getByPlaceholder('输入 @ 可指定专家')).toHaveValue('请更新工作区文件')
+    await page.getByPlaceholder('输入消息').fill('请更新工作区文件')
+    await expect(page.getByPlaceholder('输入消息')).toHaveValue('请更新工作区文件')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('我已经更新工作区文件。')).toBeVisible()
@@ -251,7 +251,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await expectMainShell(page)
 
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    const input = page.getByPlaceholder('输入 @ 可指定专家')
+    const input = page.getByPlaceholder('输入消息')
     await input.fill('@写')
     await page.locator('.group-chat-at-dropdown').getByText('写作专家', { exact: true }).click()
     await expect(page.getByText('指定：写作专家')).toBeVisible()
@@ -284,7 +284,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请写一篇文章')
+    await page.getByPlaceholder('输入消息').fill('请写一篇文章')
     await page.getByRole('button', { name: '发送' }).click()
 
     await streamReachedFileWrite
@@ -523,7 +523,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请换一个专家继续')
+    await page.getByPlaceholder('输入消息').fill('请换一个专家继续')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('四九已帮您切换专家：写作专家')).toBeVisible()
@@ -549,7 +549,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     })
 
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请连续处理到暂停')
+    await page.getByPlaceholder('输入消息').fill('请连续处理到暂停')
     await page.getByRole('button', { name: '发送' }).click()
 
     await expect(page.getByText('已暂停：等待你的确认')).toBeVisible()
@@ -627,7 +627,7 @@ test.describe('验收 2/6：工作空间会话与文件', () => {
     await page.goto('/')
     await expectMainShell(page)
     await page.getByRole('heading', { name: '已有验收会话' }).click()
-    await page.getByPlaceholder('输入 @ 可指定专家').fill('请后台运行一下')
+    await page.getByPlaceholder('输入消息').fill('请后台运行一下')
     await page.getByRole('button', { name: '发送' }).click()
     await streamStarted
 

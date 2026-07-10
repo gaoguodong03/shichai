@@ -49,7 +49,7 @@
                     ref="goalTextareaRef"
                     v-model="groupDiscussionGoal"
                     class="group-chat-input-block-textarea"
-                    placeholder="输入 @ 可指定专家"
+                    placeholder="输入消息"
                     rows="3"
                     @input="onAtInput('goal', $event)"
                     @keydown="onAtKeydown('goal', $event)"
