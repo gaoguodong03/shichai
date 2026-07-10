@@ -8,6 +8,7 @@ import re
 from typing import Any, Dict
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_spec import ToolSpec
 from app.tools.call_api import _call_api_impl
 
@@ -98,14 +99,14 @@ def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = 
 
     tool = ToolSpec.from_function(
         name=_runtime_tool_name(name),
-        description=f"调用已保存的 HTTP API 工具「{name}」。可传 query、headers 或 body 覆盖/补充默认配置。",
+        description=render_platform_prompt("tool.description.saved_http_api.v1", {"tool_name": name}),
         func=_execute,
         args_schema={
             "type": "object",
             "properties": {
-                "query": {"type": "object", "description": "追加或覆盖默认查询参数。"},
-                "headers": {"type": "object", "description": "追加或覆盖默认请求头。"},
-                "body": {"description": "覆盖默认请求体；对象会自动序列化为 JSON。"},
+                "query": {"type": "object", "description": render_platform_prompt("tool.schema.saved_http_api.query.v1", {})},
+                "headers": {"type": "object", "description": render_platform_prompt("tool.schema.saved_http_api.headers.v1", {})},
+                "body": {"description": render_platform_prompt("tool.schema.saved_http_api.body.v1", {})},
             },
         },
     )

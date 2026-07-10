@@ -512,18 +512,13 @@ class QwenLLM:
                 or max_tokens
             )
 
-        # 勿对非 DashScope 的 base_url 回退到 QWEN_API_KEY，否则 Jeniya 等中转会收到阿里云 Key → 401「无效的令牌」
         if api_key and str(api_key).strip():
             self.api_key = str(api_key).strip()
-        elif "dashscope.aliyuncs.com" in (self.base_url or ""):
-            self.api_key = (os.getenv("QWEN_API_KEY") or "").strip() or None
         else:
-            self.api_key = (os.getenv("JENIYA_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip() or None
+            self.api_key = None
 
         if not self.api_key:
-            raise ValueError(
-                "缺少 API Key：DashScope 请设置 QWEN_API_KEY；Jeniya/OpenAI 兼容中转请设置 JENIYA_API_KEY（或 OPENAI_API_KEY）"
-            )
+            raise ValueError("缺少 API Key：请通过模型配置 api_key_env 解析平台环境变量后创建 LLM 客户端。")
 
     def get_client(self):
         """获取项目本地 OpenAI SDK Chat 客户端适配器"""

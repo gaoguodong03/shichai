@@ -431,6 +431,21 @@ def test_get_llm_from_config_requires_explicit_api_key_env(monkeypatch):
         )
 
 
+def test_qwen_llm_constructor_requires_resolved_api_key(monkeypatch):
+    """底层客户端不能按 base_url 从宿主机环境变量推断凭据。"""
+    from app.agent.llm_client import QwenLLM
+
+    monkeypatch.setenv("QWEN_API_KEY", "host-qwen-key")
+    monkeypatch.setenv("JENIYA_API_KEY", "host-jeniya-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "host-openai-key")
+
+    with pytest.raises(ValueError, match="缺少 API Key"):
+        QwenLLM(base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", model="qwen3-max")
+
+    with pytest.raises(ValueError, match="缺少 API Key"):
+        QwenLLM(base_url="https://jeniya.top/v1", model="gpt-4o")
+
+
 def test_get_llm_from_config_empty_uses_default():
     """空配置使用默认 provider"""
     from app.agent.llm_client import get_llm_from_config

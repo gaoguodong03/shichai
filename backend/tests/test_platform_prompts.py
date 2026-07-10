@@ -408,6 +408,27 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_saved_http_api_tool_schema_descriptions_use_platform_prompt_registry():
+    """Saved HTTP API tool schema text is LLM-visible platform prompt material."""
+    module_text = (ROOT / "backend/app/tools/http_api_tool.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "调用已保存的 HTTP API 工具",
+        "追加或覆盖默认查询参数。",
+        "追加或覆盖默认请求头。",
+        "覆盖默认请求体；对象会自动序列化为 JSON。",
+    ]:
+        assert phrase not in module_text
+
+    for prompt_id in [
+        "tool.description.saved_http_api.v1",
+        "tool.schema.saved_http_api.query.v1",
+        "tool.schema.saved_http_api.headers.v1",
+        "tool.schema.saved_http_api.body.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_image_generation_default_user_prompt_uses_platform_prompt_registry():
     """Image tool default user prompt text belongs in the shared prompt registry."""
     tool_text = (ROOT / "backend/app/tools/chatanywhere_image_cli_lib.py").read_text(encoding="utf-8")
