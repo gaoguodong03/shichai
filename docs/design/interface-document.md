@@ -450,7 +450,6 @@ data: {"key":"value"}
 
 | 事件 | 说明 | 典型字段 |
 |------|------|----------|
-| `start` | 本轮开始 | `session_id`、`run_id` |
 | `route` | 路由到专家或 Skill | `run_id`、`agent_name`、`skill` |
 | `progress` | 当前运行阶段 | `run_id`、`phase`、`agent_name`、`skill`、`text` |
 | `message` | 完整消息 | `message_id`、`speaker`、`message`、`created_at`、`client_message_id`、`skill_result` |

@@ -168,7 +168,6 @@ POST /api/sessions/{session_id}/chat/stream
 
 | 事件 | 载荷重点 | 前端用途 |
 |------|----------|----------|
-| `start` | `session_id`、`run_id` | 标记本轮开始 |
 | `route` | `run_id`、`agent_name`、`skill` | 展示本轮交给谁处理 |
 | `progress` | `run_id`、`phase`、`agent_name`、`skill`、`text` | 展示运行阶段，不承载最终正文 |
 | `message` | 与 `history.json` 相同的完整消息结构 | 落到消息列表 |

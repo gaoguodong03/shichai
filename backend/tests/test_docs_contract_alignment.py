@@ -171,6 +171,31 @@ def test_chat_once_docs_only_advertise_current_aggregated_event_payloads():
         assert field in section
 
 
+def test_formal_docs_do_not_advertise_removed_chat_stream_start_event():
+    """The chat stream contract starts with route/message/progress, not a start event."""
+    docs = [
+        PROJECT_ROOT / "docs" / "contracts" / "runtime-interface-contract.md",
+        PROJECT_ROOT / "docs" / "contracts" / "data-structure-and-field-logic.md",
+        PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md",
+        PROJECT_ROOT / "docs" / "design" / "interface-document.md",
+        PROJECT_ROOT / "docs" / "development" / "module-file-boundaries.md",
+    ]
+    forbidden = [
+        "start\n  -> route?",
+        "start -> message?",
+        "`start`、`route`",
+        "`start`、`route`、`progress`、`message`、`end`、`error`",
+        "start/route/progress/message/end/error",
+        "| `start` |",
+        "处理 `start`",
+    ]
+
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        for marker in forbidden:
+            assert marker not in text, f"{path}: {marker}"
+
+
 def test_chat_once_runtime_is_not_named_as_fallback():
     """The non-stream chat endpoint is a formal aggregation path, not fallback logic."""
     text = (PROJECT_ROOT / "backend" / "app" / "api" / "sessions.py").read_text(encoding="utf-8")

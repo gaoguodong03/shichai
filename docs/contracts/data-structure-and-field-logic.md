@@ -715,14 +715,13 @@ POST /api/sessions/{session_id}/chat/stream
   -> 保存 history.json
   -> 清理或刷新 runtime.json
   -> 更新 memory/facts.md 和 memory/index.md
-  -> SSE 返回 start/route/progress/message/end/error
+  -> SSE 返回 route/progress/message/end/error
 ```
 
 前端 SSE 事件在 [`frontend/src/api/chat.ts`](../../frontend/src/api/chat.ts) 解析：
 
 | 事件 | 含义 |
 |------|------|
-| `start` | 本轮流开始。 |
 | `route` | 后端决定的专家和 Skill。 |
 | `progress` | 运行阶段提示，`phase` 必须等于当前 `runtime.json.phase`。 |
 | `message` | 已落盘的完整消息。 |

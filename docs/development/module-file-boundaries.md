@@ -207,7 +207,7 @@
 | 文件 | 职责 |
 |------|------|
 | `useGroupChatStreamRunner.ts` | 发起和停止当前聊天流。 |
-| `useGroupStreamEvents.ts` | 处理 `start`、`route`、`progress`、`message`、`end`、`error` 事件。 |
+| `useGroupStreamEvents.ts` | 处理 `route`、`progress`、`message`、`end`、`error` 事件。 |
 | `useGroupStreamRuntime.ts` | 运行镜像、订阅事件和 stale runtime 展示。 |
 | `useGroupOrchestrationState.ts` | `waiting_for_user`、`suggested_next_speaker`、`suggested_add_agent_names` 等编排 UI 状态。 |
 | `useGroupMessageList.ts` | 消息列表事实和展示转换。 |

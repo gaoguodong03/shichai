@@ -98,20 +98,19 @@ session_chat_stream(session_id, GroupChatRequest)
 流式返回由 `run_events()` 产生。正常情况下事件顺序是：
 
 ```text
-start
-  -> route?          # 命中专家后发出
-  -> progress*       # 模型等待、工具运行、生成中等运行阶段
-  -> message*        # 主持人气泡或专家最终消息
-  -> end             # 本轮结束状态
+route?          # 命中专家后发出
+  -> progress*  # 模型等待、工具运行、生成中等运行阶段
+  -> message*   # 主持人气泡或专家最终消息
+  -> end        # 本轮结束状态
 ```
 
 异常时可能出现：
 
 ```text
-start -> message? -> error? -> end
+message? -> error? -> end
 ```
 
-前端目标契约只分发 `start`、`route`、`progress`、`message`、`end`、`error`。`progress` 是运行阶段事件，不承载最终正文；未来如需 token 级流式正文，应另定义 `delta` 事件，不能复用 `progress`。
+前端目标契约只分发 `route`、`progress`、`message`、`end`、`error`。`progress` 是运行阶段事件，不承载最终正文；未来如需 token 级流式正文，应另定义 `delta` 事件，不能复用 `progress`。
 
 ## 3. 跳转规则
 
@@ -491,7 +490,7 @@ SSE `message` 事件、会话详情 `messages` 和 `history.json` 必须使用�
 
 `frontend/e2e/fixtures/mockApi.ts` 是接口契约的一部分。E2E mock 必须和真实 API 使用同一组事件名、字段名和消息结构：
 
-- `/chat/stream` mock 只发送 `start`、`route`、`progress`、`message`、`end`、`error`。
+- `/chat/stream` mock 只发送 `route`、`progress`、`message`、`end`、`error`。
 - `/events/stream` mock 只发送 `snapshot`、`runtime`、`message`、`keepalive`、`deleted`、`error`。
 - mock 消息必须使用 `speaker` + `message.content`，不得使用顶层 `role` / `content` / `agent_name`。
 - mock 不得保留 `discussion_ended`、`meta.phase`、`tool_start`、`tool_result`、`session_update`、`skill_route_debug`、`expert_route_debug`。
