@@ -87,6 +87,37 @@ def test_runtime_writes_runtime_json_not_session_json(tmp_path, monkeypatch):
     assert state.runtime_for_session("s1", loaded)["run_id"] == "r1"
 
 
+def test_runtime_json_keeps_only_contract_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+    state.save_session_definitions({"s1": {"title": "会话", "updated_at": "2026062908104800"}})
+
+    state.write_group_runtime(
+        "s1",
+        {
+            "running": True,
+            "run_id": "r1",
+            "agent_name": "专家A",
+            "skill": "skill-a",
+            "phase": "routing",
+            "started_at": "2999123123595900",
+            "updated_at": "2999123123595999",
+            "user_id": "u1",
+            "debug": {"trace": True},
+        },
+    )
+
+    raw = json.loads((tmp_path / "s1" / "runtime.json").read_text(encoding="utf-8"))
+
+    assert raw == {
+        "running": True,
+        "run_id": "r1",
+        "agent_name": "专家A",
+        "skill": "skill-a",
+        "phase": "routing",
+        "started_at": "2999123123595900",
+    }
+
+
 def test_session_definition_persists_only_contract_fields(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
 

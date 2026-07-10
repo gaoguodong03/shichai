@@ -212,6 +212,13 @@ def schedule_group_session_event(
     loop.create_task(publish_group_session_event(group_session_id, event_type, payload))
 
 
+def _clean_runtime_state(state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(state, dict):
+        return {"running": False}
+    allowed = {"running", "run_id", "agent_name", "skill", "phase", "started_at"}
+    return {key: value for key, value in state.items() if key in allowed and value is not None}
+
+
 def write_group_runtime(
     group_session_id: str,
     state: Optional[Dict[str, Any]],
@@ -224,17 +231,19 @@ def write_group_runtime(
         return
     root = ensure_sessions_dir()
     runtime_path = _runtime_json_path(root, group_session_id)
+    clean_state = _clean_runtime_state(state)
     if state:
         runtime_path.parent.mkdir(parents=True, exist_ok=True)
-        runtime_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        runtime_path.write_text(json.dumps(clean_state, ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         with suppress(OSError):
             runtime_path.unlink()
     save_session_definitions(session_definitions)
+    clean_notify_runtime = _clean_runtime_state(notify_runtime) if notify_runtime is not None else clean_state
     schedule_group_session_event(
         group_session_id,
         "runtime",
-        {"runtime": notify_runtime if notify_runtime is not None else state or {"running": False}},
+        {"runtime": clean_notify_runtime or {"running": False}},
     )
 
 
