@@ -152,11 +152,12 @@ def test_runtime_code_removes_legacy_skill_and_host_control_fields():
     assert "speaker_task" not in default_app_settings
 
 
-def test_backend_app_code_does_not_keep_legacy_host_config_term():
+def test_backend_app_code_does_not_keep_legacy_host_profile_term():
+    legacy_host_profile_term = "host_" + "config"
     offenders = []
     for path in (ROOT / "app").rglob("*.py"):
         text = path.read_text(encoding="utf-8")
-        if "host_config" in text:
+        if legacy_host_profile_term in text:
             offenders.append(str(path.relative_to(ROOT)))
 
     assert offenders == []

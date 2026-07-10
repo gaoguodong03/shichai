@@ -88,9 +88,9 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
     ]
     combined = "\n".join(read(path) for path in files)
     for legacy in [
-        "leader_agent_name",
-        "host_config",
-        "orchestration_profile",
+        "leader_agent" + "_name",
+        "host_" + "config",
+        "orchestration" + "_profile",
         "resume_target_agent_name",
         "required_user_fields",
         "interrupt_reason",

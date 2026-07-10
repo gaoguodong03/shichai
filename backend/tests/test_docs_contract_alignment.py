@@ -3,6 +3,9 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LEGACY_LEADER_AGENT_NAME = "leader_agent" + "_name"
+LEGACY_HOST_CONFIG = "host_" + "config"
+LEGACY_ORCHESTRATION_PROFILE = "orchestration" + "_profile"
 
 
 def test_formal_docs_tree_excludes_legacy_planning_directories():
@@ -34,7 +37,7 @@ def test_backend_readme_uses_current_runtime_contract_fields():
         "skill_session_skill",
         "result_code",
         "`message`、`artifacts`",
-        "leader_agent_name",
+        LEGACY_LEADER_AGENT_NAME,
         "历史场景包和旧磁盘配置只在导入/读取边界做兼容转换",
     ]:
         assert legacy not in text
@@ -124,11 +127,11 @@ def test_user_resource_storage_docs_use_name_based_resource_index_examples():
     assert '"name": "编写PPT"' in text
 
 
-def test_design_docs_do_not_reference_removed_host_config_module():
+def test_design_docs_do_not_reference_removed_host_profile_module():
     """Formal design docs must point to current host profile modules."""
     text = (PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md").read_text(encoding="utf-8")
 
-    assert "backend/app/core/host_config.py" not in text
+    assert f"backend/app/core/{LEGACY_HOST_CONFIG}.py" not in text
     assert "backend/app/api/settings_app.py" in text
     assert "backend/app/core/host_profile_contract.py" in text
 
@@ -457,6 +460,34 @@ def test_code_and_tests_do_not_carry_legacy_secret_contract_literals():
         "settings/" + "secrets.enc.json",
         "${" + "vault:",
         "settings_" + "secrets.py",
+    ]
+    roots = [
+        PROJECT_ROOT / "backend" / "app",
+        PROJECT_ROOT / "backend" / "tests",
+        PROJECT_ROOT / "frontend" / "src",
+        PROJECT_ROOT / "frontend" / "e2e",
+    ]
+    offenders = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in {".py", ".ts", ".tsx", ".vue"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            for token in forbidden:
+                if token in text:
+                    offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{token}")
+    assert offenders == []
+
+
+def test_code_and_tests_do_not_carry_legacy_session_contract_literals():
+    """Code and tests must not carry removed session-definition field literals."""
+    forbidden = [
+        "scenario" + "_name",
+        "orchestration" + "_profile",
+        "leader_agent" + "_name",
+        "host_" + "config",
     ]
     roots = [
         PROJECT_ROOT / "backend" / "app",

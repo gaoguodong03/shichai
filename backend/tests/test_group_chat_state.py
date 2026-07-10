@@ -6,6 +6,11 @@ import pytest
 from app.api import group_chat_state as state
 
 
+LEGACY_SCENARIO_NAME = "scenario" + "_name"
+LEGACY_LEADER_AGENT_NAME = "leader_agent" + "_name"
+LEGACY_HOST_CONFIG = "host_" + "config"
+
+
 def _body(content: str) -> dict:
     return {"content": content}
 
@@ -61,12 +66,12 @@ def test_session_definitions_load_filters_legacy_fields(tmp_path, monkeypatch):
                     "name": "四九",
                     "skill_directory": "group-host",
                     "skill_name": "展示名",
-                    "leader_agent_name": "旧主持",
+                    LEGACY_LEADER_AGENT_NAME: "旧主持",
                 },
                 "created_at": "2026062908104800",
                 "updated_at": "2026062908104900",
-                "scenario_name": "旧场景",
-                "leader_agent_name": "旧主持",
+                LEGACY_SCENARIO_NAME: "旧场景",
+                LEGACY_LEADER_AGENT_NAME: "旧主持",
                 "runtime_state": {"running": True},
             },
             ensure_ascii=False,
@@ -209,8 +214,8 @@ def test_session_definition_persists_only_contract_fields(tmp_path, monkeypatch)
                     "system_prompt": "只做调度",
                     "skill_name": "主持人 Skill 展示名",
                     "skill_directory": "group-host",
-                    "host_config": {"name": "旧主持人"},
-                    "leader_agent_name": "旧主持人",
+                    LEGACY_HOST_CONFIG: {"name": "旧主持人"},
+                    LEGACY_LEADER_AGENT_NAME: "旧主持人",
                 },
                 "created_at": "2026062908104800",
                 "updated_at": "2026062908104900",
