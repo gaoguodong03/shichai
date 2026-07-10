@@ -610,7 +610,7 @@ MCP / HTTP / workspace 工具本身不要求返回 `next_action`。这些工具�
 - `backend/app/api/settings_app.py`
 - 环境变量设置接口
 - `backend/app/agent/llm_client.py`
-- `backend/app/core/host_config.py`
+- `backend/app/core/host_profile_contract.py`
 - `frontend/src/features/settings/AppSettingsView.vue`
 - 环境变量设置视图
 - `frontend/src/features/settings/AccountSecuritySettingsView.vue`

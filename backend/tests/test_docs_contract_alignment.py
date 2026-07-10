@@ -63,6 +63,15 @@ def test_user_resource_storage_docs_use_name_based_resource_index_examples():
     assert '"name": "编写PPT"' in text
 
 
+def test_design_docs_do_not_reference_removed_host_config_module():
+    """Formal design docs must point to current host profile modules."""
+    text = (PROJECT_ROOT / "docs" / "design" / "detailed-design-spec.md").read_text(encoding="utf-8")
+
+    assert "backend/app/core/host_config.py" not in text
+    assert "backend/app/api/settings_app.py" in text
+    assert "backend/app/core/host_profile_contract.py" in text
+
+
 def test_skill_script_manifest_has_independent_module_boundary():
     """Script manifest parsing belongs outside the sandbox execution entrypoint."""
     manifest_module = PROJECT_ROOT / "backend" / "app" / "tools" / "skill_script_manifest.py"
