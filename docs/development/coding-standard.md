@@ -113,11 +113,11 @@ agent_names = validate_agent_names(data["agent_names"])
 
 ### 4.4 Prompt 不散落
 
-平台内置 Prompt 必须按 `docs/contracts/prompt-assembly-contract.md` 集中管理，并统一写入 `backend/app/agent/platform_prompts.py`。其他文件只能通过 `prompt_id`、模板变量和专门的 Prompt 读取函数调取，不直接内嵌大段固定提示词。
+平台内置 Prompt 必须按 `docs/contracts/prompt-assembly-contract.md` 集中管理，模板正文统一写入 `backend/app/agent/platform_prompt_templates.json`；`backend/app/agent/platform_prompts.py` 只负责按 `prompt_id` 读取、校验和渲染。其他文件只能通过 `prompt_id`、模板变量和专门的 Prompt 读取函数调取，不直接内嵌大段固定提示词。
 
 任何 Prompt 要求模型输出的字段，必须与 Pydantic schema、契约文档和测试断言一致。提示词不得要求 `reason`、`speaker_task`、`next_prompt` 等已删除字段。
 
-新增或修改平台内置 Prompt 时，必须同时更新 `platform_prompts.py` 中的模板注册、调用点的 `prompt_id`、对应 schema 和测试。业务代码中出现三行以上固定 LLM 指令文本时，应迁移到 `platform_prompts.py`。
+新增或修改平台内置 Prompt 时，必须同时更新 `platform_prompt_templates.json` 中的模板、调用点的 `prompt_id`、对应 schema 和测试。业务代码中出现三行以上固定 LLM 指令文本时，应迁移到 `platform_prompt_templates.json`。
 
 ### 4.5 注释写在文件开头或函数开头
 

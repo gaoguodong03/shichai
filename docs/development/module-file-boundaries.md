@@ -97,11 +97,12 @@
 | `group_chat_prompt_builder.py` | 按契约组装 Prompt 块。 |
 | `expert_self_awareness.py` | 专家自我认知或身份说明材料。 |
 | `group_chat_presentation_rewriter.py` | 展示改写类 LLM 调用。 |
-| `platform_prompts.py` | 唯一保存平台内置 Prompt 模板和 `prompt_id` 映射。其他文件只能调取，不直接写模板正文。 |
+| `platform_prompt_templates.json` | 唯一保存平台内置 Prompt 模板正文。 |
+| `platform_prompts.py` | 读取、校验和渲染 `prompt_id` 对应模板；不直接保存大段 Prompt 正文。 |
 
 规则：
 
-- 平台内置 Prompt 只能新增到 `platform_prompts.py`，不能写进 runtime、API、工具、schema、测试 fixture 或 Vue 文件。
+- 平台内置 Prompt 正文只能新增到 `platform_prompt_templates.json`，不能写进 runtime、API、工具、schema、测试 fixture 或 Vue 文件。
 - Prompt 调用点只能传入 `prompt_id` 和结构化变量，由 Prompt 层返回最终模板或 Prompt 块。
 - Prompt builder 只接收结构化输入，不扫描用户目录。
 - `debug_*`、执行 trace、真实环境变量和绝对路径不能进入 Prompt 块。
