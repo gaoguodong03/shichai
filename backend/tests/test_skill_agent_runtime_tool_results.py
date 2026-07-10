@@ -56,6 +56,24 @@ def test_mcp_tool_result_keeps_provider_identity_without_wrapper_name():
     assert result["tool_call"]["provider_tool"] == "linkup-fetch"
 
 
+def test_http_api_tool_result_keeps_saved_tool_identity():
+    from app.tools.http_api_tool import create_http_api_tool
+
+    tool = create_http_api_tool({"name": "Exa 搜索", "type": "http_api", "config": {"base_url": "https://api.example.com"}})
+
+    result = _tool_result_record_from_raw(
+        tool_name=tool.name,
+        tool=tool,
+        arguments={"query": {"q": "codex"}},
+        tool_call_id="call-http",
+        raw_result="状态码: 200\n\n{}",
+    )
+
+    assert result["tool_call"]["kind"] == "api"
+    assert result["tool_call"]["provider"] == "Exa 搜索"
+    assert result["tool_call"]["provider_tool"] == tool.name
+
+
 def test_mcp_like_tool_name_without_metadata_is_not_guessed_as_mcp():
     with pytest.raises(ValueError):
         _tool_result_record_from_raw(

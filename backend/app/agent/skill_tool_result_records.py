@@ -16,17 +16,32 @@ _WORKSPACE_TOOL_NAMES = {
 }
 
 
-def _tool_mcp_identity(tool: object) -> tuple[str, str]:
+def _tool_metadata(tool: object) -> dict[str, Any]:
     metadata = getattr(tool, "metadata", None)
-    if not isinstance(metadata, dict):
-        return "", ""
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _tool_mcp_identity(tool: object) -> tuple[str, str]:
+    metadata = _tool_metadata(tool)
     return (
         str(metadata.get("mcp_server_name") or "").strip(),
         str(metadata.get("mcp_tool_name") or "").strip(),
     )
 
 
+def _tool_trace_identity(tool: object | None) -> tuple[str, str, str]:
+    metadata = _tool_metadata(tool) if tool is not None else {}
+    return (
+        str(metadata.get("source") or "").strip(),
+        str(metadata.get("provider") or "").strip(),
+        str(metadata.get("provider_tool") or "").strip(),
+    )
+
+
 def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
+    source, _provider, _provider_tool = _tool_trace_identity(tool)
+    if source in {"mcp", "script", "workspace", "api"}:
+        return source
     server_name, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
     if server_name or provider_tool:
         return "mcp"
@@ -41,6 +56,9 @@ def _tool_call_kind(tool_name: str, tool: object | None = None) -> str:
 
 
 def _stable_tool_call_name(tool_name: str, tool: object | None = None) -> str:
+    _source, _provider, trace_provider_tool = _tool_trace_identity(tool)
+    if trace_provider_tool:
+        return trace_provider_tool
     _server_name, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
     if provider_tool:
         return provider_tool
@@ -50,7 +68,9 @@ def _stable_tool_call_name(tool_name: str, tool: object | None = None) -> str:
 
 
 def _tool_call_record_payload(*, tool_name: str, tool: object | None, arguments: dict, tool_call_id: str) -> dict:
-    provider, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
+    _source, provider, provider_tool = _tool_trace_identity(tool)
+    if not provider and not provider_tool:
+        provider, provider_tool = _tool_mcp_identity(tool) if tool is not None else ("", "")
     payload = {
         "id": str(tool_call_id or tool_name or "tool"),
         "name": _stable_tool_call_name(tool_name, tool),

@@ -102,7 +102,7 @@ def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = 
             timeout_seconds=float(cfg.get("timeout_seconds") or 60),
         )
 
-    return ToolSpec.from_function(
+    tool = ToolSpec.from_function(
         name=_runtime_tool_name(name),
         description=f"调用已保存的 HTTP API 工具「{name}」。可传 query、headers 或 body 覆盖/补充默认配置。",
         func=_execute,
@@ -115,3 +115,11 @@ def create_http_api_tool(row: Dict[str, Any], env_vars: Dict[str, str] | None = 
             },
         },
     )
+    tool.metadata.update(
+        {
+            "source": "api",
+            "provider": name,
+            "provider_tool": tool.name,
+        }
+    )
+    return tool
