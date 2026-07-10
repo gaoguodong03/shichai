@@ -101,7 +101,7 @@ def _dedupe_nonempty(values: Iterable[Any]) -> List[str]:
     return list(dict.fromkeys(str(x).strip() for x in values if str(x).strip()))
 
 
-def _reference_items(raw: Any, *, name_keys: Tuple[str, ...] = ("name", "label")) -> List[Dict[str, str]]:
+def _reference_items(raw: Any, *, name_keys: Tuple[str, ...] = ("name",)) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     seen: Set[str] = set()
     values = raw if isinstance(raw, list) else []
@@ -128,7 +128,7 @@ def mcp_refs_from_skill_frontmatter(fm: Dict[str, Any]) -> List[Dict[str, str]]:
     refs: List[Dict[str, str]] = []
     seen: Set[str] = set()
     for key in ("mcp", "http_api"):
-        for row in _reference_items(allowed.get(key), name_keys=("name", "label")):
+        for row in _reference_items(allowed.get(key)):
             name = row.get("name")
             if not name or name in seen:
                 continue

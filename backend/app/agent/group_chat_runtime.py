@@ -34,6 +34,7 @@ from app.api.group_chat_state import (
     ensure_sessions_dir,
     finish_group_run,
     format_storage_timestamp,
+    frontend_history_message,
     load_group_history,
     load_group_orchestration_state,
     load_session_definitions,
@@ -353,6 +354,7 @@ async def _run_contract_events(
             host_agent_name=host_name,
         )
         if host_msg:
+            host_msg = frontend_history_message(host_msg)
             messages.append(host_msg)
             save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
             session_item["updated_at"] = format_storage_timestamp()
@@ -547,6 +549,7 @@ async def _run_one_expert_turn(
         "created_at": format_storage_timestamp(),
         "skill_result": skill_result,
     }
+    assistant_msg = frontend_history_message(assistant_msg)
     messages.append(assistant_msg)
     save_group_history(group_session_id, messages, checkpoint_trigger="turn_completed")
     session_item["updated_at"] = format_storage_timestamp()

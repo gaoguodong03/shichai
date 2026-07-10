@@ -155,6 +155,20 @@ def test_mcp_rows_for_bundle_refs_reads_allowed_tool_names():
     ]
 
 
+def test_mcp_refs_from_skill_frontmatter_ignores_legacy_label_without_name():
+    from app.core.settings_bundle_import import mcp_refs_from_skill_frontmatter
+
+    fm = {
+        ALLOWED_TOOLS_FM_KEY: {
+            "mcp": [{"label": "Exa 搜索"}, {"name": "Exa"}],
+            "http_api": [{"label": "Weather API"}],
+            "python": [],
+        }
+    }
+
+    assert mcp_refs_from_skill_frontmatter(fm) == [{"name": "Exa"}]
+
+
 def test_collect_tool_names_from_skill_dirs_reads_allowed_tools(tmp_path: Path):
     from app.core.settings_bundle_import import collect_tool_names_from_skill_dirs
 
