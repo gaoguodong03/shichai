@@ -55,6 +55,49 @@ def test_get_api_key_requires_configuration(monkeypatch: pytest.MonkeyPatch):
         audio_asr.get_api_key()
 
 
+def test_default_transcription_prompt_lives_in_platform_template_file():
+    template_path = Path(__file__).resolve().parents[2] / "backend/app/agent/platform_prompt_templates.json"
+    template_text = template_path.read_text(encoding="utf-8")
+    module_text = Path(audio_asr.__file__).read_text(encoding="utf-8")
+
+    assert "audio_asr.default_transcription.v1" in template_text
+    assert "请将这段音频逐字转写为文本。只输出转写内容，不要编造。" not in module_text
+
+
+def test_request_transcription_uses_template_default_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    audio_file = tmp_path / "clip.wav"
+    audio_file.write_bytes(b"wav")
+    captured: dict[str, str] = {}
+
+    def fake_multipart(fields, file_path, mime_type):
+        captured.update(fields)
+        return b"body", "boundary"
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"text":"ok"}'
+
+    monkeypatch.setattr(audio_asr, "_multipart_body", fake_multipart)
+    monkeypatch.setattr(audio_asr.urllib.request, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    audio_asr._request_transcription(
+        audio_path=audio_file,
+        api_key="key",
+        base_url="http://example.test/v1",
+        model="asr",
+        language="",
+        prompt="",
+    )
+
+    assert captured["prompt"] == "请将这段音频逐字转写为文本。只输出转写内容，不要编造。"
+
+
 def test_transcribe_audio_file_returns_current_stdout_shape_for_errors():
     result = json.loads(audio_asr.transcribe_audio_file("backend/data/users/u/sessions/s/workspace/missing.wav"))
 

@@ -27,6 +27,8 @@ DEFAULT_DATA_ROOT = BACKEND_DIR / "data"
 DEFAULT_BASE_URL = "http://10.129.50.230/v1"
 DEFAULT_MODEL = "qwen3-asr-1.7b"
 DEFAULT_CHUNK_SECONDS = 120
+PLATFORM_PROMPT_TEMPLATES_PATH = BACKEND_DIR / "app" / "agent" / "platform_prompt_templates.json"
+DEFAULT_TRANSCRIPTION_PROMPT_ID = "audio_asr.default_transcription.v1"
 SUPPORTED_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".webm", ".amr"}
 
 mcp = FastMCP("Audio ASR")
@@ -103,6 +105,17 @@ def _request_timeout() -> float | None:
     return seconds if seconds > 0 else None
 
 
+def _platform_prompt_template(prompt_id: str) -> str:
+    """Read one platform prompt template without requiring package import path setup."""
+    raw = json.loads(PLATFORM_PROMPT_TEMPLATES_PATH.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise RuntimeError("platform prompt templates must be a JSON object")
+    template = raw.get(prompt_id)
+    if not isinstance(template, str) or not template.strip():
+        raise RuntimeError(f"platform prompt template is missing: {prompt_id}")
+    return template.strip()
+
+
 def _multipart_body(fields: dict[str, str], file_path: Path, mime_type: str) -> tuple[bytes, str]:
     boundary = "----audio-asr-" + uuid.uuid4().hex
     chunks: list[bytes] = []
@@ -144,7 +157,7 @@ def _request_transcription(
         {
             "model": model,
             "language": language.strip(),
-            "prompt": prompt.strip() or "请将这段音频逐字转写为文本。只输出转写内容，不要编造。",
+            "prompt": prompt.strip() or _platform_prompt_template(DEFAULT_TRANSCRIPTION_PROMPT_ID),
         },
         audio_path,
         mime_type,
