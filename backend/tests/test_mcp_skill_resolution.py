@@ -8,6 +8,13 @@ def test_resolve_skill_mcp_declarations_by_declared_name():
     assert missing == []
 
 
+def test_resolve_skill_mcp_declarations_rejects_case_mismatch():
+    servers = [{"name": "Exa"}]
+    resolved, missing = resolve_skill_mcp_declarations(["exa"], servers)
+    assert resolved == []
+    assert missing == ["exa"]
+
+
 def test_resolve_skill_mcp_declarations_by_display_name():
     servers = [{"name": "Exa 搜索"}]
     resolved, missing = resolve_skill_mcp_declarations(["Exa 搜索"], servers)

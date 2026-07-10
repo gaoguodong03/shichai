@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
 
 def normalized_name_key(raw: Any) -> str:
-    return str(raw or "").strip().casefold()
+    return str(raw or "").strip()
 
 
 def build_mcp_server_index(
