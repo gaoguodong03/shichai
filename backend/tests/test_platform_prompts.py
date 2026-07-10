@@ -378,6 +378,36 @@ def test_skill_workspace_tool_lines_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry():
+    """ToolSpec descriptions are LLM-visible and must not be hardcoded in runtime modules."""
+    files = [
+        ROOT / "backend/app/tools/read_file.py",
+        ROOT / "backend/app/tools/write_workspace_file.py",
+        ROOT / "backend/app/agent/tools_for_skill.py",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+    for phrase in [
+        "读取用户引用的文件内容。path 为工作区内相对路径",
+        "将文本内容写入当前 Chat 对应的工作区",
+        "在当前工作区对文本文件做增量编辑",
+        "重命名或移动当前工作区内的文件/目录。",
+        "在当前工作区新建目录。",
+        "递归列出当前工作区目录内容（含子目录）。",
+    ]:
+        assert phrase not in combined
+
+    for prompt_id in [
+        "tool.description.read_workspace_file.v1",
+        "tool.description.write_workspace_file.v1",
+        "tool.description.edit_workspace_file.v1",
+        "tool.description.rename_workspace_file.v1",
+        "tool.description.mkdir_workspace.v1",
+        "tool.description.list_workspace_directory.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_image_generation_default_user_prompt_uses_platform_prompt_registry():
     """Image tool default user prompt text belongs in the shared prompt registry."""
     tool_text = (ROOT / "backend/app/tools/chatanywhere_image_cli_lib.py").read_text(encoding="utf-8")

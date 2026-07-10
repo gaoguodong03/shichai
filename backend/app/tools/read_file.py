@@ -105,10 +105,7 @@ def create_read_file_tool(session_id: str) -> ToolSpec:
 
     return ToolSpec.from_function(
         name="read_workspace_file",
-        description=(
-            "读取用户引用的文件内容。path 为工作区内相对路径（如 report.md 或 notes/report.txt）；"
-            "文件经 OpenSandbox 在挂载的 /workspace 下读取，而非宿主进程直读。"
-        ),
+        description=render_platform_prompt("tool.description.read_workspace_file.v1", {}),
         coroutine=_read_file,
         args_schema=ReadFileInput,
     )

@@ -4,6 +4,7 @@ import re
 
 from pydantic import BaseModel, Field
 
+from app.agent.platform_prompts import render_platform_prompt
 from app.agent.tool_spec import ToolSpec
 from app.agent.sandbox_workspace_access import get_shared_sandbox_service
 from app.agent.workspace_visibility import WorkspacePathError, internal_system_path_error, normalize_public_workspace_path
@@ -144,12 +145,7 @@ def create_write_workspace_file_tool(workspace_id: str) -> ToolSpec:
 
     return ToolSpec.from_function(
         name="write_workspace_file",
-        description=(
-            "将文本内容写入当前 Chat 对应的工作区（workspace）中的文件（经 OpenSandbox /workspace）。\n"
-            "- path: 工作区内相对路径。项目生成的新文件名统一使用 文件名-当前文件时间戳.扩展名，"
-            "例如 'notes/report-2026070422145700.md'；工具按传入 path 原样写入，不替换或校验时间戳。\n"
-            "- content: 要保存的完整文本内容。"
-        ),
+        description=render_platform_prompt("tool.description.write_workspace_file.v1", {}),
         coroutine=_write_to_workspace_file,
         args_schema=WriteWorkspaceFileInput,
     )

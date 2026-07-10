@@ -35,6 +35,7 @@ from app.tools.run_skill_script import create_run_skill_script_tool, skill_has_s
 from app.tools.write_workspace_file import create_write_workspace_file_tool
 from app.tools.filesystem_session_wrapper import wrap_filesystem_tools
 from app.agent.tool_spec import ToolSpec
+from app.agent.platform_prompts import render_platform_prompt
 
 from pydantic import BaseModel, Field
 
@@ -266,25 +267,25 @@ def _create_builtin_workspace_tools(workspace_id: str) -> List:
         create_write_workspace_file_tool(workspace_id),
         ToolSpec.from_function(
             name="edit_workspace_file",
-            description="在当前工作区对文本文件做增量编辑（按 old_text 替换为 new_text）。",
+            description=render_platform_prompt("tool.description.edit_workspace_file.v1", {}),
             coroutine=_edit_workspace_file,
             args_schema=EditWorkspaceFileInput,
         ),
         ToolSpec.from_function(
             name="rename_workspace_file",
-            description="重命名或移动当前工作区内的文件/目录。target_path 是工作区内目标相对路径。",
+            description=render_platform_prompt("tool.description.rename_workspace_file.v1", {}),
             coroutine=_rename_workspace_file,
             args_schema=RenameWorkspaceFileInput,
         ),
         ToolSpec.from_function(
             name="mkdir_workspace",
-            description="在当前工作区新建目录。",
+            description=render_platform_prompt("tool.description.mkdir_workspace.v1", {}),
             coroutine=_mkdir_workspace,
             args_schema=MkdirWorkspaceInput,
         ),
         ToolSpec.from_function(
             name="list_workspace_directory",
-            description="递归列出当前工作区目录内容（含子目录）。",
+            description=render_platform_prompt("tool.description.list_workspace_directory.v1", {}),
             coroutine=_list_workspace_directory,
             args_schema=ListWorkspaceDirectoryInput,
         ),
