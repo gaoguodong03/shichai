@@ -95,10 +95,10 @@ async def expert_llm_pick_skill(
             "next_action": round_user_text or "（无）",
         },
     )
-    human = "请按系统提示选择本轮唯一 Skill。"
+    user_prompt = render_platform_prompt("expert.select_skill.user_prompt.v1", {})
     try:
         client = llm.get_client()
-        out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=human)])
+        out = await client.ainvoke([SystemMessage(content=sys_msg), HumanMessage(content=user_prompt)])
         raw = out.content if hasattr(out, "content") else str(out)
         if isinstance(raw, list):
             raw = "".join(str(x) for x in raw)

@@ -56,6 +56,7 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         ROOT / "backend/app/agent/group_chat_prompt_builder.py",
         ROOT / "backend/app/agent/group_chat_presentation_rewriter.py",
         ROOT / "backend/app/agent/expert_self_awareness.py",
+        ROOT / "backend/app/agent/expert_runtime.py",
         ROOT / "backend/app/agent/simple_agent_messages.py",
         ROOT / "backend/app/agent/skill_agent_runtime.py",
         ROOT / "backend/app/agent/simple_agent.py",
@@ -80,10 +81,12 @@ def test_platform_owned_llm_prompt_text_is_not_embedded_in_runtime_modules():
         "本轮工具调用格式不符合要求，平台未执行文件操作；",
         "以下最近讨论仅供承接上下文；本轮用户输入优先。",
         "上一位专家：",
+        "请按系统提示选择本轮唯一 Skill。",
     ]:
         assert phrase not in combined
     for prompt_id in [
         "host.system.boundary.v1",
+        "expert.select_skill.user_prompt.v1",
         "expert.action.default.v1",
         "expert.action.memory.v1",
         "expert.action.structured_missing.v1",
