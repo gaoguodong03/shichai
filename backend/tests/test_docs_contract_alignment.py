@@ -64,3 +64,17 @@ def test_skill_script_manifest_has_independent_module_boundary():
         "def _input_schema_from_manifest",
     ]:
         assert old_private_definition not in runner_text
+
+
+def test_group_chat_archive_has_independent_module_boundary():
+    """Archive segmentation is presentation logic, not session state storage."""
+    archive_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_archive.py"
+    state_module = PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_state.py"
+
+    assert archive_module.exists()
+    archive_text = archive_module.read_text(encoding="utf-8")
+    state_text = state_module.read_text(encoding="utf-8")
+
+    assert "def build_archive_segments" in archive_text
+    assert "def build_archive_segments" not in state_text
+    assert len(state_text.splitlines()) < 600

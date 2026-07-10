@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from app.api.group_chat_archive import build_archive_segments
 from app.agent.message_contracts import ChatMessageRecord
 from app.core.user_context import get_current_user_context
 
@@ -539,79 +540,3 @@ def cleanup_orphan_group_histories(meta: Dict[str, Dict[str, Any]]) -> int:
             except OSError:
                 logger.warning("清理孤儿会话目录失败: %s", child, exc_info=True)
     return deleted
-
-
-def build_archive_segments(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Group messages into archive segments by user turn, excluding host messages."""
-    segments: List[Dict[str, Any]] = []
-    current: Optional[Dict[str, Any]] = None
-
-    def _ensure_current() -> Dict[str, Any]:
-        nonlocal current
-        if current is None:
-            current = {
-                "user": None,
-                "experts": {},
-            }
-        return current
-
-    def _flush() -> None:
-        nonlocal current
-        if not current:
-            current = None
-            return
-        has_user = bool(current.get("user"))
-        experts = current.get("experts") or {}
-        has_expert = any((v.get("messages") or []) for v in experts.values()) if isinstance(experts, dict) else False
-        if has_user or has_expert:
-            expert_list = []
-            if isinstance(experts, dict):
-                for _, v in experts.items():
-                    if isinstance(v, dict):
-                        expert_list.append(v)
-            segments.append(
-                {
-                    "user": current.get("user"),
-                    "experts": expert_list,
-                }
-            )
-        current = None
-
-    for m in messages or []:
-        if not isinstance(m, dict):
-            continue
-        speaker = m.get("speaker") if isinstance(m.get("speaker"), dict) else {}
-        speaker_type = str(speaker.get("type") or "").strip()
-        if speaker_type == "host":
-            continue
-        if speaker_type == "user":
-            _flush()
-            cur = _ensure_current()
-            cur["user"] = {
-                "message_id": m.get("message_id"),
-                "content": _message_content(m),
-                "created_at": m.get("created_at"),
-            }
-            continue
-        if speaker_type == "expert":
-            cur = _ensure_current()
-            agent_name = str(speaker.get("agent_name") or "").strip()
-            if not agent_name:
-                continue
-            experts = cur.get("experts")
-            if not isinstance(experts, dict):
-                experts = {}
-                cur["experts"] = experts
-            if agent_name not in experts:
-                experts[agent_name] = {"agent_name": agent_name, "messages": []}
-            item = {
-                "message_id": m.get("message_id"),
-                "content": _message_content(m),
-                "created_at": m.get("created_at"),
-            }
-            if speaker.get("skill") is not None:
-                item["skill"] = speaker.get("skill")
-            experts[agent_name]["messages"].append(item)
-
-    _flush()
-    return segments
