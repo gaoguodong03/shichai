@@ -5,11 +5,27 @@ from app.agent.platform_prompts import PLATFORM_PROMPTS, get_platform_prompt, re
 
 
 ROOT = Path(__file__).resolve().parents[2]
+PROMPT_TEMPLATE_FILE = ROOT / "backend/app/agent/platform_prompt_templates.json"
 
 
 def test_platform_prompts_are_registered_by_prompt_id():
     assert "host.select_next_speaker.v1" in PLATFORM_PROMPTS
     assert get_platform_prompt("host.select_next_speaker.v1").prompt_id == "host.select_next_speaker.v1"
+
+
+def test_platform_prompt_templates_live_in_standalone_file():
+    """Platform prompt text belongs in one template file, not in the Python registry."""
+    assert PROMPT_TEMPLATE_FILE.exists()
+    registry_text = (ROOT / "backend/app/agent/platform_prompts.py").read_text(encoding="utf-8")
+    template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")
+
+    for phrase in [
+        "你是书童四九平台的会话主持人",
+        "你是当前专家的 Skill 选择器",
+        "请基于用户第一条有效输入生成一个简短会话标题",
+    ]:
+        assert phrase in template_text
+        assert phrase not in registry_text
 
 
 def test_host_prompt_requires_current_contract_fields():

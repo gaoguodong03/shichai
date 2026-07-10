@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -39,6 +40,18 @@ def test_backend_runtime_does_not_keep_session_index_contract():
 
     assert "SESSION_INDEX_FILE" not in combined
     assert "sessions/index.json" not in combined
+
+
+def test_architecture_docs_do_not_advertise_session_index_contract():
+    """Architecture docs must not reintroduce sessions/index.json after the contract removed it."""
+    docs = [
+        PROJECT_ROOT / "docs" / "architecture" / "user-resource-store" / "README.md",
+        PROJECT_ROOT / "docs" / "architecture" / "user-resource-store" / "storage-standard.md",
+    ]
+
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"sessions/\s*\n\s*index\.json", text), path
 
 
 def test_skill_script_manifest_has_independent_module_boundary():

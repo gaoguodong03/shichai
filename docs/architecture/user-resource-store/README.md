@@ -54,8 +54,6 @@ data/users/{user_id}/
       settings.json
 
   sessions/
-    index.json
-
     {session_id}/
       session.json
       history.json
@@ -90,7 +88,7 @@ data/users/{user_id}/
 1. `user_id` 是用户资源目录主键，邮箱和用户名只是登录字段。
 2. 不在主路径兼容旧邮箱目录；旧数据迁移用一次性迁移脚本处理。
 3. `resources/` 内的每类资源都目录化，避免巨型 JSON 成为唯一真相。
-4. `index.json` 只服务列表页和排序，真实内容以资源目录中的主体文件为准。
+4. 资源中心可用资源级 `index.json` 服务列表页和排序；会话列表不依赖 `sessions/index.json`，而是扫描 `sessions/{session_id}/session.json`。
 5. 资源之间只保存引用，不复制完整内容。
 6. 环境变量真实值只保存在 `settings/env.enc.json`，资源文件只能保存环境变量名或 `${env:NAME}`。
 7. 沙箱可以物理挂载当前用户全部 Skill，但逻辑上只暴露本轮允许的 Skill 和工具。
