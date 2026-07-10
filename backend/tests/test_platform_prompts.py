@@ -136,6 +136,23 @@ def test_group_title_user_messages_use_platform_prompt_registry():
     assert "title.group_topic.user_messages.v1" in PLATFORM_PROMPTS
 
 
+def test_host_agent_catalog_sections_use_platform_prompt_registry():
+    """Host scheduler catalog labels belong in platform prompt templates."""
+    runtime_text = (ROOT / "backend/app/agent/group_chat_host_runtime.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "当前会话成员：",
+        "可建议邀请的专家：",
+    ]:
+        assert phrase not in runtime_text
+
+    rendered_members = render_platform_prompt("host.agent_catalog.members.v1", {"member_lines": "- 写作专家: 写作"})
+    rendered_invitable = render_platform_prompt("host.agent_catalog.invitable.v1", {"invitable_lines": "- 检索专家: 检索"})
+
+    assert "当前会话成员：" in rendered_members
+    assert "可建议邀请的专家：" in rendered_invitable
+
+
 def test_platform_prompt_templates_do_not_depend_on_raw_tool_stream_fields():
     """Prompt templates must not ask the model to reason from raw tool stdout/stderr fields."""
     template_text = PROMPT_TEMPLATE_FILE.read_text(encoding="utf-8")

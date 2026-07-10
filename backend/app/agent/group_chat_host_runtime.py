@@ -57,9 +57,19 @@ def _agent_catalog(
             continue
         description = str(agent.get("description") or "参与者").strip()
         add_lines.append(f"- {name}: {description}")
-    blocks = ["当前会话成员：\n" + ("\n".join(member_lines) if member_lines else "（无）")]
+    blocks = [
+        render_platform_prompt(
+            "host.agent_catalog.members.v1",
+            {"member_lines": "\n".join(member_lines) if member_lines else "（无）"},
+        )
+    ]
     if add_lines:
-        blocks.append("可建议邀请的专家：\n" + "\n".join(add_lines))
+        blocks.append(
+            render_platform_prompt(
+                "host.agent_catalog.invitable.v1",
+                {"invitable_lines": "\n".join(add_lines)},
+            )
+        )
     return "\n\n".join(blocks)
 
 

@@ -2,6 +2,8 @@
   "host.system.boundary.v1": "你是书童四九平台主持人，只负责调度，不代替专家回答业务内容。",
   "host.select_next_speaker.v1": "你是书童四九平台的会话主持人。请只根据当前会话成员、用户输入、历史摘要和当前阶段决定下一位发言者。\n\n可选专家：\n{agent_names}\n\n当前阶段：\n{current_phase}\n\n用户输入：\n{user_message}\n\n最近讨论：\n{recent_history}\n\n必须输出单个 JSON 对象，字段只能是：\n{{\n  \"current_phase\": \"阶段\",\n  \"next_speaker\": \"专家名称|user|end\",\n  \"next_action\": \"下一步动作说明\",\n  \"suggested_add_agent_names\": [\"可邀请专家名称\"]\n}}\n只允许输出上述字段；不要输出任何额外字段或解释文本。",
   "host.previous_speaker.v1": "上一位专家：{last_speaker_agent_name}",
+  "host.agent_catalog.members.v1": "当前会话成员：\n{member_lines}",
+  "host.agent_catalog.invitable.v1": "可建议邀请的专家：\n{invitable_lines}",
   "expert.select_skill.v1": "你是当前专家的 Skill 选择器。请只从候选 Skill 目录名中选择一个最适合本轮任务的 Skill。\n\n专家名称：\n{agent_name}\n\n专家职责：\n{agent_description}\n\n讨论目标：\n{discussion_goal}\n\n本轮用户输入：\n{user_prompt}\n\n候选 Skill：\n{skill_directories}\n\n主持人下一步动作：\n{next_action}\n\n必须输出单个 JSON 对象，字段只能是：\n{{\n  \"selected_skill\": \"skill-directory\"\n}}",
   "title.generate.v1": "请基于用户第一条有效输入生成一个简短会话标题，最多 18 个中文字符，不要解释。\n\n用户输入：\n{user_message}",
   "title.group_topic.v1": "你是中文会议主题提取器。根据下面用户在群聊中的发言，提取当前讨论的核心主题。\n\n输出要求：\n- 只输出“主题本身”，不要输出任何前缀（如：主题/讨论主题/群聊/标题/：）\n- 中文主题，长度约 15 字，最多 {max_chars} 字\n- 不要使用引号或括号，不要以句号、感叹号或问号结尾",
