@@ -92,7 +92,7 @@ def create_session_internal(
     agent_names: Optional[List[str]] = None,
     host: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Create session.json from the current contract without legacy controls."""
+    """Create session.json without legacy controls and leave workspace creation lazy."""
     instances = load_agent_instances()
     names = _dedupe_names(agent_names)
     valid_names = set(_agent_name_map(instances))
@@ -114,14 +114,12 @@ def create_session_internal(
     session_definitions[gsid] = row
     _save_session_definitions(session_definitions)
     _save_group_history(gsid, [], checkpoint_trigger=None)
-    # 工作区目录延后新建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 新建
     try:
         from app.session_state.service import capture_session_checkpoint
 
         capture_session_checkpoint(gsid, trigger="session_created")
     except Exception:
         logger.warning("session_state initial checkpoint failed: %s", gsid, exc_info=True)
-    # 工作区目录延后创建：仅在用户首次使用工作区（列表/上传/导出等）时由 files API 或 export 创建
     return _build_session_payload(gsid, session_definitions[gsid])
 
 def export_session_to_markdown(session_id: str, filename: Optional[str] = None) -> tuple:
@@ -238,7 +236,7 @@ async def group_session_events_stream(group_session_id: str):
     )
 
 async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
-    """Update only current session contract fields: title, host, and agent_names."""
+    """Update current session fields and record membership changes as host messages."""
     session_definitions = _load_session_definitions()
     if group_session_id not in session_definitions:
         raise HTTPException(status_code=404, detail="Group session not found")
@@ -279,7 +277,6 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
         session_definitions[group_session_id]["agent_names"] = list(current)
         if current != before_names:
             _clear_host_scheduler_state(group_session_id)
-        # 成员变更：邀请 / 移出各写入一条系统提示（合并一次读写历史）
         unique_added = (
             list(
                 dict.fromkeys(
@@ -330,7 +327,7 @@ async def update_group_session(group_session_id: str, body: GroupSessionUpdate):
     return {"status": "ok", "data": _build_session_payload(group_session_id, session_definitions[group_session_id])}
 
 async def delete_group_session(group_session_id: str):
-    """删除群聊会话：同时删除会话定义、群聊历史文件与该会话的工作区目录。"""
+    """删除群聊会话：同时删除会话定义、历史、工作区和检查点目录。"""
     current_user = get_current_user()
     await _cancel_group_session_run(group_session_id, reason="session_deleted")
     try:
@@ -345,7 +342,6 @@ async def delete_group_session(group_session_id: str):
     del session_definitions[group_session_id]
     _save_session_definitions(session_definitions, preserve_unmentioned=False)
     _cleanup_orphan_group_histories(session_definitions)
-    # 删除会话目录（history / workspace / checkpoints）
     user_ctx = current_user.ctx
     from app.session_state.paths import SessionLayoutPaths
 

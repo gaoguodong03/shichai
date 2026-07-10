@@ -204,11 +204,15 @@ def test_skill_bundle_import_reference_rewrites_have_core_module_boundary():
 
 
 def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
-    """Resource import modules follow the comment placement coding standard."""
+    """Contract-critical modules follow the comment placement coding standard."""
     paths = [
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_presets.py",
         PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py",
         PROJECT_ROOT / "backend" / "app" / "core" / "settings_bundle_import.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "group_session_service.py",
+        PROJECT_ROOT / "backend" / "app" / "api" / "group_chat_state.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "group_chat_runtime.py",
+        PROJECT_ROOT / "backend" / "app" / "agent" / "message_contracts.py",
     ]
 
     for path in paths:
