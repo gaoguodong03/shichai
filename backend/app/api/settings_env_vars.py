@@ -68,12 +68,12 @@ def save_env_vars_raw(data: Dict[str, Any]) -> None:
     atomic_write_json(env_vars_path(), data)
 
 
-def load_env_var_values_for_user(username: str) -> Dict[str, str]:
-    """Load platform env values for a user without requiring request context."""
-    username = (username or "").strip()
-    if not username:
+def load_env_var_values_for_user(user_id: str) -> Dict[str, str]:
+    """Load platform env values for a user_id without requiring request context."""
+    user_id = (user_id or "").strip()
+    if not user_id:
         return {}
-    return _load_env_values_from_path((get_user_context_for(username).settings_dir / "env.enc.json").resolve())
+    return _load_env_values_from_path((get_user_context_for(user_id).settings_dir / "env.enc.json").resolve())
 
 
 def load_env_var_values() -> Dict[str, str]:

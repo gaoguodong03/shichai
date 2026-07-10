@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def _request_skills_loader():
     """Return the current user's Skill loader for host and expert runtime setup."""
     user = get_current_user()
-    return get_skills_loader_for_user(user.username, user.ctx.skills_dir)
+    return get_skills_loader_for_user(user.user_id, user.ctx.skills_dir)
 
 
 def _host_skill_directory(host_agent: Dict[str, Any]) -> str:

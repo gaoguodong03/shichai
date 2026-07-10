@@ -177,8 +177,10 @@ def _session_preset_validation_payload(preset: Dict[str, Any]) -> Dict[str, Any]
     from app.api.agents import load_agent_instances
     from app.core.user_settings_paths import skills_dir_path
 
-    un = get_current_username() or ""
-    sl = get_skills_loader_for_user(un, skills_dir_path())
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    sl = get_skills_loader_for_user(user_ctx.user_id, skills_dir_path())
 
     def skill_ok(sid: str) -> bool:
         return bool(sl.get_skill_full_content(sid))
@@ -320,9 +322,9 @@ def _get_skills_dir() -> Path:
 
 async def _invalidate_mcp_runtime_after_config_change():
     """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
-    un = get_current_username()
-    if un:
-        await dispose_mcp_runtime_for_user(un)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        await dispose_mcp_runtime_for_user(user_ctx.user_id)
 
 
 def _content_disposition_attachment(filename: str) -> str:
@@ -631,7 +633,9 @@ async def _import_scene_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         norm = normalize_preset_dict_for_validation(norm)
         if norm is None:
             raise HTTPException(status_code=400, detail="场景分享包无效")
-        invalidate_skills_cache_for_user(get_current_username() or "")
+        user_ctx = get_current_user_context(default_fallback=False)
+        if user_ctx is not None:
+            invalidate_skills_cache_for_user(user_ctx.user_id)
         for sid in imported_skills:
             skill_dir = user_skills / sid
             if not (skill_dir / "SKILL.md").is_file():

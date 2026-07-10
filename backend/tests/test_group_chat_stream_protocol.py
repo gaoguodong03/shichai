@@ -103,6 +103,65 @@ async def test_chat_stream_starts_with_start_event(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_chat_stream_registers_run_with_stable_user_id(monkeypatch, tmp_path):
+    from app.agent import group_chat_runtime as runtime
+    from app.api import group_chat_state as state
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setattr(state, "GROUP_SESSIONS_ROOT", tmp_path)
+
+    async def _init_noop():
+        return None
+
+    async def _host_decision(*_args, **_kwargs):
+        return {
+            "current_phase": "等待用户",
+            "next_speaker": "user",
+            "next_action": "等待用户补充。",
+            "suggested_add_agent_names": [],
+        }
+
+    captured = {}
+
+    async def _register_run(_session_id: str, *, user_id: str, task):
+        captured["user_id"] = user_id
+        return "run-stable-user"
+
+    monkeypatch.setattr(runtime, "ensure_mcp_and_skills_initialized", _init_noop)
+    monkeypatch.setattr(runtime, "load_agent_instances", lambda: [])
+    monkeypatch.setattr(runtime, "load_app_settings", lambda: {"default_llm": "", "system_prompt": "", "host": {}})
+    monkeypatch.setattr(runtime, "_get_llm_for_agent", lambda _agent, _settings: object())
+    monkeypatch.setattr(runtime, "_host_decide_by_agent", _host_decision)
+    monkeypatch.setattr(runtime, "register_group_run", _register_run)
+
+    session_id = "s-chat-stream-user-id"
+    state.save_session_definitions(
+        {
+            session_id: {
+                "title": "稳定用户",
+                "agent_names": [],
+                "host": {"name": "四九"},
+                "created_at": "2026070900000000",
+                "updated_at": "2026070900000000",
+            }
+        }
+    )
+    state.save_group_history(session_id, [])
+
+    token = set_current_user_identity(user_id="user-stream-stable", username="stream@example.com")
+    try:
+        response = await runtime.group_chat_stream(
+            session_id,
+            GroupChatRequest(message="你好", client_message_id="client-user-id"),
+        )
+        await _collect_stream_events(response)
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_id"] == "user-stream-stable"
+
+
+@pytest.mark.asyncio
 async def test_chat_stream_keeps_missing_agent_references_in_session(monkeypatch, tmp_path):
     from app.agent import group_chat_runtime as runtime
     from app.api import group_chat_state as state

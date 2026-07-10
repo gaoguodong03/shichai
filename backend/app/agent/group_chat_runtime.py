@@ -223,7 +223,7 @@ async def group_chat_stream(group_session_id: str, request: GroupChatRequest):
         or normalize_discussion_goal(user_text)
         or render_platform_prompt("session.discussion_goal.default.v1", {})
     )
-    stream_user = (get_current_user().username or "").strip()
+    stream_user = (get_current_user().user_id or "").strip()
 
     async def run_events() -> AsyncIterator[str]:
         current_task = asyncio.current_task()

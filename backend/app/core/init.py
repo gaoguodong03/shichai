@@ -32,7 +32,7 @@ def _user_has_startup_resources(user_dir: Path) -> bool:
     return _skills_dir_has_skill_files(resources / "skills") or has_tools
 
 
-def _known_usernames() -> list[str]:
+def _known_user_ids() -> list[str]:
     root = users_data_root()
     if not root.exists():
         return []
@@ -47,17 +47,17 @@ def _known_usernames() -> list[str]:
         return []
 
 
-async def _load_user_mcp_and_skills(username: str) -> tuple[int, int, int]:
-    ctx = get_user_context_for(username)
+async def _load_user_mcp_and_skills(user_id: str) -> tuple[int, int, int]:
+    ctx = get_user_context_for(user_id)
     skills_count = 0
     if _skills_dir_has_skill_files(ctx.skills_dir):
-        skills_loader = get_skills_loader_for_user(username, ctx.skills_dir)
+        skills_loader = get_skills_loader_for_user(user_id, ctx.skills_dir)
         skills_count = len(getattr(skills_loader, "skills", {}) or {})
 
     mcp_server_count = 0
     mcp_tool_count = 0
     if ctx.tools_dir.is_dir():
-        mcp_manager = await ensure_user_mcp_config_loaded(username)
+        mcp_manager = await ensure_user_mcp_config_loaded(user_id)
         mcp_server_count = len(getattr(mcp_manager, "server_configs", []) or [])
         # 启动期只读配置，不连接 MCP Server；这里仅统计已经存在的工具缓存。
         mcp_tool_count = len(getattr(mcp_manager, "tools", {}) or {})
@@ -74,29 +74,29 @@ async def ensure_mcp_and_skills_initialized() -> None:
     global _initialized
     if _initialized:
         return
-    usernames = _known_usernames()
-    logger.info("书童四九：开始预热 MCP / Skills 配置 users=%s", len(usernames))
+    user_ids = _known_user_ids()
+    logger.info("书童四九：开始预热 MCP / Skills 配置 users=%s", len(user_ids))
 
     ok_count = 0
     failed_count = 0
-    for username in usernames:
+    for user_id in user_ids:
         try:
-            skills_count, mcp_server_count, mcp_tool_count = await _load_user_mcp_and_skills(username)
+            skills_count, mcp_server_count, mcp_tool_count = await _load_user_mcp_and_skills(user_id)
             ok_count += 1
             logger.info(
                 "mcp_skills_startup_user_loaded user=%s skills=%s mcp_servers=%s mcp_tools=%s",
-                username,
+                user_id,
                 skills_count,
                 mcp_server_count,
                 mcp_tool_count,
             )
         except Exception as exc:  # noqa: BLE001
             failed_count += 1
-            logger.exception("mcp_skills_startup_user_failed user=%s err=%s", username, exc)
+            logger.exception("mcp_skills_startup_user_failed user=%s err=%s", user_id, exc)
 
     logger.info(
         "mcp_skills_startup_done users_total=%s ok=%s failed=%s",
-        len(usernames),
+        len(user_ids),
         ok_count,
         failed_count,
     )

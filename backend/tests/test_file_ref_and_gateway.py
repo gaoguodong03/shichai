@@ -147,7 +147,7 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     monkeypatch.setenv("EXISTING_ENV", "do-not-inherit")
 
     env = mcp_manager._build_stdio_child_env(
-        username="user-runtime",
+        user_id="user-runtime",
         raw_env={"JENIYA_API_KEY": "${env:JENIYA_API_KEY}"},
         env_vars={"JENIYA_API_KEY": "sk-test"},
     )
@@ -156,6 +156,170 @@ def test_mcp_stdio_env_includes_stable_user_identity(monkeypatch, tmp_path):
     assert env["JENIYA_API_KEY"] == "sk-test"
     assert env["ST49_MCP_USER_ID"] == "user-runtime"
     assert env["ST49_MCP_USERNAME"] == "user-runtime"
+
+
+@pytest.mark.asyncio
+async def test_current_mcp_manager_loads_resources_from_stable_user_id(monkeypatch, tmp_path):
+    import app.mcp.manager as mcp_manager
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    with mcp_manager._mcp_user_lock:
+        mcp_manager._mcp_by_user.clear()
+
+    tool_dir = tmp_path / "users" / "user-stable-manager" / "resources" / "tools" / "Stable Search"
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "tool.json").write_text(
+        json.dumps(
+            {
+                "name": "Stable Search",
+                "type": "mcp",
+                "server_config": {
+                    "mcpServers": {
+                        "Stable Search": {
+                            "command": "echo",
+                            "args": ["ok"],
+                        }
+                    }
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    token = set_current_user_identity(user_id="user-stable-manager", username="manager@example.com")
+    try:
+        mgr = mcp_manager.get_mcp_manager()
+        await mgr.load_config()
+    finally:
+        reset_current_user_identity(token)
+        with mcp_manager._mcp_user_lock:
+            mcp_manager._mcp_by_user.clear()
+
+    assert [row.get("name") for row in mgr.server_configs] == ["Stable Search"]
+
+
+@pytest.mark.asyncio
+async def test_settings_skills_mcp_invalidation_uses_stable_user_id(monkeypatch):
+    from app.api import settings_skills
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured = {}
+
+    async def fake_dispose(user_identity: str):
+        captured["user_identity"] = user_identity
+
+    monkeypatch.setattr(settings_skills, "dispose_mcp_runtime_for_user", fake_dispose)
+
+    token = set_current_user_identity(user_id="user-skill-mcp-cache", username="skill-cache@example.com")
+    try:
+        await settings_skills._invalidate_mcp_runtime_after_config_change()
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_identity"] == "user-skill-mcp-cache"
+
+
+def test_settings_skills_loader_refresh_uses_stable_user_id(monkeypatch):
+    import app.skills.loader as skill_loader
+    from app.api import settings_skills
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured = {}
+
+    def fake_invalidate(user_identity: str):
+        captured["user_identity"] = user_identity
+
+    monkeypatch.setattr(skill_loader, "invalidate_skills_cache_for_user", fake_invalidate)
+
+    token = set_current_user_identity(user_id="user-skill-loader-cache", username="skill-loader@example.com")
+    try:
+        settings_skills._refresh_skills_loader()
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_identity"] == "user-skill-loader-cache"
+
+
+def test_host_runtime_skill_loader_uses_stable_user_id(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from app.agent import group_chat_host_runtime
+
+    captured = {}
+
+    def fake_loader(user_identity, skills_dir):
+        captured["user_identity"] = user_identity
+        captured["skills_dir"] = skills_dir
+        return SimpleNamespace(skills={})
+
+    monkeypatch.setattr(
+        group_chat_host_runtime,
+        "get_current_user",
+        lambda: SimpleNamespace(
+            user_id="user-host-loader",
+            username="host-loader@example.com",
+            ctx=SimpleNamespace(skills_dir=tmp_path / "skills"),
+        ),
+    )
+    monkeypatch.setattr(group_chat_host_runtime, "get_skills_loader_for_user", fake_loader)
+
+    group_chat_host_runtime._request_skills_loader()
+
+    assert captured["user_identity"] == "user-host-loader"
+
+
+def test_agent_validation_skill_loader_uses_stable_user_id(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import app.skills.loader as skill_loader
+    from app.api import agents
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured = {}
+
+    def fake_loader(user_identity, skills_dir):
+        captured["user_identity"] = user_identity
+        return SimpleNamespace(get_skill_full_content=lambda _sid: "")
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr(skill_loader, "get_skills_loader_for_user", fake_loader)
+
+    token = set_current_user_identity(user_id="user-agent-loader", username="agent-loader@example.com")
+    try:
+        agents._agent_validation_payload({"name": "专家", "skills": []})
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_identity"] == "user-agent-loader"
+
+
+def test_session_preset_validation_skill_loader_uses_stable_user_id(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from app.api import agents
+    from app.api import settings_presets
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    captured = {}
+
+    def fake_loader(user_identity, skills_dir):
+        captured["user_identity"] = user_identity
+        return SimpleNamespace(get_skill_full_content=lambda _sid: "")
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    monkeypatch.setattr(settings_presets, "get_skills_loader_for_user", fake_loader)
+    monkeypatch.setattr(agents, "load_agent_instances", lambda: [])
+    monkeypatch.setattr(settings_presets, "load_mcp_config", lambda: [])
+
+    token = set_current_user_identity(user_id="user-preset-loader", username="preset-loader@example.com")
+    try:
+        settings_presets._session_preset_validation_payload({"name": "场景", "agent_names": []})
+    finally:
+        reset_current_user_identity(token)
+
+    assert captured["user_identity"] == "user-preset-loader"
 
 
 def test_mcp_placeholders_only_resolve_platform_env_syntax(monkeypatch):

@@ -86,9 +86,9 @@ router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_depende
 
 async def _invalidate_mcp_runtime_after_config_change():
     """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
-    un = get_current_username()
-    if un:
-        await dispose_mcp_runtime_for_user(un)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        await dispose_mcp_runtime_for_user(user_ctx.user_id)
 
 def _require_user_ctx():
     return require_user_context()
@@ -362,7 +362,9 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
             extra_skill_roots=(get_builtin_skills_dir(),),
         )
         imported_skills, overwritten_skills, directory_name_map = _copy_bundle_skills_to_user_by_directory(tmp, user_skills)
-        invalidate_skills_cache_for_user(get_current_username() or "")
+        user_ctx = get_current_user_context(default_fallback=False)
+        if user_ctx is not None:
+            invalidate_skills_cache_for_user(user_ctx.user_id)
         tool_name_map, mcp_rows_to_import, overwritten_tool_names = _mcp_name_identity_import_plan(load_mcp_config(), mcp_bundle)
         for sid in imported_skills:
             skill_dir = user_skills / sid
@@ -433,12 +435,11 @@ async def _import_expert_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict
 
 def _refresh_skills_loader():
     """使当前用户的技能缓存失效，下次请求重新从磁盘加载。"""
-    from app.core.user_context import get_current_username
     from app.skills.loader import invalidate_skills_cache_for_user
 
-    uname = get_current_username()
-    if uname:
-        invalidate_skills_cache_for_user(uname)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        invalidate_skills_cache_for_user(user_ctx.user_id)
 
 
 @router.get("/settings/skills")

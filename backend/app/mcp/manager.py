@@ -333,7 +333,7 @@ def _missing_mcp_placeholders(val: Any, env_vars: Optional[Dict[str, str]] = Non
 
 def _build_stdio_child_env(
     *,
-    username: Optional[str],
+    user_id: Optional[str],
     raw_env: Optional[Dict[str, Any]],
     env_vars: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, str]]:
@@ -343,7 +343,7 @@ def _build_stdio_child_env(
     available there. Pass the resolved stable user id explicitly so tools that
     write workspace files do not fall back to the anonymous ``free4inno`` root.
     """
-    should_create = bool(raw_env) or bool((username or "").strip())
+    should_create = bool(raw_env) or bool((user_id or "").strip())
     if not should_create:
         return None
 
@@ -368,30 +368,30 @@ def _build_stdio_child_env(
     if isinstance(raw_env, dict):
         env.update({str(k): _subst_mcp_placeholders(str(v), env_vars) for k, v in raw_env.items()})
 
-    uname = (username or "").strip()
-    if uname:
+    uid = (user_id or "").strip()
+    if uid:
         try:
             from app.core.user_context import get_user_context_for
 
-            ctx = get_user_context_for(uname)
-            env["ST49_MCP_USER_ID"] = ctx.user_id or uname
-            env["ST49_MCP_USERNAME"] = ctx.username or uname
+            ctx = get_user_context_for(uid)
+            env["ST49_MCP_USER_ID"] = ctx.user_id or uid
+            env["ST49_MCP_USERNAME"] = ctx.username or uid
         except Exception:
-            logger.warning("mcp_stdio_user_env_resolve_failed username=%s", uname, exc_info=True)
-            env["ST49_MCP_USER_ID"] = uname
-            env["ST49_MCP_USERNAME"] = uname
+            logger.warning("mcp_stdio_user_env_resolve_failed user_id=%s", uid, exc_info=True)
+            env["ST49_MCP_USER_ID"] = uid
+            env["ST49_MCP_USERNAME"] = uid
 
     return env
 
 
-def _load_user_mcp_resource_configs(username: str) -> List[Dict[str, Any]]:
+def _load_user_mcp_resource_configs(user_id: str) -> List[Dict[str, Any]]:
     from app.core.user_context import get_user_context_for
     from app.core.name_based_resources import normalize_tool_row
 
-    uname = (username or "").strip()
-    if not uname:
-        raise ValueError("username required for MCP resources")
-    root = get_user_context_for(uname).tools_dir.resolve()
+    uid = (user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id required for MCP resources")
+    root = get_user_context_for(uid).tools_dir.resolve()
     rows: List[Dict[str, Any]] = []
     if not root.is_dir():
         return rows
@@ -410,22 +410,22 @@ def _load_user_mcp_resource_configs(username: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def get_mcp_manager_for_user(username: str) -> "MCPToolManager":
-    """按用户名返回独立的 MCP 管理器（尚未加载配置时 server_configs 可能为空）。"""
-    uname = (username or "").strip()
-    if not uname:
-        raise ValueError("username required for MCP runtime")
+def get_mcp_manager_for_user(user_id: str) -> "MCPToolManager":
+    """按稳定 user_id 返回独立的 MCP 管理器（尚未加载配置时 server_configs 可能为空）。"""
+    uid = (user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id required for MCP runtime")
     with _mcp_user_lock:
-        mgr = _mcp_by_user.get(uname)
+        mgr = _mcp_by_user.get(uid)
         if mgr is None:
-            mgr = MCPToolManager(username=uname)
-            _mcp_by_user[uname] = mgr
+            mgr = MCPToolManager(user_id=uid)
+            _mcp_by_user[uid] = mgr
         return mgr
 
 
-async def ensure_user_mcp_bootstrapped(username: str) -> "MCPToolManager":
+async def ensure_user_mcp_bootstrapped(user_id: str) -> "MCPToolManager":
     """加载该用户 resources/tools，并对非 lazy 的 Server 建立连接（幂等）。"""
-    mgr = get_mcp_manager_for_user(username)
+    mgr = get_mcp_manager_for_user(user_id)
     if getattr(mgr, "_mcp_boot_done", False):
         return mgr
     async with mgr._bootstrap_lock:
@@ -437,9 +437,9 @@ async def ensure_user_mcp_bootstrapped(username: str) -> "MCPToolManager":
         return mgr
 
 
-async def ensure_user_mcp_config_loaded(username: str) -> "MCPToolManager":
+async def ensure_user_mcp_config_loaded(user_id: str) -> "MCPToolManager":
     """仅加载该用户 resources/tools，不主动连接任何 MCP Server（幂等）。"""
-    mgr = get_mcp_manager_for_user(username)
+    mgr = get_mcp_manager_for_user(user_id)
     if getattr(mgr, "_mcp_boot_done", False) or getattr(mgr, "_mcp_config_loaded", False):
         return mgr
     async with mgr._bootstrap_lock:
@@ -450,18 +450,18 @@ async def ensure_user_mcp_config_loaded(username: str) -> "MCPToolManager":
         return mgr
 
 
-async def dispose_mcp_runtime_for_user(username: str) -> None:
+async def dispose_mcp_runtime_for_user(user_id: str) -> None:
     """关闭并移除某用户的 MCP 运行时（配置更新后调用）。"""
-    uname = (username or "").strip()
-    if not uname:
+    uid = (user_id or "").strip()
+    if not uid:
         return
     with _mcp_user_lock:
-        mgr = _mcp_by_user.pop(uname, None)
+        mgr = _mcp_by_user.pop(uid, None)
     if mgr is not None:
         try:
             await mgr.cleanup()
         except Exception:
-            logger.exception("dispose_mcp_runtime_for_user: cleanup failed for %s", uname)
+            logger.exception("dispose_mcp_runtime_for_user: cleanup failed for %s", uid)
 
 
 async def cleanup_all_mcp_runtimes() -> None:
@@ -480,14 +480,14 @@ def get_mcp_manager() -> "MCPToolManager":
     """兼容旧调用：返回当前登录用户的 MCP 管理器（不自动 bootstrap，请用 ensure_user_mcp_bootstrapped）。"""
     from app.core.security import get_current_user
 
-    return get_mcp_manager_for_user(get_current_user().username)
+    return get_mcp_manager_for_user(get_current_user().user_id)
 
 
 class MCPToolManager:
     """MCP 工具管理器"""
     
-    def __init__(self, username: Optional[str] = None):
-        self._username = (username or "").strip() or None
+    def __init__(self, user_id: Optional[str] = None):
+        self._user_id = (user_id or "").strip() or None
         self.sessions: Dict[str, ClientSession] = {}
         self.tools: Dict[str, ToolSpec] = {}
         self.server_configs: List[Dict[str, Any]] = []
@@ -501,9 +501,9 @@ class MCPToolManager:
             logger.info(f"加载 MCP 配置: {config_path}")
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.server_configs = json.load(f)
-        elif self._username:
-            logger.info("从 resources/tools 加载 MCP 配置: %s", self._username)
-            self.server_configs = _load_user_mcp_resource_configs(self._username)
+        elif self._user_id:
+            logger.info("从 resources/tools 加载 MCP 配置: %s", self._user_id)
+            self.server_configs = _load_user_mcp_resource_configs(self._user_id)
         else:
             config_path = os.getenv("MCP_CONFIG_PATH", "")
             if config_path and os.path.exists(config_path):
@@ -540,11 +540,11 @@ class MCPToolManager:
             session_init_timeout = float((config.get("metadata") or {}).get("session_init_timeout_sec", 15.0))
 
             env_vars: Dict[str, str] = {}
-            if self._username:
+            if self._user_id:
                 try:
                     from app.api.settings_env_vars import load_env_var_values_for_user
 
-                    env_vars = load_env_var_values_for_user(self._username)
+                    env_vars = load_env_var_values_for_user(self._user_id)
                 except Exception:
                     env_vars = {}
 
@@ -563,7 +563,7 @@ class MCPToolManager:
                 raw_env = transport.get("env")
                 # 重要：在 stdio 子进程中保留 PATH 等基础环境变量，否则 npx/python 等可能不可用。
                 # 同时注入稳定用户身份；stdio 子进程没有请求 ContextVar。
-                env = _build_stdio_child_env(username=self._username, raw_env=raw_env, env_vars=env_vars)
+                env = _build_stdio_child_env(user_id=self._user_id, raw_env=raw_env, env_vars=env_vars)
                 params = StdioServerParameters(
                     command=command,
                     args=args,

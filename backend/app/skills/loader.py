@@ -237,9 +237,9 @@ _cache_lock = threading.Lock()
 _user_skill_cache: Dict[str, Tuple[float, SkillsLoader]] = {}
 
 
-def get_skills_loader_for_user(username: str, skills_dir: Path) -> SkillsLoader:
-    """返回指定用户技能目录对应的 SkillsLoader（带 mtime 缓存）。"""
-    key = (username or "").strip()
+def get_skills_loader_for_user(user_id: str, skills_dir: Path) -> SkillsLoader:
+    """返回指定 user_id 技能目录对应的 SkillsLoader（带 mtime 缓存）。"""
+    key = (user_id or "").strip()
     if not key:
         key = "_anonymous"
     sd = skills_dir.resolve()
@@ -255,9 +255,9 @@ def get_skills_loader_for_user(username: str, skills_dir: Path) -> SkillsLoader:
         return loader
 
 
-def invalidate_skills_cache_for_user(username: str) -> None:
+def invalidate_skills_cache_for_user(user_id: str) -> None:
     """技能文件变更后使该用户的缓存失效。"""
-    key = (username or "").strip()
+    key = (user_id or "").strip()
     if not key:
         return
     with _cache_lock:

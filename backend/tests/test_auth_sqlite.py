@@ -295,6 +295,70 @@ def test_authenticated_mcp_resource_center_uses_stable_user_id_dir(env_and_clien
     assert not (db_path.parent / "users" / username).exists()
 
 
+def test_authenticated_mcp_runtime_uses_stable_user_id(env_and_client, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.api import settings_mcp
+
+    client, _db_path = env_and_client
+    username = "mcp-runtime@example.com"
+    data = _auth_register(client, username=username, password="pw-mcp-runtime-123")
+    captured = {}
+
+    class DummySession:
+        async def list_tools(self):
+            return SimpleNamespace(tools=[])
+
+    class DummyManager:
+        server_configs = [{"name": "Stable Search", "type": "mcp"}]
+        sessions = {"Stable Search": DummySession()}
+
+    async def fake_ensure_user_mcp_config_loaded(user_identity: str):
+        captured["user_identity"] = user_identity
+        return DummyManager()
+
+    monkeypatch.setattr(settings_mcp, "ensure_user_mcp_config_loaded", fake_ensure_user_mcp_config_loaded)
+
+    r = client.get(
+        "/api/settings/mcp/Stable%20Search/tools",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+
+    assert r.status_code == 200
+    assert captured["user_identity"] == data["user_id"]
+
+
+def test_authenticated_mcp_config_change_invalidates_stable_user_id(env_and_client, monkeypatch):
+    from app.api import settings_mcp
+
+    client, _db_path = env_and_client
+    username = "mcp-invalidate@example.com"
+    data = _auth_register(client, username=username, password="pw-mcp-invalidate-123")
+    captured = {}
+
+    async def fake_dispose_mcp_runtime_for_user(user_identity: str):
+        captured["user_identity"] = user_identity
+
+    monkeypatch.setattr(settings_mcp, "dispose_mcp_runtime_for_user", fake_dispose_mcp_runtime_for_user)
+
+    r = client.post(
+        "/api/settings/mcp",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+        json={
+            "name": "配置变更 MCP",
+            "type": "mcp",
+            "transport": {
+                "type": "stdio",
+                "command": "echo",
+                "args": ["ok"],
+            },
+        },
+    )
+
+    assert r.status_code == 200
+    assert captured["user_identity"] == data["user_id"]
+
+
 def test_change_account_and_password(env_and_client):
     client, _ = env_and_client
 

@@ -17,7 +17,7 @@ from app.core.resource_store import mirror_rows_to_resource_dir
 from app.core.security import user_context_dependency
 from app.core.name_based_resources import normalize_tool_row
 from app.core.settings_bundle_import import build_single_mcp_bundle_zip_bytes, read_mcp_bundle_rows
-from app.core.user_context import get_current_user_context, get_current_username
+from app.core.user_context import get_current_user_context
 from app.mcp.manager import dispose_mcp_runtime_for_user, ensure_user_mcp_config_loaded, execute_mcp_call
 
 router = APIRouter(tags=["settings"], dependencies=[Depends(user_context_dependency)])
@@ -26,17 +26,17 @@ LEGACY_MCP_RUNTIME_FIELDS = {"enabled", "status", "tool_count"}
 
 async def _mcp_runtime_for_request():
     """当前登录用户的 MCP 运行时（只加载配置，不因查看设置页主动连接 Server）。"""
-    un = get_current_username()
-    if not un:
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
         raise HTTPException(status_code=401, detail="未登录")
-    return await ensure_user_mcp_config_loaded(un)
+    return await ensure_user_mcp_config_loaded(user_ctx.user_id)
 
 
 async def _invalidate_mcp_runtime_after_config_change():
     """工具资源变更后丢弃内存中的 MCP 连接，下次再懒加载。"""
-    un = get_current_username()
-    if un:
-        await dispose_mcp_runtime_for_user(un)
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is not None:
+        await dispose_mcp_runtime_for_user(user_ctx.user_id)
 
 
 class MCPTransport(StrictRequestModel):

@@ -110,8 +110,10 @@ def _agent_validation_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     from app.core.agent_import_validate import validate_agent_instance_row, agent_validation_to_api_dict
     from app.skills.loader import get_skills_loader_for_user
 
-    un = get_current_username() or ""
-    sl = get_skills_loader_for_user(un, _agent_skills_dir())
+    user_ctx = get_current_user_context(default_fallback=False)
+    if user_ctx is None:
+        raise HTTPException(status_code=401, detail="未登录")
+    sl = get_skills_loader_for_user(user_ctx.user_id, user_ctx.skills_dir.resolve())
 
     def skill_ok(sid: str) -> bool:
         return bool(sl.get_skill_full_content(sid))
