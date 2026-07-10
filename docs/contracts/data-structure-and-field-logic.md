@@ -36,7 +36,6 @@ backend/data/users/{user_id}/
     sandbox/requirements.txt
 
   sessions/
-    index.json
     {session_id}/
       session.json
       history.json

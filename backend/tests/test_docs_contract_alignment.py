@@ -5,6 +5,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_formal_docs_tree_excludes_legacy_planning_directories():
+    """Old planning trees must not stay under docs as searchable formal documentation."""
+    for relative in [
+        "docs/superpowers",
+        "docs/project",
+    ]:
+        root = PROJECT_ROOT / relative
+        files = list(root.rglob("*")) if root.exists() else []
+        assert not any(path.is_file() for path in files), relative
+
+
 def test_host_skill_docs_use_current_next_action_contract():
     """Keep Skill authoring docs aligned with the current host scheduler contract."""
     docs = sorted((PROJECT_ROOT / "docs" / "skills").glob("**/*.md"))
@@ -52,6 +63,13 @@ def test_architecture_docs_do_not_advertise_session_index_contract():
     for path in docs:
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"sessions/\s*\n\s*index\.json", text), path
+
+
+def test_data_structure_contract_does_not_advertise_session_index_contract():
+    """The field source-of-truth doc must not show sessions/index.json as current storage."""
+    text = (PROJECT_ROOT / "docs" / "contracts" / "data-structure-and-field-logic.md").read_text(encoding="utf-8")
+
+    assert not re.search(r"sessions/\s*\n\s*index\.json", text)
 
 
 def test_user_resource_storage_docs_use_name_based_resource_index_examples():
