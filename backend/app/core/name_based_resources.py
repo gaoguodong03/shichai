@@ -139,7 +139,7 @@ def normalize_skill_refs(raw: Any) -> List[Dict[str, str]]:
         directory_name = _normalize_skill_folder(item.get("directory_name"))
         if not name or not directory_name:
             continue
-        key = name.casefold()
+        key = directory_name.casefold()
         if key in seen:
             continue
         seen.add(key)

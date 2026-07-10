@@ -143,6 +143,26 @@ def test_frontend_resource_imports_do_not_send_legacy_conflict_controls():
         assert legacy_control not in combined
 
 
+def test_frontend_skill_reference_identity_uses_directory_name_not_display_name():
+    agent_view = read("frontend/src/features/resources/AgentView.vue")
+    scenario_editor = read("frontend/src/features/resources/useScenarioEditor.ts")
+
+    for forbidden in [
+        "seen.has(name)",
+        "seen.add(name)",
+        "x.directory_name === directoryName || x.name === name",
+        "x.directory_name !== directoryName && x.name !== name",
+        "s.directory_name === ref.directory_name || s.name === ref.name",
+    ]:
+        assert forbidden not in agent_view
+
+    for forbidden in [
+        "s.directory_name === skill.directory_name || s.name === skill.name",
+        "s.directory_name === directoryName || s.name === name",
+    ]:
+        assert forbidden not in scenario_editor
+
+
 def test_frontend_resource_imports_do_not_model_legacy_skip_summaries():
     combined = "\n".join(
         read(path)

@@ -157,7 +157,7 @@ export function useScenarioEditor(options: {
   }
 
   function scenarioLeaderSkillMissing(skill: SkillRef): boolean {
-    return Boolean(skill.directory_name && !(skills.value || []).some((s) => s.directory_name === skill.directory_name || s.name === skill.name))
+    return Boolean(skill.directory_name && !(skills.value || []).some((s) => s.directory_name === skill.directory_name))
   }
 
   function normalizeScenarioLeaderSkill(raw: unknown): SkillRef | null {
@@ -165,7 +165,7 @@ export function useScenarioEditor(options: {
     const directoryName = String((raw as any).skill_directory || '').trim().replace(/^[/\\]+/, '')
     const name = String((raw as any).skill_name || '').trim()
     if (!directoryName || !name) return null
-    const current = (skills.value || []).find((s) => s.directory_name === directoryName || s.name === name)
+    const current = (skills.value || []).find((s) => s.directory_name === directoryName)
     return { name: name || current?.name || directoryName, directory_name: directoryName }
   }
 

@@ -171,6 +171,21 @@ def test_normalize_skill_refs_keep_name_and_directory_name_only():
     ]
 
 
+def test_normalize_skill_refs_dedupes_by_directory_name_not_display_name():
+    refs = normalize_skill_refs(
+        [
+            {"name": "同名 Skill", "directory_name": "skill-alpha"},
+            {"name": "同名 Skill", "directory_name": "skill-beta"},
+            {"name": "改名后的 Skill", "directory_name": "skill-alpha"},
+        ]
+    )
+
+    assert refs == [
+        {"name": "同名 Skill", "directory_name": "skill-alpha"},
+        {"name": "同名 Skill", "directory_name": "skill-beta"},
+    ]
+
+
 def test_normalize_agent_row_keeps_only_name_llm_prompt_description_and_skills():
     row = normalize_agent_row(
         {

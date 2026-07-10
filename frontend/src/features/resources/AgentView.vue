@@ -256,9 +256,9 @@ function normalizeSkillRefs(raw: SkillRef[]): SkillRef[] {
   for (const item of raw || []) {
     const directoryName = String(item.directory_name || '').trim()
     const name = String(item.name || '').trim()
-    if (!directoryName || !name || seen.has(name)) continue
+    if (!directoryName || !name || seen.has(directoryName)) continue
     out.push({ name, directory_name: directoryName })
-    seen.add(name)
+    seen.add(directoryName)
   }
   return out
 }
@@ -268,8 +268,8 @@ function toggleSkill(skill: { name: string; directory_name: string }) {
   const name = String(skill.name || '').trim()
   if (!directoryName || !name) return
   const current = normalizeSkillRefs(form.value.skills)
-  if (current.some((x) => x.directory_name === directoryName || x.name === name)) {
-    form.value.skills = current.filter((x) => x.directory_name !== directoryName && x.name !== name)
+  if (current.some((x) => x.directory_name === directoryName)) {
+    form.value.skills = current.filter((x) => x.directory_name !== directoryName)
   } else {
     form.value.skills = [...current, { name, directory_name: directoryName }]
   }
@@ -282,7 +282,7 @@ const missingAgentLlmName = computed(() => {
 })
 
 function skillMissing(ref: SkillRef): boolean {
-  return Boolean(ref.directory_name && !(skills.value || []).some((s) => s.directory_name === ref.directory_name || s.name === ref.name))
+  return Boolean(ref.directory_name && !(skills.value || []).some((s) => s.directory_name === ref.directory_name))
 }
 
 const missingSkillBadges = computed(() =>
