@@ -18,7 +18,7 @@ from app.core.security import get_current_user
 
 
 class ReadFileInput(BaseModel):
-    path: str = Field(default="", description="工作区内相对路径，如 notes/report.md")
+    path: str = Field(default="", description=render_platform_prompt("tool.schema.read_workspace_file.path.v1", {}))
 
 
 def _normalize_path(path_or_input) -> str:

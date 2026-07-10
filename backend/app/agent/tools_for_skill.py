@@ -41,22 +41,22 @@ from pydantic import BaseModel, Field
 
 
 class EditWorkspaceFileInput(BaseModel):
-    path: str = Field(description="工作区内相对路径，例如 notes/report.md")
-    old_text: str = Field(description="要替换的旧文本")
-    new_text: str = Field(description="替换后的新文本")
+    path: str = Field(description=render_platform_prompt("tool.schema.edit_workspace_file.path.v1", {}))
+    old_text: str = Field(description=render_platform_prompt("tool.schema.edit_workspace_file.old_text.v1", {}))
+    new_text: str = Field(description=render_platform_prompt("tool.schema.edit_workspace_file.new_text.v1", {}))
 
 
 class RenameWorkspaceFileInput(BaseModel):
-    path: str = Field(description="原文件相对路径")
-    target_path: str = Field(description="目标相对路径，例如 notes/key.md")
+    path: str = Field(description=render_platform_prompt("tool.schema.rename_workspace_file.path.v1", {}))
+    target_path: str = Field(description=render_platform_prompt("tool.schema.rename_workspace_file.target_path.v1", {}))
 
 
 class MkdirWorkspaceInput(BaseModel):
-    path: str = Field(description="要新建的目录相对路径，例如 notes/archive")
+    path: str = Field(description=render_platform_prompt("tool.schema.mkdir_workspace.path.v1", {}))
 
 
 class ListWorkspaceDirectoryInput(BaseModel):
-    path: str = Field(description="目录相对路径，留空表示工作区根目录", default="")
+    path: str = Field(description=render_platform_prompt("tool.schema.list_workspace_directory.path.v1", {}), default="")
 
 
 def _filter_redundant_workspace_mcp_tools(tools: List) -> List:
@@ -373,10 +373,7 @@ def _create_mcp_configuration_status_tool(issues: List[Dict[str, Any]]) -> ToolS
 
     return ToolSpec.from_function(
         name="mcp_configuration_status",
-        description=(
-            "查看本轮 Skill 声明但未可用的 MCP 配置问题。"
-            "当检索、抓取等 MCP 工具没有出现在可用工具中时，先调用它并把缺失项告知用户。"
-        ),
+        description=render_platform_prompt("tool.description.mcp_configuration_status.v1", {}),
         func=_status,
         args_schema={"type": "object", "properties": {}},
     )

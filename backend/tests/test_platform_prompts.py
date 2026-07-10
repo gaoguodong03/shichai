@@ -379,7 +379,7 @@ def test_skill_workspace_tool_lines_use_platform_prompt_registry():
 
 
 def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry():
-    """ToolSpec descriptions are LLM-visible and must not be hardcoded in runtime modules."""
+    """ToolSpec descriptions and field schema text are LLM-visible prompt material."""
     files = [
         ROOT / "backend/app/tools/read_file.py",
         ROOT / "backend/app/tools/write_workspace_file.py",
@@ -394,6 +394,14 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
         "重命名或移动当前工作区内的文件/目录。",
         "在当前工作区新建目录。",
         "递归列出当前工作区目录内容（含子目录）。",
+        "工作区内相对路径，如 notes/report.md",
+        "要保存的完整文本内容；若为空则工具会报错并提示重新传入。",
+        "是否允许覆盖同名文件。",
+        "要替换的旧文本",
+        "替换后的新文本",
+        "目标相对路径，例如 notes/key.md",
+        "目录相对路径，留空表示工作区根目录",
+        "查看本轮 Skill 声明但未可用的 MCP 配置问题。",
     ]:
         assert phrase not in combined
 
@@ -404,6 +412,18 @@ def test_builtin_workspace_tool_schema_descriptions_use_platform_prompt_registry
         "tool.description.rename_workspace_file.v1",
         "tool.description.mkdir_workspace.v1",
         "tool.description.list_workspace_directory.v1",
+        "tool.schema.read_workspace_file.path.v1",
+        "tool.schema.write_workspace_file.path.v1",
+        "tool.schema.write_workspace_file.content.v1",
+        "tool.schema.write_workspace_file.overwrite.v1",
+        "tool.schema.edit_workspace_file.path.v1",
+        "tool.schema.edit_workspace_file.old_text.v1",
+        "tool.schema.edit_workspace_file.new_text.v1",
+        "tool.schema.rename_workspace_file.path.v1",
+        "tool.schema.rename_workspace_file.target_path.v1",
+        "tool.schema.mkdir_workspace.path.v1",
+        "tool.schema.list_workspace_directory.path.v1",
+        "tool.description.mcp_configuration_status.v1",
     ]:
         assert prompt_id in PLATFORM_PROMPTS
 

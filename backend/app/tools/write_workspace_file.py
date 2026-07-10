@@ -21,22 +21,14 @@ _PLAIN_TOOL_CALL_RE = re.compile(
 class WriteWorkspaceFileInput(BaseModel):
     """write_workspace_file 的入参。一次调用必须同时传 path 和 content。"""
 
-    path: str = Field(
-        description=(
-            "工作区内相对路径。项目生成的新文件名统一使用 文件名-当前文件时间戳.扩展名，"
-            "例如 notes/report-2026070422145700.md；工具按传入 path 原样写入，不替换或校验时间戳。"
-        )
-    )
+    path: str = Field(description=render_platform_prompt("tool.schema.write_workspace_file.path.v1", {}))
     content: str = Field(
         default="",
-        description="要保存的完整文本内容；若为空则工具会报错并提示重新传入。与 path 在同一次调用中一起传入。",
+        description=render_platform_prompt("tool.schema.write_workspace_file.content.v1", {}),
     )
     overwrite: bool = Field(
         default=False,
-        description=(
-            "是否允许覆盖同名文件。默认 false；需要修改已有文件时优先使用 edit_workspace_file，"
-            "或新建符合 文件名-当前文件时间戳.扩展名 的新文件。"
-        ),
+        description=render_platform_prompt("tool.schema.write_workspace_file.overwrite.v1", {}),
     )
 
 
