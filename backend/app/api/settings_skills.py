@@ -25,10 +25,6 @@ from app.core.user_settings_paths import require_user_context, sandbox_requireme
 from app.core.session_preset_validate import (
     normalize_preset_dict_for_validation,
 )
-from app.core.settings_references import (
-    remove_skill_path_from_user_configs as _remove_skill_path_from_user_configs,
-    replace_skill_path_in_user_configs as _replace_skill_path_in_user_configs,
-)
 from app.core.settings_bundle_import import (
     bundle_skill_display_name_map as _bundle_skill_display_name_map,
     collect_tool_names_from_skill_dirs,
@@ -539,10 +535,7 @@ async def get_skills():
     }
 
 def _slugify(name: str) -> str:
-    """生成可作目录名的 slug：仅允许 ASCII 字母数字与连字符，避免中文/特殊字符目录名导致脚本路径、沙箱、工具名异常。
-
-    展示名仍可在 SKILL.md frontmatter.name 中使用中文；目录名（directory_name）与之一一对应但为稳定 ASCII。
-    """
+    """Generate the initial stable Skill directory name from a display name."""
     raw = (name or "").strip()
     # 仅保留 ASCII 的「词」字符与空白、连字符（显式 ASCII，避免 \\w 匹配到中文）
     s = re.sub(r"[^A-Za-z0-9_\s-]", "", raw, flags=re.ASCII)
@@ -716,19 +709,6 @@ async def update_skill(directory_name: str, skill_update: SkillUpdate):
     _sanitize_skill_frontmatter_for_write(fm)
     _write_skill_file(skill_dir, fm, body)
     new_directory_name = directory_name
-    # 若名字变更，自动将目录名对齐到 frontmatter.name（并做冲突避让）
-    current_name = str(fm.get("name") or "").strip()
-    if current_name:
-        desired_seed = _slugify(current_name)
-        if desired_seed and desired_seed != directory_name:
-            if (base / desired_seed).exists():
-                desired_seed = _next_available_directory_name(base, desired_seed)
-            target_dir = base / desired_seed
-            if target_dir != skill_dir:
-                shutil.move(str(skill_dir), str(target_dir))
-                skill_dir = target_dir
-                new_directory_name = desired_seed
-                _replace_skill_path_in_user_configs(directory_name, new_directory_name)
     _refresh_skills_loader()
     return {
         "status": "ok",
@@ -747,9 +727,7 @@ async def delete_skill(directory_name: str):
     skill_dir = base / directory_name
     if not skill_dir.is_dir():
         raise HTTPException(status_code=404, detail="Skill not found")
-    skill_name = _skill_display_name_from_dir(skill_dir, directory_name)
     shutil.rmtree(skill_dir)
-    _remove_skill_path_from_user_configs(directory_name, skill_name)
     _refresh_skills_loader()
     return {"status": "ok", "data": {"directory_name": directory_name, "deleted": True}}
 

@@ -1,53 +1,58 @@
 from __future__ import annotations
 
-import json
+from fastapi.testclient import TestClient
 
-def test_deleted_skill_reference_keeps_display_name(monkeypatch, tmp_path):
-    from app.api.agents import save_agent_instances
-    from app.api.settings_presets import _mirror_session_presets_to_resources
-    from app.core.settings_references import remove_skill_path_from_user_configs
-    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
 
+def _client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    token = set_current_username("u1")
-    try:
-        ctx = get_current_user_context(default_fallback=False)
-        assert ctx is not None
-        save_agent_instances(
-            [{"name": "专家", "skills": [{"name": "旧名", "directory_name": "skill-a"}]}]
+    monkeypatch.setenv("ALLOW_ANONYMOUS_API", "1")
+    from app.main import app
+
+    return TestClient(app)
+
+
+def test_updating_skill_display_name_does_not_rename_directory(monkeypatch, tmp_path):
+    with _client(monkeypatch, tmp_path) as client:
+        created = client.post(
+            "/api/settings/skills",
+            json={"name": "Original Skill", "description": "original"},
         )
-        _mirror_session_presets_to_resources(
-            [{"name": "场景", "agent_names": ["专家"], "host": {"name": "主持人", "skill_name": "旧名", "skill_directory": "skill-a"}}]
-        )
+        assert created.status_code == 200
+        directory_name = created.json()["data"]["directory_name"]
 
-        remove_skill_path_from_user_configs("skill-a", "技能 A")
-
-        expert = json.loads((ctx.agents_dir / "专家" / "agent.json").read_text(encoding="utf-8"))
-        preset = json.loads((ctx.scenarios_dir / "场景" / "scenario.json").read_text(encoding="utf-8"))
-        assert expert["skills"] == [{"name": "技能 A", "directory_name": "skill-a"}]
-        assert preset["host"]["skill_name"] == "技能 A"
-        assert preset["host"]["skill_directory"] == "skill-a"
-    finally:
-        reset_current_username(token)
-
-
-def test_renamed_skill_path_updates_directory_only(monkeypatch, tmp_path):
-    from app.api.agents import save_agent_instances
-    from app.core.settings_references import replace_skill_path_in_user_configs
-    from app.core.user_context import get_current_user_context, reset_current_username, set_current_username
-
-    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
-    token = set_current_username("u1")
-    try:
-        ctx = get_current_user_context(default_fallback=False)
-        assert ctx is not None
-        save_agent_instances(
-            [{"name": "专家", "skills": [{"name": "技能 A", "directory_name": "skill-a"}]}]
+        updated = client.put(
+            f"/api/settings/skills/{directory_name}",
+            json={"name": "Renamed Skill", "description": "renamed", "body": "body"},
         )
 
-        replace_skill_path_in_user_configs("skill-a", "skill-b")
+        assert updated.status_code == 200
+        assert updated.json()["data"]["directory_name"] == directory_name
+        assert updated.json()["data"]["renamed"] is False
+        assert client.get(f"/api/settings/skills/{directory_name}/content").status_code == 200
 
-        expert = json.loads((ctx.agents_dir / "专家" / "agent.json").read_text(encoding="utf-8"))
-        assert expert["skills"] == [{"name": "技能 A", "directory_name": "skill-b"}]
-    finally:
-        reset_current_username(token)
+
+def test_deleting_skill_keeps_agent_reference_for_missing_reference_display(monkeypatch, tmp_path):
+    with _client(monkeypatch, tmp_path) as client:
+        created = client.post(
+            "/api/settings/skills",
+            json={"name": "Referenced Skill", "description": "referenced"},
+        )
+        assert created.status_code == 200
+        directory_name = created.json()["data"]["directory_name"]
+
+        agent = client.post(
+            "/api/agents",
+            json={
+                "name": "引用专家",
+                "skills": [{"name": "专家保留的技能快照名", "directory_name": directory_name}],
+            },
+        )
+        assert agent.status_code == 200
+
+        deleted = client.delete(f"/api/settings/skills/{directory_name}")
+
+        assert deleted.status_code == 200
+        listed = client.get("/api/agents")
+        assert listed.status_code == 200
+        row = next(item for item in listed.json()["data"]["instances"] if item["name"] == "引用专家")
+        assert row["skills"] == [{"name": "专家保留的技能快照名", "directory_name": directory_name}]
