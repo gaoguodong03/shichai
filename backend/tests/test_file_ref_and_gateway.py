@@ -349,6 +349,46 @@ async def test_build_tools_does_not_inject_script_tool_without_manifest(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_build_tools_only_injects_resolved_skill_script_tool(monkeypatch, tmp_path):
+    from app.agent import tools_for_skill
+    from app.core.user_context import reset_current_user_identity, set_current_user_identity
+
+    monkeypatch.setenv("SHUTONG_USER_DATA_ROOT", str(tmp_path / "users"))
+    token = set_current_user_identity(user_id="user-current-skill-script", username="current-skill@example.com")
+    try:
+        for skill_id in ("active-skill", "other-skill"):
+            skill_dir = tmp_path / "users" / "user-current-skill-script" / "resources" / "skills" / skill_id
+            scripts_dir = skill_dir / "scripts"
+            scripts_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(f"---\nname: {skill_id}\n---\nbody\n", encoding="utf-8")
+            (scripts_dir / "run.py").write_text("print('ok')\n", encoding="utf-8")
+            (scripts_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "entry": "run.py",
+                        "description": f"执行 {skill_id}。",
+                        "args": [{"name": "query", "description": "输入。", "required": True}],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        monkeypatch.setattr(tools_for_skill, "get_mcp_servers_for_skill", lambda _sid: [])
+        tools = await tools_for_skill.build_tools_for_group_chat(
+            {"skills": [{"directory_name": "active-skill"}, {"directory_name": "other-skill"}]},
+            "workspace-current-skill",
+            resolved_skill="active-skill",
+        )
+    finally:
+        reset_current_user_identity(token)
+
+    names = {getattr(tool, "name", "") for tool in tools}
+    assert "run_skill_script_active-skill" in names
+    assert "run_skill_script_other-skill" not in names
+
+
+@pytest.mark.asyncio
 async def test_build_tools_blocks_call_api_when_declared_mcp_is_unavailable(monkeypatch):
     from app.agent import tools_for_skill
     from app.core.user_context import reset_current_user_identity, set_current_user_identity
