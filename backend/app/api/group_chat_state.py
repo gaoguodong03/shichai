@@ -20,7 +20,6 @@ from app.core.user_context import get_current_user_context
 
 logger = logging.getLogger(__name__)
 
-SESSION_INDEX_FILE = "index.json"
 GROUP_SESSIONS_ROOT: Optional[Path] = None
 
 ACTIVE_GROUP_RUNS: Dict[str, Dict[str, Any]] = {}
