@@ -153,10 +153,13 @@ export function useGroupComposerActions(args: {
       const clientMessageId = createClientMessageId()
       const attachments = requestAttachments()
       const createdAt = currentStorageTimestamp()
+      const messageBody: GroupMessage['message'] = { content: msg }
+      if (attachments.length) messageBody.attachments = attachments
+      if (targetAgentName) messageBody.target_agent_name = targetAgentName
       const userMsg: GroupMessage = {
         message_id: `msg-${Date.now()}`,
         speaker: { type: 'user' },
-        message: { content: msg, attachments, target_agent_name: targetAgentName },
+        message: messageBody,
         created_at: createdAt,
         client_message_id: clientMessageId,
       } as GroupMessage

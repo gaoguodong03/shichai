@@ -51,3 +51,29 @@ def test_title_refresh_does_not_infer_missing_auto_title_flag(monkeypatch):
     assert "title_auto_generated" not in session_definitions["s1"]
     assert scheduled == []
     assert saved_definitions
+
+
+def test_record_user_message_omits_empty_optional_message_fields(monkeypatch):
+    monkeypatch.setattr(group_chat_title_meta, "_save_group_history", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(group_chat_title_meta, "_save_session_definitions", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(group_chat_title_meta, "_schedule_group_title_refresh", lambda *_args, **_kwargs: None)
+    session_definitions = {
+        "s1": {
+            "title": "会话",
+            "title_auto_generated": False,
+            "agent_names": [],
+            "created_at": "2026071000000000",
+            "updated_at": "2026071000000000",
+        }
+    }
+    messages: list[dict] = []
+
+    group_chat_title_meta._record_user_message_and_refresh_title(
+        group_session_id="s1",
+        session_definitions=session_definitions,
+        messages=messages,
+        user_message="请整理材料",
+        client_message_id="client-1",
+    )
+
+    assert messages[0]["message"] == {"content": "请整理材料"}

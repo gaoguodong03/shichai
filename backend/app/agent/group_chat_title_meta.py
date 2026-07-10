@@ -187,14 +187,15 @@ def _record_user_message_and_refresh_title(
     )
     first_user_message = not any(_message_speaker_type(m) == "user" for m in messages)
     if not duplicate_user_message:
+        message_body: Dict[str, Any] = {"content": user_message}
+        if attachments:
+            message_body["attachments"] = list(attachments)
+        if target_agent_name:
+            message_body["target_agent_name"] = target_agent_name
         user_msg: Dict[str, Any] = {
             "message_id": f"msg-{uuid.uuid4().hex[:8]}",
             "speaker": {"type": "user"},
-            "message": {
-                "content": user_message,
-                "attachments": list(attachments or []),
-                "target_agent_name": target_agent_name or None,
-            },
+            "message": message_body,
             "created_at": format_storage_timestamp(),
         }
         if client_message_id:

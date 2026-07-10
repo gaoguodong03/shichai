@@ -120,10 +120,10 @@ def test_e2e_stream_mocks_use_current_sse_event_payloads():
         assert "phase:" in payload
     for payload in re.findall(r"event: message\\ndata: \$\{JSON\.stringify\(([\s\S]*?)\)\}\\n\\n", combined):
         assert "created_at" in payload
-        assert "attachments: []" in payload
+        assert "attachments: []" not in payload
     mock_api = read("frontend/e2e/fixtures/mockApi.ts")
-    assert "message: { content: '历史回复：这里可以继续追问。', attachments: [] }" in mock_api
-    assert "message: { content: answer, attachments: [] }" in mock_api
+    assert "message: { content: '历史回复：这里可以继续追问。' }" in mock_api
+    assert "message: { content: answer }" in mock_api
     assert "created_at?: string" not in mock_api
     assert "created_at: string" in mock_api
     assert "skill_result?: Record<string, unknown>" not in mock_api
@@ -186,6 +186,9 @@ def test_frontend_local_session_messages_include_created_at():
     )
     assert optimistic_user is not None
     assert "created_at:" in optimistic_user.group(0)
+    assert "message: { content: msg, attachments, target_agent_name: targetAgentName }" not in composer
+    assert "if (attachments.length) messageBody.attachments = attachments" in composer
+    assert "if (targetAgentName) messageBody.target_agent_name = targetAgentName" in composer
     assert "speaker: { type: 'host', agent_name: '系统主持人' }" in composer
     assert "speaker: { type: 'host' }, message: { content }" not in composer
 
@@ -380,7 +383,7 @@ def test_frontend_local_streaming_placeholders_use_canonical_message_body():
     src = read("frontend/src/features/workspace/composables/useGroupStreamEvents.ts")
 
     for payload in re.findall(r"message: \{ content: [^}]+ \}", src):
-        assert "attachments: []" in payload
+        assert "attachments: []" not in payload
 
 
 def test_frontend_and_e2e_do_not_use_non_contract_turn_limit_end_field():
