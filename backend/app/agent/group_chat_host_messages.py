@@ -138,12 +138,6 @@ def _build_host_recommendation_message(
     return _host_message_base(content=content or HOST_ZERO_EXPERT_RECOMMENDATION, host_agent_name=host_agent_name or "四九")
 
 
-def _build_host_fallback_message(*, skill: str, host_agent_name: str = "") -> dict[str, Any] | None:
-    """There is no runtime fallback message in the strict contract."""
-    _ = (skill, host_agent_name)
-    return None
-
-
 def _build_host_notice_message(
     *,
     skill: str,

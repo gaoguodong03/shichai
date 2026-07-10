@@ -47,17 +47,17 @@ def _skill_execution_extra_instructions(tools: List[ToolSpec]) -> str:
         preface = render_platform_prompt("skill.execution.multi_step_preface.v1", {})
     file_lines: List[str] = []
     if "read_workspace_file" in names:
-        file_lines.append("- read_workspace_file: 读取工作区内相对路径对应的文件内容（例如 note/test.md、notes/report.md）。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.read.v1", {}))
     if "write_workspace_file" in names:
-        file_lines.append("- write_workspace_file: 将文本写入工作区文件（path 为相对路径，如 note/draft.md）。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.write.v1", {}))
     if "edit_workspace_file" in names:
-        file_lines.append("- edit_workspace_file: 对工作区内文件做增量修改（用 old_text → new_text）。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.edit.v1", {}))
     if "rename_workspace_file" in names:
-        file_lines.append("- rename_workspace_file: 重命名工作区内文件或目录。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.rename.v1", {}))
     if "mkdir_workspace" in names:
-        file_lines.append("- mkdir_workspace: 在工作区内新建目录。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.mkdir.v1", {}))
     if "list_workspace_directory" in names:
-        file_lines.append("- list_workspace_directory: 递归列出目录中文件（含子目录）。")
+        file_lines.append(render_platform_prompt("skill.execution.workspace_tool.list.v1", {}))
     workspace_tool_rules = ""
     if file_lines:
         timestamp_rule = ""

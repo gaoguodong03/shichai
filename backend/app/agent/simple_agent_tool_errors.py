@@ -7,7 +7,7 @@ from app.agent.messages import AIMessage, BaseMessage
 from app.agent.simple_agent_finalization import (
     _align_final_response_with_written_workspace_paths,
     _compact_multiline_text,
-    _deterministic_tool_fallback_message,
+    _deterministic_tool_summary_message,
     _json_loads_maybe,
 )
 from app.agent.simple_agent_introspection import _WRAPPED_USER_CONTEXT_MARKERS, _section_text
@@ -180,12 +180,12 @@ def _final_response_or_tool_fallback(
         return _align_final_response_with_written_workspace_paths(response, raw_outputs)
     tool_attempt_debug.append(
         {
-            "source": "text_tool_call_protocol_final_fallback",
+            "source": "text_tool_call_protocol_final_summary",
             "matched": True,
             "content_preview": str(getattr(response, "content", "") or "").strip()[:240],
         }
     )
     return _align_final_response_with_written_workspace_paths(
-        _deterministic_tool_fallback_message(raw_outputs),
+        _deterministic_tool_summary_message(raw_outputs),
         raw_outputs,
     )

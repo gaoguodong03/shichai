@@ -119,7 +119,7 @@ def test_traced_llm_client_logs_full_prompt_when_enabled(caplog, monkeypatch):
 
 
 def test_builtin_llm_provider_presets_use_compatible_base_urls():
-    """后端运行时兜底与设置页默认 provider 地址必须同步且可被 OpenAI 兼容客户端调用。"""
+    """后端运行时默认 provider 与设置页默认 provider 地址必须同步且可被 OpenAI 兼容客户端调用。"""
     from app.agent.llm_client import _DEFAULT_LLM_PROVIDERS as runtime_defaults
     from app.api.settings_app import _DEFAULT_LLM_PROVIDERS as settings_defaults
 

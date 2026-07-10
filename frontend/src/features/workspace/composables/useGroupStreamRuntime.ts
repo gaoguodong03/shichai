@@ -194,7 +194,7 @@ export function useGroupStreamRuntime(args: {
     groupSessionEventsSessionId = sessionId
     const handlePushClosed = (error?: unknown) => {
       if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
-      if (error) console.warn('会话事件推送连接失败，暂时使用恢复态轮询兜底', error)
+      if (error) console.warn('会话事件推送连接失败，暂时使用恢复态轮询', error)
       groupSessionEventsConnected = false
       const state = groupStreamStates.value[sessionId]
       if (state?.restored && state.streaming && !state.abort) scheduleRestoredRuntimePoll(sessionId)
@@ -228,7 +228,7 @@ export function useGroupStreamRuntime(args: {
         },
         onError: (error) => {
           if (abort.signal.aborted || selectedGroupSessionId() !== sessionId) return
-          console.warn('会话事件推送中断，暂时使用恢复态轮询兜底', error)
+          console.warn('会话事件推送中断，暂时使用恢复态轮询', error)
           groupSessionEventsConnected = false
           const state = groupStreamStates.value[sessionId]
           if (state?.restored && state.streaming && !state.abort) scheduleRestoredRuntimePoll(sessionId)

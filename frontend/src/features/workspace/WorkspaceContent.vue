@@ -18,7 +18,7 @@
       </div>
     </div>
 
-    <!-- 有选中 id 但尚未加载出 groupDetail：加载中 / 错误 / 兜底 -->
+    <!-- 有选中 id 但尚未加载出 groupDetail：加载中 / 错误 / 恢复态 -->
     <div v-else-if="selectedGroupSessionId" class="workspace-right-inner workspace-group-root">
       <div v-if="groupLoading && !groupDetail" class="workspace-state workspace-state-loading">
         <div class="workspace-state-dots"><span /><span /><span /></div>

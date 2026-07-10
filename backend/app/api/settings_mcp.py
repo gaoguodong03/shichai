@@ -478,7 +478,7 @@ async def call_mcp_tool(server_name: str, tool_name: str, body: MCPToolCallBody)
         if hasattr(block, "text"):
             blocks.append({"type": "text", "text": block.text})
         else:
-            # 兜底：直接转字符串
+            # 非文本块保留原始字符串，便于调试未知 MCP 返回类型。
             blocks.append({"type": "unknown", "raw": str(block)})
 
     return {

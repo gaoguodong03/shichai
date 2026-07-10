@@ -14,8 +14,8 @@ from app.agent.simple_agent_introspection import (
     _user_text_for_bound_skill_introspection,
 )
 from app.agent.simple_agent_finalization import (
-    _deterministic_tool_fallback_message,
-    _fallback_after_llm_failure_message,
+    _deterministic_tool_summary_message,
+    _summary_after_llm_failure_message,
     _final_synthesis_instruction,
     _playwright_runtime_failure_message,
     _post_tool_synthesis_instruction,
@@ -567,7 +567,7 @@ class SimpleAgent:
                         tool_attempt_debug,
                     )
                     if not _extract_text_content(final_message).strip():
-                        final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
+                        final_message = _deterministic_tool_summary_message(all_tool_raw_outputs)
                     messages.append(final_message)
                     yield {"type": "agent_step", "step": step + 2, "message": final_message}
                     break
@@ -626,7 +626,7 @@ class SimpleAgent:
                         tool_attempt_debug,
                     )
                     if not _extract_text_content(final_message).strip():
-                        final_message = _deterministic_tool_fallback_message(all_tool_raw_outputs)
+                        final_message = _deterministic_tool_summary_message(all_tool_raw_outputs)
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -651,17 +651,17 @@ class SimpleAgent:
                         continue
                     yield {"type": "agent_step", "step": step + 1, "message": protocol_message}
                     break
-                fallback_after_failure = _fallback_after_llm_failure_message(all_tool_raw_outputs, response)
-                if fallback_after_failure is not None:
-                    messages.append(fallback_after_failure)
+                summary_after_failure = _summary_after_llm_failure_message(all_tool_raw_outputs, response)
+                if summary_after_failure is not None:
+                    messages.append(summary_after_failure)
                     tool_attempt_debug.append(
                         {
-                            "source": "llm_failure_after_tool_outputs_fallback",
+                            "source": "llm_failure_after_tool_outputs_summary",
                             "matched": True,
-                            "content_preview": _extract_text_content(fallback_after_failure)[:240],
+                            "content_preview": _extract_text_content(summary_after_failure)[:240],
                         }
                     )
-                    yield {"type": "agent_step", "step": step + 1, "message": fallback_after_failure}
+                    yield {"type": "agent_step", "step": step + 1, "message": summary_after_failure}
                     break
                 tool_attempt_debug.append(
                     {
@@ -718,7 +718,7 @@ class SimpleAgent:
                 tool_attempt_debug,
             )
             if not _extract_text_content(synthesis_response).strip():
-                synthesis_response = _deterministic_tool_fallback_message(all_tool_raw_outputs)
+                synthesis_response = _deterministic_tool_summary_message(all_tool_raw_outputs)
             messages.append(synthesis_response)
             yield {"type": "agent_step", "step": self.max_steps + 1, "message": synthesis_response}
             synthesis_text = _extract_text_content(synthesis_response).strip()
@@ -1045,7 +1045,7 @@ class SimpleAgent:
                         tool_attempt_debug,
                     )
                     if not _extract_text_content(final_message).strip():
-                        final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
+                        final_message = _deterministic_tool_summary_message(tool_raw_outputs)
                     messages.append(final_message)
                     break
                 if self.synthesize_after_tools and tools:
@@ -1092,7 +1092,7 @@ class SimpleAgent:
                         tool_attempt_debug,
                     )
                     if not _extract_text_content(final_message).strip():
-                        final_message = _deterministic_tool_fallback_message(tool_raw_outputs)
+                        final_message = _deterministic_tool_summary_message(tool_raw_outputs)
                     messages.append(final_message)
                     tool_attempt_debug.append(
                         {
@@ -1118,14 +1118,14 @@ class SimpleAgent:
                     if should_retry:
                         continue
                     break
-                fallback_after_failure = _fallback_after_llm_failure_message(tool_raw_outputs, response)
-                if fallback_after_failure is not None:
-                    messages.append(fallback_after_failure)
+                summary_after_failure = _summary_after_llm_failure_message(tool_raw_outputs, response)
+                if summary_after_failure is not None:
+                    messages.append(summary_after_failure)
                     tool_attempt_debug.append(
                         {
-                            "source": "llm_failure_after_tool_outputs_fallback",
+                            "source": "llm_failure_after_tool_outputs_summary",
                             "matched": True,
-                            "content_preview": _extract_text_content(fallback_after_failure)[:240],
+                            "content_preview": _extract_text_content(summary_after_failure)[:240],
                         }
                     )
                     break
@@ -1171,7 +1171,7 @@ class SimpleAgent:
                 tool_attempt_debug,
             )
             if not _extract_text_content(synthesis_response).strip():
-                synthesis_response = _deterministic_tool_fallback_message(tool_raw_outputs)
+                synthesis_response = _deterministic_tool_summary_message(tool_raw_outputs)
             messages.append(synthesis_response)
             synthesis_text = _extract_text_content(synthesis_response).strip()
             if synthesis_text:

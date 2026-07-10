@@ -17,7 +17,7 @@ from app.agent.platform_prompts import render_platform_prompt
 logger = logging.getLogger(__name__)
 
 
-def _build_action_prompt_fallback(discussion_goal: str, context: str) -> str:
+def _build_default_action_prompt(discussion_goal: str, context: str) -> str:
     """Build the default expert action prompt when the host provides no instruction."""
     return render_platform_prompt(
         "expert.action.default.v1",
@@ -178,7 +178,7 @@ def _build_action_prompt_with_memory(
 ) -> str:
     mem = _get_group_memory_settings(app_settings)
     if not mem["enabled"]:
-        return (host_next_action or "").strip() or _build_action_prompt_fallback(discussion_goal, context)
+        return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, context)
 
     dispatch = {"has_memory": False, "rendered": ""}
     try:
@@ -203,7 +203,7 @@ def _build_action_prompt_with_memory(
             },
         )
 
-    return (host_next_action or "").strip() or _build_action_prompt_fallback(discussion_goal, context)
+    return (host_next_action or "").strip() or _build_default_action_prompt(discussion_goal, context)
 
 
 def _ensure_structured_action_prompt(

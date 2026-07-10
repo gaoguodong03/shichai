@@ -433,7 +433,7 @@ main.workspace-main .text-muted {
   color: var(--color-danger);
 }
 
-/* 深色模式兼容层：兜底修复历史页面的硬编码浅色类 */
+/* 深色模式兼容层：修复历史页面的硬编码浅色类 */
 .dark .bg-white,
 .dark .bg-white\/80,
 .dark .bg-gray-50,

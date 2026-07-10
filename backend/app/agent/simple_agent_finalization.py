@@ -313,7 +313,7 @@ def _align_final_response_with_written_workspace_paths(
     return AIMessage(content=updated)
 
 
-def _deterministic_tool_fallback_message(raw_outputs: list[str]) -> AIMessage:
+def _deterministic_tool_summary_message(raw_outputs: list[str]) -> AIMessage:
     dependency_message = _script_dependency_fallback_summary(raw_outputs)
     if dependency_message:
         return AIMessage(content=dependency_message)
@@ -392,7 +392,7 @@ def _is_llm_failure_message(message: BaseMessage) -> bool:
     return text.startswith("抱歉，模型响应失败：") or text.startswith("抱歉，模型响应超时")
 
 
-def _fallback_after_llm_failure_message(raw_outputs: list[str], response: BaseMessage) -> AIMessage | None:
+def _summary_after_llm_failure_message(raw_outputs: list[str], response: BaseMessage) -> AIMessage | None:
     if not raw_outputs or not _is_llm_failure_message(response):
         return None
-    return _deterministic_tool_fallback_message(raw_outputs)
+    return _deterministic_tool_summary_message(raw_outputs)

@@ -1,4 +1,4 @@
-"""群聊记忆开关与回退路径测试。"""
+"""群聊记忆开关与默认动作提示测试。"""
 import os
 
 os.environ.setdefault("QWEN_API_KEY", "test-key-for-unit-test")
@@ -28,7 +28,7 @@ def _get_host_runtime_module():
     return group_chat_host_runtime
 
 
-def test_action_prompt_fallback_when_memory_disabled():
+def test_action_prompt_default_when_memory_disabled():
     gc = _get_memory_prompt_module()
     app_settings = {"group_memory": {"enabled": False}}
     out = gc._build_action_prompt_with_memory(
@@ -71,7 +71,7 @@ def test_action_prompt_uses_memory_when_available(monkeypatch):
     assert "直接进入本轮角色发言" in out
 
 
-def test_action_prompt_short_fallback_avoids_meta_task_preface():
+def test_action_prompt_short_default_avoids_meta_task_preface():
     gc = _get_memory_prompt_module()
 
     out = gc._ensure_structured_action_prompt(

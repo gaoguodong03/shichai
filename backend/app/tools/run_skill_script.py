@@ -353,7 +353,7 @@ def create_run_skill_script_tool(directory_name: str, workspace_id: str = "", wr
                 ok=False,
                 code="gateway_required",
                 message=(
-                    "技能脚本已取消宿主机子进程兜底，必须与线上一致走 OpenSandbox 统一网关。"
+                    "技能脚本已取消宿主机子进程替代路径，必须与线上一致走 OpenSandbox 统一网关。"
                     "请在环境中设置 UNIFIED_TOOL_GATEWAY_ENABLED=1，并配置 OPENSANDBOX_DOMAIN。"
                 ),
             )

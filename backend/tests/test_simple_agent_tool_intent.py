@@ -4,7 +4,7 @@ import pytest
 from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.agent.simple_agent_finalization import (
-    _deterministic_tool_fallback_message,
+    _deterministic_tool_summary_message,
     _final_synthesis_instruction,
     _post_tool_synthesis_instruction,
 )
@@ -77,7 +77,7 @@ class _BindingSensitiveLLM:
         return self._client
 
 
-def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_block():
+def test_deterministic_tool_summary_wraps_markdown_like_raw_output_in_code_block():
     raw = (
         "---\n"
         "name: toutiao-summary\n"
@@ -89,7 +89,7 @@ def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_bloc
         "# Toutiao Summary\n"
     )
 
-    message = _deterministic_tool_fallback_message([raw])
+    message = _deterministic_tool_summary_message([raw])
     text = str(message.content)
 
     assert "以下是本轮工具返回摘要：" in text
@@ -145,7 +145,7 @@ def test_final_synthesis_instruction_does_not_embed_stdout_or_stderr():
     assert "\nstderr:" not in text
 
 
-def test_deterministic_tool_fallback_returns_semantic_summary_as_markdown():
+def test_deterministic_tool_summary_returns_semantic_summary_as_markdown():
     raw = json.dumps(
         {
             "ok": True,
@@ -158,7 +158,7 @@ def test_deterministic_tool_fallback_returns_semantic_summary_as_markdown():
         ensure_ascii=False,
     )
 
-    message = _deterministic_tool_fallback_message([raw])
+    message = _deterministic_tool_summary_message([raw])
     text = str(message.content)
 
     assert text.startswith("# 第二章 技术范式转移")
@@ -167,7 +167,7 @@ def test_deterministic_tool_fallback_returns_semantic_summary_as_markdown():
     assert "工具已执行完成" not in text
 
 
-def test_deterministic_tool_fallback_does_not_expose_missing_llm_summary_state():
+def test_deterministic_tool_summary_does_not_expose_missing_llm_summary_state():
     raw = (
         "Title: ISEF: International Rules for Pre-College Science Research - Society for Science\n"
         "URL: https://www.societyforscience.org/isef/international-rules/\n"
@@ -176,7 +176,7 @@ def test_deterministic_tool_fallback_does_not_expose_missing_llm_summary_state()
         "The International Rules are the official rules of the Regeneron ISEF.\n"
     )
 
-    message = _deterministic_tool_fallback_message([raw])
+    message = _deterministic_tool_summary_message([raw])
     text = str(message.content)
 
     assert "工具已执行完成" in text
@@ -1741,7 +1741,7 @@ async def test_simple_agent_falls_back_to_tool_summary_when_final_llm_fails():
     assert "本轮岗位数：55 个" in final_text
     assert "模型响应失败" not in final_text
     assert any(
-        item.get("source") == "llm_failure_after_tool_outputs_fallback"
+        item.get("source") == "llm_failure_after_tool_outputs_summary"
         for item in (out.get("tool_attempt_debug") or [])
     )
 

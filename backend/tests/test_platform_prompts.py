@@ -256,6 +256,31 @@ def test_skill_runtime_tool_error_messages_use_platform_prompt_registry():
         assert prompt_id in PLATFORM_PROMPTS
 
 
+def test_skill_workspace_tool_lines_use_platform_prompt_registry():
+    """LLM-visible workspace tool descriptions belong in the shared prompt registry."""
+    runtime_text = (ROOT / "backend/app/agent/skill_agent_runtime.py").read_text(encoding="utf-8")
+
+    for phrase in [
+        "读取工作区内相对路径对应的文件内容",
+        "将文本写入工作区文件",
+        "对工作区内文件做增量修改",
+        "重命名工作区内文件或目录",
+        "在工作区内新建目录",
+        "递归列出目录中文件",
+    ]:
+        assert phrase not in runtime_text
+
+    for prompt_id in [
+        "skill.execution.workspace_tool.read.v1",
+        "skill.execution.workspace_tool.write.v1",
+        "skill.execution.workspace_tool.edit.v1",
+        "skill.execution.workspace_tool.rename.v1",
+        "skill.execution.workspace_tool.mkdir.v1",
+        "skill.execution.workspace_tool.list.v1",
+    ]:
+        assert prompt_id in PLATFORM_PROMPTS
+
+
 def test_image_generation_default_user_prompt_uses_platform_prompt_registry():
     """Image tool default user prompt text belongs in the shared prompt registry."""
     tool_text = (ROOT / "backend/app/tools/chatanywhere_image_cli_lib.py").read_text(encoding="utf-8")
