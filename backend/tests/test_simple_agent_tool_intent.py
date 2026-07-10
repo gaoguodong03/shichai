@@ -3,7 +3,11 @@ import json
 import pytest
 from app.agent.messages import AIMessage, HumanMessage, ToolMessage
 
-from app.agent.simple_agent_finalization import _deterministic_tool_fallback_message
+from app.agent.simple_agent_finalization import (
+    _deterministic_tool_fallback_message,
+    _final_synthesis_instruction,
+    _post_tool_synthesis_instruction,
+)
 from app.agent.simple_agent import SimpleAgent, _is_run_skill_script_workflow_step
 from app.agent.tool_spec import ToolSpec
 
@@ -90,6 +94,54 @@ def test_deterministic_tool_fallback_wraps_markdown_like_raw_output_in_code_bloc
     assert "以下是本轮工具返回摘要：" in text
     assert "```text\n---\nname: toutiao-summary" in text
     assert text.rstrip().endswith("```")
+
+
+def test_post_tool_synthesis_instruction_does_not_embed_raw_tool_outputs():
+    raw_outputs = [
+        json.dumps(
+            {
+                "stdout": "internal stdout should stay in runtime logs",
+                "stderr": "internal stderr should stay in runtime logs",
+                "result": {"secret": "structured return should not be prompt text"},
+            },
+            ensure_ascii=False,
+        )
+    ]
+
+    message = _post_tool_synthesis_instruction(raw_outputs)
+    text = str(message.content)
+
+    assert "工具已经执行完成" in text
+    assert "internal stdout" not in text
+    assert "internal stderr" not in text
+    assert "structured return" not in text
+    assert "工具返回摘要" not in text
+
+
+def test_final_synthesis_instruction_does_not_embed_stdout_or_stderr():
+    tool_out = {
+        "tool_raw_outputs": [
+            json.dumps(
+                {
+                    "ok": True,
+                    "message": "script ok",
+                    "stdout": "private stdout should stay in runtime logs",
+                    "stderr": "private stderr should stay in runtime logs",
+                },
+                ensure_ascii=False,
+            )
+        ]
+    }
+
+    message = _final_synthesis_instruction("system", tool_out)
+    text = str(message.content)
+
+    assert "工具已经执行成功" in text
+    assert "script ok" in text
+    assert "private stdout" not in text
+    assert "private stderr" not in text
+    assert "\nstdout:" not in text
+    assert "\nstderr:" not in text
 
 
 def test_deterministic_tool_fallback_returns_semantic_summary_as_markdown():

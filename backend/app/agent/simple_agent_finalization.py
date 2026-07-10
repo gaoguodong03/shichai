@@ -216,57 +216,17 @@ def _should_force_final_after_tool_success(system_prompt: str, tool_out: dict[st
 
 def _final_synthesis_instruction(system_prompt: str, tool_out: dict[str, Any]) -> HumanMessage:
     payload = _successful_tool_payload(tool_out) or {}
-    stdout = str(payload.get("stdout") or "").strip()
-    stderr = str(payload.get("stderr") or "").strip()
     message = str(payload.get("message") or "工具执行成功。").strip() or "工具执行成功。"
-    if stdout:
-        parsed_stdout = _json_loads_maybe(stdout)
-        if isinstance(parsed_stdout, (dict, list)):
-            stdout = json.dumps(parsed_stdout, ensure_ascii=False, indent=2)
     return HumanMessage(
         content=render_platform_prompt(
             "agent.final_synthesis.after_tool_success.v1",
             {
                 "message": message,
-                "stdout_block": f"\nstdout:\n{stdout}" if stdout else "",
-                "stderr_block": f"\nstderr:\n{stderr}" if stderr else "",
+                "stdout_block": "",
+                "stderr_block": "",
             },
         )
     )
-
-
-def _raw_tool_outputs_summary(raw_outputs: list[str], *, limit: int = 2000) -> str:
-    snippets: list[str] = []
-    for raw in raw_outputs or []:
-        text = str(raw or "").strip()
-        if not text:
-            continue
-        payload = _json_loads_maybe(text)
-        if isinstance(payload, dict):
-            for key in ("summary", "answer", "content", "text", "result", "results", "output", "stdout", "message"):
-                value = payload.get(key)
-                if value in (None, ""):
-                    continue
-                if isinstance(value, str):
-                    nested = _json_loads_maybe(value)
-                    if isinstance(nested, (dict, list)):
-                        value = nested
-                if isinstance(value, (dict, list)):
-                    text = json.dumps(value, ensure_ascii=False, indent=2)
-                else:
-                    text = str(value)
-                break
-            else:
-                text = json.dumps(payload, ensure_ascii=False, indent=2)
-        elif isinstance(payload, list):
-            text = json.dumps(payload, ensure_ascii=False, indent=2)
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        if lines:
-            snippets.append("\n".join(lines[:12]))
-        if sum(len(s) for s in snippets) >= limit:
-            break
-    summary = "\n\n".join(snippets).strip()
-    return summary[:limit].rstrip()
 
 
 _DIRECT_MARKDOWN_SUMMARY_KEYS = ("markdown", "summary", "answer", "content", "text", "result", "results", "output")
@@ -344,11 +304,10 @@ def _markdown_code_block(text: str, info: str = "text") -> str:
 
 
 def _post_tool_synthesis_instruction(raw_outputs: list[str]) -> HumanMessage:
-    summary = _raw_tool_outputs_summary(raw_outputs, limit=2400)
     return HumanMessage(
         content=render_platform_prompt(
             "agent.final_synthesis.after_tool_outputs.v1",
-            {"summary_block": f"\n工具返回摘要：\n{summary}" if summary else ""},
+            {"summary_block": ""},
         )
     )
 
