@@ -224,6 +224,22 @@ def test_llm_bundle_zip_roundtrip_keeps_env_reference_without_plaintext_api_key(
     assert bundled["extra_body"] == {"enable_thinking": False}
 
 
+def test_llm_provider_row_sanitizer_drops_inline_api_key_fields():
+    from app.api.settings_app import _sanitize_llm_provider_row
+
+    row = _sanitize_llm_provider_row(
+        {
+            "model": "qwen3-max",
+            "api_key_env": "QWEN_API_KEY",
+            "api_key": "inline-secret",
+            "api_key_set": True,
+            "label": "旧展示名",
+        }
+    )
+
+    assert row == {"model": "qwen3-max", "api_key_env": "QWEN_API_KEY"}
+
+
 def test_get_llm_from_config_qwen():
     """使用 qwen provider 新建 LLM"""
     os.environ["QWEN_API_KEY"] = "test-key"  # 隔离：避免被其他测试先设置的 setdefault 覆盖
@@ -250,6 +266,14 @@ def test_resolve_llm_api_key_prefers_user_env_var_store(monkeypatch):
         "api_key": "inline-should-not-win",
     }
     assert resolve_llm_api_key(cfg, {"JENIYA_API_KEY": "from-user-env"}) == "from-user-env"
+
+
+def test_resolve_llm_api_key_ignores_inline_api_key_without_env_reference(monkeypatch):
+    from app.agent.llm_client import resolve_llm_api_key
+
+    monkeypatch.delenv("JENIYA_API_KEY", raising=False)
+
+    assert resolve_llm_api_key({"api_key": "inline-secret"}) is None
 
 
 def test_build_llm_credential_notice_mentions_model():
@@ -387,6 +411,24 @@ def test_missing_llm_config_does_not_borrow_default_api_key(monkeypatch):
     monkeypatch.setenv("QWEN_API_KEY", "host-default-key")
 
     assert resolve_llm_api_key({}) is None
+
+
+def test_get_llm_from_config_requires_explicit_api_key_env(monkeypatch):
+    """模型资源必须显式声明 api_key_env，不能从 base_url 猜宿主机变量。"""
+    from app.agent.llm_client import get_llm_from_config
+
+    monkeypatch.setenv("QWEN_API_KEY", "host-default-key")
+
+    with pytest.raises(ValueError, match="api_key_env"):
+        get_llm_from_config(
+            "qwen",
+            {
+                "qwen": {
+                    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                    "model": "qwen3-max",
+                }
+            },
+        )
 
 
 def test_get_llm_from_config_empty_uses_default():

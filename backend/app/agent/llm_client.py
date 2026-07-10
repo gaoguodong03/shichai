@@ -94,11 +94,11 @@ def resolve_llm_api_key(
     cfg: Dict[str, Any],
     env_vars: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
-    """Resolve API key without constructing an LLM client."""
+    """Resolve model credentials only through the api_key_env contract."""
     api_key_env = str(cfg.get("api_key_env") or "").strip()
-    api_key = resolve_platform_env_value(api_key_env, env_vars) if api_key_env else None
-    if not api_key:
-        api_key = (cfg.get("api_key") or "").strip() or None
+    if not api_key_env:
+        return None
+    api_key = resolve_platform_env_value(api_key_env, env_vars)
     return (str(api_key).strip() or None) if api_key else None
 
 
@@ -147,13 +147,18 @@ def get_llm_from_config(
 ) -> "QwenLLM":
     """
     根据 llm_name 从配置新建 LLM 客户端。
-    解析顺序：平台内用户级环境变量 > 宿主机环境变量 > 配置中的内联 api_key。
+    解析顺序：模型 api_key_env 指向的平台内用户级环境变量 > 同名宿主机环境变量。
     """
     resolved_name, cfg = resolve_llm_provider_entry(llm_name, providers_config)
     if not cfg:
         raise ValueError(f"模型配置不存在：{resolved_name}")
 
+    api_key_env = str(cfg.get("api_key_env") or "").strip()
+    if not api_key_env:
+        raise ValueError(f"模型配置缺少 api_key_env：{resolved_name}")
     api_key = resolve_llm_api_key(cfg, env_vars)
+    if not api_key:
+        raise ValueError(f"缺少环境变量 {api_key_env}")
     base_url = cfg.get("base_url")
     model = cfg.get("model")
     return QwenLLM(

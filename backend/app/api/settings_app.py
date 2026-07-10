@@ -101,9 +101,11 @@ def normalize_host_profile(raw: Any) -> Dict[str, Any]:
 
 
 def _sanitize_llm_provider_row(meta: Any) -> Dict[str, Any]:
-    """Remove legacy model-resource fields while preserving request settings."""
+    """Remove legacy model-resource fields while preserving current settings."""
     out = dict(meta or {}) if isinstance(meta, dict) else {}
     out.pop("label", None)
+    out.pop("api_key", None)
+    out.pop("api_key_set", None)
     return out
 
 
@@ -221,16 +223,15 @@ def load_app_settings() -> Dict[str, Any]:
 
 
 def _sanitize_app_settings_for_client(data: Dict[str, Any]) -> Dict[str, Any]:
-    """GET/PUT 响应：不返回 llm_providers 中的 api_key 明文，仅保留 api_key_set。"""
+    """GET/PUT responses expose model env references, never inline API keys."""
     safe = dict(data)
     providers = safe.get("llm_providers") or {}
     if isinstance(providers, dict):
         safe_providers: Dict[str, Dict[str, Any]] = {}
         for pid, meta in providers.items():
             m = _sanitize_llm_provider_row(meta)
-            api_key = (m.get("api_key") or "").strip()
-            m["api_key_set"] = bool(api_key)
             m.pop("api_key", None)
+            m.pop("api_key_set", None)
             safe_providers[pid] = m
         safe["llm_providers"] = safe_providers
     safe.pop("_deleted_llm_providers", None)
@@ -299,18 +300,14 @@ def save_app_settings(data: Dict[str, Any]):
     patch = {k: v for k, v in data.items() if v is not None}
 
     if "llm_providers" in patch and isinstance(patch["llm_providers"], dict):
-        existing = (current.get("llm_providers") or {}) if isinstance(current.get("llm_providers"), dict) else {}
         merged: Dict[str, Dict[str, Any]] = {}
         incoming = patch["llm_providers"]
         for pid, meta in incoming.items():
             if not isinstance(meta, dict):
                 continue
             base: Dict[str, Any] = dict(meta)
-            old = existing.get(pid, {}) if isinstance(existing.get(pid), dict) else {}
-            if "api_key" not in meta and "api_key" in old:
-                base["api_key"] = old.get("api_key")
-            if isinstance(meta.get("api_key"), str) and meta.get("api_key") == "":
-                base.pop("api_key", None)
+            base.pop("api_key", None)
+            base.pop("api_key_set", None)
             merged[str(pid)] = _sanitize_llm_provider_row(base)
         deleted_defaults = sorted(k for k in _DEFAULT_LLM_PROVIDERS if k not in merged)
         if deleted_defaults:

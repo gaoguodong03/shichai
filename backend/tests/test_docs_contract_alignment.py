@@ -488,6 +488,18 @@ def test_runtime_user_messages_do_not_reference_removed_secret_settings_entry():
         assert legacy not in combined
 
 
+def test_frontend_model_types_do_not_keep_legacy_api_key_set_field():
+    """Frontend model types must not expose the removed inline-key status field."""
+    frontend_paths = [
+        PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "LLMSettingsView.vue",
+        PROJECT_ROOT / "frontend" / "src" / "features" / "resources" / "useBundleImports.ts",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in frontend_paths)
+
+    assert "api_key_env" in combined
+    assert "api_key_set" not in combined
+
+
 def test_sandbox_tool_docs_use_current_workspace_rename_schema():
     """Sandbox tool authoring docs must match the current workspace rename parameter."""
     text = (PROJECT_ROOT / "docs" / "skills" / "sandbox-tool-interface.md").read_text(encoding="utf-8")

@@ -368,8 +368,6 @@ const form = ref<{
 
       api_key_env?: string
 
-      api_key_set?: boolean
-
       [key: string]: unknown
 
     }

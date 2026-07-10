@@ -498,14 +498,14 @@ def test_frontend_resource_center_and_settings_flow(frontend_flow_client: TestCl
     )
     assert secret_settings.status_code == 200
     provider = secret_settings.json()["data"]["llm_providers"]["qwen"]
-    assert provider["api_key_set"] is True
     assert "api_key" not in provider
+    assert "api_key_set" not in provider
 
     app_settings_after_secret = client.get("/api/settings/app", headers=headers)
     assert app_settings_after_secret.status_code == 200
     provider_after = app_settings_after_secret.json()["data"]["llm_providers"]["qwen"]
-    assert provider_after["api_key_set"] is True
     assert "api_key" not in provider_after
+    assert "api_key_set" not in provider_after
     assert "sk-inline-secret" not in app_settings_after_secret.text
 
     exported_llm = client.get("/api/settings/llm-providers/qwen/export-bundle", headers=headers)
