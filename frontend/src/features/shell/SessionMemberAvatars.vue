@@ -24,7 +24,6 @@ import { computed } from 'vue'
 import { formatSessionDate } from './sessionListDisplay'
 
 type SessionAvatarAgent = {
-  agent_name?: string
   name: string
 }
 
@@ -48,7 +47,7 @@ const props = defineProps<{
 function agentAvatarColorForId(agentName: string, agentInstances: SessionAvatarAgent[]): string {
   const idx = Math.max(
     0,
-    (agentInstances || []).findIndex((d) => (d.agent_name || d.name) === agentName),
+    (agentInstances || []).findIndex((d) => d.name === agentName),
   )
   return AGENT_AVATAR_COLORS[idx % AGENT_AVATAR_COLORS.length]
 }
@@ -61,7 +60,7 @@ function agentAvatarCharForId(agentName: string, agentByName: Map<string, Sessio
 
 const agentNames = computed(() => props.agentNames || [])
 const visibleAgentNames = computed(() => agentNames.value.slice(0, 3))
-const agentByName = computed(() => new Map((props.agentInstances || []).map((agent) => [agent.agent_name || agent.name, agent])))
+const agentByName = computed(() => new Map((props.agentInstances || []).map((agent) => [agent.name, agent])))
 const visibleAvatars = computed(() => visibleAgentNames.value.map((id) => ({
   id,
   color: agentAvatarColorForId(id, props.agentInstances),

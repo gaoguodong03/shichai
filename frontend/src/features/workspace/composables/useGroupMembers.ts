@@ -3,8 +3,6 @@ import { apiRequest } from '@/api/base'
 import { appAlert, appConfirm } from '@/composables/useAppDialog'
 import { formatGroupSkillLabel } from '../groupSkillLabel'
 
-export const VIRTUAL_SCENE_HOST_ID = 'agent-scene-host'
-
 type GroupMemberMessage = {
   speaker?: {
     type?: string
@@ -21,7 +19,6 @@ type GroupMemberDetail = {
 }
 
 type AgentItem = {
-  agent_name?: string
   name: string
 }
 
@@ -76,7 +73,6 @@ export function useGroupMembers(args: {
     if (speakerType !== 'expert') return false
     const mid = String(speaker.agent_name || '').trim()
     if (!mid) return false
-    if (mid === VIRTUAL_SCENE_HOST_ID) return true
     const lid = String(groupDetail.value?.host?.name || '').trim()
     if (lid && mid === lid) {
       const sid = speaker.skill
@@ -100,17 +96,12 @@ export function useGroupMembers(args: {
   const invitableAgents = computed(() => {
     const inGroup = new Set(groupDetail.value?.agent_names || [])
     return (agentInstances() || [])
-      .map((d) => ({ ...d, agent_name: d.agent_name || d.name }))
-      .filter((d) => d.agent_name && !inGroup.has(d.agent_name))
+      .map((d) => ({ ...d, name: String(d.name || '').trim() }))
+      .filter((d) => d.name && !inGroup.has(d.name))
   })
 
-  const sceneHostMemberId = computed(() => VIRTUAL_SCENE_HOST_ID)
-  const orderedMemberIds = computed(() => {
-    const ids = [...(groupDetail.value?.agent_names || [])]
-    const hostMemberId = sceneHostMemberId.value
-    const rest = ids.filter((id) => id !== hostMemberId)
-    return [hostMemberId, ...rest]
-  })
+  const sceneHostMemberId = computed(() => 'host')
+  const orderedMemberIds = computed(() => [...(groupDetail.value?.agent_names || [])])
 
   function agentIndex(agentName?: string): number {
     const ids = groupDetail.value?.agent_names || []
@@ -135,12 +126,11 @@ export function useGroupMembers(args: {
   function displayGroupSpeakerName(agentName: string): string {
     const id = (agentName || '').trim()
     if (!id) return ''
-    if (id === 'host' || id === VIRTUAL_SCENE_HOST_ID) return effectiveHostDisplayName.value || defaultHostDisplayName
-    const fromInstances = (agentInstances() || []).find((item) => (item.agent_name || item.name) === id)?.name
+    if (id === 'host') return effectiveHostDisplayName.value || defaultHostDisplayName
+    const fromInstances = (agentInstances() || []).find((item) => item.name === id)?.name
     if (fromInstances && fromInstances.trim()) return fromInstances.trim()
     const fromMap = (groupDetail.value?.agent_map || {})[id]?.name
     if (fromMap && fromMap.trim()) return fromMap.trim()
-    if (/^agent-[0-9a-f]{6,}$/i.test(id)) return '专家'
     return id
   }
 
@@ -167,7 +157,7 @@ export function useGroupMembers(args: {
 
   async function removeMember(agentName: string) {
     const id = groupDetail.value?.id
-    if (agentName === 'host' || agentName === VIRTUAL_SCENE_HOST_ID) return
+    if (agentName === 'host') return
     if (!id) return
     const ok = await appConfirm({
       title: '移出成员',
@@ -209,6 +199,5 @@ export function useGroupMembers(args: {
     displayGroupSpeakerName,
     inviteSingleMember,
     removeMember,
-    VIRTUAL_SCENE_HOST_ID,
   }
 }

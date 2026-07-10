@@ -22,7 +22,6 @@ export type ShortcutPreset = {
 }
 
 type ShortcutExpert = {
-  agent_name?: string
   name: string
 }
 
@@ -196,7 +195,7 @@ export function useShortcutPresets(args: {
   async function createSessionFromScenarioPreset(p: ShortcutPreset): Promise<string | null> {
     const availableAgentNames = new Set(
       (args.agentInstances() || [])
-        .map((x) => String(x?.agent_name || x?.name || '').trim())
+        .map((x) => String(x?.name || '').trim())
         .filter(Boolean),
     )
     const targetExperts = Array.from(new Set((p.agent_names || []).filter((x) => !!x))).filter((id) =>
@@ -265,7 +264,7 @@ export function useShortcutPresets(args: {
   function shortcutPresetExpertNamesText(preset: ShortcutPreset): string {
     const map = args.groupDetail.value?.agent_map || {}
     const names = (preset.agent_names || [])
-      .map((id) => (args.agentInstances() || []).find((x) => (x.agent_name || x.name) === id)?.name || map[id]?.name || id)
+      .map((id) => (args.agentInstances() || []).find((x) => x.name === id)?.name || map[id]?.name || id)
       .filter(Boolean)
     return names.join('、')
   }

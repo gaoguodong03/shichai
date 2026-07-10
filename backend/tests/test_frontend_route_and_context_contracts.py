@@ -99,6 +99,30 @@ def test_frontend_runtime_and_e2e_do_not_use_legacy_session_or_end_fields():
         assert legacy not in combined
 
 
+def test_frontend_member_identity_uses_expert_name_without_agent_id_aliases():
+    files = [
+        "frontend/src/features/workspace/composables/useGroupOrchestrationState.ts",
+        "frontend/src/features/workspace/composables/useGroupMembers.ts",
+        "frontend/src/features/workspace/composables/useShortcutPresets.ts",
+        "frontend/src/features/workspace/composables/useWorkspaceContentProviders.ts",
+        "frontend/src/features/shell/SessionMemberAvatars.vue",
+    ]
+    combined = "\n".join(read(path) for path in files)
+
+    for legacy_identity_fallback in [
+        "toAgentStyleName",
+        "buildExpertAliasMap",
+        "item.agent_name || item.name",
+        "d.agent_name || d.name",
+        "x.agent_name || x.name",
+        "x?.agent_name || x?.name",
+        "(item.agent_name || item.name)",
+        "agent-[0-9a-f]",
+        "agent-scene-host",
+    ]:
+        assert legacy_identity_fallback not in combined
+
+
 def test_frontend_resource_imports_do_not_send_legacy_conflict_controls():
     combined = "\n".join(
         read(path)

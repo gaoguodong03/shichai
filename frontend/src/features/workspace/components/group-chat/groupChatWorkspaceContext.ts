@@ -137,7 +137,6 @@ export interface GroupChatComposerContext {
   toolbarDisplayLabelText: ContextValue
   toolbarDisplaySpeakerId: ContextValue
   showAddMemberModal: ContextValue
-  VIRTUAL_SCENE_HOST_ID: ContextValue
 }
 
 export interface GroupChatWorkspacePanelContext {

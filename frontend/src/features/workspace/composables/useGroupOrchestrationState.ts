@@ -10,7 +10,6 @@ type GroupDetailLike = {
 }
 
 type AgentItem = {
-  agent_name?: string
   name: string
 }
 
@@ -55,7 +54,6 @@ export function useGroupOrchestrationState(args: {
   currentGroupStreaming: ComputedRef<boolean>
   groupStreaming: ComputedRef<boolean>
   orderedMemberIds: ComputedRef<string[]>
-  sceneHostMemberId: ComputedRef<string>
   effectiveHostDisplayName: ComputedRef<string>
   defaultHostDisplayName: string
   agentInstances: () => AgentItem[]
@@ -79,7 +77,6 @@ export function useGroupOrchestrationState(args: {
     currentGroupStreaming,
     groupStreaming,
     orderedMemberIds,
-    sceneHostMemberId,
     effectiveHostDisplayName,
     defaultHostDisplayName,
     agentInstances,
@@ -117,25 +114,6 @@ export function useGroupOrchestrationState(args: {
     if (!expert) return ''
     return `${effectiveHostDisplayName.value}已帮您切换专家：${expert}`
   })
-
-  function toAgentStyleName(raw: string | null | undefined): string {
-    const sid = String(raw || '').trim()
-    if (!sid) return ''
-    if (sid.startsWith('agent-')) return sid
-    return `agent-${sid}`
-  }
-
-  function buildExpertAliasMap(): Map<string, string> {
-    const out = new Map<string, string>()
-    for (const item of (agentInstances() || [])) {
-      const id = String(item.agent_name || item.name || '').trim()
-      if (!id) continue
-      out.set(id, id)
-      const agentName = toAgentStyleName(id)
-      if (agentName) out.set(agentName, id)
-    }
-    return out
-  }
 
   function extractSuggestedAddNames(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
@@ -201,12 +179,12 @@ export function useGroupOrchestrationState(args: {
   const orchestrationInterruptHint = computed(() => '')
 
   const pendingSuggestedAddAgentNames = computed(() => {
-    const aliasMap = buildExpertAliasMap()
-    const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))
+    const available = new Set((agentInstances() || []).map((item) => String(item.name || '').trim()).filter(Boolean))
+    const inGroup = new Set(groupDetail.value?.agent_names || [])
     const normalized = (groupSuggestedAddAgentNames.value || [])
-      .map((id) => aliasMap.get(String(id || '').trim()) || '')
-      .filter(Boolean)
-    return [...new Set(normalized)].filter((id) => !inGroup.has(toAgentStyleName(id)))
+      .map((id) => String(id || '').trim())
+      .filter((id) => id && available.has(id))
+    return [...new Set(normalized)].filter((id) => !inGroup.has(id))
   })
 
   const pendingSuggestedAgentItems = computed(() =>
@@ -214,9 +192,8 @@ export function useGroupOrchestrationState(args: {
   )
 
   function suggestedAgentDisplayName(id: string): string {
-    const aliasMap = buildExpertAliasMap()
-    const canonicalId = aliasMap.get(String(id || '').trim()) || id
-    return (agentInstances() || []).find((item) => (item.agent_name || item.name) === canonicalId)?.name
+    const canonicalId = String(id || '').trim()
+    return (agentInstances() || []).find((item) => item.name === canonicalId)?.name
       || groupDetail.value?.agent_map?.[canonicalId]?.name
       || groupDetail.value?.agent_map?.[id]?.name
       || canonicalId
@@ -369,8 +346,7 @@ export function useGroupOrchestrationState(args: {
     const id = focusRoleForToolbar.value
     if (!id) return true
     if (id === 'host') return true
-    const hostMemberId = (sceneHostMemberId.value || '').trim()
-    return Boolean(hostMemberId && hostMemberId !== 'host' && id === hostMemberId)
+    return false
   })
 
   const toolbarDisplaySpeakerId = computed(() => focusRoleForToolbar.value)
@@ -389,12 +365,12 @@ export function useGroupOrchestrationState(args: {
   function resolveSuggestedNamesFromPayload(payload: Record<string, unknown> | null | undefined): string[] {
     if (!payload) return []
     const direct = extractSuggestedAddNames(payload)
-    const aliasMap = buildExpertAliasMap()
-    const inGroup = new Set((groupDetail.value?.agent_names || []).map((id) => toAgentStyleName(id)))
+    const available = new Set((agentInstances() || []).map((item) => String(item.name || '').trim()).filter(Boolean))
+    const inGroup = new Set(groupDetail.value?.agent_names || [])
     const normalize = (ids: string[]) => {
       const uniq = [...new Set((ids || [])
-        .map((id) => aliasMap.get(String(id || '').trim()) || '')
-        .filter((id) => !!id && !inGroup.has(toAgentStyleName(id))))]
+        .map((id) => String(id || '').trim())
+        .filter((id) => !!id && available.has(id) && !inGroup.has(id)))]
       return uniq.slice(0, 3)
     }
     if (direct.length) return normalize(direct)

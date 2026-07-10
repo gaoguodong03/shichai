@@ -36,7 +36,7 @@ import {
 
 export type WorkspaceContentProps = {
   selectedGroupSessionId: string | null
-  agentInstances: { agent_name?: string; name: string; description?: string; skills?: { name: string; directory_name: string }[] }[]
+  agentInstances: { name: string; description?: string; skills?: { name: string; directory_name: string }[] }[]
   skills?: { directory_name?: string; name: string }[]
   middleColumnOpen?: boolean
 }
@@ -85,8 +85,6 @@ export function useWorkspaceContentProviders(args: {
   })
   const hostDisplayName = ref(DEFAULT_HOST_DISPLAY_NAME)
   const effectiveHostDisplayName = computed(() => {
-    const hostMapName = String(groupDetail.value?.agent_map?.['agent-scene-host']?.name || '').trim()
-    if (hostMapName) return hostMapName
     const hostName = String(groupDetail.value?.host?.name || '').trim()
     if (hostName) return hostName
     return (hostDisplayName.value || DEFAULT_HOST_DISPLAY_NAME).trim() || DEFAULT_HOST_DISPLAY_NAME
@@ -117,7 +115,6 @@ export function useWorkspaceContentProviders(args: {
     displayGroupSpeakerName,
     inviteSingleMember,
     removeMember,
-    VIRTUAL_SCENE_HOST_ID,
   } = useGroupMembers({
     groupDetail,
     agentInstances: () => props.agentInstances || [],
@@ -369,7 +366,6 @@ export function useWorkspaceContentProviders(args: {
     currentGroupStreaming,
     groupStreaming,
     orderedMemberIds,
-    sceneHostMemberId,
     effectiveHostDisplayName,
     defaultHostDisplayName: DEFAULT_HOST_DISPLAY_NAME,
     agentInstances: () => props.agentInstances || [],
@@ -686,7 +682,6 @@ export function useWorkspaceContentProviders(args: {
     toolbarDisplayLabelText,
     toolbarDisplaySpeakerId,
     showAddMemberModal,
-    VIRTUAL_SCENE_HOST_ID,
   })
 
   provideGroupChatWorkspacePanelContext({

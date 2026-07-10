@@ -276,7 +276,6 @@
                           <ul v-if="orderedMemberIds.length > 0" class="group-chat-members-list">
                             <li v-for="id in orderedMemberIds" :key="id" class="group-chat-members-item group-chat-member-skill-row">
                               <span
-                                v-if="id !== 'host' && id !== VIRTUAL_SCENE_HOST_ID"
                                 class="group-chat-avatar group-chat-avatar-sm"
                                 :style="
                                   expertAvatarUrl(id)
@@ -292,24 +291,12 @@
                                 />
                                 <template v-else>{{ agentAvatarChar(id) }}</template>
                               </span>
-                              <span
-                                v-else
-                                class="group-chat-avatar group-chat-avatar-sm group-chat-avatar-host group-chat-avatar-host-logo"
-                                aria-hidden="true"
-                              >
-                                <img :src="hostLogoUrl" alt="" class="group-chat-avatar-photo" />
-                              </span>
                               <span class="group-chat-member-skill-name">
                                 <span class="group-chat-member-skill-name-text">
-                                  {{
-                                    id === 'host' || id === VIRTUAL_SCENE_HOST_ID
-                                      ? hostDisplayName
-                                      : ((groupDetail?.agent_map || {})[id]?.name || id)
-                                  }}
+                                  {{ (groupDetail?.agent_map || {})[id]?.name || id }}
                                 </span>
-                                <span v-if="id === sceneHostMemberId" class="group-chat-member-badge">主持人</span>
                               </span>
-                              <button v-if="id !== sceneHostMemberId" type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
+                              <button type="button" class="group-chat-remove-member-btn" title="移出群聊" @click="removeMember(id)">移出</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无成员，请在下方邀请</p>
@@ -317,25 +304,25 @@
                         <section class="group-chat-add-remove-section">
                           <p class="group-chat-members-dropdown-title">可邀请的专家</p>
                           <ul v-if="invitableAgents.length" class="group-chat-members-list">
-                            <li v-for="d in invitableAgents" :key="d.agent_name" class="group-chat-members-item group-chat-member-skill-row">
+                            <li v-for="d in invitableAgents" :key="d.name" class="group-chat-members-item group-chat-member-skill-row">
                               <span
                                 class="group-chat-avatar group-chat-avatar-sm"
                                 :style="
-                                  expertAvatarUrl(d.agent_name)
+                                  expertAvatarUrl(d.name)
                                     ? { background: 'transparent', overflow: 'hidden' }
-                                    : { backgroundColor: agentAvatarColor(agentIndex(d.agent_name)) }
+                                    : { backgroundColor: agentAvatarColor(agentIndex(d.name)) }
                                 "
                               >
                                 <img
-                                  v-if="expertAvatarUrl(d.agent_name)"
-                                  :src="expertAvatarUrl(d.agent_name)!"
+                                  v-if="expertAvatarUrl(d.name)"
+                                  :src="expertAvatarUrl(d.name)!"
                                   alt=""
                                   class="group-chat-avatar-photo"
                                 />
-                                <template v-else>{{ (d.name || d.agent_name || '?').trim().slice(0, 1).toUpperCase() }}</template>
+                                <template v-else>{{ (d.name || '?').trim().slice(0, 1).toUpperCase() }}</template>
                               </span>
-                              <span class="group-chat-add-member-label">{{ d.name || d.agent_name }}</span>
-                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.agent_name)">邀请</button>
+                              <span class="group-chat-add-member-label">{{ d.name }}</span>
+                              <button type="button" class="group-chat-invite-member-btn" title="邀请加入群聊" @click="inviteSingleMember(d.name)">邀请</button>
                             </li>
                           </ul>
                           <p v-else class="group-chat-add-member-empty">暂无可邀请的专家</p>
@@ -446,7 +433,6 @@ const {
   agentAvatarColor,
   agentIndex,
   agentAvatarChar,
-  sceneHostMemberId,
   removeMember,
   invitableAgents,
   inviteSingleMember,
@@ -464,6 +450,5 @@ const {
   toolbarDisplayLabelText,
   toolbarDisplaySpeakerId,
   showAddMemberModal,
-  VIRTUAL_SCENE_HOST_ID,
 } = useGroupChatComposerContext()
 </script>
