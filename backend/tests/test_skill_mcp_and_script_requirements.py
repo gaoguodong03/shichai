@@ -34,14 +34,14 @@ def test_normalized_allowed_tools_rejects_python_string_shape():
     assert out["python"] == []
 
 
-def test_normalize_allowed_tools_payload_accepts_http_api_alias():
+def test_normalize_allowed_tools_payload_ignores_http_api_alias():
     out = normalize_allowed_tools_payload({"mcp": ["Exa"], "http-api": ["Weather"], "python": ["requests>=2", ""]})
-    assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": ["requests>=2"]}
+    assert out == {"mcp": ["Exa"], "http_api": [], "python": ["requests>=2"]}
 
 
 def test_normalize_allowed_tools_payload_rejects_python_string_shape():
     out = normalize_allowed_tools_payload({"mcp": ["Exa"], "http-api": ["Weather"], "python": "requests>=2\npandas"})
-    assert out == {"mcp": ["Exa"], "http_api": ["Weather"], "python": []}
+    assert out == {"mcp": ["Exa"], "http_api": [], "python": []}
 
 
 def test_sanitize_skill_frontmatter_keeps_only_contract_fields():
@@ -55,7 +55,32 @@ def test_sanitize_skill_frontmatter_keeps_only_contract_fields():
     assert fm == {
         "name": "Skill A",
         "description": "desc",
-        ALLOWED_TOOLS_FM_KEY: {"mcp": ["Exa"], "http_api": ["Weather"], "python": ["pandas", "requests"]},
+        ALLOWED_TOOLS_FM_KEY: {"mcp": ["Exa"], "http_api": [], "python": ["pandas", "requests"]},
+    }
+
+
+def test_import_frontmatter_remap_drops_http_api_alias():
+    from app.api.settings_skills import _remap_frontmatter_mcp_refs
+
+    fm = {
+        ALLOWED_TOOLS_FM_KEY: {
+            "mcp": ["old-mcp"],
+            "http-api": ["old-http"],
+            "http_api": ["canonical-http"],
+            "python": [],
+        }
+    }
+
+    out = _remap_frontmatter_mcp_refs(
+        fm,
+        {"old-mcp": "new-mcp", "old-http": "new-http", "canonical-http": "new-canonical-http"},
+        {"new-mcp": "New MCP", "new-http": "New HTTP", "new-canonical-http": "New Canonical HTTP"},
+    )
+
+    assert out[ALLOWED_TOOLS_FM_KEY] == {
+        "mcp": ["New MCP"],
+        "http_api": ["New Canonical HTTP"],
+        "python": [],
     }
 
 

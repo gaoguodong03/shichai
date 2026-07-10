@@ -142,12 +142,10 @@ def _remap_frontmatter_mcp_refs(
 
     section = fm.get(ALLOWED_TOOLS_FM_KEY)
     if isinstance(section, dict):
-        copied_section = dict(section)
-        for key in ("mcp", "http_api", "http-api"):
+        copied_section = {key: section.get(key) for key in ("mcp", "http_api", "python") if key in section}
+        for key in ("mcp", "http_api"):
             if key in copied_section:
-                copied_section["http_api" if key == "http-api" else key] = remap_list(copied_section.get(key))
-                if key == "http-api":
-                    copied_section.pop("http-api", None)
+                copied_section[key] = remap_list(copied_section.get(key))
         fm[ALLOWED_TOOLS_FM_KEY] = copied_section
     return fm
 

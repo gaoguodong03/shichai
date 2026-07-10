@@ -61,7 +61,7 @@ def _list_tool_names(raw: Any) -> List[str]:
 def _http_api_names_from_section(section: Any) -> List[str]:
     if not isinstance(section, dict):
         return []
-    return _list_tool_names(section.get("http_api") or section.get("http-api"))
+    return _list_tool_names(section.get("http_api"))
 
 
 def tool_names_from_frontmatter(fm: Dict[str, Any]) -> List[str]:
@@ -122,7 +122,7 @@ def normalize_allowed_tools_payload(raw: Dict[str, Any]) -> Dict[str, Any]:
     """校验并归一化 API 传入的 allowed_tools 体。"""
     mcp_raw = raw.get("mcp")
     mcp_list = list(dict.fromkeys(str(x).strip() for x in (mcp_raw if isinstance(mcp_raw, list) else []) if str(x).strip()))
-    http_raw = raw.get("http_api") or raw.get("http-api")
+    http_raw = raw.get("http_api")
     http_api_list = _list_tool_names(http_raw)
     py = raw.get("python", [])
     if isinstance(py, list):
