@@ -138,20 +138,6 @@ def _mcp_rows_for_skill_dir(skill_dir: Path) -> List[Dict[str, Any]]:
     return mcp_rows_for_bundle_refs(mcp_refs, load_mcp_config())
 
 
-def _parse_mcp_bundle_rows(raw: bytes) -> List[Dict[str, Any]]:
-    try:
-        parsed = json.loads(raw.decode("utf-8"))
-    except Exception:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [row for row in parsed if isinstance(row, dict) and str(row.get("name") or "").strip()]
-
-
-def _read_mcp_bundle_rows(bundle_dir: Path) -> List[Dict[str, Any]]:
-    return read_bundle_tool_rows(bundle_dir)
-
-
 async def _merge_imported_skill_requirements_and_prewarm(directory_names: List[str], skills_root: Path) -> Dict[str, Any]:
     incoming: List[str] = []
     for sid in directory_names:
@@ -194,7 +180,7 @@ async def _import_skill_from_bundle_bytes(raw: bytes, *, dry_run: bool) -> Dict[
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or manifest.get("bundle_type") != "skill":
             raise HTTPException(status_code=400, detail="技能资源包类型无效")
-        mcp_bundle = _read_mcp_bundle_rows(tmp)
+        mcp_bundle = read_bundle_tool_rows(tmp)
         directory_names = list_skill_directories_in_bundle_skills_dir(tmp)
         if not directory_names:
             raise HTTPException(status_code=400, detail="分享包中缺少技能目录")

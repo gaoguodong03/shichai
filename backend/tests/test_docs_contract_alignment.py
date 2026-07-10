@@ -214,6 +214,15 @@ def test_mcp_bundle_packaging_has_core_module_boundary():
     assert "def _read_mcp_bundle_rows" not in api_text
 
 
+def test_skill_import_does_not_keep_api_mcp_bundle_parsers():
+    """Skill import reads MCP rows through the current resource-bundle core helper."""
+    api_text = (PROJECT_ROOT / "backend" / "app" / "api" / "settings_skills.py").read_text(encoding="utf-8")
+
+    assert "read_bundle_tool_rows(tmp)" in api_text
+    assert "def _read_mcp_bundle_rows" not in api_text
+    assert "def _parse_mcp_bundle_rows" not in api_text
+
+
 def test_resource_import_modules_keep_comments_at_file_or_function_boundary():
     """Contract-critical modules follow the comment placement coding standard."""
     paths = [
