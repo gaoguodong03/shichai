@@ -168,6 +168,7 @@ def apply_skill_result_to_orchestration_state(
     """Apply message-level Skill session policy to orchestration_state."""
     next_action = skill_result.get("next_action") if isinstance(skill_result.get("next_action"), dict) else {}
     skill_policy = str(next_action.get("skill_session") or "release").strip()
+    previous_host_scheduler = orchestration_state.pop("host_scheduler", None)
     if skill_policy == "keep":
         row = {
             "owner_agent_name": str(agent_name or "").strip(),
@@ -179,8 +180,8 @@ def apply_skill_result_to_orchestration_state(
             row["skill"] = skill_name
         previous = orchestration_state.get("continuation")
         orchestration_state["continuation"] = row
-        return previous != row
+        return previous != row or previous_host_scheduler is not None
     if "continuation" in orchestration_state:
         orchestration_state.pop("continuation", None)
         return True
-    return False
+    return previous_host_scheduler is not None

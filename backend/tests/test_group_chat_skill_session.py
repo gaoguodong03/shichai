@@ -202,7 +202,13 @@ def test_failed_tool_result_content_excludes_execution_log_fields():
 
 
 def test_keep_skill_session_writes_continuation_from_skill_result():
-    orchestration_state = {}
+    orchestration_state = {
+        "host_scheduler": {
+            "current_phase": "写作中",
+            "next_speaker": "写作专家",
+            "next_action": "旧主持人指令",
+        }
+    }
     skill_result = {
         "execution_status": "succeeded",
         "content": "请补充目标受众。",
@@ -224,10 +230,16 @@ def test_keep_skill_session_writes_continuation_from_skill_result():
         "skill": "article-writer",
         "next_action": "请补充目标受众。",
     }
+    assert "host_scheduler" not in orchestration_state
 
 
 def test_release_skill_session_clears_existing_continuation():
     orchestration_state = {
+        "host_scheduler": {
+            "current_phase": "写作中",
+            "next_speaker": "写作专家",
+            "next_action": "旧主持人指令",
+        },
         "continuation": {
             "owner_agent_name": "写作专家",
             "skill_policy": "keep",
@@ -251,3 +263,4 @@ def test_release_skill_session_clears_existing_continuation():
 
     assert changed is True
     assert "continuation" not in orchestration_state
+    assert "host_scheduler" not in orchestration_state
