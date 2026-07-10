@@ -88,15 +88,6 @@ def _json_object_from_result(raw_result: object) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _legacy_text_status(text: str) -> tuple[str, str]:
-    stripped = str(text or "").strip()
-    if stripped.startswith(("错误：未提供", "错误：content 为空", "错误：read_workspace_file 需要", "错误：write_workspace_file 需要")):
-        return "blocked", "tool_input_required"
-    if stripped.startswith(("错误：", "Error:", "ERROR:")):
-        return "failed", "tool_failed"
-    return "succeeded", "ok"
-
-
 def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, arguments: dict, tool_call_id: str, raw_result: object) -> dict:
     if isinstance(raw_result, ToolResultRecord):
         return raw_result.model_dump(exclude_none=True)
@@ -104,8 +95,8 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
     if isinstance(raw_payload, dict) and raw_payload.get("tool_call") and raw_payload.get("execution_status"):
         return ToolResultRecord.model_validate(raw_payload).model_dump(exclude_none=True)
     text = str(raw_result or "")
-    status, _result_code = _legacy_text_status(text)
-    message = "工具执行成功" if status == "succeeded" else "工具执行失败"
+    status = "succeeded"
+    message = "工具执行成功"
     output: dict[str, Any] = {"text": text}
     error_log = None
     if str(tool_name or "").startswith("run_skill_script_") and isinstance(raw_payload, dict):
@@ -119,8 +110,6 @@ def _tool_result_record_from_raw(*, tool_name: str, tool: object | None, argumen
         status = "failed" if ok is False or (isinstance(returncode, int) and returncode != 0) else "succeeded"
         if status == "failed":
             error_log = {"message": message or stderr or "脚本执行失败", "stdout": stdout, "stderr": stderr, "raw_output": text, "retryable": False}
-    elif status == "failed":
-        error_log = {"message": text.strip() or "工具执行失败", "raw_output": text, "retryable": False}
     payload = {
         "tool_call": _tool_call_record_payload(tool_name=tool_name, tool=tool, arguments=arguments, tool_call_id=tool_call_id),
         "execution_status": status,

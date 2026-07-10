@@ -54,6 +54,23 @@ def test_mcp_tool_result_keeps_provider_identity_without_wrapper_name():
     assert result["tool_call"]["provider_tool"] == "linkup-fetch"
 
 
+def test_plain_text_tool_output_does_not_infer_status_from_legacy_error_prefix():
+    result = _tool_result_record_from_raw(
+        tool_name="mcp_Server_tool",
+        tool=SimpleNamespace(
+            name="mcp_Server_tool",
+            metadata={"mcp_server_name": "server", "mcp_tool_name": "tool"},
+        ),
+        arguments={},
+        tool_call_id="call-legacy-text",
+        raw_result="错误：未提供 content 参数",
+    )
+
+    assert result["execution_status"] == "succeeded"
+    assert result["output"]["text"] == "错误：未提供 content 参数"
+    assert "error_log" not in result
+
+
 def test_tool_exception_becomes_failed_tool_result_with_error_log():
     result = _tool_result_record_from_exception(
         tool_name="read_workspace_file",

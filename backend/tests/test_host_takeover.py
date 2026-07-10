@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.agent.group_host_decision import HOST_PROTOCOL_ERROR_MESSAGE, parse_strict_host_scheduler_output
-from app.agent.group_chat_host_runtime import _host_decide_by_agent
+from app.agent.group_chat_host_runtime import _host_decide_by_agent, _host_skill_directory
 from app.agent.session_contracts import GroupChatRequest
 from app.api import group_chat_state as state
 
@@ -40,6 +40,34 @@ def test_group_chat_request_accepts_structured_target_agent_name():
         target_agent_name="文书专员",
     )
     assert request.target_agent_name == "文书专员"
+
+
+def test_host_skill_directory_ignores_legacy_skills_list():
+    assert _host_skill_directory({"name": "四九", "skills": [{"directory_name": "group-host-webnovel"}]}) == ""
+    assert _host_skill_directory({"name": "四九", "skill_directory": "group-host-webnovel"}) == "group-host-webnovel"
+
+
+def test_host_snapshot_runtime_shape_does_not_emit_legacy_skills_list():
+    from app.agent.group_chat_runtime import _host_snapshot_to_agent
+
+    host_agent = _host_snapshot_to_agent(
+        {
+            "host": {
+                "name": "四九",
+                "llm_name": "qwen",
+                "system_prompt": "主持人规则",
+                "skill_directory": "group-host-webnovel",
+            }
+        }
+    )
+
+    assert host_agent == {
+        "name": "四九",
+        "description": "群聊主持人",
+        "llm_name": "qwen",
+        "system_prompt": "主持人规则",
+        "skill_directory": "group-host-webnovel",
+    }
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.agent.messages import HumanMessage, SystemMessage  # type: ignore
-from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent, _pick_resolved_host_skill
+from app.agent.group_chat_expert_resolution import _llm_credential_notice_for_agent
 from app.agent.group_host_decision import parse_strict_host_scheduler_output
 from app.agent.platform_prompts import render_platform_prompt
 from app.api.settings_app import load_app_settings
@@ -23,18 +23,7 @@ def _request_skills_loader():
 
 def _host_skill_directory(host_agent: Dict[str, Any]) -> str:
     """Resolve the host Skill directory from the session host snapshot."""
-    direct = str(host_agent.get("skill_directory") or "").strip()
-    if direct:
-        return direct
-    skills = host_agent.get("skills")
-    if isinstance(skills, list):
-        directories = [
-            str(item.get("directory_name") or "").strip()
-            for item in skills
-            if isinstance(item, dict) and str(item.get("directory_name") or "").strip()
-        ]
-        return _pick_resolved_host_skill(directories) if directories else ""
-    return ""
+    return str(host_agent.get("skill_directory") or "").strip()
 
 
 def _load_host_skill_content(host_agent: Dict[str, Any]) -> str:

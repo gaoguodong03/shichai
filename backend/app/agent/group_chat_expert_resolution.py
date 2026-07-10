@@ -12,18 +12,6 @@ from app.agent.llm_client import (
 from app.api.settings_env_vars import load_env_var_values
 
 
-def _pick_resolved_host_skill(skill_directories: List[str]) -> str:
-    """Pick the most specific host Skill directory from a host snapshot."""
-    cleaned = [str(item or "").strip() for item in skill_directories or [] if str(item or "").strip()]
-    if not cleaned:
-        return ""
-    for item in cleaned:
-        lowered = item.lower()
-        if "host" in lowered or "主持" in lowered:
-            return item
-    return cleaned[0]
-
-
 def _resolve_llm_config_for_agent(
     agent_profile: Optional[Dict[str, Any]],
     app_settings: Dict[str, Any],

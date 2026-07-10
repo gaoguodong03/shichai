@@ -78,7 +78,7 @@ def _end_event_payload(end: SseEndEvent) -> Dict[str, Any]:
 
 
 def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert the session `host` snapshot into the Agent-like shape used by LLM helpers."""
+    """Convert the session `host` snapshot into the host runtime profile."""
     host = session_item.get("host") if isinstance(session_item.get("host"), dict) else {}
     skill_directory = str(host.get("skill_directory") or "").strip()
     return {
@@ -87,7 +87,6 @@ def _host_snapshot_to_agent(session_item: Dict[str, Any]) -> Dict[str, Any]:
         "llm_name": str(host.get("llm_name") or "").strip(),
         "system_prompt": str(host.get("system_prompt") or "").strip(),
         "skill_directory": skill_directory,
-        "skills": [{"directory_name": skill_directory}] if skill_directory else [],
     }
 
 
